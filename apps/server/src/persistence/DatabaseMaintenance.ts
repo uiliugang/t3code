@@ -73,10 +73,10 @@ export class LegacyDatabaseRemoveError extends Schema.TaggedError<
 
 export class LegacyDatabaseHasUnmigratedRecordsError extends Schema.TaggedError<LegacyDatabaseHasUnmigratedRecordsError>()(
   "LegacyDatabaseHasUnmigratedRecordsError",
-  { projects: Schema.Int, threads: Schema.Int },
+  { projects: Schema.Int, threads: Schema.Int, messages: Schema.Int },
 ) {
   override get message() {
-    return `The current database is missing legacy records. Projects missing: ${this.projects}. Threads missing: ${this.threads}. Keep the old database for recovery.`;
+    return `The current database is missing legacy records. Projects missing: ${this.projects}. Threads missing: ${this.threads}. Messages missing: ${this.messages}. Keep the old database for recovery.`;
   }
 }
 
@@ -89,7 +89,11 @@ export class DiskSpaceCheckError extends Schema.TaggedError<
   }
 }
 
-type LegacyOnlyRecords = { readonly projects: number; readonly threads: number };
+type LegacyOnlyRecords = {
+  readonly projects: number;
+  readonly threads: number;
+  readonly messages: number;
+};
 
 export type DatabaseCompactStep = "prune-events" | "vacuum" | "rebuild-search" | "checkpoint";
 
@@ -199,7 +203,13 @@ const make = Effect.gen(function* () {
           WHERE legacy.deleted_at IS NULL AND NOT EXISTS (
             SELECT 1 FROM current_v2.orchestration_v2_projection_threads current
             WHERE current.thread_id = legacy.thread_id
-          )) AS threads
+          )) AS threads,
+        (SELECT COUNT(*) FROM main.projection_thread_messages legacy
+          INNER JOIN main.projection_threads thread ON thread.thread_id = legacy.thread_id
+          WHERE thread.deleted_at IS NULL AND NOT EXISTS (
+            SELECT 1 FROM current_v2.orchestration_v2_projection_messages current
+            WHERE current.thread_id = legacy.thread_id AND current.message_id = legacy.message_id
+          )) AS messages
     `;
     if (!counts) return yield* Effect.die(new Error("Missing result from legacy database counts"));
     return counts;
@@ -291,7 +301,7 @@ const make = Effect.gen(function* () {
       const check = lockExclusively(legacy).pipe(
         Effect.andThen(readLegacyOnlyRecords(databasePath)),
         Effect.flatMap((counts) =>
-          counts.projects > 0 || counts.threads > 0
+          counts.projects > 0 || counts.threads > 0 || counts.messages > 0
             ? new LegacyDatabaseHasUnmigratedRecordsError(counts)
             : Effect.void,
         ),

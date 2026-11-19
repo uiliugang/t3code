@@ -68,7 +68,7 @@ it.effect(
                     reclaimableBytes: 1000,
                     incrementalVacuumEnabled: false,
                     legacyDatabaseBytes: 4000,
-                    legacyOnlyRecords: { projects: 0, threads: 0 },
+                    legacyOnlyRecords: { projects: 0, threads: 0, messages: 0 },
                   }),
                 compact: () =>
                   startServer.pipe(

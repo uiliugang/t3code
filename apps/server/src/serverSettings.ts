@@ -381,7 +381,8 @@ export class ServerSettingsService extends Context.Service<
     ) => Effect.Effect<void, ServerSettingsError>;
 
     readonly withSettingsSnapshot: <A, E, R>(
-      use: (settings: ServerSettings) => Effect.Effect<A, E, R>,
+      use: (settings: ServerSettings, stored?: ServerSettings) => Effect.Effect<A, E, R>,
+      options?: { readonly tryTrusted?: true },
     ) => Effect.Effect<A, E | ServerSettingsError, R>;
 
     readonly streamChanges: Stream.Stream<ServerSettings>;
@@ -1477,8 +1478,33 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const withSettingsSnapshot: ServerSettingsService["Service"]["withSettingsSnapshot"] = (use) =>
-    writeSemaphore.withPermits(1)(getMaterializedSettings.pipe(Effect.flatMap(use)));
+  const withSettingsSnapshot: ServerSettingsService["Service"]["withSettingsSnapshot"] = (
+    use,
+    options,
+  ) => {
+    if (!options?.tryTrusted) {
+      return writeSemaphore.withPermits(1)(getMaterializedSettings.pipe(Effect.flatMap(use)));
+    }
+    const unreadable = (cause: unknown) =>
+      new ServerSettingsError({ settingsPath, operation: "read-file", cause });
+    return writeSemaphore
+      .withPermitsIfAvailable(1)(
+        Effect.gen(function* () {
+          const { settings, parseFailure } = yield* reloadSettings;
+          if (Option.isSome(parseFailure)) return yield* unreadable(parseFailure.value);
+          const stored = yield* materializeSettingsSecrets(settings);
+          return yield* use(toEffective(stored), stored);
+        }),
+      )
+      .pipe(
+        Effect.flatMap(
+          Option.match({
+            onSome: Effect.succeed,
+            onNone: () => unreadable(new Error("Settings are busy.")),
+          }),
+        ),
+      );
+  };
 
   const revalidateAndEmit = writeSemaphore.withPermits(1)(
     Effect.gen(function* () {

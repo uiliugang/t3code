@@ -411,8 +411,22 @@ function codexHistoryBase(records: ReadonlyArray<DecodedTranscriptRecord>) {
 
 // Claude Code records its own UI as user turns: slash commands, `!` shell runs and
 // their output, task notifications. Keep what the user typed, as they typed it.
-const CLAUDE_UI_OUTPUT =
-  /^(?:<(?:task-notification|local-command-stdout|local-command-stderr|local-command-caveat|bash-stdout|bash-stderr)>|\[Request interrupted by user(?: for tool use)?\]$)/;
+const CLAUDE_UI_OUTPUT_TAG =
+  /^<(task-notification|local-command-stdout|local-command-stderr|local-command-caveat|bash-stdout|bash-stderr)>/;
+
+function isClaudeUiOutput(text: string): boolean {
+  if (/^\[Request interrupted by user(?: for tool use)?\]$/.test(text)) return true;
+  while (text.length > 0) {
+    const tag = CLAUDE_UI_OUTPUT_TAG.exec(text);
+    if (!tag) return false;
+    const endTag = `</${tag[1]}>`;
+    const end = text.indexOf(endTag, tag[0].length);
+    if (end < 0) return false;
+    text = text.slice(end + endTag.length).trimStart();
+    if (text.length === 0) return true;
+  }
+  return false;
+}
 
 /**
  * A slash command as typed. Its arguments may name the thread; a bare command
@@ -429,15 +443,22 @@ function claudeCommand(text: string): { readonly text: string; readonly titleTex
 
 /** What a Claude user turn shows the user typed, and the part of it that may name the thread. */
 function claudeUserText(text: string): { readonly text: string; readonly titleText: string } {
-  if (CLAUDE_UI_OUTPUT.test(text)) return { text: "", titleText: "" };
+  if (isClaudeUiOutput(text)) return { text: "", titleText: "" };
   const shellInput = /^<bash-input>([\s\S]*)<\/bash-input>$/.exec(text)?.[1];
   if (shellInput !== undefined) return { text: `!${shellInput}`, titleText: "" };
   return claudeCommand(text) ?? { text, titleText: text };
 }
 
 function claudeVisibleText(record: DecodedTranscriptRecord) {
-  const text = extractText(record.message?.content);
-  return record.type === "user" ? claudeUserText(text) : { text, titleText: text };
+  const content = record.message?.content;
+  if (record.type === "user") {
+    const visibleContent = Array.isArray(content)
+      ? content.filter((block) => !isClaudeUiOutput(block.text?.trim() ?? ""))
+      : content;
+    return claudeUserText(extractText(visibleContent));
+  }
+  const text = extractText(content);
+  return { text, titleText: text };
 }
 
 /** Saved titles can be the raw markup of a user turn, such as the command that opened the session. */

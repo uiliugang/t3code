@@ -1,4 +1,7 @@
 import { expect, it, vi } from "vite-plus/test";
+import { getReactI18nCache } from "gt-react-native";
+import { resolveVoiceComposerPresentation } from "../features/voice-input/voiceInputPresentation";
+import { keepMarked, setActiveLocale } from "../i18n/messages";
 
 const mocks = vi.hoisted(() => ({
   checkAvailability: vi.fn<() => Promise<boolean>>(),
@@ -80,6 +83,7 @@ it.each([
   };
   const prepareToRecordAsync = vi.fn(async () => {});
   const controller = new VoiceInputController({
+    resolve: keepMarked,
     recorder: {
       uri: "file:///acceptance.m4a",
       prepareToRecordAsync,
@@ -95,8 +99,26 @@ it.each([
     commitDraft: commit,
     onStateChange: () => {},
   });
-  await controller.start();
-  if (phase === "transcription") await controller.stop();
+  const chinese = code === "storage" ? "设备存储空间不足。" : "设备语音配额已用尽。";
+  using _lookup = vi
+    .spyOn(getReactI18nCache(), "lookupTranslation")
+    .mockImplementation((locale, message) =>
+      locale === "zh" && typeof message === "string" && expected.test(message)
+        ? chinese
+        : undefined,
+    );
+  try {
+    setActiveLocale("zh");
+    await controller.start();
+    if (phase === "transcription") await controller.stop();
+    expect(resolveVoiceComposerPresentation(controller.currentState, 0).statusLabel).toBe(chinese);
+    setActiveLocale("en");
+    expect(resolveVoiceComposerPresentation(controller.currentState, 0).statusLabel).toMatch(
+      expected,
+    );
+  } finally {
+    setActiveLocale("en");
+  }
 
   expect(controller.currentState).toMatchObject({ phase: "error", errorAction: "retry" });
   expect(commit).not.toHaveBeenCalled();

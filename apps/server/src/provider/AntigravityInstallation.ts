@@ -36,6 +36,10 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
+  makeProtectedBinaryPathSnapshot,
+  type WithProtectedBinaryPaths,
+} from "./configuredBinaryPaths.ts";
+import {
   ANTIGRAVITY_CLI_MANIFEST_BASE,
   antigravityCliTarget,
   parseAntigravityCliRelease,
@@ -131,6 +135,7 @@ export class AntigravityInstallation extends Context.Service<
       const settings = yield* ServerSettings.ServerSettingsService;
       return yield* makeAntigravityInstallation({
         baseDir: config.baseDir,
+        withProtectedBinaryPaths: yield* makeProtectedBinaryPathSnapshot(),
         updateChecksEnabled: settings.getSettings.pipe(
           Effect.map((value) => value.enableProviderUpdateChecks),
           Effect.orElseSucceed(() => false),
@@ -142,6 +147,7 @@ export class AntigravityInstallation extends Context.Service<
 
 export interface AntigravityInstallationOptions {
   readonly baseDir: string;
+  readonly withProtectedBinaryPaths?: WithProtectedBinaryPaths;
   readonly releaseAsset?: AntigravityReleaseAsset | AntigravityCliReleaseAsset | null;
   readonly updateChecksEnabled?: Effect.Effect<boolean>;
   readonly validate?: (
@@ -542,19 +548,31 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
 
   // Each update lands in its own directory. Best effort: a busy gate means a session is
   // resolving, so the next start or update finishes the cleanup.
-  const pruneInactiveReleases = Effect.gen(function* () {
+  const pruneUnreferenced = Effect.fn("AntigravityInstallation.pruneUnreferenced")(function* (
+    binaryPaths: ReadonlyArray<string>,
+  ) {
     const active = yield* readRecord(activePath, ActiveRelease);
+    const protectedPaths = yield* Effect.forEach(binaryPaths, (binary) =>
+      fs.realPath(binary).pipe(Effect.orElseSucceed(() => path.resolve(binary))),
+    );
     for (const entry of yield* fs.readDirectory(versionsDirectory)) {
       if (entry === active.releaseId || !/^[a-f0-9]{64}$/u.test(entry)) continue;
       const directory = path.join(versionsDirectory, entry);
       if (leases.has(directory)) continue;
+      const resolvedDirectory = yield* fs.realPath(directory);
+      if (
+        protectedPaths.some(
+          (binary) =>
+            binary === resolvedDirectory || binary.startsWith(`${resolvedDirectory}${path.sep}`),
+        )
+      )
+        continue;
       yield* fs.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore);
     }
-  }).pipe(
-    gate.withPermitsIfAvailable(1),
-    Effect.ignore,
-    Effect.withSpan("AntigravityInstallation.pruneInactiveReleases"),
-  );
+  }, gate.withPermitsIfAvailable(1));
+  const pruneInactiveReleases = (
+    options.withProtectedBinaryPaths?.(pruneUnreferenced) ?? pruneUnreferenced([])
+  ).pipe(Effect.ignore, Effect.withSpan("AntigravityInstallation.pruneInactiveReleases"));
 
   const install = Effect.fn("AntigravityInstallation.install")(
     function* (asset: AntigravityReleaseAsset | AntigravityCliReleaseAsset) {

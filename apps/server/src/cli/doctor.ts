@@ -75,11 +75,15 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
     );
     if (legacyRecords === null) {
       yield* Console.log(
-        "  Could not check for missing projects or threads. Keep the old database.",
+        "  Could not check for missing projects, threads, or messages. Keep the old database.",
       );
-    } else if (legacyRecords.projects > 0 || legacyRecords.threads > 0) {
+    } else if (
+      legacyRecords.projects > 0 ||
+      legacyRecords.threads > 0 ||
+      legacyRecords.messages > 0
+    ) {
       yield* Console.log(
-        `  The current database is missing legacy records. Projects missing: ${legacyRecords.projects}. Threads missing: ${legacyRecords.threads}. Keep the old database for recovery.`,
+        `  The current database is missing legacy records. Projects missing: ${legacyRecords.projects}. Threads missing: ${legacyRecords.threads}. Messages missing: ${legacyRecords.messages}. Keep the old database for recovery.`,
       );
     }
   }
@@ -103,7 +107,8 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
     ...(status.legacyDatabaseBytes === null ||
     legacyRecords === null ||
     legacyRecords.projects > 0 ||
-    legacyRecords.threads > 0
+    legacyRecords.threads > 0 ||
+    legacyRecords.messages > 0
       ? []
       : [
           {

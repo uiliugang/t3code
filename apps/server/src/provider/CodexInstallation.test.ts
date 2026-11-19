@@ -1,4 +1,8 @@
-import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
@@ -11,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
@@ -647,6 +652,7 @@ const upstreamResponses = (checksum: string) => ({
 it.effect("updates a managed install to OpenAI's newest release and never downgrades it", () =>
   Effect.gen(function* () {
     const digest = yield* Digest.Digest;
+    const path = yield* Path.Path;
     const checksum = Hex.encode(
       yield* digest.digest(Digest.sha256, upstreamArchive).pipe(Effect.orDie),
     );
@@ -684,6 +690,12 @@ it.effect("updates a managed install to OpenAI's newest release and never downgr
         config: { connectionMode: "byok" },
         connectionProfiles: { existing: { config: pinnedConfig } },
       },
+      {
+        config: { runtimeSource: "local" },
+        environment: [
+          { name: "PATH", value: path.dirname(previous.executablePath), sensitive: false },
+        ],
+      },
     ]) {
       const protectedBinaryPaths = yield* configuredBinaryPaths({
         [ProviderInstanceId.make("pinned-local-codex")]: {
@@ -693,7 +705,9 @@ it.effect("updates a managed install to OpenAI's newest release and never downgr
       }).pipe(Effect.provideService(HostProcess.HomeDirectory, h.baseDir));
       yield* makeHarness({
         baseDir: h.baseDir,
-        options: { protectedBinaryPaths: Effect.succeed(protectedBinaryPaths) },
+        options: {
+          withProtectedBinaryPaths: (use) => use(protectedBinaryPaths, DEFAULT_SERVER_SETTINGS),
+        },
       });
       expect(yield* h.fs.exists(previous.executablePath)).toBe(true);
     }

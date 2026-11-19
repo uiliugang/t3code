@@ -1,9 +1,8 @@
 import { requireOptionalNativeModule } from "expo";
 import type { RecorderState, RecordingStatus } from "expo-audio";
-import { msg } from "gt-react-native";
+import { mFallback, msg } from "gt-react-native";
 import { Platform } from "react-native";
 import type { NativeVoiceRecorder } from "../features/voice-input/lazyVoiceRecorder";
-import { m } from "../i18n/messages";
 
 import {
   VoiceTranscriptionError,
@@ -100,18 +99,18 @@ async function runOperation<T>(
     throwIfVoiceTranscriptionAborted(signal);
     const code =
       typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    const message =
+      (typeof code === "string" ? nativeErrorMessages[code] : undefined) ??
+      (fallbackCode === "preparation-failed"
+        ? msg(
+            "Voice transcription could not prepare this language. Check {service} and try again.",
+            { service: "Google speech services" },
+          )
+        : msg("Voice transcription failed."));
     throw new VoiceTranscriptionError({
       code: code === "unavailable" || code === "unsupported-locale" ? code : fallbackCode,
-      message:
-        m(typeof code === "string" ? nativeErrorMessages[code] : undefined) ??
-        (fallbackCode === "preparation-failed"
-          ? m(
-              msg(
-                "Voice transcription could not prepare this language. Check {service} and try again.",
-                { service: "Google speech services" },
-              ),
-            )
-          : m(msg("Voice transcription failed."))),
+      message: mFallback(message),
+      i18nMessage: [message],
       cause: error,
     });
   } finally {

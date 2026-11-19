@@ -8,17 +8,16 @@ import {
   ProviderDriverKind,
   type ProviderInstallCancelInput,
   type ProviderInstallState,
+  type ProviderInstanceConfigMap,
   type ProviderInstanceId,
   type ProviderInstanceEnvironment,
   ProviderSetupError,
   type ProviderSetupInput,
 } from "@t3tools/contracts";
-import { configuredBinaryPaths } from "./configuredBinaryPaths.ts";
+import { makeProtectedBinaryPathSnapshot } from "./configuredBinaryPaths.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -65,8 +64,7 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
   const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const providers = yield* ProviderRegistry.ProviderRegistry;
   const settings = yield* ServerSettings.ServerSettingsService;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
+  const withProtectedBinaryPaths = yield* makeProtectedBinaryPathSnapshot();
   const scope = yield* Effect.scope;
   const resolveInstallEnvironment = Effect.fn("ProviderInstallation.resolveInstallEnvironment")(
     function* (instanceId: ProviderInstanceId, environment: ProviderInstanceEnvironment = []) {
@@ -117,8 +115,9 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
     instanceId: ProviderInstanceId,
     operation: string,
     managedOnly = false,
+    snapshotEntries?: ProviderInstanceConfigMap,
   ) {
-    const entries = yield* readEntries(instanceId, operation);
+    const entries = snapshotEntries ?? (yield* readEntries(instanceId, operation));
     // Settings remain available while a runtime switch rebuilds the live instance.
     const driver = entries[instanceId]?.driver;
     const isCodex = driver === ProviderDriverKind.make("codex");
@@ -385,17 +384,31 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
     );
 
   const remove = Effect.fn("ProviderInstallation.remove")(function* (input: ProviderSetupInput) {
-    const { installation, driver } = yield* requireInstance(
-      input.instanceId,
-      "remove-install",
-      true,
+    const { installation, driver } = yield* withProtectedBinaryPaths((paths, current) =>
+      Effect.gen(function* () {
+        const target = yield* requireInstance(
+          input.instanceId,
+          "remove-install",
+          true,
+          deriveProviderInstanceConfigMap(current),
+        );
+        yield* target.installation.remove(paths).pipe(Effect.mapError(failure(input.instanceId)));
+        return target;
+      }),
+    ).pipe(
+      Effect.mapError((error) =>
+        error._tag === "ProviderSetupError"
+          ? error
+          : new ProviderSetupError({
+              instanceId: input.instanceId,
+              operation: "remove-install",
+              detail:
+                error._tag === "UnresolvedBinaryPathEnvironment"
+                  ? `Cannot confirm which provider runtime is in use while ${error.variable} comes from a secret provider.`
+                  : "Could not read provider installation settings. Try again when settings are available.",
+            }),
+      ),
     );
-    const entries = yield* readEntries(input.instanceId, "remove-install");
-    const protectedPaths = yield* configuredBinaryPaths(entries).pipe(
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(Path.Path, path),
-    );
-    yield* installation.remove(protectedPaths).pipe(Effect.mapError(failure(input.instanceId)));
     const allInstances = yield* instances.listInstances;
     yield* Effect.forEach(
       allInstances.filter((instance) => instance.driverKind === driver),

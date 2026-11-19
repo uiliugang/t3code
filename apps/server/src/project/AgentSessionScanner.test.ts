@@ -3304,6 +3304,7 @@ describe("parseAgentSessionTranscript", () => {
           "<bash-input>npm test</bash-input>",
           "<bash-stdout>1 passed</bash-stdout><bash-stderr></bash-stderr>",
           "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>",
+          "<task-notification> 这个标签如何解析？",
           "[Request interrupted by user for tool use]",
         ].map((content) =>
           JSON.stringify({
@@ -3312,6 +3313,17 @@ describe("parseAgentSessionTranscript", () => {
             message: { role: "user", content },
           }),
         ),
+        JSON.stringify({
+          type: "user",
+          sessionId: "claude-session",
+          message: {
+            role: "user",
+            content: [
+              { type: "text", text: "<local-command-stdout>Compacted</local-command-stdout>" },
+              { type: "text", text: "Continue the review" },
+            ],
+          },
+        }),
         JSON.stringify({
           type: "assistant",
           sessionId: "claude-session",
@@ -3345,6 +3357,8 @@ describe("parseAgentSessionTranscript", () => {
         { role: "user", text: "Fix authentication" },
         { role: "user", text: "/review the login flow" },
         { role: "user", text: "!npm test" },
+        { role: "user", text: "<task-notification> 这个标签如何解析？" },
+        { role: "user", text: "Continue the review" },
         { role: "assistant", text: "Updated the login flow" },
         { role: "assistant", text: "The provider request failed" },
       ],

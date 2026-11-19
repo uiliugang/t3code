@@ -3,7 +3,6 @@ import {
   ProviderDriverKind,
   type ProviderInstallState,
   type ServerProviderCompatibilityAdvisory,
-  type ServerSettingsError,
 } from "@t3tools/contracts";
 import { cliArchiveTarCommand, parseChecksums } from "@t3tools/shared/cliRelease";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -30,8 +29,10 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as NodeCrypto from "node:crypto";
 import * as ServerConfig from "../config.ts";
-import * as ServerSettings from "../serverSettings.ts";
-import { configuredBinaryPaths } from "./configuredBinaryPaths.ts";
+import {
+  makeProtectedBinaryPathSnapshot,
+  type WithProtectedBinaryPaths,
+} from "./configuredBinaryPaths.ts";
 import { selectManagedRelease } from "./managedRelease.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { resolveProviderCompatibility } from "./providerCompatibility.ts";
@@ -177,22 +178,16 @@ export class CodexInstallation extends Context.Service<
     CodexInstallation,
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
-      const settings = yield* ServerSettings.ServerSettingsService;
-      const services =
-        yield* Effect.context<Effect.Services<ReturnType<typeof configuredBinaryPaths>>>();
       return yield* makeCodexInstallation({
         baseDir: config.baseDir,
-        protectedBinaryPaths: settings.getSettings.pipe(
-          Effect.flatMap((value) => configuredBinaryPaths(value.providerInstances)),
-          Effect.provide(services),
-        ),
+        withProtectedBinaryPaths: yield* makeProtectedBinaryPathSnapshot(),
       });
     }),
   );
 }
 export interface CodexInstallationOptions {
   readonly baseDir: string;
-  readonly protectedBinaryPaths?: Effect.Effect<ReadonlyArray<string>, ServerSettingsError>;
+  readonly withProtectedBinaryPaths?: WithProtectedBinaryPaths;
   readonly releaseAsset?: CodexReleaseAsset | null;
   readonly validate?: (
     executable: CodexExecutable,
@@ -611,11 +606,12 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
     );
   // Each update lands in its own directory. Best effort: a busy gate means a session is
   // resolving, so the next start or update finishes the cleanup.
-  const pruneInactiveReleases = Effect.gen(function* () {
+  const pruneUnreferenced = Effect.fn("CodexInstallation.pruneUnreferenced")(function* (
+    binaryPaths: ReadonlyArray<string>,
+  ) {
     const active = yield* readRecord(activePath, ActiveRelease);
-    const protectedPaths = yield* Effect.forEach(
-      yield* options.protectedBinaryPaths ?? Effect.succeed([]),
-      (binary) => fs.realPath(binary).pipe(Effect.orElseSucceed(() => path.resolve(binary))),
+    const protectedPaths = yield* Effect.forEach(binaryPaths, (binary) =>
+      fs.realPath(binary).pipe(Effect.orElseSucceed(() => path.resolve(binary))),
     );
     for (const entry of yield* fs.readDirectory(managedDirectory)) {
       if (
@@ -635,11 +631,10 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         continue;
       yield* fs.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore);
     }
-  }).pipe(
-    gate.withPermitsIfAvailable(1),
-    Effect.ignore,
-    Effect.withSpan("CodexInstallation.pruneInactiveReleases"),
-  );
+  }, gate.withPermitsIfAvailable(1));
+  const pruneInactiveReleases = (
+    options.withProtectedBinaryPaths?.(pruneUnreferenced) ?? pruneUnreferenced([])
+  ).pipe(Effect.ignore, Effect.withSpan("CodexInstallation.pruneInactiveReleases"));
 
   const install = Effect.fn("CodexInstallation.install")(
     function* (release: CodexReleaseAsset) {

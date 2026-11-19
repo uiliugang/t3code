@@ -70,11 +70,13 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
     settings?: Parameters<typeof ServerSettings.layerTest>[0];
     secretValue?: string | undefined;
     settingsRef?: SubscriptionRef.SubscriptionRef<ServerSettingsValue>;
+    snapshotSettings?: ServerSettingsValue;
     rebuilding?: boolean;
     missingLocalRuntime?: boolean;
     policy?: Parameters<typeof ServerSettings.layerTest>[1];
   } = {},
 ) {
+  const { settingsRef } = input;
   const calls: string[] = [];
   const refreshed = yield* Deferred.make<void>();
   const lastRefreshes = yield* Queue.unbounded<void>();
@@ -103,10 +105,14 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
       state: Effect.succeed(state),
       changes: Stream.succeed(state),
     }),
-    input.settingsRef
+    settingsRef
       ? Layer.mock(ServerSettings.ServerSettingsService)({
-          getSettings: SubscriptionRef.get(input.settingsRef),
-          subscribeChanges: Effect.succeed(SubscriptionRef.changes(input.settingsRef)),
+          getSettings: SubscriptionRef.get(settingsRef),
+          subscribeChanges: Effect.succeed(SubscriptionRef.changes(settingsRef)),
+          withSettingsSnapshot: (use) =>
+            SubscriptionRef.get(settingsRef).pipe(
+              Effect.flatMap((current) => use(input.snapshotSettings ?? current)),
+            ),
         })
       : ServerSettings.layerTest(input.settings, input.policy),
     Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
@@ -559,31 +565,57 @@ describe("provider installation routing", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("protects another instance's binary found through its own PATH", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const platform = yield* HostProcess.Platform;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-provider-install-route-" });
-      const binary = platform === "win32" ? "agy-test.exe" : "agy-test";
-      const executable = path.join(directory, binary);
-      yield* fs.writeFileString(executable, "test");
-      yield* fs.chmod(executable, 0o755);
-      const other = ProviderInstanceId.make("antigravity-work");
-      const harness = yield* makeHarness({
-        settings: {
+  it.effect.each(["literal", "secret", "snapshot"] as const)(
+    "protects another instance's binary found through its own PATH (%s)",
+    (source) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const platform = yield* HostProcess.Platform;
+        const directory = yield* fs.makeTempDirectoryScoped({
+          prefix: "t3-provider-install-route-",
+        });
+        const binary = platform === "win32" ? "agy-test.exe" : "agy-test";
+        const executable = path.join(directory, binary);
+        yield* fs.writeFileString(executable, "test");
+        yield* fs.chmod(executable, 0o755);
+        const other = ProviderInstanceId.make("antigravity-work");
+        const configured: ServerSettingsValue = {
+          ...DEFAULT_SERVER_SETTINGS,
           providerInstances: {
             [other]: {
               driver,
               config: { binaryPath: binary },
-              environment: [{ name: "PATH", value: directory, sensitive: false }],
+              environment: [
+                {
+                  name: "PATH",
+                  value:
+                    source === "secret"
+                      ? { provider: SecretProviderId.make("vault"), reference: "provider-path" }
+                      : directory,
+                  sensitive: source === "secret",
+                },
+              ],
             },
           },
-        },
-      });
-      yield* harness.router.remove({ instanceId });
-      assert.include(harness.protectedPaths(), executable);
-      assert.deepEqual(harness.calls, ["remove", "refresh"]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+        };
+        const harness = yield* makeHarness(
+          source === "snapshot"
+            ? {
+                settingsRef: yield* SubscriptionRef.make(DEFAULT_SERVER_SETTINGS),
+                snapshotSettings: configured,
+              }
+            : { settings: configured },
+        );
+        if (source === "secret") {
+          const failure = yield* Effect.flip(harness.router.remove({ instanceId }));
+          assert.include(failure.detail, "PATH");
+          assert.deepEqual(harness.calls, []);
+          return;
+        }
+        yield* harness.router.remove({ instanceId });
+        assert.include(harness.protectedPaths(), executable);
+        assert.deepEqual(harness.calls, ["remove", "refresh"]);
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
