@@ -330,7 +330,8 @@ it("scrolls to a file asked for as the tab opens", async () => {
   });
   const previousFile = screen.getByRole("treeitem", { name: "early-38.ts", exact: true });
   await expect.element(previousFile).toBeVisible();
-  await userEvent.click(previousFile);
+  previousFile.element().focus({ preventScroll: true });
+  await userEvent.keyboard("{Enter}");
   await expectFileHeaderShown(screen, container, "early-38.ts");
   await screen.rerender(tab(0, { path: "early-39.ts", nonce: 2 }));
   await expectFileHeaderShown(screen, container, "early-39.ts");
