@@ -111,22 +111,22 @@ export function HideMergedRemoteBranchesRow() {
   );
 }
 
-export function MainBranchOnlyRow() {
-  const key = "newWorktreesMainBranchOnly";
+export function MainBranchOnlyRow({ childWorktree = false }: { childWorktree?: boolean }) {
+  const key = childWorktree ? "childWorktreesMainBranchOnly" : "newWorktreesMainBranchOnly";
   const t = useUiTranslation();
   const settings = useScopedSettings();
+  const mixed = useScopedSettingsMixed([key]);
   const update = useUpdateScopedSettings();
-  const setting = searchableSetting("worktree-main-branch-only");
+  const setting = searchableSetting(
+    childWorktree ? "child-worktree-main-branch-only" : "worktree-main-branch-only",
+  );
   return (
     <SettingsRow
       serverScoped
       settingKeys={[key]}
       {...setting}
-      description={t(
-        "Create new worktree branches only from main or master. Existing branch checkouts are unaffected.",
-      )}
       resetAction={
-        settings[key] !== DEFAULT_UNIFIED_SETTINGS[key] ? (
+        mixed || settings[key] !== DEFAULT_UNIFIED_SETTINGS[key] ? (
           <SettingResetButton
             label={setting.title}
             onClick={() => update({ [key]: DEFAULT_UNIFIED_SETTINGS[key] })}

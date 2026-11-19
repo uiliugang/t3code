@@ -905,6 +905,30 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           }),
         );
         expect(Result.isFailure(spoofed)).toBe(true);
+        const pinned = (yield* runGit(repoDir, ["rev-parse", "main"])).stdout.trim();
+        const { manager: strictChild } = yield* makeManager({
+          serverSettings: { childWorktreesMainBranchOnly: true },
+        });
+        const childOptions = { childWorktree: true };
+        for (const [name, ref, allowed, git] of [
+          ["delegate-feature", ahead.stdout.trim(), true, manager],
+          ["side-chat-feature", "feature/ahead", true, manager],
+          ["strict-feature", ahead.stdout.trim(), false, strictChild],
+          ["strict-main", pinned, true, strictChild],
+        ] as const) {
+          const result = yield* Effect.result(
+            git.createWorktree(
+              {
+                cwd: repoDir,
+                refName: ref,
+                newRefName: name,
+                path: NodePath.join(yield* makeTempDir("t3code-worktree-policy-"), "checkout"),
+              },
+              childOptions,
+            ),
+          );
+          expect(Result.isSuccess(result), name).toBe(allowed);
+        }
         for (const [index, ref] of [
           "main",
           "master",

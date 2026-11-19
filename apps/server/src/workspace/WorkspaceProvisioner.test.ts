@@ -780,6 +780,39 @@ it.live(
             .pipe(Effect.flip);
           assert.include(denied.message, message);
         }
+        const delegateCwd = roots[0]!.sourcePath;
+        yield* git.execute({
+          operation: "test",
+          cwd: delegateCwd,
+          args: ["checkout", "-b", "feature/delegate"],
+        });
+        yield* git.execute({
+          operation: "test",
+          cwd: delegateCwd,
+          args: [
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "parent work",
+          ],
+        });
+        const { commitSha } = yield* git.resolveCommit({ cwd: delegateCwd, revision: "HEAD" });
+        const delegated = yield* provisioner.prepare({
+          ...input,
+          threadId: ThreadId.make("delegated-group"),
+          strategy: { type: "worktree", baseRef: commitSha, startFromOrigin: false },
+          childWorktree: true,
+        });
+        yield* delegated.completion;
+        const checkout = delegated.workspace.resources[0]!.checkoutRoot;
+        assert.equal(
+          (yield* git.resolveCommit({ cwd: checkout, revision: "HEAD" })).commitSha,
+          commitSha,
+        );
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );

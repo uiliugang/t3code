@@ -44,6 +44,11 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import {
+  isPinnedMainBranchTip,
+  worktreeMainBranchError,
+  worktreeMainBranchOnly,
+} from "../git/worktreeBranchPolicy.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 import { sameDirectoryIdentity } from "./directoryIdentity.ts";
@@ -105,6 +110,7 @@ export class WorkspaceProvisioner extends Context.Service<
       readonly scripts?: readonly ProjectScript[];
       readonly strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
       readonly generatedBranchName?: GitVcsDriver.CreateWorktreeOptions["generatedBranchName"];
+      readonly childWorktree?: boolean;
       readonly carryChanges?: boolean;
       readonly carrySourceWorkspace?: ThreadWorkspaceRevision;
       readonly carrySourceWorktreePath?: string | null;
@@ -285,7 +291,8 @@ export const layer = Layer.effect(
                     !carryChanges &&
                     root.defaultSelected &&
                     input.strategy.type === "worktree" &&
-                    projectSettings?.newWorktreesMainBranchOnly
+                    projectSettings !== null &&
+                    worktreeMainBranchOnly(projectSettings, input.childWorktree)
                   ) {
                     if (baseRef === "HEAD" && root.defaultBaseRef === undefined) {
                       const branches = yield* git.listLocalBranchNames(root.sourcePath);
@@ -305,10 +312,16 @@ export const layer = Layer.effect(
                         baseRef,
                       ],
                     });
-                    if (!isMainOrMasterBranch(resolvedBase.stdout.trim()))
+                    const ref = resolvedBase.stdout.trim();
+                    const allowed =
+                      isMainOrMasterBranch(ref) ||
+                      (input.childWorktree === true &&
+                        ref === "" &&
+                        (yield* isPinnedMainBranchTip(git, root.sourcePath, baseRef)));
+                    if (!allowed)
                       return yield* new WorkspacePreparationError({
                         threadId: input.threadId,
-                        detail: `${root.alias}: new worktree branches must start from main or master. Change this in Settings → Source Control → Branch management.`,
+                        detail: `${root.alias}: ${worktreeMainBranchError(input.childWorktree)}`,
                       });
                     recordedBaseRef = baseRef;
                   }

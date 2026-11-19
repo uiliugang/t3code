@@ -390,8 +390,9 @@ it.effect.each(
       const checkoutEntered = yield* Deferred.make<void>();
       const allowCheckout = yield* Deferred.make<void>();
       const harness = makeHarness({
-        createWorktree: (input) =>
+        createWorktree: (input, options) =>
           Deferred.succeed(checkoutEntered, undefined).pipe(
+            Effect.tap(() => Effect.sync(() => assert.isTrue(options?.childWorktree))),
             Effect.andThen(Deferred.await(allowCheckout)),
             Effect.andThen(
               fails
@@ -490,7 +491,7 @@ it.effect.each(
           ...launchInput({
             command: "continue-side-chat",
             thread: "isolated",
-            workspace: { type: "worktree", baseRef: "main", startFromOrigin: false },
+            workspace: { type: "worktree", baseRef: "feature/parent", startFromOrigin: false },
             ...(withMessage ? { message: "Implement the side chat plan" } : {}),
           }),
           forkFrom: { threadId: sideChatId, runId },

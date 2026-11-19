@@ -105,6 +105,7 @@ const applicationServerSettingsTransferPolicy = {
   defaultThreadEnvMode: "portable",
   newWorktreesStartFromOrigin: "portable",
   newWorktreesMainBranchOnly: "portable",
+  childWorktreesMainBranchOnly: "portable",
   remoteBranchDisplayDays: "portable",
   hideMergedRemoteBranches: "portable",
   autoDeleteMergedBranches: "portable",

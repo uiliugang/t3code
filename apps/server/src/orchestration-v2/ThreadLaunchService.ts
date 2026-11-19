@@ -569,6 +569,17 @@ const make = Effect.gen(function* () {
     const workspaceThread = yield* threads
       .getThreadShell(threadId)
       .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+    const forkedFrom = workspaceThread?.forkedFrom;
+    const childWorktree =
+      input.workspaceStrategy.type === "worktree" &&
+      (workspaceThread?.lineage.relationshipToParent === "subagent" ||
+        workspaceThread?.delegatedFrom != null ||
+        workspaceThread?.lineage.sideChat === true ||
+        (forkedFrom?.type === "run" &&
+          (yield* threads
+            .getThreadShell(forkedFrom.threadId)
+            .pipe(Effect.mapError(mapError(input, "update-thread", threadId))))?.lineage
+            .sideChat === true));
     const carryChanges =
       input.workspaceStrategy.type === "worktree" &&
       input.forkFrom?.carryChanges === true &&
@@ -756,6 +767,7 @@ const make = Effect.gen(function* () {
             config: workspaceThread.workspaceConfiguration,
             scripts: project.scripts,
             strategy: input.workspaceStrategy,
+            ...(childWorktree ? { childWorktree: true } : {}),
             ...(carryChanges ? { carryChanges: true } : {}),
             ...(carrySourceThread?.workspace === undefined
               ? {}
@@ -1084,6 +1096,7 @@ const make = Effect.gen(function* () {
             },
             {
               ...(carrySourceCwd === null ? {} : { carryChangesFromCwd: carrySourceCwd }),
+              ...(childWorktree ? { childWorktree: true } : {}),
               progress: {
                 onWorktreeClaimed: (path) =>
                   Effect.sync(() => {
