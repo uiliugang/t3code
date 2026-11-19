@@ -659,7 +659,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Add project base directory"]
       : []),
     ...(settings.newWorktreesMainBranchOnly !== DEFAULT_UNIFIED_SETTINGS.newWorktreesMainBranchOnly
-      ? ["Only create worktrees from main/master"]
+      ? ["New thread worktrees: main/master only"]
+      : []),
+    ...(settings.childWorktreesMainBranchOnly !==
+    DEFAULT_UNIFIED_SETTINGS.childWorktreesMainBranchOnly
+      ? ["Subagent and side chat worktrees: main/master only"]
       : []),
     ...(settings.remoteBranchDisplayDays !== DEFAULT_UNIFIED_SETTINGS.remoteBranchDisplayDays
       ? ["Remote branch display days"]
@@ -793,6 +797,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
       newWorktreesMainBranchOnly: DEFAULT_UNIFIED_SETTINGS.newWorktreesMainBranchOnly,
+      childWorktreesMainBranchOnly: DEFAULT_UNIFIED_SETTINGS.childWorktreesMainBranchOnly,
       remoteBranchDisplayDays: DEFAULT_UNIFIED_SETTINGS.remoteBranchDisplayDays,
       hideMergedRemoteBranches: DEFAULT_UNIFIED_SETTINGS.hideMergedRemoteBranches,
       autoDeleteMergedBranches: DEFAULT_UNIFIED_SETTINGS.autoDeleteMergedBranches,

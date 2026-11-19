@@ -922,10 +922,19 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "worktree-main-branch-only",
-    title: "Only create worktrees from main/master",
+    title: "New thread worktrees: main/master only",
     to: "/settings/worktrees",
     scope: "project-defaults",
     searchTerms: ["branch base main master worktree restrict 创建 基线 主分支"],
+  },
+  {
+    id: "child-worktree-main-branch-only",
+    title: "Subagent and side chat worktrees: main/master only",
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: [
+      "branch base main master worktree delegation subagent side chat 分支 委派 子代理 侧边对话",
+    ],
   },
   {
     id: "auto-delete-merged-branches",

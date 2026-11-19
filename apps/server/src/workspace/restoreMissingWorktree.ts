@@ -1,7 +1,6 @@
 import {
   ThreadId,
   type OrchestrationV2ThreadShell,
-  type ProjectId,
   type TerminalCwdNotFoundError,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -16,6 +15,8 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import { isChildWorktree, worktreeMainBranchOnly } from "../git/worktreeBranchPolicy.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { scratchFolderRoot } from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
@@ -61,13 +62,15 @@ const LEFTOVER_WORKTREE_ENTRIES = new Set(["node_modules", ".next"]);
 type WorktreeThread = Pick<
   OrchestrationV2ThreadShell,
   "id" | "projectId" | "worktreePath" | "branch" | "workspace"
->;
+> &
+  Partial<Pick<OrchestrationV2ThreadShell, "lineage" | "delegatedFrom" | "forkedFrom">>;
 
 export const makeRestoreMissingWorktree = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectService.ProjectService;
   const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
   const serverConfig = yield* ServerConfig.ServerConfig;
@@ -157,17 +160,22 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
     readonly cwd: string;
     readonly worktreePath: string;
     readonly branch: string;
-    readonly projectId: ProjectId;
+    readonly thread: WorktreeThread;
   }) {
-    const { cwd, worktreePath, branch } = input;
+    const { cwd, worktreePath, branch, thread } = input;
     yield* gitWorkflow.pruneWorktrees({ cwd });
     const localBranchNames = yield* gitWorkflow.listLocalBranchNames(cwd);
     if (localBranchNames.includes(branch)) {
       yield* gitWorkflow.createWorktree({ cwd, refName: branch, path: worktreePath });
       return;
     }
-    const { settings } = resolveProjectSettings(yield* serverSettings.getSettings, input.projectId);
-    if (settings.newWorktreesMainBranchOnly) {
+    const { settings } = resolveProjectSettings(
+      yield* serverSettings.getSettings,
+      thread.projectId,
+    );
+    const childWorktree = yield* isChildWorktree(thread, projections.findThread);
+    const options = { childWorktree, projectId: thread.projectId };
+    if (worktreeMainBranchOnly(settings, childWorktree)) {
       const baseRef =
         localBranchNames.find((name) => name === "main") ??
         localBranchNames.find((name) => name === "master") ??
@@ -178,15 +186,18 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
       const remoteBase = settings.newWorktreesStartFromOrigin
         ? yield* fetchRecreateBase(cwd, baseRef)
         : null;
-      yield* gitWorkflow.createWorktree({
-        cwd,
-        refName: remoteBase?.commitSha ?? `refs/heads/${baseRef}`,
-        newRefName: branch,
-        baseRefName: remoteBase
-          ? `refs/remotes/${remoteBase.remoteRefName}`
-          : `refs/heads/${baseRef}`,
-        path: worktreePath,
-      });
+      yield* gitWorkflow.createWorktree(
+        {
+          cwd,
+          refName: remoteBase?.commitSha ?? `refs/heads/${baseRef}`,
+          newRefName: branch,
+          baseRefName: remoteBase
+            ? `refs/remotes/${remoteBase.remoteRefName}`
+            : `refs/heads/${baseRef}`,
+          path: worktreePath,
+        },
+        options,
+      );
       return;
     }
     const remoteName = yield* gitWorkflow
@@ -195,12 +206,15 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
     // Push keeps the tracking ref current, so recovery reads it without fetching.
     const pushedRef = remoteName === null ? null : `refs/remotes/${remoteName}/${branch}`;
     if (pushedRef !== null && (yield* gitWorkflow.hasCommit({ cwd, refName: pushedRef }))) {
-      yield* gitWorkflow.createWorktree({
-        cwd,
-        refName: pushedRef,
-        newRefName: branch,
-        path: worktreePath,
-      });
+      yield* gitWorkflow.createWorktree(
+        {
+          cwd,
+          refName: pushedRef,
+          newRefName: branch,
+          path: worktreePath,
+        },
+        options,
+      );
       return;
     }
     const base = yield* resolveRecreateBase(cwd, remoteName);
@@ -209,17 +223,20 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
       settings.newWorktreesStartFromOrigin && base.refName.startsWith("refs/heads/")
         ? yield* fetchRecreateBase(cwd, base.refName)
         : null;
-    yield* gitWorkflow.createWorktree({
-      cwd,
-      refName: remoteBase?.commitSha ?? base.refName,
-      newRefName: branch,
-      ...(remoteBase
-        ? { baseRefName: `refs/remotes/${remoteBase.remoteRefName}` }
-        : base.baseRefName === undefined
-          ? {}
-          : { baseRefName: base.baseRefName }),
-      path: worktreePath,
-    });
+    yield* gitWorkflow.createWorktree(
+      {
+        cwd,
+        refName: remoteBase?.commitSha ?? base.refName,
+        newRefName: branch,
+        ...(remoteBase
+          ? { baseRefName: `refs/remotes/${remoteBase.remoteRefName}` }
+          : base.baseRefName === undefined
+            ? {}
+            : { baseRefName: base.baseRefName }),
+        path: worktreePath,
+      },
+      options,
+    );
   });
 
   return Effect.fn("restoreMissingWorktree")(function* (thread: WorktreeThread) {
@@ -267,7 +284,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
           cwd: project.workspaceRoot,
           worktreePath,
           branch,
-          projectId: thread.projectId,
+          thread,
         }),
       ),
       Effect.mapError((cause) =>

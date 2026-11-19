@@ -905,6 +905,42 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           }),
         );
         expect(Result.isFailure(spoofed)).toBe(true);
+        const pinned = (yield* runGit(repoDir, ["rev-parse", "main"])).stdout.trim();
+        yield* runGit(repoDir, ["push", "origin", "feature/ahead:main"]);
+        const remoteTip = ahead.stdout.trim();
+        const featureTip = (yield* runGit(repoDir, [
+          "commit-tree",
+          `${remoteTip}^{tree}`,
+          "-p",
+          remoteTip,
+          "-m",
+          "Feature only",
+        ])).stdout.trim();
+        yield* runGit(repoDir, ["update-ref", "refs/remotes/origin/release/main", featureTip]);
+        const { manager: strictChild } = yield* makeManager({
+          serverSettings: { childWorktreesMainBranchOnly: true },
+        });
+        const childOptions = { childWorktree: true };
+        for (const [name, ref, allowed, git] of [
+          ["delegate-feature", ahead.stdout.trim(), true, manager],
+          ["side-chat-feature", "feature/ahead", true, manager],
+          ["strict-remote-main", remoteTip, true, strictChild],
+          ["strict-feature", featureTip, false, strictChild],
+          ["strict-main", pinned, true, strictChild],
+        ] as const) {
+          const result = yield* Effect.result(
+            git.createWorktree(
+              {
+                cwd: repoDir,
+                refName: ref,
+                newRefName: name,
+                path: NodePath.join(yield* makeTempDir("t3code-worktree-policy-"), "checkout"),
+              },
+              childOptions,
+            ),
+          );
+          expect(Result.isSuccess(result), name).toBe(allowed);
+        }
         for (const [index, ref] of [
           "main",
           "master",

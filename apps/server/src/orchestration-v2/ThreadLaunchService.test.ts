@@ -75,6 +75,7 @@ import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
@@ -285,6 +286,7 @@ function makeHarness(options: HarnessOptions = {}) {
       Layer.mergeAll(
         layerExternalServices,
         layerThreadManagement,
+        ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
         layerReceipts,
         layerOrchestrator,
         IdAllocator.layer,
@@ -390,8 +392,9 @@ it.effect.each(
       const checkoutEntered = yield* Deferred.make<void>();
       const allowCheckout = yield* Deferred.make<void>();
       const harness = makeHarness({
-        createWorktree: (input) =>
+        createWorktree: (input, options) =>
           Deferred.succeed(checkoutEntered, undefined).pipe(
+            Effect.tap(() => Effect.sync(() => assert.isTrue(options?.childWorktree))),
             Effect.andThen(Deferred.await(allowCheckout)),
             Effect.andThen(
               fails
@@ -490,7 +493,7 @@ it.effect.each(
           ...launchInput({
             command: "continue-side-chat",
             thread: "isolated",
-            workspace: { type: "worktree", baseRef: "main", startFromOrigin: false },
+            workspace: { type: "worktree", baseRef: "feature/parent", startFromOrigin: false },
             ...(withMessage ? { message: "Implement the side chat plan" } : {}),
           }),
           forkFrom: { threadId: sideChatId, runId },

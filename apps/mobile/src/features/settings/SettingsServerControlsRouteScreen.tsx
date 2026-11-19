@@ -110,6 +110,7 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "worktreeCleanup",
     "newWorktreesStartFromOrigin",
     "newWorktreesMainBranchOnly",
+    "childWorktreesMainBranchOnly",
     "remoteBranchDisplayDays",
     "hideMergedRemoteBranches",
     "autoDeleteMergedBranches",
@@ -583,13 +584,19 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                   />
                   <SettingsSwitchRow
                     icon="arrow.triangle.branch"
-                    label={t("Only create worktrees from main/master")}
-                    subtitle={t(
-                      "Create new worktree branches only from main or master. Existing branch checkouts are unaffected.",
-                    )}
+                    label={t("New thread worktrees: main/master only")}
+                    subtitle={managed("newWorktreesMainBranchOnly")}
                     value={uniform("newWorktreesMainBranchOnly")}
                     disabled={disabledFor("newWorktreesMainBranchOnly")}
                     onValueChange={(value) => write({ newWorktreesMainBranchOnly: value })}
+                  />
+                  <SettingsSwitchRow
+                    icon="arrow.triangle.branch"
+                    label={t("Subagent and side chat worktrees: main/master only")}
+                    subtitle={managed("childWorktreesMainBranchOnly")}
+                    value={uniform("childWorktreesMainBranchOnly")}
+                    disabled={disabledFor("childWorktreesMainBranchOnly")}
+                    onValueChange={(value) => write({ childWorktreesMainBranchOnly: value })}
                   />
                 </SettingsSection>
                 <SettingsSection

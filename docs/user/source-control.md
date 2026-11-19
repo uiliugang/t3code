@@ -5,9 +5,10 @@ and review changes. The other hosting integrations described below are disabled 
 
 ## Manage local branches and worktrees
 
-In **Settings → Worktrees → Creation**, new worktree branches default to using
-`main` or `master` as their base. Turn off **Only create worktrees from main/master** to use other
-base branches. Checking out an existing branch is unaffected.
+In **Settings → Worktrees → Creation**, **New thread worktrees: main/master only** is on by
+default. **Subagent and side chat worktrees: main/master only** is off by default, so a delegated
+task or a side chat continued in an isolated worktree can start from a feature branch. Neither
+setting affects checking out an existing branch or opening a side chat in its parent's worktree.
 
 In **Settings → Worktrees → Cleanup**, **Automatically delete merged branches and worktrees**
 controls both merged-branch and merged-worktree cleanup and is off by default. Enable it to remove
