@@ -9,7 +9,7 @@ import {
   resolveProjectFileBackedSetting,
 } from "@t3tools/shared/projectSettings";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
-import { isMainOrMasterBranch, isTemporaryWorktreeBranch } from "@t3tools/shared/git";
+import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import * as ServerSettings from "../serverSettings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Option from "effect/Option";
@@ -44,6 +44,11 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import {
+  isMainWorktreeBase,
+  worktreeMainBranchError,
+  worktreeMainBranchOnly,
+} from "../git/worktreeBranchPolicy.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 import { sameDirectoryIdentity } from "./directoryIdentity.ts";
@@ -105,6 +110,7 @@ export class WorkspaceProvisioner extends Context.Service<
       readonly scripts?: readonly ProjectScript[];
       readonly strategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
       readonly generatedBranchName?: GitVcsDriver.CreateWorktreeOptions["generatedBranchName"];
+      readonly childWorktree?: boolean;
       readonly carryChanges?: boolean;
       readonly carrySourceWorkspace?: ThreadWorkspaceRevision;
       readonly carrySourceWorktreePath?: string | null;
@@ -159,6 +165,13 @@ export const layer = Layer.effect(
               const settings = Option.isSome(settingsService)
                 ? yield* settingsService.value.getSettings
                 : null;
+              const projectSettings =
+                settings === null
+                  ? null
+                  : resolveProjectSettings(settings, input.projectId).settings;
+              const strictBase =
+                projectSettings !== null &&
+                worktreeMainBranchOnly(projectSettings, input.childWorktree);
               const carryChangesByPath = new Map<string, CarriedCheckoutChanges>();
               let state: typeof Preparation.Type;
               if (rows[0]) {
@@ -211,10 +224,6 @@ export const layer = Layer.effect(
                     threadId: input.threadId,
                     detail: "Set an absolute worktree location on this environment.",
                   });
-                const projectSettings =
-                  settings === null
-                    ? null
-                    : resolveProjectSettings(settings, input.projectId).settings;
                 const submodules = projectSettings?.worktreeSubmodules ?? null;
                 const carryChanges =
                   input.strategy.type === "worktree" && input.carryChanges === true;
@@ -285,7 +294,7 @@ export const layer = Layer.effect(
                     !carryChanges &&
                     root.defaultSelected &&
                     input.strategy.type === "worktree" &&
-                    projectSettings?.newWorktreesMainBranchOnly
+                    strictBase
                   ) {
                     if (baseRef === "HEAD" && root.defaultBaseRef === undefined) {
                       const branches = yield* git.listLocalBranchNames(root.sourcePath);
@@ -294,21 +303,16 @@ export const layer = Layer.effect(
                         branches.find((name) => name === "master") ??
                         baseRef;
                     }
-                    const resolvedBase = yield* git.execute({
-                      operation: "WorkspaceProvisioner.validateBase",
-                      cwd: root.sourcePath,
-                      args: [
-                        "rev-parse",
-                        "--symbolic-full-name",
-                        "--verify",
-                        "--end-of-options",
-                        baseRef,
-                      ],
-                    });
-                    if (!isMainOrMasterBranch(resolvedBase.stdout.trim()))
+                    const allowed = yield* isMainWorktreeBase(
+                      git,
+                      root.sourcePath,
+                      baseRef,
+                      input.childWorktree,
+                    );
+                    if (!allowed)
                       return yield* new WorkspacePreparationError({
                         threadId: input.threadId,
-                        detail: `${root.alias}: new worktree branches must start from main or master. Change this in Settings → Source Control → Branch management.`,
+                        detail: `${root.alias}: ${worktreeMainBranchError(input.childWorktree)}`,
                       });
                     recordedBaseRef = baseRef;
                   }
@@ -335,6 +339,20 @@ export const layer = Layer.effect(
                     if (remote !== null) {
                       baseRef = remote.commitSha;
                       recordedBaseRef = `refs/remotes/${remote.remoteRefName}`;
+                      if (
+                        strictBase &&
+                        !(yield* isMainWorktreeBase(
+                          git,
+                          root.sourcePath,
+                          recordedBaseRef,
+                          input.childWorktree,
+                        ))
+                      ) {
+                        return yield* new WorkspacePreparationError({
+                          threadId: input.threadId,
+                          detail: `${root.alias}: ${worktreeMainBranchError(input.childWorktree)}`,
+                        });
+                      }
                     }
                   }
                   baseRefs.set(root.id, recordedBaseRef);
@@ -484,6 +502,35 @@ export const layer = Layer.effect(
                   let createdThisPass = false;
                   yield* fs.makeDirectory(path.dirname(item.path), { recursive: true });
                   if (!(yield* fs.exists(item.path))) {
+                    if (
+                      rows[0] &&
+                      strictBase &&
+                      input.carryChanges !== true &&
+                      item.carryCheckoutRoot === undefined
+                    ) {
+                      const allowed = yield* isMainWorktreeBase(
+                        git,
+                        item.source.checkoutRoot,
+                        item.baseRef,
+                        input.childWorktree,
+                      );
+                      const stable =
+                        /^(?:(?:refs\/heads\/)?(?:main|master)|refs\/remotes\/.+)$/.test(
+                          item.baseRef,
+                        ) || item.baseRef === item.baseCommit;
+                      const matches =
+                        stable ||
+                        (allowed &&
+                          (yield* git.resolveCommit({
+                            cwd: item.source.checkoutRoot,
+                            revision: item.baseRef,
+                          })).commitSha === item.baseCommit);
+                      if (!allowed || !matches)
+                        return yield* new WorkspacePreparationError({
+                          threadId: input.threadId,
+                          detail: `${item.source.checkoutRoot}: ${worktreeMainBranchError(input.childWorktree)}`,
+                        });
+                    }
                     const created = yield* withWorkspaceLease(
                       item.source.identity.commonDir,
                       git.createWorktree(

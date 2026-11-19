@@ -537,6 +537,7 @@ it.layer(
                 },
               }),
               Layer.mock(ProjectService.ProjectService)({}),
+              Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
               Layer.mock(GitWorkflowService.GitWorkflowService)({}),
             ),
           ),
@@ -598,6 +599,7 @@ it.layer(
               Layer.mock(ProjectService.ProjectService)({
                 getById: () => Effect.succeedSome({ workspaceRoot: baseDir } as never),
               }),
+              Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
               Layer.mock(GitWorkflowService.GitWorkflowService)({
                 pruneWorktrees: () => Effect.void,
                 listLocalBranchNames: () => Effect.succeed(["feature"]),

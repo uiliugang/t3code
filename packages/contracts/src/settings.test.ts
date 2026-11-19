@@ -210,6 +210,7 @@ describe("storage cleanup settings", () => {
   it("uses the configured cleanup defaults and preserves explicit opt-outs", () => {
     expect(decodeServerSettings({}).autoDeleteMergedBranches).toBe(true);
     expect(decodeServerSettings({}).newWorktreesMainBranchOnly).toBe(true);
+    expect(decodeServerSettings({}).childWorktreesMainBranchOnly).toBe(false);
     expect(decodeServerSettings({}).worktreeSharedDependencies).toBe(true);
     expect(decodeServerSettings({}).remoteBranchDisplayDays).toBe(14);
     expect(decodeServerSettings({}).hideMergedRemoteBranches).toBe(true);

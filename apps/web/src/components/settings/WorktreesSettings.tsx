@@ -119,6 +119,7 @@ export function WorktreesSettingsPanel() {
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
         <MainBranchOnlyRow />
+        <MainBranchOnlyRow childWorktree />
         <SharedDependenciesRow />
         <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
           <WorktreeSubmodulesRow />

@@ -11,7 +11,7 @@ import {
 } from "@t3tools/client-runtime/source-control-clients";
 import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import * as Schema from "effect/Schema";
-import { decodeMsg, msg, useMessages } from "gt-react";
+import { mFallback, msg, useMessages } from "gt-react";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import type { MessageResolver } from "../../i18n/messages";
@@ -972,10 +972,19 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "worktree-main-branch-only",
-    title: msg("Only create worktrees from main/master"),
+    title: msg("New thread worktrees: main/master only"),
     to: "/settings/worktrees",
     scope: "project-defaults",
     searchTerms: ["branch base main master worktree restrict 创建 基线 主分支"],
+  },
+  {
+    id: "child-worktree-main-branch-only",
+    title: msg("Subagent and side chat worktrees: main/master only"),
+    to: "/settings/worktrees",
+    scope: "project-defaults",
+    searchTerms: [
+      "branch base main master worktree delegation subagent side chat 分支 委派 子代理 侧边对话",
+    ],
   },
   {
     id: "auto-delete-merged-branches",
@@ -1792,8 +1801,8 @@ export function searchSettings(
 
   return settingsForThisPlatform(items)
     .flatMap((item, index) => {
-      const sourceTitle = decodeMsg(item.title);
-      const sourceSection = decodeMsg(SETTINGS_SECTION_LABELS[item.to]);
+      const sourceTitle = mFallback(item.title);
+      const sourceSection = mFallback(SETTINGS_SECTION_LABELS[item.to]);
       const title = normalizeSearchText(sourceTitle);
       const fields = [
         title,

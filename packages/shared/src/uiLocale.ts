@@ -2225,10 +2225,9 @@ const zhCN: Readonly<Record<string, string>> = {
     "展示时将名称首字母大写，保留原始名称和路径。",
   "Show Terminal in each repository's Open in menu.": "在各仓库的打开菜单中显示 Terminal。",
   "Branch management": "分支管理",
-  "Only create worktrees from main/master": "仅允许从 main/master 创建工作树",
+  "New thread worktrees: main/master only": "普通会话的工作树仅限 main/master",
+  "Subagent and side chat worktrees: main/master only": "子代理与侧边对话的工作树仅限 main/master",
   "Automatically delete merged branches and worktrees": "自动清理已合并的分支和工作树",
-  "Create new worktree branches only from main or master. Existing branch checkouts are unaffected.":
-    "新工作树分支只能基于 main 或 master 创建。检出现有分支不受影响。",
   "Automatically remove local branches and worktrees merged into main or master. Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept.":
     "自动删除已合并到 main 或 master 的本地分支及工作树。保留项目目录、有未提交改动、已锁定或正在使用的工作树，以及远程分支。",
   "Keeps project checkouts, uncommitted changes, locked worktrees, and active work. Remote branches are kept.":

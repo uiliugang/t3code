@@ -62,6 +62,8 @@ import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { DispatchModeLimit } from "./DispatchModeLimit.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
+import { isChildWorktree } from "../git/worktreeBranchPolicy.ts";
 
 // The agent waits for its branch name; a rate-limited provider would hold it for minutes.
 const BRANCH_NAME_TIMEOUT = "20 seconds";
@@ -297,6 +299,7 @@ const make = Effect.gen(function* () {
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
   const ids = yield* IdAllocator.IdAllocatorV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
   const eventSink = yield* EventSink.EventSinkV2;
   const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
   // A project-folder launch that names no branch records the folder's checkout, as the composer does.
@@ -569,6 +572,11 @@ const make = Effect.gen(function* () {
     const workspaceThread = yield* threads
       .getThreadShell(threadId)
       .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+    const childWorktree =
+      input.workspaceStrategy.type === "worktree" &&
+      (yield* isChildWorktree(workspaceThread, projections.findThread).pipe(
+        Effect.mapError(mapError(input, "update-thread", threadId)),
+      ));
     const carryChanges =
       input.workspaceStrategy.type === "worktree" &&
       input.forkFrom?.carryChanges === true &&
@@ -756,6 +764,7 @@ const make = Effect.gen(function* () {
             config: workspaceThread.workspaceConfiguration,
             scripts: project.scripts,
             strategy: input.workspaceStrategy,
+            ...(childWorktree ? { childWorktree: true } : {}),
             ...(carryChanges ? { carryChanges: true } : {}),
             ...(carrySourceThread?.workspace === undefined
               ? {}
@@ -1083,7 +1092,9 @@ const make = Effect.gen(function* () {
               path: null,
             },
             {
+              projectId: input.projectId,
               ...(carrySourceCwd === null ? {} : { carryChangesFromCwd: carrySourceCwd }),
+              ...(childWorktree ? { childWorktree: true } : {}),
               progress: {
                 onWorktreeClaimed: (path) =>
                   Effect.sync(() => {

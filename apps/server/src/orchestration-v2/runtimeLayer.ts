@@ -307,7 +307,7 @@ const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImp
       layerLegacyV1ThreadImporterProvided,
       layerCommandReceiptStoreProvided,
       layerProviderSessionManagerProvided,
-      layerThreadWorktreeRestore,
+      layerThreadWorktreeRestore.pipe(Layer.provide(ProjectionStore.layer)),
     ),
   ),
 );
@@ -349,6 +349,7 @@ const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
       layerManagedProjectFoldersProvided,
       layerWorkspaceProvisioner,
       layerThreadManagementProvided,
+      ProjectionStore.layer,
       layerCommandReceiptStoreProvided,
       layerEventSink,
       IdAllocator.layer,

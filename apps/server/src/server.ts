@@ -929,7 +929,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerBrowserStream.routeLayer,
     PreviewTunnel.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
-    Ws.layer,
+    Ws.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
     speechStreamRouteLayer,
   ),
   McpHttpServer.layer.pipe(
