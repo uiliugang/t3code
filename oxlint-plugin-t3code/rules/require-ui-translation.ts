@@ -86,7 +86,9 @@ export default defineRule({
       JSXAttribute(node) {
         if (node.name.type !== "JSXIdentifier" || !COPY_PROPS.has(node.name.name) || !node.value)
           return;
-        if (node.name.name === "context" && isGtElement(node.parent.parent)) return;
+        const element = node.parent.parent;
+        if (node.name.name === "context" && element?.type === "JSXElement" && isGtElement(element))
+          return;
         if (node.value.type === "Literal") copyExpression(node.value);
       },
       Property(node) {
