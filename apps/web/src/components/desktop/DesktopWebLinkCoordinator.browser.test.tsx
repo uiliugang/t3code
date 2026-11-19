@@ -152,7 +152,7 @@ function setup() {
   state.preview
     .mockReset()
     .mockResolvedValue(AsyncResult.success({ sources: [{ kind: "commit", headRef: sha }] }));
-  useDiffPanelStore.setState({ byThreadKey: {}, branchBaseRefByThreadKey: {} });
+  useDiffPanelStore.setState(useDiffPanelStore.getInitialState());
   useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
   appAtomRegistry.set(discoverySettled, false);
 }
