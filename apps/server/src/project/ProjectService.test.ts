@@ -703,6 +703,47 @@ it.layer(layerTest)("ProjectService", (it) => {
       ).pipe(Effect.flip);
       assert.equal(move._tag, "ProjectInvalidError");
 
+      const primaryRootId = WorkspaceRootId.make("primary");
+      const workspaceConfig = {
+        primaryRootId,
+        roots: [
+          {
+            id: primaryRootId,
+            alias: "primary",
+            sourcePath: "C:\\work\\wsl-share-mover",
+            description: "",
+            defaultSelected: true,
+            accessIntent: "write" as const,
+          },
+          {
+            id: WorkspaceRootId.make("secondary"),
+            alias: "secondary",
+            sourcePath: "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\repo",
+            description: "",
+            defaultSelected: true,
+            accessIntent: "write" as const,
+          },
+        ],
+      };
+      const groupedCreate = yield* onWindows(
+        service.create({
+          commandId: CommandId.make("command:wsl-share:grouped-create"),
+          projectId,
+          title: "Grouped",
+          workspaceRoot: workspaceConfig.roots[0]!.sourcePath,
+          workspaceConfig,
+        }),
+      ).pipe(Effect.flip);
+      assert.equal(groupedCreate._tag, "ProjectInvalidError");
+      const groupedUpdate = yield* onWindows(
+        service.update({
+          commandId: CommandId.make("command:wsl-share:grouped-update"),
+          projectId: mover,
+          workspaceConfig,
+        }),
+      ).pipe(Effect.flip);
+      assert.equal(groupedUpdate._tag, "ProjectInvalidError");
+
       const linux = yield* service
         .create({
           commandId: CommandId.make("command:wsl-share:linux"),

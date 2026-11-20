@@ -356,18 +356,6 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  const normalizeWorkspaceConfig = Effect.fn("ProjectService.normalizeWorkspaceConfig")(function* (
-    projectId: ProjectId,
-    config: ProjectWorkspaceConfigInput,
-  ) {
-    const roots = yield* Effect.forEach(config.roots, (root) =>
-      normalizeWorkspaceRoot({ projectId, workspaceRoot: root.sourcePath }).pipe(
-        Effect.map((sourcePath) => ({ ...root, sourcePath })),
-      ),
-    );
-    return { ...config, roots };
-  });
-
   const rejectWorktreeContainer = Effect.fn("ProjectService.rejectWorktreeContainer")(function* (
     projectId: ProjectId,
     workspaceRoot: string,
@@ -390,6 +378,22 @@ export const make = Effect.gen(function* () {
       projectId,
       detail: `${workspaceRoot.trim()} is inside WSL. Add it to the WSL backend instead of the Windows one.`,
     });
+  });
+
+  const normalizeWorkspaceConfig = Effect.fn("ProjectService.normalizeWorkspaceConfig")(function* (
+    projectId: ProjectId,
+    config: ProjectWorkspaceConfigInput,
+    previousRoots?: ReadonlySet<string>,
+  ) {
+    for (const { sourcePath } of config.roots) {
+      if (!previousRoots?.has(sourcePath)) yield* rejectWslSharePath(projectId, sourcePath);
+    }
+    const roots = yield* Effect.forEach(config.roots, (root) =>
+      normalizeWorkspaceRoot({ projectId, workspaceRoot: root.sourcePath }).pipe(
+        Effect.map((sourcePath) => ({ ...root, sourcePath })),
+      ),
+    );
+    return { ...config, roots };
   });
 
   const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
@@ -600,16 +604,24 @@ export const make = Effect.gen(function* () {
         return yield* new ProjectSetupScriptAuthorizationError({ projectId: input.projectId });
       }
       const previousRoot = existing.value.workspaceRoot;
+      const previousRoots = new Set([
+        previousRoot,
+        ...(existing.value.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
+      ]);
+      const requestedSourcePath =
+        input.workspaceConfig?.roots.find(
+          (root) => root.id === input.workspaceConfig?.primaryRootId,
+        )?.sourcePath ?? input.workspaceRoot;
+      if (requestedSourcePath !== undefined && requestedSourcePath !== previousRoot) {
+        yield* rejectWslSharePath(input.projectId, requestedSourcePath);
+      }
       const workspaceConfig =
         input.workspaceConfig === undefined
           ? undefined
-          : yield* normalizeWorkspaceConfig(input.projectId, input.workspaceConfig);
+          : yield* normalizeWorkspaceConfig(input.projectId, input.workspaceConfig, previousRoots);
       const requestedRoot =
         workspaceConfig?.roots.find((root) => root.id === workspaceConfig.primaryRootId)
           ?.sourcePath ?? input.workspaceRoot;
-      if (requestedRoot !== undefined && requestedRoot !== previousRoot) {
-        yield* rejectWslSharePath(input.projectId, requestedRoot);
-      }
       const workspaceRoot =
         requestedRoot === undefined
           ? previousRoot
@@ -643,10 +655,6 @@ export const make = Effect.gen(function* () {
         yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
       }
       if (workspaceConfig !== undefined) {
-        const previousRoots = new Set([
-          previousRoot,
-          ...(existing.value.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
-        ]);
         for (const root of workspaceConfig.roots) {
           if (!previousRoots.has(root.sourcePath) && root.sourcePath !== workspaceRoot) {
             yield* rejectWorktreeContainer(input.projectId, root.sourcePath);

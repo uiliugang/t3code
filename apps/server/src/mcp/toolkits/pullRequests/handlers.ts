@@ -1018,7 +1018,7 @@ const make = Effect.gen(function* () {
         }
         const created = yield* git
           .createPullRequest({
-            cwd: thread.worktreePath ?? project.workspaceRoot,
+            cwd: thread.worktreePath ?? thread.projectWorkspaceRoot ?? project.workspaceRoot,
             projectId: project.id,
             title: input.title,
             body: input.body,
