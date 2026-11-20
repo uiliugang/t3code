@@ -245,6 +245,7 @@ export class ProjectService extends Context.Service<
     >;
     readonly getShell: (
       projectId: ProjectId,
+      workspaceRoot?: string,
     ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ProjectOperationError>;
     readonly listShells: (options?: {
       readonly projectIds?: ReadonlyArray<ProjectId>;
@@ -835,7 +836,7 @@ export const make = Effect.gen(function* () {
     );
 
   const getShell: ProjectService["Service"]["getShell"] = Effect.fn("ProjectService.getShell")(
-    function* (projectId) {
+    function* (projectId, workspaceRoot) {
       const shell = yield* projects
         .getShell(projectId)
         .pipe(
@@ -843,7 +844,12 @@ export const make = Effect.gen(function* () {
             (cause) => new ProjectOperationError({ operation: "read-project", projectId, cause }),
           ),
         );
-      return Option.isNone(shell) ? shell : Option.some(yield* enrichShell(shell.value));
+      if (Option.isNone(shell)) return shell;
+      const project =
+        workspaceRoot === undefined || workspaceRoot === shell.value.workspaceRoot
+          ? shell.value
+          : { ...shell.value, workspaceRoot };
+      return Option.some(yield* enrichShell(project));
     },
   );
 

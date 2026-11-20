@@ -25,7 +25,11 @@ import * as GitManager from "../../../git/GitManager.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestWatchService from "../../../pullRequest/PullRequestWatchService.ts";
-import { resolveTarget, type ResolvedTarget } from "../../../pullRequest/pullRequestTarget.ts";
+import {
+  projectForPullRequestListing,
+  resolveTarget,
+  type ResolvedTarget,
+} from "../../../pullRequest/pullRequestTarget.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 import { reviewPositionInPatch } from "../../../pullRequest/pullRequestReviewPosition.ts";
@@ -300,7 +304,7 @@ const make = Effect.gen(function* () {
       | typeof PullRequestUnlinkFailedError
       | typeof PullRequestForgeError,
   ) =>
-    projects.getShell(thread.projectId).pipe(
+    projects.getShell(thread.projectId, thread.projectWorkspaceRoot).pipe(
       Effect.map(Option.getOrUndefined),
       Effect.mapError((cause) => new Failure({ cause })),
     );
@@ -504,18 +508,24 @@ const make = Effect.gen(function* () {
           )
         : undefined;
     const branchPullRequest = thread.branchPullRequest ?? opened ?? null;
-    const branchRepository =
-      project.repositoryIdentity == null
-        ? undefined
-        : (sourceControlDefinitions.repositorySelector(project.repositoryIdentity) ?? undefined);
+    const targetProject =
+      input.number !== undefined && input.repository === undefined
+        ? projectForPullRequestListing(project)
+        : project;
     const named =
       input.number !== undefined
-        ? { number: input.number, repository: input.repository ?? branchRepository }
+        ? {
+            number: input.number,
+            repository:
+              input.repository ??
+              sourceControlDefinitions.repositorySelector(targetProject.repositoryIdentity) ??
+              undefined,
+          }
         : branchPullRequest === null
           ? null
           : { number: branchPullRequest.number, repository: branchPullRequest.repository };
     if (named === null) return yield* new PullRequestBranchHasNoneError();
-    const target = yield* resolveTarget(named, project);
+    const target = yield* resolveTarget(named, targetProject);
     const ref: PullRequestRef = {
       projectId: project.id,
       host: target.host,
@@ -972,16 +982,19 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const thread = yield* requireThread(PullRequestForgeError, undefined);
         const listed = yield* pullRequests
-          .list({
-            projectId: thread.projectId,
-            state: input.state ?? "open",
-            involvement: input.involvement ?? "all",
-            limit: input.limit ?? 30,
-            ...(input.query === undefined ? {} : { query: input.query }),
-            ...(input.cursor === undefined
-              ? {}
-              : { cursors: yield* listCursors.decode(input.cursor) }),
-          })
+          .list(
+            {
+              projectId: thread.projectId,
+              state: input.state ?? "open",
+              involvement: input.involvement ?? "all",
+              limit: input.limit ?? 30,
+              ...(input.query === undefined ? {} : { query: input.query }),
+              ...(input.cursor === undefined
+                ? {}
+                : { cursors: yield* listCursors.decode(input.cursor) }),
+            },
+            thread.projectWorkspaceRoot,
+          )
           .pipe(Effect.mapError(forgeFailure));
         const failure = listed.errors[0];
         if (listed.entries.length === 0 && failure !== undefined) {
@@ -1195,15 +1208,13 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError(forgeFailure));
         // Like a push, a rerun makes a watch's finished checks stale, so the thread keeps working
         // until a read sees them run. The rerun already happened, so a failed reopen only logs.
-        if (
-          checks.some((check) => check.rerun) &&
-          threadPullRequestsOf(thread).some((link) => link.watch?.checksPending !== undefined)
-        ) {
+        if (checks.some((check) => check.rerun)) {
           yield* engine
             .dispatch({
               type: "thread.pull-request-watch.checks-reopen",
               commandId: yield* commandId("mcp-ci-rerun-checks", thread.id),
               threadId: thread.id,
+              target: normalizeThreadPullRequestKey(target),
             })
             .pipe(
               Effect.catchCause((cause) =>

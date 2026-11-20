@@ -6180,6 +6180,17 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         yield* TestClock.adjust("2 minutes");
         yield* reactor.sweep;
         assert.isFalse(yield* checksPending);
+
+        const target = { host: "github.com", repository: "pingdotgg/t3code", number: 17 };
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request-watch.checks-reopen",
+          commandId: CommandId.make("pr-watch-quiet-rerun"),
+          threadId,
+          target,
+        });
+        const links = (yield* orchestrator.getThreadShell(threadId))?.pullRequests ?? [];
+        assert.isUndefined(links.find((link) => link.number === 17)?.watch?.checksPending);
+        assert.isFalse(links.find((link) => link.number === 18)?.watch?.checksPending);
       }),
   );
 

@@ -302,6 +302,7 @@ function makeService(input: {
   readonly providers: ReadonlyArray<PullRequestProviderApi>;
   readonly resolveHandle?: SourceControlProviderRegistry.SourceControlProviderRegistry["Service"]["resolveHandle"];
   readonly resolveRepositoryIdentity?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"]["resolve"];
+  readonly checkoutProject?: OrchestrationProjectShell;
   readonly onProjectRead?: () => void;
 }) {
   // Build in the test scope; per-call Effect.provide would close the marks database on service acquisition.
@@ -329,9 +330,15 @@ function makeService(input: {
                 (project) => options?.projectIds?.includes(project.id) ?? true,
               );
             }),
-          getShell: (projectId) =>
+          getShell: (projectId, workspaceRoot) =>
             Effect.sync(() => {
               input.onProjectRead?.();
+              if (
+                input.checkoutProject?.id === projectId &&
+                input.checkoutProject.workspaceRoot === workspaceRoot
+              ) {
+                return Option.some(input.checkoutProject);
+              }
               return Option.fromNullishOr(input.projects.find((p) => p.id === projectId));
             }),
         }),
@@ -1010,6 +1017,45 @@ it.effect("reads a repository once when several worktrees share it", () =>
     assert.strictEqual(calls, 1);
     assert.strictEqual(result.entries.length, 1);
     assert.isUndefined(result.providers[0]?.projectIds);
+  }),
+);
+
+it.effect("isolates the PR list cache for a thread's pinned checkout", () =>
+  Effect.gen(function* () {
+    const current = project({
+      id: "p1",
+      title: "Project",
+      workspaceRoot: "/new",
+      repository: "team/new",
+    });
+    const previous = project({
+      id: "p1",
+      title: "Project",
+      workspaceRoot: "/old",
+      repository: "team/old",
+    });
+    const listed: string[][] = [];
+    const service = yield* makeService({
+      projects: [current],
+      checkoutProject: previous,
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequests: ({ cwd, repository }) =>
+            Effect.sync(() => {
+              listed.push([cwd, repository]);
+              return { items: [], truncated: false, continues: false };
+            }),
+        }),
+      ],
+    });
+    const input = { state: "open", projectId: current.id } as const;
+    yield* service.list(input);
+    yield* service.list(input, previous.workspaceRoot);
+    yield* service.list(input);
+    assert.deepStrictEqual(listed, [
+      ["/new", "team/new"],
+      ["/old", "team/old"],
+    ]);
   }),
 );
 

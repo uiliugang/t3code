@@ -5299,16 +5299,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           };
         }
         case "thread.pull-request-watch.checks-reopen": {
-          const linked = threadPullRequestsOf(thread);
-          if (!linked.some((link) => link.watch?.checksPending !== undefined)) return thread;
-          return {
-            ...thread,
-            pullRequests: linked.map((link) =>
-              link.watch?.checksPending === undefined
-                ? link
-                : { ...link, watch: withoutChecksAnswer(link.watch) },
-            ),
-          };
+          let changed = false;
+          const pullRequests = threadPullRequestsOf(thread).map((link) => {
+            if (
+              link.watch?.checksPending === undefined ||
+              (command.target !== undefined && !threadPullRequestKeysEqual(link, command.target))
+            ) {
+              return link;
+            }
+            changed = true;
+            return { ...link, watch: withoutChecksAnswer(link.watch) };
+          });
+          return changed ? { ...thread, pullRequests } : thread;
         }
         case "thread.pull-request.watch":
         case "thread.pull-request-watch.sync": {

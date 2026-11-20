@@ -145,6 +145,7 @@ function makeLink(
 interface HarnessOptions {
   readonly thread?: PullRequestTestThread | null;
   readonly project?: OrchestrationProjectShell | null;
+  readonly checkoutProject?: OrchestrationProjectShell;
   readonly reject?: (command: OrchestrationCommand) => string | null;
   readonly projects?: ReadonlyArray<OrchestrationProjectShell>;
   readonly generate?: (
@@ -181,7 +182,14 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
   const layerDependencies = Layer.mergeAll(
     Layer.mock(PullRequestWatchService.PullRequestWatchService)({}),
     Layer.mock(ProjectService.ProjectService)({
-      getShell: () => Effect.succeed(Option.fromNullishOr(project)),
+      getShell: (_projectId, workspaceRoot) =>
+        Effect.succeed(
+          Option.fromNullishOr(
+            workspaceRoot === options.checkoutProject?.workspaceRoot
+              ? (options.checkoutProject ?? project)
+              : project,
+          ),
+        ),
       listShells: () => Effect.succeed(options.projects ?? (project ? [project] : [])),
     }),
     Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({
@@ -936,6 +944,75 @@ describe("source control tools", () => {
     }),
   );
 
+  it.effect("uses the listed fork for numbered PRs and keeps the branch's upstream PR", () =>
+    Effect.gen(function* () {
+      const project = makeProject();
+      const updated: Array<PullRequestRef> = [];
+      const harness = yield* makeHarness({
+        thread: branchThread,
+        project: {
+          ...project,
+          repositoryIdentity: {
+            ...project.repositoryIdentity!,
+            origin: {
+              canonicalKey: "github.com/contributor/t3code",
+              remoteUrl: "git@github.com:contributor/t3code.git",
+            },
+          },
+        },
+        pullRequests: {
+          update: (input) => Effect.sync(() => void updated.push(input)),
+        },
+      });
+      yield* harness.call("pull_request_update", { number: 42, title: "Fork PR" });
+      yield* harness.call("pull_request_update", { title: "Branch PR" });
+      yield* harness.call("pull_request_update", {
+        number: 42,
+        repository: "t3tools/t3code",
+        title: "Explicit upstream PR",
+      });
+      expect(updated).toMatchObject([
+        { host: "github.com", repository: "contributor/t3code", number: 42 },
+        { host: "github.com", repository: "t3tools/t3code", number: 42 },
+        { host: "github.com", repository: "t3tools/t3code", number: 42 },
+      ]);
+    }),
+  );
+
+  it.effect("lists and targets PRs from the thread's pinned checkout after the project moves", () =>
+    Effect.gen(function* () {
+      const project = makeProject();
+      const listed: Array<string | undefined> = [];
+      const updated: Array<PullRequestRef> = [];
+      const workspaceRoot = "/workspace/previous";
+      const harness = yield* makeHarness({
+        thread: { ...branchThread, projectWorkspaceRoot: workspaceRoot },
+        project,
+        checkoutProject: {
+          ...project,
+          workspaceRoot,
+          repositoryIdentity: {
+            ...project.repositoryIdentity!,
+            origin: { canonicalKey: "github.com/contributor/previous" },
+          },
+        },
+        pullRequests: {
+          list: (_input, checkout) =>
+            Effect.sync(() => void listed.push(checkout)).pipe(
+              Effect.as({ entries: [], errors: [], truncated: false, nextCursors: {} } as never),
+            ),
+          update: (input) => Effect.sync(() => void updated.push(input)),
+        },
+      });
+      yield* harness.call("pull_request_list", {});
+      yield* harness.call("pull_request_update", { number: 42, title: "Previous checkout" });
+      expect({ listed, updated }).toMatchObject({
+        listed: [workspaceRoot],
+        updated: [{ host: "github.com", repository: "contributor/previous", number: 42 }],
+      });
+    }),
+  );
+
   it.effect("reads the PR this thread opened before status sync reports it", () =>
     Effect.gen(function* () {
       const asked: Array<PullRequestRef> = [];
@@ -1078,15 +1155,19 @@ describe("source control tools", () => {
               rerunChecks: () => Effect.succeed([{ name: "test", rerun: reran, detail: null }]),
             },
           });
-          yield* harness.call("ci_rerun", {});
+          yield* harness.call("ci_rerun", { number: 42 });
           return yield* Ref.get(harness.commands);
         });
-      expect(yield* rerun(false, true)).toMatchObject([
-        { type: "thread.pull-request-watch.checks-reopen", threadId: THREAD_ID },
-      ]);
-      // Nothing re-ran, or the watch has no answer to clear.
+      const reopen = [
+        {
+          type: "thread.pull-request-watch.checks-reopen",
+          threadId: THREAD_ID,
+          target: { host: "github.com", repository: "t3tools/t3code", number: 42 },
+        },
+      ];
+      expect(yield* rerun(false, true)).toMatchObject(reopen);
+      expect(yield* rerun(undefined, true)).toMatchObject(reopen);
       expect(yield* rerun(false, false)).toEqual([]);
-      expect(yield* rerun(undefined, true)).toEqual([]);
     }),
   );
 

@@ -103,6 +103,7 @@ import * as PullRequestReadCache from "./PullRequestReadCache.ts";
 import * as PullRequestProviderRegistry from "./PullRequestProviderRegistry.ts";
 import * as ViewedFiles from "./pullRequestViewedFiles.ts";
 import { toChangeBreakdown } from "./pullRequestChangeBreakdown.ts";
+import { projectForPullRequestListing } from "./pullRequestTarget.ts";
 
 export interface PullRequestMergeEvent extends PullRequestRef {
   readonly mergedAt: string;
@@ -183,6 +184,7 @@ export class PullRequestService extends Context.Service<
   {
     readonly list: (
       input: PullRequestListInput,
+      workspaceRoot?: string,
     ) => Effect.Effect<PullRequestListResult, PullRequestError>;
     readonly listStats: (
       input: PullRequestListStatsInput,
@@ -907,13 +909,14 @@ export const make = Effect.gen(function* () {
 
   const listWorkspaceProjects = (
     filter: Pick<PullRequestListInput, "projectId" | "projectIds" | "host">,
+    workspaceRoot?: string,
   ): Effect.Effect<WorkspaceProjects, PullRequestError> =>
     Effect.flatMap(sharedProjectReads, (shared) => {
-      if (shared === null || !shared.open) return readWorkspaceProjects(filter);
-      const key = JSON.stringify([filter.projectId, filter.projectIds, filter.host]);
+      if (shared === null || !shared.open) return readWorkspaceProjects(filter, workspaceRoot);
+      const key = JSON.stringify([filter.projectId, filter.projectIds, filter.host, workspaceRoot]);
       const existing = shared.reads.get(key);
       if (existing !== undefined) return existing;
-      return Effect.cached(readWorkspaceProjects(filter)).pipe(
+      return Effect.cached(readWorkspaceProjects(filter, workspaceRoot)).pipe(
         Effect.tap((read) => Effect.sync(() => shared.reads.set(key, read))),
         Effect.flatten,
       );
@@ -935,12 +938,13 @@ export const make = Effect.gen(function* () {
 
   const readWorkspaceProjects = (
     filter: Pick<PullRequestListInput, "projectId" | "projectIds" | "host">,
+    workspaceRoot?: string,
   ): Effect.Effect<WorkspaceProjects, PullRequestError> =>
     (filter.projectId === undefined
       ? projects.listShells(
           filter.projectIds === undefined ? undefined : { projectIds: filter.projectIds },
         )
-      : projects.getShell(filter.projectId).pipe(Effect.map(Option.toArray))
+      : projects.getShell(filter.projectId, workspaceRoot).pipe(Effect.map(Option.toArray))
     ).pipe(
       Effect.mapError(
         (error) =>
@@ -962,24 +966,7 @@ export const make = Effect.gen(function* () {
           { concurrency: REPOSITORY_CONCURRENCY },
         ),
       ),
-      Effect.map((projects) =>
-        projects.map((project) => {
-          const origin = project.repositoryIdentity?.origin;
-          if (origin === undefined) return project;
-          // PR listings follow the checkout's own repository, not its upstream identity.
-          const remoteUrl = origin.remoteUrl ?? `https://${origin.canonicalKey}`;
-          const provider = sourceControlDefinitions.recognizeRemote(remoteUrl);
-          return {
-            ...project,
-            repositoryIdentity: {
-              canonicalKey: origin.canonicalKey,
-              locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl },
-              displayName: origin.displayName ?? origin.canonicalKey.split("/").slice(1).join("/"),
-              ...(provider === null ? {} : { provider: provider.kind }),
-            },
-          };
-        }),
-      ),
+      Effect.map((projects) => projects.map(projectForPullRequestListing)),
       Effect.flatMap((projects) =>
         resolveRemoteHosts(projects, filter).pipe(
           Effect.map((remoteHosts) => ({ remoteHosts, projects })),
@@ -1396,7 +1383,7 @@ export const make = Effect.gen(function* () {
 
   const listUncached: PullRequestService["Service"]["list"] = Effect.fn(
     "PullRequestService.listUncached",
-  )(function* (input) {
+  )(function* (input, workspaceRoot) {
     const involvement = input.involvement ?? "all";
     const epochAtStart = epochCounter;
     const continuation = yield* decodeCursors(input.cursors);
@@ -1405,7 +1392,7 @@ export const make = Effect.gen(function* () {
       unimplemented,
       viewerRoots,
       refinedProjectIdsByHost,
-    } = yield* listWorkspaceProjects(input);
+    } = yield* listWorkspaceProjects(input, workspaceRoot);
     const projectCounts = new Map<string, number>();
     for (const { host } of projects) {
       projectCounts.set(host, (projectCounts.get(host) ?? 0) + 1);
@@ -3258,6 +3245,7 @@ export const make = Effect.gen(function* () {
         limit,
         query,
         cursorEntries,
+        workspaceRoot,
       ] = JSON.parse(key) as [
         number,
         string,
@@ -3269,25 +3257,29 @@ export const make = Effect.gen(function* () {
         number | null,
         string | null,
         ReadonlyArray<[string, string]> | null,
+        string | null,
       ];
-      return listUncached({
-        state,
-        ...(involvement === null ? {} : { involvement }),
-        ...(filters === null ? {} : { filters: filtersOfKey(filters) }),
-        ...(projectId === null ? {} : { projectId }),
-        ...(projectIds === null ? {} : { projectIds }),
-        ...(host === null ? {} : { host }),
-        ...(limit === null ? {} : { limit }),
-        ...(query === null ? {} : { query }),
-        ...(cursorEntries === null ? {} : { cursors: Object.fromEntries(cursorEntries) }),
-      } as PullRequestListInput);
+      return listUncached(
+        {
+          state,
+          ...(involvement === null ? {} : { involvement }),
+          ...(filters === null ? {} : { filters: filtersOfKey(filters) }),
+          ...(projectId === null ? {} : { projectId }),
+          ...(projectIds === null ? {} : { projectIds }),
+          ...(host === null ? {} : { host }),
+          ...(limit === null ? {} : { limit }),
+          ...(query === null ? {} : { query }),
+          ...(cursorEntries === null ? {} : { cursors: Object.fromEntries(cursorEntries) }),
+        } as PullRequestListInput,
+        workspaceRoot ?? undefined,
+      );
     },
     {
       capacity: LIST_CACHE_CAPACITY,
       timeToLive: (exit) => (Exit.isSuccess(exit) ? LIST_CACHE_TTL : Duration.zero),
     },
   );
-  const list: PullRequestService["Service"]["list"] = (input) => {
+  const list: PullRequestService["Service"]["list"] = (input, workspaceRoot) => {
     const key = JSON.stringify([
       listingsEpoch,
       input.state,
@@ -3310,6 +3302,7 @@ export const make = Effect.gen(function* () {
       input.cursors === undefined
         ? null
         : Object.entries(input.cursors).toSorted(([left], [right]) => left.localeCompare(right)),
+      workspaceRoot ?? null,
     ]);
     // A replacement reader can join a lookup still finishing its previous reader's cancellation.
     return Cache.get(listCache, key).pipe(
