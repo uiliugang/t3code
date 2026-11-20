@@ -8,17 +8,23 @@ import {
 
 describe("provider account visibility", () => {
   it.each([
-    ["codex", undefined, true, true, false],
-    ["codex", true, true, false, true],
-    ["claudeAgent", undefined, true, false, false],
-    ["cursor", false, true, true, false],
-    ["acpRegistry", undefined, true, false, true],
-    ["acpRegistry", undefined, false, true, false],
+    ["codex", true, undefined, true, true, false],
+    ["codex", true, true, true, false, true],
+    ["claudeAgent", true, undefined, true, false, false],
+    ["cursor", true, false, true, true, false],
+    ["cursor", true, true, true, false, true],
+    ["cursor", false, true, true, true, false],
+    ["antigravity", true, true, true, false, true],
+    ["antigravity", false, true, true, true, false],
+    ["acpRegistry", true, undefined, true, false, true],
+    ["acpRegistry", false, undefined, true, true, false],
+    ["acpRegistry", true, undefined, false, true, false],
   ] as const)(
-    "classifies %s with authentication %s and installed %s",
-    (driver, authenticate, installed, summary, managed) => {
+    "classifies %s with enabled %s, authentication %s and installed %s",
+    (driver, enabled, authenticate, installed, summary, managed) => {
       const provider = {
         driver,
+        enabled,
         installed,
         setup: { canAuthenticate: authenticate },
       } as ServerProvider;
