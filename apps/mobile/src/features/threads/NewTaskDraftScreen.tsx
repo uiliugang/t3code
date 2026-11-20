@@ -1,5 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { useGT, useMessages } from "gt-react-native";
+import { T, useGT, useMessages, Var } from "gt-react-native";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { DraftEnvironmentControl } from "./DraftEnvironmentControl";
 import { NativeScrollEdgeEffectsContext } from "../../native/NativeScrollViewMarker";
@@ -989,8 +989,15 @@ export function NewTaskDraftScreen(props: {
         <View className="flex-1 justify-end gap-3 p-4">
           {environmentControl}
           <Text className="text-foreground-muted">
-            {t(
-              "Your draft is saved on this device. Connect to an environment to choose its first model.",
+            {environmentConnected && selectedEnvironmentServerConfig ? (
+              <T>
+                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has no
+                model available. Install or sign in to a provider there to choose one.
+              </T>
+            ) : (
+              t(
+                "Your draft is saved on this device. Connect to an environment to choose its first model.",
+              )
             )}
           </Text>
           <ComposerEditor

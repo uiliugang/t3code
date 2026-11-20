@@ -3025,7 +3025,6 @@
   "2f217a9d1ea97105": "Mic failed",
   "93c5bab0e5728401": "Mic disconnected",
   "89426e9b039148d7": "Voice input failed",
-  "4d9569bd7cc6b2e7": "Couldn’t list microphones. The system default still works.",
   "0ba1f43e53ce79b7": "Setting up worktree…",
   "8b3d09e8905dda54": "Worktree ready, setup script failed",
   "030b98b5a873a78a": "Worktree ready",

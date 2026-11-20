@@ -201,6 +201,7 @@ export const mobileUiMessages: Readonly<Record<string, string>> = {
   "Loading video...": "正在加载视频…",
   "Save or share video": "保存或分享视频",
   "Mixed · Set on": "部分开启 · 全部开启",
+  "Mixed · Set off": "部分开启 · 全部关闭",
   "Dismiss message": "关闭提示",
   "Could not load every archive": "部分归档无法加载",
   "Loading archive...": "正在加载归档…",

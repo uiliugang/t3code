@@ -66,8 +66,8 @@ curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/insta
 也可以在终端中移除该应用的下载隔离标记，然后重新打开：
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/T3 Code (Beta).app"
-open "/Applications/T3 Code (Beta).app"
+xattr -dr com.apple.quarantine "/Applications/T3 Code.app"
+open "/Applications/T3 Code.app"
 ```
 
 如果应用安装在其他位置，请将两处路径替换为实际路径。此操作只移除指定应用的隔离标记，不代表应用通过了 Apple 验证，也不会关闭系统的 Gatekeeper。重新下载或更新后可能需要再次处理。

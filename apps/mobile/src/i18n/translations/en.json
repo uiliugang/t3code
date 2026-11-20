@@ -1141,8 +1141,8 @@
   "cf063d4a1ffd5c6e": "This comment makes the message too long to send. Shorten it to save and close.",
   "9d1893839b7b4881": "Dev",
   "ae2263d9d6e71fd8": "Preview",
-  "525f2b92a20a9707": "Beta",
   "30958cbc5d9ac66a": "T3 Code, Threads",
+  "c7c831a0cc19e1e4": "Nightly",
   "b8d326a59c6b0fa5": "Retry uploading {name}",
   "3db94ecff966e631": "Uploading {name}, {percent}%",
   "b1687c7b2b91e569": "Open {name}",
@@ -1512,6 +1512,7 @@
   "2b29584d2bcea749": "The file was not found at {path}.",
   "61026d122846876c": "Attach the file again and retry.",
   "703f773d7151e52f": "Could not open preview",
+  "d0872cb98b34eae8": "Set {label} off for selected environments",
   "a9129aaa7c955e46": "Set {label} on for selected environments",
   "8711a1de99862971": "Decrease {label}",
   "e16b0b9b490c8bc7": "{label}: {value}",
@@ -2967,6 +2968,15 @@
   "bc81dfd7ade60791": "Branch: {branch}",
   "f10d1278b1a29dae": "Failed to cancel clone",
   "5952671c8cf107c6": "Failed to retry clone",
+  "39a92e68dd2bf6cc": [
+    "Your draft is saved on this device. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " has no model available. Install or sign in to a provider there to choose one."
+  ],
   "8b53cd9e9e107f7c": "Add an environment before creating a task.",
   "b369a312b533f975": "Loading projects from the saved environment.",
   "0d2830120b14f208": "Choose a project for what you shared",

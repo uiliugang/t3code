@@ -4546,6 +4546,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Save failed. Try again.": "保存失败，请重试。",
   "Could not list microphones. You can still use the system default.":
     "无法列出麦克风，仍可使用系统默认设备。",
+  "Couldn’t list microphones. The system default still works.":
+    "无法列出麦克风，仍可使用系统默认设备。",
   "Microphone access needed": "需要麦克风权限",
   "Microphone access is required for voice input.": "语音输入需要麦克风权限。",
   "This draft is no longer available.": "此草稿已不可用。",

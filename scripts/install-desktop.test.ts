@@ -7,7 +7,8 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-const appName = "T3 Code (Beta).app";
+const appName = "T3 Code.app";
+const betaAppName = "T3 Code (Beta).app";
 const bundleId = "com.t3tools.t3code";
 const version = "1.2.3";
 const asset = `T3-Code-${version}-arm64.dmg`;
@@ -29,7 +30,7 @@ const command = path.basename(process.argv[1]);
 const args = process.argv.slice(2);
 const linux = options.platform === 'Linux';
 const linuxAsset = 'T3-Code-' + (['arm64', 'aarch64'].includes(options.arch) ? 'arm64' : 'x86_64') + '.AppImage';
-const destination = path.join(root, 'Applications', linux ? linuxAsset : '${appName}');
+const destination = path.join(root, 'Applications', linux ? linuxAsset : options.betaRelease ? '${betaAppName}' : '${appName}');
 fs.appendFileSync(path.join(root, 'commands.jsonl'), JSON.stringify({ command, args }) + '\\n');
 switch (command) {
   case 'uname':
@@ -109,9 +110,10 @@ async function fixture(options: Record<string, unknown> = {}) {
   const bin = NodePath.join(root, "bin");
   const installDir = NodePath.join(root, "Applications");
   const linuxAsset = `T3-Code-${["arm64", "aarch64"].includes(String(options.arch)) ? "arm64" : "x86_64"}.AppImage`;
+  const imageAppName = options.betaRelease ? betaAppName : appName;
   const destination = NodePath.join(
     installDir,
-    options.platform === "Linux" ? linuxAsset : appName,
+    options.platform === "Linux" ? linuxAsset : imageAppName,
   );
   const source = await NodeFSP.readFile(installer, "utf8");
   await NodeFSP.mkdir(bin);
@@ -122,9 +124,9 @@ async function fixture(options: Record<string, unknown> = {}) {
   );
   await NodeFSP.mkdir(NodePath.join(root, "home", ".t3"), { recursive: true });
   await NodeFSP.writeFile(NodePath.join(root, "home", ".t3", "user-data"), "keep me");
-  await NodeFSP.mkdir(NodePath.join(root, "image", appName, "Contents"), { recursive: true });
+  await NodeFSP.mkdir(NodePath.join(root, "image", imageAppName, "Contents"), { recursive: true });
   await NodeFSP.writeFile(
-    NodePath.join(root, "image", appName, "Contents", "Info.plist"),
+    NodePath.join(root, "image", imageAppName, "Contents", "Info.plist"),
     JSON.stringify({
       CFBundleIdentifier: options.bundleId ?? bundleId,
       CFBundleShortVersionString: options.bundleVersion ?? version,
@@ -152,7 +154,7 @@ async function fixture(options: Record<string, unknown> = {}) {
     root,
     destination,
     installDir,
-    async existingApp(id = bundleId) {
+    async existingApp(id = bundleId, existingPath = destination) {
       if (options.platform === "Linux") {
         await NodeFSP.writeFile(destination, oldAppImage);
         await NodeFSP.writeFile(
@@ -161,12 +163,12 @@ async function fixture(options: Record<string, unknown> = {}) {
         );
         return;
       }
-      await NodeFSP.mkdir(NodePath.join(destination, "Contents"), { recursive: true });
+      await NodeFSP.mkdir(NodePath.join(existingPath, "Contents"), { recursive: true });
       await NodeFSP.writeFile(
-        NodePath.join(destination, "Contents", "Info.plist"),
+        NodePath.join(existingPath, "Contents", "Info.plist"),
         JSON.stringify({ CFBundleIdentifier: id, CFBundleShortVersionString: "1.0.0" }),
       );
-      await NodeFSP.writeFile(NodePath.join(destination, "old.txt"), "old app");
+      await NodeFSP.writeFile(NodePath.join(existingPath, "old.txt"), "old app");
     },
     run(env: NodeJS.ProcessEnv = {}) {
       return NodeChildProcess.spawnSync("sh", options.pipe ? [] : [installer], {
@@ -283,6 +285,18 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("desktop instal
     expect(await NodeFSP.readdir(test.installDir)).toEqual([appName]);
   });
 
+  it("preserves an existing Beta app when the requested release has the same name", async () => {
+    await using test = await fixture({ betaRelease: true });
+    await test.existingApp();
+
+    const result = test.run({ T3CODE_VERSION: version });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`Move ${test.destination} out of the install directory`);
+    expect(await NodeFSP.readFile(NodePath.join(test.destination, "old.txt"), "utf8")).toBe(
+      "old app",
+    );
+  });
+
   it("restores the previous app if the final rename fails", async () => {
     await using test = await fixture({ replaceFailure: true });
     await test.existingApp();
@@ -294,6 +308,26 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("desktop instal
       "old app",
     );
     expect(await NodeFSP.readdir(test.installDir)).toEqual([appName]);
+  });
+
+  it.each([
+    { betaRelease: false, bothInstalled: false },
+    { betaRelease: false, bothInstalled: true },
+    { betaRelease: true, bothInstalled: false },
+  ])("preserves conflicting macOS apps: %j", async ({ betaRelease, bothInstalled }) => {
+    await using test = await fixture({ betaRelease });
+    const otherName = betaRelease ? appName : betaAppName;
+    const otherApp = NodePath.join(test.installDir, otherName);
+    await test.existingApp(bundleId, otherApp);
+    if (bothInstalled) await test.existingApp();
+
+    const result = test.run(betaRelease ? { T3CODE_VERSION: version } : {});
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`Move ${otherApp} out of the install directory`);
+    expect(await NodeFSP.readFile(NodePath.join(otherApp, "old.txt"), "utf8")).toBe("old app");
+    expect((await NodeFSP.readdir(test.installDir)).sort()).toEqual(
+      bothInstalled ? [betaAppName, appName] : [otherName],
+    );
   });
 
   it.each(["Darwin", "Linux"])(

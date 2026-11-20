@@ -236,6 +236,8 @@ export class SourceControlProvider extends Context.Service<
       readonly branch: string;
       readonly baseBranch: string;
     }) => Effect.Effect<void>;
+    /** True when `createChangeRequest` opens the change request as a draft when asked. */
+    readonly createsDraftChangeRequests?: boolean;
     readonly listChangeRequests: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
@@ -258,6 +260,8 @@ export class SourceControlProvider extends Context.Service<
       readonly headSelector: string;
       readonly title: string;
       readonly bodyFile: string;
+      /** Honored only by a provider with `createsDraftChangeRequests`. */
+      readonly draft?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;

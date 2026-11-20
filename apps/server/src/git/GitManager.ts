@@ -2579,6 +2579,7 @@ export const make = Effect.gen(function* () {
     emit: GitActionProgressEmitter,
     pushRemoteRef: { readonly remoteName: string; readonly upstreamRef: string } | undefined,
     requestedBase: string | undefined,
+    draft: boolean,
     content: (input: {
       readonly provider: SourceControlProvider.SourceControlProvider["Service"];
       readonly baseBranch: string;
@@ -2616,6 +2617,7 @@ export const make = Effect.gen(function* () {
     if (existing) {
       return {
         status: "opened_existing" as const,
+        openedAsDraft: false,
         url: existing.url,
         number: existing.number,
         baseBranch: existing.baseRefName,
@@ -2660,6 +2662,7 @@ export const make = Effect.gen(function* () {
       phase: "pr",
       label: `Creating ${terms.singular}...`,
     });
+    const openedAsDraft = draft && provider.createsDraftChangeRequests === true;
     yield* provider
       .createChangeRequest({
         cwd,
@@ -2677,6 +2680,7 @@ export const make = Effect.gen(function* () {
           : {}),
         title: generated.title,
         bodyFile,
+        ...(draft ? { draft: true } : {}),
       })
       .pipe(Effect.ensuring(fileSystem.remove(bodyFile).pipe(Effect.ignore)));
 
@@ -2692,6 +2696,7 @@ export const make = Effect.gen(function* () {
     if (!created) {
       return {
         status: "created" as const,
+        openedAsDraft,
         baseBranch,
         headBranch: headContext.headBranch,
         title: generated.title,
@@ -2700,6 +2705,7 @@ export const make = Effect.gen(function* () {
 
     return {
       status: "created" as const,
+      openedAsDraft,
       url: created.url,
       number: created.number,
       baseBranch: created.baseRefName,
@@ -2722,6 +2728,7 @@ export const make = Effect.gen(function* () {
       emit,
       pushRemoteRef,
       undefined,
+      false,
       ({ provider, baseBranch, baseRef, headBranch }) =>
         Effect.gen(function* () {
           const terms = sourceControlDefinitions.get(provider.kind).changeRequest;
@@ -2755,22 +2762,23 @@ export const make = Effect.gen(function* () {
             projectId: settings.projectId,
           });
         }),
-    );
+    ).pipe(Effect.map(({ openedAsDraft: _, ...result }) => result));
 
   const createPullRequest: GitManager["Service"]["createPullRequest"] = Effect.fn(
     "GitManager.createPullRequest",
   )(function* (input) {
-    const result = yield* openPrFromBranch(
+    const { openedAsDraft, ...result } = yield* openPrFromBranch(
       input.cwd,
       null,
       () => Effect.void,
       undefined,
       input.baseBranch,
+      input.draft === true,
       () => Effect.succeed({ title: input.title, body: input.body }),
     );
     // The thread's branch PR comes from status, which may hold the lookup from before.
     if (result.status === "created") yield* invalidateStatus(input.cwd);
-    if (input.draft === true && !(yield* draftOpened(input, result))) {
+    if (input.draft === true && !openedAsDraft && !(yield* draftOpened(input, result))) {
       // A retry finds the open PR and drafts it then.
       return yield* new GitManagerError({
         operation: "createPullRequest",

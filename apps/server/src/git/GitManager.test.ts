@@ -91,6 +91,8 @@ interface FakeProviderScenario {
   };
   /** The kind the fake host reports itself as. */
   kind?: string;
+  /** False for a host that opens every change request ready for review. */
+  createsDraftChangeRequests?: boolean;
   /** Answers to successive change request listings, whatever their head selector. */
   prListSequence?: ReadonlyArray<ReadonlyArray<FakeChangeRequest>>;
   prListByHeadSelector?: Record<string, ReadonlyArray<FakeChangeRequest>>;
@@ -126,6 +128,7 @@ type FakeProviderCall =
       readonly baseRefName: string;
       readonly headSelector: string;
       readonly title: string;
+      readonly draft: unknown;
     }
   | { readonly operation: "getChangeRequest"; readonly reference: string }
   | {
@@ -487,6 +490,7 @@ function createFakeSourceControlProvider(scenario: FakeProviderScenario = {}): {
   return {
     service: {
       kind,
+      createsDraftChangeRequests: scenario.createsDraftChangeRequests ?? true,
       ...headBranchProbe,
       listChangeRequests: (input) =>
         record(input.cwd, {
@@ -519,6 +523,7 @@ function createFakeSourceControlProvider(scenario: FakeProviderScenario = {}): {
           baseRefName: input.baseRefName,
           headSelector: input.headSelector,
           title: input.title,
+          draft: "draft" in input ? input.draft : undefined,
         }),
       getDefaultBranch: (input) =>
         record(input.cwd, { operation: "getDefaultBranch" }).pipe(
@@ -642,6 +647,7 @@ function makeManager(input?: {
   providerScenario?: FakeProviderScenario;
   pullRequests?: Partial<PullRequestService.PullRequestService["Service"]>;
   sourceControlProvider?: SourceControlProvider["Service"];
+  failProviderResolutionAfterCreate?: boolean;
   textGeneration?: Partial<FakeGitTextGeneration>;
   serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   setupScriptRunner?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"];
@@ -740,7 +746,19 @@ function makeManager(input?: {
           resolveLink: (input) => provider.resolveLink?.(input),
           get: () => Effect.succeed(provider),
           resolveHandle: () => Effect.succeed({ provider, context: null }),
-          resolve: () => Effect.succeed(provider),
+          resolve: ({ cwd }) =>
+            Effect.suspend(() =>
+              input?.failProviderResolutionAfterCreate && created(providerCalls).length > 0
+                ? Effect.fail(
+                    new SourceControlProviderFailure({
+                      provider: provider.kind,
+                      operation: "resolve",
+                      cwd,
+                      detail: "Source control settings unavailable after creation.",
+                    }),
+                  )
+                : Effect.succeed(provider),
+            ),
           discover: Effect.succeed([]),
         }),
       ),
@@ -4707,7 +4725,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       // A draft of a PR the host does not list yet fails, so a retry drafts it.
       yield* runGit(repoDir, ["push"]);
-      const unlisted = yield* makeManager({ providerScenario: { prListSequence: [[], []] } });
+      const unlisted = yield* makeManager({
+        providerScenario: { prListSequence: [[], []], createsDraftChangeRequests: false },
+      });
       const notListed = yield* Effect.flip(
         unlisted.manager.createPullRequest({
           cwd: repoDir,
@@ -4719,6 +4739,36 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       );
       expect(notListed.message).toContain("does not list it yet");
       expect(created(unlisted.providerCalls)).toHaveLength(1);
+
+      // A new PR asked for as a draft is opened as one, never ready first.
+      const newActions: Array<PullRequestActionInput> = [];
+      const fresh = yield* makeManager({
+        providerScenario: { prListSequence: [[]] },
+        failProviderResolutionAfterCreate: true,
+        pullRequests: {
+          summary: () => Effect.succeed({ isDraft: false } as never),
+          runAction: (action) => Effect.sync(() => void newActions.push(action)),
+        },
+      });
+      const draft = yield* fresh.manager.createPullRequest({
+        cwd: repoDir,
+        projectId: ProjectId.make("project-1"),
+        title: "Feature",
+        body: "Body",
+        draft: true,
+      });
+      expect(draft).toEqual({
+        status: "created",
+        baseBranch: "main",
+        headBranch: "feature/unpushed",
+        title: "Feature",
+      });
+      expect(
+        fresh.providerCalls.flatMap((call) =>
+          call.operation === "createChangeRequest" ? [call.draft] : [],
+        ),
+      ).toEqual([true]);
+      expect(newActions).toEqual([]);
     }),
   );
 
