@@ -1,0 +1,60 @@
+diff --git a/dist/commonjs/provider/NativeGTProvider.js b/dist/commonjs/provider/NativeGTProvider.js
+--- a/dist/commonjs/provider/NativeGTProvider.js
++++ b/dist/commonjs/provider/NativeGTProvider.js
+@@ -1,6 +1,7 @@
+ Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+ require("../_virtual/_rolldown/runtime.js");
+ const require_condition_store_NativeConditionStore = require("../condition-store/NativeConditionStore.js");
++const require_utils_resolveLocale = require("../utils/resolveLocale.js");
+ let _generaltranslation_react_core_components = require("@generaltranslation/react-core/components");
+ let react = require("react");
+ let react_jsx_runtime = require("react/jsx-runtime");
+@@ -18,7 +19,7 @@ function NativeGTProvider(props) {
+ 	if (i18nStoreRef.current == null) i18nStoreRef.current = new _generaltranslation_react_core_components.I18nStore();
+ 	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_generaltranslation_react_core_components.InternalGTProvider, {
+ 		...props,
+-		locale: conditionStore.getLocale(),
++		locale: require_utils_resolveLocale.resolveLocale(props.locale),
+ 		region: conditionStore.getRegion(),
+ 		enableI18n: conditionStore.getEnableI18n(),
+ 		setLocale: conditionStore.setLocale,
+diff --git a/dist/module/provider/NativeGTProvider.js b/dist/module/provider/NativeGTProvider.js
+--- a/dist/module/provider/NativeGTProvider.js
++++ b/dist/module/provider/NativeGTProvider.js
+@@ -1,5 +1,6 @@
+ import { NativeConditionStore } from "../condition-store/NativeConditionStore.js";
++import { resolveLocale } from "../utils/resolveLocale.js";
+ import { I18nStore, InternalGTProvider } from "@generaltranslation/react-core/components";
+ import { useMemo, useRef } from "react";
+ import { jsx } from "react/jsx-runtime";
+ //#region src/provider/NativeGTProvider.tsx
+@@ -16,7 +17,7 @@ function NativeGTProvider(props) {
+ 	if (i18nStoreRef.current == null) i18nStoreRef.current = new I18nStore();
+ 	return /* @__PURE__ */ jsx(InternalGTProvider, {
+ 		...props,
+-		locale: conditionStore.getLocale(),
++		locale: resolveLocale(props.locale),
+ 		region: conditionStore.getRegion(),
+ 		enableI18n: conditionStore.getEnableI18n(),
+ 		setLocale: conditionStore.setLocale,
+diff --git a/src/provider/NativeGTProvider.tsx b/src/provider/NativeGTProvider.tsx
+--- a/src/provider/NativeGTProvider.tsx
++++ b/src/provider/NativeGTProvider.tsx
+@@ -6,7 +6,8 @@ import {
+ import { useMemo, useRef } from 'react';
+ import type { LocaleCandidates } from 'gt-i18n/internal/types';
+ import type { NativeConditionStoreParams } from '../condition-store/NativeConditionStore';
+ import { NativeConditionStore } from '../condition-store/NativeConditionStore';
++import { resolveLocale } from '../utils/resolveLocale';
+ 
+ export type NativeGTProviderProps = Omit<
+   InternalGTProviderProps,
+@@ -28,7 +29,7 @@ export function NativeGTProvider(props: NativeGTProviderProps) {
+   return (
+     <InternalGTProvider
+       {...props}
+-      locale={conditionStore.getLocale()}
++      locale={resolveLocale(props.locale)}
+       region={conditionStore.getRegion()}
+       enableI18n={conditionStore.getEnableI18n()}
+       setLocale={conditionStore.setLocale}

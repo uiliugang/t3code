@@ -16,6 +16,7 @@ import { ServerSettingsService } from "../serverSettings.ts";
 import { providerConnectionConfigurations } from "./providerConnectionProfiles.ts";
 
 const hasBinaryPath = Schema.is(Schema.Struct({ binaryPath: Schema.String }));
+const hasCommandPath = Schema.is(Schema.Struct({ commandPath: Schema.String }));
 const codexDriver = ProviderDriverKind.make("codex");
 const defaultCodexInstance = defaultInstanceIdForDriver(codexDriver);
 
@@ -43,34 +44,42 @@ export const configuredBinaryPaths = Effect.fn("ProviderInstallation.configuredB
     for (const { driver, config, environment } of Object.values(entries).flatMap(
       providerConnectionConfigurations,
     )) {
-      const override = hasBinaryPath(config) ? config.binaryPath.trim() : "";
-      const binary = expandHomePath(
-        override || (driver === "codex" && codexRuntimeSource(config) === "local" ? "codex" : ""),
-        home,
-      );
-      if (!binary) continue;
-      const searchPath = !binary.includes("/") && !binary.includes("\\");
-      const unresolved = environment?.find(({ name, value }) => {
-        const key = windows ? name.toUpperCase() : name;
-        return (
-          typeof value !== "string" &&
-          ((searchPath && key === "PATH") || (windows && key === "PATHEXT"))
-        );
-      });
-      if (unresolved) {
-        return yield* new UnresolvedBinaryPathEnvironment({ variable: unresolved.name });
-      }
-      paths.add(binary);
-      const env = yield* mergeProviderInstanceEnvironment(environment, hostEnvironment);
-      if (searchPath) {
-        const matches = yield* resolveCommandPaths(binary, {
-          env,
-          until: () => driver !== "antigravity",
+      const configuredPaths = [
+        hasBinaryPath(config) ? config.binaryPath.trim() : "",
+        hasCommandPath(config) ? config.commandPath.trim() : "",
+      ].filter((value) => value.length > 0);
+      const candidates =
+        configuredPaths.length > 0
+          ? configuredPaths
+          : driver === "codex" && codexRuntimeSource(config) === "local"
+            ? ["codex"]
+            : [];
+      for (const rawBinary of candidates) {
+        const binary = expandHomePath(rawBinary, home);
+        if (!binary) continue;
+        const searchPath = !binary.includes("/") && !binary.includes("\\");
+        const unresolved = environment?.find(({ name, value }) => {
+          const key = windows ? name.toUpperCase() : name;
+          return (
+            typeof value !== "string" &&
+            ((searchPath && key === "PATH") || (windows && key === "PATHEXT"))
+          );
         });
-        for (const match of matches) paths.add(match);
-      } else {
-        const resolved = yield* resolveCommandPath(binary, { env });
-        if (resolved !== null) paths.add(resolved);
+        if (unresolved) {
+          return yield* new UnresolvedBinaryPathEnvironment({ variable: unresolved.name });
+        }
+        paths.add(binary);
+        const env = yield* mergeProviderInstanceEnvironment(environment, hostEnvironment);
+        if (searchPath) {
+          const matches = yield* resolveCommandPaths(binary, {
+            env,
+            until: () => driver !== "antigravity",
+          });
+          for (const match of matches) paths.add(match);
+        } else {
+          const resolved = yield* resolveCommandPath(binary, { env });
+          if (resolved !== null) paths.add(resolved);
+        }
       }
     }
     return [...paths];

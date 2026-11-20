@@ -19,10 +19,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 vi.mock("../../lib/useUiTranslation", async () => {
   const { translateUi } = await import("@t3tools/shared/uiLocale");
-  return { useUiTranslation: () => translateUi.bind(null, "en") };
+  return {
+    useUiTranslation: () => translateUi.bind(null, state.uiLanguage),
+  };
 });
 
 const state = vi.hoisted(() => ({
+  uiLanguage: "en" as "en" | "zh-CN",
   scopes: new Set<string>(),
   baseDirectory: "",
   projects: [] as string[],
@@ -38,6 +41,8 @@ const state = vi.hoisted(() => ({
   createNewResult: null as Promise<unknown> | null,
   startCloneResult: null as Promise<unknown> | null,
   connectionStates: {} as Record<string, EnvironmentConnectionPhase>,
+  connectionErrors: {} as Record<string, string>,
+  i18nConnectionErrors: {} as Record<string, readonly [string]>,
   newProjectsRoot: null as string | null,
   waitForProject: vi.fn(),
   dispatch: vi.fn(),
@@ -140,6 +145,9 @@ vi.mock("../../state/use-remote-environment-registry", () => ({
     connectedEnvironments: state.environments.map((environment) => ({
       environmentId: environment.environmentId,
       connectionState: state.connectionStates[environment.environmentId] ?? "connected",
+      connectionError: state.connectionErrors[environment.environmentId] ?? null,
+      i18nConnectionError: state.i18nConnectionErrors[environment.environmentId],
+      connectionErrorTraceId: null,
     })),
   }),
   useSavedRemoteConnections: () => ({
@@ -482,6 +490,37 @@ describe("add project source environment", () => {
     } finally {
       await act(() => root.unmount());
       state.connectionStates = {};
+      state.environments = [{ environmentId: "environment", environmentLabel: "Environment" }];
+    }
+  });
+
+  it("translates disconnected environment status and interpolates localized error reasons", () => {
+    state.scopes = new Set([AuthOrchestrationOperateScope]);
+    state.uiLanguage = "zh-CN";
+    state.environments = [
+      { environmentId: "environment", environmentLabel: "Environment" },
+      { environmentId: "another-environment", environmentLabel: "Another environment" },
+    ];
+    state.connectionStates = { "another-environment": "error" };
+    state.connectionErrors = { "another-environment": "Socket closed." };
+    state.i18nConnectionErrors = { "another-environment": ["Socket closed."] };
+    try {
+      (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+      const container = document.createElement("div");
+      const root = createRoot(container);
+      mountedRoots.push(root);
+      using _error = vi.spyOn(console, "error").mockImplementation(() => {});
+      act(() =>
+        root.render(
+          createElement(AddProjectSourceScreen, { environmentId: "another-environment" }),
+        ),
+      );
+      expect(container.textContent).toContain("连接失败，原因：Socket closed.");
+    } finally {
+      state.uiLanguage = "en";
+      state.connectionStates = {};
+      state.connectionErrors = {};
+      state.i18nConnectionErrors = {};
       state.environments = [{ environmentId: "environment", environmentLabel: "Environment" }];
     }
   });

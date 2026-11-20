@@ -1,5 +1,5 @@
 import { getClientSettings } from "../../hooks/useSettings";
-import { translateUi } from "@t3tools/shared/uiLocale";
+import { translateUi, type UiLocale, type UiTranslator } from "@t3tools/shared/uiLocale";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import {
@@ -36,12 +36,14 @@ type RecoveryProps = {
   snoozedUntil: string | null;
   recovery: OrchestrationV2LimitRecovery | null;
   timestampFormat: TimestampFormat;
+  uiLanguage?: UiLocale;
+  t?: UiTranslator;
   onChange: (recovery: OrchestrationV2LimitRecoveryUpdate) => Promise<void>;
 };
 
 export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBannerStackItem {
-  const language = getClientSettings().uiLanguage;
-  const t = translateUi.bind(null, language);
+  const language = props.uiLanguage ?? getClientSettings().uiLanguage;
+  const t = props.t ?? translateUi.bind(null, language);
   const {
     runId,
     errorCode,

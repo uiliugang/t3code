@@ -19,6 +19,7 @@ import {
   normalizeServerBackgroundActivitySettings,
   resolveServerBackgroundActivitySettings,
 } from "@t3tools/shared/backgroundActivitySettings";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import { msg } from "gt-react";
@@ -91,7 +92,7 @@ type TypographySettings = Pick<
   | "fontSizeTerminal"
 >;
 
-export function getChangedTypographySettingLabels(
+function getChangedTypographySettingLabels(
   settings: TypographySettings,
   resolve: MessageResolver = m,
 ): string[] {
@@ -177,6 +178,204 @@ export function getChangedBrowserSettingLabels(
       : []),
     ...(settings.pullRequestLinksOpenInApp !== DEFAULT_UNIFIED_SETTINGS.pullRequestLinksOpenInApp
       ? [resolve(msg("Open pull requests in T3 Code"))]
+      : []),
+  ];
+}
+
+export function getChangedUnifiedSettingLabels(
+  input: {
+    readonly settings: UnifiedSettings;
+    readonly theme: string;
+    readonly followSystem: boolean;
+    readonly hasThemeHalves: boolean;
+  },
+  resolve: MessageResolver = m,
+  t: UiTranslator = translateUi.bind(null, "en"),
+): string[] {
+  const { settings, theme, followSystem, hasThemeHalves } = input;
+  const isTextGenerationModelDirty = !Equal.equals(
+    settings.textGenerationModelSelection ?? null,
+    DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
+  );
+  const isBackgroundActivityDirty = hasChangedBackgroundActivitySettings(settings);
+
+  return [
+    ...(theme !== "system" ? [resolve(msg("Theme"))] : []),
+    ...(!followSystem ? [resolve(msg("Follow system"))] : []),
+    ...(hasThemeHalves ? [resolve(msg("Theme mix"))] : []),
+    ...(settings.appearanceContrast !== DEFAULT_UNIFIED_SETTINGS.appearanceContrast
+      ? [resolve(msg("Contrast"))]
+      : []),
+    ...(settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity
+      ? [resolve(msg("Glass opacity"))]
+      : []),
+    ...(settings.diffColorScheme !== DEFAULT_UNIFIED_SETTINGS.diffColorScheme ||
+    !Equal.equals(settings.diffCustomColors, DEFAULT_UNIFIED_SETTINGS.diffCustomColors)
+      ? [resolve(msg("Diff colors"))]
+      : []),
+    ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth
+      ? [resolve(msg("Chat width"))]
+      : []),
+    ...(settings.effortDisplay !== DEFAULT_UNIFIED_SETTINGS.effortDisplay
+      ? [resolve(msg("Effort display"))]
+      : []),
+    ...(settings.mathRenderingEnabled !== DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled
+      ? [resolve(msg("Render math"))]
+      : []),
+    ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
+      ? [resolve(msg("Panel animations"))]
+      : []),
+    ...(settings.environmentIdentificationMode !==
+    DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
+      ? [resolve(msg("Environment identification"))]
+      : []),
+    ...(settings.uiLanguage !== DEFAULT_UNIFIED_SETTINGS.uiLanguage
+      ? [resolve(msg("Language"))]
+      : []),
+    ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
+      ? [resolve(msg("Time format"))]
+      : []),
+    ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
+      ? [resolve(msg("Thread notifications"))]
+      : []),
+    ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
+      ? [resolve(msg("In-app notifications"))]
+      : []),
+    ...(settings.sidebarProjectGroupingMode !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
+      ? [resolve(msg("Project Grouping"))]
+      : []),
+    ...(settings.sidebarProjectSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder
+      ? [resolve(msg("Project order"))]
+      : []),
+    ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
+      ? [resolve(msg("Working section"))]
+      : []),
+    ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
+      ? [resolve(msg("Auto-settle inactive threads"))]
+      : []),
+    ...(settings.sidebarAutoSettleKeepPullRequests !==
+    DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests
+      ? [resolve(msg("Keep threads with a PR"))]
+      : []),
+    ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
+      ? [resolve(msg("Auto-settle merged threads"))]
+      : []),
+    ...(settings.autoResumeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads
+      ? [resolve(msg("Resume after usage limits"))]
+      : []),
+    ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
+      ? [resolve(msg("Snooze until limits reset"))]
+      : []),
+    ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
+      ? [resolve(msg("Snooze options"))]
+      : []),
+    ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? [resolve(msg("Word wrap"))] : []),
+    ...(settings.persistComposerContextStrip !==
+    DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
+      ? [resolve(msg("Composer context"))]
+      : []),
+    ...getChangedTypographySettingLabels(settings, resolve),
+    ...(settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed
+      ? [resolve(msg("Default diff file state"))]
+      : []),
+    ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
+      ? [resolve(msg("Diff whitespace changes"))]
+      : []),
+    ...(settings.diffLayout !== DEFAULT_UNIFIED_SETTINGS.diffLayout
+      ? [resolve(msg("Diff layout"))]
+      : []),
+    ...(settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled
+      ? [resolve(msg("Open pull requests and changes panels proactively"))]
+      : []),
+    ...(settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu
+      ? [resolve(msg("Show skills in slash menu"))]
+      : []),
+    ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
+      ? [resolve(msg("Rich text composer"))]
+      : []),
+    ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut
+      ? [resolve(msg("Send shortcut"))]
+      : []),
+    ...(settings.showPredictedMessages !== DEFAULT_UNIFIED_SETTINGS.showPredictedMessages
+      ? [resolve(msg("Show predicted messages"))]
+      : []),
+    ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
+      ? [resolve(msg("Follow-up behavior"))]
+      : []),
+    ...(settings.toolCallVisibility !== DEFAULT_UNIFIED_SETTINGS.toolCallVisibility
+      ? [resolve(msg("Tool calls in chat"))]
+      : []),
+    ...(settings.screenReaderAnnouncements !== DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements
+      ? [resolve(msg("Screen reader announcements"))]
+      : []),
+    ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
+      ? [t("Context window indicator")]
+      : []),
+    ...(settings.screenReaderWindowTitle !== DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle
+      ? [resolve(msg("Screen reader window title"))]
+      : []),
+    ...(settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode
+      ? [resolve(msg("Response streaming"))]
+      : []),
+    ...(settings.enableProviderUpdateChecks !== DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
+      ? [resolve(msg("Provider update checks"))]
+      : []),
+    ...(settings.continueThreadsAfterServerUpdate !==
+    DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
+      ? [resolve(msg("Continue threads after restarts"))]
+      : []),
+    ...(isBackgroundActivityDirty ? [resolve(msg("Background activity"))] : []),
+    ...(settings.keepAwakeWhileAgentsWork !== DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork
+      ? [resolve(msg("Keep awake while agents work"))]
+      : []),
+    ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
+      ? [resolve(msg("New thread mode"))]
+      : []),
+    ...(settings.newWorktreesStartFromOrigin !==
+    DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin
+      ? [resolve(msg("New worktrees start from remote"))]
+      : []),
+    ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
+      ? [resolve(msg("Add project base directory"))]
+      : []),
+    ...(settings.newWorktreesMainBranchOnly !== DEFAULT_UNIFIED_SETTINGS.newWorktreesMainBranchOnly
+      ? [t("New thread worktrees: main/master only")]
+      : []),
+    ...(settings.childWorktreesMainBranchOnly !==
+    DEFAULT_UNIFIED_SETTINGS.childWorktreesMainBranchOnly
+      ? [t("Subagent and side chat worktrees: main/master only")]
+      : []),
+    ...(settings.remoteBranchDisplayDays !== DEFAULT_UNIFIED_SETTINGS.remoteBranchDisplayDays
+      ? [t("Remote branch display days")]
+      : []),
+    ...(settings.hideMergedRemoteBranches !== DEFAULT_UNIFIED_SETTINGS.hideMergedRemoteBranches
+      ? [t("Hide merged remote branches")]
+      : []),
+    ...(settings.autoDeleteMergedBranches !== DEFAULT_UNIFIED_SETTINGS.autoDeleteMergedBranches
+      ? [t("Automatically delete merged branches and worktrees")]
+      : []),
+    ...(settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin
+      ? [resolve(msg("Unpin confirmation"))]
+      : []),
+    ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
+      ? [resolve(msg("Archive confirmation"))]
+      : []),
+    ...(settings.confirmTerminalClose !== DEFAULT_UNIFIED_SETTINGS.confirmTerminalClose
+      ? [resolve(msg("Terminal close confirmation"))]
+      : []),
+    ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
+      ? [resolve(msg("Delete confirmation"))]
+      : []),
+    ...(settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit
+      ? [resolve(msg("Quit shortcut"))]
+      : []),
+    ...(isTextGenerationModelDirty ? [resolve(msg("Text generation model"))] : []),
+    ...(settings.threadTitleInstructions !== DEFAULT_UNIFIED_SETTINGS.threadTitleInstructions
+      ? [resolve(msg("Thread title instructions"))]
+      : []),
+    ...getChangedBrowserSettingLabels(settings, resolve),
+    ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
+      ? [resolve(msg("Agent browser access"))]
       : []),
   ];
 }

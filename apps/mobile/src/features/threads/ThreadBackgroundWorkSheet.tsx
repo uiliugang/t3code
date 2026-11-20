@@ -31,12 +31,11 @@ export function ThreadBackgroundWorkSheet({ route }: StaticScreenProps<Backgroun
   const t = useUiTranslation();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const m = useMessages();
   const target = route.params;
   const thread = useAtomValue(
     environmentThreadShells.threadShellAtom(scopeThreadRef(target.environmentId, target.threadId)),
   );
-  const presentation = presentPendingBackgroundWork(thread?.pendingBackgroundTasks ?? [], m);
+  const presentation = presentPendingBackgroundWork(thread?.pendingBackgroundTasks ?? [], t);
   const openThread = (threadId: ThreadId) => {
     void Haptics.selectionAsync();
     // A thread replaces the leaf sheet so workspace back navigation still works.

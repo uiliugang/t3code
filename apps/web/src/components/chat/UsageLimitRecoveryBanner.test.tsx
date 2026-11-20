@@ -1,5 +1,6 @@
 import { RunId } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { usageLimitRecoveryBannerItem } from "./UsageLimitRecoveryBanner";
@@ -45,5 +46,22 @@ describe("usageLimitRecoveryBannerItem", () => {
     expect(bannerDescription(new Date(2026, 9, 21, 17, 30), "24-hour", "zh-CN")).toBe(
       "重置时间：明天 17:30",
     );
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
+    const reactive = usageLimitRecoveryBannerItem({
+      runId: RunId.make("run-1"),
+      errorCode: null,
+      resetAt: new Date(2026, 9, 21, 17, 30).toISOString(),
+      stoppedAt: stoppedAt.toISOString(),
+      settled: false,
+      requestPending: false,
+      snoozedUntil: null,
+      recovery: null,
+      timestampFormat: "24-hour",
+      uiLanguage: "zh-CN",
+      t: translateUi.bind(null, "zh-CN"),
+      onChange: async () => {},
+    });
+    expect(reactive.title).toBe("已达到用量限制");
+    expect(reactive.description).toBe("重置时间：明天 17:30");
   });
 });

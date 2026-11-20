@@ -524,6 +524,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       onOpenThread: onOpenRelatedThreadStable,
     },
     messages,
+    t,
   );
 
   const sendStandaloneCommand = async (text: string, failureMessage: string) => {
@@ -634,6 +635,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           onOpenThread: onOpenRelatedThreadStable,
         },
         messages,
+        t,
       )
     : null;
   // The relative times read the clock; nowMinute re-renders them on the minute.

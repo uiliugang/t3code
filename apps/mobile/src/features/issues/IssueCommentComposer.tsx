@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react-native";
 import { useRef, useState } from "react";
 import { Platform, View } from "react-native";
 import Animated from "react-native-reanimated";
@@ -52,6 +53,7 @@ export function IssueCommentComposer(props: {
   readonly onFocusChange: (focused: boolean) => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
 
   const editorRef = useRef<ComposerEditorHandle>(null);
   const [draft, setDraft] = useState("");
@@ -80,6 +82,8 @@ export function IssueCommentComposer(props: {
   const voicePresentation = resolveVoiceComposerPresentation(
     voiceInput.state,
     voiceInput.elapsedSeconds,
+    t,
+    messages,
   );
   const dictating = voicePresentation.statusKind === "active";
   const locked = props.posting || voiceInput.blocksSubmission;

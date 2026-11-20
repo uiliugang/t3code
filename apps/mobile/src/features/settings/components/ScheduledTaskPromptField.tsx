@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react-native";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { TextInput, View } from "react-native";
 
@@ -23,8 +24,14 @@ export function ScheduledTaskPromptField(props: {
   readonly voiceInput: ReturnType<typeof useVoiceInputController>;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const voice = props.voiceInput;
-  const presentation = resolveVoiceComposerPresentation(voice.state, voice.elapsedSeconds, t);
+  const presentation = resolveVoiceComposerPresentation(
+    voice.state,
+    voice.elapsedSeconds,
+    t,
+    messages,
+  );
   const showsDictation = presentation.statusKind === "active";
   const showsIdleTrigger = voice.isAvailable && !showsDictation;
 

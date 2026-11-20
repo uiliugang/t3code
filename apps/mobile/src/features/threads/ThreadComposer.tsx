@@ -485,6 +485,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     voiceInput.state,
     voiceInput.elapsedSeconds,
     t,
+    messages,
   );
   const isVoiceInputPresented = voicePresentation.statusKind === "active";
   const isExpanded = isFocused || settingsSheetPresentation.keepsComposerExpanded;

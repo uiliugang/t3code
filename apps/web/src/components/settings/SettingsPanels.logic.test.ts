@@ -1,4 +1,5 @@
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import * as Duration from "effect/Duration";
 import { describe, expect, it } from "vite-plus/test";
 import {
@@ -10,6 +11,7 @@ import {
   editAutoSettleDaysField,
   failAutoSettleDaysField,
   getChangedBrowserSettingLabels,
+  getChangedUnifiedSettingLabels,
   hasChangedBackgroundActivitySettings,
   syncAutoSettleDaysField,
 } from "./SettingsPanels.logic";
@@ -93,6 +95,42 @@ describe("getChangedBrowserSettingLabels", () => {
         browserCustomSearchUrl: "https://search.example/?q=%s",
       }),
     ).toEqual(["Search engine"]);
+  });
+});
+
+describe("getChangedUnifiedSettingLabels", () => {
+  it("lists each changed setting once and translates fork setting labels", () => {
+    const labels = getChangedUnifiedSettingLabels(
+      {
+        settings: {
+          ...DEFAULT_UNIFIED_SETTINGS,
+          glassOpacity: 0.5,
+          sendShortcut: "mod-enter",
+          contextWindowMeterEnabled: !DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
+          newWorktreesMainBranchOnly: !DEFAULT_UNIFIED_SETTINGS.newWorktreesMainBranchOnly,
+          childWorktreesMainBranchOnly: !DEFAULT_UNIFIED_SETTINGS.childWorktreesMainBranchOnly,
+          remoteBranchDisplayDays: DEFAULT_UNIFIED_SETTINGS.remoteBranchDisplayDays + 7,
+          hideMergedRemoteBranches: !DEFAULT_UNIFIED_SETTINGS.hideMergedRemoteBranches,
+          autoDeleteMergedBranches: !DEFAULT_UNIFIED_SETTINGS.autoDeleteMergedBranches,
+        },
+        theme: "system",
+        followSystem: true,
+        hasThemeHalves: false,
+      },
+      undefined,
+      translateUi.bind(null, "zh-CN"),
+    );
+
+    expect(labels).toEqual([
+      "Glass opacity",
+      "Send shortcut",
+      "上下文窗口指示器",
+      "普通会话的工作树仅限 main/master",
+      "子代理与侧边对话的工作树仅限 main/master",
+      "远程分支展示天数",
+      "隐藏已合并的远程分支",
+      "自动清理已合并的分支和工作树",
+    ]);
   });
 });
 

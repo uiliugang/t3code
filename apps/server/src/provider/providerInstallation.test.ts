@@ -565,7 +565,7 @@ describe("provider installation routing", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect.each(["literal", "secret", "snapshot"] as const)(
+  it.effect.each(["literal", "secret", "snapshot", "commandPath"] as const)(
     "protects another instance's binary found through its own PATH (%s)",
     (source) =>
       Effect.gen(function* () {
@@ -584,8 +584,8 @@ describe("provider installation routing", () => {
           ...DEFAULT_SERVER_SETTINGS,
           providerInstances: {
             [other]: {
-              driver,
-              config: { binaryPath: binary },
+              driver: source === "commandPath" ? ProviderDriverKind.make("acpRegistry") : driver,
+              config: source === "commandPath" ? { commandPath: binary } : { binaryPath: binary },
               environment: [
                 {
                   name: "PATH",
