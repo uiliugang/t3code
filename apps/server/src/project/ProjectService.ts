@@ -18,7 +18,9 @@ import {
   type ThreadId,
   type WorkspaceRootId,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
+import { isWslSharePath } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -243,6 +245,7 @@ export class ProjectService extends Context.Service<
     >;
     readonly getShell: (
       projectId: ProjectId,
+      workspaceRoot?: string,
     ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ProjectOperationError>;
     readonly listShells: (options?: {
       readonly projectIds?: ReadonlyArray<ProjectId>;
@@ -354,18 +357,6 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  const normalizeWorkspaceConfig = Effect.fn("ProjectService.normalizeWorkspaceConfig")(function* (
-    projectId: ProjectId,
-    config: ProjectWorkspaceConfigInput,
-  ) {
-    const roots = yield* Effect.forEach(config.roots, (root) =>
-      normalizeWorkspaceRoot({ projectId, workspaceRoot: root.sourcePath }).pipe(
-        Effect.map((sourcePath) => ({ ...root, sourcePath })),
-      ),
-    );
-    return { ...config, roots };
-  });
-
   const rejectWorktreeContainer = Effect.fn("ProjectService.rejectWorktreeContainer")(function* (
     projectId: ProjectId,
     workspaceRoot: string,
@@ -375,6 +366,35 @@ export const make = Effect.gen(function* () {
       projectId,
       detail: `${workspaceRoot} holds a repository's worktrees but is not a checkout itself. Add one of its worktrees as the project instead.`,
     });
+  });
+
+  // Git for Windows can't trust an index written inside the distro and rereads every file across the
+  // share, so git status can hit its timeout. Checked before normalizing, which already stats the share.
+  const rejectWslSharePath = Effect.fn("ProjectService.rejectWslSharePath")(function* (
+    projectId: ProjectId,
+    workspaceRoot: string,
+  ) {
+    if (!isWslSharePath(workspaceRoot) || !(yield* HostProcess.isWindows)) return;
+    return yield* new ProjectInvalidError({
+      projectId,
+      detail: `${workspaceRoot.trim()} is inside WSL. Add it to the WSL backend instead of the Windows one.`,
+    });
+  });
+
+  const normalizeWorkspaceConfig = Effect.fn("ProjectService.normalizeWorkspaceConfig")(function* (
+    projectId: ProjectId,
+    config: ProjectWorkspaceConfigInput,
+    previousRoots?: ReadonlySet<string>,
+  ) {
+    for (const { sourcePath } of config.roots) {
+      if (!previousRoots?.has(sourcePath)) yield* rejectWslSharePath(projectId, sourcePath);
+    }
+    const roots = yield* Effect.forEach(config.roots, (root) =>
+      normalizeWorkspaceRoot({ projectId, workspaceRoot: root.sourcePath }).pipe(
+        Effect.map((sourcePath) => ({ ...root, sourcePath })),
+      ),
+    );
+    return { ...config, roots };
   });
 
   const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
@@ -537,11 +557,13 @@ export const make = Effect.gen(function* () {
         input.workspaceConfig === undefined
           ? undefined
           : yield* normalizeWorkspaceConfig(input.projectId, input.workspaceConfig);
+      const requestedRoot =
+        workspaceConfig?.roots.find((root) => root.id === workspaceConfig.primaryRootId)
+          ?.sourcePath ?? input.workspaceRoot;
+      yield* rejectWslSharePath(input.projectId, requestedRoot);
       const workspaceRoot = yield* normalizeWorkspaceRoot({
         projectId: input.projectId,
-        workspaceRoot:
-          workspaceConfig?.roots.find((root) => root.id === workspaceConfig.primaryRootId)
-            ?.sourcePath ?? input.workspaceRoot,
+        workspaceRoot: requestedRoot,
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
       });
       yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
@@ -583,10 +605,21 @@ export const make = Effect.gen(function* () {
         return yield* new ProjectSetupScriptAuthorizationError({ projectId: input.projectId });
       }
       const previousRoot = existing.value.workspaceRoot;
+      const previousRoots = new Set([
+        previousRoot,
+        ...(existing.value.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
+      ]);
+      const requestedSourcePath =
+        input.workspaceConfig?.roots.find(
+          (root) => root.id === input.workspaceConfig?.primaryRootId,
+        )?.sourcePath ?? input.workspaceRoot;
+      if (requestedSourcePath !== undefined && requestedSourcePath !== previousRoot) {
+        yield* rejectWslSharePath(input.projectId, requestedSourcePath);
+      }
       const workspaceConfig =
         input.workspaceConfig === undefined
           ? undefined
-          : yield* normalizeWorkspaceConfig(input.projectId, input.workspaceConfig);
+          : yield* normalizeWorkspaceConfig(input.projectId, input.workspaceConfig, previousRoots);
       const requestedRoot =
         workspaceConfig?.roots.find((root) => root.id === workspaceConfig.primaryRootId)
           ?.sourcePath ?? input.workspaceRoot;
@@ -623,10 +656,6 @@ export const make = Effect.gen(function* () {
         yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
       }
       if (workspaceConfig !== undefined) {
-        const previousRoots = new Set([
-          previousRoot,
-          ...(existing.value.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
-        ]);
         for (const root of workspaceConfig.roots) {
           if (!previousRoots.has(root.sourcePath) && root.sourcePath !== workspaceRoot) {
             yield* rejectWorktreeContainer(input.projectId, root.sourcePath);
@@ -807,7 +836,7 @@ export const make = Effect.gen(function* () {
     );
 
   const getShell: ProjectService["Service"]["getShell"] = Effect.fn("ProjectService.getShell")(
-    function* (projectId) {
+    function* (projectId, workspaceRoot) {
       const shell = yield* projects
         .getShell(projectId)
         .pipe(
@@ -815,7 +844,12 @@ export const make = Effect.gen(function* () {
             (cause) => new ProjectOperationError({ operation: "read-project", projectId, cause }),
           ),
         );
-      return Option.isNone(shell) ? shell : Option.some(yield* enrichShell(shell.value));
+      if (Option.isNone(shell)) return shell;
+      if (workspaceRoot === undefined || workspaceRoot === shell.value.workspaceRoot) {
+        return Option.some(yield* enrichShell(shell.value));
+      }
+      const repositoryIdentity = yield* projectEnrichment.readRepositoryIdentity(workspaceRoot);
+      return Option.some({ ...shell.value, workspaceRoot, repositoryIdentity });
     },
   );
 

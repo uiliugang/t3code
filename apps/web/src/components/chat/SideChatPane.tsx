@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { GitForkIcon, LockKeyholeIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
 import { T, useGT } from "gt-react";
 import { useEffect, useState } from "react";
 
@@ -42,7 +43,7 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { BackgroundThreadContext } from "./backgroundThread";
 
-/** A side chat tab: its title, Bring back, Delete and Close, over the side chat's own chat. */
+/** A side chat tab: its title, Add to chat, Delete and Close, over the side chat's own chat. */
 export default function SideChatPane(props: {
   readonly parentRef: ScopedThreadRef;
   readonly threadId: ThreadId;
@@ -148,6 +149,17 @@ export default function SideChatPane(props: {
     }
   };
 
+  // Closing an unused side chat deletes it, which would leave the link unreadable.
+  const canAddToChat = shell !== null && shell.latestUserMessageAt !== null;
+  const addToChat = () => {
+    if (!canAddToChat) return;
+    useComposerDraftStore
+      .getState()
+      .addThreadContexts(parentRef, [threadContextRecord(threadRef, shell.title)], {
+        insertAtCaret: false,
+      });
+  };
+
   const deleteSideChat = async () => {
     if (!canOperate || shell === null || deleting) return;
     if (confirmThreadDelete) {
@@ -236,6 +248,25 @@ export default function SideChatPane(props: {
           />
           <TooltipPopup side="bottom">
             {bringBackBlockedReason ?? gt("Adds this side chat to the main thread's next message.")}
+          </TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="xs"
+                aria-disabled={!canAddToChat || undefined}
+                onClick={addToChat}
+              >
+                <T>Add to chat</T>
+              </Button>
+            }
+          />
+          <TooltipPopup side="bottom">
+            {canAddToChat
+              ? gt("Adds this side chat to the main thread's next message.")
+              : gt("Available after the first message.")}
           </TooltipPopup>
         </Tooltip>
         <Button

@@ -61,6 +61,24 @@ export interface ResolvedTarget {
   readonly url: string;
 }
 
+export function projectForPullRequestListing(
+  project: OrchestrationProjectShell,
+): OrchestrationProjectShell {
+  const origin = project.repositoryIdentity?.origin;
+  if (origin === undefined) return project;
+  const remoteUrl = origin.remoteUrl ?? `https://${origin.canonicalKey}`;
+  const provider = sourceControlDefinitions.recognizeRemote(remoteUrl);
+  return {
+    ...project,
+    repositoryIdentity: {
+      canonicalKey: origin.canonicalKey,
+      locator: { source: "git-remote", remoteName: "origin", remoteUrl },
+      displayName: origin.displayName ?? origin.canonicalKey.split("/").slice(1).join("/"),
+      ...(provider === null ? {} : { provider: provider.kind }),
+    },
+  };
+}
+
 function projectHostAndProvider(project: OrchestrationProjectShell | undefined): {
   readonly host: string | null;
   readonly kind: SourceControlProviderKind | null;

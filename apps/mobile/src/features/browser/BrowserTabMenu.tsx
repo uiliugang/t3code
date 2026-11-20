@@ -15,6 +15,7 @@ import { msg, useGT, useMessages } from "gt-react-native";
 
 import { ControlPill } from "../../components/ui/ControlPill";
 import { Menu } from "../../components/ui/Menu";
+import { useEnvironmentPreviewTunnelOff } from "../../state/entities";
 import { previewEnvironment } from "../../state/preview";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { browserTabUrl, loopbackUrlForDevice } from "./browserTabs";
@@ -64,6 +65,7 @@ export function BrowserTabMenu({
   readonly onReleaseControl?: (() => void) | undefined;
 }) {
   const openLocalPreview = useOpenLocalPreview();
+  const tunnelOff = useEnvironmentPreviewTunnelOff(environmentId);
   const adjust = useAtomCommand(previewEnvironment.adjust, "browser tab change");
   const resize = useAtomCommand(previewEnvironment.resize, "browser viewport change");
   const close = useAtomCommand(previewEnvironment.close, "browser tab close");
@@ -91,7 +93,7 @@ export function BrowserTabMenu({
     image: "xmark",
     attributes: { destructive: true, disabled: !canClose },
   };
-  const deviceUrl = loopbackUrlForDevice(browserTabUrl(tab));
+  const deviceUrl = tunnelOff ? null : loopbackUrlForDevice(browserTabUrl(tab));
   // The device preview has its own webview and tunnel, so it doesn't wait for the stream.
   const openOnDevice: MenuAction[] = deviceUrl
     ? [{ id: "open-on-device", title: gt("Open on this device"), image: "iphone" }]

@@ -1,5 +1,5 @@
 import { pipe } from "effect/Function";
-import { ThreadDetailsControl } from "./ThreadDetailsControl";
+import { ThreadDetailsMoreButton } from "./ThreadDetailsControl";
 import type {
   EnvironmentId,
   ScopedThreadRef,
@@ -14,7 +14,6 @@ import {
   visibleThreadPullRequests,
 } from "@t3tools/client-runtime/thread-pull-requests";
 import { useMessages } from "gt-react";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { useState, type ComponentProps, type MouseEvent as ReactMouseEvent } from "react";
 
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -29,7 +28,6 @@ import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
-import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   linkedPullRequestSnapshotStatus,
   prStatusIndicator,
@@ -94,7 +92,6 @@ export function ThreadDetailsPrRows({
   currentLink: ThreadPullRequestLink | null;
   onOpenLink: (event: ReactMouseEvent<HTMLElement>, url: string) => void;
 }) {
-  const t = useUiTranslation();
   const [expanded, setExpanded] = useState(false);
   const watch = useAtomCommand(threadEnvironment.watchPullRequest, { reportFailure: true });
   const stopWatching = (link: ThreadPullRequestLink | null) =>
@@ -138,22 +135,11 @@ export function ThreadDetailsPrRows({
           ))}
         </div>
       ) : null}
-      <ThreadDetailsControl
-        variant="ghost"
-        size="sm"
-        onClick={() => setExpanded(!expanded)}
-        part="row"
-        tone="muted"
-        className="w-full active:scale-100"
-      >
-        {/* Chevrons, not plus and minus: the plus already means "add" in this card. */}
-        {expanded ? (
-          <ChevronUpIcon aria-hidden className="size-4 shrink-0" />
-        ) : (
-          <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
-        )}
-        {expanded ? t("Show less") : t("Show {count} more", { count: rest.length })}
-      </ThreadDetailsControl>
+      <ThreadDetailsMoreButton
+        expanded={expanded}
+        remaining={rest.length}
+        onToggle={() => setExpanded(!expanded)}
+      />
     </>
   );
 }

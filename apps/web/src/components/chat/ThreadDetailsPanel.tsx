@@ -29,9 +29,9 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
 
 import { BranchToolbar } from "../BranchToolbar";
-import BaseGitActionsControl from "../GitActionsControl";
+import GitActionsControl from "../GitActionsControl";
 import ProjectScriptsControl from "../ProjectScriptsControl";
-import { memo, useState, type ComponentProps, type Ref } from "react";
+import { useState, type ComponentProps, type Ref } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -52,8 +52,6 @@ import {
   THREAD_DETAILS_PANEL_LABEL_CLASS,
 } from "./threadDetailsPanelStyles";
 import { Menu, MenuPopup } from "../ui/menu";
-
-const GitActionsControl = memo(BaseGitActionsControl);
 
 interface ThreadDetailsPanelProps extends Pick<
   ComponentProps<typeof ThreadDetailsCard>,

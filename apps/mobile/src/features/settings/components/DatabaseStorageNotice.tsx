@@ -1,10 +1,11 @@
 import { useGT } from "gt-react-native";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 
 import { copyTextWithHaptic } from "../../../lib/copyTextWithHaptic";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../../state/preferences";
 import { serverEnvironment } from "../../../state/server";
+import { useAtomCommand } from "../../../state/use-atom-command";
 import type { SettingsTarget } from "../settings-environment-filter";
 import { ListActionRow as SettingsActionRow } from "../../../components/ui/ListActionRow";
 import { SettingsSection } from "./SettingsSection";
@@ -24,7 +25,7 @@ export function DatabaseStorageNotice({
     ),
   );
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const updatePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const updatePreferences = useAtomCommand(saveMobilePreferences);
   const dismissed = AsyncResult.isSuccess(preferences)
     ? (preferences.value.dismissedDatabaseStorageNotices ?? [])
     : [];
@@ -52,8 +53,8 @@ export function DatabaseStorageNotice({
       <SettingsActionRow
         icon="xmark"
         label={t("Dismiss")}
-        onPress={() =>
-          updatePreferences({
+        onPress={() => {
+          void updatePreferences({
             transform: (current) => ({
               dismissedDatabaseStorageNotices: [
                 ...new Set([
@@ -62,8 +63,8 @@ export function DatabaseStorageNotice({
                 ]),
               ],
             }),
-          })
-        }
+          });
+        }}
       />
     </SettingsSection>
   );

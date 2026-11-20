@@ -302,6 +302,7 @@ function makeService(input: {
   readonly providers: ReadonlyArray<PullRequestProviderApi>;
   readonly resolveHandle?: SourceControlProviderRegistry.SourceControlProviderRegistry["Service"]["resolveHandle"];
   readonly resolveRepositoryIdentity?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"]["resolve"];
+  readonly checkoutProject?: OrchestrationProjectShell;
   readonly onProjectRead?: () => void;
 }) {
   // Build in the test scope; per-call Effect.provide would close the marks database on service acquisition.
@@ -329,9 +330,15 @@ function makeService(input: {
                 (project) => options?.projectIds?.includes(project.id) ?? true,
               );
             }),
-          getShell: (projectId) =>
+          getShell: (projectId, workspaceRoot) =>
             Effect.sync(() => {
               input.onProjectRead?.();
+              if (
+                input.checkoutProject?.id === projectId &&
+                input.checkoutProject.workspaceRoot === workspaceRoot
+              ) {
+                return Option.some(input.checkoutProject);
+              }
               return Option.fromNullishOr(input.projects.find((p) => p.id === projectId));
             }),
         }),
@@ -396,6 +403,9 @@ it.effect("lists GitHub Enterprise PRs for a stored unknown repository after hos
       result.entries.map(({ host, number }) => [host, number]),
       [["code.example.test", 42]],
     );
+    // Agents get the forge tools only where the host is one T3 reads.
+    assert.isTrue(yield* service.servesProject("p1" as ProjectId));
+    assert.isFalse(yield* service.servesProject("p2" as ProjectId));
   }),
 );
 
@@ -1010,6 +1020,80 @@ it.effect("reads a repository once when several worktrees share it", () =>
   }),
 );
 
+it.effect("isolates the PR list cache for a thread's pinned checkout", () =>
+  Effect.gen(function* () {
+    const current = project({
+      id: "p1",
+      title: "Project",
+      workspaceRoot: "/new",
+      repository: "team/new",
+    });
+    const previous = project({
+      id: "p1",
+      title: "Project",
+      workspaceRoot: "/old",
+      repository: "team/old",
+    });
+    const listed: string[][] = [];
+    const service = yield* makeService({
+      projects: [current],
+      checkoutProject: previous,
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequests: ({ cwd, repository }) =>
+            Effect.sync(() => {
+              listed.push([cwd, repository]);
+              return { items: [], truncated: false, continues: false };
+            }),
+        }),
+      ],
+    });
+    const input = { state: "open", projectId: current.id } as const;
+    yield* service.list(input);
+    yield* service.list(input, previous.workspaceRoot);
+    yield* service.list(input);
+    assert.deepStrictEqual(listed, [
+      ["/new", "team/new"],
+      ["/old", "team/old"],
+    ]);
+  }),
+);
+
+it.effect("reads and updates a GitLab PR through the pinned checkout after a project moves", () =>
+  Effect.gen(function* () {
+    const current = project({
+      id: "p1",
+      title: "Project",
+      workspaceRoot: "/new",
+      repository: "team/new",
+    });
+    const previous = project({
+      id: "p1",
+      title: "Project",
+      workspaceRoot: "/old",
+      repository: "team/old",
+      provider: "gitlab",
+    });
+    const mutations: string[] = [];
+    const service = yield* makeService({
+      projects: [current],
+      checkoutProject: previous,
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
+          getChangeRequest: ({ cwd }) => Effect.succeed(hostedChangeRequest(cwd)),
+          updateChangeRequest: ({ cwd }) => Effect.sync(() => void mutations.push(cwd)),
+        }),
+      ],
+    });
+    const ref = { projectId: current.id, host: "gitlab.com", repository: "team/old", number: 1 };
+    const pinned = { ...ref, [PullRequestService.checkoutRoot]: previous.workspaceRoot };
+    assert.strictEqual((yield* service.detail(pinned)).body, "/old");
+    yield* service.update({ ...pinned, title: "Updated" });
+    assert.deepStrictEqual(mutations, ["/old"]);
+    assert.isTrue(Exit.isFailure(yield* Effect.exit(service.detail(ref))));
+  }),
+);
+
 it.effect.each([false, true])("lists forks independently of their upstream (batch: %s)", (batch) =>
   Effect.gen(function* () {
     const origin = {
@@ -1398,6 +1482,147 @@ it.effect(
       }
       assert.deepStrictEqual(asked, [true, undefined]);
     }),
+);
+
+it.effect(
+  "reads logs of the failing checks, or of the one named, and names the checks it lacks",
+  () =>
+    Effect.gen(function* () {
+      const asked: Array<ReadonlyArray<string>> = [];
+      let failing = 0;
+      const check = (name: string, status: "success" | "failure" | "cancelled") => ({
+        name,
+        status,
+        description: null,
+        url: `https://github.com/acme/web/runs/${name.length}`,
+      });
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+            getChangeRequestChecks: () =>
+              Effect.succeed({
+                state: "open",
+                checks: [
+                  check("Lint", "success"),
+                  check("Test", "failure"),
+                  check("E2E", "cancelled"),
+                  ...Array.from({ length: failing }, (_, index) =>
+                    check(`Shard ${index}`, "failure"),
+                  ),
+                ],
+              }),
+            getCheckLogs: (input) =>
+              Effect.sync(() => {
+                asked.push(input.checks.map((entry) => entry.name));
+                return input.checks.map((entry) => ({
+                  ...entry,
+                  log: "boom",
+                  truncated: false,
+                  detail: null,
+                }));
+              }),
+          }),
+        ],
+      });
+      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+      yield* service.checkLogs({ ...reference, tailLines: 50 });
+      yield* service.checkLogs({ ...reference, check: "lint", tailLines: 50 });
+      const missing = yield* Effect.flip(
+        service.checkLogs({ ...reference, check: "Deploy", tailLines: 50 }),
+      );
+      assert.deepStrictEqual(asked, [["Test", "E2E"], ["Lint"]]);
+      assert.include(missing.message, "Lint, Test, E2E");
+
+      failing = 6;
+      asked.length = 0;
+      const many = yield* service.checkLogs({ ...reference, tailLines: 50 });
+      // The host is asked for five; the other three come back unread, by name.
+      assert.lengthOf(asked[0] ?? [], 5);
+      assert.deepStrictEqual(
+        many.map((log) => [log.name, log.log]),
+        [
+          ["Test", "boom"],
+          ["E2E", "boom"],
+          ["Shard 0", "boom"],
+          ["Shard 1", "boom"],
+          ["Shard 2", "boom"],
+          ["Shard 3", null],
+          ["Shard 4", null],
+          ["Shard 5", null],
+        ],
+      );
+      assert.include(many.at(-1)?.detail ?? "", "Ask for this check by name");
+    }),
+);
+
+it.effect.each([false, true])(
+  "re-reads checks after a rerun instead of serving the failed ones (rerun fails: %s)",
+  (failAfterRerun) =>
+    Effect.gen(function* () {
+      let rerun = false;
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+            getChangeRequestChecks: () =>
+              Effect.succeed({
+                state: "open" as const,
+                checks: [
+                  {
+                    name: "Test",
+                    status: rerun ? ("pending" as const) : ("failure" as const),
+                    description: null,
+                    url: null,
+                  },
+                ],
+              }),
+            // A failure can come after one run already restarted.
+            rerunChecks: (input) =>
+              Effect.suspend(() => {
+                rerun = true;
+                return failAfterRerun
+                  ? Effect.fail(requestFailed)
+                  : Effect.succeed(
+                      input.checks.map((check) => ({ ...check, rerun: true, detail: null })),
+                    );
+              }),
+          }),
+        ],
+      });
+      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+      assert.equal((yield* service.checks(reference))?.checks[0]?.status, "failure");
+      yield* service.rerunChecks(reference).pipe(Effect.ignore);
+      assert.equal((yield* service.checks(reference))?.checks[0]?.status, "pending");
+    }),
+);
+
+it.effect("refuses a merge whose head moved past expectedHeadSha and pins the host merge", () =>
+  Effect.gen(function* () {
+    const pinned: Array<string | undefined> = [];
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          getChangeRequest: () =>
+            Effect.succeed({ ...hostedChangeRequest("Body"), headSha: "new-head" }),
+          getChangeRequestSummary: () => Effect.succeed(changeRequest(1, "2026-09-03T00:00:00Z")),
+          runAction: (input) => Effect.sync(() => void pinned.push(input.expectedHeadSha)),
+        }),
+      ],
+    });
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const refused = yield* Effect.flip(
+      service.runAction({ ...reference, action: "merge", expectedHeadSha: "reviewed-head" }),
+    );
+    assert.include(refused.message, "new-head");
+    yield* service.runAction({ ...reference, action: "merge", expectedHeadSha: "new-head" });
+    assert.deepStrictEqual(pinned, ["new-head"]);
+  }),
 );
 
 it.effect("publishes a merge for immediate settlement only after host confirmation", () =>

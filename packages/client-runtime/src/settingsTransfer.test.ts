@@ -335,6 +335,7 @@ describe("settings transfer", () => {
       server: {
         ...source,
         requireConnectDeviceApproval: true,
+        enablePreviewTunnel: false,
         defaultTheme: "private-theme",
         defaultThemeSetAt: "2026-11-14T00:00:00.000Z",
         defaultAppearance: "dark",
@@ -364,6 +365,7 @@ describe("settings transfer", () => {
     expect(contents).not.toContain("privatePath");
     expect(contents).not.toContain("private-device-microphone-id");
     expect(file.clientSettings).not.toHaveProperty("voiceMicrophone");
+    expect(file.server).not.toHaveProperty("enablePreviewTunnel");
     const legacyMicrophone = parseSettingsFile(
       JSON.stringify({
         ...JSON.parse(contents),

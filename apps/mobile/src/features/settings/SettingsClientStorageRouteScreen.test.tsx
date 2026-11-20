@@ -55,7 +55,7 @@ vi.mock("../../lib/uuid", () => ({ uuidv4: () => "import-id" }));
 vi.mock("../../state/atom-registry", () => ({ appAtomRegistry: { get: vi.fn() } }));
 vi.mock("../../state/preferences", () => ({
   mobilePreferencesAtom: {},
-  updateMobilePreferencesAtom: {},
+  saveMobilePreferences: {},
 }));
 vi.mock("../../state/client-cache-state", () => ({
   clearClientCacheAtom: "cache-clear",

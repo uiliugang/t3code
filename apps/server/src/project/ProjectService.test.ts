@@ -15,6 +15,7 @@ import {
   WorkspaceRootId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -667,6 +668,94 @@ it.layer(layerTest)("ProjectService", (it) => {
     }),
   );
 
+  it.effect("refuses a WSL share path on Windows and allows it elsewhere", () =>
+    Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const onWindows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(Effect.provideService(HostProcess.Platform, "win32"));
+      const projectId = ProjectId.make("project:wsl-share");
+      const refused = yield* onWindows(
+        service.create({
+          commandId: CommandId.make("command:wsl-share"),
+          projectId,
+          title: "WSL",
+          workspaceRoot: "\\\\wsl$\\Ubuntu\\home\\ubuntu\\repo",
+        }),
+      ).pipe(Effect.flip);
+      assert.equal(refused._tag, "ProjectInvalidError");
+      assert.isTrue(Option.isNone(yield* service.getById(projectId)));
+
+      const mover = ProjectId.make("project:wsl-share:mover");
+      yield* onWindows(
+        service.create({
+          commandId: CommandId.make("command:wsl-share:mover"),
+          projectId: mover,
+          title: "Mover",
+          workspaceRoot: "C:\\work\\wsl-share-mover",
+        }),
+      );
+      const move = yield* onWindows(
+        service.update({
+          commandId: CommandId.make("command:wsl-share:move"),
+          projectId: mover,
+          workspaceRoot: "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\repo",
+        }),
+      ).pipe(Effect.flip);
+      assert.equal(move._tag, "ProjectInvalidError");
+
+      const primaryRootId = WorkspaceRootId.make("primary");
+      const workspaceConfig = {
+        primaryRootId,
+        roots: [
+          {
+            id: primaryRootId,
+            alias: "primary",
+            sourcePath: "C:\\work\\wsl-share-mover",
+            description: "",
+            defaultSelected: true,
+            accessIntent: "write" as const,
+          },
+          {
+            id: WorkspaceRootId.make("secondary"),
+            alias: "secondary",
+            sourcePath: "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\repo",
+            description: "",
+            defaultSelected: true,
+            accessIntent: "write" as const,
+          },
+        ],
+      };
+      const groupedCreate = yield* onWindows(
+        service.create({
+          commandId: CommandId.make("command:wsl-share:grouped-create"),
+          projectId,
+          title: "Grouped",
+          workspaceRoot: workspaceConfig.roots[0]!.sourcePath,
+          workspaceConfig,
+        }),
+      ).pipe(Effect.flip);
+      assert.equal(groupedCreate._tag, "ProjectInvalidError");
+      const groupedUpdate = yield* onWindows(
+        service.update({
+          commandId: CommandId.make("command:wsl-share:grouped-update"),
+          projectId: mover,
+          workspaceConfig,
+        }),
+      ).pipe(Effect.flip);
+      assert.equal(groupedUpdate._tag, "ProjectInvalidError");
+
+      const linux = yield* service
+        .create({
+          commandId: CommandId.make("command:wsl-share:linux"),
+          projectId: ProjectId.make("project:wsl-share:linux"),
+          title: "Linux",
+          workspaceRoot: "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\repo",
+        })
+        .pipe(Effect.provideService(HostProcess.Platform, "linux"));
+      assert.equal(linux.title, "Linux");
+    }),
+  );
+
   it.effect("replays a workspace conflict after the workspace frees up", () =>
     Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;
@@ -876,6 +965,8 @@ it.effect("invalidates workspace-derived metadata when a project moves", () =>
         projectId,
         workspaceRoot: "/work/temporary",
       });
+      const pinned = Option.getOrThrow(yield* service.getShell(projectId, "/work/original"));
+      assert.equal(pinned.repositoryIdentity?.canonicalKey, "example.test/v2/work/original");
       yield* service.snapshot;
 
       yield* Ref.set(metadataVersion, 3);
