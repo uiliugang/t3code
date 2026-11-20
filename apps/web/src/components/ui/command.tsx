@@ -199,6 +199,8 @@ function CommandItem({
         active !== undefined &&
           "cursor-pointer hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
         active && "bg-accent! text-accent-foreground!",
+        props["aria-checked"] === true &&
+          (active ? "bg-primary/20! text-foreground!" : "bg-primary/12! text-foreground!"),
         className,
       )}
       data-active={active || undefined}

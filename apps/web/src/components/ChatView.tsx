@@ -1251,11 +1251,12 @@ export default function ChatView(props: ChatViewProps) {
       activeProject,
       environmentById.get(activeProject.environmentId)?.serverConfig?.scratchWorkspaceRoot ?? null,
     );
+  const isAdhocGroupDraft = !isServerThread && (draftThread?.selectedProjectIds?.length ?? 0) >= 2;
   const logicalProjectEnvironments = useLogicalProjectEnvironments(
     activeProject,
     activeProjectIsScratch && draftId !== null,
   );
-  const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
+  const hasMultipleEnvironments = !isAdhocGroupDraft && logicalProjectEnvironments.length > 1;
   const canAutoBalanceEnvironments = hasMultipleEnvironments && !activeProjectIsScratch;
   const activeEnvironmentOption =
     logicalProjectEnvironments.find(
@@ -3481,6 +3482,8 @@ export default function ChatView(props: ChatViewProps) {
               activeThreadTitle={activeThread.title}
               activeThreadLinkOrigin={activeThreadShell?.linkOrigin?.label ?? null}
               activeProject={activeProject ?? null}
+              activeProjectNameOverride={isAdhocGroupDraft ? draftThread?.groupTitle : undefined}
+              activeProjectIsGroupOverride={isAdhocGroupDraft}
               parentThreadLink={headerParentThreadLink}
               onOpenThread={onOpenRelatedThreadStable}
               rightPanelOpen={inlineRightPanelOwnsTitleBar}
@@ -3923,7 +3926,9 @@ export default function ChatView(props: ChatViewProps) {
                             {showComposerContextStrip && (
                               <div className="pointer-events-auto">
                                 <BranchToolbar
-                                  forceNewWorktree={multipleModelSelections !== null}
+                                  forceNewWorktree={
+                                    multipleModelSelections !== null || isAdhocGroupDraft
+                                  }
                                   ref={branchToolbarRef}
                                   environmentId={activeThread.environmentId}
                                   threadId={activeThread.id}
@@ -4025,7 +4030,7 @@ export default function ChatView(props: ChatViewProps) {
                     : {})}
                   anchor={threadPanelPopoverAnchorRef}
                   handle={threadPanelPopoverHandle}
-                  forceNewWorktree={multipleModelSelections !== null}
+                  forceNewWorktree={multipleModelSelections !== null || isAdhocGroupDraft}
                   environmentId={activeThread.environmentId}
                   threadId={activeThread.id}
                   projectId={activeThread.projectId}

@@ -1,6 +1,5 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { FolderPlusIcon, LayersIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
-import { openCreateWorkspace } from "../CreateWorkspaceDialog";
+import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -11,15 +10,6 @@ import {
 
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
-import {
-  Menu,
-  MenuItem,
-  MenuItemLabel,
-  MenuPopup,
-  MenuSeparator,
-  MenuShortcut,
-  MenuTrigger,
-} from "../ui/menu";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -110,67 +100,29 @@ export function SidebarThreadHeader({
       </div>
       <div className="flex shrink-0 items-center">
         {hasProjects ? projectScope : null}
-        <Menu>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <MenuTrigger
-                  render={
-                    <SidebarMenuButton
-                      size="icon"
-                      type="button"
-                      aria-label={t("New thread")}
-                      className="relative size-7 shrink-0"
-                      onClick={(event) => {
-                        if (event.shiftKey && !newThreadDisabled) {
-                          event.preventDefault();
-                          onNewThread(event);
-                        }
-                      }}
-                    />
-                  }
-                />
-              }
-            >
-              <SquarePenIcon />
-              <span
-                aria-hidden
-                className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-              />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              {showNewThreadInProjectHint ? (
-                <span className="flex flex-col gap-0.5">
-                  <span>{newThreadLabel}</span>
-                  <span className="text-muted-foreground">
-                    {t("New thread in current project: Shift+click")}
-                    {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
-                  </span>
+        <SidebarHeaderIconButton label={t("Add project")} onClick={onNewProject}>
+          <FolderPlusIcon />
+        </SidebarHeaderIconButton>
+        <SidebarHeaderIconButton
+          label={t("New thread")}
+          disabled={newThreadDisabled}
+          onClick={onNewThread}
+          tooltip={
+            showNewThreadInProjectHint ? (
+              <span className="flex flex-col gap-0.5">
+                <span>{newThreadLabel}</span>
+                <span className="text-muted-foreground">
+                  {t("New thread in current project: Shift+click")}
+                  {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
                 </span>
-              ) : (
-                newThreadLabel
-              )}
-            </TooltipPopup>
-          </Tooltip>
-          <MenuPopup align="end">
-            <MenuItem disabled={newThreadDisabled} onClick={(event) => onNewThread(event)}>
-              <SquarePenIcon />
-              <MenuItemLabel>{t("New thread")}</MenuItemLabel>
-              {newThreadShortcutLabel ? (
-                <MenuShortcut>{newThreadShortcutLabel}</MenuShortcut>
-              ) : null}
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem onClick={onNewProject}>
-              <FolderPlusIcon />
-              <MenuItemLabel>{t("Add project")}</MenuItemLabel>
-            </MenuItem>
-            <MenuItem onClick={() => openCreateWorkspace()}>
-              <LayersIcon />
-              <MenuItemLabel>{t("Create group")}</MenuItemLabel>
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
+              </span>
+            ) : (
+              newThreadLabel
+            )
+          }
+        >
+          <SquarePenIcon />
+        </SidebarHeaderIconButton>
       </div>
     </div>
   );

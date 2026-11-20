@@ -2189,6 +2189,13 @@ const zhCN: Readonly<Record<string, string>> = {
   "Creating...": "正在创建…",
   "Select environment": "选择环境",
   "Group name": "分组名称",
+  "Remove {name} from group": "从分组移除 {name}",
+  "Combine with {name}": "与 {name} 组合",
+  "Start ({count})": "开始（{count}）",
+  "Choose up to 16 repositories from one environment.": "请选择同一环境中的仓库，最多 16 个。",
+  "A selected project is no longer available. Choose projects again.":
+    "所选项目已不可用，请重新选择项目。",
+  "This environment does not support multi-repository workspaces.": "此环境不支持多仓库工作区。",
   "e.g. Customer portal": "例如：客户管理平台",
   "Bring existing repositories together for one task. Each repository gets its own worktree when the task starts.":
     "将已有仓库组成一个分组。任务启动时，会为各仓库创建独立的 worktree。",

@@ -1,6 +1,5 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
-import { LayersIcon, MessageSquareDashedIcon, PlusIcon } from "lucide-react";
-import { openCreateWorkspace } from "./CreateWorkspaceDialog";
+import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
 import { T, useGT } from "gt-react";
 
 import { openCommandPalette } from "../commandPaletteBus";
@@ -43,10 +42,6 @@ export function NoProjectsHero() {
                 <Button size="sm" onClick={() => openCommandPalette({ open: "add-project" })}>
                   <PlusIcon className="size-4" />
                   <T>Add project</T>
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => openCreateWorkspace()}>
-                  <LayersIcon />
-                  {gt("Create group")}
                 </Button>
                 {scratchTargetEnvironmentId === null ? null : (
                   <Button

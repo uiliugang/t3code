@@ -151,6 +151,13 @@ it.effect.each([
     );
     expect(invalidInput.detail).toMatch(/HTTP 400: Invalid messages$/);
     expect(upstream).toHaveBeenCalledTimes(3);
+
+    upstream.mockResolvedValueOnce(interruptedResponse("UND_ERR_SOCKET", 401));
+    const interruptedAuth = yield* Effect.flip(
+      run!(request).pipe(Effect.provideService(FetchHttpClient.Fetch, upstream)),
+    );
+    expect(interruptedAuth.detail).toMatch(/rejected the API key\.$/);
+    expect(upstream).toHaveBeenCalledTimes(4);
   }),
 );
 
@@ -193,8 +200,57 @@ it.effect.each([
   }),
 );
 
-it.effect.each(["length", "rejected-budget"])(
-  "keeps the output retry within the original generation deadline: %s",
+const fetchFailure = (code: string) =>
+  new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code }) });
+
+const interruptedResponse = (code: string, status = 200) =>
+  new Response(
+    new ReadableStream({ start: (controller) => controller.error(fetchFailure(code)) }),
+    { status },
+  );
+
+it.effect.each([
+  { code: "ECONNRESET", phase: "headers", failures: 1, attempts: 2, succeeds: true },
+  { code: "UND_ERR_SOCKET", phase: "headers", failures: 1, attempts: 2, succeeds: true },
+  { code: "UND_ERR_SOCKET", phase: "body", failures: 1, attempts: 2, succeeds: true },
+  { code: "ECONNRESET", phase: "headers", failures: 2, attempts: 2, succeeds: false },
+  { code: "ENOTFOUND", phase: "headers", failures: 1, attempts: 1, succeeds: false },
+])("generates commit messages with $failures $code failures at $phase", (fixture) =>
+  Effect.gen(function* () {
+    const expected = { subject: "Fix settings", body: "Handle connection resets." };
+    const upstream = vi.fn<typeof fetch>(async () => {
+      if (upstream.mock.calls.length <= fixture.failures) {
+        if (fixture.phase === "headers") throw fetchFailure(fixture.code);
+        return interruptedResponse(fixture.code);
+      }
+      return Response.json({
+        choices: [{ finish_reason: "stop", message: { content: JSON.stringify(expected) } }],
+      });
+    });
+    const generators = yield* TextGenerators.TextGenerators.pipe(Effect.provide(layer({})));
+    const run = yield* generators.runner(ID);
+    const result = yield* run!({
+      ...request,
+      operation: "generateCommitMessage",
+      outputSchema: Schema.Struct({ subject: Schema.String, body: Schema.String }),
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, upstream), Effect.result);
+    if (fixture.succeeds) {
+      expect(result).toEqual(Result.succeed(expected));
+      const [first, retry] = upstream.mock.calls;
+      expect(String(retry?.[0])).toBe(String(first?.[0]));
+      expect(retry?.[1]?.body).toEqual(first?.[1]?.body);
+    } else {
+      expect(Result.isFailure(result)).toBe(true);
+      if (fixture.code === "ECONNRESET" && Result.isFailure(result)) {
+        expect(result.failure.detail).toContain("connection to api.test closed unexpectedly");
+      }
+    }
+    expect(upstream).toHaveBeenCalledTimes(fixture.attempts);
+  }),
+);
+
+it.effect.each(["length", "rejected-budget", "connection-reset"])(
+  "keeps retries within the original generation deadline: %s",
   (trigger) =>
     Effect.gen(function* () {
       const firstStarted = yield* Deferred.make<void>();
@@ -218,20 +274,24 @@ it.effect.each(["length", "rejected-budget"])(
       );
       yield* Deferred.await(firstStarted);
       yield* TestClock.adjust("1 minute");
-      firstReply.resolve(
-        trigger === "length"
-          ? Response.json({ choices: [{ finish_reason: "length", message: { content: null } }] })
-          : Response.json(
-              {
-                error: {
-                  message: "max_tokens exceeds the output limit",
-                  code: "invalid_value",
-                  param: "max_tokens",
+      if (trigger === "connection-reset") {
+        firstReply.reject(fetchFailure("ECONNRESET"));
+      } else {
+        firstReply.resolve(
+          trigger === "length"
+            ? Response.json({ choices: [{ finish_reason: "length", message: { content: null } }] })
+            : Response.json(
+                {
+                  error: {
+                    message: "max_tokens exceeds the output limit",
+                    code: "invalid_value",
+                    param: "max_tokens",
+                  },
                 },
-              },
-              { status: 400 },
-            ),
-      );
+                { status: 400 },
+              ),
+        );
+      }
       yield* Effect.raceFirst(Deferred.await(secondStarted), Fiber.await(generation));
       expect(upstream).toHaveBeenCalledTimes(2);
       yield* TestClock.adjust("1 minute");

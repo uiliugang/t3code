@@ -277,9 +277,18 @@ describe("environment grouping", () => {
       environmentId: primaryEnvironmentId,
       id: fallbackPrimary.id,
     });
+    const locked = buildSidebarProjectPickerEntries({
+      groups,
+      preferredProjectRef: { environmentId: remoteEnvironmentId, projectId: currentRemote.id },
+      selectionEnvironmentId: primaryEnvironmentId,
+    });
+    expect(
+      locked.find((entry) => entry.group.projectKey === destinationRepositoryIdentity.canonicalKey)
+        ?.targetProject.id,
+    ).toBe(destinationPrimary.id);
   });
 
-  it("targets an open copy when the preferred project is archived", () => {
+  it("targets an open copy even when the selected environment's copy is archived", () => {
     const archived = makeProject({
       repositoryIdentity,
       archivedAt: "2026-01-02T00:00:00.000Z",
@@ -298,6 +307,7 @@ describe("environment grouping", () => {
     const [entry] = buildSidebarProjectPickerEntries({
       groups: pickableProjectGroups(groups),
       preferredProjectRef: { environmentId: archived.environmentId, projectId: archived.id },
+      selectionEnvironmentId: archived.environmentId,
     });
 
     expect(entry?.targetProject).toMatchObject({ environmentId: open.environmentId, id: open.id });

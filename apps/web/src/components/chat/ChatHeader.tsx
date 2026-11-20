@@ -55,6 +55,8 @@ interface ChatHeaderProps {
   activeThreadLinkOrigin?: string | null | undefined;
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
+  activeProjectNameOverride?: string | undefined;
+  activeProjectIsGroupOverride?: boolean | undefined;
   parentThreadLink: { threadId: ThreadId; title: string } | null;
   onOpenThread: (threadId: ThreadId) => void;
   rightPanelOpen: boolean;
@@ -80,6 +82,8 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadLinkOrigin,
   isServerThread,
   activeProject,
+  activeProjectNameOverride,
+  activeProjectIsGroupOverride = false,
   parentThreadLink,
   onOpenThread,
   rightPanelOpen,
@@ -90,7 +94,9 @@ export const ChatHeader = memo(function ChatHeader({
   const t = useUiTranslation();
   const gt = useGT();
   const capitalizeProjectNames = useClientSettings((settings) => settings.capitalizeProjectNames);
-  const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
+  const activeProjectName = activeProject?.isScratch
+    ? "No project"
+    : (activeProjectNameOverride ?? activeProject?.title);
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
   const breadcrumbContainerRef = useRef<HTMLDivElement>(null);
@@ -296,7 +302,9 @@ export const ChatHeader = memo(function ChatHeader({
                     showTitle={false}
                     variant="cap-aligned"
                   />
-                  {!activeProject.isScratch && projectDisplayKind(activeProject) === "group" ? (
+                  {!activeProject.isScratch &&
+                  (activeProjectIsGroupOverride ||
+                    projectDisplayKind(activeProject) === "group") ? (
                     <Badge variant="secondary" size="sm">
                       {t("group")}
                     </Badge>
