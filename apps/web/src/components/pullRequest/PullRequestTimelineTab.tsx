@@ -3,7 +3,6 @@ import type { PullRequestComment } from "@t3tools/contracts";
 import type { PullRequestDetailView } from "@t3tools/contracts";
 import type { PullRequestRef } from "@t3tools/contracts";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import type { ReactNode } from "react";
 import type { PullRequestChatSubject } from "./pullRequestDetail.logic";
 import type { PullRequestReviewOutcome } from "./pullRequestDetail.logic";
 import type { PullRequestTimelineEvent } from "./pullRequestDetail.logic";
@@ -31,7 +30,8 @@ import {
   MessageSquareIcon,
   MessageSquarePlusIcon,
 } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { T, useGT, useMessages } from "gt-react";
 
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
@@ -57,6 +57,7 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestMoreReplies } from "./PullRequestMoreReplies";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
+import { canReactPullRequestComment } from "@t3tools/client-runtime/pull-request-reactions";
 import { PullRequestResolveThreadButton } from "./PullRequestResolveThreadButton";
 import {
   PullRequestActorAvatar,
@@ -193,6 +194,7 @@ function AddToChatButton({
   comment: PullRequestComment;
   reactions: ReactionSurface;
 }) {
+  const gt = useGT();
   const onAddToChat = reactions.onAddToChat;
   return onAddToChat === undefined ? null : (
     <Tooltip>
@@ -202,14 +204,16 @@ function AddToChatButton({
             size="icon-xs"
             variant="ghost-muted"
             className="-mt-1 shrink-0"
-            aria-label="Add to chat"
+            aria-label={gt("Add to chat")}
             onClick={() => onAddToChat(comment)}
           />
         }
       >
         <MessageSquarePlusIcon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup>Add to chat</TooltipPopup>
+      <TooltipPopup>
+        <T>Add to chat</T>
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -471,6 +475,7 @@ function ReviewThreadEvent({
   onOpen: (url: string) => void;
   reactions: ReactionSurface;
 }) {
+  const gt = useGT();
   const dismissed = pullRequestReviewOutcome(event.reviewState) === "dismissed";
   const [expanded, setExpanded] = useState(
     () =>
@@ -497,7 +502,9 @@ function ReviewThreadEvent({
         onClick={() => setExpanded((current) => !current)}
       >
         {thread.path === null ? (
-          <span className="min-w-0 truncate">Overview</span>
+          <span className="min-w-0 truncate">
+            <T context="review thread without a file">Overview</T>
+          </span>
         ) : (
           <>
             <FileCode2Icon aria-hidden className="size-3 shrink-0" />
@@ -509,18 +516,30 @@ function ReviewThreadEvent({
         {thread.isResolved ? (
           <span className="inline-flex shrink-0 items-center gap-1 font-medium text-success-foreground">
             <CircleCheckIcon aria-hidden className="size-3" />
-            Resolved
+            <T context="review thread state">Resolved</T>
           </span>
         ) : null}
-        {dismissed ? <span className="shrink-0 font-medium">Review dismissed</span> : null}
-        {thread.isOutdated ? <span className="shrink-0 font-medium">Outdated</span> : null}
+        {dismissed ? (
+          <span className="shrink-0 font-medium">
+            <T>Review dismissed</T>
+          </span>
+        ) : null}
+        {thread.isOutdated ? (
+          <span className="shrink-0 font-medium">
+            <T context="review thread state">Outdated</T>
+          </span>
+        ) : null}
         {expanded ? null : (
           <span className="shrink-0">
             · {event.actor?.login ?? "ghost"}
             {replyCount > 0 ? (
               <>
                 {" "}
-                · {replyCount.toLocaleString()} {replyCount === 1 ? "reply" : "replies"}
+                ·{" "}
+                {gt("{count, plural, one {{formatted} reply} other {{formatted} replies}}", {
+                  count: replyCount,
+                  formatted: replyCount.toLocaleString(),
+                })}
               </>
             ) : null}
           </span>
@@ -654,6 +673,20 @@ function LifecycleEvent({ event, term }: { event: PullRequestTimelineEvent; term
   );
 }
 
+function staleReviewOutcomeLabel(
+  outcome: PullRequestReviewOutcome,
+  gt: ReturnType<typeof useGT>,
+): string {
+  switch (outcome) {
+    case "approved":
+      return gt("Approved, before the latest commits");
+    case "changes-requested":
+      return gt("Changes requested, before the latest commits");
+    case "dismissed":
+      return gt("Review dismissed, before the latest commits");
+  }
+}
+
 function ReviewVerdictEvent({
   event,
   outcome,
@@ -669,7 +702,8 @@ function ReviewVerdictEvent({
   onOpen: (url: string) => void;
   reactions: ReactionSurface;
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
+  const resolve = useMessages();
   const canReact = reactions.canReact(event);
   return (
     <div className="group relative mb-5 pl-12 [contain-intrinsic-block-size:48px] [content-visibility:auto]">
@@ -695,10 +729,16 @@ function ReviewVerdictEvent({
                   />
                 }
               >
-                {t(pullRequestReviewOutcomeLabel(outcome))}
-                {stale ? <span className="sr-only">{t(", before the latest commits")}</span> : null}
+                {stale ? (
+                  <>
+                    <span aria-hidden>{pullRequestReviewOutcomeLabel(outcome, resolve)}</span>
+                    <span className="sr-only">{staleReviewOutcomeLabel(outcome, gt)}</span>
+                  </>
+                ) : (
+                  pullRequestReviewOutcomeLabel(outcome, resolve)
+                )}
               </TooltipTrigger>
-              <TooltipPopup>{pullRequestReviewOutcomeStaleLabel(outcome, t)}</TooltipPopup>
+              <TooltipPopup>{pullRequestReviewOutcomeStaleLabel(outcome, resolve)}</TooltipPopup>
             </Tooltip>
           </div>
           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -771,7 +811,8 @@ export function PullRequestTimelineTab({
   onRefresh: () => void;
 }) {
   const t = useUiTranslation();
-  const events = buildPullRequestTimeline(detail);
+  const resolve = useMessages();
+  const events = buildPullRequestTimeline(detail, resolve);
   const location = parsePullRequestAnchor(revealUrl);
   const revealAnchor = location?.kind === "timeline" ? location.anchor : null;
   // The linked item stays marked and open after it is shown, until another link replaces it.
@@ -795,7 +836,8 @@ export function PullRequestTimelineTab({
   const newestCommitAt = newestPullRequestCommitAt(detail.commits);
   const reactions: ReactionSurface = {
     revealAnchor: anchor,
-    canReact: (event) => event.comment !== undefined && detail.capabilities.reactions === true,
+    canReact: (event) =>
+      event.comment !== undefined && canReactPullRequestComment(detail, event.comment),
     onAddToChat: onAddToChat && ((comment) => onAddToChat({ kind: "comment", comment })),
     environmentId,
     threadRef,
@@ -922,7 +964,7 @@ export function PullRequestTimelineTab({
       ListHeaderComponent={
         anchor !== null && targetIndex < 0 && revealUrl === undefined ? (
           <p role="status" className="py-4 text-xs text-muted-foreground">
-            The linked item is not in the loaded activity.
+            <T>The linked item is not in the loaded activity.</T>
           </p>
         ) : (
           <div className="h-5" />

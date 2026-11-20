@@ -1,12 +1,14 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, PullRequestDetail, PullRequestRef } from "@t3tools/contracts";
+import { msg } from "gt-react";
 import { useState } from "react";
 import {
   capitalizeTerm,
   sourceControlClients,
 } from "@t3tools/client-runtime/source-control-clients";
 
+import { m } from "~/i18n/messages";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
@@ -60,7 +62,7 @@ export function PullRequestTitleEditor({
         title: t("The title could not be saved"),
         description: readableFailure(
           squashAtomCommandFailure(result),
-          "The host refused the new title.",
+          m(msg("The host refused the new title.")),
         ),
       });
     }

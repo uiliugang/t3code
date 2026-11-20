@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../../../lib/useUiTranslation";
 
+import { useGT } from "gt-react-native";
 import {
   MAX_TERMINAL_FONT_SIZE,
   MIN_TERMINAL_FONT_SIZE,
@@ -16,6 +17,7 @@ import { FontSizeSliderRow } from "../components/FontSizeSliderRow";
 
 export function TerminalAppearanceSection() {
   const t = useUiTranslation();
+  const gt = useGT();
   const { isReady, appearance, setTerminalFontSize } = useAppearancePreferences();
   const custom = appearance.isTerminalFontSizeCustom;
 
@@ -44,7 +46,7 @@ export function TerminalAppearanceSection() {
           onChange={setTerminalFontSize}
           step={TERMINAL_FONT_SIZE_STEP}
           value={appearance.terminalFontSize}
-          valueLabel={`${appearance.terminalFontSize.toFixed(1)} pt`}
+          valueLabel={gt("{size} pt", { size: appearance.terminalFontSize.toFixed(1) })}
         />
       ) : null}
     </SettingsSection>

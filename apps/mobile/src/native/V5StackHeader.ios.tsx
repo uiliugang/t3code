@@ -3,6 +3,7 @@ import type {
   NativeStackHeaderItemMenu,
   NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
+import { useGT } from "gt-react-native";
 import { isValidElement, useEffect, useRef } from "react";
 import { StyleSheet } from "react-native";
 import { KeyboardController, useKeyboardState } from "react-native-keyboard-controller";
@@ -167,6 +168,7 @@ export function V5StackHeader(props: {
 }) {
   const t = useUiTranslation();
   const { options } = props;
+  const gt = useGT();
   const theme = useMobileNavigationTheme();
   const nativeMetrics = useNativeLayoutMetrics();
   const deviceType = useDeviceType();
@@ -366,7 +368,11 @@ export function V5StackHeader(props: {
                 hideWhenScrolling={false}
                 allowToolbarIntegration={searchOptions?.allowToolbarIntegration ?? true}
                 placement={bottomSearch ? "integrated" : (searchOptions?.placement ?? "automatic")}
-                placeholder={t(mailSearch?.placeholder ?? searchOptions?.placeholder ?? "Search")}
+                placeholder={
+                  mailSearch?.placeholder ??
+                  searchOptions?.placeholder ??
+                  gt("Search", { $context: "search field placeholder" })
+                }
                 onFocus={(event) => {
                   searchOptions?.onFocus?.(event);
                 }}

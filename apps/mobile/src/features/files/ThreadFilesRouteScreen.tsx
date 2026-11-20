@@ -9,6 +9,7 @@ import {
   usePreventRemove,
   type StaticScreenProps,
 } from "@react-navigation/native";
+import { useGT, useMessages } from "gt-react-native";
 import { type ComponentProps, type ReactNode, useId, useState } from "react";
 import { Platform, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -83,10 +84,10 @@ function FilesBrowserHeader(props: {
   readonly onRefresh: () => void;
   readonly onBack: () => void;
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   return (
     <AppBar
-      title={t("Files")}
+      title={gt("Files", { $context: "screen title, workspace files" })}
       subtitle={props.projectName}
       onBack={props.onBack}
       hideBottomBorder
@@ -94,11 +95,11 @@ function FilesBrowserHeader(props: {
       search={{
         value: props.searchQuery,
         onChangeText: props.onSearchQueryChange,
-        placeholder: t("Search files"),
-        closeAccessibilityLabel: "Close file search",
-        clearAccessibilityLabel: "Clear file search",
+        placeholder: gt("Search files"),
+        closeAccessibilityLabel: gt("Close file search"),
+        clearAccessibilityLabel: gt("Clear file search"),
       }}
-      refresh={{ accessibilityLabel: t("Refresh files"), onPress: props.onRefresh }}
+      refresh={{ accessibilityLabel: gt("Refresh files"), onPress: props.onRefresh }}
     />
   );
 }
@@ -404,21 +405,29 @@ function useThreadFilesWorkspace(params: {
 }
 
 function FilesUnavailable({
-  title = "Files unavailable",
-  detail = "This thread does not have an active workspace path.",
+  title,
+  detail,
   onBack,
 }: {
   title?: string;
   detail?: string;
   onBack: () => void;
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   return (
     <View className="flex-1 bg-sheet">
-      <AppBar title={t("Files")} onBack={onBack} onBackToList={onBack} hideBottomBorder />
+      <AppBar
+        title={gt("Files", { $context: "screen title, workspace files" })}
+        onBack={onBack}
+        onBackToList={onBack}
+        hideBottomBorder
+      />
       <ScreenContent>
         <View className="flex-1 items-center justify-center px-6">
-          <EmptyState title={t(title)} detail={t(detail)} />
+          <EmptyState
+            title={title ?? gt("Files unavailable")}
+            detail={detail ?? gt("This thread does not have an active workspace path.")}
+          />
         </View>
       </ScreenContent>
     </View>
@@ -463,16 +472,20 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
     props.route.params,
   );
   const hasFileInspector = fileInspector.supported && threadId !== null;
+  const messages = useMessages();
   const fileAccessSession = useEnvironmentQuery(
     environmentId !== null ? environmentSession.sessionStateAtom(environmentId) : null,
   );
   const fileEnvironment = useEnvironmentPresentation(environmentId);
-  const fileAccess = resolveFilesystemReadAccess({
-    isCatalogReady: fileEnvironment.isReady,
-    connection: fileEnvironment.presentation?.connection ?? null,
-    session: fileAccessSession.data,
-    sessionError: fileAccessSession.error,
-  });
+  const fileAccess = resolveFilesystemReadAccess(
+    {
+      isCatalogReady: fileEnvironment.isReady,
+      connection: fileEnvironment.presentation?.connection ?? null,
+      session: fileAccessSession.data,
+      sessionError: fileAccessSession.error,
+    },
+    messages,
+  );
   const { canReadFiles } = fileAccess;
   const entriesQuery = useFileTreeEntries({
     environmentId,
@@ -615,22 +628,27 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
 export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
   const { fileInspector } = useWorkspacePaneState();
   const { appearance, setCodeWordBreak } = useAppearancePreferences();
   const params = props.route.params;
   const targetLine = normalizeRouteLine(firstRouteParam(params.line));
   const { cwd, environmentId, projectName, relativePath, selectedThread, threadId } =
     useThreadFilesWorkspace(props.route.params);
+  const messages = useMessages();
   const fileAccessSession = useEnvironmentQuery(
     environmentId !== null ? environmentSession.sessionStateAtom(environmentId) : null,
   );
   const fileEnvironment = useEnvironmentPresentation(environmentId);
-  const fileAccess = resolveFilesystemReadAccess({
-    isCatalogReady: fileEnvironment.isReady,
-    connection: fileEnvironment.presentation?.connection ?? null,
-    session: fileAccessSession.data,
-    sessionError: fileAccessSession.error,
-  });
+  const fileAccess = resolveFilesystemReadAccess(
+    {
+      isCatalogReady: fileEnvironment.isReady,
+      connection: fileEnvironment.presentation?.connection ?? null,
+      session: fileAccessSession.data,
+      sessionError: fileAccessSession.error,
+    },
+    messages,
+  );
   const { canReadFiles } = fileAccess;
   const targetPath =
     cwd !== null && relativePath !== null ? resolveWorkspaceFilePath(cwd, relativePath) : null;
@@ -844,7 +862,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
       canSelectText
         ? ({
             id: "select-text",
-            title: selectingText ? "Done selecting" : "Select text",
+            title: selectingText ? gt("Done selecting") : gt("Select text"),
             icon: "character.cursor.ibeam",
             inline: false,
             onPress: () => setTextSelectionPath(selectingText ? null : relativePath),

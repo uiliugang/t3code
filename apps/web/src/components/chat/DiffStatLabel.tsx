@@ -28,6 +28,7 @@ export const DiffStatLabel = memo(function DiffStatLabel(props: {
 }) {
   const t = useUiTranslation();
   const { additions, deletions, className, layout = "aligned" } = props;
+
   return (
     <span
       role="group"

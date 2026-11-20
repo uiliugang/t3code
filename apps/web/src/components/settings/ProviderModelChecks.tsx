@@ -72,7 +72,7 @@ export function ProviderModelChecks({
             ? result.value.message
             : failure instanceof Error
               ? failure.message
-              : "Check failed. Try again.",
+              : t("Check failed. Try again."),
       },
     }));
   };

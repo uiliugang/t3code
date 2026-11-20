@@ -1,4 +1,6 @@
 import type { EnvironmentId, SourceControlSignInPrompt } from "@t3tools/contracts";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { useGT } from "gt-react-native";
 import {
   readHostCredentialSettings,
   sourceControlClients,
@@ -9,6 +11,7 @@ import * as Cause from "effect/Cause";
 import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
 import { Linking } from "react-native";
+import { m } from "../../../i18n/messages";
 
 import * as Dialog from "../../../components/ui/Dialog";
 import { useEnvironmentQuery } from "../../../state/query";
@@ -23,7 +26,7 @@ import { useUiTranslation } from "../../../lib/useUiTranslation";
 
 const failureMessage = (cause: Cause.Cause<unknown>) => {
   const error = Cause.squash(cause);
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? (errorDisplayMessage(error, m) ?? error.message) : String(error);
 };
 
 const openUrl = (url: string) => void Linking.openURL(url).catch(() => undefined);
@@ -109,6 +112,7 @@ export function AppSignInRow(props: {
   readonly disabled: boolean;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { environment, definition, appSignIn } = props;
   const environmentId = environment.environmentId;
   const host = appSignIn.hosts[0] ?? "";
@@ -133,13 +137,13 @@ export function AppSignInRow(props: {
     void Clipboard.setStringAsync(prompt.userCode).catch(() => undefined);
     Dialog.alert(
       prompt.userCode,
-      t(
-        "Enter this code on GitHub, then approve {name}. It is copied. The server finishes signing in even if you leave the app.",
-        { name: appSignIn.appName },
+      gt(
+        "Enter this code on {host}, then approve {app}. It is copied. The server finishes signing in even if you leave the app.",
+        { host: "GitHub", app: appSignIn.appName },
       ),
       [
         {
-          text: t("Cancel"),
+          text: gt("Cancel"),
           style: "cancel",
           onPress: () => {
             attempt.current = null;
@@ -147,7 +151,10 @@ export function AppSignInRow(props: {
             void cancel({ environmentId, input });
           },
         },
-        { text: t("Open GitHub"), onPress: () => openUrl(prompt.verificationUri) },
+        {
+          text: gt("Open {host}", { host: "GitHub" }),
+          onPress: () => openUrl(prompt.verificationUri),
+        },
       ],
     );
   };

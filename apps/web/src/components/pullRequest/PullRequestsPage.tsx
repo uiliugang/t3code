@@ -1,4 +1,5 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { heldPullRequestListEntriesAtom } from "@t3tools/client-runtime/state/pull-requests";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -24,6 +25,9 @@ import type {
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowDownUpIcon, LayersIcon, Plug2Icon } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
+
+import { m } from "~/i18n/messages";
 import { useEffect, useEffectEvent, useRef, useState, type ComponentProps } from "react";
 
 import {
@@ -67,7 +71,12 @@ import {
   type PullRequestFilterOption,
 } from "./PullRequestListFilters";
 import { PullRequestCompactFilterMenu } from "./PullRequestCompactFilterMenu";
-import { INVOLVEMENT_TABS, SORT_OPTIONS, STATE_TABS } from "./pullRequestListOptions";
+import {
+  INVOLVEMENT_TABS,
+  resolveFilterOptions,
+  SORT_OPTIONS,
+  STATE_TABS,
+} from "./pullRequestListOptions";
 import { PullRequestsColumn } from "./PullRequestsColumn";
 import { PullRequestListGroups } from "./PullRequestListGroups";
 import { pullRequestPanelReference } from "./usePullRequestDetail";
@@ -126,6 +135,8 @@ import {
   type PullRequestHostRead,
 } from "./pullRequestProjectAssignment.logic";
 
+import { changeRequestTermKind } from "./changeRequestTerm";
+
 function getShortcutContext() {
   return {
     terminalFocus: isTerminalFocused(),
@@ -183,6 +194,8 @@ function usePendingListEntries(
 
 export function PullRequestsPage() {
   const t = useUiTranslation();
+  const gt = useGT();
+  const resolve = useMessages();
   const search = useSearch({ from: "/_chat/pull-requests" });
   const sort = search.sort ?? "ready";
   const statsPolicy: PullRequestStatsPolicy =
@@ -1193,8 +1206,8 @@ export function PullRequestsPage() {
   const searchInput = (
     <PullRequestSearchInput
       value={search.q ?? ""}
-      label="Search pull requests"
-      placeholder="Search pull requests, or label:bug"
+      label={gt("Search pull requests")}
+      placeholder={gt("Search pull requests, or label:bug")}
       busy={typedQuery.length > 0 && (!querySettled || showingCarried)}
       onChange={(query) => updateListScope({ q: query || undefined })}
       onSubmit={submitQuery}
@@ -1214,7 +1227,7 @@ export function PullRequestsPage() {
       rightPanelAvailable={rightPanelAvailable}
       rightPanelOpen={rightPanelState.isOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-      rightPanelUnavailableLabel="Select a pull request first"
+      rightPanelUnavailableLabel={gt("Select a pull request first")}
       onToggleTerminal={() => undefined}
       onToggleRightPanel={toggleRightPanel}
     />
@@ -1343,7 +1356,7 @@ export function PullRequestsPage() {
         Icon: getSourceControlPresentationForKind(entry.kind).Icon,
         ...(summary === undefined || summary.configured
           ? {}
-          : { unavailable: summary.detail ?? "This host could not be read." }),
+          : { unavailable: summary.detail ?? gt("This host could not be read.") }),
       };
     }),
   ];
@@ -1357,12 +1370,12 @@ export function PullRequestsPage() {
   ];
   const sortMenu = (
     <PullRequestCompactFilterMenu
-      label={t("Sort pull requests")}
+      label={gt("Sort pull requests")}
       triggerIcon={<ArrowDownUpIcon aria-hidden className="size-4" />}
-      triggerLabel={t("Sort")}
+      triggerLabel={gt("Sort", { $context: "verb, sort a list" })}
       outlined
       value={sort}
-      options={SORT_OPTIONS.map((option) => ({ ...option, label: t(option.label) }))}
+      options={resolveFilterOptions(SORT_OPTIONS, resolve)}
       onChange={(next) => updateListScope({ sort: next })}
     />
   );
@@ -1370,10 +1383,10 @@ export function PullRequestsPage() {
     <PullRequestFiltersMenuInSidebarOrder
       onOpenChange={setFiltersOpen}
       state={search.state}
-      stateOptions={STATE_TABS.map((option) => ({ ...option, label: t(option.label) }))}
+      stateOptions={resolveFilterOptions(STATE_TABS, resolve)}
       onState={(state) => updateListScope({ state })}
       involvement={search.involvement}
-      involvementOptions={INVOLVEMENT_TABS.map((option) => ({ ...option, label: t(option.label) }))}
+      involvementOptions={resolveFilterOptions(INVOLVEMENT_TABS, resolve)}
       onInvolvement={(involvement) => updateListScope({ involvement })}
       filters={
         typedParsed.filters.draft
@@ -1509,19 +1522,30 @@ export function PullRequestsPage() {
     event.stopPropagation();
     if (event.repeat) return;
     const url = openPanelPullRequestUrl;
-    const { shortLabel, singular } = (
+    const terminology = (
       sourceControlClients.findByChangeRequestUrl(url) ?? sourceControlClients.get(undefined)
     ).changeRequest;
-    void writeTextToClipboard(url, t("{term} link", { term: t(singular) })).then(
-      undefined,
-      (error) => {
-        toastManager.add({
-          type: "error",
-          title: t("Failed to copy {term} link", { term: shortLabel }),
-          description: error instanceof Error ? error.message : t("An error occurred."),
-        });
-      },
-    );
+    void writeTextToClipboard(url, {
+      target: `${terminology.singular} link`,
+      unavailableMessage: msg(
+        "Clipboard API is unavailable while copying {term, select, mr {merge request} cr {change request} other {pull request}} link.",
+        { term: changeRequestTermKind(terminology) },
+      ),
+      failureMessage: msg(
+        "Failed to copy {term, select, mr {merge request} cr {change request} other {pull request}} link to the clipboard.",
+        { term: changeRequestTermKind(terminology) },
+      ),
+    }).then(undefined, (error) => {
+      toastManager.add({
+        type: "error",
+        title: m(
+          msg("Failed to copy {term, select, mr {MR} cr {change request} other {PR}} link", {
+            term: changeRequestTermKind(terminology),
+          }),
+        ),
+        description: thrownErrorMessage(error, m) ?? m(msg("An error occurred.")),
+      });
+    });
   });
   const closeActiveSurfaceFromShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (activePullRequestSurface === null) return;

@@ -19,6 +19,7 @@ import {
   mcpAppFileName,
   type McpAppReference,
 } from "@t3tools/shared/mcpApp";
+import { msg } from "gt-react";
 import { Minimize2Icon } from "lucide-react";
 import { useEffect, useRef, useState, type FocusEvent, type ToggleEvent } from "react";
 import { flushSync } from "react-dom";
@@ -31,12 +32,14 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
+import { m } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { useTurnItemDetail } from "~/state/queries";
 import { mcpAppEnvironment } from "~/state/mcpApps";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { observeResize } from "~/lib/observeResize";
+import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
 
 const commandFailure = (result: {
   readonly cause: Parameters<typeof squashAtomCommandFailure>[0]["cause"];
@@ -92,6 +95,7 @@ export function McpAppFrame(props: {
   const t = useUiTranslation();
   const { app } = props;
   const theme = useHtmlRenderTheme();
+  const nativeTitlebarHeight = useNativeTitlebarHeight();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -285,11 +289,7 @@ export function McpAppFrame(props: {
           throw new McpAppHostRefusal({ message: "This app cannot call that tool." });
         if (!info.value.readOnly) {
           const approved = await ask(
-            t("Allow {server} to run {tool}?\n{arguments}", {
-              server: app.server,
-              tool: info.value.title ?? name,
-              arguments: JSON.stringify(args, null, 2),
-            }),
+            `${m(msg("Allow {server} to run {tool}?", { server: app.server, tool: info.value.title ?? name }))}\n${JSON.stringify(args, null, 2)}`,
           );
           if (approved !== true) throw new McpAppHostRefusal({ message: "Declined by the user." });
         }
@@ -461,6 +461,8 @@ export function McpAppFrame(props: {
             ? "fixed inset-0 m-0 flex h-dvh max-h-none w-dvw max-w-none flex-col border-0 bg-background p-0"
             : "block! static! m-0 border-0 bg-transparent p-0 text-inherit",
         )}
+        // Keep the header clear of the native window controls.
+        style={fullscreen ? { paddingTop: nativeTitlebarHeight } : undefined}
       >
         {fullscreen ? (
           <div

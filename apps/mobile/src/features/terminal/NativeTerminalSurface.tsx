@@ -4,6 +4,7 @@ import {
   type TerminalGrid,
   type TerminalOutputState,
 } from "@t3tools/client-runtime/state/terminal";
+import { useGT } from "gt-react-native";
 import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
   Pressable,
@@ -90,14 +91,15 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface({
 }: ReadyTerminalSurfaceProps) {
   const t = useUiTranslation();
   const fontSize = props.fontSize ?? MOBILE_TYPOGRAPHY.label.fontSize;
+  const gt = useGT();
   const inputRef = useRef<TextInputInstance>(null);
   const { themeAppearance, themeId } = useAppearancePreferences();
   const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance);
   const statusLabel = props.readOnly
-    ? "Viewing terminal output."
+    ? gt("Viewing terminal output.")
     : props.isRunning
-      ? "Native terminal unavailable. Using text fallback."
-      : "Open terminal to start a shell.";
+      ? gt("Native terminal unavailable. Using text fallback.")
+      : gt("Open terminal to start a shell.");
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;

@@ -3,6 +3,7 @@ import {
   type SavedViewIdentity as SavedViewIdentitySchema,
   savedViewNameError,
 } from "@t3tools/client-runtime/saved-views";
+import { useGT, useMessages } from "gt-react-native";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { Alert } from "react-native";
@@ -21,8 +22,7 @@ const EMPTY_SAVED_VIEWS: ReadonlyArray<never> = [];
 export function SavedViewsMenu<Scope extends object>({
   read,
   write,
-  noun,
-  shortNoun,
+  list,
   suggestedName,
   scope,
   matches,
@@ -30,9 +30,8 @@ export function SavedViewsMenu<Scope extends object>({
 }: {
   read: (preferences: Preferences) => ReadonlyArray<Scope & SavedViewIdentity> | undefined;
   write: (views: ReadonlyArray<Scope & SavedViewIdentity>) => Partial<Preferences>;
-  /** "pull request" in the menu's label, "PR" in its dialogs. */
-  noun: string;
-  shortNoun: string;
+  /** Picks whole translated sentences for this list; never inject it into copy. */
+  list: "pullRequest" | "issue" | "requirement";
   suggestedName: string;
   scope: Scope;
   matches: (view: Scope, scope: Scope) => boolean;
@@ -40,6 +39,8 @@ export function SavedViewsMenu<Scope extends object>({
 }) {
   const t = useUiTranslation();
   type View = Scope & SavedViewIdentity;
+  const gt = useGT();
+  const messages = useMessages();
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promise" });
   const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
@@ -61,8 +62,13 @@ export function SavedViewsMenu<Scope extends object>({
       setSelectedId(view.id);
     } catch {
       Alert.alert(
-        t("Could not apply {kind} view", { kind: t(shortNoun) }),
-        t("The device could not save your filters. Try again."),
+        gt(
+          "{list, select, pullRequest {Could not apply PR view} requirement {Could not apply requirement view} other {Could not apply issue view}}",
+          {
+            list,
+          },
+        ),
+        gt("The device could not save your filters. Try again."),
       );
     }
     setBusy(false);
@@ -77,8 +83,13 @@ export function SavedViewsMenu<Scope extends object>({
       });
     } catch {
       Alert.alert(
-        t("Could not save {kind} views", { kind: t(shortNoun) }),
-        t("The device could not save your views. Try again."),
+        gt(
+          "{list, select, pullRequest {Could not save PR views} requirement {Could not save requirement views} other {Could not save issue views}}",
+          {
+            list,
+          },
+        ),
+        gt("The device could not save your views. Try again."),
       );
       saved = false;
     }
@@ -89,12 +100,18 @@ export function SavedViewsMenu<Scope extends object>({
   function editName(view?: View) {
     showTextInputDialog({
       title: view
-        ? t("Rename {kind} view", { kind: t(shortNoun) })
-        : t("Save {kind} view", { kind: t(shortNoun) }),
-      initialValue: view?.name ?? t(suggestedName),
-      confirmText: t("Save"),
+        ? gt(
+            "{list, select, pullRequest {Rename PR view} requirement {Rename requirement view} other {Rename issue view}}",
+            { list },
+          )
+        : gt(
+            "{list, select, pullRequest {Save PR view} requirement {Save requirement view} other {Save issue view}}",
+            { list },
+          ),
+      initialValue: view?.name ?? suggestedName,
+      confirmText: gt("Save"),
       onConfirm: (value) => {
-        const error = savedViewNameError(value, views, view?.id);
+        const error = savedViewNameError(value, views, view?.id, messages);
         if (error) {
           Alert.alert(t("Could not save view"), t(error));
           return;
@@ -130,9 +147,16 @@ export function SavedViewsMenu<Scope extends object>({
 
   return (
     <ListFilterMenu
-      label={selectedView ? `${selectedView.name}${modified ? " *" : ""}` : t("Views")}
+      label={
+        selectedView
+          ? `${selectedView.name}${modified ? " *" : ""}`
+          : gt("Views", { $context: "saved filter views menu" })
+      }
       active={selectedView !== undefined}
-      accessibilityLabel={t("Saved {kind} views", { kind: t(noun) })}
+      accessibilityLabel={gt(
+        "{list, select, pullRequest {Saved pull request views} requirement {Saved requirement views} other {Saved issue views}}",
+        { list },
+      )}
       actions={actions.map((action) => ({
         ...action,
         attributes: { ...action.attributes, disabled: !ready || busy },

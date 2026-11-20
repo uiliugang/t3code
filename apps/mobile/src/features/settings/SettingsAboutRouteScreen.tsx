@@ -1,3 +1,4 @@
+import { useGT } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import * as Application from "expo-application";
@@ -45,6 +46,7 @@ export function SettingsAboutRouteScreen() {
 
 function AppSettingsSection() {
   const t = useUiTranslation();
+  const gt = useGT();
   const [checkState, setCheckState] = useState<{
     readonly state: AppUpdateCheckState;
     // "Up to date" is a confirmation that fades back to idle.
@@ -98,15 +100,15 @@ function AppSettingsSection() {
 
   const statusLabel =
     updateState === "checking"
-      ? "Checking…"
+      ? gt("Checking…")
       : updateState === "downloading"
-        ? "Downloading…"
+        ? gt("Downloading…")
         : updateState === "ready"
-          ? "Update ready"
+          ? gt("Update ready")
           : updateState === "restarting"
-            ? "Restarting…"
+            ? gt("Restarting…")
             : updateState === "current"
-              ? "Up to date"
+              ? gt("Up to date")
               : null;
 
   const versionRow = (
@@ -123,15 +125,19 @@ function AppSettingsSection() {
   );
 
   return (
-    <SettingsSection title="App">
-      <SettingsRow icon="internaldrive" label="Client Storage" target="SettingsClientStorage" />
-      <SettingsRow icon="stethoscope" label="Diagnostics" target="SettingsDiagnostics" />
+    <SettingsSection title={gt("App", { $context: "settings section about this mobile app" })}>
+      <SettingsRow
+        icon="internaldrive"
+        label={gt("Client Storage")}
+        target="SettingsClientStorage"
+      />
+      <SettingsRow icon="stethoscope" label={gt("Diagnostics")} target="SettingsDiagnostics" />
       <SettingsRow
         icon="doc.on.doc"
-        label="Open source licenses"
+        label={gt("Open source licenses")}
         target="SettingsOpenSourceLicenses"
       />
-      <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
+      <SettingsRow icon="doc.text" label={gt("Legal")} fullScreenTarget="SettingsLegal" />
       {updateCheckAvailable ? (
         <Pressable
           accessibilityLabel={t("Version {version}", { version: versionLabel })}

@@ -36,6 +36,7 @@ import { resolveEventKeys } from "@t3tools/shared/keybindings";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { T, useGT, useMessages } from "gt-react";
 
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
@@ -53,6 +54,7 @@ import {
   searchSettings,
   revealSettingsSearchTarget,
   SETTINGS_NAV_GROUPS,
+  SETTINGS_NAV_LABELS,
   SETTINGS_SECTION_LABELS,
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
@@ -398,6 +400,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                         <SidebarMenu>
                           {group.paths.map((to) => {
                             const Icon = SETTINGS_SECTION_ICONS[to];
+                            const navLabel =
+                              to === "/settings/source-control"
+                                ? SETTINGS_SECTION_LABELS[to]
+                                : SETTINGS_NAV_LABELS[to];
                             const isActive = activePath === to || activePath.startsWith(`${to}/`);
                             return (
                               <SidebarMenuItem key={to}>
@@ -414,7 +420,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                                       !compactSearchOpen && "max-md:sr-only",
                                     )}
                                   >
-                                    {t(m(SETTINGS_SECTION_LABELS[to]))}
+                                    {t(m(navLabel))}
                                   </span>
                                 </SidebarMenuButton>
                               </SidebarMenuItem>
@@ -441,4 +447,3 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     </nav>
   );
 }
-import { useUiTranslation } from "../../hooks/useUiTranslation";

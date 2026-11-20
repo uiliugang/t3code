@@ -1,3 +1,4 @@
+import { msg, useGT, useMessages } from "gt-react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -20,17 +21,19 @@ const FOLLOW_UP_OPTIONS: ReadonlyArray<{
 }> = [
   {
     behavior: "queue",
-    label: "Queue",
-    description: "Your message waits and runs after the current turn finishes.",
+    label: msg("Queue", { $context: "verb, follow-up behavior" }),
+    description: msg("Your message waits and runs after the current turn finishes."),
   },
   {
     behavior: "steer",
-    label: "Steer",
-    description: "Your message reaches the agent right away, changing what it is working on.",
+    label: msg("Steer", { $context: "verb, follow-up behavior" }),
+    description: msg("Your message reaches the agent right away, changing what it is working on."),
   },
 ];
 
 export function SettingsFollowUpRouteScreen() {
+  const gt = useGT();
+  const m = useMessages();
   const insets = useSafeAreaInsets();
   const t = useUiTranslation();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
@@ -63,12 +66,12 @@ export function SettingsFollowUpRouteScreen() {
           onValueChange={(showPredictedMessages) => savePreferences({ showPredictedMessages })}
         />
       </SettingsSection>
-      <SettingsSection title="While the agent is running">
+      <SettingsSection title={gt("While the agent is running")}>
         {FOLLOW_UP_OPTIONS.map((option, index) => (
           <SettingsChoiceRow
             key={option.behavior}
-            label={t(option.label)}
-            description={t(option.description)}
+            label={m(option.label)}
+            description={m(option.description)}
             selected={selectedBehavior === option.behavior}
             separated={index > 0}
             disabled={!preferencesReady}

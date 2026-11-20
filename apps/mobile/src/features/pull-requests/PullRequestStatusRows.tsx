@@ -5,12 +5,11 @@ import { PullRequestSendReviewLink } from "./PullRequestSendReviewLink";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import type { PullRequestAction, PullRequestDetail } from "@t3tools/contracts";
-import {
-  capitalizeTerm,
-  sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import Animated from "react-native-reanimated";
 import { PR_ROW_LAYOUT, PR_DISCLOSURE_ENTER, PR_ROW_EXIT } from "./pullRequestAnimations";
+import { useGT, useMessages } from "gt-react-native";
 import { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -61,16 +60,18 @@ export function PullRequestStatusMenu(props: RowProps) {
   const t = useUiTranslation();
   const action = usePullRequestAction(props.params, props.pr);
   const actions = STATUS_ACTIONS.filter(action.available);
-  const status = pullRequestStatus(props.pr);
+  const gt = useGT();
+  const m = useMessages();
+  const status = pullRequestStatus(props.pr, m);
   const terminology = sourceControlClients.get(props.pr.provider).changeRequest;
-  const term = capitalizeTerm(terminology.singular);
+  const term = changeRequestTermKind(terminology);
   const trigger = (
     <Pressable
       accessibilityRole={actions.length ? "button" : undefined}
-      accessibilityLabel={t("{term} status, {label}", {
-        term: String(term),
-        label: t(status.label),
-      })}
+      accessibilityLabel={gt(
+        "{term, select, mr {Merge request} cr {Change request} other {Pull request}} status, {status}",
+        { term, status: status.label },
+      )}
       disabled={!actions.length}
       className="min-h-8 flex-row items-center gap-1.5 active:opacity-70"
     >
@@ -84,10 +85,13 @@ export function PullRequestStatusMenu(props: RowProps) {
   if (!actions.length) return trigger;
   return (
     <Menu
-      title={t("{term} status", { term: String(term) })}
+      title={gt(
+        "{term, select, mr {Merge request} cr {Change request} other {Pull request}} status",
+        { term },
+      )}
       actions={actions.map((id) => ({
         id,
-        title: pullRequestActionLabel(id, terminology),
+        title: pullRequestActionLabel(id, terminology, m),
         image: PR_ACTION_ICONS[id],
         attributes: { destructive: id === "close" },
       }))}
@@ -98,8 +102,11 @@ export function PullRequestStatusMenu(props: RowProps) {
         else if (selected === "revert")
           action.confirm(
             selected,
-            pullRequestActionLabel("revert", terminology),
-            `Open a new ${terminology.singular} that reverses these changes?`,
+            pullRequestActionLabel("revert", terminology, m),
+            gt(
+              "Open a new {term, select, mr {merge request} cr {change request} other {pull request}} that reverses these changes?",
+              { term },
+            ),
           );
         else void action.perform(selected);
       }}
@@ -118,7 +125,9 @@ export function PullRequestChecksRow(props: RowProps) {
     setSeenNavigation(props.params.navigationId);
     if (linked) setExpanded(true);
   }
-  const checks = pullRequestChecksSummary(props.pr);
+  const gt = useGT();
+  const m = useMessages();
+  const checks = pullRequestChecksSummary(props.pr, m);
   const action = usePullRequestAction(props.params, props.pr);
   const definition = sourceControlClients.get(props.pr.provider);
   return (
@@ -141,20 +150,26 @@ export function PullRequestChecksRow(props: RowProps) {
           className="pl-8"
         >
           {props.pr.state === "open" && props.pr.checks.some(isFailingCheck) ? (
-            <PullRequestAgentRow {...props} task="feedback" title={t("Fix failing checks")} />
+            <PullRequestAgentRow {...props} task="feedback" title={gt("Fix failing checks")} />
           ) : null}
           {action.available("approve-workflows") ? (
             <PullRequestCardRow
-              title={t("Approve workflows")}
+              title={gt("Approve workflows")}
               icon="checkmark"
-              detail={t("{workflowApprovalsRequired} waiting for approval", {
-                workflowApprovalsRequired: String(props.pr.workflowApprovalsRequired),
-              })}
+              detail={gt(
+                "{count, plural, one {{count} waiting for approval} other {{count} waiting for approval}}",
+                {
+                  count: props.pr.workflowApprovalsRequired ?? 0,
+                },
+              )}
               onPress={() =>
                 action.confirm(
                   "approve-workflows",
-                  "Approve workflows",
-                  `Allow this ${definition.changeRequest.singular}'s workflows to run? Review the workflow changes first.`,
+                  gt("Approve workflows"),
+                  gt(
+                    "Allow this {term, select, mr {merge request} cr {change request} other {pull request}}''s workflows to run? Review the workflow changes first.",
+                    { term: changeRequestTermKind(definition.changeRequest) },
+                  ),
                 )
               }
             />
@@ -162,7 +177,7 @@ export function PullRequestChecksRow(props: RowProps) {
           {[...props.pr.checks]
             .sort((a, b) => CHECK_PRIORITY[a.status] - CHECK_PRIORITY[b.status])
             .map((check) => {
-              const status = checkStatus(check);
+              const status = checkStatus(check, m);
               const url = check.url;
               return (
                 <PullRequestCardRow
@@ -200,10 +215,12 @@ export function PullRequestBranchRow(props: RowProps) {
   const t = useUiTranslation();
   const action = usePullRequestAction(props.params, props.pr);
   const agent = usePullRequestAgentActions(props.params, props.pr);
+  const gt = useGT();
+  const m = useMessages();
   const methods = action.available("update-branch") ? allowedUpdateMethods(props.pr) : [];
   const canResolve =
     agent.canAsk && props.pr.state === "open" && props.pr.mergeability === "conflicting";
-  const summary = action.busy ? t("Updating…") : pullRequestBranchSummary(props.pr, t);
+  const summary = action.busy ? gt("Updating…") : pullRequestBranchSummary(props.pr, m);
   const clean = props.pr.mergeability === "mergeable";
   const conflicting = props.pr.mergeability === "conflicting";
   const row = (
@@ -243,7 +260,12 @@ export function PullRequestBranchRow(props: RowProps) {
         ...(canResolve ? [agent.menuAction("conflicts")] : []),
         ...methods.map((id) => ({
           id,
-          title: t("Update with {id}", { id: String(id) }),
+          title: gt(
+            "Update with {method, select, merge {merge} rebase {rebase} other {{method}}}",
+            {
+              method: id,
+            },
+          ),
           image: "arrow.up.circle",
         })),
       ]}
@@ -262,10 +284,12 @@ export function PullRequestReviewersRow(props: RowProps) {
   const t = useUiTranslation();
   const [expanded, setExpanded] = useState(false);
   const navigation = useNavigation();
+  const gt = useGT();
+  const m = useMessages();
   const activity = useEnvironmentQuery(
     composerPullRequests.activity(pullRequestTarget(props.params)),
   );
-  const summary = pullRequestReviewSummary(props.pr, activity.data, t);
+  const summary = pullRequestReviewSummary(props.pr, activity.data, m);
   const canWrite = useAtomValue(
     composerPullRequests.requestReviewers.permissionAtom(
       pullRequestTarget(props.params).environmentId,
@@ -313,7 +337,13 @@ export function PullRequestReviewersRow(props: RowProps) {
             .map((review) => (
               <View
                 key={review.id}
-                accessibilityLabel={`${review.author?.login ?? "Unknown reviewer"}, ${review.reviewState === "APPROVED" ? "Approved" : review.reviewState === "CHANGES_REQUESTED" ? "Changes requested" : "Commented"}`}
+                accessibilityLabel={`${review.author?.login ?? t("Unknown reviewer")}, ${
+                  review.reviewState === "APPROVED"
+                    ? gt("Approved", { $context: "review state" })
+                    : review.reviewState === "CHANGES_REQUESTED"
+                      ? t("Changes requested")
+                      : gt("Commented", { $context: "review state" })
+                }`}
                 className="min-h-14 flex-row items-center gap-3 px-4 py-2"
               >
                 <SymbolView

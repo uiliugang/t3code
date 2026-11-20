@@ -15,6 +15,7 @@ export function SettingsDragHandle(props: {
   readonly onStep: (direction: "up" | "down") => void;
 }) {
   const t = useUiTranslation();
+
   const onStart = useEffectEvent(() => props.onStart());
   const onMove = useEffectEvent((translation: number) => props.onMove(translation));
   const onEnd = useEffectEvent((translation: number, cancelled: boolean) =>

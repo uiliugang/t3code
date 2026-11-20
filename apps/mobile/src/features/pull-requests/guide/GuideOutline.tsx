@@ -2,6 +2,7 @@ import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { Button } from "../../../components/ui/Button";
 import type { PullRequestReviewGuide } from "@t3tools/contracts";
 import { stopFilePaths } from "@t3tools/client-runtime/review-guide-tour";
+import { useGT } from "gt-react-native";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { SymbolView } from "../../../components/ui/AppSymbol";
@@ -20,6 +21,7 @@ export function GuideOutline({
   readonly onRewrite?: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { appearance, setCodeWordBreak } = useAppearancePreferences();
   const files = new Set(guide.stops.flatMap(stopFilePaths));
   return (
@@ -27,18 +29,22 @@ export function GuideOutline({
       <View className="mb-5 flex-row items-center justify-between">
         <View className="flex-row items-baseline gap-2">
           <Text className="text-base font-t3-semibold">
-            {t("{count} stops", { count: guide.stops.length })}
+            {gt("{count, plural, one {{count} stops} other {{count} stops}}", {
+              count: guide.stops.length,
+            })}
           </Text>
           <Text className="text-sm text-foreground-muted">
-            {t("through {count} files", { count: files.size })}
+            {gt("{count, plural, one {through {count} file} other {through {count} files}}", {
+              count: files.size,
+            })}
           </Text>
         </View>
         <Menu
-          title={t("Guide options")}
+          title={gt("Guide options")}
           actions={[
             {
               id: "word-wrap",
-              title: t("Word wrap"),
+              title: gt("Word wrap"),
               image: "text.alignleft",
               state: appearance.codeWordBreak ? "on" : "off",
             },

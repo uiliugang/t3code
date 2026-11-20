@@ -1,5 +1,6 @@
 import { createContext, use, useEffect, useState, type ReactNode } from "react";
 import { Animated, Platform, Pressable, View } from "react-native";
+import { useMessages } from "gt-react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -30,9 +31,9 @@ const ConnectionStatusContext = createContext<ConnectionStatus | null>(null);
  * a moment when it came back, while context still reaches it.
  */
 export function WorkspaceConnectionStatusProvider(props: { readonly children: ReactNode }) {
-  const t = useUiTranslation();
   const { state } = useWorkspaceState();
-  const presentation = workspaceConnectionStatusPresentation(state, t);
+  const m = useMessages();
+  const presentation = workspaceConnectionStatusPresentation(state, m);
   const hasStatus = presentation !== null;
   // When the current status run began; a gap in the status restarts the delay.
   const [statusSince, setStatusSince] = useState(() => (hasStatus ? Date.now() : null));

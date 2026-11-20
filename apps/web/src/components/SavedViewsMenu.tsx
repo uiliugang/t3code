@@ -1,3 +1,4 @@
+import { T, useGT, useMessages } from "gt-react";
 import { BookmarkIcon, CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
 import { type ComponentProps, useId, useState } from "react";
 import type * as Schema from "effect/Schema";
@@ -39,10 +40,11 @@ export interface SavedViewsKind<Preferences extends Stored, Stored, Encoded> {
   readonly storageKey: string;
   readonly schema: Schema.Codec<ReadonlyArray<SavedView<Stored>>, Encoded>;
   readonly empty: ReadonlyArray<SavedView<Stored>>;
-  /** "pull request" in the menu's label, "PR" in the dialog and errors. */
-  readonly noun: string;
-  readonly shortNoun: string;
+  /** Picks whole translated sentences for this list; never inject it into copy. */
+  readonly list: "pullRequest" | "issue" | "requirement";
+  /** `msg()` text, resolved where it renders. */
   readonly placeholder: string;
+  /** `msg()` text or "". */
   readonly suggestedName: (preferences: Preferences) => string;
   /** Drops the parts of the list state that a view does not keep. */
   readonly normalize: (preferences: Stored) => Preferences;
@@ -61,6 +63,8 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
   size?: ComponentProps<typeof Button>["size"];
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const messages = useMessages();
   const [views, setViews] = useLocalStorage(kind.storageKey, kind.empty, kind.schema);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ id?: string; name: string } | null>(null);
@@ -71,7 +75,14 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
     views.find((view) => kind.matches(view, preferences));
   if (selectedView && selectedId !== selectedView.id) setSelectedId(selectedView.id);
   const modified = selectedView !== undefined && !kind.matches(selectedView, preferences);
-  const nameError = editor ? savedViewNameError(editor.name, views, editor.id) : null;
+  const nameError = editor ? savedViewNameError(editor.name, views, editor.id, messages) : null;
+  const requirementLabel = kind.list === "requirement" ? t("requirement") : null;
+  const savedViewsLabel =
+    requirementLabel === null
+      ? gt("{list, select, pullRequest {Saved pull request views} other {Saved issue views}}", {
+          list: kind.list,
+        })
+      : t("Saved {kind} views", { kind: requirementLabel });
 
   function persist(
     update: (current: ReadonlyArray<SavedView<Stored>>) => ReadonlyArray<SavedView<Stored>>,
@@ -95,8 +106,14 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
     }
     toastManager.add({
       type: "error",
-      title: t("Could not save {kind} views", { kind: t(kind.shortNoun) }),
-      description: t(
+      title:
+        requirementLabel === null
+          ? gt(
+              "{list, select, pullRequest {Could not save PR views} other {Could not save issue views}}",
+              { list: kind.list },
+            )
+          : t("Could not save {kind} views", { kind: requirementLabel }),
+      description: gt(
         "Local storage is unavailable or full. Try again after freeing space or allowing storage.",
       ),
     });
@@ -140,18 +157,18 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
             render={
               <MenuTrigger
                 render={<Button variant="outline" {...(size ? { size } : {})} />}
-                aria-label={t("Saved {kind} views", { kind: t(kind.noun) })}
+                aria-label={savedViewsLabel}
               />
             }
           >
             <BookmarkIcon aria-hidden className="size-4" />
-            <span className="max-w-40 truncate">{selectedView?.name ?? t("Views")}</span>
-            {modified ? <span aria-label={t("Modified view")}>*</span> : null}
+            <span className="max-w-40 truncate">
+              {selectedView?.name ?? gt("Views", { $context: "saved filter views menu" })}
+            </span>
+            {modified ? <span aria-label={gt("Modified view")}>*</span> : null}
             <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
           </TooltipTrigger>
-          <TooltipPopup>
-            {selectedView?.name ?? t("Saved {kind} views", { kind: t(kind.noun) })}
-          </TooltipPopup>
+          <TooltipPopup>{selectedView?.name ?? savedViewsLabel}</TooltipPopup>
         </Tooltip>
         <MenuPopup align="start">
           {views.map((view) => (
@@ -177,9 +194,9 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
             </Tooltip>
           ))}
           {views.length > 0 ? <MenuSeparator /> : null}
-          <MenuItem onClick={() => setEditor({ name: t(kind.suggestedName(preferences)) })}>
+          <MenuItem onClick={() => setEditor({ name: messages(kind.suggestedName(preferences)) })}>
             <PlusIcon aria-hidden />
-            {t("Save current view…")}
+            <T>Save current view…</T>
           </MenuItem>
           {selectedView ? (
             <>
@@ -230,12 +247,20 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
           >
             <DialogHeader>
               <DialogTitle>
-                {editor?.id
-                  ? t("Rename {kind} view", { kind: t(kind.shortNoun) })
-                  : t("Save {kind} view", { kind: t(kind.shortNoun) })}
+                {requirementLabel === null
+                  ? editor?.id
+                    ? gt("{list, select, pullRequest {Rename PR view} other {Rename issue view}}", {
+                        list: kind.list,
+                      })
+                    : gt("{list, select, pullRequest {Save PR view} other {Save issue view}}", {
+                        list: kind.list,
+                      })
+                  : t(editor?.id ? "Rename {kind} view" : "Save {kind} view", {
+                      kind: requirementLabel,
+                    })}
               </DialogTitle>
               <DialogDescription>
-                {t("Save your search, filters, and sort order on this device.")}
+                <T>Save your search, filters, and sort order on this device.</T>
               </DialogDescription>
             </DialogHeader>
             <DialogPanel>
@@ -246,7 +271,7 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
                   autoFocus
                   value={editor?.name ?? ""}
                   maxLength={SAVED_VIEW_NAME_MAX_LENGTH}
-                  placeholder={t(kind.placeholder)}
+                  placeholder={messages(kind.placeholder)}
                   aria-invalid={Boolean(editor?.name && nameError)}
                   aria-describedby={nameError && editor?.name ? errorId : undefined}
                   onChange={(event) =>

@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { msg, useGT, useMessages } from "gt-react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -24,18 +25,26 @@ const ENTER_BEHAVIOR_OPTIONS: ReadonlyArray<{
 }> = [
   {
     behavior: "send",
-    label: "Send message",
-    description: "Return sends the message. Shift-Return inserts a new line.",
+    label: msg("Send message"),
+    description: msg("{returnKey} sends the message. {shiftReturn} inserts a new line.", {
+      returnKey: "Return",
+      shiftReturn: "Shift-Return",
+    }),
   },
   {
     behavior: "newline",
-    label: "Insert new line",
-    description: `Return inserts a new line. ${SEND_MODIFIER}-Return sends the message.`,
+    label: msg("Insert new line"),
+    description: msg("{returnKey} inserts a new line. {sendKeys} sends the message.", {
+      returnKey: "Return",
+      sendKeys: `${SEND_MODIFIER}-Return`,
+    }),
   },
 ];
 
 export function SettingsKeyboardRouteScreen() {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const insets = useSafeAreaInsets();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
@@ -53,12 +62,12 @@ export function SettingsKeyboardRouteScreen() {
         contentContainerClassName="gap-3 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
-        <SettingsSection title={t("Return key")}>
+        <SettingsSection title={gt("Return key")}>
           {ENTER_BEHAVIOR_OPTIONS.map((option, index) => (
             <SettingsChoiceRow
               key={option.behavior}
-              label={t(option.label)}
-              description={t(option.description)}
+              label={m(option.label)}
+              description={m(option.description)}
               selected={selectedBehavior === option.behavior}
               separated={index > 0}
               disabled={!preferencesReady}

@@ -4,7 +4,7 @@ import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import type { SidebarThreadSummary } from "../types";
 import {
   runOutcomeText,
-  THREAD_STATUS_TEXT,
+  threadRequestText,
 } from "@t3tools/client-runtime/state/thread-activity-announcement";
 
 export interface BackgroundThreadSnapshot {
@@ -73,7 +73,7 @@ export function nextBackgroundThreadAnnouncement(
       thread.request !== null &&
       (thread.request !== before.request || thread.requestId !== before.requestId)
     ) {
-      announcements.push(`${t(THREAD_STATUS_TEXT[thread.request])}: ${thread.title}`);
+      announcements.push(`${t(threadRequestText(thread.request))}: ${thread.title}`);
     }
     // While another run still works, the latest run's ending (a queued message
     // cancelled before it started) isn't the thread finishing. The shell then

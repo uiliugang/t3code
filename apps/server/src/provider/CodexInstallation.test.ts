@@ -1,3 +1,8 @@
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
@@ -10,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
@@ -19,6 +25,7 @@ import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } fr
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as CodexInstallation from "./CodexInstallation.ts";
+import { configuredBinaryPaths } from "./configuredBinaryPaths.ts";
 
 const archive = Buffer.from(
   "H4sIAAAAAAAC/+3W0W6DIBQGYB/FcD0sKNSkD7J7aom6tmAQtzXL3n3QZM3qdWVt+n8XoCckJp78wLY3q8bu9Ge2HBbUUp7nYD4H8s9zrNdSsCxnWQLT6JULn8ye09K9h/u2/c0/jSM9xqGzo0+bf3Gdf15WQiD/Kdy61/CA+z8dlO9Wrv2387+c5Z9VZY38p7BY0+Gh8t/sVauLt9Ga9Pnnop7ln1e4/6fxRQ7qZCf/qt3YW0M2OX/JyfvljbCCy3XBSaiGH9VqH4tKuaZbC6qG4aDpTrmP3sQV2nh3Gmxvzqsud0vyjaABAAAAAAAAAAAAAAAk8gOq19rvACgAAA==",
@@ -226,6 +233,23 @@ const compileNative = Effect.fn("test.compileNative")(function* (
   );
   expect(yield* compiler.exitCode).toBe(0);
 }, Effect.scoped);
+
+it.effect("resolves and leases the local executable on the instance search path", () =>
+  Effect.gen(function* () {
+    const host = yield* makeHarness({ local: { version: "0.156.1" } });
+    const other = yield* makeHarness({ local: { version: "0.156.2" } });
+    const environment = { PATH: `${other.baseDir}/local` };
+    expect((yield* host.installation.resolve("local", "codex", environment)).executablePath).toBe(
+      other.localBinaryPath,
+    );
+    expect((yield* host.installation.acquire("local", "codex", environment)).executablePath).toBe(
+      other.localBinaryPath,
+    );
+    expect((yield* host.installation.resolve("local", "codex")).executablePath).toBe(
+      host.localBinaryPath,
+    );
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
 
 it.effect("rechecks compatibility after the local executable is replaced", () =>
   Effect.gen(function* () {
@@ -628,6 +652,7 @@ const upstreamResponses = (checksum: string) => ({
 it.effect("updates a managed install to OpenAI's newest release and never downgrades it", () =>
   Effect.gen(function* () {
     const digest = yield* Digest.Digest;
+    const path = yield* Path.Path;
     const checksum = Hex.encode(
       yield* digest.digest(Digest.sha256, upstreamArchive).pipe(Effect.orDie),
     );
@@ -642,6 +667,8 @@ it.effect("updates a managed install to OpenAI's newest release and never downgr
       version: upstreamVersion,
     });
 
+    const sessionScope = yield* Scope.make();
+    const previous = yield* h.installation.acquire().pipe(Scope.provide(sessionScope));
     yield* h.installation.start;
     expect(yield* terminalState(h.installation)).toMatchObject({
       phase: "succeeded",
@@ -649,9 +676,45 @@ it.effect("updates a managed install to OpenAI's newest release and never downgr
       version: upstreamVersion,
     });
     expect((yield* h.installation.resolve()).version).toBe(upstreamVersion);
+    // The running session keeps its release until the next start prunes it.
+    expect(yield* h.fs.exists(previous.managedVersionDirectory!)).toBe(true);
+    yield* Scope.close(sessionScope, Exit.void);
+
+    const pinnedConfig = {
+      runtimeSource: "local",
+      binaryPath: `~${previous.executablePath.slice(h.baseDir.length)}`,
+    };
+    for (const connection of [
+      { config: pinnedConfig },
+      {
+        config: { connectionMode: "byok" },
+        connectionProfiles: { existing: { config: pinnedConfig } },
+      },
+      {
+        config: { runtimeSource: "local" },
+        environment: [
+          { name: "PATH", value: path.dirname(previous.executablePath), sensitive: false },
+        ],
+      },
+    ]) {
+      const protectedBinaryPaths = yield* configuredBinaryPaths({
+        [ProviderInstanceId.make("pinned-local-codex")]: {
+          driver: ProviderDriverKind.make("codex"),
+          ...connection,
+        },
+      }).pipe(Effect.provideService(HostProcess.HomeDirectory, h.baseDir));
+      yield* makeHarness({
+        baseDir: h.baseDir,
+        options: {
+          withProtectedBinaryPaths: (use) => use(protectedBinaryPaths, DEFAULT_SERVER_SETTINGS),
+        },
+      });
+      expect(yield* h.fs.exists(previous.executablePath)).toBe(true);
+    }
 
     // Without upstream information the older pin is not offered as a reinstall.
     const restarted = yield* makeHarness({ baseDir: h.baseDir });
+    expect(yield* h.fs.exists(previous.managedVersionDirectory!)).toBe(false);
     expect(yield* restarted.installation.state).toMatchObject({
       installedVersion: upstreamVersion,
       version: upstreamVersion,

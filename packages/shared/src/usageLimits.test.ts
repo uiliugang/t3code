@@ -18,7 +18,6 @@ import {
   withUsageLimitsCommands,
   collectLimitAccounts,
   collectExternalUsageLinks,
-  collectLimitNotices,
   collectLimitPools,
   elapsedShare,
   exhaustedUsageWindow,
@@ -29,6 +28,7 @@ import {
   resolveNewThreadModelSelection,
   summarizeLimitNotice,
 } from "./usageLimits.ts";
+import { collectLimitNotices } from "./usageLimitsCopy.ts";
 
 const now = Date.parse("2026-09-03T12:00:00.000Z");
 
@@ -1855,6 +1855,7 @@ describe("external usage settings", () => {
     expect(
       summarizeLimitNotice("Gmac · Hub: Failed to fetch remote endpoint (Transport error).", zh),
     ).toBe("Gmac · Hub: 未连接");
+    expect(summarizeLimitNotice("工作区: 未报告限额。稍后再试。", zh)).toBe("工作区: 未报告限额。");
   });
 });
 

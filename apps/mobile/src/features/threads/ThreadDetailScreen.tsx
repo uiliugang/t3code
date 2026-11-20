@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ChildThreadApprovals } from "./ChildThreadApprovals";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { useOpenThreadInspector } from "./thread-inspector-navigation";
 import { useSidebarWorkspaceTabs } from "../layout/workspace/useSystemWorkspaceTabBar";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
@@ -91,6 +92,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useGT, useMessages } from "gt-react-native";
+import { m } from "../../i18n/messages";
 import {
   AppState,
   Keyboard,
@@ -130,8 +133,15 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
-import { getComposerDraftSnapshot, setFreshSessionPending } from "../../state/use-composer-drafts";
+import {
+  captureComposerDraftInsertion,
+  getComposerDraftSnapshot,
+  insertComposerDraftText,
+  setFreshSessionPending,
+} from "../../state/use-composer-drafts";
 import { insertAssistantQuote } from "../../state/insert-assistant-quote";
+import { assistantCitationDraftWithinLimit } from "../../lib/composerContext";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import {
   ANDROID_READING_MAX_WIDTH,
@@ -213,6 +223,7 @@ import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-scroll-position
 import { useOpenLinkedThread } from "./useOpenLinkedThread";
 import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 import type { OrchestrationV2ProviderSession } from "@t3tools/contracts";
+import { voiceInputBlocksSubmission } from "@t3tools/client-runtime/voice-input";
 
 export interface ThreadDetailScreenProps {
   readonly header?: React.ReactNode;
@@ -293,7 +304,7 @@ export interface ThreadDetailScreenProps {
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onPickDraftMedia: () => Promise<void>;
   readonly onPickDraftFiles: () => Promise<void>;
-  readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
+  readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<boolean>;
   readonly onNativePasteText: (paste: ComposerTextPaste) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
@@ -410,6 +421,8 @@ function ThreadDetailBody(
 ) {
   const t = useUiTranslation();
 
+  const gt = useGT();
+  const messages = useMessages();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const deviceType = useDeviceType();
   const workspace = useWorkspaceTabs();
@@ -508,7 +521,7 @@ function ThreadDetailBody(
     : "showAll";
   const queuedCount = useThreadQueuedCount(props.selectedThreadDetailRef);
   const turnSubagents = useThreadTurnSubagents(props.selectedThreadDetailRef);
-  const agentsSegment = resolveSubagentPillSegment(turnSubagents, t);
+  const agentsSegment = resolveSubagentPillSegment(turnSubagents, messages);
   const defaultComposerEditorRef = useRef<ComposerEditorHandle>(null);
   const composerEditorRef = props.draftMode?.editorRef ?? defaultComposerEditorRef;
   const isProviderSubagent = isProviderNativeSubagentThread(props.selectedThread.source);
@@ -584,24 +597,20 @@ function ThreadDetailBody(
     });
     setForceStoppingKey((current) => (current === threadKey ? null : current));
     if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) Dialog.alert("Could not force stop the agent");
+      if (!isAtomCommandInterrupted(result)) Dialog.alert(gt("Could not force stop the agent"));
       return;
     }
     const others = result.value.sharedWithThreadIds.length;
     if (result.value.outcome === "releasing") {
-      Dialog.alert("Turn stopped; the agent is still shutting down");
+      Dialog.alert(gt("Turn stopped; the agent is still shutting down"));
     }
     if (result.value.outcome === "shared") {
       Dialog.alert(
-        "Turn stopped; the agent process kept running",
-        others === 0
-          ? t("It is shared with other working threads. Stop those to free it.")
-          : t(
-              others === 1
-                ? "It is shared with {count} working thread. Stop those to free it."
-                : "It is shared with {count} working threads. Stop those to free it.",
-              { count: others },
-            ),
+        gt("Turn stopped; the agent process kept running"),
+        gt(
+          "{count, plural, =0 {It is shared with other working threads. Stop those to free it.} one {It is shared with {count} working thread. Stop those to free it.} other {It is shared with {count} working threads. Stop those to free it.}}",
+          { count: others },
+        ),
       );
     }
   };
@@ -712,14 +721,14 @@ function ThreadDetailBody(
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       Dialog.alert(
-        "Could not update thread",
-        error instanceof Error ? error.message : "Try again.",
+        gt("Could not update thread"),
+        errorDisplayMessage(error, m) ?? gt("Try again."),
       );
     }
   };
   const pendingBackgroundWork = presentPendingBackgroundWork(
     props.selectedThread.pendingBackgroundTasks,
-    t,
+    messages,
   );
   const extensionStatus = props.extensionStatuses?.length
     ? {
@@ -754,28 +763,34 @@ function ThreadDetailBody(
   })();
   const lifecycleLine = ((): ThreadStatusLineModel | null => {
     if (contentPresentationKind !== "ready" || !(lifecycleSnoozed || settled || woke)) return null;
-    const actionLabel = t(lifecycleSnoozed ? "Wake now" : settled ? "Un-settle" : "Dismiss");
+    const actionLabel = lifecycleSnoozed
+      ? gt("Wake now")
+      : settled
+        ? gt("Un-settle", { $context: "verb, thread action" })
+        : gt("Dismiss");
     const wake =
-      lifecycleSnoozed && snoozedUntil !== null
-        ? snoozeWakeLabel(snoozedUntil, { now: lifecycleNow })
-        : "now";
+      lifecycleSnoozed &&
+      snoozedUntil !== null &&
+      Date.parse(snoozedUntil) > Date.parse(lifecycleNow)
+        ? snoozeWakeLabel(snoozedUntil, { now: lifecycleNow }, messages)
+        : null;
     return {
       key: "lifecycle",
       icon: settled && !lifecycleSnoozed ? "checkmark.circle" : "alarm",
       label: lifecycleSnoozed
-        ? wake === "now"
-          ? t("Snoozed")
-          : t("Snoozed, wakes in {duration}", { duration: t(wake) })
+        ? wake === null
+          ? gt("Snoozed", { $context: "thread state" })
+          : gt("Snoozed, {time} left", { time: wake })
         : settled
-          ? t("Settled")
-          : t("Woke from snooze"),
+          ? gt("Settled", { $context: "thread state" })
+          : gt("Woke from snooze"),
       action: {
         label: statusPending
           ? lifecycleSnoozed
-            ? t("Waking...")
+            ? gt("Waking...")
             : settled
-              ? t("Un-settling...")
-              : t("Dismissing...")
+              ? gt("Un-settling...")
+              : gt("Dismissing...")
           : actionLabel,
         accessibilityLabel: actionLabel,
         disabled: !props.canOperateThread || statusPending,
@@ -786,13 +801,15 @@ function ThreadDetailBody(
   })();
   const statusLines = [backgroundLine, lifecycleLine].filter((line) => line !== null);
   const floatingStatus = ((): FloatingWorkingStatus | null => {
-    const connectionStatus = connectionFloatingStatus({
-      connectionError: props.connectionError,
-      connectionState: props.connectionStateLabel,
-      environmentLabel: props.environmentLabel,
-      onReconnect: props.onReconnectEnvironment,
-      t,
-    });
+    const connectionStatus = connectionFloatingStatus(
+      {
+        connectionError: props.connectionError,
+        connectionState: props.connectionStateLabel,
+        environmentLabel: props.environmentLabel,
+        onReconnect: props.onReconnectEnvironment,
+      },
+      messages,
+    );
     if (connectionStatus !== null && !props.draftMode) {
       return connectionStatus;
     }
@@ -838,13 +855,10 @@ function ThreadDetailBody(
     if (childInput && contentPresentationKind === "ready") {
       return {
         kind: "child-input",
-        label: childThreadInputsTitle(childThreadInputs, t),
-        accessibilityLabel: t(
-          childInput.hasPendingApprovals
-            ? "Open approval from {title}"
-            : "Open question from {title}",
-          { title: childInput.title },
-        ),
+        label: childThreadInputsTitle(childThreadInputs, messages),
+        accessibilityLabel: childInput.hasPendingApprovals
+          ? gt("Open approval from {title}", { title: childInput.title })
+          : gt("Open question from {title}", { title: childInput.title }),
         onPress: () => {
           Keyboard.dismiss();
           openLinkedThread({ environmentId: childInput.environmentId, threadId: childInput.id });
@@ -852,7 +866,7 @@ function ThreadDetailBody(
       };
     }
     if (props.selectedThread.goal !== null && contentPresentationKind === "ready") {
-      const goal = presentProviderGoal(props.selectedThread.goal, false);
+      const goal = presentProviderGoal(props.selectedThread.goal, false, messages);
       return {
         kind: "goal",
         label: goal.title,
@@ -938,8 +952,10 @@ function ThreadDetailBody(
   const composerSlotHidden =
     activeUserInputRequestId !== null || props.creationState?.kind === "failed";
   const pendingMessageEditBlocked =
-    queuedRunEditBlockedReason({ openQuestionCount: activeUserInputRequestId === null ? 0 : 1 }) !==
-    null;
+    queuedRunEditBlockedReason(
+      { openQuestionCount: activeUserInputRequestId === null ? 0 : 1 },
+      messages,
+    ) !== null;
   const [usageLimitsPanel, setUsageLimitsPanel] = useState<{
     readonly key: string;
     readonly threadKey: string;
@@ -1253,8 +1269,8 @@ function ThreadDetailBody(
             if (feedbackTarget?.supportsFeedback) {
               if (hasAttachmentsOrContext) {
                 Dialog.alert(
-                  "Approval feedback",
-                  "Send approval feedback without attachments or added context.",
+                  gt("Approval feedback"),
+                  gt("Send approval feedback without attachments or added context."),
                 );
                 return false;
               }
@@ -1333,8 +1349,8 @@ function ThreadDetailBody(
     if (AsyncResult.isFailure(edited)) {
       const error = squashAtomCommandFailure(edited);
       Dialog.alert(
-        "Could not edit message",
-        error instanceof Error ? error.message : "Please try again.",
+        gt("Could not edit message"),
+        errorDisplayMessage(error, m) ?? gt("Please try again."),
       );
       return;
     }
@@ -1351,22 +1367,62 @@ function ThreadDetailBody(
     composerEditorRef.current?.blur();
   };
 
-  const handleQuote = async (quote: AssistantCitation | ResponseContextRecord) => {
+  const canCiteAssistantText =
+    props.composerDraftKey !== null &&
+    !isProviderSubagent &&
+    !composerSlotHidden &&
+    props.activePendingApproval === null &&
+    (props.canOperateThread || props.connectionStateLabel !== "connected") &&
+    !props.isSavingQueuedEdit &&
+    !props.draftMode?.interactionLocked &&
+    !(
+      voiceInputSession.ownerKey === props.composerDraftKey &&
+      voiceInputBlocksSubmission(voiceInputSession.controller.currentState)
+    );
+  const handleQuote = async (quote: ResponseContextRecord) => {
     const key = props.composerDraftKey;
-    if (!key || props.activePendingUserInput || props.activePendingApproval) return;
+    if (key === null || !canCiteAssistantText) return;
+    const signal = threadScope.current.signal;
     const result = await insertAssistantQuote({
       draftKey: key,
       quote,
       flushPendingInput: async () => composerEditorRef.current?.flushPendingInput(),
-      signal: threadScope.current.signal,
+      signal,
     });
-    if (result === "cancelled") return;
+    if (signal.aborted || result === "cancelled") return;
     if (result === "full") {
-      Dialog.alert(t("Could not add reference"), t("Remove a context item and try again."));
+      Dialog.alert(gt("Could not add reference"), gt("Remove a context item and try again."));
       return;
     }
     void Haptics.selectionAsync();
-    requestAnimationFrame(() => composerEditorRef.current?.focus());
+    requestAnimationFrame(() => {
+      if (!signal.aborted) composerEditorRef.current?.focus();
+    });
+  };
+
+  const handleCiteAssistantText = async (citation: AssistantCitation) => {
+    const key = props.composerDraftKey;
+    if (!canCiteAssistantText || key === null) return;
+    const signal = threadScope.current.signal;
+    if (signal.aborted) return;
+    const editor = composerEditorRef.current;
+    await editor?.flushPendingInput();
+    if (signal.aborted) return;
+    const target = captureComposerDraftInsertion(key);
+    const prefix = target.start > 0 && !/\s/.test(target.text[target.start - 1]!) ? " " : "";
+    const value = `${prefix}${serializeAssistantCitation(citation)} `;
+    const text = target.text.slice(0, target.start) + value + target.text.slice(target.end);
+    if (!assistantCitationDraftWithinLimit(text)) {
+      Dialog.alert(
+        gt("Could not add quote"),
+        gt(
+          "This quote would make the message too long to send. Shorten the draft or select less text.",
+        ),
+      );
+      return;
+    }
+    insertComposerDraftText(key, value, target);
+    editor?.focus();
   };
 
   const handleUseArtifactTemplate = (template: CodexArtifactTemplate) => {
@@ -1524,14 +1580,9 @@ function ThreadDetailBody(
                   onHeaderMaterialVisibilityChange={props.onHeaderMaterialVisibilityChange}
                   onIsAtEndChange={setIsAtEnd}
                   skills={selectedProviderSkills}
+                  onCiteAssistantText={canCiteAssistantText ? handleCiteAssistantText : undefined}
                   onUseArtifactTemplate={handleUseArtifactTemplate}
-                  onQuote={
-                    props.composerDraftKey &&
-                    !props.activePendingUserInput &&
-                    !props.activePendingApproval
-                      ? handleQuote
-                      : undefined
-                  }
+                  onQuote={canCiteAssistantText ? handleQuote : undefined}
                 />
               </ColumnWidth>
             </WorkspaceMutationIdProvider>
@@ -1864,9 +1915,9 @@ function ThreadDetailBody(
                         placeholder={
                           props.activePendingApproval
                             ? props.activePendingApproval.supportsFeedback
-                              ? "Send feedback to decline this request"
-                              : "Send a message to decline and redirect the agent"
-                            : t("Ask anything")
+                              ? gt("Send feedback to decline this request")
+                              : gt("Send a message to decline and redirect the agent")
+                            : gt("Ask anything")
                         }
                         contentMaxWidth={contentMaxWidth}
                         draftControls={props.draftMode?.controls(draftViewportHeight)}
@@ -1906,7 +1957,7 @@ function ThreadDetailBody(
                             ? props.draftMode.sendBlockedReason
                             : props.creationState?.kind === "preparing" &&
                                 !props.creationState.serverOwned
-                              ? "Starting the task…"
+                              ? gt("Starting the task…")
                               : null
                         }
                         interactionLocked={props.draftMode?.interactionLocked}

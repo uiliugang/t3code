@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../../../lib/useUiTranslation";
+import { msg, useMessages } from "gt-react-native";
 import { memo, useId } from "react";
 import { Pressable, View } from "react-native";
 import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
@@ -17,16 +18,32 @@ import {
   type MobileThemeMode,
 } from "../../../../lib/mobileTheme";
 import { getMobileUniwindThemeName } from "../../../../lib/mobileThemeRuntime";
+import type { MessageResolver } from "../../../../i18n/messages";
 import { cn } from "../../../../lib/cn";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
+
+const THEME_NAMES: Readonly<Record<string, string>> = {
+  grove: msg("Grove", { $context: "color theme name" }),
+  ocean: msg("Ocean", { $context: "color theme name" }),
+  ember: msg("Ember", { $context: "color theme name" }),
+  iris: msg("Iris", { $context: "color theme name" }),
+};
+
+function themeName(
+  theme: { readonly id: string; readonly label: string },
+  resolve: MessageResolver,
+) {
+  const name = THEME_NAMES[theme.id];
+  return name === undefined ? theme.label : resolve(name);
+}
 
 const APPEARANCE_MODES: ReadonlyArray<{
   readonly id: MobileThemeMode;
   readonly label: string;
 }> = [
-  { id: "system", label: "System" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
+  { id: "system", label: msg("System", { $context: "appearance follows the system" }) },
+  { id: "light", label: msg("Light", { $context: "light appearance" }) },
+  { id: "dark", label: msg("Dark", { $context: "dark appearance" }) },
 ];
 
 const previewPercentage = (value: number) => `${value * 100}%`;
@@ -293,6 +310,7 @@ function SectionLabel({ children }: { readonly children: string }) {
 
 export function ThemeAppearanceSection() {
   const t = useUiTranslation();
+  const m = useMessages();
   const {
     isReady,
     setThemeIdForAppearance,
@@ -312,7 +330,7 @@ export function ThemeAppearanceSection() {
             <ModeCard
               disabled={!isReady}
               key={mode.id}
-              label={t(mode.label)}
+              label={m(mode.label)}
               mode={mode.id}
               onPress={() => setThemeMode(mode.id)}
               selected={mode.id === themeMode}
@@ -331,7 +349,7 @@ export function ThemeAppearanceSection() {
             <ThemeCard
               disabled={!isReady}
               key={theme.id}
-              label={t(theme.label)}
+              label={themeName(theme, m)}
               darkSelected={theme.id === themeIds.dark}
               lightSelected={theme.id === themeIds.light}
               onSelect={(appearance) => setThemeIdForAppearance(appearance, theme.id)}

@@ -5,6 +5,7 @@ import {
   type SecretReference,
   type SettingsSecretValue,
 } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { ExternalLinkIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -36,6 +37,7 @@ export function SourceControlTokenSettings({
   readonly onSaved: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { tokens } = useEnvironmentSettings(environmentId, (settings) =>
     readHostCredentialSettings(settings, definition.kind),
   );
@@ -130,7 +132,7 @@ export function SourceControlTokenSettings({
             <SecretSourceInput
               id={`${definition.kind}-token-${environmentId}`}
               size="sm"
-              aria-label={`${definition.label} token`}
+              aria-label={gt("{host} token", { host: definition.label })}
               environmentId={environmentId}
               configured={isSaved && !isSecretReference(savedToken)}
               value={draft}

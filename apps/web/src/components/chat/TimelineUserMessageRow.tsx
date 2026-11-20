@@ -5,6 +5,7 @@ import {
   CHAT_USER_MARKDOWN_REMARK_PLUGINS,
   remarkEnableOrderedListNumbers,
 } from "@t3tools/shared/markdownPipeline";
+import { T, useGT, useMessages } from "gt-react";
 import { findRevealRef } from "./markdownFindContext";
 import {
   type EnvironmentId,
@@ -86,7 +87,6 @@ import { markdownProseDirection } from "~/textDirection";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
-import { useClientSettings } from "../../hooks/useSettings";
 import { WorkflowOpeningBlock } from "./WorkflowOpeningBlock";
 import { useTallEnoughToFold } from "./useTallEnoughToFold";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
@@ -117,9 +117,13 @@ function UserFileCard({
 }) {
   const t = useUiTranslation();
   const ctx = use(TimelineRowCtx);
+  const gt = useGT();
+  const m = useMessages();
   const pastedText = file.source?._tag === "pasted-text";
-  const label = userMessageFileLabel(file);
-  const extension = /\.([a-z0-9]{1,8})$/i.exec(file.name)?.[1]?.toUpperCase() ?? t("File");
+  const label = userMessageFileLabel(file, m);
+  const extension =
+    /\.([a-z0-9]{1,8})$/i.exec(file.name)?.[1]?.toUpperCase() ??
+    gt("File", { $context: "file type badge when the name has no extension" });
   const identity = (
     <>
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/60">
@@ -131,7 +135,7 @@ function UserFileCard({
         </span>
         <span className="block text-xs text-muted-foreground tabular-nums">
           {file.downloadable === false ? (
-            t("Sending...")
+            <T>Sending…</T>
           ) : (
             <>
               {!pastedText && `${extension} · `}
@@ -330,6 +334,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         <FoldedMessageHeader
           icon={CalendarClockIcon}
           label={t("Automation")}
+          fitLabel
           summary={summary}
           expanded={expanded}
           onToggle={() => setExpanded((value) => !value)}
@@ -398,6 +403,8 @@ export function useScheduledTaskTitle(
 export function FoldedMessageHeader(props: {
   icon: LucideIcon;
   label: string;
+  /** A generic label (not a thread title) never truncates, whatever its length in the UI language. */
+  fitLabel?: boolean;
   summary: string;
   expanded: boolean;
   onToggle: () => void;
@@ -412,7 +419,14 @@ export function FoldedMessageHeader(props: {
       className="flex w-full min-w-0 items-center gap-1.5 rounded-2xl px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-ring"
     >
       <Icon className="size-4 shrink-0 stroke-2 text-muted-foreground" />
-      <span className="max-w-1/2 shrink-0 truncate text-muted-foreground">{props.label}</span>
+      <span
+        className={cn(
+          "shrink-0 text-muted-foreground",
+          props.fitLabel !== true && "max-w-1/2 truncate",
+        )}
+      >
+        {props.label}
+      </span>
       <span className="min-w-0 flex-1 truncate">{props.summary}</span>
       <ChevronDownIcon
         className={cn(
@@ -444,8 +458,9 @@ function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind:
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const t = useUiTranslation();
-  const language = useClientSettings((settings) => settings.uiLanguage);
   const ctx = use(TimelineRowCtx);
+  const gt = useGT();
+  const m = useMessages();
   const { onImageExpand, onFileOpen } = ctx;
   const coarsePointer = useMediaQuery({ pointer: "coarse" });
   // A linked environment's agent sent it from a thread there.
@@ -484,8 +499,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const [expanded, setExpanded] = useState(false);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
   const senderShell = useQuietThreadShell(folded ? senderRef : null);
+  const senderTitle = senderShell?.title.trim() || row.message.linkedSender?.title.trim();
   const senderLabel =
-    senderShell?.title.trim() || row.message.linkedSender?.title.trim() || t("Agent");
+    senderTitle || gt("Agent", { $context: "sender of a message from another agent" });
   // Only an environment this client is connected to can open the sender's thread there.
   const linkedSenderEnvironment = useEnvironment(row.message.linkedSender?.environmentId ?? null);
   const canOpenSender =
@@ -616,13 +632,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       .map(asKnownContextRecord)
       .find((candidate) => candidate?.kind === "image" && candidate.attachmentId === id);
     if (!image?.previewUrl || record?.kind !== "image")
-      throw new Error("Snapshot is no longer available.");
+      throw new Error(gt("Snapshot is no longer available."));
     const fragment = encodeComposerContextFragment({
       version: 1,
       source: { environmentId: ctx.activeThreadEnvironmentId, messageId: row.message.id },
       records: [{ ...record, ...(image.source ? { source: image.source } : {}) }],
     });
-    if (!fragment) throw new Error("The snapshot is too large to copy.");
+    if (!fragment) throw new Error(gt("The snapshot is too large to copy."));
     await copySnapshotToClipboard(
       image.previewUrl,
       formatComposerContextReference(record),
@@ -787,7 +803,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                     standaloneMedia && image.source?.kind === "snap-shot"
                       ? "h-auto max-h-48 w-auto min-w-24 max-w-full object-contain"
                       : loneImage
-                        ? "h-48 w-auto min-w-24 max-w-full object-cover"
+                        ? "h-48 w-auto min-w-24 max-w-full object-contain"
                         : "size-full object-cover",
                   )}
                 />
@@ -849,11 +865,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ctx.timestampFormat,
             undefined,
             undefined,
-            language,
+            m,
           )}
         </TooltipTrigger>
         <TooltipPopup>
-          {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat, language)}
+          {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat, m)}
         </TooltipPopup>
       </Tooltip>
       <div className={cn("flex items-center gap-0.5", floatActions && "flex-wrap justify-end")}>
@@ -953,6 +969,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           <FoldedMessageHeader
             icon={MessagesSquareIcon}
             label={senderLabel}
+            fitLabel={!senderTitle}
             summary={foldSummary}
             expanded={expanded}
             onToggle={() => setExpanded((value) => !value)}
@@ -1008,7 +1025,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               <div className="mb-2 flex flex-col gap-1">
                 {unchippedFiles.map((file) => {
                   const pastedText = file.source?._tag === "pasted-text";
-                  const label = userMessageFileLabel(file);
+                  const label = userMessageFileLabel(file, m);
                   const fileIdentity = (
                     <>
                       <PierreEntryIcon
@@ -1020,9 +1037,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                         <span className="block truncate">{label}</span>
                         {file.downloadable === false || pastedText ? (
                           <span className="block text-xs text-muted-foreground tabular-nums">
-                            {file.downloadable === false
-                              ? t("Sending...")
-                              : formatBytes(file.sizeBytes)}
+                            {file.downloadable === false ? (
+                              <T>Sending…</T>
+                            ) : (
+                              formatBytes(file.sizeBytes)
+                            )}
                           </span>
                         ) : null}
                       </span>

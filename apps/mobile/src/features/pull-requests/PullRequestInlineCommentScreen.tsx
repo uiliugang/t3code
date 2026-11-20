@@ -3,6 +3,7 @@ import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import * as Dialog from "../../components/ui/Dialog";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { useGT, useMessages } from "gt-react-native";
 import { useRef, useState } from "react";
 import { View } from "react-native";
 import type { PullRequestReviewPosition } from "@t3tools/contracts";
@@ -31,6 +32,8 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
   const t = useUiTranslation();
   const params = route.params;
   const navigation = useNavigation();
+  const gt = useGT();
+  const m = useMessages();
   const store = usePullRequestReviewDraft(params);
   const saved = store.draft.comments.find((draft) => draft.id === params.draftId);
   const [editedBody, setBody] = useState<string | null>(null);
@@ -86,8 +89,8 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
   return (
     <PullRequestSheetContent
       busy={busy}
-      title={saved ? t("Edit review comment") : t("Review comment")}
-      subtitle={`#${params.number} · ${reviewPositionLabel(params.position)}`}
+      title={saved ? gt("Edit review comment") : gt("Review comment")}
+      subtitle={`#${params.number} · ${reviewPositionLabel(params.position, m)}`}
       footer={
         <Button
           fullWidth
@@ -142,12 +145,12 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
       ) : null}
       {saved ? (
         <Button
-          label={t("Delete draft")}
+          label={gt("Delete draft")}
           onPress={() =>
-            Dialog.alert(t("Delete this draft?"), t("Your other review comments will be kept."), [
-              { text: "Cancel", style: "cancel" },
+            Dialog.alert(gt("Delete this draft?"), gt("Your other review comments will be kept."), [
+              { text: gt("Cancel"), style: "cancel" },
               {
-                text: "Delete",
+                text: gt("Delete"),
                 style: "destructive",
                 onPress: () => {
                   store.update((draft) => ({

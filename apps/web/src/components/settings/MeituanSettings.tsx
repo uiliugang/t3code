@@ -221,7 +221,9 @@ function MeituanProjectSources({
           key={entry.project.id}
           icon={ClipboardListIcon}
           title={entry.project.title}
-          subtitle={`MEP · ${[...new Set(entry.sources.map((source) => source.scope))].join(", ")}`}
+          subtitle={t("MEP · {spaces}", {
+            spaces: [...new Set(entry.sources.map((source) => source.scope))].join(", "),
+          })}
           status={t(entry.manual ? "Edit" : "Automatic")}
           onClick={() => {
             setProjectId(entry.project.id);
@@ -337,7 +339,7 @@ function MeituanSkillSource({
   const source: SkillSource = sources?.find((entry) => entry.enabled) ??
     sources?.[0] ?? {
       id: "meituan",
-      label: "Meituan Skills",
+      label: t("Meituan Skills"),
       kind: "mtskills",
       enabled: false,
       executable: "mtskills",
@@ -517,7 +519,7 @@ function EnvironmentMeituanSettings({
         : [
             {
               id: "meituan",
-              label: "Meituan Skills",
+              label: t("Meituan Skills"),
               kind: "mtskills",
               enabled: false,
               executable: "mtskills",
@@ -640,7 +642,13 @@ function EnvironmentMeituanSettings({
           <ServiceRow
             icon={GitBranchIcon}
             title={t("Source control")}
-            subtitle={`Meituan Code${settings.sourceControlHosts.meituan?.mis ? ` · ${settings.sourceControlHosts.meituan.mis}` : ""}`}
+            subtitle={
+              settings.sourceControlHosts.meituan?.mis
+                ? t("Meituan Code · {account}", {
+                    account: String(settings.sourceControlHosts.meituan.mis),
+                  })
+                : t("Meituan Code")
+            }
             status={t(
               !enabled
                 ? "Paused"
@@ -656,20 +664,17 @@ function EnvironmentMeituanSettings({
           <ServiceRow
             icon={ClipboardListIcon}
             title={t("Requirements and delivery")}
-            subtitle="MEP ONES · MCM"
+            subtitle={t("MEP ONES · MCM")}
             status={
               !enabled
                 ? t("Paused")
                 : !issuesEnabled
                   ? t("Disabled")
-                  : t(
-                      meituanAssociationCountLabel(
-                        associations.projects.length,
-                        associations.query,
-                      ),
-                      {
-                        count: associations.entries.length,
-                      },
+                  : meituanAssociationCountLabel(
+                      associations.projects.length,
+                      associations.query,
+                      associations.entries.length,
+                      t,
                     )
             }
             onClick={() => selected("issues")}

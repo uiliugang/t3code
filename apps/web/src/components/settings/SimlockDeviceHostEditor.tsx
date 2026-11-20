@@ -1,4 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
 import { useId, useState, type ReactNode } from "react";
 import {
@@ -11,6 +13,7 @@ import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { XIcon } from "lucide-react";
+import { useGT, useMessages } from "gt-react";
 
 import { deviceSimlockIdentityCheck } from "../../state/device";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
@@ -37,7 +40,7 @@ import {
 
 const failureMessage = (cause: Cause.Cause<unknown>) => {
   const error = Cause.squash(cause);
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? (thrownErrorMessage(error, m) ?? error.message) : String(error);
 };
 
 /** The gateway each environment's own agent-device points at, if any. */
@@ -60,6 +63,8 @@ export function SimlockDeviceHostEditor(props: {
   onClose: () => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
+  const gt = useGT();
   const [draft, setDraft] = useState(props.host);
   const [urlEdited, setUrlEdited] = useState(false);
   const machineGateways = useAtomValue(
@@ -94,12 +99,12 @@ export function SimlockDeviceHostEditor(props: {
   const checkUrl = simlockDeviceHostProblem(next) === null ? next.gatewayUrl : null;
   // Environments whose token field holds a secret reference that cannot be saved yet.
   const [invalidTokens, setInvalidTokens] = useState<ReadonlySet<EnvironmentId>>(new Set());
-  const plan = planSimlockDeviceHostSave(props.environments, next, tokens);
+  const plan = planSimlockDeviceHostSave(props.environments, next, tokens, messages);
   const problem =
     "problem" in plan
       ? plan.problem
       : invalidTokens.size > 0
-        ? "Enter a valid secret reference."
+        ? gt("Enter a valid secret reference.")
         : null;
   const several = props.environments.length > 1;
 
@@ -228,8 +233,8 @@ export function SimlockDeviceHostEditor(props: {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              {limit("maxLeases", "Devices at once", 1, 20)}
-              {limit("maxLeaseMinutes", "Lease minutes", 5, 240)}
+              {limit("maxLeases", gt("Devices at once"), 1, 20)}
+              {limit("maxLeaseMinutes", gt("Lease minutes"), 5, 240)}
             </div>
             <p className="text-xs text-muted-foreground">
               {t("A lease ends after the lease minutes even while in use.")}

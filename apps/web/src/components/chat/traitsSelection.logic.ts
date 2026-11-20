@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+import { m, type MessageResolver } from "../../i18n/messages";
 import {
   getDescriptorStringValue,
   getTraitSelectChange,
@@ -35,33 +37,36 @@ export function readPromptUltrathink(prompt: string): PromptUltrathink {
 }
 
 const SAVED_OPTION_LABELS: Readonly<Record<string, string>> = {
-  agent: "Agent",
-  effort: "Effort",
-  reasoningEffort: "Reasoning effort",
-  variant: "Reasoning",
+  agent: msg("Agent", { $context: "model option name" }),
+  effort: msg("Effort", { $context: "model option name" }),
+  reasoningEffort: msg("Reasoning effort"),
+  variant: msg("Reasoning", { $context: "model option name" }),
 };
 
-function savedOptionLabel(id: string): string {
-  return (
-    SAVED_OPTION_LABELS[id] ??
-    id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, (character) => character.toUpperCase())
-  );
+function savedOptionLabel(id: string, resolve: MessageResolver): string {
+  const saved = SAVED_OPTION_LABELS[id];
+  return saved !== undefined
+    ? resolve(saved)
+    : id
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/^./, (character) => character.toUpperCase());
 }
 
 function buildUnavailableModelOptionDescriptors(
   selections: ProviderOptions | null | undefined,
+  resolve: MessageResolver,
 ): ReadonlyArray<ProviderOptionDescriptor> {
   return (selections ?? []).map((selection) =>
     typeof selection.value === "boolean"
       ? {
           id: selection.id,
-          label: savedOptionLabel(selection.id),
+          label: savedOptionLabel(selection.id, resolve),
           type: "boolean" as const,
           currentValue: selection.value,
         }
       : {
           id: selection.id,
-          label: savedOptionLabel(selection.id),
+          label: savedOptionLabel(selection.id, resolve),
           type: "select" as const,
           options: [{ id: selection.value, label: selection.value }],
           currentValue: selection.value,
@@ -77,6 +82,7 @@ function getSelectedTraits(
   modelOptions: ProviderOptions | null | undefined,
   allowPromptInjectedEffort: boolean,
   includePlanAgent: boolean | undefined,
+  resolve: MessageResolver = m,
 ) {
   const caps = getProviderModelCapabilities(models, model, provider, includePlanAgent);
   const modelIsUnavailable =
@@ -87,6 +93,7 @@ function getSelectedTraits(
         includePlanAgent
           ? modelOptions
           : modelOptions?.filter((option) => option.id !== "agent" || option.value !== "plan"),
+        resolve,
       )
     : getProviderOptionDescriptors({
         caps,
@@ -155,6 +162,7 @@ export function getTraitsSectionVisibility(input: {
   modelOptions?: ProviderOptions | null | undefined;
   allowPromptInjectedEffort?: boolean;
   includePlanAgent?: boolean | undefined;
+  resolve?: MessageResolver;
 }) {
   const selected = getSelectedTraits(
     input.provider,
@@ -164,6 +172,7 @@ export function getTraitsSectionVisibility(input: {
     input.modelOptions,
     input.allowPromptInjectedEffort ?? true,
     input.includePlanAgent,
+    input.resolve,
   );
 
   const showEffort = selected.primarySelectDescriptor !== null;

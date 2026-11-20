@@ -1,4 +1,5 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { useGT } from "gt-react";
 import { PlusIcon, XIcon } from "lucide-react";
 import { useRef, useState, type PointerEvent } from "react";
 
@@ -18,6 +19,7 @@ function ProviderCustomColorPanel(props: {
   readonly showAddButton: boolean;
 }) {
   const t = useUiTranslation();
+
   const { onCommit, onPreview } = props;
   const [hsv, setHsv] = useState(() => hexToHsv(props.value));
   const currentColor = hsvToHex(hsv.h, hsv.s, hsv.v);
@@ -114,8 +116,8 @@ function ProviderCustomColorPicker(props: {
   readonly onClose: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const normalized = normalizeProviderAccentColor(props.value);
-
   return (
     <Popover
       onOpenChange={(open) => {
@@ -129,7 +131,11 @@ function ProviderCustomColorPicker(props: {
             size="icon-sm"
             variant="ghost-muted"
             style={normalized ? { backgroundColor: normalized } : undefined}
-            aria-label={`${normalized ? "Change" : "Add"} accent color for ${props.displayName}`}
+            aria-label={
+              normalized
+                ? gt("Change accent color for {provider}", { provider: props.displayName })
+                : gt("Add accent color for {provider}", { provider: props.displayName })
+            }
           >
             {normalized ? (
               <span className="sr-only">{t("Change accent color")}</span>

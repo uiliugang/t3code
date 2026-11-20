@@ -1,3 +1,5 @@
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import { FILL_PREVIEW_VIEWPORT, type ScopedThreadRef } from "@t3tools/contracts";
 import { previewPdfAssetUrl } from "@t3tools/shared/preview";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
@@ -10,6 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useGT } from "gt-react";
 import { create } from "zustand";
 import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -220,6 +223,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, miniPlayer }: Props) {
 
 function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly tabId: string }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const httpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
   const { serverEpoch, snapshot, desktopOverlay, serverTab, sourceSize } =
     useBrowserMiniPlayerSource(threadRef, tabId);
@@ -260,8 +264,10 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: t(serverTab ? "Unable to pop out preview" : "Unable to update popped-out preview"),
-        description: error instanceof Error ? error.message : t("An error occurred."),
+        title: serverTab
+          ? gt("Unable to pop out preview")
+          : gt("Unable to update popped-out preview"),
+        description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
       });
     }
   };

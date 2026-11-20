@@ -1,6 +1,5 @@
 import { RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { translateUi } from "@t3tools/shared/uiLocale";
 import { deriveMessagesTimelineRows, liveWorkEntryLabel } from "./MessagesTimeline.logic";
 
 describe("long active tool groups", () => {
@@ -36,12 +35,7 @@ describe("long active tool groups", () => {
       const live = rows.find((row) => row.kind === "work-live");
       expect(live).toBeDefined();
       expect(live?.entry.id).toBe("work-999");
-      expect(
-        live &&
-          liveWorkEntryLabel(live.entry, undefined, live.active, (message, values) =>
-            translateUi("en", message, values),
-          ),
-      ).toContain("999");
+      expect(live && liveWorkEntryLabel(live.entry, undefined, live.active)).toContain("999");
       expect(live?.thought?.id).toBe("work-998");
       expect(live?.groupedEntries.map(({ id }) => id)).toEqual(
         timelineEntries.map(({ entry }) => entry.id),

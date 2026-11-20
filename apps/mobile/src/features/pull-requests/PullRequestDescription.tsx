@@ -6,6 +6,7 @@ import {
   PullRequestMediaContext,
 } from "./PullRequestMedia";
 import { PullRequestSectionHeading } from "./PullRequestSectionHeading";
+import { useGT, useMessages } from "gt-react-native";
 import { useContext, useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -35,24 +36,30 @@ export function PullRequestDescription(props: {
   const t = useUiTranslation();
   const { collapse } = props;
   const expanded = collapse?.expanded ?? true;
+  const gt = useGT();
+  const messages = useMessages();
   const [bodyHeight, setBodyHeight] = useState(0);
   const mediaContext = useContext(PullRequestMediaContext);
   const { themeVariables: colors } = useAppearancePreferences();
   const fadeColor = colors[Platform.OS === "android" ? "--color-sheet-solid" : "--color-screen"];
   const content = useMemo(() => {
     const document = parseMarkdownDocument(props.markdown);
-    const content = pullRequestDescriptionContent(document, splitPullRequestBody(props.markdown));
+    const content = pullRequestDescriptionContent(
+      document,
+      splitPullRequestBody(props.markdown),
+      messages,
+    );
     return {
       ...content,
       attachments: content.attachments.filter((attachment) => !isBotBadgeImage(attachment.uri)),
     };
-  }, [props.markdown]);
+  }, [props.markdown, messages]);
   const gallery: FilePreviewItem[] = content.attachments
     .filter((attachment) => attachment.kind === "image")
     .map((attachment) => {
       return {
         ...pullRequestImageSource(attachment.uri, mediaContext),
-        name: new URL(attachment.uri).pathname.split("/").pop() || "Image",
+        name: new URL(attachment.uri).pathname.split("/").pop() || gt("Image"),
       };
     });
   const canCollapse = collapse !== undefined && bodyHeight > COLLAPSED_HEIGHT;

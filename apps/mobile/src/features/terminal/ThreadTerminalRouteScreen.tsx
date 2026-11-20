@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import * as Dialog from "../../components/ui/Dialog";
+import { m } from "../../i18n/messages";
 import {
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
@@ -16,6 +17,7 @@ import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics
 import { useContentTopInset } from "../../components/ui/useBarInset";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useAtomMount } from "@effect/atom-react";
+import { useGT, useMessages } from "gt-react-native";
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -108,52 +110,49 @@ function TerminalHeader(props: {
   readonly onOpenNewTerminal: () => void;
   readonly onSelectTerminal: (terminalId: string) => void;
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
+  const resolveMessage = useMessages();
   return (
     <AppBar
-      title={t("Terminal")}
+      title={gt("Terminal", { $context: "screen title" })}
       subtitle={props.subtitle}
       onBack={props.onCloseTerminal}
       backInSplitView={{
-        accessibilityLabel: t("Back to chat"),
+        accessibilityLabel: gt("Back to chat"),
         icon: "chevron.left",
       }}
       menus={
         props.isEnvironmentReady
           ? [
               {
-                title: t("Terminal options"),
+                title: gt("Terminal options"),
                 icon: "terminal",
-                status: getTerminalStatusLabel(props.status),
+                status: getTerminalStatusLabel(props.status, resolveMessage),
                 items: [
                   {
                     id: "text-size",
-                    title: t("Text size"),
+                    title: gt("Text size"),
                     icon: "textformat.size",
                     inline: true,
                     items: [
                       {
                         id: "font-decrease",
-                        title: t("A- {value} pt", {
-                          value: String(
-                            Math.max(
-                              MIN_TERMINAL_FONT_SIZE,
-                              props.fontSize - TERMINAL_FONT_SIZE_STEP,
-                            ).toFixed(1),
-                          ),
+                        title: gt("A- {size} pt", {
+                          size: Math.max(
+                            MIN_TERMINAL_FONT_SIZE,
+                            props.fontSize - TERMINAL_FONT_SIZE_STEP,
+                          ).toFixed(1),
                         }),
                         disabled: props.fontSize <= MIN_TERMINAL_FONT_SIZE,
                         onPress: props.onDecreaseFontSize,
                       },
                       {
                         id: "font-increase",
-                        title: t("A+ {value} pt", {
-                          value: String(
-                            Math.min(
-                              MAX_TERMINAL_FONT_SIZE,
-                              props.fontSize + TERMINAL_FONT_SIZE_STEP,
-                            ).toFixed(1),
-                          ),
+                        title: gt("A+ {size} pt", {
+                          size: Math.min(
+                            MAX_TERMINAL_FONT_SIZE,
+                            props.fontSize + TERMINAL_FONT_SIZE_STEP,
+                          ).toFixed(1),
                         }),
                         disabled: props.fontSize >= MAX_TERMINAL_FONT_SIZE,
                         onPress: props.onIncreaseFontSize,
@@ -165,10 +164,13 @@ function TerminalHeader(props: {
                     title: session.displayLabel,
                     icon: "terminal",
                     subtitle: [
-                      getTerminalStatusLabel({
-                        status: session.status,
-                        hasRunningSubprocess: session.hasRunningSubprocess,
-                      }),
+                      getTerminalStatusLabel(
+                        {
+                          status: session.status,
+                          hasRunningSubprocess: session.hasRunningSubprocess,
+                        },
+                        resolveMessage,
+                      ),
                       basename(session.cwd),
                     ]
                       .filter(Boolean)
@@ -179,11 +181,13 @@ function TerminalHeader(props: {
                   {
                     id: "terminal-new",
                     disabled: !props.canOperateTerminal,
-                    title: t("Open new terminal"),
+                    title: gt("Open new terminal"),
                     icon: "plus",
-                    subtitle: t("Start another shell in {workspace}", {
-                      workspace: basename(props.workspaceRoot) ?? t("this workspace"),
-                    }),
+                    subtitle: basename(props.workspaceRoot)
+                      ? gt("Start another shell in {folder}", {
+                          folder: basename(props.workspaceRoot),
+                        })
+                      : gt("Start another shell in this workspace"),
                     onPress: props.onOpenNewTerminal,
                   },
                 ],
@@ -367,7 +371,7 @@ function readLiveTerminalSessions(
       cwd: summary.cwd,
       status: summary.status,
       hasRunningSubprocess: summary.hasRunningSubprocess,
-      displayLabel: resolveTerminalSessionLabel(summary.terminalId, summary),
+      displayLabel: resolveTerminalSessionLabel(summary.terminalId, summary, m),
       updatedAt: summary.updatedAt,
     }));
 }
@@ -384,6 +388,8 @@ function ThreadTerminal(props: {
 }) {
   const t = useUiTranslation();
   const { params, routeEnvironmentId, thread: selectedThread, terminalId } = props;
+  const gt = useGT();
+  const messages = useMessages();
   const { selectedThreadProject, selectedEnvironmentConnection } = props.selection;
   const {
     session: terminalSession,
@@ -607,18 +613,21 @@ function ThreadTerminal(props: {
   const terminalBottomInset =
     (isKeyboardVisible ? keyboardHeight : 0) + (isAccessoryVisible ? TERMINAL_ACCESSORY_HEIGHT : 0);
 
-  const terminalMenuSessions: ReadonlyArray<TerminalMenuSession> = buildTerminalMenuSessions({
-    knownSessions: knownSessions ?? [],
-    workspaceRoot: selectedThreadProject?.workspaceRoot ?? null,
-    currentSession: {
-      terminalId,
-      cwd: cwd ?? null,
-      status: terminal.status,
-      hasRunningSubprocess: terminal.hasRunningSubprocess,
-      displayLabel: resolveTerminalSessionLabel(terminalId, terminal.summary),
-      updatedAt: terminal.updatedAt,
+  const terminalMenuSessions: ReadonlyArray<TerminalMenuSession> = buildTerminalMenuSessions(
+    {
+      knownSessions: knownSessions ?? [],
+      workspaceRoot: selectedThreadProject?.workspaceRoot ?? null,
+      currentSession: {
+        terminalId,
+        cwd: cwd ?? null,
+        status: terminal.status,
+        hasRunningSubprocess: terminal.hasRunningSubprocess,
+        displayLabel: resolveTerminalSessionLabel(terminalId, terminal.summary, messages),
+        updatedAt: terminal.updatedAt,
+      },
     },
-  });
+    messages,
+  );
 
   const writeInput = async (data: string): Promise<boolean> => {
     if (
@@ -833,7 +842,7 @@ function ThreadTerminal(props: {
           environmentId={selectedThread.environmentId}
           threadId={selectedThread.id}
           terminalId={terminalId}
-          terminalLabel={resolveTerminalSessionLabel(terminalId, terminal.summary)}
+          terminalLabel={resolveTerminalSessionLabel(terminalId, terminal.summary, messages)}
           onClose={() => setCapturedOutput(null)}
           onAttach={() => {
             setCapturedOutput(null);
@@ -878,7 +887,7 @@ function ThreadTerminal(props: {
               environmentLabel={
                 environment.presentation?.entry.target.label ??
                 selectedEnvironmentConnection?.environmentLabel ??
-                "Environment"
+                gt("Environment", { $context: "fallback environment name" })
               }
               connection={
                 environment.presentation?.connection ?? {
@@ -887,7 +896,7 @@ function ThreadTerminal(props: {
                   traceId: null,
                 }
               }
-              resourceName="terminal"
+              resource="terminal"
               onRetry={handleRetryEnvironment}
             />
           ) : terminalSession.data === null && terminalSession.error === null ? (

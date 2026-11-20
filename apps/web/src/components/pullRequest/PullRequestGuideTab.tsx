@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { EnvironmentId, PullRequestRef, PullRequestReviewGuideStop } from "@t3tools/contracts";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { ScrollTextIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useEffectEvent } from "react";
 
@@ -52,6 +53,8 @@ export function PullRequestGuideTab({
   onTourShown?: (() => void) | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const resolve = useMessages();
   const { query, data, running, canWrite, write } = useReviewGuideWriter({
     environmentId,
     reference,
@@ -97,7 +100,7 @@ export function PullRequestGuideTab({
     canWrite ? (
       <Button size={size} variant="outline" disabled={running} onClick={() => void write()}>
         {running ? <Spinner /> : <ScrollTextIcon aria-hidden className="size-3.5" />}
-        {running ? "Reading the change..." : label}
+        {running ? gt("Reading the change...") : label}
       </Button>
     ) : null;
 
@@ -128,9 +131,9 @@ export function PullRequestGuideTab({
                 t(
                   "A guide is a tour of the change: stops through the code in reading order, with the calls only a maintainer can make.",
                 ))
-              : FAILURE_HINT}
+              : resolve(FAILURE_HINT)}
         </p>
-        {writeButton(failure === null ? "Write guide" : "Try again", "sm")}
+        {writeButton(failure === null ? gt("Write guide") : gt("Try again"), "sm")}
         {failure === null || running ? null : <FailureDetails detail={failure} />}
       </div>
     );
@@ -147,12 +150,16 @@ export function PullRequestGuideTab({
             t("Written before the latest push.")
           ) : (
             <>
-              {`Could not rewrite this guide. ${FAILURE_HINT}`}
+              {gt(
+                "Could not rewrite this guide. Check the review guide model in Settings → Source control.",
+              )}
               <FailureDetails detail={failure} />
             </>
           )}
         </AlertDescription>
-        {!running && canWrite ? <AlertAction>{writeButton("Rewrite", "xs")}</AlertAction> : null}
+        {!running && canWrite ? (
+          <AlertAction>{writeButton(gt("Rewrite"), "xs")}</AlertAction>
+        ) : null}
       </Alert>
     ) : null;
 
@@ -180,13 +187,13 @@ export function PullRequestGuideTab({
   );
 }
 
-const FAILURE_HINT = "Check the review guide model in Settings → Source control & issues.";
+const FAILURE_HINT = msg("Check the review guide model in Settings → Source control & issues.");
 
 function FailureDetails({ detail }: { detail: string }) {
   return (
     <details className="w-full max-w-lg text-xs text-muted-foreground">
       <summary className="cursor-pointer rounded-sm -outline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-        Technical details
+        <T>Technical details</T>
       </summary>
       <pre className="scrollbar-gutter-both mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/40 p-3 text-left font-mono text-xs">
         {detail}

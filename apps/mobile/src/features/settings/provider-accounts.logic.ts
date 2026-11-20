@@ -10,10 +10,14 @@ export function needsProviderSummary(provider: ServerProvider) {
   return provider.driver !== "claudeAgent" && !canManageProvider(provider);
 }
 
-export function providerSummaryStatus(provider: ServerProvider) {
-  if (!provider.enabled) return "Turned off";
-  if (!provider.installed) return "Not installed";
-  if (provider.auth.status === "authenticated") return "Signed in";
-  if (provider.auth.status === "unauthenticated") return "Not signed in";
-  return "Unknown";
+export function providerSummaryStatus(
+  provider: ServerProvider,
+  t: UiTranslator = translateUi.bind(null, "en"),
+) {
+  if (!provider.enabled) return t("Turned off");
+  if (!provider.installed) return t("Not installed");
+  if (provider.auth.status === "authenticated") return t("Signed in");
+  if (provider.auth.status === "unauthenticated") return t("Not signed in");
+  return t("Unknown");
 }
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";

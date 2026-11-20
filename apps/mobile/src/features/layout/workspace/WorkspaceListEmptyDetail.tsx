@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../../lib/useUiTranslation";
+
 import { Platform } from "react-native";
 
 import { AppBar } from "../../../components/ui/AppBar";
@@ -17,6 +18,7 @@ export function WorkspaceListEmptyDetail(props: {
   readonly onStartNewTask: () => void;
 }) {
   const t = useUiTranslation();
+
   const { panes } = useWorkspacePaneState();
   return (
     <>

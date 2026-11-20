@@ -1,7 +1,7 @@
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { EnvironmentSpeechModel } from "@t3tools/contracts";
+import type { EnvironmentId, EnvironmentSpeechModel } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -13,6 +13,7 @@ import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useState } from "react";
 import { Platform, Text as NativeText, View } from "react-native";
+import { m } from "../../i18n/messages";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -62,7 +63,10 @@ export function useVoiceModels(environmentId: EnvironmentId, label: string) {
     try {
       await work();
     } catch (error) {
-      Dialog.alert(title, error instanceof Error ? error.message : String(error));
+      Dialog.alert(
+        title,
+        error instanceof Error ? (errorDisplayMessage(error, m) ?? error.message) : String(error),
+      );
     }
     if (downloadId) setRequested(null);
     else setBusy(false);
@@ -118,19 +122,19 @@ export function useVoiceModels(environmentId: EnvironmentId, label: string) {
 
 export type VoiceModels = ReturnType<typeof useVoiceModels>;
 
-const languageNames =
-  typeof Intl.DisplayNames === "function"
-    ? {
-        en: new Intl.DisplayNames("en", { type: "language" }),
-        "zh-CN": new Intl.DisplayNames("zh-CN", { type: "language" }),
-      }
-    : null;
+const languageNames = new Map<string, Intl.DisplayNames>();
+function languageLabel(code: string, locale: string) {
+  if (typeof Intl.DisplayNames !== "function") return code.toUpperCase();
+  let names = languageNames.get(locale);
+  if (!names)
+    languageNames.set(locale, (names = new Intl.DisplayNames([locale], { type: "language" })));
+  return names.of(code) ?? code.toUpperCase();
+}
 
 function ModelStats(props: { readonly model: EnvironmentSpeechModel; readonly language: string }) {
   const t = useUiTranslation();
   const preferences = useAtomValue(mobilePreferencesAtom);
   const locale = AsyncResult.isSuccess(preferences) ? (preferences.value.uiLanguage ?? "en") : "en";
-  const languageLabel = (code: string) => languageNames?.[locale].of(code) ?? code.toUpperCase();
   const { model, language } = props;
   const data = model.benchmark;
   const code = !data
@@ -145,7 +149,7 @@ function ModelStats(props: { readonly model: EnvironmentSpeechModel; readonly la
           [
             "score",
             <>
-              {languageLabel(code)}{" "}
+              {languageLabel(code, locale)}{" "}
               <Text className="font-t3-medium text-foreground">{score.grade}</Text> (
               {t("{percent}% error", { percent: score.errorPercent })})
             </>,
@@ -158,7 +162,7 @@ function ModelStats(props: { readonly model: EnvironmentSpeechModel; readonly la
             "speed",
             <>
               <Text className="font-t3-medium text-foreground">
-                {data.secondsPer30s.accelerated} s
+                {Number(data.secondsPer30s.accelerated.toFixed(2))} s
               </Text>{" "}
               / 30 s
             </>,
@@ -182,9 +186,9 @@ function ModelStats(props: { readonly model: EnvironmentSpeechModel; readonly la
             </>,
           ],
         ] as const)
-      : score
+      : score || !model.languages[0]
         ? []
-        : ([["languages", languageLabel(model.languages[0] ?? "")]] as const)),
+        : ([["languages", languageLabel(model.languages[0], locale)]] as const)),
     ["size", formatBytes(model.size)],
   ];
   return (

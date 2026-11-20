@@ -9,6 +9,7 @@ import {
 } from "@t3tools/client-runtime/issue-selection";
 import { isSelected, toggleSelection } from "@t3tools/client-runtime/pull-request-selection";
 import type { IssueLabelCandidate } from "@t3tools/contracts";
+
 import { useEffect, useState } from "react";
 
 import * as Dialog from "../../components/ui/Dialog";
@@ -25,6 +26,7 @@ import { issueCommandError, useIssueAccess } from "./issuePresentation";
 
 export function IssueLabelsScreen({ route }: StaticScreenProps<IssueParams>) {
   const t = useUiTranslation();
+
   const navigation = useNavigation();
   const target = issueTarget(route.params);
   const detail = useEnvironmentQuery(issueEnvironment.detail(target)).data;

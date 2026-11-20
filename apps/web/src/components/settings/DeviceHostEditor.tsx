@@ -34,6 +34,8 @@ import {
   type DeviceHostCheckTarget,
 } from "./deviceHostConnectionChecks";
 
+const EXAMPLE_HOST_NAME = "Mac mini";
+
 export function DeviceHostEditor({
   host,
   isNew,
@@ -137,7 +139,7 @@ function DeviceHostEditorForm({
               const label = event.target.value;
               setDraft((current) => ({ ...current, label }));
             }}
-            placeholder="Mac mini"
+            placeholder={EXAMPLE_HOST_NAME}
           />
         </label>
         <div className="block space-y-1.5 text-sm">

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { getReactI18nCache } from "gt-react-native";
 import type { PreparedVoiceTranscription } from "@t3tools/client-runtime/voice-input";
 import { resetVoiceInputGlobalsForTests } from "../../../../../packages/client-runtime/src/voice-input/controller";
+import { setActiveLocale } from "../../i18n/messages";
 import {
   acquireAudioSession,
   activateAudioSession,
@@ -24,12 +26,13 @@ import {
   type VoiceInputSessionDependencies,
   type VoiceRecordingSample,
 } from "./voiceInputSession";
+import { resolveVoiceComposerPresentation } from "./voiceInputPresentation";
 
 function createSession(
   overrides?: Partial<
     Pick<
       VoiceInputSessionDependencies,
-      "configureRecording" | "releaseRecording" | "sampleRecording"
+      "configureRecording" | "releaseRecording" | "requestPermission" | "sampleRecording"
     >
   >,
 ) {
@@ -64,6 +67,31 @@ function createSession(
 describe("global voice input", () => {
   beforeEach(() => resetVoiceInputGlobalsForTests());
 
+  it("keeps microphone errors translatable after the UI language changes", async () => {
+    const english = "Microphone access is required for voice input.";
+    const chinese = "语音输入需要麦克风权限。";
+    using _lookup = vi
+      .spyOn(getReactI18nCache(), "lookupTranslation")
+      .mockImplementation((locale, message) =>
+        locale === "zh" && message === english ? chinese : undefined,
+      );
+    try {
+      setActiveLocale("zh");
+      const { session } = createSession({
+        requestPermission: async () => ({ granted: false, canAskAgain: false }),
+      });
+      await session.start(createVoiceInputTarget("first", () => "", vi.fn(), { start: 0, end: 0 }));
+      const { state } = session.getSnapshot();
+      expect(state.errorAction).toBe("settings");
+      expect(resolveVoiceComposerPresentation(state, 0).statusLabel).toBe(chinese);
+      setActiveLocale("en");
+      expect(resolveVoiceComposerPresentation(state, 0).statusLabel).toBe(english);
+      setActiveLocale("zh");
+      expect(resolveVoiceComposerPresentation(state, 0).statusLabel).toBe(chinese);
+    } finally {
+      setActiveLocale("en");
+    }
+  });
   it.each(["retry", "takeover"])(
     "handles failed deactivation with %s without notifying a released owner",
     async (action) => {

@@ -1,3 +1,4 @@
+import { T, useMessages, Var } from "gt-react";
 import { useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -55,9 +56,10 @@ export function PreviewFileNotShown({
 
 export function PreviewUnreachable({ url, code, description, onReload, move }: Props) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const [showDetails, setShowDetails] = useState(false);
   const host = safeHost(url) ?? url;
-  const friendly = describePreviewError(description, t);
+  const friendly = describePreviewError(description, messages);
   const errorLabel = description.length > 0 ? description : `ERR_${Math.abs(code) || "FAILED"}`;
 
   return (
@@ -65,10 +67,15 @@ export function PreviewUnreachable({ url, code, description, onReload, move }: P
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-8 py-12 sm:py-16">
         <ErrorIcon className="mb-6 size-12 text-muted-foreground/70" />
         <h1 className="mb-3 text-2xl font-semibold leading-tight text-foreground">
-          {t("This site can't be reached")}
+          <T>This site can&rsquo;t be reached</T>
         </h1>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          <span className="font-semibold text-foreground">{host}</span>: {friendly}.
+          <T>
+            <span className="font-semibold text-foreground">
+              <Var>{host}</Var>
+            </span>
+            : <Var>{friendly}</Var>.
+          </T>
         </p>
 
         {showDetails ? (

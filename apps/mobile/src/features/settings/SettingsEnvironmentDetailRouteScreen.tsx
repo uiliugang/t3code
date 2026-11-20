@@ -1,4 +1,7 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { serverUpdateFailureText } from "@t3tools/client-runtime/state/server";
+import { T, useGT, useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtom, useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -6,11 +9,11 @@ import {
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
   AuthOrchestrationReadScope,
-  managedUpdatesDenial,
   type EnvironmentId,
   type ServerProvider,
 } from "@t3tools/contracts";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { managedUpdatesDenial } from "@t3tools/client-runtime/contract-labels";
 import { sessionPermissionsUnavailableMessage } from "@t3tools/shared/authScopeOptions";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
@@ -18,6 +21,7 @@ import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { Linking, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { m } from "../../i18n/messages";
 
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -57,6 +61,8 @@ export function SettingsEnvironmentDetailRouteScreen({
 
 function EnvironmentDetail({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const messages = useMessages();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const connections = useRemoteConnections();
@@ -123,7 +129,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const managedPolicy = config?.managedPolicy;
   const supportUrl = managedPolicy?.supportUrl;
   // The server refuses checks and installs; say so instead of offering them.
-  const updatesDenial = managedUpdatesDenial(managedPolicy);
+  const updatesDenial = managedUpdatesDenial(managedPolicy, messages);
 
   async function run(label: string, action: () => Promise<void>) {
     if (pendingRef.current) return;
@@ -137,7 +143,9 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     if (AsyncResult.isFailure(result)) {
       const cause = squashAtomCommandFailure(result);
       setError(
-        cause instanceof Error ? cause.message : "The action could not be completed. Try again.",
+        cause instanceof Error
+          ? (errorDisplayMessage(cause, m) ?? cause.message)
+          : gt("The action could not be completed. Try again."),
       );
     }
   }
@@ -265,20 +273,21 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
               />
             ) : !connected ? (
               <Text className="px-2 text-sm text-foreground-muted">
-                {t("Connect this environment to manage it.")}
+                <T>Connect this environment to manage it.</T>
               </Text>
             ) : !allowed ? (
               <Text className="px-2 text-sm text-foreground-muted">
-                {t(
-                  AsyncResult.isFailure(sessionResult) || session === null || !session.authenticated
-                    ? sessionPermissionsUnavailableMessage({
+                {AsyncResult.isFailure(sessionResult) || session === null || !session.authenticated
+                  ? sessionPermissionsUnavailableMessage(
+                      {
                         connected,
                         failed: AsyncResult.isFailure(sessionResult),
                         rejected:
                           !AsyncResult.isFailure(sessionResult) && session?.authenticated === false,
-                      })
-                    : "This connection does not have permission to manage the environment.",
-                )}
+                      },
+                      messages,
+                    )
+                  : gt("This connection does not have permission to manage the environment.")}
               </Text>
             ) : null}
             {error ? (
@@ -306,15 +315,13 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                     ) : null}
                     {running ? (
                       <Text className="text-sm text-foreground-muted">
-                        {t(
-                          updateState.stage === "resuming"
-                            ? "Restarting and reconnecting…"
-                            : "Downloading update…",
-                        )}
+                        {updateState.stage === "resuming"
+                          ? gt("Restarting and reconnecting…")
+                          : gt("Downloading update…")}
                       </Text>
                     ) : updateState.status === "failed" ? (
                       <Text selectable className="text-sm text-danger-foreground">
-                        {t(updateState.message)}
+                        {serverUpdateFailureText(updateState, messages)}
                       </Text>
                     ) : null}
                     {checkedRelease && !updatesDenial ? (
@@ -412,12 +419,16 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                             </Text>
                           </View>
                           <Text className="text-sm text-foreground-muted">
-                            {provider.installed
-                              ? (provider.version ?? t("Version unknown"))
-                              : t("Not installed")}
                             {provider.versionAdvisory?.latestVersion
-                              ? ` · ${t("Latest {version}", { version: provider.versionAdvisory.latestVersion })}`
-                              : ""}
+                              ? gt("{version} · Latest {latest}", {
+                                  version: provider.installed
+                                    ? (provider.version ?? gt("Version unknown"))
+                                    : gt("Not installed"),
+                                  latest: provider.versionAdvisory.latestVersion,
+                                })
+                              : provider.installed
+                                ? (provider.version ?? gt("Version unknown"))
+                                : gt("Not installed")}
                           </Text>
                           {provider.updateState && provider.updateState.status !== "idle" ? (
                             <Text
@@ -428,9 +439,14 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                                   : "text-sm text-foreground-muted"
                               }
                             >
-                              {provider.updateState.message
-                                ? t(provider.updateState.message)
-                                : t("Update {status}", { status: t(provider.updateState.status) })}
+                              {provider.updateState.message ??
+                                {
+                                  queued: gt("Update queued"),
+                                  running: gt("Update running"),
+                                  succeeded: gt("Update succeeded"),
+                                  failed: gt("Update failed"),
+                                  unchanged: gt("Update unchanged"),
+                                }[provider.updateState.status]}
                             </Text>
                           ) : null}
                           {provider.compatibilityAdvisory?.message ? (

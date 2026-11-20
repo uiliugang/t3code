@@ -3,6 +3,7 @@ import { ComposerSelectControl } from "./chat/ComposerControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { FolderGit2Icon, FolderGitIcon, FolderIcon } from "lucide-react";
 import { memo, type MouseEvent as ReactMouseEvent } from "react";
+import { useMessages } from "gt-react";
 
 import {
   resolveCurrentWorkspaceLabel,
@@ -49,17 +50,16 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   onUsePreviousWorktree,
 }: BranchToolbarEnvModeSelectorProps) {
   const t = useUiTranslation();
+  const m = useMessages();
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
     useAtomValue(primaryServerKeybindingsAtom),
     "composer.workspace",
   );
   const showPreviousWorktree = Boolean(previousWorktreeLabel && onUsePreviousWorktree);
-  const currentWorkspaceLabel = t(resolveCurrentWorkspaceLabel(activeWorktreePath));
-  const newWorktreeLabel = t(resolveEnvModeLabel("worktree"));
-  const lockedWorkspaceLabel = activeWorktreePath
-    ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode)
-    : t(resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode));
+  const currentWorkspaceLabel = resolveCurrentWorkspaceLabel(activeWorktreePath, m);
+  const newWorktreeLabel = resolveEnvModeLabel("worktree", m);
+  const lockedWorkspaceLabel = resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode, m);
   const envModeItems = [
     {
       value: "local",

@@ -2779,7 +2779,30 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       assert.isFalse(settings.projectSettingsFolded);
       assert.isFalse(settings.continueThreadsAfterServerUpdate);
       assert.equal(settings.usageHistoryRetentionDays, "unlimited");
+      assert.include(settings.storageCleanup, {
+        worktreeAfterDays: null,
+        worktreeSettledAfterDays: null,
+        worktreeOnMerge: false,
+        worktreeOnDelete: false,
+        worktreeUnchanged: false,
+        browserArtifactsAfterDays: null,
+        logsAfterDays: null,
+      });
       assert.deepEqual(settings.projectSettingsOverrides, {});
+      const failure = yield* Effect.flip(
+        serverSettings.withSettingsSnapshot(Effect.succeed, { tryTrusted: true }),
+      );
+      assert.equal(failure.operation, "read-file");
+
+      const busy = yield* serverSettings.withSettingsSnapshot(() =>
+        Effect.gen(function* () {
+          const attempt = yield* serverSettings
+            .withSettingsSnapshot(Effect.succeed, { tryTrusted: true })
+            .pipe(Effect.forkChild({ startImmediately: true }));
+          return attempt.pollUnsafe();
+        }),
+      );
+      assert.equal(busy?._tag, "Failure");
 
       assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), broken);
     }).pipe(Effect.provide(layerServerSettings())),
@@ -3229,6 +3252,18 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const claudeInstance = effective.providerInstances[claudeId];
         assert.deepEqual(claudeInstance?.environment, [bedrock, userVariable]);
         assert.deepEqual(claudeInstance?.config, { binaryPath: "/opt/claude/bin/claude" });
+        const paths = yield* service.withSettingsSnapshot(
+          (active, stored) =>
+            Effect.succeed([
+              active.providerInstances[claudeId]?.config,
+              stored?.providerInstances[claudeId]?.config,
+            ]),
+          { tryTrusted: true },
+        );
+        assert.deepEqual(paths, [
+          { binaryPath: "/opt/claude/bin/claude" },
+          { binaryPath: "/usr/local/bin/claude" },
+        ]);
         // The implicit default Codex instance gets the unlocked default too.
         assert.deepEqual(effective.providerInstances[codexId]?.config, {
           launchArgs: "-c model_provider=gateway",

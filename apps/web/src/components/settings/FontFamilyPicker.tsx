@@ -1,6 +1,7 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useLegendListRef } from "~/hooks/useLegendListRef";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
+import { useGT } from "gt-react";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -100,6 +101,7 @@ export function FontFamilyPicker({
   onSelect: (family: string) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   // Base UI needs an initial closed commit; mounting open loses exit transitionend and leaves the popup
@@ -146,8 +148,10 @@ export function FontFamilyPicker({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: `"${value}" isn't monospace`,
-          description: "Code and terminal need a fixed-width font, so the current font was kept.",
+          title: gt('"{font}" isn\'t monospace', { font: value }),
+          description: gt(
+            "Code and terminal need a fixed-width font, so the current font was kept.",
+          ),
         }),
       );
       return;

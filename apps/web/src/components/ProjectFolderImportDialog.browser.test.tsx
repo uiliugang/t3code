@@ -18,9 +18,10 @@ vi.mock(import("../projectFolderImport"), async () => {
   const { Atom } = await import("effect/reactivity");
   return { projectFolderImportAtom: Atom.make<ProjectFolderImportRequest | null>(null) };
 });
-vi.mock(import("../hooks/useUiTranslation"), () => ({
-  useUiTranslation: () => (text: string) => text,
-}));
+vi.mock(import("../hooks/useUiTranslation"), async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
 vi.mock("../state/environments", () => ({
   usePrimaryEnvironmentId: () => localId,
   useEnvironments: () => ({ environments }),

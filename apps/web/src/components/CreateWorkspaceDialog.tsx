@@ -216,7 +216,7 @@ function WorkspaceForm({
   const [roots, setRoots] = useState(() => [emptyRoot()]);
   const [primaryRootId, setPrimaryRootId] = useState(roots[0]!.id);
   const [error, setError] = useState<string | null>(null);
-  const validation = workspaceCreationError({ title, roots, primaryRootId });
+  const validation = workspaceCreationError({ title, roots, primaryRootId }, t);
   const change = (rootId: WorkspaceRootId, patch: Partial<ProjectWorkspaceRoot>) => {
     setRoots((current) =>
       current.map((root) => (root.id === rootId ? { ...root, ...patch } : root)),

@@ -1,5 +1,6 @@
 import { formatProjectDisplayName } from "@t3tools/shared/projectPresentation";
 import { useProjectPresentation } from "../../lib/useProjectPresentation";
+import { useGT, useMessages } from "gt-react-native";
 import { useContentTopInset } from "../../components/ui/useBarInset";
 import { usePaneRole } from "../../components/ui/Pane";
 import { ScreenContent } from "../../components/ui/ScreenContent";
@@ -197,6 +198,8 @@ function renderHomeScrollView(props: ScrollViewProps) {
 export function HomeScreen(props: HomeScreenProps) {
   const t = useUiTranslation();
   const { capitalizeProjectNames } = useProjectPresentation();
+  const gt = useGT();
+  const m = useMessages();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
   const [initialScrollOffset] = useState(() => workspace?.getScrollOffset("threads") ?? 0);
@@ -325,12 +328,15 @@ export function HomeScreen(props: HomeScreenProps) {
   const { projects, selectedEnvironmentId, projectGroupingMode } = props;
   const projectScopes = useMemo(
     () =>
-      buildHomeProjectScopes({
-        projects,
-        environmentId: selectedEnvironmentId,
-        projectGroupingMode,
-      }),
-    [projects, selectedEnvironmentId, projectGroupingMode],
+      buildHomeProjectScopes(
+        {
+          projects,
+          environmentId: selectedEnvironmentId,
+          projectGroupingMode,
+        },
+        m,
+      ),
+    [projects, selectedEnvironmentId, projectGroupingMode, m],
   );
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const projectByKey = (() => {
@@ -626,8 +632,8 @@ export function HomeScreen(props: HomeScreenProps) {
     props.selectedEnvironmentId === null
       ? null
       : (props.savedConnectionsById[props.selectedEnvironmentId]?.environmentLabel ??
-        t("this environment"));
-  const emptyState = deriveHomeEmptyState(props.catalogState, props.projects.length);
+        gt("this environment"));
+  const emptyState = deriveHomeEmptyState(props.catalogState, props.projects.length, m);
 
   if (!hasAnyThreads) {
     return (
@@ -648,8 +654,8 @@ export function HomeScreen(props: HomeScreenProps) {
           >
             <View className="w-full max-w-[430px]">
               <EmptyState
-                title={t(emptyState.title)}
-                detail={t(emptyState.detail)}
+                title={emptyState.title}
+                detail={emptyState.detail}
                 actionLabel={emptyState.showsAddEnvironment ? t("Add environment") : undefined}
                 onAction={emptyState.showsAddEnvironment ? props.onAddConnection : undefined}
                 action={
@@ -715,8 +721,10 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     ) : hasSearchQuery && threadSearch.failed ? (
       <EmptyState
-        title="Search failed"
-        detail={`Couldn't search messages for "${props.searchQuery}". Change the search to try again.`}
+        title={gt("Search failed")}
+        detail={gt('Couldn\'t search messages for "{query}". Change the search to try again.', {
+          query: props.searchQuery,
+        })}
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     ) : hasSearchQuery ? (

@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { GitForkIcon, LockKeyholeIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { T, useGT } from "gt-react";
 import { useEffect, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -50,6 +51,7 @@ export default function SideChatPane(props: {
 }) {
   const { parentRef, threadId } = props;
   const t = useUiTranslation();
+  const gt = useGT();
   const threadRef = scopeThreadRef(parentRef.environmentId, threadId);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the parent panel as host in the panel store
   useEffect(
@@ -79,11 +81,11 @@ export default function SideChatPane(props: {
   const mergeRun = projection ? resolveLatestMergeBackRun(projection) : null;
   // A pending merge-back would fail the main thread's queued message, so the server refuses it.
   const bringBackBlockedReason = !canOperate
-    ? "This connection cannot change threads."
+    ? gt("This connection cannot change threads.")
     : threadRuntimeIsActive(parent?.runtime)
-      ? "Available when the main thread is idle."
+      ? gt("Available when the main thread is idle.")
       : mergeRun === null
-        ? "Available after a finished reply."
+        ? gt("Available after a finished reply.")
         : null;
 
   const bringBack = async () => {
@@ -154,8 +156,8 @@ export default function SideChatPane(props: {
       const confirmed = await settlePromise(() =>
         api.dialogs.confirm(
           [
-            `Delete side chat "${shell.title}"?`,
-            "This permanently clears its conversation history.",
+            gt('Delete side chat "{title}"?', { title: shell.title }),
+            gt("This permanently clears its conversation history."),
           ].join("\n"),
           { variant: "destructive" },
         ),
@@ -186,7 +188,7 @@ export default function SideChatPane(props: {
     <div data-side-chat-pane={threadId} className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border pr-1 pl-3">
         <span className="min-w-0 flex-1 truncate text-xs font-medium">
-          {shell?.title ?? "Side chat"}
+          {shell?.title ?? gt("Side chat")}
         </span>
         <Tooltip>
           <TooltipTrigger
@@ -228,12 +230,12 @@ export default function SideChatPane(props: {
                 aria-disabled={bringBackBlockedReason !== null || bringingBack || undefined}
                 onClick={() => void bringBack()}
               >
-                Bring back
+                <T>Bring back</T>
               </Button>
             }
           />
           <TooltipPopup side="bottom">
-            {bringBackBlockedReason ?? "Adds this side chat to the main thread's next message."}
+            {bringBackBlockedReason ?? gt("Adds this side chat to the main thread's next message.")}
           </TooltipPopup>
         </Tooltip>
         <Button

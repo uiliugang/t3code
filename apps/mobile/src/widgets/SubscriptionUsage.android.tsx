@@ -55,17 +55,25 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
         track: material.surfaceVariant,
         error: material.error,
       };
+  const text = props.text ?? {
+    refresh: chinese ? "打开 T3 以刷新" : "Open T3 to refresh",
+    left: chinese ? "剩余" : "left",
+    asOf: chinese ? "更新于 {time}" : "As of {time}",
+    tapToConnect: chinese ? "轻点以在 T3 中连接" : "Tap to connect in T3",
+    moreInApp: {} as Record<string, string>,
+  };
+  const connectDetail = chinese ? "打开 T3 以连接" : "Open T3 to connect";
   const providers = props.providers ?? [
     {
       name: "Codex",
-      detail: chinese ? "打开 T3 以连接" : "Open T3 to connect",
+      detail: connectDetail,
       windows: [],
       expiresAt: 0,
       totalWindows: 0,
     },
     {
       name: "Claude",
-      detail: chinese ? "打开 T3 以连接" : "Open T3 to connect",
+      detail: connectDetail,
       windows: [],
       expiresAt: 0,
       totalWindows: 0,
@@ -96,7 +104,7 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
         {
           type: "note",
           provider: provider.name,
-          text: stale ? (chinese ? "打开 T3 以刷新" : "Open T3 to refresh") : provider.detail,
+          text: stale ? text.refresh : provider.detail,
         },
       ];
     return [...provider.windows]
@@ -129,6 +137,9 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
   );
   const shown = slots > capacity ? lines.slice(0, capacity - 1) : lines;
   const hidden = lines.length - shown.length + dropped;
+  const hiddenText =
+    text.moreInApp[String(hidden)] ??
+    (chinese ? `另有 ${hidden} 项，请在 T3 查看` : `${hidden} more in T3`);
   // Rows share any spare height so short lists do not bunch at the top.
   const rowHeight = Math.min(
     full ? 52 : 28,
@@ -318,7 +329,7 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
               style={{ fontSize: 10 }}
               modifiers={[padding(3, 0, 0, 3)]}
             >
-              {`${chinese ? "剩余" : "left"}${paceArrow(line.window.accounts ?? [])}`}
+              {`${text.left}${paceArrow(line.window.accounts ?? [])}`}
             </Text>
           </Row>
         </Column>
@@ -340,7 +351,7 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
           {shown.map(row)}
           {hidden > 0 ? (
             <Text color={colors.muted} maxLines={1} style={{ fontSize: 10 }}>
-              {chinese ? `另有 ${hidden} 项，请在 T3 查看` : `${hidden} more in T3`}
+              {hiddenText}
             </Text>
           ) : null}
         </Column>
@@ -351,10 +362,16 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
           modifiers={[height(footer)]}
         >
           {props.checkedAt
-            ? `${chinese ? "更新于" : "As of"} ${new Date(props.checkedAt).toLocaleString(props.language ?? "en", { hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}`
-            : chinese
-              ? "轻点以在 T3 中连接"
-              : "Tap to connect in T3"}
+            ? text.asOf.replace(
+                "{time}",
+                new Date(props.checkedAt).toLocaleString(props.language ?? "en", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  month: "short",
+                  day: "numeric",
+                }),
+              )
+            : text.tapToConnect}
         </Text>
       </Column>
     </Button>

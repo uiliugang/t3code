@@ -11,6 +11,7 @@ import {
   resolveCompatibleRuntimeMode,
   runtimeModeConfig,
   resolveRuntimeModeOptions,
+  runtimeModeDenial,
 } from "./runtimeModeConfig";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
@@ -44,7 +45,6 @@ import {
   EnvironmentRequestInvalidError,
   AuthOrchestrationOperateScope,
   clampManagedRuntimeMode,
-  managedRuntimeModeDenial,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -72,6 +72,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { T, useGT, useMessages, Var } from "gt-react";
 import { flushSync } from "react-dom";
 import {
   clampCollapsedComposerCursor,
@@ -299,6 +300,7 @@ import { useComposerAttachmentIntake } from "./useComposerAttachmentIntake";
 import {
   countPreparingComposerImages,
   usePreparingComposerImages,
+  useSubmitAfterPreparingImages,
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
@@ -512,6 +514,8 @@ const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const gt = useGT();
+  const m = useMessages();
   const {
     composerDraftTarget,
     environmentId,
@@ -802,32 +806,38 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     supportsAttachmentUploads,
     maxFileAttachmentBytes,
   });
-  const fileCapabilityBlockReason = fileAttachmentCapabilityBlockReason({
-    files: composerFiles,
-    attachmentUploadsCapabilityKnown,
-    supportsAttachmentUploads,
-    maxFileAttachmentBytes,
-  });
+  const fileCapabilityBlockReason = fileAttachmentCapabilityBlockReason(
+    {
+      files: composerFiles,
+      attachmentUploadsCapabilityKnown,
+      supportsAttachmentUploads,
+      maxFileAttachmentBytes,
+    },
+    m,
+  );
   const attachmentBlockReason =
     (questionAttachmentTarget &&
     !supportsQuestionAttachments &&
     (composerImages.length > 0 || composerFiles.length > 0)
-      ? "Update this server to send files with question answers"
+      ? gt("Update this server to send files with question answers")
       : null) ??
     fileCapabilityBlockReason ??
     (supportsAttachmentUploads
       ? needsReattachFileCount > 0
         ? needsReattachFileCount === 1
-          ? "Attach the interrupted file again or remove it"
-          : "Attach the interrupted files again or remove them"
+          ? gt("Attach the interrupted file again or remove it")
+          : gt("Attach the interrupted files again or remove them")
         : // A plain send waits for its uploads. Answers and approval redirects need them first.
           questionAttachmentTarget ||
             pendingApprovals.some((approval) => !heldRequestIds.has(approval.requestId))
-          ? attachmentUploadBlockReason({
-              imageIds: [...composerImages, ...composerFiles].map((attachment) => attachment.id),
-              uploadsByImageId,
-              environmentId,
-            })
+          ? attachmentUploadBlockReason(
+              {
+                imageIds: [...composerImages, ...composerFiles].map((attachment) => attachment.id),
+                uploadsByImageId,
+                environmentId,
+              },
+              m,
+            )
           : null
       : null);
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -995,9 +1005,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const compatibleRuntimeModeOptions = resolveRuntimeModeOptions(
     compatibleRuntimeModes,
     managedPolicy,
+    m,
   );
   // A thread or draft already above the ceiling would be refused; offer the broadest mode left.
-  const runtimeModeCeilingDenial = managedRuntimeModeDenial(managedPolicy, compatibleRuntimeMode);
+  const runtimeModeCeilingDenial = runtimeModeDenial(managedPolicy, compatibleRuntimeMode, m);
   const runtimeModeCeilingFallback =
     runtimeModeCeilingDenial === undefined
       ? undefined
@@ -1006,11 +1017,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const providerSendBlockReason = getAntigravitySendBlockReason(
     selectedProviderEntry?.snapshot,
     selectedModel,
+    m,
   );
   const sendDisabledReason =
     externalSendDisabledReason ??
     claudeByokSelectionError(selectedProviderEntry?.snapshot, selectedModel) ??
-    (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
+    (multipleModelSelections?.length === 0 ? gt("Select at least one model.") : null) ??
     (activePendingProgress
       ? attachmentBlockReason
       : (attachmentBlockReason ??
@@ -1337,10 +1349,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentUnavailable !== null ||
     (!composerSendState.hasSendableContent && !showResumeAction);
   const collapsedComposerPrimaryActionLabel = showResumeAction
-    ? "Resume thread"
+    ? gt("Resume thread")
     : props.resumeCompactionTokens !== null && !props.keepFullHistory
-      ? "Open composer to compact and send"
-      : "Send message";
+      ? gt("Open composer to compact and send")
+      : gt("Send message");
   const showMobilePendingAnswerActions =
     isMobileViewport && !isComposerCollapsedMobile && pendingPrimaryAction !== null;
 
@@ -1448,10 +1460,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const copyComposerSnapshot = async (imageId: string) => {
     const image = composerImages.find((candidate) => candidate.id === imageId);
-    if (!image) throw new Error("Snapshot is no longer available.");
+    if (!image) throw new Error(gt("Snapshot is no longer available."));
     const contextId = toKindScopedComposerContextId("image", image.id);
     const fragment = buildContextClipboardFragment([contextId]);
-    if (!fragment || !image.previewUrl) throw new Error("The snapshot is not ready to copy.");
+    if (!fragment || !image.previewUrl) throw new Error(gt("The snapshot is not ready to copy."));
     await copySnapshot(
       image.previewUrl,
       formatComposerContextReference({ kind: "image", contextId, label: image.name }),
@@ -1503,7 +1515,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }
 
   if (composerSubmissionError !== null) {
-    const nextError = getComposerPromptLengthValidationMessage(prompt);
+    const nextError = getComposerPromptLengthValidationMessage(prompt, m);
     if (nextError !== composerSubmissionError) {
       setComposerSubmissionError(nextError);
     }
@@ -1992,10 +2004,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     attachmentBlockReason,
     environmentUnavailable: environmentUnavailable !== null,
   });
+  const submitAfterPreparingImages = useSubmitAfterPreparingImages(
+    attachmentTargetKey,
+    submissionBlocked,
+  );
   // The pending Submit button follows the answer's own blockers, matching submitComposer.
   const primaryActionSendDisabledReason =
     (activePendingProgress ? attachmentBlockReason : sendDisabledReason) ??
-    (speechInput.preparing ? "Preparing voice input" : null);
+    (speechInput.preparing ? gt("Preparing voice input") : null);
   const primaryActionEnvironmentUnavailable =
     environmentUnavailable !== null ||
     (!activePendingProgress && (noProviderAvailable || projectSelectionRequired));
@@ -2270,16 +2286,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event?.preventDefault();
       return false;
     }
-    // A send while a pasted image is still compressing would strand that image:
-    // the turn snapshot wouldn't include it, and it would surface in the *next*
-    // draft instead.
-    if (activeThreadId && countPreparingComposerImages(attachmentTargetKey) > 0) {
+    // Sending now would leave a still-compressing image out of the turn, so wait for it.
+    if (
+      activeThreadId &&
+      submitAfterPreparingImages(() => submitComposerRef.current(dispatchMode, submissionIntent))
+    ) {
       event?.preventDefault();
-      toastManager.add({
-        type: "info",
-        title: t("Still compressing a pasted image."),
-        description: t("Send again once its thumbnail appears."),
-      });
       return false;
     }
     if (pendingDraftWork.has(attachmentTargetKey)) {
@@ -2681,7 +2693,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               {assistantCitationLabel(replyTo.citation)}
             </button>
           ),
-          dismissLabel: "Cancel reply",
+          dismissLabel: gt("Cancel reply"),
           onDismiss: () => setComposerDraftReplyTo(composerDraftTarget, null),
         },
       ]
@@ -2706,7 +2718,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       variant="ghost"
                       onClick={() => handleRuntimeModeChange(runtimeModeCeilingFallback)}
                     >
-                      Switch to {runtimeModeConfig[runtimeModeCeilingFallback].label}
+                      <T>
+                        Switch to{" "}
+                        <Var>{m(runtimeModeConfig[runtimeModeCeilingFallback].label)}</Var>
+                      </T>
                     </Button>
                   ),
                 }),
@@ -2920,7 +2935,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       (!pastedContext &&
         activeThreadId &&
         files.length > 0 &&
-        shouldHandleComposerAttachmentPaste({ files, plainText }))
+        shouldHandleComposerAttachmentPaste({ files, plainText, bypassAutoAttachment }))
     ) {
       event.preventDefault();
       event.stopPropagation();
@@ -3014,7 +3029,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             if (activeThreadId) {
               setThreadError(
                 activeThreadId,
-                `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
+                gt(
+                  "{count, plural, one {You can attach up to {count} files per message.} other {You can attach up to {count} files per message.}}",
+                  {
+                    count: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+                  },
+                ),
               );
             }
           },
@@ -3782,7 +3802,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <ComposerPromptEditor
                     draftKey={composerDraftTargetKey}
                     // Switching threads lands focus here, so the label names the thread.
-                    ariaLabel={activeThread ? `Message ${activeThread.title}` : "Message"}
+                    ariaLabel={
+                      activeThread
+                        ? gt("Message {title}", { title: activeThread.title })
+                        : gt("Message", { $context: "noun, label of the message input" })
+                    }
                     suggestionListId={composerSuggestionListId}
                     activeSuggestionId={
                       composerSuggestionListVisible && activeComposerMenuItem
@@ -3821,23 +3845,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onCitationSubmitAndSend={submitCitationAndSendStable}
                     onCitationDraftSave={saveCitationDraftToPromptStable}
                     onPaste={onComposerPasteStable}
-                    placeholder={t(
+                    placeholder={
                       isComposerApprovalState
                         ? activePendingApproval?.supportsFeedback
-                          ? "Send feedback to decline this request"
-                          : "Send a message to decline and redirect the agent"
+                          ? gt("Send feedback to decline this request")
+                          : gt("Send a message to decline and redirect the agent")
                         : activePendingProgress
                           ? isChoiceOnlyPendingQuestion
-                            ? "Choose an option above"
+                            ? gt("Choose an option above")
                             : activePendingProgress.activeQuestion?.options.length === 0
-                              ? "Type your answer"
-                              : "Type your own answer, or leave this blank to use the selected option"
+                              ? gt("Type your answer")
+                              : gt(
+                                  "Type your own answer, or leave this blank to use the selected option",
+                                )
                           : projectSelectionRequired
-                            ? "Choose a project above to start a thread"
+                            ? gt("Choose a project above to start a thread")
                             : showProviderUnavailable
-                              ? "Enable a provider in Settings to send a message"
-                              : DEFAULT_COMPOSER_PLACEHOLDER,
-                    )}
+                              ? gt("Enable a provider in Settings to send a message")
+                              : m(DEFAULT_COMPOSER_PLACEHOLDER)
+                    }
                     disabled={
                       projectSelectionRequired ||
                       isChoiceOnlyPendingQuestion ||

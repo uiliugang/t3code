@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import type { DiagramType, MathResolver } from "pele/lazy";
+
 import { use, useState } from "react";
 
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -228,6 +229,7 @@ export function MermaidDiagram({
   onExpand: (imageUrl: string) => void;
 }) {
   const t = useUiTranslation();
+
   const [, setAttempt] = useState(0);
   const [renderError, setRenderError] = useState<string | null>(null);
   const trimmedSource = source.trim();

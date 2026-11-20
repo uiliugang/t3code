@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { Pressable, View } from "react-native";
 
 import { NativeStackScreenOptions } from "../../native/StackHeader";
@@ -45,9 +46,10 @@ function SheetDismissGuard(props: { readonly dismissDisabled: boolean | undefine
 }
 
 function NativeSheetHeader(props: SheetHeaderProps) {
+  const gt = useGT();
   const { colors } = useControlTheme();
   const onDismiss = props.onCancel ?? props.onClose;
-  const dismissLabel = props.accessibilityLabel ?? (props.onCancel ? "Cancel" : "Close");
+  const dismissLabel = props.accessibilityLabel ?? (props.onCancel ? gt("Cancel") : gt("Close"));
   const confirmation = props.confirm;
 
   // Toolbar children are parsed as native items, so keep the actual Button

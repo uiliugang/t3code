@@ -18,6 +18,7 @@ export const MarkdownMath = memo(function MarkdownMath(props: {
   focusable?: boolean;
 }) {
   const t = useUiTranslation();
+
   const viewportRef = useRef<HTMLSpanElement>(null);
   const contentRef = useRef<HTMLSpanElement>(null);
   const [overflows, setOverflows] = useState(false);

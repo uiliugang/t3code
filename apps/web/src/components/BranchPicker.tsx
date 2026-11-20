@@ -4,6 +4,7 @@ import { getBranchDisplayName } from "@t3tools/shared/git";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useUiTranslation } from "../hooks/useUiTranslation";
+import { useGT } from "gt-react";
 
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { cn } from "../lib/utils";
@@ -212,17 +213,18 @@ export function BranchPickerRefItem({
   onContextMenu?: ComponentProps<typeof ComboboxItem>["onContextMenu"];
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const itemValue = refName.name;
   const hasSecondaryWorktree =
     refName.worktreePath && activeProjectCwd && refName.worktreePath !== activeProjectCwd;
   const badge = refName.current
-    ? "current"
+    ? gt("current", { $context: "git ref badge, the checked-out branch" })
     : hasSecondaryWorktree
-      ? "worktree"
+      ? gt("worktree", { $context: "git ref badge, checked out in another worktree" })
       : refName.isRemote
-        ? "remote"
+        ? gt("remote", { $context: "git ref badge, a remote branch" })
         : refName.isDefault
-          ? "default"
+          ? gt("default", { $context: "git ref badge, the default branch" })
           : null;
   return (
     <ComboboxItem

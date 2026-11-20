@@ -1,3 +1,5 @@
+import { msg } from "gt-i18n";
+import { MarkedText, translatableMessage } from "../errors/translatable.ts";
 import {
   WS_METHODS,
   PullRequestActivity,
@@ -67,7 +69,10 @@ export * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 export class EnvironmentHttpConnectionNotReadyError extends Schema.TaggedError<
   EnvironmentHttpConnectionNotReadyError,
   { readonly brand: unique symbol }
->()("EnvironmentHttpConnectionNotReadyError", { message: Schema.String }) {}
+>()("EnvironmentHttpConnectionNotReadyError", {
+  message: Schema.String,
+  i18nMessage: Schema.optionalKey(MarkedText),
+}) {}
 
 const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 
@@ -1082,7 +1087,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     const prepared = yield* SubscriptionRef.get(supervisor.prepared);
     if (Option.isNone(prepared)) {
       return yield* new EnvironmentHttpConnectionNotReadyError({
-        message: "The environment HTTP connection is not ready.",
+        ...translatableMessage(msg("The environment HTTP connection is not ready.")),
       });
     }
     return yield* loader.load(prepared.value, input);

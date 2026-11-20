@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import type { ChatComposerProps } from "./ChatComposer";
 import {
   type ComposerContextRecord,
@@ -413,17 +415,30 @@ export function useComposerStash(input: {
     const missingImageReasons: string[] = [];
     if (entry.droppedImageNames.length > 0) {
       missingImageReasons.push(
-        `${entry.droppedImageNames.join(", ")} exceeded the stash size limit when this prompt was saved.`,
+        m(
+          msg("{names} exceeded the stash size limit when this prompt was saved.", {
+            names: entry.droppedImageNames.join(", "),
+          }),
+        ),
       );
     }
     if (entry.unreadableImageNames && entry.unreadableImageNames.length > 0) {
       missingImageReasons.push(
-        `${entry.unreadableImageNames.join(", ")} could not be read when this prompt was saved.`,
+        m(
+          msg("{names} could not be read when this prompt was saved.", {
+            names: entry.unreadableImageNames.join(", "),
+          }),
+        ),
       );
     }
     if (unrestoredImageNames.length > 0) {
       missingImageReasons.push(
-        `${unrestoredImageNames.join(", ")} could not be restored: the composer is at its ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}-attachment limit.`,
+        m(
+          msg("{names} could not be restored: the composer is at its {limit}-attachment limit.", {
+            names: unrestoredImageNames.join(", "),
+            limit: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+          }),
+        ),
       );
     }
     if (unrestoredFileNames.length > 0) {

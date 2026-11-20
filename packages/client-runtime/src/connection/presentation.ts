@@ -1,7 +1,10 @@
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import type { ServerConfig } from "@t3tools/contracts";
 import * as Option from "effect/Option";
+import { mFallback } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
+import { type MarkedText, resolveMarkedText } from "../errors/translatable.ts";
 import type { ConnectionCatalogEntry } from "./catalog.ts";
 import type { ConnectionTarget, SupervisorConnectionState } from "./model.ts";
 import { connectionRouteId, connectionRoutes, routeHttpBaseUrl } from "./routes.ts";
@@ -18,6 +21,8 @@ export type EnvironmentConnectionPhase =
 export interface EnvironmentConnectionPresentation {
   readonly phase: EnvironmentConnectionPhase;
   readonly error: string | null;
+  /** `error` as marked text, when the failure carries it. Read both through `connectionErrorText`. */
+  readonly i18nError?: MarkedText;
   readonly traceId: string | null;
   /**
    * Set while reconnecting because the host has not approved this device yet. `error` then
@@ -42,6 +47,16 @@ export interface EnvironmentPresentation {
   readonly refusedRouteIds: ReadonlyArray<string>;
 }
 
+function failureError(
+  failure: SupervisorConnectionState["lastFailure"],
+): Pick<EnvironmentConnectionPresentation, "error" | "i18nError" | "traceId"> {
+  return {
+    error: failure?.message ?? null,
+    ...(failure?.i18nMessage !== undefined ? { i18nError: failure.i18nMessage } : {}),
+    traceId: failure?.traceId ?? null,
+  };
+}
+
 export function presentConnectionState(
   state: SupervisorConnectionState,
 ): EnvironmentConnectionPresentation {
@@ -51,8 +66,7 @@ export function presentConnectionState(
   ) {
     return {
       phase: "reconnecting",
-      error: state.lastFailure.message,
-      traceId: state.lastFailure.traceId ?? null,
+      ...failureError(state.lastFailure),
       awaitingApproval: true,
       ...(state.lastFailure.verificationCode
         ? { verificationCode: state.lastFailure.verificationCode }
@@ -67,30 +81,40 @@ export function presentConnectionState(
     case "connecting":
       return {
         phase: state.attempt <= 1 && state.lastFailure === null ? "connecting" : "reconnecting",
-        error: state.lastFailure?.message ?? null,
-        traceId: state.lastFailure?.traceId ?? null,
+        ...failureError(state.lastFailure),
       };
     case "connected":
       return { phase: "connected", error: null, traceId: null };
     case "backoff":
       return {
         phase: "reconnecting",
-        error: state.lastFailure?.message ?? null,
-        traceId: state.lastFailure?.traceId ?? null,
+        ...failureError(state.lastFailure),
       };
     case "blocked":
       return {
         phase: state.lastFailure?.reason === "unsupported" ? "unsupported" : "error",
-        error: state.lastFailure?.message ?? null,
-        traceId: state.lastFailure?.traceId ?? null,
+        ...failureError(state.lastFailure),
       };
   }
+}
+
+/** The connection's error in the active language, or null when it has none. */
+export function connectionErrorText(
+  connection: Pick<EnvironmentConnectionPresentation, "error" | "i18nError">,
+  resolve: MFunctionType = mFallback,
+): string | null {
+  if (connection.error === null) return null;
+  return connection.i18nError !== undefined
+    ? resolveMarkedText(connection.i18nError, resolve)
+    : connection.error;
 }
 
 export function connectionStatusText(
   connection: EnvironmentConnectionPresentation,
   t: UiTranslator = translateUi.bind(null, "en"),
+  resolve: MFunctionType = mFallback,
 ): string {
+  const error = connectionErrorText(connection, resolve);
   switch (connection.phase) {
     case "available":
       return t("Available");
@@ -106,17 +130,15 @@ export function connectionStatusText(
             })
           : t("Waiting for approval on the host");
       }
-      return connection.error
-        ? t("Failed to connect. Reconnecting... Reason: {error}", { error: connection.error })
+      return error
+        ? t("Failed to connect. Reconnecting... Reason: {error}", { error })
         : t("Reconnecting...");
     case "connected":
       return t("Connected");
     case "unsupported":
       return t("Client not supported");
     case "error":
-      return connection.error
-        ? t("Connection failed. Reason: {error}", { error: connection.error })
-        : t("Connection failed");
+      return error ? t("Connection failed. Reason: {error}", { error }) : t("Connection failed");
   }
 }
 

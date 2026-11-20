@@ -1,3 +1,6 @@
+import { msg } from "gt-react";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
 import { useState } from "react";
@@ -37,8 +40,8 @@ export function useForceStopThread(environmentId: EnvironmentId) {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: t("Could not force stop the agent"),
-        description: error instanceof Error ? error.message : undefined,
+        title: m(msg("Could not force stop the agent")),
+        description: thrownErrorMessage(error, m) ?? undefined,
       });
       return;
     }

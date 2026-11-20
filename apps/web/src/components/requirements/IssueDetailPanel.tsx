@@ -145,7 +145,7 @@ function LegacyIssueDetailPanel({
         className={`flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 ${embedded ? "h-10" : "h-14"}`}
       >
         <span className="text-xs text-muted-foreground">
-          {target.provider === "meituan" ? "MEP ONES" : "GitHub Issues"} · #{id}
+          {target.provider === "meituan" ? t("MEP ONES") : t("GitHub Issues")} · #{id}
         </span>
         {!embedded && close ? (
           <Tooltip>

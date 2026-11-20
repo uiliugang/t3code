@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isTerminalSubagentStatus,
@@ -42,9 +43,11 @@ export function WorkflowOpeningBlock(props: {
   readonly onOpenThread: (threadId: string) => void;
 }) {
   const t = useUiTranslation();
+
   const { opening } = props;
+  const m = useMessages();
   const providers = useAtomValue(providersIgnoringCheckedAtAtom(props.environmentId));
-  const headline = workflowOpeningHeadline(opening);
+  const headline = workflowOpeningHeadline(opening, m);
   const phases = opening.group?.phases.filter((phase) => phase.members.length > 0) ?? [];
   const memberRow = (member: RuntimeSubagent) =>
     opening.providerInstanceId === null ? null : (
@@ -113,6 +116,7 @@ function WorkflowMemberRow(props: {
   readonly onOpenThread: (threadId: string) => void;
 }) {
   const t = useUiTranslation();
+
   const { member } = props;
   const threadId = member.childThreadId;
   const failed = member.status === "failed";
@@ -206,6 +210,7 @@ function WorkflowMemberRow(props: {
 
 function WorkflowScript(props: { readonly script: string }) {
   const t = useUiTranslation();
+
   const [expanded, setExpanded] = useState(false);
   const revealRef = findRevealRef(() => setExpanded(true));
   const { ref: contentRef, tallEnough: canFold } = useTallEnoughToFold();

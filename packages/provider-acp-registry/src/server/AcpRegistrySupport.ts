@@ -319,6 +319,17 @@ function readEnvironmentPath(
   );
 }
 
+// Windows env keys are case-insensitive, and an inherited NPM_CONFIG_PREFIX would win over ours.
+function withoutNpmPrefix(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): NodeJS.ProcessEnv {
+  if (platform !== "win32") return environment;
+  return Object.fromEntries(
+    Object.entries(environment).filter(([key]) => key.toLowerCase() !== "npm_config_prefix"),
+  );
+}
+
 function withPreferredPath(
   environment: NodeJS.ProcessEnv,
   directory: string,
@@ -1257,7 +1268,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     );
     const packageEnvironment =
       distribution === "npx"
-        ? { ...environment, npm_config_prefix: packageRoot }
+        ? { ...withoutNpmPrefix(environment, platform), npm_config_prefix: packageRoot }
         : {
             ...environment,
             UV_TOOL_DIR: packageRoot,

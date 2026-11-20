@@ -6,6 +6,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export default function MermaidViewer(props: { readonly text: string }) {
   const t = useUiTranslation();
+
   const [expanded, setExpanded] = useState<string | null>(null);
   // Mermaid lays out DOM before sanitizing its SVG. Refuse resource and config
   // syntax before that pass so standalone files cannot initiate requests. Node

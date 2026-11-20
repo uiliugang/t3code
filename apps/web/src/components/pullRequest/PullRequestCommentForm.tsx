@@ -3,6 +3,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@t3tools/contracts";
 import { SendIcon } from "lucide-react";
+import { useGT } from "gt-react";
 import { useEffect, useState, type RefObject } from "react";
 
 import { TextFieldSpeechControls, useTextFieldSpeech } from "~/speech/useTextFieldSpeech";
@@ -44,6 +45,7 @@ export function PullRequestCommentForm({
   onClose: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState<"comment" | "close" | "reopen" | null>(null);
   const locked = submitting !== null || actionPending;
@@ -171,7 +173,7 @@ export function PullRequestCommentForm({
                 </span>
               </span>
             ) : submitting === "reopen" ? (
-              "Reopening..."
+              gt("Reopening...")
             ) : (
               t("Reopen with comment")
             )}

@@ -7,7 +7,9 @@ import {
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { ChevronLeftIcon, ChevronRightIcon, FileIcon, FolderIcon } from "lucide-react";
+import { msg, useMessages } from "gt-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { m } from "~/i18n/messages";
 
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 
@@ -32,6 +34,7 @@ import {
 } from "./binaryPreviewProtocol";
 import { PreviewImage } from "./PreviewImage";
 import { readBinaryPreview } from "./readBinaryPreview";
+import { previewErrorText, previewFailureText } from "./previewFailureMessages";
 
 const SourcePreview = lazy(() => import("./ReadOnlySourcePreview"));
 type Archive = Extract<BinaryWorkerResult, { type: "archive" }>;
@@ -93,6 +96,7 @@ export default function BinaryViewer(props: {
   readonly onRetry?: () => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const [sizeBytes, setSizeBytes] = useState<number | null>(null);
   const [archive, setArchive] = useState<Archive | null>(null);
   const [database, setDatabase] = useState<Database | null>(null);
@@ -146,7 +150,7 @@ export default function BinaryViewer(props: {
       if (timerRef.current) clearTimeout(timerRef.current);
       const result = event.data;
       setBusy(false);
-      if (result.type === "error") setError(result.message);
+      if (result.type === "error") setError(previewFailureText(result));
       else if (result.type === "archive") setArchive(result);
       else if (result.type === "entry") setEntry(result);
       else if (result.type === "rows") setRows(result);
@@ -167,7 +171,7 @@ export default function BinaryViewer(props: {
         }
       })
       .catch((cause: unknown) =>
-        fail(cause instanceof Error ? cause.message : t("Could not read this file.")),
+        fail(previewErrorText(cause, m(msg("Could not read this file.")))),
       );
     return () => {
       controller.abort();
@@ -221,7 +225,7 @@ export default function BinaryViewer(props: {
           </span>
           <span className="shrink-0 text-muted-foreground">
             {countLabel(t, archive.entries.length, "{count} entry", "{count} entries")}
-            {sizeBytes !== null ? ` · ${formatAttachmentSize(sizeBytes)}` : ""}
+            {sizeBytes !== null ? ` · ${formatAttachmentSize(sizeBytes, messages)}` : ""}
           </span>
         </div>
       ) : null}
@@ -286,7 +290,7 @@ export default function BinaryViewer(props: {
             {rows
               ? countLabel(t, rows.columns.length, "{count} column", "{count} columns")
               : t("… columns")}
-            {sizeBytes !== null ? ` · ${formatAttachmentSize(sizeBytes)}` : ""}
+            {sizeBytes !== null ? ` · ${formatAttachmentSize(sizeBytes, messages)}` : ""}
           </div>
           <FileSurfaceNotice>
             {t(
@@ -358,7 +362,7 @@ export default function BinaryViewer(props: {
                       </button>
                     </td>
                     <td className="w-20 border-b border-border/60 px-3 py-2 text-right whitespace-nowrap text-muted-foreground tabular-nums">
-                      {formatAttachmentSize(item.size)}
+                      {formatAttachmentSize(item.size, messages)}
                     </td>
                     <td className="w-28 border-b border-border/60 px-3 py-2 text-right whitespace-nowrap text-muted-foreground">
                       {item.modified ? new Date(item.modified).toLocaleDateString() : "-"}

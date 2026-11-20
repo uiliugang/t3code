@@ -7,7 +7,9 @@ import {
   CHATGPT_WORKSPACE_ADMIN_REQUEST,
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
 } from "@t3tools/shared/usageLimits";
+import { msg } from "gt-react";
 import { memo } from "react";
+import { m } from "../../i18n/messages";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
@@ -18,15 +20,19 @@ import { OpenAI } from "../Icons";
 import { ChatGptUsageButton } from "../settings/ChatGptUsageButton";
 import { ExpandableText } from "../settings/ExpandableText";
 
-export function copyAdminRequest(t: (message: string) => string) {
-  void writeTextToClipboard(CHATGPT_WORKSPACE_ADMIN_REQUEST, "admin request").then(
+export function copyAdminRequest() {
+  void writeTextToClipboard(CHATGPT_WORKSPACE_ADMIN_REQUEST, {
+    target: "admin request",
+    unavailableMessage: msg("Clipboard API is unavailable while copying admin request."),
+    failureMessage: msg("Failed to copy admin request to the clipboard."),
+  }).then(
     () =>
       toastManager.add({
         type: "success",
-        title: t("Request copied"),
-        description: t("Send it to your workspace admin."),
+        title: m(msg("Request copied")),
+        description: m(msg("Send it to your workspace admin.")),
       }),
-    () => toastManager.add({ type: "error", title: t("Could not copy the request") }),
+    () => toastManager.add({ type: "error", title: m(msg("Could not copy the request")) }),
   );
 }
 
@@ -118,7 +124,7 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
         {(chatGptLimit || onDismiss) && (
           <AlertAction>
             {workspaceLimit ? (
-              <Button variant="default" size="sm" onClick={() => copyAdminRequest(t)}>
+              <Button variant="default" size="sm" onClick={copyAdminRequest}>
                 {t("Copy request for admin")}
               </Button>
             ) : chatGptLimit ? (

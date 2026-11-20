@@ -1,4 +1,5 @@
 import type { ExecutionEnvironmentCapabilities, MaintainableTool } from "@t3tools/contracts";
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 export type MeituanSettingsSection = "code" | "issues" | "daxiang" | "skills";
 
@@ -19,9 +20,13 @@ export function toolSubscriptionsFor(
 export function meituanAssociationCountLabel(
   projectCount: number,
   query: { data: readonly { error?: string }[] | null; error: string | null },
+  associatedProjectCount: number,
+  t: UiTranslator,
 ) {
-  if (query.error || query.data?.some((result) => result.error)) return "Unknown";
-  return projectCount > 0 && query.data === null ? "Loading" : "{count} projects";
+  if (query.error || query.data?.some((result) => result.error)) return t("Unknown");
+  return projectCount > 0 && query.data === null
+    ? t("Loading")
+    : t("{count} projects", { count: associatedProjectCount });
 }
 
 export function shouldDiscoverMeituanProjectSources(section?: MeituanSettingsSection) {

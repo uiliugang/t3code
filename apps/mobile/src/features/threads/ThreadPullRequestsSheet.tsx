@@ -1,5 +1,7 @@
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { LegendList } from "@legendapp/list/react-native";
+import { useGT } from "gt-react-native";
+import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +24,7 @@ export function ThreadPullRequestsSheet(
 ) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
   const insets = useSafeAreaInsets();
   const { selectedThread, selectedThreadProject, selectedEnvironmentRuntime } =
     useThreadSelection();
@@ -42,9 +45,11 @@ export function ThreadPullRequestsSheet(
     runtime: selectedEnvironmentRuntime,
   });
   const rowInputs = { lines, actions };
-  const { singular } = actions.terminology;
-  const plural = t(actions.terminology.plural);
-  const title = t("Linked {requests}", { requests: plural });
+  const term = changeRequestTermKind(actions.terminology);
+  const title = gt(
+    "{term, select, mr {Linked merge requests} cr {Linked change requests} other {Linked pull requests}}",
+    { term },
+  );
 
   const content = (
     <View className="flex-1 bg-screen">
@@ -81,7 +86,10 @@ export function ThreadPullRequestsSheet(
         }
         ListEmptyComponent={
           <Text className="pt-6 text-center text-sm text-foreground-muted">
-            {t("No linked {requests}.", { requests: plural })}
+            {gt(
+              "{term, select, mr {No linked merge requests.} cr {No linked change requests.} other {No linked pull requests.}}",
+              { term },
+            )}
           </Text>
         }
       />
@@ -97,7 +105,10 @@ export function ThreadPullRequestsSheet(
           actions.canLink
             ? [
                 {
-                  accessibilityLabel: `Link ${singular}`,
+                  accessibilityLabel: gt(
+                    "{term, select, mr {Link merge request} cr {Link change request} other {Link pull request}}",
+                    { term },
+                  ),
                   icon: "plus",
                   onPress: actions.promptLink,
                 },

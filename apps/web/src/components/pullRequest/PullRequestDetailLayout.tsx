@@ -1,4 +1,5 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+
 import { ArrowLeftIcon, FileDiffIcon } from "lucide-react";
 import { useEffect, useRef, type ComponentProps, type ReactNode } from "react";
 
@@ -27,6 +28,7 @@ export function PullRequestDetailHeaderBody({
   diffStat: ReactNode;
 }) {
   const t = useUiTranslation();
+
   return (
     <div className="col-span-2 mt-1 min-w-0 px-4 pb-4">
       {title}
@@ -80,6 +82,7 @@ export function PullRequestDetailTabBar<Tab extends string>({
   children?: ReactNode;
 }) {
   const t = useUiTranslation();
+
   // A pointer passing over a tab is not intent; it must rest like a list row does.
   const pointerIntent = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- A rest timer still pending when the bar unmounts must not read for a closed panel.

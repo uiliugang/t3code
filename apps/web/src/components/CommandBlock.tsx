@@ -1,3 +1,4 @@
+import { msg } from "gt-react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -16,9 +17,14 @@ export function CommandBlock({
   readonly prominent?: boolean;
 }) {
   const t = useUiTranslation();
+
   const { copyToClipboard, isCopied } = useCopyToClipboard({
     timeout: 1500,
-    target: "command",
+    target: {
+      target: "command",
+      unavailableMessage: msg("Clipboard API is unavailable while copying command."),
+      failureMessage: msg("Failed to copy command to the clipboard."),
+    },
   });
   return (
     <div

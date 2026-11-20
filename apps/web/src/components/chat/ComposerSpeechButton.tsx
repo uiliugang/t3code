@@ -1,8 +1,6 @@
 import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
-import type { PointerEvent } from "react";
-import type { ReactElement } from "react";
+import type { PointerEvent, ReactElement } from "react";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
-
 import { CheckIcon, MicIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -131,6 +129,7 @@ export function ComposerSpeechRecordingPill(props: {
         size={props.size}
         error={props.state.error}
         errorAction={props.state.errorAction}
+        errorCode={props.state.errorCode}
         disabled={props.disabled ?? false}
         cancelShortcutLabel={props.cancelShortcutLabel ?? null}
         onRetry={props.onStart}

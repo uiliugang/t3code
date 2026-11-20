@@ -10,6 +10,7 @@ import {
   UserPlusIcon,
   UsersIcon,
 } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
 import type { ReactNode } from "react";
 import {
   capitalizeTerm,
@@ -37,6 +38,9 @@ import {
   pullRequestChecksStatePresentation,
   resolvePullRequestState,
 } from "./pullRequestPresentation";
+import { resolveFilterOptions } from "./pullRequestListOptions";
+
+import { changeRequestTermKind } from "./changeRequestTerm";
 
 export function GhostBar({ className }: { className?: string | undefined }) {
   return <span aria-hidden className={cn("block h-3 rounded bg-muted-foreground/15", className)} />;
@@ -45,9 +49,9 @@ export function GhostBar({ className }: { className?: string | undefined }) {
 const TITLE_WIDTHS = ["w-3/5", "w-2/5", "w-1/2", "w-2/3", "w-2/5", "w-3/5", "w-1/2"];
 const META_WIDTHS = ["w-2/5", "w-1/3", "w-2/5", "w-1/4", "w-1/3", "w-2/5", "w-1/3"];
 const DEFAULT_DETAIL_TABS = [
-  { value: "summary", label: "Summary" },
-  { value: "timeline", label: "Timeline" },
-  { value: "code", label: "Code" },
+  { value: "summary", label: msg("Summary", { $context: "pull request tab" }) },
+  { value: "timeline", label: msg("Timeline", { $context: "pull request tab" }) },
+  { value: "code", label: msg("Code", { $context: "pull request tab" }) },
 ] as const;
 
 export function PullRequestListGhost({ rows = 7, caption }: { rows?: number; caption?: string }) {
@@ -85,7 +89,7 @@ export function PullRequestDetailGhost({
   summary,
   actions,
   checkoutCommand,
-  tabs = DEFAULT_DETAIL_TABS,
+  tabs: requestedTabs,
   activeTab,
   number,
   onBack,
@@ -104,6 +108,9 @@ export function PullRequestDetailGhost({
   onCheckoutError?: ((error: Error) => void) | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const resolve = useMessages();
+  const tabs = requestedTabs ?? resolveFilterOptions(DEFAULT_DETAIL_TABS, resolve);
   const seed = summary
     ? {
         ...entry,
@@ -113,15 +120,18 @@ export function PullRequestDetailGhost({
     : entry;
   const terminology = sourceControlClients.get(seed?.provider).changeRequest;
   const statePresentation = seed
-    ? resolvePullRequestState({
-        state: seed.state,
-        isDraft: seed.isDraft ?? false,
-      })
+    ? resolvePullRequestState(
+        {
+          state: seed.state,
+          isDraft: seed.isDraft ?? false,
+        },
+        resolve,
+      )
     : null;
   // Passing list rollups can omit workflows awaiting approval; wait for detail.
   const checksPresentation =
     seed?.checksState === "failing" || seed?.checksState === "pending"
-      ? pullRequestChecksStatePresentation(seed.checksState)
+      ? pullRequestChecksStatePresentation(seed.checksState, resolve)
       : null;
   const checkout = checkoutCommand ?? null;
   const changedFiles = summary?.changedFiles ?? null;
@@ -233,9 +243,19 @@ export function PullRequestDetailGhost({
                   <PullRequestCopyableCode
                     key={checkout}
                     value={checkout}
-                    target={t("{term} checkout command", { term: t(terminology.singular) })}
-                    copyLabel={t("Copy checkout command")}
-                    copiedLabel={t("Checkout command copied")}
+                    target={{
+                      target: `${terminology.singular} checkout command`,
+                      unavailableMessage: msg(
+                        "Clipboard API is unavailable while copying {term, select, mr {merge request} cr {change request} other {pull request}} checkout command.",
+                        { term: changeRequestTermKind(terminology) },
+                      ),
+                      failureMessage: msg(
+                        "Failed to copy {term, select, mr {merge request} cr {change request} other {pull request}} checkout command to the clipboard.",
+                        { term: changeRequestTermKind(terminology) },
+                      ),
+                    }}
+                    copyLabel={gt("Copy checkout command")}
+                    copiedLabel={gt("Checkout command copied")}
                     className="ml-auto font-mono"
                     tooltipSide="bottom"
                     {...(onCheckoutError ? { onError: onCheckoutError } : {})}
@@ -258,9 +278,18 @@ export function PullRequestDetailGhost({
                   <PullRequestCopyableCode
                     key={seed.headBranch}
                     value={seed.headBranch}
-                    target={t("branch name")}
-                    copyLabel={t("Copy {term} branch", { term: t(terminology.singular) })}
-                    copiedLabel={t("Branch name copied")}
+                    target={{
+                      target: "branch name",
+                      unavailableMessage: msg(
+                        "Clipboard API is unavailable while copying branch name.",
+                      ),
+                      failureMessage: msg("Failed to copy branch name to the clipboard."),
+                    }}
+                    copyLabel={gt(
+                      "Copy {term, select, mr {merge request} cr {change request} other {pull request}} branch",
+                      { term: changeRequestTermKind(terminology) },
+                    )}
+                    copiedLabel={gt("Branch name copied")}
                     className="min-w-0 font-mono"
                   />
                 ) : (
@@ -381,11 +410,11 @@ export function PullRequestDetailGhost({
 }
 
 export function PullRequestPeopleGhost({ rows = 4 }: { rows?: number }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   return (
     <div
       role="status"
-      aria-label={t("Loading people")}
+      aria-label={gt("Loading people")}
       className="motion-safe:animate-skeleton space-y-1 p-1"
     >
       {Array.from({ length: rows }, (_, index) => (

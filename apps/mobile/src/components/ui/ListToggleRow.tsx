@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { Pressable } from "react-native";
 
 import { AppText } from "./AppText";
@@ -13,6 +14,7 @@ export function ListToggleRow(
 ) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   return (
     <ListRowLayout
       icon={props.icon}
@@ -22,7 +24,9 @@ export function ListToggleRow(
       accessory={
         props.value === null ? (
           <Pressable
-            accessibilityLabel={`Set ${props.label} on for selected environments`}
+            accessibilityLabel={gt("Set {label} on for selected environments", {
+              label: props.label,
+            })}
             accessibilityRole="button"
             accessibilityHint={props.description}
             accessibilityState={{ disabled: Boolean(props.disabled) }}

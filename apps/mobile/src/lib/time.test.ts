@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { translateUi } from "@t3tools/shared/uiLocale";
+import { decodeOptions, gtFallback } from "gt-react-native";
+import { keepMarked, m, type MessageResolver } from "../i18n/messages";
 import { byTimestamp, compareTimestamps, msUntilRelativeTimeChange, relativeTime } from "./time";
 
 const at = "2026-10-19T12:00:00.000Z";
@@ -50,8 +52,12 @@ describe("relative time", () => {
       expect(relativeTime(at, nowMs)).toBe(before);
       expect(msUntilRelativeTimeChange(at, nowMs)).toBe(1);
       expect(relativeTime(at, nowMs + 1)).toBe(after);
-      const chinese = (message: string, values?: Readonly<Record<string, string | number>>) =>
-        translateUi("zh-CN", message, values);
+      expect(m(relativeTime(at, nowMs + 1, keepMarked))).toBe(after);
+      const chinese = ((message: string) => {
+        const options = decodeOptions(message);
+        const source = typeof options?.$_source === "string" ? options.$_source : message;
+        return gtFallback(translateUi("zh-CN", source), { ...options, $locale: "zh" });
+      }) as MessageResolver;
       expect(relativeTime(at, nowMs, chinese)).toBe(zhBefore);
       expect(relativeTime(at, nowMs + 1, chinese)).toBe(zhAfter);
     },

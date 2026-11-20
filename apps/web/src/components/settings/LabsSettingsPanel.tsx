@@ -1,7 +1,8 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
-import { managedCapabilityDenial } from "@t3tools/contracts";
+import { useGT, useMessages } from "gt-react";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
@@ -9,16 +10,17 @@ import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { firstManagedDenial, usePrimaryManagedPolicy } from "~/state/managedPolicy";
 
 /** Features still settling in. */
 export function LabsSettingsPanel() {
+  const gt = useGT();
   return (
     <SettingsPageContainer>
-      <SettingsSection id="beta" title="Beta">
+      <SettingsSection id="beta" title={gt("Beta")}>
         <BoringSidebarRow />
         {/* Clerk is only mounted when this build has T3 Connect. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
@@ -33,6 +35,7 @@ export function LabsSettingsPanel() {
 
 function BoringSidebarRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -60,6 +63,7 @@ function BoringSidebarRow() {
 
 function BoringSidebarMultilineRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -85,6 +89,7 @@ function BoringSidebarMultilineRow() {
 /** Signed out of T3 Connect, the row offers to sign in instead of its switch. */
 function GuestLinksRowWithSignIn() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const { isSignedIn } = useAuth();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   // `isSignedIn` is undefined until Clerk loads.
@@ -106,8 +111,10 @@ function GuestLinksRowWithSignIn() {
 
 function GuestLinksRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const messages = useMessages();
   const scope = useOptionalSettingsScope();
   const primaryPolicy = usePrimaryManagedPolicy();
   // Guests arrive through T3 Connect, so a policy that turns Connect off turns this off too.
@@ -115,7 +122,7 @@ function GuestLinksRow() {
     scope
       ? scope.connectedEnvironments.map((environment) => environment.serverConfig?.managedPolicy)
       : [primaryPolicy],
-    (policy) => managedCapabilityDenial(policy, "connect"),
+    (policy) => managedCapabilityDenial(policy, "connect", messages),
   );
   return (
     <SettingsRow
@@ -149,6 +156,7 @@ function GuestLinksRow() {
 
 function LinkedEnvironmentsRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -183,6 +191,7 @@ function LinkedEnvironmentsRow() {
 
 function PromptSuggestionsRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -209,6 +218,7 @@ function PromptSuggestionsRow() {
 
 function SimlockHostsRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -251,6 +261,7 @@ function SimlockHostsRow() {
 /** Shows only when every machine in scope is a Mac, since only macOS servers honor it. */
 function FastWorktreeCheckoutRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const { scope, connectedEnvironments } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();

@@ -28,7 +28,10 @@ import {
   UsersIcon,
 } from "lucide-react";
 import * as Schema from "effect/Schema";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+
+import { m, type MessageResolver } from "~/i18n/messages";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -101,9 +104,12 @@ import {
   pullRequestCompletionScope,
 } from "./PullRequestMarkdownTextarea";
 import { PullRequestReactionBar } from "./PullRequestReactions";
+import { canReactPullRequestComment } from "@t3tools/client-runtime/pull-request-reactions";
 import { PullRequestResolveThreadButton } from "./PullRequestResolveThreadButton";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
+
+import { changeRequestTermKind } from "./changeRequestTerm";
 
 function reviewerKey(login: string): string {
   return login.toLowerCase();
@@ -175,7 +181,14 @@ function CommentLocation({
   );
 }
 
-function reviewStateLabel(state: string): string {
+const REVIEW_STATE_LABELS: Partial<Record<string, string>> = {
+  commented: msg("Commented", { $context: "review state" }),
+  pending: msg("Pending", { $context: "review state" }),
+};
+
+function reviewStateLabel(state: string, resolve: MessageResolver): string {
+  const known = REVIEW_STATE_LABELS[state.trim().toLowerCase()];
+  if (known) return resolve(known);
   const words = state.toLowerCase().replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -261,7 +274,9 @@ function AddToChatButton({ onClick }: { onClick: () => void }) {
       {/* Wrapped like Fix's label so both sit on the header's baseline. */}
       <span className="inline-flex items-baseline gap-1">
         <MessageSquarePlusIcon className="size-3 self-center" />
-        <span>Add to chat</span>
+        <span>
+          <T>Add to chat</T>
+        </span>
       </span>
     </Button>
   );
@@ -371,6 +386,7 @@ export function PullRequestMetaRow({
 
 export function PullRequestSection({
   title,
+  name,
   defaultOpen = true,
   keepMounted = false,
   revealCount = 0,
@@ -378,6 +394,8 @@ export function PullRequestSection({
   children,
 }: {
   title: string;
+  /** Stable key for links that reveal this section, since the title is translated. */
+  name?: string;
   defaultOpen?: boolean;
   keepMounted?: boolean;
   /** Reopens the section each time a link reveals it. */
@@ -418,7 +436,7 @@ export function PullRequestSection({
       open={open !== false}
       onOpenChange={setOpenWithScrollAnchor}
       render={<section aria-label={title} />}
-      data-pull-request-summary-section
+      data-pull-request-summary-section={name ?? ""}
     >
       <div
         ref={headingRef}
@@ -461,8 +479,8 @@ export function PullRequestSummaryTab({
   checksStale = false,
   activityError,
   pendingFinding,
-  fixFindingLabel = "Fix in a thread",
-  fixCheckLabel = "Fix",
+  fixFindingLabel: requestedFixFindingLabel,
+  fixCheckLabel: requestedFixCheckLabel,
   onFixFinding,
   onAddToChat,
   onRefresh,
@@ -489,6 +507,11 @@ export function PullRequestSummaryTab({
   onRefreshChecks?: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const resolve = useMessages();
+  const fixFindingLabel = requestedFixFindingLabel ?? t("Fix in a thread");
+  const fixCheckLabel =
+    requestedFixCheckLabel ?? gt("Fix", { $context: "verb, fix a review finding" });
   const terminology = sourceControlClients.get(detail.provider).changeRequest;
   const [shown, setShown] = useState({ url: detail.url, count: COMMENT_PAGE });
   const shownConversations = shown.url === detail.url ? shown.count : COMMENT_PAGE;
@@ -635,9 +658,7 @@ export function PullRequestSummaryTab({
     if (revealUrl === undefined || !root) return;
     let target: HTMLElement | null | undefined;
     if (location?.kind === "checks") {
-      target = root.querySelector<HTMLElement>(
-        '[data-pull-request-summary-section][aria-label="Checks"]',
-      );
+      target = root.querySelector<HTMLElement>('[data-pull-request-summary-section="checks"]');
     } else if (location?.kind === "summary") {
       if (location.anchor === "top") {
         stopHolding.current?.();
@@ -680,7 +701,9 @@ export function PullRequestSummaryTab({
     descriptionSavesRunning.current -= 1;
     const saved = result._tag === "Success";
     setDescriptionDraft((draft) => settleDescriptionSave(draft, key, saved));
-    if (!saved) toastManager.add({ type: "error", title: t("Could not save the description") });
+    if (!saved) {
+      toastManager.add({ type: "error", title: m(msg("Could not save the description")) });
+    }
     if (descriptionSavesRunning.current === 0) onRefresh();
     return saved;
   };
@@ -725,7 +748,7 @@ export function PullRequestSummaryTab({
     <PullRequestReactionBar
       className="ml-auto justify-end"
       reactions={comment.reactions ?? []}
-      canReact={detail.capabilities.reactions === true}
+      canReact={canReactPullRequestComment(detail, comment)}
       subjectId={comment.id}
       environmentId={environmentId}
       reference={reference}
@@ -774,7 +797,7 @@ export function PullRequestSummaryTab({
             {outcome ? (
               <PullRequestReviewOutcomeBadge outcome={outcome} />
             ) : comment.reviewState ? (
-              <span>{t(reviewStateLabel(comment.reviewState))}</span>
+              <span>{reviewStateLabel(comment.reviewState, resolve)}</span>
             ) : null}
           </div>
           {onFixFinding && finding ? (
@@ -789,8 +812,8 @@ export function PullRequestSummaryTab({
                 <HammerIcon className="size-3 self-center" />
                 <span>
                   {pendingFinding === pullRequestFindingKey(finding)
-                    ? t("Preparing...")
-                    : t(fixFindingLabel)}
+                    ? gt("Preparing...")
+                    : fixFindingLabel}
                 </span>
               </span>
             </Button>
@@ -940,8 +963,8 @@ export function PullRequestSummaryTab({
                               />
                               <span className="sr-only">
                                 {entry.stale
-                                  ? pullRequestReviewOutcomeStaleLabel(entry.outcome, t)
-                                  : t(pullRequestReviewOutcomeLabel(entry.outcome))}
+                                  ? pullRequestReviewOutcomeStaleLabel(entry.outcome, resolve)
+                                  : pullRequestReviewOutcomeLabel(entry.outcome, resolve)}
                               </span>
                             </>
                           ) : null}
@@ -950,8 +973,8 @@ export function PullRequestSummaryTab({
                           {entry.outcome
                             ? `${named}: ${
                                 entry.stale
-                                  ? pullRequestReviewOutcomeStaleLabel(entry.outcome, t)
-                                  : t(pullRequestReviewOutcomeLabel(entry.outcome))
+                                  ? pullRequestReviewOutcomeStaleLabel(entry.outcome, resolve)
+                                  : pullRequestReviewOutcomeLabel(entry.outcome, resolve)
                               }`
                             : named}
                         </TooltipPopup>
@@ -1032,7 +1055,7 @@ export function PullRequestSummaryTab({
 
       <PullRequestSection
         key={`description:${detail.url}`}
-        title="Description"
+        title={gt("Description")}
         keepMounted
         revealCount={descriptionReveals}
       >
@@ -1074,7 +1097,8 @@ export function PullRequestSummaryTab({
 
       <PullRequestSection
         key={`checks:${detail.url}`}
-        title="Checks"
+        title={gt("Checks", { $context: "CI checks section" })}
+        name="checks"
         defaultOpen={false}
         revealCount={checksReveals}
       >
@@ -1112,7 +1136,7 @@ export function PullRequestSummaryTab({
                       <PullRequestCheckStatusIcon status={check.status} />
                       <span className="min-w-0 flex-1 wrap-anywhere">{check.name}</span>
                       <span className="shrink-0 text-muted-foreground">
-                        {t(pullRequestCheckStatusLabel(check))}
+                        {pullRequestCheckStatusLabel(check, resolve)}
                       </span>
                     </button>
                     {onFixFinding && failing ? (
@@ -1125,8 +1149,8 @@ export function PullRequestSummaryTab({
                       >
                         <HammerIcon className="size-3" />
                         {pendingFinding === pullRequestFindingKey(finding)
-                          ? t("Preparing...")
-                          : t(fixCheckLabel)}
+                          ? gt("Preparing...")
+                          : fixCheckLabel}
                       </Button>
                     ) : null}
                   </div>
@@ -1194,7 +1218,7 @@ export function PullRequestSummaryTab({
           <PullRequestActivityUnavailableState
             compact
             error={activityError}
-            term={terminology.singular}
+            term={changeRequestTermKind(terminology)}
             onRetry={onRefresh}
           />
         ) : (

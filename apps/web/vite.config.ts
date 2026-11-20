@@ -96,6 +96,7 @@ const unitTestProject = {
     setupFiles: [
       "../../packages/shared/src/testing/longTempDir.ts",
       "../../packages/shared/src/testing/providerEnv.ts",
+      "../../packages/shared/src/testing/gitEnv.ts",
     ],
   },
 } satisfies TestProjectInlineConfiguration;
@@ -131,6 +132,7 @@ const browserTestProject = {
       "@base-ui/react/preview-card",
       "@base-ui/react/separator",
       "@base-ui/react/toolbar",
+      "@pierre/diffs/ssr",
       "@pierre/diffs/worker",
       "@pierre/trees/react",
       "@t3tools/client-runtime > unbash",
@@ -167,6 +169,7 @@ const browserTestProject = {
       "hast-util-to-html",
       "hast-util-to-jsx-runtime",
       "html-url-attributes",
+      "jsonc-parser",
       "katex",
       "micromark-util-combine-extensions",
       "pele/lazy",

@@ -1,5 +1,6 @@
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
+import { m } from "../../i18n/messages";
 
 export type VoiceComposerPresentation = {
   readonly leadingAction: "cancel" | null;
@@ -14,6 +15,7 @@ export function resolveVoiceComposerPresentation(
   state: VoiceInputState,
   elapsedSeconds: number,
   t: UiTranslator = (message, values) => translateUi("en", message, values),
+  resolve = m,
 ): VoiceComposerPresentation {
   switch (state.phase) {
     case "idle":
@@ -31,7 +33,7 @@ export function resolveVoiceComposerPresentation(
         trailingAction: "mic",
         showsSend: true,
         statusKind: "error",
-        statusLabel: state.error === null ? null : t(state.error),
+        statusLabel: state.error === null ? null : resolve(state.error),
         confirmationEnabled: false,
       };
     case "preparing":

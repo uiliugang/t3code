@@ -246,7 +246,7 @@ export function RequirementDeliveryPanel({
           ))}
           {delivery.evidence.planIds.map((id) => (
             <p key={id} className="text-xs text-muted-foreground">
-              MCM #{id}
+              {t("MCM #{id}", { id })}
             </p>
           ))}
         </div>

@@ -1,4 +1,5 @@
 import type { DesktopPreviewColorScheme } from "@t3tools/contracts";
+import { msg, useMessages } from "gt-react";
 import { Minus, MoreVertical, Plus as PlusIcon, RotateCcw } from "lucide-react";
 
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -25,9 +26,9 @@ const COLOR_SCHEME_OPTIONS: ReadonlyArray<{
   value: DesktopPreviewColorScheme;
   label: string;
 }> = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
+  { value: "system", label: msg("System", { $context: "color scheme" }) },
+  { value: "light", label: msg("Light", { $context: "color scheme" }) },
+  { value: "dark", label: msg("Dark", { $context: "color scheme" }) },
 ];
 
 export interface PreviewMoreMenuActions {
@@ -89,6 +90,7 @@ export function PreviewMoreMenu({
   move,
 }: Props) {
   const t = useUiTranslation();
+  const m = useMessages();
   const zoomLabel = `${Math.round(zoomFactor * 100)}%`;
   const disabled = !enabled;
   return (
@@ -131,7 +133,7 @@ export function PreviewMoreMenu({
             >
               {COLOR_SCHEME_OPTIONS.map((option) => (
                 <MenuRadioItem key={option.value} value={option.value}>
-                  {t(option.label)}
+                  {m(option.label)}
                 </MenuRadioItem>
               ))}
             </MenuRadioGroup>

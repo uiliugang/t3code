@@ -1,11 +1,19 @@
 import { useUiTranslation } from "../hooks/useUiTranslation";
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import {
+  writeTextToClipboard,
+  ClipboardApiUnavailableError,
+  ClipboardWriteError,
+} from "../hooks/useCopyToClipboard";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import * as Schema from "effect/Schema";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { readLocalApi } from "../localApi";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { msg, useMessages } from "gt-react";
+import { m as resolveMessage } from "../i18n/messages";
 import { FolderGit2Icon, FolderGitIcon, FolderIcon, PlusIcon, ScaleIcon } from "lucide-react";
 import {
   type Ref,
@@ -68,7 +76,11 @@ import { MiddleTruncate } from "./ui/middle-truncate";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { cn } from "~/lib/utils";
+
 import { observeResize } from "~/lib/observeResize";
+
+const isClipboardApiUnavailableError = Schema.is(ClipboardApiUnavailableError);
+const isClipboardWriteError = Schema.is(ClipboardWriteError);
 
 export interface BranchToolbarHandle {
   openBranchPicker: () => void;
@@ -110,25 +122,31 @@ function showWorkspaceContextMenu(event: ReactMouseEvent, workspacePath: string)
   event.preventDefault();
   event.stopPropagation();
   void api.contextMenu
-    .show([{ id: "copy-path", label: "Copy full path", icon: "copy" }], {
+    .show([{ id: "copy-path", label: resolveMessage(msg("Copy full path")), icon: "copy" }], {
       x: event.clientX,
       y: event.clientY,
     })
     .then((action) => {
       if (action !== "copy-path") return;
       const clipboardPath = formatFilePathForClipboard(workspacePath);
-      void writeTextToClipboard(clipboardPath, "workspace path").then(
-        undefined,
-        (error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to copy path",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        },
-      );
+      void writeTextToClipboard(clipboardPath, {
+        target: "workspace path",
+        unavailableMessage: msg("Clipboard API is unavailable while copying workspace path."),
+        failureMessage: msg("Failed to copy workspace path to the clipboard."),
+      }).then(undefined, (error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: resolveMessage(msg("Failed to copy path")),
+            description: isClipboardApiUnavailableError(error)
+              ? resolveMessage(msg("Clipboard API is unavailable while copying workspace path."))
+              : isClipboardWriteError(error)
+                ? resolveMessage(msg("Failed to copy workspace path to the clipboard."))
+                : (thrownErrorMessage(error, resolveMessage) ??
+                  resolveMessage(msg("An error occurred."))),
+          }),
+        );
+      });
     });
 }
 
@@ -178,6 +196,7 @@ const RunContextSelector = memo(function RunContextSelector({
   onAddToMachine,
 }: RunContextSelectorProps) {
   const t = useUiTranslation();
+  const m = useMessages();
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
     availableEnvironments?.find((env) => env.environmentId === environmentId) ?? null;
@@ -188,14 +207,12 @@ const RunContextSelector = memo(function RunContextSelector({
         ? FolderGitIcon
         : FolderIcon;
   const workspaceLabel = forceNewWorktree
-    ? t(resolveEnvModeLabel("worktree"))
+    ? resolveEnvModeLabel("worktree", m)
     : envModeLocked
-      ? activeWorktreePath
-        ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode)
-        : t(resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode))
+      ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode, m)
       : effectiveEnvMode === "worktree"
-        ? t(resolveEnvModeLabel("worktree"))
-        : t(resolveCurrentWorkspaceLabel(activeWorktreePath));
+        ? resolveEnvModeLabel("worktree", m)
+        : resolveCurrentWorkspaceLabel(activeWorktreePath, m);
   const isPanel = displayMode === "panel";
   const isLocked = envLocked || (envModeLocked && (!isPanel || !showEnvironmentPicker));
   const workspacePath =
@@ -423,13 +440,13 @@ const RunContextSelector = memo(function RunContextSelector({
                 ) : (
                   <FolderIcon className="size-3" />
                 )}
-                <MiddleTruncate value={t(resolveCurrentWorkspaceLabel(activeWorktreePath))} />
+                <MiddleTruncate value={resolveCurrentWorkspaceLabel(activeWorktreePath, m)} />
               </span>
             </MenuRadioItem>
             <MenuRadioItem disabled={envModeLocked} value="worktree" closeOnClick>
               <span className="flex min-w-0 items-center gap-1.5">
                 <FolderGit2Icon className="size-3" />
-                <span className="min-w-0 truncate">{t(resolveEnvModeLabel("worktree"))}</span>
+                <span className="min-w-0 truncate">{resolveEnvModeLabel("worktree", m)}</span>
               </span>
             </MenuRadioItem>
             {previousWorktreeLabel ? (
@@ -632,6 +649,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   onEnvironmentChange,
   trailing,
 }: BranchToolbarProps) {
+  const m = useMessages();
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = scopeThreadRef(environmentId, threadId);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
@@ -652,7 +670,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       })
     : null;
   const previousWorktreeLabel = previousWorktreeSeed
-    ? resolvePreviousWorktreeLabel(previousWorktreeSeed)
+    ? resolvePreviousWorktreeLabel(previousWorktreeSeed, m)
     : null;
   const onUsePreviousWorktree = () => {
     if (!previousWorktreeSeed) return;

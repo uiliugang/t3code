@@ -86,7 +86,7 @@ export function MeituanCodeSettings(props: {
     if (result._tag === "Success") {
       setDraft(null);
       props.onChanged();
-    } else setError("Could not save the MIS ID. Try again.");
+    } else setError(t("Could not save the MIS ID. Try again."));
   };
   const request = async () => {
     setBusy(true);
@@ -97,7 +97,7 @@ export function MeituanCodeSettings(props: {
     });
     setBusy(false);
     if (result._tag !== "Success")
-      setError("Could not start authorization. Rescan the server and try again.");
+      setError(t("Could not start authorization. Rescan the server and try again."));
     props.onChanged();
   };
   return (

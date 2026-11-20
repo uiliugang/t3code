@@ -1,3 +1,4 @@
+import { useGT } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -31,6 +32,7 @@ export function SettingsClientStorageRouteScreen() {
   const t = useUiTranslation();
   const environmentMenu = useSettingsEnvironmentMenu();
   const { selectedConfiguredTargets } = useSettingsEnvironmentFilter();
+  const gt = useGT();
   const insets = useSafeAreaInsets();
   const summaryResult = useAtomValue(clientCacheSummaryAtom);
   const clearResult = useAtomValue(clearClientCacheAtom);
@@ -101,7 +103,7 @@ export function SettingsClientStorageRouteScreen() {
               )}
             </Text>
           )}
-          <SettingsSection title="Environment caches">
+          <SettingsSection title={gt("Environment caches")}>
             {AsyncResult.isFailure(summaryResult) ? (
               <View className="items-center gap-2 px-6 py-8">
                 <SymbolView
@@ -160,7 +162,7 @@ export function SettingsClientStorageRouteScreen() {
           </SettingsSection>
 
           <View className="gap-3">
-            <SettingsSection title="Actions">
+            <SettingsSection title={gt("Actions")}>
               <SettingsActionRow
                 icon="trash"
                 label={

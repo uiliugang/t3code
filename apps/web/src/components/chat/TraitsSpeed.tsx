@@ -1,21 +1,20 @@
 import type { ProviderDriverKind, ProviderOptionDescriptor } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
-import { translateUi } from "@t3tools/shared/uiLocale";
+import { msg } from "gt-react";
 import { ZapIcon } from "lucide-react";
-import { getClientSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { m, type MessageResolver } from "~/i18n/messages";
 import { UltrafastIcon } from "../Icons";
 import { cn } from "~/lib/utils";
 import { ComposerControlIcon, type ComposerControlSize } from "./ComposerControl";
 
 export function getTraitsSpeedDisplay(
   descriptor: ProviderOptionDescriptor,
+  resolve: MessageResolver = m,
 ): { label: string; speedIcon: "fast" | "ultrafast" | null } | null {
-  const language = getClientSettings().uiLanguage;
-  const t = translateUi.bind(null, language);
   if (descriptor.id === "fastMode" && descriptor.type === "boolean") {
     return {
-      label: descriptor.currentValue === true ? t("Fast") : t("Normal"),
+      label: descriptor.currentValue === true ? resolve(msg("Fast")) : resolve(msg("Normal")),
       speedIcon: descriptor.currentValue === true ? "fast" : null,
     };
   }
@@ -31,7 +30,8 @@ export function getTraitsSpeedDisplay(
     (ultrafastTier && currentValue === ultrafastTier.id)
   ) {
     return {
-      label: descriptor.options.find(({ id }) => id === currentValue)?.label ?? t("Normal"),
+      label:
+        descriptor.options.find(({ id }) => id === currentValue)?.label ?? resolve(msg("Normal")),
       speedIcon:
         ultrafastTier && currentValue === ultrafastTier.id
           ? "ultrafast"

@@ -1,5 +1,20 @@
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
-import type { PullRequestReaction, PullRequestReactionContent } from "@t3tools/contracts";
+import type {
+  PullRequestComment,
+  PullRequestDetail,
+  PullRequestReaction,
+  PullRequestReactionContent,
+} from "@t3tools/contracts";
+
+export function canReactPullRequestComment(
+  detail: Pick<PullRequestDetail, "provider" | "capabilities">,
+  comment: Pick<PullRequestComment, "kind">,
+): boolean {
+  return (
+    detail.capabilities.reactions === true &&
+    !(detail.provider === "gitcafe" && comment.kind === "review")
+  );
+}
 
 export const PULL_REQUEST_REACTION_ORDER: ReadonlyArray<PullRequestReactionContent> = [
   "thumbs-up",
@@ -38,8 +53,11 @@ export function pullRequestReactionEmoji(content: PullRequestReactionContent): s
   return REACTION_EMOJI[content];
 }
 
-export function pullRequestReactionName(content: PullRequestReactionContent): string {
-  return REACTION_NAME[content];
+export function pullRequestReactionName(
+  content: PullRequestReactionContent,
+  t = translateUi.bind(null, "en"),
+): string {
+  return t(REACTION_NAME[content]);
 }
 
 const NAMED_ACTOR_LIMIT = 3;
@@ -70,7 +88,7 @@ export function pullRequestReactionTooltip(
   const parts = [...shown, ...(others > 0 ? [countRemainder(others, shown.length > 0, t)] : [])];
   return t("{actors} reacted with {reaction} emoji", {
     actors: joinNames(parts, t),
-    reaction: t(pullRequestReactionName(reaction.content)),
+    reaction: pullRequestReactionName(reaction.content, t),
   });
 }
 

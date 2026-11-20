@@ -4,8 +4,15 @@ import { effectiveSpeechLanguage } from "@t3tools/shared/speech";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 
-const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
-export const languageLabel = (code: string) => languageNames.of(code) ?? code;
+const languageNamesByLocale = new Map<string, Intl.DisplayNames>();
+export function languageLabel(code: string, locale = "en"): string {
+  let languageNames = languageNamesByLocale.get(locale);
+  if (!languageNames) {
+    languageNames = new Intl.DisplayNames([locale], { type: "language" });
+    languageNamesByLocale.set(locale, languageNames);
+  }
+  return languageNames.of(code) ?? code;
+}
 
 type ModelLanguages = Pick<
   Extract<EnvironmentSpeechStatus, { supported: true }>,
@@ -14,6 +21,7 @@ type ModelLanguages = Pick<
 
 export function SpeechLanguageSelect({ model }: { readonly model: ModelLanguages | null }) {
   const t = useUiTranslation();
+  const locale = useClientSettings((settings) => settings.uiLanguage);
   const preference = useClientSettings((settings) => settings.speechLanguage);
   const languages = model?.languages ?? [];
   const resolved = model
@@ -22,13 +30,13 @@ export function SpeechLanguageSelect({ model }: { readonly model: ModelLanguages
         preference,
       )
     : preference;
-  const effectiveLabel = resolved === "auto" ? t("Auto-detect") : t(languageLabel(resolved));
+  const effectiveLabel = resolved === "auto" ? t("Auto-detect") : languageLabel(resolved, locale);
   const unavailable =
     preference !== "auto" && preference !== resolved
-      ? t("{language} unavailable", { language: t(languageLabel(preference)) })
+      ? t("{language} unavailable", { language: languageLabel(preference, locale) })
       : null;
   const label = unavailable
-    ? `${effectiveLabel} (${unavailable})`
+    ? t("{language} ({unavailable})", { language: effectiveLabel, unavailable })
     : preference === "auto" && resolved !== "auto"
       ? t("Auto ({language})", { language: effectiveLabel })
       : effectiveLabel;
@@ -51,10 +59,12 @@ export function SpeechLanguageSelect({ model }: { readonly model: ModelLanguages
           </SelectItem>
         ) : null}
         {languages
-          .toSorted((left, right) => languageLabel(left).localeCompare(languageLabel(right)))
+          .toSorted((left, right) =>
+            languageLabel(left, locale).localeCompare(languageLabel(right, locale), locale),
+          )
           .map((code) => (
             <SelectItem key={code} value={code}>
-              {t(languageLabel(code))}
+              {languageLabel(code, locale)}
             </SelectItem>
           ))}
       </SelectPopup>

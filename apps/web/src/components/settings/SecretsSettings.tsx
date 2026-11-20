@@ -2,6 +2,7 @@ import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { EnvironmentId, SecretProviderConfig, SecretProviderId } from "@t3tools/contracts";
 import { PlusIcon } from "lucide-react";
 import { useState } from "react";
+import { useGT, useMessages } from "gt-react";
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import type { EnvironmentPresentation } from "../../state/environments";
@@ -26,7 +27,7 @@ import {
 } from "./ProviderSettingsPanel.logic";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 const SECRET_PROVIDER_KINDS: Readonly<
@@ -37,6 +38,7 @@ const SECRET_PROVIDER_KINDS: Readonly<
 
 export function SecretsSettingsPanel() {
   const t = useUiTranslation();
+  const setting = useSearchableSetting();
   const { scope, environment } = useSettingsScope();
   const connected = environment?.connection.phase === "connected";
   return (
@@ -44,7 +46,7 @@ export function SecretsSettingsPanel() {
       {connected &&
       environment.serverConfig !== null &&
       environment.serverConfig.secretProviderSettings !== true ? (
-        <SettingsSection {...searchableSetting("secret-providers")}>
+        <SettingsSection {...setting("secret-providers")}>
           <p className="px-4 py-3 text-sm text-muted-foreground">
             {t("Update T3 Code on {environment} to manage its secret providers.", {
               environment: environment.label,
@@ -58,7 +60,7 @@ export function SecretsSettingsPanel() {
           projectScoped={scope.kind === "project" || scope.kind === "checkout"}
         />
       ) : (
-        <SettingsSection {...searchableSetting("secret-providers")}>
+        <SettingsSection {...setting("secret-providers")}>
           <p className="px-4 py-3 text-sm text-muted-foreground">
             {t(
               "Connect an environment to manage the secret providers its provider variables read from.",
@@ -78,6 +80,8 @@ function EnvironmentSecretProviders({
   readonly projectScoped: boolean;
 }) {
   const t = useUiTranslation();
+  const setting = useSearchableSetting();
+  const gt = useGT();
   const environmentId = environment.environmentId;
   const sessionState = useEnvironmentSessionState(environmentId);
   // The server requires the same grant for secret providers as for provider settings.
@@ -105,7 +109,7 @@ function EnvironmentSecretProviders({
   return (
     <>
       <SettingsSection
-        {...searchableSetting("secret-providers")}
+        {...setting("secret-providers")}
         headerAction={
           !readOnly ? (
             <Button size="xs" variant="outline" onClick={() => setDialog({ mode: "add" })}>
@@ -151,9 +155,9 @@ function EnvironmentSecretProviders({
                       <span className="shrink-0">{kind.name} ·</span>
                       <RedactedSensitiveText
                         value={classified.account}
-                        ariaLabel="Toggle account visibility"
-                        revealTooltip={t("Click to reveal account")}
-                        hideTooltip={t("Click to hide account")}
+                        ariaLabel={gt("Toggle account visibility")}
+                        revealTooltip={gt("Click to reveal account")}
+                        hideTooltip={gt("Click to hide account")}
                         className="max-w-full truncate"
                       />
                     </span>
@@ -252,7 +256,8 @@ function SecretProviderUses({
   readonly label: string;
 }) {
   const t = useUiTranslation();
-  const uses = secretProviderUses(useEnvironmentSettings(environmentId), id);
+  const messages = useMessages();
+  const uses = secretProviderUses(useEnvironmentSettings(environmentId), id, messages);
   if (uses.length === 0) {
     return (
       <AlertDialogDescription>

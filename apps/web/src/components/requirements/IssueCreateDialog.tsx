@@ -253,7 +253,7 @@ export function IssueCreateDialog({
           <DialogHeader>
             <DialogTitle>{t("New issue")}</DialogTitle>
             <div className="text-xs text-muted-foreground">
-              {provider === "meituan" ? "MEP ONES" : "GitHub Issues"}
+              {provider === "meituan" ? t("MEP ONES") : t("GitHub Issues")}
             </div>
           </DialogHeader>
           <DialogPanel>
@@ -320,7 +320,7 @@ export function IssueCreateDialog({
                         { value: "", label: t("Choose platform") },
                         ...availableProviders.map((value) => ({
                           value,
-                          label: value === "github" ? "GitHub Issues" : "MEP ONES",
+                          label: value === "github" ? t("GitHub Issues") : t("MEP ONES"),
                         })),
                       ]}
                       onChange={(value) => {

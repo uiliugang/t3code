@@ -8,6 +8,7 @@ import {
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useNavigation } from "@react-navigation/native";
+import { useGT } from "gt-react-native";
 import { use, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Keyboard, Platform, Pressable, View } from "react-native";
@@ -142,6 +143,7 @@ export function PullRequestsScreen(
 ) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
   const primaryColumn = use(NativePrimaryColumnContext);
   const workspace = useWorkspaceTabs()!;
   const { environments } = useWorkspaceState();
@@ -373,10 +375,9 @@ export function PullRequestsScreen(
                 <SavedViewsMenu
                   read={(preferences) => preferences.pullRequestSavedViews}
                   write={(pullRequestSavedViews) => ({ pullRequestSavedViews })}
-                  noun="pull request"
-                  shortNoun="PR"
+                  list="pullRequest"
                   suggestedName={
-                    controls.involvement === "reviewing" ? "PRs Requesting My Review" : ""
+                    controls.involvement === "reviewing" ? gt("PRs Requesting My Review") : ""
                   }
                   matches={pullRequestViewMatches}
                   scope={{
@@ -415,7 +416,7 @@ export function PullRequestsScreen(
                     environments.find(
                       (environment) => environment.environmentId === error.environmentId,
                     )?.environmentLabel ||
-                    t("Environment"),
+                    gt("Environment", { $context: "fallback name for a server" }),
                   message: error.message,
                   hasProject: Boolean(error.projectTitle),
                 }))}

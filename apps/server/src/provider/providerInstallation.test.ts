@@ -16,6 +16,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
 import * as ServerSettings from "../serverSettings.ts";
@@ -65,21 +66,29 @@ function instance(kind = driver, id = instanceId): ProviderInstance {
 const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function* (
   input: {
     instance?: ProviderInstance;
+    others?: ReadonlyArray<ProviderInstance>;
     settings?: Parameters<typeof ServerSettings.layerTest>[0];
     secretValue?: string | undefined;
     settingsRef?: SubscriptionRef.SubscriptionRef<ServerSettingsValue>;
+    snapshotSettings?: ServerSettingsValue;
     rebuilding?: boolean;
+    missingLocalRuntime?: boolean;
     policy?: Parameters<typeof ServerSettings.layerTest>[1];
   } = {},
 ) {
+  const { settingsRef } = input;
   const calls: string[] = [];
   const refreshed = yield* Deferred.make<void>();
+  const lastRefreshes = yield* Queue.unbounded<void>();
   const observed = yield* Deferred.make<void>();
   const listening = yield* Deferred.make<void>();
   const installationState = yield* SubscriptionRef.make(state);
   let protectedPaths: ReadonlyArray<string> = [];
   let installationEnvironment: NodeJS.ProcessEnv | undefined;
   const configured = input.instance ?? instance();
+  const all = [configured, ...(input.others ?? [])];
+  const refreshedInstances: ProviderInstanceId[] = [];
+  let watches = 0;
   const dependencies = Layer.mergeAll(
     Layer.mock(SecretResolver.SecretResolver)({
       read: (references) => Effect.succeed(references.map(() => input.secretValue)),
@@ -96,38 +105,51 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
       state: Effect.succeed(state),
       changes: Stream.succeed(state),
     }),
-    input.settingsRef
+    settingsRef
       ? Layer.mock(ServerSettings.ServerSettingsService)({
-          getSettings: SubscriptionRef.get(input.settingsRef),
-          subscribeChanges: Effect.succeed(SubscriptionRef.changes(input.settingsRef)),
+          getSettings: SubscriptionRef.get(settingsRef),
+          subscribeChanges: Effect.succeed(SubscriptionRef.changes(settingsRef)),
+          withSettingsSnapshot: (use) =>
+            SubscriptionRef.get(settingsRef).pipe(
+              Effect.flatMap((current) => use(input.snapshotSettings ?? current)),
+            ),
         })
       : ServerSettings.layerTest(input.settings, input.policy),
     Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
       getInstance: (id) =>
-        Effect.succeed(!input.rebuilding && id === configured.instanceId ? configured : undefined),
-      listInstances: Effect.succeed([configured]),
+        Effect.succeed(input.rebuilding ? undefined : all.find((entry) => entry.instanceId === id)),
+      listInstances: Effect.succeed(all),
     }),
     Layer.mock(ProviderRegistry.ProviderRegistry)({
-      refreshInstance: () =>
+      refreshInstance: (id) =>
         Effect.sync(() => {
           calls.push("refresh");
+          refreshedInstances.push(id);
           return [];
-        }).pipe(Effect.tap(() => Deferred.succeed(refreshed, undefined))),
+        }).pipe(
+          Effect.tap(() => Deferred.succeed(refreshed, undefined)),
+          Effect.tap(() =>
+            id === all.at(-1)?.instanceId ? Queue.offer(lastRefreshes, undefined) : Effect.void,
+          ),
+        ),
     }),
     Layer.mock(CodexInstallation.CodexInstallation)({
       managedDirectory: "/unused-managed-codex",
-      resolve: (source, binaryPath) =>
-        source === "managed"
+      resolve: (source, binaryPath, environment) =>
+        source === "managed" || input.missingLocalRuntime
           ? Effect.fail(
               new CodexInstallation.CodexInstallationError({
                 operation: "resolve",
-                detail: "No managed runtime",
+                detail: source === "managed" ? "No managed runtime" : "Local runtime not found",
               }),
             )
           : Effect.succeed({
               source: "local" as const,
               version: "0.169.0",
-              executablePath: binaryPath ?? "/custom/codex",
+              executablePath:
+                binaryPath === "instance-codex"
+                  ? `${environment?.PATH}/instance-codex`
+                  : (binaryPath ?? "/custom/codex"),
               managedVersionDirectory: null,
             }),
       startManaged: Effect.die("Unexpected managed installation"),
@@ -140,7 +162,15 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
           calls.push("codex-cancel");
           return { ...state, driver: ProviderDriverKind.make("codex") };
         }),
-      state: Effect.succeed({ ...state, driver: ProviderDriverKind.make("codex") }),
+      state: Effect.succeed({
+        ...state,
+        driver: ProviderDriverKind.make("codex"),
+        source: "managed",
+        phase: "downloading",
+        operationId: "managed-install",
+        downloadedBytes: 16,
+        totalBytes: 32,
+      }),
       changes: Stream.succeed({
         ...state,
         driver: ProviderDriverKind.make("codex"),
@@ -168,8 +198,13 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
           return state;
         }),
       state: Effect.succeed(state),
-      changes: input.instance?.refreshModels
+      changes: all.some((entry) => entry.refreshModels)
         ? SubscriptionRef.changes(installationState).pipe(
+            Stream.onStart(
+              Effect.sync(() => {
+                watches++;
+              }),
+            ),
             Stream.tap(() => Deferred.succeed(listening, undefined)),
             Stream.ensuring(Deferred.succeed(observed, undefined)),
           )
@@ -192,8 +227,11 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
     listening,
     calls,
     refreshed,
+    lastRefreshes,
+    watches: () => watches,
     observed,
     installationState,
+    refreshedInstances,
     protectedPaths: () => protectedPaths,
     installationEnvironment: () => installationEnvironment,
   };
@@ -316,15 +354,19 @@ describe("provider installation routing", () => {
     { source: "managed", rebuilding: false },
     { source: "local", rebuilding: true },
     { source: "managed", rebuilding: true },
+    { source: "local", rebuilding: true, missingLocalRuntime: true },
   ] as const)(
     "projects the selected $source runtime for ChatGPT sign-in while rebuilding=$rebuilding",
-    ({ source, rebuilding }) =>
+    (testCase) =>
       Effect.gen(function* () {
+        const { source, rebuilding } = testCase;
+        const missingLocalRuntime = "missingLocalRuntime" in testCase;
         const kind = ProviderDriverKind.make("codex");
         const id = ProviderInstanceId.make("codex");
         const harness = yield* makeHarness({
           instance: instance(kind, id),
           rebuilding,
+          missingLocalRuntime,
           settings: {
             providerInstances: {
               [id]: {
@@ -342,9 +384,23 @@ describe("provider installation routing", () => {
         const observed = Array.from(
           yield* Stream.runCollect(harness.router.subscribe({ instanceId: id })),
         )[0];
-        assert.equal(observed?.installedVersion, source === "local" ? "0.169.0" : null);
-        assert.equal(observed?.executablePath, source === "local" ? "/custom/codex" : null);
+        assert.equal(
+          observed?.installedVersion,
+          source === "local" && !missingLocalRuntime ? "0.169.0" : null,
+        );
+        assert.equal(
+          observed?.executablePath,
+          source === "local" && !missingLocalRuntime ? "/custom/codex" : null,
+        );
         if (source === "local") {
+          assert.include(observed, {
+            source: "local",
+            phase: "idle",
+            operationId: null,
+            downloadedBytes: 0,
+            totalBytes: null,
+            message: missingLocalRuntime ? "Local runtime not found" : null,
+          });
           const start = yield* harness.router.start({ instanceId: id }).pipe(Effect.result);
           assert.equal(start._tag, "Failure");
         }
@@ -358,11 +414,16 @@ describe("provider installation routing", () => {
       Effect.gen(function* () {
         const kind = ProviderDriverKind.make("codex");
         const id = ProviderInstanceId.make("codex");
-        const current = (source: "local" | "managed", binaryPath: string): ServerSettingsValue => ({
+        const current = (
+          source: "local" | "managed",
+          binaryPath: string,
+          searchPath = "/first",
+        ): ServerSettingsValue => ({
           ...DEFAULT_SERVER_SETTINGS,
           providerInstances: {
             [id]: {
               driver: kind,
+              environment: [{ name: "PATH", value: searchPath, sensitive: false }],
               config: {
                 connectionMode: "chatgpt",
                 runtimeSource: source,
@@ -372,27 +433,32 @@ describe("provider installation routing", () => {
             },
           },
         });
-        const settingsRef = yield* SubscriptionRef.make(current("local", "/first/codex"));
+        const settingsRef = yield* SubscriptionRef.make(current("local", "instance-codex"));
         const first = yield* Deferred.make<void>();
         const second = yield* Deferred.make<void>();
+        const changedPath = yield* Deferred.make<void>();
         const harness = yield* makeHarness({ instance: instance(kind, id), settingsRef });
         const observed = yield* harness.router.subscribe({ instanceId: id }).pipe(
           Stream.tap((value) =>
-            value.executablePath === "/first/codex"
+            value.executablePath === "/first/instance-codex"
               ? Deferred.succeed(first, undefined)
-              : Deferred.succeed(second, undefined),
+              : value.executablePath === "/other/instance-codex"
+                ? Deferred.succeed(changedPath, undefined)
+                : Deferred.succeed(second, undefined),
           ),
-          Stream.take(3),
+          Stream.take(4),
           Stream.runCollect,
           Effect.forkChild,
         );
         yield* Deferred.await(first);
+        yield* SubscriptionRef.set(settingsRef, current("local", "instance-codex", "/other"));
+        yield* Deferred.await(changedPath);
         yield* SubscriptionRef.set(settingsRef, current("managed", "/first/codex"));
         yield* Deferred.await(second);
         yield* SubscriptionRef.set(settingsRef, current("local", "/second/codex"));
         assert.deepEqual(
           Array.from(yield* Fiber.join(observed)).map((value) => value.executablePath),
-          ["/first/codex", null, "/second/codex"],
+          ["/first/instance-codex", "/other/instance-codex", null, "/second/codex"],
         );
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
@@ -421,6 +487,62 @@ describe("provider installation routing", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect(
+    "checks every enabled instance on the managed runtime once, whichever instance started the install",
+    () =>
+      Effect.gen(function* () {
+        const checked: string[] = [];
+        const managed = (id: string, enabled: boolean) =>
+          Object.assign(instance(driver, ProviderInstanceId.make(id)), {
+            enabled,
+            refreshModels: () =>
+              Effect.sync(() => {
+                checked.push(id);
+              }),
+          });
+        const work = managed("antigravity_work", true);
+        const personal = managed("antigravity_personal", true);
+        const harness = yield* makeHarness({
+          // The disabled default instance is listed first, as server.getConfig lists it.
+          instance: managed("antigravity", false),
+          others: [managed("antigravity_custom", true), work, personal],
+          settings: {
+            providerInstances: {
+              [work.instanceId]: { driver, config: {} },
+              [personal.instanceId]: { driver, config: {} },
+              [ProviderInstanceId.make("antigravity_custom")]: {
+                driver,
+                config: { binaryPath: "/external/agy" },
+              },
+            },
+          },
+        });
+        yield* Effect.gen(function* () {
+          const first = yield* harness.connect;
+          const second = yield* harness.connect;
+          yield* Effect.all(
+            [first.start({ instanceId }), second.start({ instanceId: personal.instanceId })],
+            { concurrency: "unbounded" },
+          );
+          yield* Deferred.await(harness.listening);
+        }).pipe(Effect.scoped);
+        yield* SubscriptionRef.set(harness.installationState, {
+          ...state,
+          operationId: "install-1",
+          phase: "succeeded",
+          installedVersion: "1.5.8",
+        });
+        yield* Deferred.await(harness.observed);
+        // Instances refresh in list order, so the last one's refresh ends a watch's pass.
+        yield* Queue.take(harness.lastRefreshes);
+        assert.deepEqual(checked, [work.instanceId, personal.instanceId]);
+        // Let every other watch of this install finish its pass; none may refresh again.
+        yield* Queue.takeN(harness.lastRefreshes, harness.watches() - 1);
+        assert.deepEqual(checked, [work.instanceId, personal.instanceId]);
+        assert.deepEqual(harness.refreshedInstances, [work.instanceId, personal.instanceId]);
+        assert.strictEqual(harness.watches(), 1);
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
   it.effect("keeps external installs manual without hiding shared install status", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
@@ -443,31 +565,57 @@ describe("provider installation routing", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("protects another instance's binary found through its own PATH", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const platform = yield* HostProcess.Platform;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-provider-install-route-" });
-      const binary = platform === "win32" ? "agy-test.exe" : "agy-test";
-      const executable = path.join(directory, binary);
-      yield* fs.writeFileString(executable, "test");
-      yield* fs.chmod(executable, 0o755);
-      const other = ProviderInstanceId.make("antigravity-work");
-      const harness = yield* makeHarness({
-        settings: {
+  it.effect.each(["literal", "secret", "snapshot"] as const)(
+    "protects another instance's binary found through its own PATH (%s)",
+    (source) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const platform = yield* HostProcess.Platform;
+        const directory = yield* fs.makeTempDirectoryScoped({
+          prefix: "t3-provider-install-route-",
+        });
+        const binary = platform === "win32" ? "agy-test.exe" : "agy-test";
+        const executable = path.join(directory, binary);
+        yield* fs.writeFileString(executable, "test");
+        yield* fs.chmod(executable, 0o755);
+        const other = ProviderInstanceId.make("antigravity-work");
+        const configured: ServerSettingsValue = {
+          ...DEFAULT_SERVER_SETTINGS,
           providerInstances: {
             [other]: {
               driver,
               config: { binaryPath: binary },
-              environment: [{ name: "PATH", value: directory, sensitive: false }],
+              environment: [
+                {
+                  name: "PATH",
+                  value:
+                    source === "secret"
+                      ? { provider: SecretProviderId.make("vault"), reference: "provider-path" }
+                      : directory,
+                  sensitive: source === "secret",
+                },
+              ],
             },
           },
-        },
-      });
-      yield* harness.router.remove({ instanceId });
-      assert.include(harness.protectedPaths(), executable);
-      assert.deepEqual(harness.calls, ["remove", "refresh"]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+        };
+        const harness = yield* makeHarness(
+          source === "snapshot"
+            ? {
+                settingsRef: yield* SubscriptionRef.make(DEFAULT_SERVER_SETTINGS),
+                snapshotSettings: configured,
+              }
+            : { settings: configured },
+        );
+        if (source === "secret") {
+          const failure = yield* Effect.flip(harness.router.remove({ instanceId }));
+          assert.include(failure.detail, "PATH");
+          assert.deepEqual(harness.calls, []);
+          return;
+        }
+        yield* harness.router.remove({ instanceId });
+        assert.include(harness.protectedPaths(), executable);
+        assert.deepEqual(harness.calls, ["remove", "refresh"]);
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

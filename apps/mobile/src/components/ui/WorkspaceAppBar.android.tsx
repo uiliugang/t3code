@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+
 import { Box, Icon, IconButton, RNHostView } from "@expo/ui/jetpack-compose";
 import { size } from "@expo/ui/jetpack-compose/modifiers";
 import type { MenuAction } from "@react-native-menu/menu";
@@ -139,6 +140,7 @@ export function WorkspaceAppBar(props: WorkspaceAppBarProps) {
  */
 function WorkspaceAppBarView(props: WorkspaceAppBarProps) {
   const t = useUiTranslation();
+
   const { search, filter } = props;
   const searching = search?.active === true;
   const { colors } = useControlTheme();

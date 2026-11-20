@@ -1,4 +1,9 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import {
+  errorDisplayMessage,
+  errorI18nMessage,
+  resolveMarkedText,
+} from "@t3tools/client-runtime/errors";
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { AppBar, type AppBarSearch } from "../../components/ui/AppBar";
 import { AsyncResult } from "effect/reactivity";
@@ -8,6 +13,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import {
   hostReviewerQuery,
   parseReviewerIds,
@@ -23,6 +29,7 @@ import {
 } from "@t3tools/client-runtime/pull-request-selection";
 import { PullRequestOperationError, type PullRequestReviewerCandidate } from "@t3tools/contracts";
 import { Schema } from "effect";
+import { msg, useGT, useMessages } from "gt-react-native";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
@@ -38,30 +45,46 @@ import { useDebouncedValue } from "../../state/queries";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { PullRequestAvatar } from "./PullRequestPresentation";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
+import type { MessageResolver } from "../../i18n/messages";
+import { m as resolveMessage } from "../../i18n/messages";
 
 const isPullRequestOperationError = Schema.is(PullRequestOperationError);
 
-const TRUNCATED_LABELS: Record<ReviewerTruncation, (error: string | null) => string> = {
-  unsearchable: () =>
-    "The provider has more reviewers than it returned. Find additional reviewers on the provider.",
-  searchable: () => "The provider has more reviewers than are listed here. Search to find them.",
-  "search-failed": (error) =>
-    `Only listed reviewers are matched: the provider search failed. ${error ?? ""}`,
-  "search-truncated": () =>
-    "More reviewers match than the provider returned. Keep typing to narrow it down.",
+const TRUNCATED_LABELS: Record<
+  ReviewerTruncation,
+  (error: string | null, resolve: MessageResolver) => string
+> = {
+  unsearchable: (_error, resolve) =>
+    resolve(
+      msg(
+        "The provider has more reviewers than it returned. Find additional reviewers on the provider.",
+      ),
+    ),
+  searchable: (_error, resolve) =>
+    resolve(msg("The provider has more reviewers than are listed here. Search to find them.")),
+  "search-failed": (error, resolve) =>
+    resolve(
+      msg("Only listed reviewers are matched: the provider search failed. {error}", {
+        error: error ?? "",
+      }),
+    ),
+  "search-truncated": (_error, resolve) =>
+    resolve(msg("More reviewers match than the provider returned. Keep typing to narrow it down.")),
 };
 
 export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequestParams>) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
+  const m = useMessages();
   const contentTopInset = useContentTopInset();
   const listRef = useRef<LegendListRef>(null);
   const target = pullRequestTarget(route.params);
   const detail = useEnvironmentQuery(composerPullRequests.detail(target));
   const pr = detail.data;
-  const { singular } = sourceControlClients.get(
-    (pr ?? route.params.initialSummary)?.provider,
-  ).changeRequest;
+  const term = changeRequestTermKind(
+    sourceControlClients.get((pr ?? route.params.initialSummary)?.provider).changeRequest,
+  );
   const canWrite = useAtomValue(
     composerPullRequests.requestReviewers.permissionAtom(target.environmentId),
   );
@@ -141,14 +164,14 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
     setPending(null);
     if (AsyncResult.isFailure(response)) {
       const cause = squashAtomCommandFailure(response);
+      const marked = errorI18nMessage(cause);
       setError(
-        t(
-          isPullRequestOperationError(cause)
-            ? cause.detail
-            : cause instanceof Error
-              ? cause.message
-              : "Couldn't update this review request. Try again.",
-        ),
+        marked !== undefined
+          ? resolveMarkedText(marked, resolveMessage)
+          : isPullRequestOperationError(cause)
+            ? t(cause.detail)
+            : (errorDisplayMessage(cause, resolveMessage) ??
+              t("Couldn't update this review request. Try again.")),
       );
       return;
     }
@@ -186,9 +209,11 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
           const logins = people.map((person) => person.login).join(", ");
           Dialog.alert(
             requested
-              ? `Couldn't request a review from ${logins}`
-              : `Couldn't remove the review request from ${logins}`,
-            cause instanceof Error ? cause.message : "The provider refused the change.",
+              ? gt("Couldn't request a review from {logins}", { logins })
+              : gt("Couldn't remove the review request from {logins}", { logins }),
+            cause instanceof Error
+              ? (errorDisplayMessage(cause, resolveMessage) ?? cause.message)
+              : gt("The provider refused the change."),
           );
         };
         const send = async (
@@ -205,7 +230,7 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
           .then(() => send(add, true))
           .then(() => refreshSearch?.());
       }),
-    [navigation, draft, latest, request, target, hostQuery, searchResult.refresh],
+    [navigation, draft, latest, request, target, hostQuery, searchResult.refresh, gt],
   );
   const reviewerIds = parseReviewerIds(query);
   const tooMany = reviewerIds.length > 25;
@@ -278,7 +303,7 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
           ref={listRef}
           data={candidates}
           keyExtractor={(candidate) => `${candidate.kind}:${candidate.id}`}
-          extraData={{ allowed, draft }}
+          extraData={{ allowed, draft, pending, canRemove: pr?.capabilities.reviewers.remove }}
           estimatedItemSize={64}
           recycleItems
           renderScrollComponent={NativeScrollView}
@@ -300,14 +325,16 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
                 <Text className="text-xs text-foreground-muted">
                   {t(
                     "Tap someone to request a review. Tap a requested reviewer to remove the request.",
-                  )}
+                  )}{" "}
+                  {gt("Changes are sent when you close this sheet.")}
                 </Text>
               )}
               {!allowed ? (
                 <Text className="text-xs text-foreground-muted">
-                  {t("Requesting reviews requires write access and an open {type}.", {
-                    type: t(singular),
-                  })}
+                  {gt(
+                    "Requesting reviews requires write access and an open {term, select, mr {merge request} cr {change request} other {pull request}}.",
+                    { term },
+                  )}
                 </Text>
               ) : null}
               {error && !manualWithCandidates ? (
@@ -320,21 +347,24 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
           renderItem={({ item }) => {
             const id = `${item.kind}:${item.id}`;
             const requested = isSelected(draft, id, item.isRequested);
+            const disabled =
+              !allowed ||
+              pending !== null ||
+              (requested && item.isRequested && pr?.capabilities.reviewers.remove === false);
             return (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${requested ? "Remove review request from" : "Request review from"} ${item.login}${item.kind === "team" ? " team" : ""}`}
-                accessibilityState={{
-                  disabled:
-                    !allowed ||
-                    pending !== null ||
-                    (requested && item.isRequested && pr?.capabilities.reviewers.remove === false),
-                }}
-                disabled={
-                  !allowed ||
-                  pending !== null ||
-                  (requested && item.isRequested && pr?.capabilities.reviewers.remove === false)
+                accessibilityLabel={
+                  item.kind === "team"
+                    ? requested
+                      ? gt("Remove review request from {login} team", { login: item.login })
+                      : gt("Request review from {login} team", { login: item.login })
+                    : requested
+                      ? gt("Remove review request from {login}", { login: item.login })
+                      : gt("Request review from {login}", { login: item.login })
                 }
+                accessibilityState={{ disabled }}
+                disabled={disabled}
                 onPress={() =>
                   setDraft((current) => toggleSelection(current, id, item, item.isRequested))
                 }
@@ -347,7 +377,7 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
                   </Text>
                   <Text className="text-xs text-foreground-muted" numberOfLines={1}>
                     {item.login}
-                    {item.kind === "team" ? t(" · Team") : ""}
+                    {item.kind === "team" ? ` · ${gt("Team", { $context: "reviewer kind" })}` : ""}
                   </Text>
                 </View>
                 {requested ? (
@@ -402,7 +432,7 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
           ListFooterComponent={
             view.truncation ? (
               <Text className="px-4 py-4 text-xs text-foreground-muted">
-                {t(TRUNCATED_LABELS[view.truncation](view.searchError))}
+                {TRUNCATED_LABELS[view.truncation](view.searchError, m)}
               </Text>
             ) : undefined
           }
@@ -419,7 +449,11 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
               <AppActivityIndicator />
             ) : (
               <Text className="text-danger-foreground">
-                {detail.error ?? t("Couldn't load this {singular}.", { singular: t(singular) })}
+                {detail.error ??
+                  gt(
+                    "Couldn't load this {term, select, mr {merge request} cr {change request} other {pull request}}.",
+                    { term },
+                  )}
               </Text>
             )
           ) : (

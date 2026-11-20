@@ -53,6 +53,7 @@ export function ZoomableImage({
   ref?: Ref<ZoomableImageHandle>;
 }) {
   const t = useUiTranslation();
+
   const viewportRef = useRef<HTMLDivElement>(null);
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const viewerSize = useSyncExternalStore(subscribeViewerSize, getViewerSize);

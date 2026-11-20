@@ -6,15 +6,15 @@ import type {
 } from "@t3tools/contracts";
 import {
   collectProviderUsageLimits,
-  formatDuration,
   type LimitPace,
-  limitsNotice,
   paceOf,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
+import { formatDuration, limitsNotice } from "@t3tools/shared/usageLimitsCopy";
+import { msg, useGT, useLocale, useMessages } from "gt-react";
 import type { ReactNode } from "react";
 
-import { useClientSettings, usePrimarySettings } from "../../hooks/useSettings";
+import { usePrimarySettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
@@ -26,9 +26,9 @@ import { formatContextWindowCompactionMessage } from "./compaction.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 
 const PACE_LABEL: Record<LimitPace, string> = {
-  ahead: "Ahead of pace",
-  on: "On pace",
-  under: "Under pace",
+  ahead: msg("Ahead of pace"),
+  on: msg("On pace"),
+  under: msg("Under pace"),
 };
 
 export interface ThreadDetailsUsageInput {
@@ -47,6 +47,7 @@ export function ThreadDetailsUsage({
   sources,
 }: Omit<ThreadDetailsUsageInput, "contextWindow">) {
   const t = useUiTranslation();
+  const m = useMessages();
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
   const report =
@@ -59,7 +60,7 @@ export function ThreadDetailsUsage({
     report?.accounts.find((entry) => entry.instanceId === providerInstanceId)?.limits ??
     providers.find((provider) => provider.instanceId === providerInstanceId)?.usageLimits;
   if (!limits) return null;
-  const notice = limitsNotice(limits);
+  const notice = limitsNotice(limits, m);
 
   return (
     <ThreadDetailsSection
@@ -97,6 +98,8 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
     maxTokens !== null && threshold !== null && threshold > 0 && threshold < maxTokens
       ? (threshold / maxTokens) * 100
       : null;
+  const m = useMessages();
+  const locale = useLocale();
   const usedTokens = formatContextWindowTokens(usage.usedTokens);
   return (
     <ThreadDetailsSection
@@ -131,14 +134,14 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
               {maxTokens !== null ? (
                 <span className="text-muted-foreground">
                   {t("{used} of {max} tokens", {
-                    used: usage.usedTokens.toLocaleString("en-US"),
-                    max: maxTokens.toLocaleString("en-US"),
+                    used: usage.usedTokens.toLocaleString(locale),
+                    max: maxTokens.toLocaleString(locale),
                   })}
                 </span>
               ) : null}
               {threshold !== null && threshold > 0 ? (
                 <span className="text-muted-foreground">
-                  {formatContextWindowCompactionMessage(threshold)}
+                  {formatContextWindowCompactionMessage(threshold, m)}
                 </span>
               ) : null}
             </>
@@ -157,7 +160,7 @@ function LimitRow({
   readonly now: number;
 }) {
   const t = useUiTranslation();
-  const uiLanguage = useClientSettings((settings) => settings.uiLanguage);
+  const m = useMessages();
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const left = remainingPercent(window);
   const pace = paceOf(window, now);
@@ -176,17 +179,11 @@ function LimitRow({
           </span>
           {window.resetsAt && resetsAt > now ? (
             <span className="text-muted-foreground">
-              {t("Resets in {duration}", { duration: formatDuration(resetsAt - now) })} ·{" "}
-              {formatUpcomingTimestamp(
-                window.resetsAt,
-                timestampFormat,
-                now,
-                undefined,
-                uiLanguage,
-              )}
+              {t("Resets in {duration}", { duration: formatDuration(resetsAt - now, m) })} ·{" "}
+              {formatUpcomingTimestamp(window.resetsAt, timestampFormat, now, undefined, m)}
             </span>
           ) : null}
-          {pace ? <span className="text-muted-foreground">{t(PACE_LABEL[pace])}</span> : null}
+          {pace ? <span className="text-muted-foreground">{m(PACE_LABEL[pace])}</span> : null}
         </>
       }
     />
@@ -215,13 +212,14 @@ function UsageRow({
   readonly tooltip: ReactNode;
   readonly muted?: boolean;
 }) {
+  const gt = useGT();
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <div
             tabIndex={0}
-            aria-label={`${label}: ${ariaValue}`}
+            aria-label={gt("{label}: {value}", { label, value: ariaValue })}
             className="col-span-3 grid h-6 cursor-default grid-cols-subgrid items-center rounded-lg px-2.5 outline-none hover:bg-black/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-black/[0.035] dark:hover:bg-white/[0.08] dark:data-popup-open:bg-white/[0.08]"
           />
         }

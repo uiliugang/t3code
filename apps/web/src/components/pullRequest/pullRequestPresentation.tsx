@@ -23,8 +23,10 @@ import {
   UserRoundIcon,
   UserRoundXIcon,
 } from "lucide-react";
+import { msg, useMessages } from "gt-react";
 import { Children, type CSSProperties, isValidElement, type ReactNode, useState } from "react";
 
+import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 
 import { Badge } from "../ui/badge";
@@ -80,19 +82,19 @@ function reviewDecisionPresentation(decision: PullRequestReviewDecision) {
     case "approved":
       return {
         Icon: UserCheckIcon,
-        label: "Approved",
+        label: msg("Approved", { $context: "review decision" }),
         toneClassName: CHECK_STATUS_PRESENTATION.success.toneClassName,
       };
     case "changes-requested":
       return {
         Icon: UserRoundXIcon,
-        label: "Changes requested",
+        label: msg("Changes requested"),
         toneClassName: "text-amber-600/90 dark:text-amber-400/80",
       };
     case "review-required":
       return {
         Icon: UserRoundIcon,
-        label: "Awaiting review",
+        label: msg("Awaiting review"),
         toneClassName: "text-muted-foreground/60",
       };
   }
@@ -103,25 +105,29 @@ export function PullRequestReviewDecisionGlyph({
 }: {
   decision: PullRequestReviewDecision;
 }) {
-  const t = useUiTranslation();
+  const m = useMessages();
   const presentation = reviewDecisionPresentation(decision);
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
-        <span className="sr-only">{t(presentation.label)}</span>
+        <span className="sr-only">{m(presentation.label)}</span>
       </TooltipTrigger>
-      <TooltipPopup>{t(presentation.label)}</TooltipPopup>
+      <TooltipPopup>{m(presentation.label)}</TooltipPopup>
     </Tooltip>
   );
 }
 
-export function resolvePullRequestState(input: {
-  readonly state: PullRequestState;
-  readonly isDraft: boolean;
-}): PullRequestStatePresentation {
+export function resolvePullRequestState(
+  input: {
+    readonly state: PullRequestState;
+    readonly isDraft: boolean;
+  },
+  resolve: MessageResolver = m,
+): PullRequestStatePresentation {
   const key = input.state === "open" && input.isDraft ? "draft" : input.state;
-  return PULL_REQUEST_STATE_PRESENTATION[key];
+  const presentation = PULL_REQUEST_STATE_PRESENTATION[key];
+  return { ...presentation, label: resolve(presentation.label) };
 }
 
 export interface PullRequestConflictPresentation {
@@ -160,18 +166,18 @@ export function PullRequestStateGlyph({
   isDraft: boolean;
   className?: string;
 }) {
-  const t = useUiTranslation();
-  const presentation = resolvePullRequestState({ state, isDraft });
+  const m = useMessages();
+  const presentation = resolvePullRequestState({ state, isDraft }, m);
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon
           role="img"
-          aria-label={t(presentation.label)}
+          aria-label={presentation.label}
           className={cn("size-4 shrink-0", presentation.toneClassName, className)}
         />
       </TooltipTrigger>
-      <TooltipPopup>{t(presentation.label)}</TooltipPopup>
+      <TooltipPopup>{presentation.label}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -205,35 +211,51 @@ export function PullRequestConflictGlyph({
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon
           role="img"
-          aria-label={t(presentation.label)}
+          aria-label={presentation.label}
           className={cn("size-4 shrink-0", presentation.toneClassName, className)}
         />
       </TooltipTrigger>
-      <TooltipPopup>{t(presentation.label)}</TooltipPopup>
+      <TooltipPopup>{presentation.label}</TooltipPopup>
     </Tooltip>
   );
 }
 
 const CHECK_STATUS_PRESENTATION = {
-  pending: { label: "Running", Icon: Spinner, toneClassName: "text-amber-500" },
+  pending: {
+    label: msg("Running", { $context: "check status" }),
+    Icon: Spinner,
+    toneClassName: "text-amber-500",
+  },
   "action-required": {
-    label: "Awaiting action",
+    label: msg("Awaiting action"),
     Icon: CircleDotIcon,
     toneClassName: "text-amber-600 dark:text-amber-400/90",
   },
   success: {
-    label: "Passed",
+    label: msg("Passed", { $context: "check status" }),
     Icon: CircleCheckIcon,
     toneClassName: "text-emerald-600 dark:text-emerald-300/90",
   },
-  failure: { label: "Failed", Icon: CircleXIcon, toneClassName: "text-destructive" },
+  failure: {
+    label: msg("Failed", { $context: "check status" }),
+    Icon: CircleXIcon,
+    toneClassName: "text-destructive",
+  },
   cancelled: {
-    label: "Cancelled",
+    label: msg("Cancelled", { $context: "check status" }),
     Icon: OctagonXIcon,
     toneClassName: "text-muted-foreground/70",
   },
-  skipped: { label: "Skipped", Icon: CircleSlashIcon, toneClassName: "text-muted-foreground/70" },
-  neutral: { label: "Neutral", Icon: CircleDashedIcon, toneClassName: "text-muted-foreground/70" },
+  skipped: {
+    label: msg("Skipped", { $context: "check status" }),
+    Icon: CircleSlashIcon,
+    toneClassName: "text-muted-foreground/70",
+  },
+  neutral: {
+    label: msg("Neutral", { $context: "check status" }),
+    Icon: CircleDashedIcon,
+    toneClassName: "text-muted-foreground/70",
+  },
 } as const satisfies Record<
   PullRequestCheckStatus,
   { label: string; Icon: typeof CircleCheckIcon | typeof Spinner; toneClassName: string }
@@ -249,10 +271,11 @@ function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">
 
 export function pullRequestCheckStatusLabel(
   check: Pick<PullRequestCheck, "status" | "url">,
+  resolve: MessageResolver = m,
 ): string {
   return isWorkflowApprovalCheck(check)
-    ? "Awaiting approval"
-    : CHECK_STATUS_PRESENTATION[check.status].label;
+    ? resolve(msg("Awaiting approval"))
+    : resolve(CHECK_STATUS_PRESENTATION[check.status].label);
 }
 
 export function PullRequestCheckStatusIcon({ status }: { status: PullRequestCheckStatus }) {
@@ -267,17 +290,17 @@ export function PullRequestCheckStatusIcon({ status }: { status: PullRequestChec
 
 const CHECKS_STATE_PRESENTATION = {
   passing: {
-    label: "All checks have passed",
+    label: msg("All checks have passed"),
     Icon: CircleCheckIcon,
     toneClassName: CHECK_STATUS_PRESENTATION.success.toneClassName,
   },
   failing: {
-    label: "Some checks were not successful",
+    label: msg("Some checks were not successful"),
     Icon: CircleXIcon,
     toneClassName: "text-destructive",
   },
   pending: {
-    label: "Some checks haven't completed yet",
+    label: msg("Some checks haven't completed yet"),
     Icon: CircleDotIcon,
     toneClassName: "text-amber-600 dark:text-amber-400/90",
   },
@@ -286,8 +309,12 @@ const CHECKS_STATE_PRESENTATION = {
   { label: string; Icon: typeof CircleCheckIcon; toneClassName: string }
 >;
 
-export function pullRequestChecksStatePresentation(state: PullRequestChecksState) {
-  return CHECKS_STATE_PRESENTATION[state];
+export function pullRequestChecksStatePresentation(
+  state: PullRequestChecksState,
+  resolve: MessageResolver = m,
+) {
+  const presentation = CHECKS_STATE_PRESENTATION[state];
+  return { ...presentation, label: resolve(presentation.label) };
 }
 
 export function pullRequestChecksState(
@@ -302,7 +329,10 @@ export function pullRequestChecksState(
 
 const REVIEW_OUTCOME_PRESENTATION = {
   approved: {
-    label: "Approved",
+    label: msg("Approved", { $context: "review outcome" }),
+    staleLabel: msg("Approved earlier changes", {
+      $context: "tooltip: this approval was given before the latest commits were pushed",
+    }),
     Icon: CircleCheckIcon,
     toneClassName: "text-emerald-600 dark:text-emerald-300/90",
     ringClassName: "ring-2 ring-emerald-500 dark:ring-emerald-400",
@@ -312,7 +342,11 @@ const REVIEW_OUTCOME_PRESENTATION = {
     badgeVariant: "success",
   },
   "changes-requested": {
-    label: "Changes requested",
+    label: msg("Changes requested"),
+    staleLabel: msg("Changes requested earlier changes", {
+      $context:
+        "tooltip: the reviewer requested changes on an older version, before the latest commits",
+    }),
     Icon: CircleXIcon,
     toneClassName: "text-destructive",
     ringClassName: "ring-2 ring-destructive",
@@ -321,7 +355,10 @@ const REVIEW_OUTCOME_PRESENTATION = {
     badgeVariant: "error",
   },
   dismissed: {
-    label: "Review dismissed",
+    label: msg("Review dismissed"),
+    staleLabel: msg("Review dismissed earlier changes", {
+      $context: "tooltip: a review of an older version, before the latest commits, was dismissed",
+    }),
     Icon: CircleDashedIcon,
     toneClassName: "text-muted-foreground/70",
     ringClassName: "ring-2 ring-muted-foreground/60",
@@ -334,6 +371,7 @@ const REVIEW_OUTCOME_PRESENTATION = {
   PullRequestReviewOutcome,
   {
     label: string;
+    staleLabel: string;
     Icon: typeof CircleCheckIcon;
     toneClassName: string;
     ringClassName: string;
@@ -358,9 +396,9 @@ export function pullRequestReviewOutcomeRingClassName(
 
 export function pullRequestReviewOutcomeStaleLabel(
   outcome: PullRequestReviewOutcome,
-  t = translateUi.bind(null, "en"),
+  resolve: MessageResolver = m,
 ): string {
-  return t("{outcome} earlier changes", { outcome: t(REVIEW_OUTCOME_PRESENTATION[outcome].label) });
+  return resolve(REVIEW_OUTCOME_PRESENTATION[outcome].staleLabel);
 }
 
 export function PullRequestReviewOutcomeIcon({
@@ -401,8 +439,11 @@ export function PullRequestReviewOutcomeAvatarBadge({
   );
 }
 
-export function pullRequestReviewOutcomeLabel(outcome: PullRequestReviewOutcome): string {
-  return REVIEW_OUTCOME_PRESENTATION[outcome].label;
+export function pullRequestReviewOutcomeLabel(
+  outcome: PullRequestReviewOutcome,
+  resolve: MessageResolver = m,
+): string {
+  return resolve(REVIEW_OUTCOME_PRESENTATION[outcome].label);
 }
 
 export function PullRequestReviewOutcomeBadge({
@@ -412,13 +453,13 @@ export function PullRequestReviewOutcomeBadge({
   outcome: PullRequestReviewOutcome;
   className?: string;
 }) {
-  const t = useUiTranslation();
+  const m = useMessages();
   const presentation = REVIEW_OUTCOME_PRESENTATION[outcome];
   return (
     <Badge size="sm" variant={presentation.badgeVariant} className={className}>
       <span className="inline-flex items-baseline gap-1">
         <presentation.Icon aria-hidden className="size-3 self-center" />
-        <span>{t(presentation.label)}</span>
+        <span>{m(presentation.label)}</span>
       </span>
     </Badge>
   );

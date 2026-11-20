@@ -7,6 +7,7 @@ import {
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { msg } from "gt-i18n";
 
 export const DEFAULT_WEBHOOK_PROMPT = "Handle this webhook:\n{{body}}";
 
@@ -35,11 +36,11 @@ export const WEBHOOK_FILTER_OPS: ReadonlyArray<{
   readonly op: ScheduledTaskWebhookFilterOp;
   readonly label: string;
 }> = [
-  { op: "equals", label: "equals" },
-  { op: "notEquals", label: "does not equal" },
-  { op: "in", label: "is one of" },
-  { op: "startsWith", label: "starts with" },
-  { op: "exists", label: "exists" },
+  { op: "equals", label: msg("equals") },
+  { op: "notEquals", label: msg("does not equal") },
+  { op: "in", label: msg("is one of") },
+  { op: "startsWith", label: msg("starts with") },
+  { op: "exists", label: msg("exists") },
 ];
 
 let lastWebhookFilterDraftId = 0;

@@ -1,6 +1,9 @@
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
+import { msg } from "gt-react";
+
+import { m, type MessageResolver } from "../i18n/messages";
 
 export type ThreadActionMenuId =
   | "find"
@@ -37,30 +40,53 @@ export type DraftActionMenuId =
   | "project-settings"
   | "discard";
 
-export function buildDraftActionMenuItems(options: {
-  readonly hasPath: boolean;
-  readonly hasBranch: boolean;
-  readonly hasProject: boolean;
-}): ReadonlyArray<ContextMenuItem<DraftActionMenuId>> {
+export function buildDraftActionMenuItems(
+  options: {
+    readonly hasPath: boolean;
+    readonly hasBranch: boolean;
+    readonly hasProject: boolean;
+  },
+  resolve: MessageResolver = m,
+): ReadonlyArray<ContextMenuItem<DraftActionMenuId>> {
   return [
     {
       id: "copy",
-      label: "Copy",
+      label: resolve(msg("Copy", { $context: "submenu of things to copy" })),
       icon: "copy",
       disabled: !options.hasPath && !options.hasBranch,
       children: [
-        ...(options.hasPath ? [{ id: "copy-path" as const, label: "Path", icon: "folder" }] : []),
+        ...(options.hasPath
+          ? [
+              {
+                id: "copy-path" as const,
+                label: resolve(msg("Path", { $context: "copy the file path" })),
+                icon: "folder",
+              },
+            ]
+          : []),
         ...(options.hasBranch
-          ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
+          ? [
+              {
+                id: "copy-branch" as const,
+                label: resolve(msg("Branch", { $context: "copy the git branch name" })),
+                icon: "git-branch",
+              },
+            ]
           : []),
       ],
     },
     ...(options.hasProject
-      ? [{ id: "project-settings" as const, label: "Project settings", icon: "settings" }]
+      ? [
+          {
+            id: "project-settings" as const,
+            label: resolve(msg("Project settings")),
+            icon: "settings",
+          },
+        ]
       : []),
     {
       id: "discard",
-      label: "Discard draft",
+      label: resolve(msg("Discard draft")),
       icon: "trash",
       destructive: true,
       separatorBefore: true,

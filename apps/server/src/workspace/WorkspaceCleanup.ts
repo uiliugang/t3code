@@ -7,6 +7,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { makeWorktreeFileInspection } from "../vcs/worktreeFileInspection.ts";
 import { removeLinkedWorktree } from "../vcs/worktreeRemoval.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withWorkspaceLeases } from "./workspaceLease.ts";
@@ -32,6 +33,7 @@ export class WorkspaceCleanup extends Context.Service<
       readonly workspace: ThreadWorkspaceRevision;
       readonly managedRoots: ReadonlyArray<string>;
       readonly isOccupied: (checkoutRoot: string) => Effect.Effect<boolean, WorkspaceCleanupError>;
+      readonly beforeRemove: Effect.Effect<void, WorkspaceCleanupError>;
     }) => Effect.Effect<void, WorkspaceCleanupError>;
   }
 >()("t3/workspace/WorkspaceCleanup") {}
@@ -46,6 +48,7 @@ export const layer = Layer.effect(
     const path = yield* Path.Path;
     const git = yield* GitVcsDriver.GitVcsDriver;
     const resolver = yield* WorkspaceRepositoryResolver.WorkspaceRepositoryResolver;
+    const { localChangesReason, hasSubmoduleFiles } = yield* makeWorktreeFileInspection;
     return WorkspaceCleanup.of({
       remove: Effect.fn("WorkspaceCleanup.remove")(
         function* (input) {
@@ -63,6 +66,12 @@ export const layer = Layer.effect(
                   }>`SELECT deleted_at FROM orchestration_v2_projection_threads WHERE thread_id = ${input.threadId}`;
                   if (owner[0]?.deleted_at == null)
                     return yield* reject("Only deleted tasks can release a worktree group.");
+                  const pendingCleanup = yield* sql<{ status: string }>`
+                    SELECT status FROM orchestration_v2_effect_outbox
+                    WHERE thread_id = ${input.threadId} AND status NOT IN ('succeeded', 'cancelled')
+                    LIMIT 1`;
+                  if (pendingCleanup.length > 0)
+                    return yield* reject("Thread deletion is still pending.");
                   const restores = yield* sql<{
                     stage: string;
                   }>`SELECT stage FROM workspace_restores WHERE thread_id = ${input.threadId} AND stage != 'complete'`;
@@ -117,7 +126,25 @@ export const layer = Layer.effect(
                     }
                   }
                 });
+                const assertClean = Effect.fn("WorkspaceCleanup.assertClean")(function* (
+                  resource: (typeof workspace.resources)[number],
+                ) {
+                  if ((yield* fs.realPath(resource.checkoutRoot)) !== resource.checkoutRoot)
+                    return yield* reject(`${resource.name} is a symbolic link.`);
+                  if (!(yield* fs.exists(path.join(resource.checkoutRoot, ".git"))))
+                    return yield* reject(`${resource.name} is no longer a linked worktree.`);
+                  yield* resolver.verify(resource.identity);
+                  if (yield* fs.exists(path.join(resource.identity.gitDir, "locked")))
+                    return yield* reject(`${resource.name} is locked.`);
+                  const changes = yield* localChangesReason(resource.checkoutRoot, {
+                    worktreeKeepWhen: "any-local-files",
+                  });
+                  if (changes !== null) return yield* reject(`${resource.name} ${changes}.`);
+                  if (yield* hasSubmoduleFiles(resource.identity))
+                    return yield* reject(`${resource.name} has local submodule data.`);
+                });
                 yield* assertUnused();
+                yield* input.beforeRemove;
                 const journal = yield* sql<{
                   resource_id: string;
                   stage: string;
@@ -132,11 +159,6 @@ export const layer = Layer.effect(
                       return yield* reject(`${resource.name} disappeared before cleanup.`);
                     continue;
                   }
-                  if ((yield* fs.realPath(resource.checkoutRoot)) !== resource.checkoutRoot)
-                    return yield* reject(`${resource.name} is a symbolic link.`);
-                  if (yield* fs.exists(path.join(resource.checkoutRoot, ".git")))
-                    yield* resolver.verify(resource.identity);
-                  else yield* resolver.verifyRepository(resource.identity);
                   if (resource.identity.gitDir === resource.identity.commonDir)
                     return yield* reject("The main repository cannot be removed.");
                   if (
@@ -153,8 +175,7 @@ export const layer = Layer.effect(
                     return yield* reject(
                       `${resource.name} is outside the managed worktree directories.`,
                     );
-                  if (yield* fs.exists(path.join(resource.identity.gitDir, "locked")))
-                    return yield* reject(`${resource.name} is locked.`);
+                  yield* assertClean(resource);
                   present.push(resource);
                 }
                 // Persist intent before removing any checkout; a retry can recognize completed removals.
@@ -162,32 +183,24 @@ export const layer = Layer.effect(
                   yield* sql`INSERT INTO workspace_cleanup_resources (revision_id, resource_id, stage) VALUES (${workspace.id}, ${resource.id}, 'planned') ON CONFLICT DO NOTHING`;
                 for (const resource of present) {
                   yield* assertUnused();
-                  if ((yield* fs.realPath(resource.checkoutRoot)) !== resource.checkoutRoot)
-                    return yield* reject(`${resource.name} is a symbolic link.`);
-                  if (yield* fs.exists(path.join(resource.identity.gitDir, "locked")))
-                    return yield* reject(`${resource.name} is locked.`);
-                  if (yield* fs.exists(path.join(resource.checkoutRoot, ".git"))) {
-                    yield* resolver.verify(resource.identity);
-                    yield* removeLinkedWorktree({
-                      operation: "WorkspaceCleanup.remove",
-                      cwd: resource.identity.commonDir,
-                      worktreePath: resource.checkoutRoot,
-                      force: true,
-                      execute: git.execute,
-                      run: (args) =>
-                        git.execute({
-                          operation: "WorkspaceCleanup.remove",
-                          cwd: path.dirname(resource.checkoutRoot),
-                          args: ["--git-dir", resource.identity.commonDir, ...args],
-                        }),
-                    }).pipe(
-                      Effect.provideService(FileSystem.FileSystem, fs),
-                      Effect.provideService(Path.Path, path),
-                    );
-                  } else {
-                    yield* resolver.verifyRepository(resource.identity);
-                    yield* fs.remove(resource.checkoutRoot, { recursive: true });
-                  }
+                  yield* assertClean(resource);
+                  yield* input.beforeRemove;
+                  yield* removeLinkedWorktree({
+                    operation: "WorkspaceCleanup.remove",
+                    cwd: resource.identity.commonDir,
+                    worktreePath: resource.checkoutRoot,
+                    force: false,
+                    execute: git.execute,
+                    run: (args) =>
+                      git.execute({
+                        operation: "WorkspaceCleanup.remove",
+                        cwd: path.dirname(resource.checkoutRoot),
+                        args: ["--git-dir", resource.identity.commonDir, ...args],
+                      }),
+                  }).pipe(
+                    Effect.provideService(FileSystem.FileSystem, fs),
+                    Effect.provideService(Path.Path, path),
+                  );
                   yield* sql`UPDATE workspace_cleanup_resources SET stage = 'removed' WHERE revision_id = ${workspace.id} AND resource_id = ${resource.id}`;
                 }
               }),

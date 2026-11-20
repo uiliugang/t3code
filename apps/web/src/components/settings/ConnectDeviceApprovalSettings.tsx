@@ -1,5 +1,6 @@
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import type { AuthConnectDevice, EnvironmentId } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -10,6 +11,7 @@ import { useState } from "react";
 
 import type { ServerPairingLinkRecord } from "~/environments/primary";
 import { authEnvironment } from "~/state/auth";
+import { m } from "~/i18n/messages";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -31,8 +33,11 @@ function reportFailure(
   toastManager.add(
     stackedThreadToast({
       type: "error",
-      title: t(title),
-      description: error instanceof Error ? error.message : t("An error occurred."),
+      title,
+      description:
+        error instanceof Error
+          ? (thrownErrorMessage(error, m) ?? error.message)
+          : t("An error occurred."),
     }),
   );
 }
@@ -92,7 +97,7 @@ export function ConnectDeviceApprovalSettings({
                     void run(request.id, async () =>
                       reportFailure(
                         t,
-                        "Could not deny the device",
+                        t("Could not deny the device"),
                         await deny({ environmentId, input: { id: request.id } }),
                       ),
                     )
@@ -107,7 +112,7 @@ export function ConnectDeviceApprovalSettings({
                     void run(request.id, async () =>
                       reportFailure(
                         t,
-                        "Could not approve the device",
+                        t("Could not approve the device"),
                         await approve({ environmentId, input: { pairingLinkId: request.id } }),
                       ),
                     )
@@ -149,7 +154,7 @@ export function ConnectDeviceApprovalSettings({
                         run(device.proofKeyThumbprint, async () =>
                           reportFailure(
                             t,
-                            "Could not revoke the device",
+                            t("Could not revoke the device"),
                             await revoke({
                               environmentId,
                               input: { proofKeyThumbprint: device.proofKeyThumbprint },

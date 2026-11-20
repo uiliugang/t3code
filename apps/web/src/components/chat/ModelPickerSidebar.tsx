@@ -2,29 +2,47 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@t3tools/contracts";
 import { memo, useLayoutEffect, useRef, useState } from "react";
+import { msg, useMessages } from "gt-react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
+import type { MessageResolver } from "../../i18n/messages";
 import {
   isProviderInstancePickerReady,
   shouldShowInstanceBadge,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 
-function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
+function describeUnavailableInstance(
+  entry: ProviderInstanceEntry,
+  resolve: MessageResolver,
+): string {
   const label = entry.displayName;
   // An unavailable instance (a driver this build lacks or the policy leaves out) says why instead.
   if ((!entry.enabled && entry.isAvailable) || entry.status === "disabled") {
-    return `${label}: Disabled in settings.`;
+    return resolve(msg("{label}: Disabled in settings.", { label }));
   }
   if (entry.status === "ready" && entry.isAvailable) {
     return label;
   }
-  const kind =
-    entry.status === "error" ? "Unavailable" : entry.status === "warning" ? "Limited" : "Not ready";
-  const msg = entry.snapshot.message?.trim();
-  return msg ? `${label}: ${kind}. ${msg}` : `${label}: ${kind}.`;
+  const message = entry.snapshot.message?.trim();
+  if (message) {
+    return resolve(
+      entry.status === "error"
+        ? msg("{label}: Unavailable. {message}", { label, message })
+        : entry.status === "warning"
+          ? msg("{label}: Limited. {message}", { label, message })
+          : msg("{label}: Not ready. {message}", { label, message }),
+    );
+  }
+  return resolve(
+    entry.status === "error"
+      ? msg("{label}: Unavailable.", { label })
+      : entry.status === "warning"
+        ? msg("{label}: Limited.", { label })
+        : msg("{label}: Not ready.", { label }),
+  );
 }
 
 const PICKER_TOOLTIP_SIDE = "left" as const;
@@ -41,6 +59,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
     props.onSelectInstance(instanceId);
   };
@@ -137,7 +156,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
 
             const tooltip = isUnavailable
-              ? describeUnavailableInstance(entry)
+              ? describeUnavailableInstance(entry, m)
               : isContextDisabled
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
                 : entry.displayName;

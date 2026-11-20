@@ -10,10 +10,11 @@ import {
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import { msg, useGT } from "gt-react-native";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import * as Haptics from "expo-haptics";
 import { Accelerometer } from "expo-sensors";
-import { Pressable, StatusBar, View } from "react-native";
+import { Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,6 +28,7 @@ import {
   menuActionsFromAppBarItems,
 } from "../../components/ui/menuActionItems";
 import { AppBar } from "../../components/ui/AppBar";
+import { m } from "../../i18n/messages";
 import { useBarOverlap } from "../../components/ui/useBarInset";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import { useAppForeground } from "../../lib/appState";
@@ -100,6 +102,7 @@ export function DevicePreviewScreen({
   const foreground = useAppForeground();
   const [selectedKey, setSelectedKey] = useState<string | null>(initialDeviceKey ?? null);
   const [inputConnected, setInputConnected] = useState(false);
+  const gt = useGT();
   const [streamAttempt, setStreamAttempt] = useState(0);
   const [shuttingDown, setShuttingDown] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -178,19 +181,21 @@ export function DevicePreviewScreen({
       : []),
     {
       id: "device-tools",
-      title: t("Device tool versions"),
+      title: gt("Device tool versions"),
       icon: "info.circle",
       onPress: () =>
         Dialog.alert(
-          t("Device tool versions"),
-          deviceToolUpdateOwnership +
+          m(msg("Device tool versions")),
+          m(deviceToolUpdateOwnership) +
             "\n\n" +
             deviceToolUpdatePolicy(
               state.data?.hosts.find((host) => host.id === preview?.session.hostId)?.tools,
+              m,
             ) +
             "\n\n" +
             deviceToolVersionLabels(
               state.data?.hosts.find((host) => host.id === preview?.session.hostId)?.tools,
+              m,
             ).join("\n") +
             "\n" +
             (state.data?.hosts.find((host) => host.id === preview?.session.hostId)
@@ -268,7 +273,6 @@ export function DevicePreviewScreen({
   ];
   return (
     <View className="flex-1" style={{ backgroundColor: themeVariables["--color-sheet-solid"] }}>
-      {!embedded ? <StatusBar hidden animated /> : null}
       {embedded ? (
         <>
           <AppBar

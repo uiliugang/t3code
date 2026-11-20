@@ -2,6 +2,7 @@ import { translateUi } from "@t3tools/shared/uiLocale";
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Option from "effect/Option";
+import { mFallback, msg } from "gt-i18n";
 
 import {
   BearerConnectionProfile,
@@ -205,6 +206,23 @@ describe("connection presentation", () => {
       expect(connectionStatusTitle(connection, t)).toBe(chinese);
     }
     const error = "SSH: /tmp/{host}";
+    const localizedFailure = presentConnectionState(
+      supervisorState({
+        phase: "backoff",
+        lastFailure: new ConnectionTransientError({
+          reason: "transport",
+          detail: "Socket closed.",
+          i18nMessage: ["Socket closed."],
+        }),
+      }),
+    );
+    expect(
+      connectionStatusText(localizedFailure, t, (encoded) =>
+        mFallback(
+          encoded === "Socket closed." ? (msg("套接字已关闭。") as typeof encoded) : encoded,
+        ),
+      ),
+    ).toBe("连接失败，正在重新连接… 原因：套接字已关闭。");
     expect(connectionStatusText({ phase: "reconnecting", error, traceId: null }, t)).toBe(
       `连接失败，正在重新连接… 原因：${error}`,
     );

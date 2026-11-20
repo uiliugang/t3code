@@ -8,7 +8,10 @@ import type {
 } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
 import { useState } from "react";
+
+import { m } from "~/i18n/messages";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { Button } from "../ui/button";
@@ -28,7 +31,7 @@ import { PullRequestStackLayers } from "./PullRequestStackLayers";
 import { PullRequestStackHeader } from "./PullRequestStackHeader";
 import { PullRequestStackLayerContent } from "./PullRequestStackLayerContent";
 import { PullRequestGlyph } from "./pullRequestIcons";
-import { readableFailure } from "./pullRequestDetail.logic";
+import { PULL_REQUEST_MERGE_METHOD_LABELS, readableFailure } from "./pullRequestDetail.logic";
 
 export function PullRequestStackMenu({
   hostLabel,
@@ -60,6 +63,8 @@ export function PullRequestStackMenu({
   onActed: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const resolve = useMessages();
   const [open, setOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<"merge" | "update-branch" | null>(null);
   const [pending, setPending] = useState(false);
@@ -83,7 +88,7 @@ export function PullRequestStackMenu({
     mergeHasClosed ||
     mergeLayers.length === 0 ||
     mergeLayers.some((layer) => layer.isDraft);
-  const staleReason = t(notice ?? "Checking the stack with the host…");
+  const staleReason = notice ?? gt("Checking the stack with the host…");
   const rebaseDisabled = pending || stale || hasUnknownHead || hasClosed || unmerged.length === 0;
   const run = async () => {
     if (
@@ -125,8 +130,16 @@ export function PullRequestStackMenu({
         description: readableFailure(
           squashAtomCommandFailure(result),
           action === "merge"
-            ? "The host refused the merge. Check that you have write access, that the checks it requires have passed, and that the branch is not conflicting."
-            : "The host refused the rebase. A rebase stops at the first commit that does not apply cleanly.",
+            ? m(
+                msg(
+                  "The host refused the merge. Check that you have write access, that the checks it requires have passed, and that the branch is not conflicting.",
+                ),
+              )
+            : m(
+                msg(
+                  "The host refused the rebase. A rebase stops at the first commit that does not apply cleanly.",
+                ),
+              ),
         ),
       });
     } else {
@@ -172,7 +185,7 @@ export function PullRequestStackMenu({
               position,
               total: stack.layers.length,
             })}
-            {notice ? ` · ${t(notice)}` : null}
+            {notice ? ` · ${notice}` : null}
           </TooltipPopup>
         </Tooltip>
         <MenuPopup align="start">
@@ -277,7 +290,7 @@ export function PullRequestStackMenu({
                     {
                       number: reference.number,
                       branch: stack.base,
-                      method: t(mergeMethod),
+                      method: resolve(PULL_REQUEST_MERGE_METHOD_LABELS[mergeMethod]),
                       host: hostLabel,
                     },
                   )

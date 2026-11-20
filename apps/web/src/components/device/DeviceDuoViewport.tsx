@@ -23,6 +23,7 @@ export function DeviceDuoViewport(props: {
   readonly onUnavailable: () => void;
 }) {
   const t = useUiTranslation();
+
   const viewerRef = useRef<
     (DuoViewer & { readonly sources: Record<1 | 3, HTMLCanvasElement> }) | null
   >(null);

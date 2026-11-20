@@ -16,6 +16,7 @@ interface Props {
 
 export function PreviewRecentUrlCard({ threadRef, entry, onOpen, onRemove }: Props) {
   const t = useUiTranslation();
+
   const parsed = new URL(entry.url);
   const path = parsed.pathname === "/" ? "" : parsed.pathname;
   const label = `${parsed.host}${path}${parsed.search}${parsed.hash}`;

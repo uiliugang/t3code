@@ -7,10 +7,17 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-const APPS = ["apps/web", "apps/mobile"];
 const TRANSLATED_SOURCES = ["apps/web/src", "apps/mobile/src"];
+// Desktop only depends on gt-i18n, so the gt CLI hides `generate` there; its script adds it back.
+const GENERATE: Record<string, readonly [string, ...string[]]> = {
+  "apps/web": ["node_modules/.bin/gt", "generate"],
+  "apps/mobile": ["node_modules/.bin/gt", "generate"],
+  "apps/desktop": [process.execPath, "scripts/i18n-generate.mjs"],
+};
+const APPS = Object.keys(GENERATE);
 
-type Catalog = Record<string, string>;
+// JSX entries (`<T>`) are arrays and objects, so values compare by their JSON text.
+type Catalog = Record<string, unknown>;
 const readJson = (file: string) => JSON.parse(NodeFS.readFileSync(file, "utf8"));
 const missingFrom = (from: Catalog, catalog: Catalog) =>
   Object.keys(from).filter((key) => !Object.hasOwn(catalog, key));
@@ -19,11 +26,15 @@ const root = NodePath.resolve(import.meta.dirname, "..");
 // Computed so the scripts project does not need to list the shared sources in its composite.
 const uiLocaleModule = (await import(
   new URL("../packages/shared/src/uiLocale.ts", import.meta.url).href
-)) as { readonly hasUiTranslation: (message: string) => boolean };
-const { hasUiTranslation } = uiLocaleModule;
+)) as {
+  readonly hasUiTranslation: (message: string) => boolean;
+  readonly translateUi: (locale: "zh-CN", message: string) => string;
+};
+const { hasUiTranslation, translateUi } = uiLocaleModule;
+const syncForkChinese = process.argv.includes("--sync-fork-zh");
 const problems: string[] = [];
 
-for (const app of APPS) {
+for (const [app, [command, ...args]] of Object.entries(GENERATE)) {
   const appDir = NodePath.join(root, app);
   const config = readJson(NodePath.join(appDir, "gt.config.json"));
   const catalogDir = NodePath.join(appDir, NodePath.dirname(config.files.gt.output));
@@ -37,11 +48,10 @@ for (const app of APPS) {
       tmpConfig,
       JSON.stringify({ ...config, locales: [], files: { gt: { output: `${tmp}/[locale].json` } } }),
     );
-    const gt = NodeChildProcess.spawnSync(
-      NodePath.join(appDir, "node_modules/.bin/gt"),
-      ["generate", "--config", tmpConfig],
-      { cwd: appDir, encoding: "utf8" },
-    );
+    const gt = NodeChildProcess.spawnSync(command, [...args, "--config", tmpConfig], {
+      cwd: appDir,
+      encoding: "utf8",
+    });
     if (gt.status !== 0) {
       problems.push(`${app}: gt generate failed\n${gt.stdout}${gt.stderr}`);
       continue;
@@ -50,7 +60,7 @@ for (const app of APPS) {
     for (const [key, text] of Object.entries(generated)) {
       if (!Object.hasOwn(source, key)) {
         problems.push(`${app}: ${key} ${JSON.stringify(text)} is missing from en.json`);
-      } else if (source[key] !== text) {
+      } else if (JSON.stringify(source[key]) !== JSON.stringify(text)) {
         problems.push(
           `${app}: en.json has ${key} ${JSON.stringify(source[key])}, source says ${JSON.stringify(text)}`,
         );
@@ -64,7 +74,27 @@ for (const app of APPS) {
   }
 
   for (const locale of config.locales) {
-    const catalog: Catalog = readJson(NodePath.join(catalogDir, `${locale}.json`));
+    const catalogPath = NodePath.join(catalogDir, `${locale}.json`);
+    const catalog: Catalog = readJson(catalogPath);
+    if (locale === "zh") {
+      let changed = false;
+      for (const [key, message] of Object.entries(source)) {
+        if (typeof message !== "string" || !hasUiTranslation(message)) continue;
+        const forkMessage = translateUi("zh-CN", message);
+        if (catalog[key] === forkMessage) continue;
+        if (syncForkChinese) {
+          catalog[key] = forkMessage;
+          changed = true;
+        } else {
+          problems.push(
+            `${app}: ${key} must keep the fork translation of ${JSON.stringify(message)}`,
+          );
+        }
+      }
+      if (changed) {
+        NodeFS.writeFileSync(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+      }
+    }
     for (const key of missingFrom(source, catalog)) {
       problems.push(`${app}: ${locale}.json is missing ${key} ${JSON.stringify(source[key])}`);
     }
@@ -118,7 +148,7 @@ problems.push(...dictionaryProblems.values());
 if (problems.length > 0) {
   console.error(problems.join("\n"));
   console.error(
-    "\nRun `vp run i18n:generate` in the app, translate any new keys in every locale catalog, and add shared-dictionary keys to packages/shared/src/uiLocale.ts.",
+    "\nRun `vp run i18n:generate` in the app, translate any new keys, and run `vp run i18n:check --sync-fork-zh` to keep existing Simplified Chinese translations.",
   );
   process.exitCode = 1;
 } else {

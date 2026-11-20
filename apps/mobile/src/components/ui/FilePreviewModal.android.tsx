@@ -1,4 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
+
 import { Button } from "./Button";
 import * as Dialog from "./Dialog";
 import { createContext, useContext, useEffect, useEffectEvent } from "react";
@@ -31,6 +33,7 @@ function PdfDocumentPreview(props: {
   readonly onRequestClose: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const insets = useSafeAreaInsets();
   const media = useMediaActions(props.source.actionsSource);
   const save = media.actions.find((action) => action.id === "save");
@@ -47,7 +50,7 @@ function PdfDocumentPreview(props: {
       >
         <SheetHeader
           presentation="inline"
-          title={props.source.name ?? "PDF"}
+          title={props.source.name ?? gt("PDF")}
           onClose={props.onRequestClose}
           actions={
             save
@@ -75,6 +78,7 @@ function DocumentPreview(props: {
   readonly onOpenError?: (error: unknown) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { uri, name } = props.source;
   const documentName = t("Document");
   const onRequestClose = useEffectEvent(props.onRequestClose);
@@ -115,7 +119,7 @@ function DocumentPreview(props: {
         <View className="w-full max-w-sm gap-4 rounded-2xl bg-sheet-solid p-6">
           <Text className="font-t3-semibold text-foreground">{t("Opening document…")}</Text>
           <Text className="text-foreground-muted" numberOfLines={2}>
-            {name ?? "Document"}
+            {name ?? gt("Document")}
           </Text>
           <View className="items-end">
             <Button label={t("Cancel")} tone="text" onPress={props.onRequestClose} />
@@ -137,6 +141,7 @@ function ImagePreviewHeader(header: { readonly imageIndex: number }) {
   const t = useUiTranslation();
   const props = useContext(ImagePreviewContext)!;
   const source = props.source.images[header.imageIndex];
+
   const insets = useSafeAreaInsets();
   const mediaActions = useMediaActions(source?.actionsSource, props.onRequestClose);
   return (

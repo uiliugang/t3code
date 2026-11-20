@@ -1,3 +1,8 @@
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
@@ -25,6 +30,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { type AntigravityReleaseAsset } from "./antigravityRelease.ts";
+import { configuredBinaryPaths } from "./configuredBinaryPaths.ts";
 
 const serverContents = "antigravity runtime\n";
 const harnessContents = "local harness\n";
@@ -135,6 +141,7 @@ interface HarnessOptions {
   readonly nativeManifest?: (manifest: { version: string; url: string; sha512: string }) => unknown;
   readonly beforeManifest?: Effect.Effect<void>;
   readonly updateChecksEnabled?: Effect.Effect<boolean>;
+  readonly withProtectedBinaryPaths?: AntigravityInstallation.AntigravityInstallationOptions["withProtectedBinaryPaths"];
 }
 
 const makeHarness = Effect.fn("test.makeAntigravityInstallation")(function* (
@@ -179,6 +186,9 @@ const makeHarness = Effect.fn("test.makeAntigravityInstallation")(function* (
   const installation = yield* AntigravityInstallation.makeAntigravityInstallation({
     baseDir,
     ...(options.native ? {} : { releaseAsset: asset }),
+    ...(options.withProtectedBinaryPaths === undefined
+      ? {}
+      : { withProtectedBinaryPaths: options.withProtectedBinaryPaths }),
     ...(options.updateChecksEnabled === undefined
       ? {}
       : { updateChecksEnabled: options.updateChecksEnabled }),
@@ -290,6 +300,39 @@ const expectPreviousRelease = Effect.fn("test.expectPreviousAntigravityRelease")
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity installation", (it) => {
+  it.effect("keeps an inactive runtime selected past an incomplete PATH candidate", () =>
+    Effect.gen(function* () {
+      const { installation, fs, path, baseDir } = yield* makeHarness({ previous: true });
+      const previous = yield* installation.resolve();
+      const incomplete = path.join(baseDir, "incomplete");
+      yield* fs.makeDirectory(incomplete);
+      yield* fs.writeFileString(path.join(incomplete, executableName), serverContents, {
+        mode: 0o755,
+      });
+      const environment = {
+        PATH: [incomplete, path.dirname(previous.executablePath)].join(
+          hostPlatform === "win32" ? ";" : ":",
+        ),
+      };
+      expect((yield* installation.resolve(executableName, environment)).executablePath).toBe(
+        previous.executablePath,
+      );
+      const protectedPaths = yield* configuredBinaryPaths({
+        [ProviderInstanceId.make("pinned-local-agi")]: {
+          driver: ProviderDriverKind.make("antigravity"),
+          config: { binaryPath: executableName },
+          environment: [{ name: "PATH", value: environment.PATH, sensitive: false }],
+        },
+      }).pipe(Effect.provideService(HostProcess.Platform, hostPlatform));
+      yield* writeRelease(installation.managedDirectory, yield* releaseAsset());
+      yield* makeHarness({
+        baseDir,
+        withProtectedBinaryPaths: (use) => use(protectedPaths, DEFAULT_SERVER_SETTINGS),
+      });
+      expect(yield* fs.exists(previous.executablePath)).toBe(true);
+    }),
+  );
+
   it.effect.each([...new Set(["win32", hostPlatform])] as NodeJS.Platform[])(
     "migrates the legacy managed runtime to the native CLI on %s and retains the old release",
     (platform) =>
@@ -595,7 +638,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
       expect(yield* fs.readFileString(selected.executablePath)).toBe(serverContents);
       expect(yield* fs.readFileString(selected.harnessPath!)).toBe(harnessContents);
       expect(yield* fs.readDirectory(path.join(installation.managedDirectory, "versions"))).toEqual(
-        expect.arrayContaining([previousReleaseId, (yield* releaseAsset()).sha256]),
+        [(yield* releaseAsset()).sha256],
       );
       expect(requests).toEqual([(yield* releaseAsset()).url]);
     }),
@@ -1066,8 +1109,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
         const baseDir = yield* fs
           .makeTempDirectoryScoped({ prefix: "t3-agy-cli-test-" })
           .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
-        const cliDirectory = path.join(baseDir, "cli");
+        const cliDirectory = path.join(baseDir, 'cli" ');
         yield* fs.makeDirectory(cliDirectory);
+        const siblingDirectory = path.join(baseDir, 'cli"');
+        yield* fs.makeDirectory(siblingDirectory);
+        yield* fs.writeFileString(path.join(siblingDirectory, "agy"), "other cli", { mode: 0o755 });
         const cli = path.join(cliDirectory, "antigravity");
         const alias = path.join(cliDirectory, "agy");
         const other = path.join(cliDirectory, "custom-acp");
@@ -1115,7 +1161,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
           const windowsDirectory = path.join(baseDir, `windows-${name}`);
           yield* fs.makeDirectory(windowsDirectory);
           yield* fs.writeFileString(path.join(windowsDirectory, name), "cli");
-          const selected = yield* windows.resolve("agy", { PATH: windowsDirectory });
+          const selected = yield* windows.resolve("agy", { PATH: `"${windowsDirectory}"` });
           expect(selected.harnessPath).toBeNull();
           expect((yield* fs.realPath(selected.executablePath)).toLowerCase()).toBe(
             (yield* fs.realPath(path.join(windowsDirectory, name))).toLowerCase(),
@@ -1214,7 +1260,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
     Effect.gen(function* () {
       const manifestEntered = yield* Deferred.make<void>();
       const releaseManifest = yield* Deferred.make<void>();
-      const { installation, fs, stagingReleased } = yield* makeHarness({
+      const { installation, fs, baseDir, stagingReleased } = yield* makeHarness({
         native: true,
         platform: "win32",
         archive: Buffer.from(serverContents),
@@ -1239,6 +1285,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
       expect(yield* fs.readFileString(oldExecutable.executablePath)).toBe(serverContents);
       expect(yield* installation.remove().pipe(Effect.flip)).toMatchObject({ operation: "remove" });
       yield* Scope.close(processScope, Exit.void);
+      yield* makeHarness({ native: true, platform: "win32", baseDir });
+      expect(yield* fs.exists(oldExecutable.managedVersionDirectory!)).toBe(false);
+      expect(yield* fs.readFileString(current.executablePath)).toBe(serverContents);
       yield* installation.remove();
       expect(yield* fs.exists(installation.managedDirectory)).toBe(false);
     }),

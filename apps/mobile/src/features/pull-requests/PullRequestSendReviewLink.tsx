@@ -88,7 +88,9 @@ export function PullRequestSendReviewLink({
                 setBusy(false);
                 if (result._tag !== "Success") {
                   setStatus(
-                    "Delivery could not be confirmed. Check DaXiang and the application's credentials before resending.",
+                    t(
+                      "Delivery could not be confirmed. Check DaXiang and the application's credentials before resending.",
+                    ),
                   );
                   return;
                 }

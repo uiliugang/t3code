@@ -1,8 +1,11 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import { pipe } from "effect/Function";
 import { ChevronsLeftRightEllipsisIcon, PlusIcon, TerminalIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { useGT, useMessages } from "gt-react";
 import {
   type DesktopDiscoveredSshHost,
   type DesktopSshEnvironmentTarget,
@@ -66,6 +69,7 @@ import {
   formatDesktopSshConnectionError,
 } from "./ConnectionsSettings.logic";
 
+const SSH_PROTOCOL_NAME = "SSH";
 const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
 // known_hosts can list one host on several ports. Its own bracketed form keeps an IPv6
 // host's port separate from the address; no portless known_hosts entry has that form.
@@ -88,6 +92,7 @@ export function AddEnvironmentDialog({
   readonly onErrorChange: (error: string | null) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const desktopBridge = window.desktopBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
@@ -128,6 +133,7 @@ export function AddEnvironmentDialog({
   const isSshDiscoveryActive = desktopBridge !== undefined && open && savedBackendMode === "ssh";
   const desktopSshHosts = useEnvironmentQuery(
     isSshDiscoveryActive ? desktopSshHostsStateAtom : null,
+    useMessages(),
   );
   // The discovery atom is kept alive across dialog opens, so re-read SSH config
   // each time the SSH tab is shown; stale hosts stay visible while it refreshes.
@@ -223,7 +229,10 @@ export function AddEnvironmentDialog({
         pairingCode: savedBackendPairingCode,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to add backend.";
+      const message =
+        error instanceof Error
+          ? (thrownErrorMessage(error, m) ?? error.message)
+          : gt("Failed to add backend.");
       onErrorChange(message);
       toastManager.add(
         stackedThreadToast({
@@ -243,7 +252,10 @@ export function AddEnvironmentDialog({
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message = error instanceof Error ? error.message : "Failed to add backend.";
+        const message =
+          error instanceof Error
+            ? (thrownErrorMessage(error, m) ?? error.message)
+            : gt("Failed to add backend.");
         onErrorChange(message);
         toastManager.add(
           stackedThreadToast({
@@ -422,7 +434,7 @@ export function AddEnvironmentDialog({
           <Input
             value={savedBackendPairingCode}
             onChange={(event) => setSavedBackendPairingCode(event.target.value)}
-            placeholder="PAIRCODE"
+            placeholder={gt("PAIRCODE")}
             disabled={isAddingSavedBackend}
             spellCheck={false}
           />
@@ -456,7 +468,11 @@ export function AddEnvironmentDialog({
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        onErrorChange(error instanceof Error ? error.message : "Could not add the route.");
+        onErrorChange(
+          error instanceof Error
+            ? (thrownErrorMessage(error, m) ?? error.message)
+            : gt("Could not add the route."),
+        );
       }
       return;
     }
@@ -673,8 +689,8 @@ export function AddEnvironmentDialog({
               {desktopBridge
                 ? renderConnectionModeCard({
                     mode: "ssh",
-                    title: "SSH",
-                    description: t("Use local SSH config, agent, and tunnels for the backend."),
+                    title: SSH_PROTOCOL_NAME,
+                    description: gt("Use local SSH config, agent, and tunnels for the backend."),
                     icon: <TerminalIcon aria-hidden className="size-4" />,
                   })
                 : null}

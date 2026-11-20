@@ -2,10 +2,11 @@ import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { PermissionChecklist, PermissionContinueButton } from "../permissions/PermissionChecklist";
 import { usePermissionStatus } from "../permissions/usePermissionStatus";
-import type { BrowserImportSource } from "@t3tools/contracts";
-import { BROWSER_IMPORT_FAILURE_COPY } from "@t3tools/contracts";
+import { browserImportFailureMessage } from "@t3tools/client-runtime/contract-labels";
+import type { BROWSER_IMPORT_FAILURE_COPY, BrowserImportSource } from "@t3tools/contracts";
 import { ArrowDownIcon, ArrowRightIcon, CheckIcon, HardDriveIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { T, useGT, useMessages, Var } from "gt-react";
 
 import { cn, randomUUID } from "~/lib/utils";
 
@@ -68,6 +69,7 @@ export function BrowserImportWizard({
   onCheckFullDiskAccess,
   onClose,
 }: BrowserImportWizardProps) {
+  const gt = useGT();
   const [source, setSource] = useState(initialSource);
   const [step, setStep] = useState<WizardStep>(() => initialWizardStep(initialSource));
   const [sourceProfileDirectory, setSourceProfileDirectory] = useState(
@@ -85,7 +87,9 @@ export function BrowserImportWizard({
     if (importInFlight.current) return;
     const chosen = resolveWizardTarget(target, newProfileId.current, targetProfiles);
     if (chosen === undefined) {
-      setTargetError("That profile is no longer available. Choose where to import these cookies.");
+      setTargetError(
+        gt("That profile is no longer available. Choose where to import these cookies."),
+      );
       setStep({ step: "configure" });
       return;
     }
@@ -207,7 +211,9 @@ function QuitStep({
         <Button variant="outline" onClick={onCancel}>
           {t("Cancel")}
         </Button>
-        <DialogAction onClick={onRechecked}>I&rsquo;ve quit it</DialogAction>
+        <DialogAction onClick={onRechecked}>
+          <T>I&rsquo;ve quit it</T>
+        </DialogAction>
       </DialogFooter>
     </>
   );
@@ -253,6 +259,7 @@ function FullDiskAccessStep({
   readonly stillRequired: boolean;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [opening, setOpening] = useState(false);
   const [openingError, setOpeningError] = useState<string | null>(null);
   const permission = usePermissionStatus(async () => ({ fullDiskAccess: await onCheck() }), {
@@ -264,7 +271,7 @@ function FullDiskAccessStep({
     setOpeningError(null);
     void Promise.resolve()
       .then(onOpenSettings)
-      .catch(() => setOpeningError("Could not open System Settings. Try Allow again."))
+      .catch(() => setOpeningError(gt("Could not open System Settings. Try Allow again.")))
       .finally(() => setOpening(false));
   };
   return (
@@ -345,6 +352,7 @@ function ConfigureStep({
   onImport,
 }: ConfigureStepProps) {
   const t = useUiTranslation();
+  const gt = useGT();
   const targetMissing =
     target.kind === "existing" &&
     !targetProfiles.some((profile) => profile.id === target.profileId);
@@ -352,9 +360,9 @@ function ConfigureStep({
   const targetFeedback =
     targetError ??
     (targetMissing
-      ? "That profile is no longer available. Choose where to import these cookies."
+      ? gt("That profile is no longer available. Choose where to import these cookies.")
       : targetUncreatable
-        ? "You've reached the profile limit. Choose an existing profile to import into."
+        ? gt("You've reached the profile limit. Choose an existing profile to import into.")
         : undefined);
   return (
     <>
@@ -537,6 +545,7 @@ function DoneStep({
   readonly onClose: () => void;
 }) {
   const t = useUiTranslation();
+  const m = useMessages();
   return (
     <>
       <DialogHeader>
@@ -564,7 +573,7 @@ function DoneStep({
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {t("Skipped")}
           </p>
-          <p className="mt-1 text-sm text-foreground">{formatSkippedDomains(skippedDomains)}</p>
+          <p className="mt-1 text-sm text-foreground">{formatSkippedDomains(skippedDomains, m)}</p>
         </DialogPanel>
       ) : null}
       <DialogFooter>
@@ -589,18 +598,28 @@ function BlockedStep({
   readonly onClose: () => void;
   readonly onRetry: (() => void) | undefined;
 }) {
-  const t = useUiTranslation();
+  const messages = useMessages();
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{t("Couldn’t import from {browser}", { browser: source.name })}</DialogTitle>
-        <DialogDescription>{t(message ?? BROWSER_IMPORT_FAILURE_COPY[reason])}</DialogDescription>
+        <DialogTitle>
+          <T>
+            Couldn&rsquo;t import from <Var>{source.name}</Var>
+          </T>
+        </DialogTitle>
+        <DialogDescription>
+          {message ?? browserImportFailureMessage(reason, messages)}
+        </DialogDescription>
       </DialogHeader>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
-          {t("Close")}
+          <T>Close</T>
         </Button>
-        {onRetry ? <DialogAction onClick={onRetry}>Try again</DialogAction> : null}
+        {onRetry ? (
+          <DialogAction onClick={onRetry}>
+            <T>Try again</T>
+          </DialogAction>
+        ) : null}
       </DialogFooter>
     </>
   );

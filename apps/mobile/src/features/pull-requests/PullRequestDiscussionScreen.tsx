@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import {
   parsePullRequestAnchor,
   pullRequestAnchorMatchesUrl,
@@ -13,6 +14,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { pullRequestConversationThreads, type PullRequestThreadComment } from "@t3tools/contracts";
+import { useGT } from "gt-react-native";
 import { useRef, useState } from "react";
 import { ScrollView, View, type ScrollViewInstance } from "react-native";
 import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
@@ -22,7 +24,8 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/
 import { AppBar } from "../../components/ui/AppBar";
 import { Button } from "../../components/ui/Button";
 import { GlassSurface } from "../../components/ui/GlassSurface";
-import { compareTimestamps, relativeTime } from "../../lib/time";
+import { compareTimestamps } from "../../lib/time";
+import { RelativeTime } from "../../components/RelativeTime";
 import { composerPullRequests } from "../../state/pull-requests";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
@@ -34,6 +37,7 @@ import { usePullRequestPermissions } from "./usePullRequestPermissions";
 import { pullRequestReviewKey } from "./pullRequestReviewDrafts";
 import { PullRequestCompletionSuggestions } from "./PullRequestCompletionSuggestions";
 import { usePullRequestCompletions } from "./usePullRequestCompletions";
+import { m } from "../../i18n/messages";
 
 export function PullRequestDiscussionScreen({
   route,
@@ -50,6 +54,7 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
   const t = useUiTranslation();
   const target = pullRequestTarget(params);
   const navigation = useNavigation();
+  const gt = useGT();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const bottomInset = keyboardVisible ? 8 : Math.max(insets.bottom, 12);
@@ -104,7 +109,9 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
     if (result && AsyncResult.isFailure(result)) {
       const cause = squashAtomCommandFailure(result);
       setError(
-        cause instanceof Error ? cause.message : "The provider could not complete this action.",
+        cause instanceof Error
+          ? (errorDisplayMessage(cause, m) ?? cause.message)
+          : gt("The provider could not complete this action."),
       );
     }
   };
@@ -118,7 +125,7 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
       });
       if (AsyncResult.isFailure(response)) return response;
       setBody((current) => (current === submitted ? "" : current));
-      setNotice("Reply posted.");
+      setNotice(gt("Reply posted."));
       refresh();
       return response;
     });
@@ -159,7 +166,9 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
       ? resolvePullRequestReviewAnchor(location.anchor, [], [{ comments }])
       : null;
   const canReply = permissions.canReply && Boolean(thread);
-  const resolveLabel = thread?.isResolved ? "Unresolve" : "Resolve";
+  const resolveLabel = thread?.isResolved
+    ? gt("Unresolve", { $context: "review thread" })
+    : gt("Resolve", { $context: "review thread" });
   return (
     <PullRequestMarkdownRepository params={params} changeRequest={detail.data}>
       <KeyboardAvoidingView
@@ -215,11 +224,11 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
                 )}
                 <Text className="text-xs text-foreground-muted">
                   {thread.isResolved ? t("Resolved") : t("Unresolved")}
-                  {thread.isOutdated ? t(" · Outdated") : ""}
+                  {thread.isOutdated ? ` · ${t("Outdated")}` : ""}
                 </Text>
                 {filePath === null ? null : (
                   <Button
-                    label="View file diff"
+                    label={gt("View file diff")}
                     onPress={() =>
                       navigation.navigate("PullRequestFile", { ...params, path: filePath })
                     }
@@ -255,7 +264,7 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
                     {comment.author?.login ?? t("Unknown author")}
                   </Text>
                   <Text className="text-2xs text-foreground-muted">
-                    {relativeTime(comment.createdAt)}
+                    <RelativeTime timestamp={comment.createdAt} />
                   </Text>
                 </View>
                 <PullRequestMarkdown markdown={comment.body} />

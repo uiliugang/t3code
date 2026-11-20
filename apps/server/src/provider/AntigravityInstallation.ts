@@ -36,6 +36,10 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
+  makeProtectedBinaryPathSnapshot,
+  type WithProtectedBinaryPaths,
+} from "./configuredBinaryPaths.ts";
+import {
   ANTIGRAVITY_CLI_MANIFEST_BASE,
   antigravityCliTarget,
   parseAntigravityCliRelease,
@@ -131,6 +135,7 @@ export class AntigravityInstallation extends Context.Service<
       const settings = yield* ServerSettings.ServerSettingsService;
       return yield* makeAntigravityInstallation({
         baseDir: config.baseDir,
+        withProtectedBinaryPaths: yield* makeProtectedBinaryPathSnapshot(),
         updateChecksEnabled: settings.getSettings.pipe(
           Effect.map((value) => value.enableProviderUpdateChecks),
           Effect.orElseSucceed(() => false),
@@ -142,6 +147,7 @@ export class AntigravityInstallation extends Context.Service<
 
 export interface AntigravityInstallationOptions {
   readonly baseDir: string;
+  readonly withProtectedBinaryPaths?: WithProtectedBinaryPaths;
   readonly releaseAsset?: AntigravityReleaseAsset | AntigravityCliReleaseAsset | null;
   readonly updateChecksEnabled?: Effect.Effect<boolean>;
   readonly validate?: (
@@ -367,8 +373,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         ? Object.entries(processEnvironment).findLast(([key]) => key.toUpperCase() === "PATH")?.[1]
         : processEnvironment.PATH;
     const candidates: string[] = [];
-    for (const directory of (pathValue ?? "").split(platform === "win32" ? ";" : ":")) {
-      const entry = directory.trim().replace(/^"|"$/gu, "");
+    for (const entry of (pathValue ?? "").split(platform === "win32" ? ";" : ":")) {
       if (entry.length === 0) continue;
       const resolved = yield* commandPath(command, { ...processEnvironment, PATH: entry });
       if (resolved !== null) candidates.push(resolved);
@@ -541,6 +546,34 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       }),
     );
 
+  // Each update lands in its own directory. Best effort: a busy gate means a session is
+  // resolving, so the next start or update finishes the cleanup.
+  const pruneUnreferenced = Effect.fn("AntigravityInstallation.pruneUnreferenced")(function* (
+    binaryPaths: ReadonlyArray<string>,
+  ) {
+    const active = yield* readRecord(activePath, ActiveRelease);
+    const protectedPaths = yield* Effect.forEach(binaryPaths, (binary) =>
+      fs.realPath(binary).pipe(Effect.orElseSucceed(() => path.resolve(binary))),
+    );
+    for (const entry of yield* fs.readDirectory(versionsDirectory)) {
+      if (entry === active.releaseId || !/^[a-f0-9]{64}$/u.test(entry)) continue;
+      const directory = path.join(versionsDirectory, entry);
+      if (leases.has(directory)) continue;
+      const resolvedDirectory = yield* fs.realPath(directory);
+      if (
+        protectedPaths.some(
+          (binary) =>
+            binary === resolvedDirectory || binary.startsWith(`${resolvedDirectory}${path.sep}`),
+        )
+      )
+        continue;
+      yield* fs.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore);
+    }
+  }, gate.withPermitsIfAvailable(1));
+  const pruneInactiveReleases = (
+    options.withProtectedBinaryPaths?.(pruneUnreferenced) ?? pruneUnreferenced([])
+  ).pipe(Effect.ignore, Effect.withSpan("AntigravityInstallation.pruneInactiveReleases"));
+
   const install = Effect.fn("AntigravityInstallation.install")(
     function* (asset: AntigravityReleaseAsset | AntigravityCliReleaseAsset) {
       yield* ensureEligible(asset.version);
@@ -586,6 +619,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
             mode: 0o600,
           });
           yield* fs.rename(pointerPath, activePath);
+          yield* pruneInactiveReleases;
           yield* SubscriptionRef.update(
             state,
             (current) =>
@@ -1170,6 +1204,9 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       ),
     ),
   );
+
+  // A startup install prunes when it activates; pruning now could delete the release it is verifying.
+  if (!isRunning(yield* SubscriptionRef.get(state))) yield* pruneInactiveReleases;
 
   return AntigravityInstallation.of({
     managedDirectory,

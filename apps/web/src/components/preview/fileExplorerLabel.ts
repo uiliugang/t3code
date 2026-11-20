@@ -1,29 +1,30 @@
 import type { ExecutionEnvironmentPlatformOs, FileManagerRevealKind } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
-type Translate = (message: string) => string;
-const identity: Translate = (message) => message;
+import { m, type MessageResolver } from "~/i18n/messages";
 
-export function revealInFileExplorerLabel(platform: string, t: Translate = identity): string {
+/** Components pass `useMessages()` so labels follow a language switch. */
+export function revealInFileExplorerLabel(platform: string, resolve: MessageResolver = m): string {
   const normalized = platform.toLowerCase();
-  if (normalized.includes("mac")) return t("Reveal in Finder");
-  if (normalized.includes("win")) return t("Reveal in File Explorer");
-  return t("Reveal in Files");
+  if (normalized.includes("mac")) return resolve(msg("Reveal in Finder"));
+  if (normalized.includes("win")) return resolve(msg("Reveal in File Explorer"));
+  return resolve(msg("Reveal in Files"));
 }
 
 export function revealInFileExplorerLabelForOs(
   os: ExecutionEnvironmentPlatformOs,
-  t: Translate = identity,
+  resolve: MessageResolver = m,
 ): string {
-  if (os === "darwin") return t("Reveal in Finder");
-  if (os === "windows") return t("Reveal in File Explorer");
-  return t("Reveal in Files");
+  if (os === "darwin") return resolve(msg("Reveal in Finder"));
+  if (os === "windows") return resolve(msg("Reveal in File Explorer"));
+  return resolve(msg("Reveal in Files"));
 }
 
 export function revealInFileExplorerLabelForKind(
   kind: FileManagerRevealKind,
-  t: Translate = identity,
+  resolve: MessageResolver = m,
 ): string {
-  if (kind === "finder") return t("Reveal in Finder");
-  if (kind === "file-explorer") return t("Reveal in File Explorer");
-  return t("Reveal in Files");
+  if (kind === "finder") return resolve(msg("Reveal in Finder"));
+  if (kind === "file-explorer") return resolve(msg("Reveal in File Explorer"));
+  return resolve(msg("Reveal in Files"));
 }

@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import { DEFAULT_CLIENT_SETTINGS, type ClientSettings } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
@@ -15,6 +16,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { vi } from "vite-plus/test";
+import { msg } from "gt-i18n";
 
 vi.mock("electron", () => ({}));
 vi.mock("@clerk/electron", () => ({ createClerkBridge: vi.fn() }));
@@ -57,6 +59,7 @@ import * as DesktopBackendConfiguration from "../backend/DesktopBackendConfigura
 import * as DesktopCliCommand from "./DesktopCliCommand.ts";
 import * as DesktopCliShim from "./DesktopCliShim.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
+import { applyLanguage, m } from "../i18n/messages.ts";
 import * as DesktopConnectionCatalogStore from "./DesktopConnectionCatalogStore.ts";
 import * as DesktopIpc from "../ipc/DesktopIpc.ts";
 import * as DesktopLocalEnvironmentAuth from "../backend/DesktopLocalEnvironmentAuth.ts";
@@ -72,10 +75,12 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as MacPermissions from "../permissions/MacPermissions.ts";
+import * as LoopbackTunnel from "../preview/LoopbackTunnel.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 
 interface StubbedDesktop {
   readonly localEnvironmentEnabled: boolean;
+  readonly clientSettings?: ClientSettings;
   readonly environment: Partial<DesktopEnvironment.DesktopEnvironment["Service"]>;
   readonly fileSystem: Layer.Layer<FileSystem.FileSystem>;
   readonly record: (event: string) => Effect.Effect<void>;
@@ -84,6 +89,7 @@ interface StubbedDesktop {
   readonly backends?: ReadonlyArray<{ readonly stop: () => Effect.Effect<void> }>;
   readonly flushRendererHistory?: Effect.Effect<void>;
   readonly tokenRequested?: Deferred.Deferred<void>;
+  readonly activationStarted?: Deferred.Deferred<void>;
 }
 
 const runStubbedDesktop = (stub: StubbedDesktop) =>
@@ -189,7 +195,9 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           reconcile: Effect.void,
         } as DesktopWslBackend.DesktopWslBackend["Service"]),
         Effect.provideService(DesktopAppActivation.DesktopAppActivation, {
-          start: Effect.void,
+          start: stub.activationStarted
+            ? Deferred.succeed(stub.activationStarted, undefined)
+            : Effect.void,
         } as unknown as DesktopAppActivation.DesktopAppActivation["Service"]),
         Effect.provideService(DesktopRendererHistory.DesktopRendererHistory, {
           shutdown: stub.flushRendererHistory ?? Effect.void,
@@ -202,7 +210,9 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           Layer.mock(ChildProcessSpawner.ChildProcessSpawner, {}),
           Layer.mock(DesktopBackendConfiguration.DesktopBackendConfiguration, {}),
           Layer.mock(DesktopCliCommand.DesktopCliCommand, {}),
-          Layer.mock(DesktopClientSettings.DesktopClientSettings, {}),
+          Layer.mock(DesktopClientSettings.DesktopClientSettings, {
+            get: Effect.succeed(Option.fromNullishOr(stub.clientSettings)),
+          }),
           Layer.mock(DesktopConnectionCatalogStore.DesktopConnectionCatalogStore, {}),
           Layer.mock(DesktopIpc.DesktopIpc, {}),
           Layer.mock(DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth, {
@@ -229,6 +239,7 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           Layer.mock(ElectronTheme.ElectronTheme, {}),
           Layer.mock(ElectronWindow.ElectronWindow, {}),
           Layer.mock(MacPermissions.MacPermissions, {}),
+          Layer.mock(LoopbackTunnel.LoopbackTunnel, {}),
           Layer.mock(PreviewManager.PreviewManager, {
             isBrowserPartition: () => {
               throw new Error("unexpected browser partition lookup");
@@ -251,6 +262,7 @@ it.effect.each([false, true])(
   "stops backends together before flushing history and cancels Linux registration, stop defect=%s",
   (stopDefect) =>
     Effect.gen(function* () {
+      yield* Effect.acquireRelease(applyLanguage("en"), () => applyLanguage("en"));
       const registrationStarted = yield* Deferred.make<void>();
       const releaseRegistration = yield* Deferred.make<void>();
       const registrationStopped = yield* Deferred.make<void>();
@@ -262,13 +274,16 @@ it.effect.each([false, true])(
       const releaseHistory = yield* Deferred.make<void>();
       const tokenRequested = yield* Deferred.make<void>();
       const events: string[] = [];
+      let startupMessage: string | undefined;
       const app = yield* runStubbedDesktop({
         localEnvironmentEnabled: true,
+        clientSettings: { ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "zh-CN" },
         environment: {},
         fileSystem: FileSystem.layerNoop({}),
         record: (event) =>
           Effect.sync(() => {
             events.push(event);
+            if (event === "backend") startupMessage = m(msg("This T3 home is unavailable"));
           }),
         windowStarted,
         tokenRequested,
@@ -320,55 +335,64 @@ it.effect.each([false, true])(
       assert.equal(Exit.isFailure(result), stopDefect);
       assert.isTrue(yield* shutdown.isComplete);
       assert.isTrue(yield* Deferred.isDone(registrationStopped));
+      assert.equal(startupMessage, "此 T3 主目录不可用");
     }).pipe(Effect.provide(DesktopShutdown.layer)),
 );
 
-it.effect("points a stale t3 launcher at the updated AppImage with Local environment off", () =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-desktop-app-" });
-    const launcher = DesktopCliShim.launcherPath({
-      path,
-      baseDir,
-      platform: "linux",
-    } as DesktopEnvironment.DesktopEnvironment["Service"]);
-    const removedAppImage = path.join(baseDir, "T3-Code-0.1.6-x86_64.AppImage");
-    const updatedAppImage = path.join(baseDir, "T3-Code-0.1.7-x86_64.AppImage");
-    yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
-    yield* fs.writeFileString(
-      launcher,
-      DesktopCliShim.renderCliShim({
-        target: { kind: "appimage", appImage: removedAppImage, executableName: "t3code" },
-        shimPath: launcher,
-        t3Home: baseDir,
-      }),
-    );
-    yield* fs.writeFileString(updatedAppImage, "", { mode: 0o755 });
-    const windowStarted = yield* Deferred.make<void>();
-
-    const app = yield* runStubbedDesktop({
-      localEnvironmentEnabled: false,
-      environment: {
+it.effect(
+  "points a stale t3 launcher at the updated AppImage and accepts t3 <dir> with Local environment off",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-desktop-app-" });
+      const launcher = DesktopCliShim.launcherPath({
         path,
         baseDir,
-        serverRoot: path.join(baseDir, "resources", "app.asar"),
-        appImagePath: Option.some(updatedAppImage),
-      },
-      fileSystem: Layer.succeed(FileSystem.FileSystem, fs),
-      record: () => Effect.void,
-      windowStarted,
-      registerLinuxUrlHandler: Effect.void,
-    });
-    yield* Deferred.await(windowStarted);
-    yield* (yield* DesktopShutdown.DesktopShutdown).request;
-    yield* Fiber.join(app);
+        platform: "linux",
+      } as DesktopEnvironment.DesktopEnvironment["Service"]);
+      const removedAppImage = path.join(baseDir, "T3-Code-0.1.6-x86_64.AppImage");
+      const updatedAppImage = path.join(baseDir, "T3-Code-0.1.7-x86_64.AppImage");
+      yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
+      yield* fs.writeFileString(
+        launcher,
+        DesktopCliShim.renderCliShim({
+          target: { kind: "appimage", appImage: removedAppImage, executableName: "t3code" },
+          shimPath: launcher,
+          t3Home: baseDir,
+        }),
+      );
+      yield* fs.writeFileString(updatedAppImage, "", { mode: 0o755 });
+      const windowStarted = yield* Deferred.make<void>();
+      const activationStarted = yield* Deferred.make<void>();
 
-    const content = yield* fs.readFileString(launcher);
-    assert.include(
-      content,
-      `app='${updatedAppImage}'`,
-      "startup left the t3 launcher pointing at the removed AppImage",
-    );
-  }).pipe(Effect.provide(Layer.mergeAll(DesktopShutdown.layer, NodeServices.layer))),
+      const app = yield* runStubbedDesktop({
+        localEnvironmentEnabled: false,
+        activationStarted,
+        environment: {
+          path,
+          baseDir,
+          serverRoot: path.join(baseDir, "resources", "app.asar"),
+          appImagePath: Option.some(updatedAppImage),
+        },
+        fileSystem: Layer.succeed(FileSystem.FileSystem, fs),
+        record: () => Effect.void,
+        windowStarted,
+        registerLinuxUrlHandler: Effect.void,
+      });
+      yield* Deferred.await(windowStarted);
+      yield* (yield* DesktopShutdown.DesktopShutdown).request;
+      yield* Fiber.join(app);
+
+      const content = yield* fs.readFileString(launcher);
+      assert.include(
+        content,
+        `app='${updatedAppImage}'`,
+        "startup left the t3 launcher pointing at the removed AppImage",
+      );
+      assert.isTrue(
+        yield* Deferred.isDone(activationStarted),
+        "startup left the t3 <dir> control socket closed",
+      );
+    }).pipe(Effect.provide(Layer.mergeAll(DesktopShutdown.layer, NodeServices.layer))),
 );

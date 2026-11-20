@@ -1,5 +1,8 @@
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { translateUi, type UiLocale } from "@t3tools/shared/uiLocale";
+import { mFallback, msg } from "gt-react";
+import { DEFAULT_LOCALE } from "./i18n/locales";
+import { getActiveLocale, m, type MessageResolver } from "./i18n/messages";
 
 function getTimestampFormatOptions(
   timestampFormat: TimestampFormat,
@@ -111,10 +114,23 @@ export function parseTimestampDate(isoDate: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-// Deliberately not the host locale: the tooltip's ordinal suffix and
-// day-before-month order below are English, so a localized month alone would
-// read "4th Juni 2026".
+// English keeps its ordinal day-before-month form; other UI languages use their own long date.
 const monthNameFormatter = new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" });
+const longDateFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function getLongDateFormatter(locale: string): Intl.DateTimeFormat {
+  let formatter = longDateFormatterCache.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    longDateFormatterCache.set(locale, formatter);
+  }
+  return formatter;
+}
 
 function ordinalSuffix(day: number): string {
   const lastTwo = day % 100;
@@ -134,13 +150,14 @@ function ordinalSuffix(day: number): string {
 export function formatChatTimestampTooltip(
   isoDate: string,
   timestampFormat: TimestampFormat,
-  language: UiLocale = "en",
+  language: UiLocale | MessageResolver = m,
 ): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
   const time = formatTime(date, timestampFormat);
-  if (language === "zh-CN") {
-    return `${new Intl.DateTimeFormat(language, { year: "numeric", month: "long", day: "numeric" }).format(date)} ${time}`;
+  const locale = typeof language === "string" ? language : getActiveLocale();
+  if (locale !== DEFAULT_LOCALE) {
+    return `${getLongDateFormatter(locale).format(wallClockAsUtc(date))} ${time}`;
   }
   const day = date.getDate();
   const month = monthNameFormatter.format(wallClockAsUtc(date));
@@ -215,7 +232,7 @@ export function formatDayAwareTimestamp(
   timestampFormat: TimestampFormat,
   nowMs: number = Date.now(),
   timeZone?: string,
-  language: UiLocale = "en",
+  language: UiLocale | MessageResolver = m,
 ): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
@@ -226,7 +243,10 @@ export function formatDayAwareTimestamp(
   const dayDiff = today.index - messageDay.index;
 
   if (dayDiff <= 0) return time;
-  if (dayDiff === 1) return translateUi(language, "yesterday at {time}", { time });
+  if (dayDiff === 1)
+    return typeof language === "string"
+      ? translateUi(language, "yesterday at {time}", { time })
+      : language(msg("yesterday at {time}", { time }));
   return `${formatNumericDate(date, messageDay.year === today.year, timeZone)} ${time}`;
 }
 
@@ -236,7 +256,7 @@ export function formatUpcomingTimestamp(
   timestampFormat: TimestampFormat,
   nowMs: number = Date.now(),
   timeZone?: string,
-  language: UiLocale = "en",
+  language: UiLocale | MessageResolver = m,
 ): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
@@ -249,15 +269,19 @@ export function formatUpcomingTimestamp(
   if (dayDiff < 0)
     return formatDayAwareTimestamp(isoDate, timestampFormat, nowMs, timeZone, language);
   if (dayDiff === 0) return time;
-  if (dayDiff === 1) return translateUi(language, "tomorrow at {time}", { time });
+  if (dayDiff === 1)
+    return typeof language === "string"
+      ? translateUi(language, "tomorrow at {time}", { time })
+      : language(msg("tomorrow at {time}", { time }));
   return `${formatNumericDate(date, targetDay.year === today.year, timeZone)} ${time}`;
 }
 
-type RelativeTimeParts = { value: string; suffix: string | null };
+/** `label` is the whole phrase ("5m ago"); `value` and `suffix` split it for styled layouts. */
+type RelativeTimeParts = { value: string; suffix: string | null; label: string };
 export type RelativeTimeState =
   | { status: "missing" }
   | { status: "invalid" }
-  | { status: "relative"; value: string; suffix: string | null };
+  | ({ status: "relative" } & RelativeTimeParts);
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -291,72 +315,102 @@ export function msUntilRelativeTimeChange(
   return Math.min(nextChangeMs - nowMs, DAY_MS);
 }
 
+const secondsLabel = (count: number, resolve: MessageResolver) =>
+  resolve(msg("{count}s", { count, $context: "seconds, abbreviated" }));
+const minutesLabel = (count: number, resolve: MessageResolver) =>
+  resolve(msg("{count}m", { count, $context: "minutes, abbreviated" }));
+const hoursLabel = (count: number, resolve: MessageResolver) =>
+  resolve(msg("{count}h", { count, $context: "hours, abbreviated" }));
+const daysLabel = (count: number, resolve: MessageResolver) =>
+  resolve(msg("{count}d", { count, $context: "days, abbreviated" }));
+
+function relativeElapsedLabel(elapsedMs: number, resolve: MessageResolver): string {
+  const seconds = Math.floor(elapsedMs / 1000);
+  if (seconds < 60) return resolve(msg("just now"));
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return resolve(msg("{count}m ago", { count: minutes }));
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return resolve(msg("{count}h ago", { count: hours }));
+  return resolve(msg("{count}d ago", { count: Math.floor(hours / 24) }));
+}
+
 export function formatRelativeElapsed(
   elapsedMs: number,
-  t = translateUi.bind(null, "en"),
+  t = translateUi.bind(null, getActiveLocale() === "zh" ? "zh-CN" : "en"),
 ): RelativeTimeParts {
-  const seconds = Math.floor(elapsedMs / 1000);
-  if (seconds < 60) return { value: t("just now"), suffix: null };
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return { value: t("{count}m", { count: minutes }), suffix: t("ago") };
+  const minutes = Math.floor(elapsedMs / MINUTE_MS);
+  if (minutes < 1) {
+    const value = t("just now");
+    return { value, suffix: null, label: value };
+  }
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return { value: t("{count}h", { count: hours }), suffix: t("ago") };
-  const days = Math.floor(hours / 24);
-  return { value: t("{count}d", { count: days }), suffix: t("ago") };
+  const value =
+    minutes < 60
+      ? t("{count}m", { count: minutes })
+      : hours < 24
+        ? t("{count}h", { count: hours })
+        : t("{count}d", { count: Math.floor(hours / 24) });
+  const suffix = t("ago");
+  return { value, suffix, label: t("{value} {suffix}", { value, suffix }) };
 }
 
 export function formatRelativeTime(
   isoDate: string,
   nowMs: number = Date.now(),
+  resolve: MessageResolver = m,
 ): RelativeTimeParts | null {
   const elapsedMs = relativeTimeElapsedMs(isoDate, nowMs);
-  return elapsedMs === null ? null : formatRelativeElapsed(elapsedMs);
+  if (elapsedMs === null) return null;
+  const relative = formatRelativeElapsed(elapsedMs);
+  return { ...relative, label: relativeElapsedLabel(elapsedMs, resolve) };
 }
 
 export function formatRelativeTimeLabel(
   isoDate: string,
   nowMs: number = Date.now(),
-  language: UiLocale = "en",
+  language: UiLocale | MessageResolver = m,
 ) {
   const elapsed = relativeTimeElapsedMs(isoDate, nowMs);
   if (elapsed === null) return "";
-  const t = translateUi.bind(null, language);
-  const relative = formatRelativeElapsed(elapsed, t);
-  return relative.suffix
-    ? t("{value} {suffix}", { value: relative.value, suffix: relative.suffix })
-    : relative.value;
+  return typeof language === "string"
+    ? formatRelativeElapsed(elapsed, translateUi.bind(null, language)).label
+    : relativeElapsedLabel(elapsed, language);
 }
 
-export function formatElapsedDurationLabel(isoDate: string, nowMs: number = Date.now()): string {
+export function formatElapsedDurationLabel(
+  isoDate: string,
+  nowMs: number = Date.now(),
+  resolve: MessageResolver = m,
+): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
   const diffMs = nowMs - date.getTime();
-  if (diffMs <= 0) return "just now";
+  if (diffMs <= 0) return resolve(msg("just now"));
 
   const seconds = Math.floor(diffMs / 1000);
-  if (seconds < 5) return "just now";
-  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 5) return resolve(msg("just now"));
+  if (seconds < 60) return secondsLabel(seconds, resolve);
 
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return minutesLabel(minutes, resolve);
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return hoursLabel(hours, resolve);
 
   const days = Math.floor(hours / 24);
-  return `${days}d`;
+  return daysLabel(days, resolve);
 }
 
 /** Pass nowMs to match a parent-driven render tick. */
 export function formatExpiresInLabel(
   isoDate: string,
   nowMs: number = Date.now(),
-  language: UiLocale = "en",
+  language: UiLocale | MessageResolver = m,
 ): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";
   const diffMs = date.getTime() - nowMs;
-  if (language === "zh-CN") {
+  if ((typeof language === "string" ? language : getActiveLocale()).startsWith("zh")) {
     if (diffMs <= 0) return "已过期";
     if (diffMs < 5000) return "即将过期";
     const seconds = Math.floor(diffMs / 1000);
@@ -371,16 +425,21 @@ export function formatExpiresInLabel(
       .map(([count, unit]) => `${count}${unit}`)
       .join(" ")}后过期`;
   }
-  if (diffMs <= 0) return "Expired";
+  const resolve = typeof language === "function" ? language : mFallback;
+  if (diffMs <= 0) return resolve(msg("Expired"));
 
   const totalSeconds = Math.floor(diffMs / 1000);
-  if (totalSeconds < 5) return "Expires in a moment";
-  if (totalSeconds < 60) return `Expires in ${totalSeconds}s`;
+  if (totalSeconds < 5) return resolve(msg("Expires in a moment"));
+  const expiresIn = (parts: string[]) =>
+    resolve(msg("Expires in {duration}", { duration: parts.join(" ") }));
+  if (totalSeconds < 60) return expiresIn([secondsLabel(totalSeconds, resolve)]);
 
   if (totalSeconds < 3600) {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
-    return seconds === 0 ? `Expires in ${minutes}m` : `Expires in ${minutes}m ${seconds}s`;
+    return seconds === 0
+      ? expiresIn([minutesLabel(minutes, resolve)])
+      : expiresIn([minutesLabel(minutes, resolve), secondsLabel(seconds, resolve)]);
   }
 
   if (totalSeconds < 86_400) {
@@ -388,22 +447,22 @@ export function formatExpiresInLabel(
     const rem = totalSeconds % 3600;
     const minutes = Math.floor(rem / 60);
     const seconds = rem % 60;
-    const parts = [`${hours}h`];
-    if (minutes > 0) parts.push(`${minutes}m`);
-    if (seconds > 0) parts.push(`${seconds}s`);
-    return `Expires in ${parts.join(" ")}`;
+    const parts = [hoursLabel(hours, resolve)];
+    if (minutes > 0) parts.push(minutesLabel(minutes, resolve));
+    if (seconds > 0) parts.push(secondsLabel(seconds, resolve));
+    return expiresIn(parts);
   }
 
   const days = Math.floor(totalSeconds / 86_400);
   const remAfterDays = totalSeconds % 86_400;
-  if (remAfterDays === 0) return `Expires in ${days}d`;
+  if (remAfterDays === 0) return expiresIn([daysLabel(days, resolve)]);
   const hours = Math.floor(remAfterDays / 3600);
   const rem = remAfterDays % 3600;
   const minutes = Math.floor(rem / 60);
   const seconds = rem % 60;
-  const tail: string[] = [];
-  if (hours > 0) tail.push(`${hours}h`);
-  if (minutes > 0) tail.push(`${minutes}m`);
-  if (seconds > 0) tail.push(`${seconds}s`);
-  return tail.length > 0 ? `Expires in ${days}d ${tail.join(" ")}` : `Expires in ${days}d`;
+  const parts = [daysLabel(days, resolve)];
+  if (hours > 0) parts.push(hoursLabel(hours, resolve));
+  if (minutes > 0) parts.push(minutesLabel(minutes, resolve));
+  if (seconds > 0) parts.push(secondsLabel(seconds, resolve));
+  return expiresIn(parts);
 }

@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { useMessages } from "gt-react-native";
 import { useState, type ReactNode } from "react";
 import { Linking, Platform, Pressable, useWindowDimensions, View } from "react-native";
 import Animated, {
@@ -36,9 +37,15 @@ const ENTERING = FadeIn.duration(180).reduceMotion(ReduceMotion.System);
 
 export function GlobalVoiceInputControl(props: { readonly children: ReactNode }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const voice = useGlobalVoiceInput();
   const [expanded, setExpanded] = useState(false);
-  const presentation = resolveVoiceComposerPresentation(voice.state, voice.elapsedSeconds, t);
+  const presentation = resolveVoiceComposerPresentation(
+    voice.state,
+    voice.elapsedSeconds,
+    t,
+    messages,
+  );
   const visible =
     presentation.statusLabel !== null &&
     !(voice.ownerKey && voice.focusedOwners.has(voice.ownerKey));
@@ -68,6 +75,7 @@ function EdgeDictationPill(props: {
   readonly onExpandedChange: (expanded: boolean) => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
 
   const voice = useGlobalVoiceInput();
   const insets = useSafeAreaInsets();
@@ -92,7 +100,12 @@ function EdgeDictationPill(props: {
       ? Math.max(insets.bottom, 16) + 16 + fabSize + 12
       : Math.max(insets.bottom, 12) + IOS_BOTTOM_CHROME_CLEARANCE;
 
-  const presentation = resolveVoiceComposerPresentation(voice.state, voice.elapsedSeconds, t);
+  const presentation = resolveVoiceComposerPresentation(
+    voice.state,
+    voice.elapsedSeconds,
+    t,
+    messages,
+  );
   const phase = voice.state.phase;
   const isError = phase === "error";
   const openSettings = isError && voice.state.errorAction === "settings";

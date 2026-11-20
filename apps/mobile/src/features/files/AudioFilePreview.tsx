@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { Button } from "../../components/ui/Button";
 import { useAudioPlayerStatus } from "expo-audio";
+
 import { useEffect, useState } from "react";
 import { AppState, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -16,6 +17,7 @@ function timestamp(seconds: number) {
 export function AudioFilePreview(props: { uri: string; onRetry: () => void }) {
   const t = useUiTranslation();
   const player = usePlaybackAudioPlayer(props.uri);
+
   const status = useAudioPlayerStatus(player);
   const [playbackRequested, setPlaybackRequested] = useState(false);
   const playback = createAudioPlaybackSession(player, false, setPlaybackRequested);

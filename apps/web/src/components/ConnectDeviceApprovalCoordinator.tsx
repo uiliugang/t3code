@@ -1,5 +1,6 @@
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "../hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useNavigate } from "@tanstack/react-router";
 import {
   type AtomCommandResult,
@@ -10,6 +11,7 @@ import { AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { useEffect, useRef, useState } from "react";
 
+import { m } from "../i18n/messages";
 import { authEnvironment } from "../state/auth";
 import { useEnvironments } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
@@ -55,8 +57,8 @@ async function reportFailure(
     toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: t(title),
-        description: error instanceof Error ? error.message : t("An error occurred."),
+        title,
+        description: thrownErrorMessage(error, m) ?? t("An error occurred."),
       }),
     );
   }
@@ -135,7 +137,7 @@ function ConnectDeviceRequestToasts({
             close();
             void settle(
               id,
-              reportFailure(t, "Could not approve the device", () =>
+              reportFailure(t, t("Could not approve the device"), () =>
                 approve({ environmentId, input: { pairingLinkId: id } }),
               ),
             );
@@ -149,7 +151,7 @@ function ConnectDeviceRequestToasts({
               close();
               void settle(
                 id,
-                reportFailure(t, "Could not deny the device", () =>
+                reportFailure(t, t("Could not deny the device"), () =>
                   deny({ environmentId, input: { id } }),
                 ),
               );

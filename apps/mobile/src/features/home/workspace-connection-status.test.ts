@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
+import { decodeOptions, gtFallback } from "gt-react-native";
+import { translateUi } from "@t3tools/shared/uiLocale";
+
+import type { MessageResolver } from "../../i18n/messages";
+import zh from "../../i18n/translations/zh.json";
 
 import type { WorkspaceState } from "../../state/workspaceModel";
 import { workspaceConnectionStatusPresentation } from "./workspace-connection-status";
@@ -55,7 +59,14 @@ describe("workspace connection status", () => {
   );
 
   it("shows connected shell catch-up even while a secondary environment is unreachable", () => {
-    const t: UiTranslator = (message, values) => translateUi("zh-CN", message, values);
+    const t = ((message: string) => {
+      const options = decodeOptions(message);
+      const source = typeof options?.$_source === "string" ? options.$_source : message;
+      const translated = source.startsWith("{count, plural, one {Reconnecting ")
+        ? zh["1a75f83e4b8bb3ed"]
+        : translateUi("zh-CN", source);
+      return gtFallback(translated, { ...options, $locale: "zh" });
+    }) as MessageResolver;
     const state = workspaceState({
       hasSyncingConnectedEnvironment: true,
       hasPendingShellSnapshot: true,

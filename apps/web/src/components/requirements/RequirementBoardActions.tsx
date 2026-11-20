@@ -136,7 +136,7 @@ function EnvironmentCreateItems({
             disabled={!canCreateIssue || !projects.length}
             onClick={() => createIssue(environmentId, provider)}
           >
-            {provider === "github" ? "GitHub Issue" : "MEP ONES"}
+            {provider === "github" ? t("GitHub Issue") : t("MEP ONES")}
           </MenuItem>
         ))}
       <MenuSub>

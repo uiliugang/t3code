@@ -4,6 +4,8 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
+import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+import { useGT } from "gt-react";
 import { useState } from "react";
 
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -27,6 +29,21 @@ export function BackgroundWorkDetails(props: {
   readonly onOpenThread: (threadId: ThreadId) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const kindLabel = (kind: string) => {
+    switch (kind) {
+      case "subagent":
+        return gt("subagent", { $context: "kind of background work" });
+      case "command":
+        return gt("command", { $context: "kind of background work" });
+      case "monitor":
+        return gt("monitor", { $context: "kind of background work" });
+      case "background_task":
+        return gt("background task", { $context: "kind of background work" });
+      default:
+        return kind.replaceAll("_", " ");
+    }
+  };
   const [open, setOpen] = useState(false);
   const streamsOutput = useCommandOutputStreaming(props.environmentId);
   return (
@@ -51,8 +68,8 @@ export function BackgroundWorkDetails(props: {
                 description && description !== command?.trim()
                   ? description
                   : command
-                    ? t("Command")
-                    : task.kind.replaceAll("_", " ");
+                    ? gt("Command", { $context: "title of a background shell command" })
+                    : kindLabel(task.kind);
               const itemId =
                 task.itemId ?? (item?.type === "command_execution" ? item.id : undefined);
               const childThreadId = task.kind === "subagent" ? task.childThreadId : undefined;
@@ -61,7 +78,7 @@ export function BackgroundWorkDetails(props: {
                   <div className="flex items-baseline justify-between gap-3">
                     <h3 className="font-medium">{title}</h3>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {task.awaited ? t("Waiting") : t("Running")}
+                      {t(backgroundWorkHoldsCompletion([task]) ? "Waiting" : "Running")}
                     </span>
                   </div>
                   {command ? (

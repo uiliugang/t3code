@@ -1,5 +1,9 @@
 import { RegistryContext } from "@effect/atom-react";
-import { AuthSessionState, type EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthSessionState,
+  type EnvironmentId,
+  type ManagedPolicySummary,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -15,6 +19,7 @@ const testState = vi.hoisted(() => ({
   clipboard: vi.fn(),
   sessionAtom: null as unknown,
   serverVersions: new Map<string, string>(),
+  serverPolicies: new Map<string, ManagedPolicySummary>(),
   ssh: false,
 }));
 
@@ -51,7 +56,7 @@ vi.mock(import("~/state/entities"), async (original) => ({
     new Map(
       [...testState.serverVersions].map(([id, serverVersion]) => [
         id,
-        { environment: { serverVersion } },
+        { environment: { serverVersion }, managedPolicy: testState.serverPolicies.get(id) },
       ]),
     )) as never,
 }));
@@ -109,6 +114,7 @@ function setup(): Disposable {
   testState.toast.mockReset();
   testState.clipboard.mockReset();
   testState.serverVersions.clear();
+  testState.serverPolicies.clear();
   testState.ssh = false;
   sessionAtom = Atom.make<SessionResult>(AsyncResult.success(currentSession));
   testState.sessionAtom = sessionAtom;
@@ -268,5 +274,21 @@ describe("ServerUpdatesAction", () => {
     expect(testState.toast).toHaveBeenCalledWith(
       expect.objectContaining({ type: "success", title: "Office updated" }),
     );
+  });
+
+  it("does not offer batch updates that violate the machine's stable-only policy", async () => {
+    using _state = setup();
+    const host = targets[0]!;
+    testState.serverVersions.set(host.environmentId, "0.0.30-nightly.20261001.1");
+    testState.serverPolicies.set(host.environmentId, {
+      organization: "Example Corp",
+      lockedSettings: [],
+      limits: { updates: { mode: "auto", allowNightly: false } },
+    });
+
+    await using screen = await mount([{ ...host, targetVersion: "0.0.31-nightly.20261002.1" }]);
+    expect(button(screen, "Update all")?.disabled).toBe(true);
+    await click(screen, "Update all");
+    expect(testState.updateServer).not.toHaveBeenCalled();
   });
 });

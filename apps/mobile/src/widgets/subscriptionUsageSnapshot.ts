@@ -7,10 +7,35 @@ import {
   type LimitPoolWindow,
   type LimitPresentations,
 } from "@t3tools/shared/usageLimits";
+import { msg } from "gt-react-native";
+
+import { m, type MessageResolver } from "../i18n/messages";
 
 import { providerColors } from "../features/usage/providerColors";
 import type { WidgetTheme } from "./widgetTheme";
 import { translateUi, type UiLocale } from "@t3tools/shared/uiLocale";
+
+/**
+ * Copy for the widget, which runs without the app's catalogs. `{name}` tokens are filled in by the
+ * widget; `moreInApp` is keyed by count.
+ */
+export interface SubscriptionUsageText {
+  refresh: string;
+  noSessionLimit: string;
+  noWeeklyLimit: string;
+  subscriptionRemaining: string;
+  percentLeft: string;
+  windowPercentLeft: string;
+  left: string;
+  notApplicable: string;
+  openApp: string;
+  noLimits: string;
+  asOf: string;
+  tapToConnect: string;
+  providerAccessibility: string;
+  windowAccessibility: string;
+  moreInApp: Record<string, string>;
+}
 
 export interface WidgetLimitAccount {
   name: string;
@@ -27,6 +52,7 @@ export interface SubscriptionUsageSnapshot {
   language?: UiLocale;
   theme?: WidgetTheme;
   url?: string;
+  text?: SubscriptionUsageText;
   checkedAt: number;
   providers: Array<{
     name: string;
@@ -69,29 +95,34 @@ export function createWidgetRefresher<Id>(refresh: (id: Id) => Promise<unknown>)
 }
 
 // Widget snapshots must not persist account emails.
-function accountName(account: LimitAccount) {
+function accountName(account: LimitAccount, resolve: MessageResolver) {
   if (account.displayName && !account.displayName.includes("@")) return account.displayName;
   const email = account.email ?? account.displayName;
-  if (!email?.includes("@")) return "Account";
+  if (!email?.includes("@"))
+    return resolve(msg("Account", { $context: "an unnamed provider account" }));
   const [local = "", domain = ""] = email.split("@");
   return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase();
 }
 
-function clockLabel(at: number, from: number) {
+function clockLabel(at: number, from: number, language: UiLocale) {
   const time = { hour: "numeric", minute: "2-digit" } as const;
   if (new Date(at).toDateString() === new Date(from).toDateString())
-    return new Date(at).toLocaleTimeString(undefined, time);
+    return new Date(at).toLocaleTimeString(language, time);
   return new Date(at).toLocaleString(
-    undefined,
+    language,
     at - from < 6 * 86_400_000 ? { weekday: "short", ...time } : { month: "short", day: "numeric" },
   );
 }
 
-function widgetAccounts(window: LimitPoolWindow): WidgetLimitAccount[] {
+function widgetAccounts(
+  window: LimitPoolWindow,
+  language: UiLocale,
+  resolve: MessageResolver,
+): WidgetLimitAccount[] {
   const seen = new Map<string, number>();
   return window.columns.map((column) => {
     // Redacted initials can collide, and the widget keys segments by name.
-    const base = accountName(column.account);
+    const base = accountName(column.account, resolve);
     const count = (seen.get(base) ?? 0) + 1;
     seen.set(base, count);
     const color = normalizeProviderAccentColor(column.account.accentColor);
@@ -108,7 +139,7 @@ function widgetAccounts(window: LimitPoolWindow): WidgetLimitAccount[] {
       refill: reset ? column.refillPercent : 0,
       ...(reset && {
         resetsAt,
-        reset: clockLabel(resetsAt, checkedAt),
+        reset: clockLabel(resetsAt, checkedAt, language),
       }),
       ...(column.window.windowDurationMins && {
         durationMs: column.window.windowDurationMins * 60_000,
@@ -121,14 +152,87 @@ function widgetAccounts(window: LimitPoolWindow): WidgetLimitAccount[] {
 const isUpcoming = (reset: LimitPoolWindow["resets"][number]) =>
   reset.at > Date.parse(reset.member.account.limits.checkedAt);
 
+const resetTime = (at: number, language: UiLocale) =>
+  new Date(at).toLocaleString(language, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+function subscriptionUsageText(
+  language: UiLocale,
+  resolve: MessageResolver,
+  maxHiddenWindows: number,
+): SubscriptionUsageText {
+  const chinese = language === "zh-CN";
+  return {
+    refresh: translateUi(language, "Open T3 to refresh"),
+    noSessionLimit: chinese ? "未报告会话额度" : resolve(msg("No session limit reported")),
+    noWeeklyLimit: chinese ? "未报告每周额度" : resolve(msg("No weekly limit reported")),
+    subscriptionRemaining: translateUi(language, "Subscription remaining"),
+    percentLeft: chinese
+      ? "剩余 {remaining}%"
+      : resolve(msg("{remaining}% left", { remaining: "{remaining}" })),
+    windowPercentLeft: chinese
+      ? "{window} · 剩余 {remaining}%"
+      : resolve(
+          msg("{window} · {remaining}% left", { window: "{window}", remaining: "{remaining}" }),
+        ),
+    left: chinese
+      ? "剩余"
+      : resolve(msg("left", { $context: "follows a bold percentage, as in 40% left" })),
+    notApplicable: chinese
+      ? "暂无数据"
+      : resolve(msg("N/A", { $context: "no usage limit for the chosen period" })),
+    openApp: chinese ? "打开 T3" : resolve(msg("Open {app}", { app: "T3" })),
+    noLimits: chinese ? "暂无订阅额度数据。" : resolve(msg("No subscription limits available.")),
+    asOf: chinese ? "更新于 {time}" : resolve(msg("As of {time}", { time: "{time}" })),
+    tapToConnect: chinese
+      ? "轻点以在 T3 中连接"
+      : resolve(msg("Tap to connect in {app}", { app: "T3" })),
+    providerAccessibility: resolve(
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- placeholders the widget fills in
+      msg("{provider}. {detail}.", { provider: "{provider}", detail: "{detail}" }),
+    ),
+    windowAccessibility: chinese
+      ? "{provider}，{window}，剩余百分之{remaining}。{reset}。{detail}。"
+      : resolve(
+          msg("{provider}, {window}, {remaining} percent remaining. {reset}. {detail}.", {
+            provider: "{provider}",
+            window: "{window}",
+            remaining: "{remaining}",
+            reset: "{reset}",
+            // oxlint-disable-next-line t3code/no-untranslated-copy -- placeholders the widget fills in
+            detail: "{detail}",
+          }),
+        ),
+    moreInApp: Object.fromEntries(
+      Array.from({ length: maxHiddenWindows }, (_, index) => [
+        String(index + 1),
+        chinese
+          ? `另有 ${index + 1} 项，请在 T3 查看`
+          : resolve(
+              msg("{count, plural, one {{count} more in {app}} other {{count} more in {app}}}", {
+                count: index + 1,
+                app: "T3",
+              }),
+            ),
+      ]),
+    ),
+  };
+}
+
 function subscriptionUsageProps(
   accounts: readonly LimitAccount[],
   now: number,
   configuredDrivers: ReadonlySet<string>,
   maxWindowsPerProvider: number,
   language: UiLocale,
+  resolve: MessageResolver,
 ): SubscriptionUsageSnapshot {
   const t = translateUi.bind(null, language);
+  const chinese = language === "zh-CN";
   const pools = collectLimitPools(accounts, now);
   const checked = accounts
     .filter((account) => account.driver === "codex" || account.driver === "claudeAgent")
@@ -181,7 +285,14 @@ function subscriptionUsageProps(
           detail: !fresh
             ? t("Open T3 to refresh")
             : pool.accounts.length > 1
-              ? t("{count} accounts · pooled", { count: pool.accounts.length })
+              ? chinese
+                ? t("{count} accounts · pooled", { count: pool.accounts.length })
+                : resolve(
+                    msg(
+                      "{count, plural, one {{count} account · pooled} other {{count} accounts · pooled}}",
+                      { count: pool.accounts.length },
+                    ),
+                  )
               : t("Subscription remaining"),
           expiresAt: fresh ? expiresAt : 0,
           totalWindows: fresh ? pool.windows.length : 0,
@@ -191,16 +302,9 @@ function subscriptionUsageProps(
                 label: t(window.label),
                 remaining: Math.round(window.remainingPercent),
                 reset: window.resets[0]
-                  ? `${t(isUpcoming(window.resets[0]) ? "Next reset" : "Reset")} ${new Date(
-                      window.resets[0].at,
-                    ).toLocaleString(language, {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}`
+                  ? `${t(isUpcoming(window.resets[0]) ? "Next reset" : "Reset")} ${resetTime(window.resets[0].at, language)}`
                   : t("Reset time unavailable"),
-                accounts: widgetAccounts(window),
+                accounts: widgetAccounts(window, language, resolve),
               }))
             : [],
         };
@@ -213,6 +317,7 @@ export function buildSubscriptionUsageSnapshot(
   url: string,
   maxWindowsPerProvider = 6,
   language: UiLocale = "en",
+  resolve: MessageResolver = m,
 ): SubscriptionUsageSnapshot {
   const configuredDrivers = new Set(
     [...presentations.values()].flatMap((presentation) =>
@@ -227,16 +332,24 @@ export function buildSubscriptionUsageSnapshot(
         .map((provider) => provider.driver),
     ),
   );
+  const props = subscriptionUsageProps(
+    collectLimitAccounts(presentations),
+    0,
+    configuredDrivers,
+    maxWindowsPerProvider,
+    language,
+    resolve,
+  );
   return {
-    ...subscriptionUsageProps(
-      collectLimitAccounts(presentations),
-      0,
-      configuredDrivers,
-      maxWindowsPerProvider,
-      language,
-    ),
+    ...props,
     language,
     url,
+    // The Android widget counts hidden rows across providers, a note row included.
+    text: subscriptionUsageText(
+      language,
+      resolve,
+      props.providers.reduce((sum, provider) => sum + Math.max(1, provider.totalWindows), 0),
+    ),
   };
 }
 
@@ -252,7 +365,9 @@ export function subscriptionUsageTimeline(snapshot: SubscriptionUsageSnapshot, n
         provider.windows.length > 0 && provider.expiresAt <= date
           ? {
               ...provider,
-              detail: translateUi(snapshot.language ?? "en", "Open T3 to refresh"),
+              detail:
+                snapshot.text?.refresh ??
+                translateUi(snapshot.language ?? "en", "Open T3 to refresh"),
               windows: [],
               totalWindows: 0,
             }

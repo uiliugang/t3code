@@ -1,3 +1,4 @@
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import type { AssetResource, EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
@@ -22,14 +23,16 @@ import {
   EyeIcon,
   Table2Icon,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { msg, useGT, useMessages } from "gt-react";
+import { m } from "~/i18n/messages";
 
 import { useAssetUrlRefresh } from "~/assets/assetUrls";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { maskMarkdownFrontmatter } from "@t3tools/shared/markdownFrontmatter";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { toastManager } from "~/components/ui/toast";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { namedClipboardTarget, useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
@@ -113,7 +116,6 @@ export function AttachmentFilePreview(props: {
   onClose?: () => void;
 }) {
   const t = useUiTranslation();
-  const translate = useEffectEvent(t);
   const kind = filePreviewKind(props);
   const officeKind = officePreviewKind(props);
   const delimiter = filePreviewDelimiter(props);
@@ -129,7 +131,11 @@ export function AttachmentFilePreview(props: {
             : null;
   const attachmentId =
     props.asset && "attachmentId" in props.asset ? props.asset.attachmentId : undefined;
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: props.name });
+  const gt = useGT();
+  const messages = useMessages();
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: namedClipboardTarget(props.name),
+  });
   // useAssetUrlRefresh keys its callback on these objects, so they must stay cached.
   const resource =
     props.asset && "resource" in props.asset
@@ -181,15 +187,13 @@ export function AttachmentFilePreview(props: {
     void refresh()
       .then((url) => {
         if (cancelled) return;
-        if (!url) throw new Error(translate("Reconnect to the environment and try again."));
+        if (!url) throw new Error(m(msg("Reconnect to the environment and try again.")));
         authorizedAt.current = Date.now();
         setRemoteUrl(url);
       })
       .catch((cause: unknown) => {
         if (!cancelled)
-          setError(
-            cause instanceof Error ? cause.message : translate("The attachment is unavailable."),
-          );
+          setError(thrownErrorMessage(cause, m) ?? m(msg("The attachment is unavailable.")));
       });
     return () => {
       cancelled = true;
@@ -215,7 +219,7 @@ export function AttachmentFilePreview(props: {
       if (!file && Date.now() - authorizedAt.current > STALE_URL_MS) {
         const target = await refresh();
         if (controller.signal.aborted) return;
-        if (!target) throw new Error(translate("Reconnect to the environment and try again."));
+        if (!target) throw new Error(m(msg("Reconnect to the environment and try again.")));
         authorizedAt.current = Date.now();
         if (target !== url) {
           setRemoteUrl(target);
@@ -235,9 +239,7 @@ export function AttachmentFilePreview(props: {
       if (!controller.signal.aborted) setContent(result);
     })().catch((cause: unknown) => {
       if (!controller.signal.aborted)
-        setContentError(
-          cause instanceof Error ? cause.message : translate("Could not load this file."),
-        );
+        setContentError(thrownErrorMessage(cause, m) ?? m(msg("Could not load this file.")));
     });
     return () => controller.abort();
   }, [url, needsText, streamsText, revision, props.sizeBytes, props.file, refresh]);
@@ -276,8 +278,8 @@ export function AttachmentFilePreview(props: {
         const cause = Cause.squash(result.cause);
         toastManager.add({
           type: "error",
-          title: t("Could not save file"),
-          description: cause instanceof Error ? cause.message : t("Please try again."),
+          title: gt("Could not save file"),
+          description: thrownErrorMessage(cause, m) ?? gt("Please try again."),
         });
       }
       setSaving(false);
@@ -414,7 +416,7 @@ export function AttachmentFilePreview(props: {
           </span>
           {props.sizeBytes > 0 ? (
             <span className="ml-2 shrink-0 text-muted-foreground">
-              {formatAttachmentSize(props.sizeBytes)}
+              {formatAttachmentSize(props.sizeBytes, messages)}
             </span>
           ) : null}
         </div>
@@ -466,8 +468,8 @@ export function AttachmentFilePreview(props: {
                 .catch((cause: unknown) =>
                   toastManager.add({
                     type: "error",
-                    title: t("Could not copy file"),
-                    description: cause instanceof Error ? cause.message : t("Try again."),
+                    title: gt("Could not copy file"),
+                    description: thrownErrorMessage(cause, m) ?? gt("Try again."),
                   }),
                 );
             }}

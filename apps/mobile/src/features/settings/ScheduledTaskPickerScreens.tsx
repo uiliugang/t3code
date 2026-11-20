@@ -1,3 +1,4 @@
+import { msg, T, useGT, useMessages } from "gt-react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { LegendList } from "@legendapp/list/react-native";
 import { useNavigation } from "@react-navigation/native";
@@ -30,11 +31,11 @@ import { moveDraftToThread, unbindDraftFromThread } from "./scheduledTaskDraft";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 
 function MissingTaskDraft() {
-  const t = useUiTranslation();
+  const gt = useGT();
   return (
-    <SettingsScreen title={t("Scheduled task")}>
+    <SettingsScreen title={gt("Scheduled task")}>
       <Text className="p-5 text-base text-foreground-muted">
-        {t("Open a scheduled task form first.")}
+        <T>Open a scheduled task form first.</T>
       </Text>
     </SettingsScreen>
   );
@@ -187,10 +188,12 @@ export function ScheduledTaskBranchPickerRouteScreen() {
   );
 }
 
-const THREAD_SEARCH_PLACEHOLDER = "Search threads, including older ones";
+const THREAD_SEARCH_PLACEHOLDER = msg("Search threads, including older ones");
 
 export function ScheduledTaskThreadPickerRouteScreen() {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { editor, setEditor } = useScheduledTaskEditor();
@@ -203,9 +206,9 @@ export function ScheduledTaskThreadPickerRouteScreen() {
   const search = {
     value: query,
     onChangeText: setQuery,
-    placeholder: t(THREAD_SEARCH_PLACEHOLDER),
-    accessibilityLabel: t("Search threads"),
-    clearAccessibilityLabel: t("Clear thread search"),
+    placeholder: m(THREAD_SEARCH_PLACEHOLDER),
+    accessibilityLabel: gt("Search threads"),
+    clearAccessibilityLabel: gt("Clear thread search"),
     mode: "inline" as const,
     compactToolbar: true,
   };
@@ -223,7 +226,7 @@ export function ScheduledTaskThreadPickerRouteScreen() {
   const rows = [
     ...(needle
       ? []
-      : [{ key: "new-thread", title: t(NEW_THREAD_DESTINATION_LABEL), thread: null }]),
+      : [{ key: "new-thread", title: m(NEW_THREAD_DESTINATION_LABEL), thread: null }]),
     ...(threadId !== null && currentLabel.toLocaleLowerCase().includes(needle)
       ? [{ key: threadId, title: currentLabel, thread: null }]
       : []),
@@ -247,7 +250,7 @@ export function ScheduledTaskThreadPickerRouteScreen() {
   const selectedKey = threadId ?? (editor.draft.threadMode === "new_thread" ? "new-thread" : null);
 
   return (
-    <SettingsScreen title="Destination" search={search}>
+    <SettingsScreen title={gt("Destination")} search={search}>
       <LegendList
         renderScrollComponent={NativeScrollView}
         data={rows}

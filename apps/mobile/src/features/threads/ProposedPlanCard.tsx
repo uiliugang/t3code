@@ -1,11 +1,14 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
+import { useGT } from "gt-react-native";
+import { m } from "../../i18n/messages";
 import { useRef, useState, type ReactNode } from "react";
 import { View } from "react-native";
 
@@ -24,6 +27,7 @@ export function ProposedPlanCard(props: {
 }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   const canWrite = useAtomValue(projectEnvironment.writeFile.permissionAtom(props.environmentId));
   const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
   const inFlight = useRef(false);
@@ -49,13 +53,10 @@ export function ProposedPlanCard(props: {
       setSaving(false);
     });
     if (result._tag === "Success") {
-      Dialog.alert(t("Plan saved to workspace"), result.value.relativePath);
+      Dialog.alert(gt("Plan saved to workspace"), result.value.relativePath);
     } else if (!isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
-      Dialog.alert(
-        t("Could not save plan"),
-        error instanceof Error ? error.message : String(error),
-      );
+      Dialog.alert(gt("Could not save plan"), errorDisplayMessage(error, m) ?? String(error));
     }
   };
 

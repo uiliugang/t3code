@@ -100,7 +100,7 @@ function IssueRow({
             </span>
             <span className="mb-1 flex flex-wrap gap-x-2 text-2xs text-muted-foreground">
               <span>
-                {issue.provider === "meituan" ? "MEP ONES" : issue.repository} #{issue.id}
+                {issue.provider === "meituan" ? t("MEP ONES") : issue.repository} #{issue.id}
               </span>
               <span>{issue.state}</span>
             </span>

@@ -9,6 +9,7 @@ import {
   type TextDirection,
 } from "@t3tools/shared/textDirection";
 import { useNavigation } from "@react-navigation/native";
+import { Plural, T, useGT, Var } from "gt-react-native";
 import { useRef } from "react";
 import { Platform, Pressable, ScrollView, View, type LayoutChangeEvent } from "react-native";
 import Animated, {
@@ -123,6 +124,7 @@ function QuestionText(props: {
 export function PendingUserInputCard(props: PendingUserInputCardProps) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   const questionCount = props.pendingUserInput.questions.length;
   const canRespond = props.pendingUserInput.responseCapability !== "not_resumable";
   const isResponding = props.respondingUserInputId === props.pendingUserInput.requestId;
@@ -193,18 +195,32 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Expand user input, ${questionCount} question${
-          questionCount === 1 ? "" : "s"
-        }`}
+        accessibilityLabel={gt(
+          "{count, plural, one {Expand user input, {count} question} other {Expand user input, {count} questions}}",
+          { count: questionCount },
+        )}
         onPress={props.onToggleCollapsed}
         className="min-h-10 flex-1 flex-row items-center gap-2 active:opacity-70"
       >
         <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
-          {t("User input needed")}
+          <T>User input needed</T>
         </Text>
         <Text className="font-sans text-xs text-foreground-muted">
-          {questionCount} {t("question")}
-          {questionCount === 1 ? "" : "s"}
+          <T>
+            <Plural
+              n={questionCount}
+              one={
+                <>
+                  <Var>{questionCount}</Var> question
+                </>
+              }
+              other={
+                <>
+                  <Var>{questionCount}</Var> questions
+                </>
+              }
+            />
+          </T>
         </Text>
         <View className="flex-1" />
         <SymbolView

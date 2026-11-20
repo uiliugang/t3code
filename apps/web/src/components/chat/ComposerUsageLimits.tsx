@@ -3,9 +3,11 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { translateUi } from "@t3tools/shared/uiLocale";
 import type { EnvironmentId, UsageLimitsReport } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
-import { limitsNotice } from "@t3tools/shared/usageLimits";
+import { limitsNotice } from "@t3tools/shared/usageLimitsCopy";
+import { msg, useMessages } from "gt-react";
 import { GaugeIcon } from "lucide-react";
 
+import { m, type MessageResolver } from "../../i18n/messages";
 import { ensureLocalApi } from "../../localApi";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Button } from "../ui/button";
@@ -53,6 +55,7 @@ export function usageLimitsBannerItem(
   report: UsageLimitsReport,
   environmentId: EnvironmentId,
   onDismiss: () => void,
+  resolve: MessageResolver = m,
 ): ComposerBannerStackItem {
   const language = getClientSettings().uiLanguage;
   const t = translateUi.bind(null, language);
@@ -61,7 +64,11 @@ export function usageLimitsBannerItem(
   const summary = single ? (
     <AccountSummary account={single} />
   ) : (
-    t("{count} accounts", { count: report.accounts.length })
+    resolve(
+      msg("{count, plural, one {{count} account} other {{count} accounts}}", {
+        count: report.accounts.length,
+      }),
+    )
   );
   return {
     id,
@@ -75,42 +82,51 @@ export function usageLimitsBannerItem(
   };
 }
 
-export function modelFallbackBannerItem({
-  fallbackModelName,
-  defaultProviderName,
-  defaultModelName,
-  resetsAt,
-  timestampFormat,
-  onUseDefault,
-  onDismiss,
-}: {
-  readonly fallbackModelName: string;
-  readonly defaultProviderName: string;
-  readonly defaultModelName: string;
-  readonly resetsAt: string | null;
-  readonly timestampFormat: TimestampFormat;
-  readonly onUseDefault: () => void;
-  readonly onDismiss: () => void;
-}): ComposerBannerStackItem {
-  const language = getClientSettings().uiLanguage;
-  const t = translateUi.bind(null, language);
+export function modelFallbackBannerItem(
+  {
+    fallbackModelName,
+    defaultProviderName,
+    defaultModelName,
+    resetsAt,
+    timestampFormat,
+    onUseDefault,
+    onDismiss,
+  }: {
+    readonly fallbackModelName: string;
+    readonly defaultProviderName: string;
+    readonly defaultModelName: string;
+    readonly resetsAt: string | null;
+    readonly timestampFormat: TimestampFormat;
+    readonly onUseDefault: () => void;
+    readonly onDismiss: () => void;
+  },
+  resolve: MessageResolver = m,
+): ComposerBannerStackItem {
   return {
     id: "fallback-model",
     variant: "info",
     icon: <GaugeIcon />,
-    title: t("Using {model}", { model: fallbackModelName }),
+    title: resolve(msg("Using {model}", { model: fallbackModelName })),
     description: resetsAt
-      ? t("{provider} is out of usage · resets {time}", {
-          provider: defaultProviderName,
-          time: formatUpcomingTimestamp(resetsAt, timestampFormat, undefined, undefined, language),
-        })
-      : t("{provider} is out of usage", { provider: defaultProviderName }),
+      ? resolve(
+          msg("{provider} is out of usage · resets {time}", {
+            provider: defaultProviderName,
+            time: formatUpcomingTimestamp(
+              resetsAt,
+              timestampFormat,
+              Date.now(),
+              undefined,
+              resolve,
+            ),
+          }),
+        )
+      : resolve(msg("{provider} is out of usage", { provider: defaultProviderName })),
     actions: (
       <Button size="xs" variant="ghost" onClick={onUseDefault}>
-        {t("Use {model}", { model: defaultModelName })}
+        {resolve(msg("Use {model}", { model: defaultModelName }))}
       </Button>
     ),
-    dismissLabel: t("Dismiss fallback model notice"),
+    dismissLabel: resolve(msg("Dismiss fallback model notice")),
     onDismiss,
   };
 }
@@ -123,6 +139,7 @@ function UsageLimitsBannerBody({
   readonly environmentId: EnvironmentId;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const now = Date.parse(report.createdAt);
   return (
     <ComposerBanner.Scroll>
@@ -131,7 +148,7 @@ function UsageLimitsBannerBody({
           const resetCreditInput =
             account.resetCreditInput ??
             (account.instanceId ? { instanceId: account.instanceId } : undefined);
-          const notice = limitsNotice(account.limits);
+          const notice = limitsNotice(account.limits, messages);
           const externalUsage = account.limits.externalUsage;
           return (
             <div key={account.id} className="flex min-w-0 flex-col gap-1">

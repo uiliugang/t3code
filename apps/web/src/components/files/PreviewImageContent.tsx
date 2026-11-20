@@ -13,6 +13,7 @@ export default function PreviewImageContent(props: {
   readonly onError?: () => void;
 }) {
   const t = useUiTranslation();
+
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [natural, setNatural] = useState({ width: 0, height: 0 });

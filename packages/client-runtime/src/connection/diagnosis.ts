@@ -4,6 +4,9 @@ import {
 } from "@t3tools/contracts";
 import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
+import { mFallback } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
+import { resolveMarkedText } from "../errors/translatable.ts";
 import * as DateTime from "effect/DateTime";
 
 import type {
@@ -356,6 +359,7 @@ function hopLabel(hop: ConnectionHop, host: string, t: UiTranslator): string {
 export function presentConnectionDiagnosis(
   input: ConnectionDiagnosisInput,
   t: UiTranslator = translateUi.bind(null, "en"),
+  resolve: MFunctionType = mFallback,
 ): ConnectionDiagnosis | null {
   const located = locate(input);
   if (located === null) return null;
@@ -398,7 +402,12 @@ export function presentConnectionDiagnosis(
   add("Route", relayPath ? "T3 Connect" : t("Direct"));
   add("App version", input.clientVersion);
   add("Host version", input.serverVersion);
-  add("Error", failure?.detail);
+  add(
+    "Error",
+    failure?.i18nMessage === undefined
+      ? failure?.detail
+      : resolveMarkedText(failure.i18nMessage, resolve),
+  );
   add("Trace ID", failure?.traceId);
 
   return {

@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+
 import { NavigationRouteContext } from "@react-navigation/native";
 import { Activity, useState, type ReactNode } from "react";
 import { View } from "react-native";
@@ -14,6 +15,7 @@ const SETTINGS_LIST_ROUTE = { key: "settings-sidebar", name: "Settings" };
 
 export function SettingsWorkspaceLayout(props: { readonly children: ReactNode }) {
   const t = useUiTranslation();
+
   const root = useAndroidWorkspaceRoot();
   const { layout } = useAdaptiveWorkspaceLayout();
   const split = root?.settingsOpen === true && layout.usesSplitView;

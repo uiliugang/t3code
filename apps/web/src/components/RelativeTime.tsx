@@ -6,7 +6,5 @@ export function RelativeTime(props: { timestamp: string }) {
   const t = useUiTranslation();
   const relative = useRelativeTimeState(props.timestamp, t);
   if (relative.status !== "relative") return null;
-  return relative.suffix
-    ? t("{value} {suffix}", { value: relative.value, suffix: relative.suffix })
-    : relative.value;
+  return relative.label;
 }

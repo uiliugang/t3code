@@ -1,56 +1,51 @@
 import type { IssueDetail, IssueEvent } from "@t3tools/contracts";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
-type Translate = (message: string, values?: Readonly<Record<string, string | number>>) => string;
-
-const identityTranslate: Translate = (message, values) =>
-  values
-    ? message.replace(/\{(\w+)\}/g, (placeholder, key: string) =>
-        Object.hasOwn(values, key) ? String(values[key]) : placeholder,
-      )
-    : message;
-
-/** "completed" → "Completed"; a reason the tracker spells with a dash reads as words. */
 function issueCloseReasonLabel(reason: string): string {
-  const words = reason.replace(/[-_]+/g, " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return reason.replace(/[-_]+/g, " ").trim().toLowerCase();
 }
 
-export function issueEventSentence(event: IssueEvent, t: Translate = identityTranslate): string {
+export function issueEventSentence(event: IssueEvent, resolve: MFunctionType = mFallback): string {
   switch (event.kind) {
     case "closed":
       return event.detail
-        ? t("closed this as {reason}", {
-            reason: t(issueCloseReasonLabel(event.detail)),
-          })
-        : t("closed this");
+        ? resolve(
+            msg("closed this as {reason}", {
+              reason: issueCloseReasonLabel(event.detail),
+            }),
+          )
+        : resolve(msg("closed this"));
     case "reopened":
-      return t("reopened this");
+      return resolve(msg("reopened this"));
     case "labeled":
       return event.detail
-        ? t("added the {label} label", { label: event.detail })
-        : t("added a label");
+        ? resolve(msg("added the {label} label", { label: event.detail }))
+        : resolve(msg("added a label"));
     case "unlabeled":
       return event.detail
-        ? t("removed the {label} label", { label: event.detail })
-        : t("removed a label");
+        ? resolve(msg("removed the {label} label", { label: event.detail }))
+        : resolve(msg("removed a label"));
     case "assigned":
-      return event.detail ? t("assigned {name}", { name: event.detail }) : t("assigned someone");
+      return event.detail
+        ? resolve(msg("assigned {person}", { person: event.detail }))
+        : resolve(msg("assigned someone"));
     case "unassigned":
       return event.detail
-        ? t("unassigned {name}", { name: event.detail })
-        : t("unassigned someone");
+        ? resolve(msg("unassigned {person}", { person: event.detail }))
+        : resolve(msg("unassigned someone"));
     case "renamed":
       return event.detail
-        ? t("renamed this to “{title}”", { title: event.detail })
-        : t("renamed this");
+        ? resolve(msg("renamed this to “{title}”", { title: event.detail }))
+        : resolve(msg("renamed this"));
     case "referenced":
       return event.detail
-        ? t("referenced this from {source}", { source: event.detail })
-        : t("referenced this");
+        ? resolve(msg("referenced this from {source}", { source: event.detail }))
+        : resolve(msg("referenced this"));
     case "state-changed":
       return event.detail
-        ? t("moved this to {state}", { state: event.detail })
-        : t("changed the state");
+        ? resolve(msg("moved this to {state}", { state: event.detail }))
+        : resolve(msg("changed the state"));
   }
 }
 
@@ -58,11 +53,15 @@ export function issueEventSentence(event: IssueEvent, t: Translate = identityTra
  * What the viewer may do to an issue here: the client's write scope, the issue being inside a
  * project's scope, what the tracker can do at all, and what it grants this account.
  */
-export function issueWriteAccess(detail: IssueDetail, canWrite: boolean) {
+export function issueWriteAccess(
+  detail: IssueDetail,
+  canWrite: boolean,
+  resolve: MFunctionType = mFallback,
+) {
   const blocked = !canWrite
-    ? "Writing to this tracker needs the source-control write scope."
+    ? resolve(msg("Writing to this tracker needs the source-control write scope."))
     : !detail.writable
-      ? "This issue is outside every project's own scope, so it is read-only here."
+      ? resolve(msg("This issue is outside every project's own scope, so it is read-only here."))
       : null;
   const may = (capability: boolean, permission: boolean) =>
     blocked === null && capability && permission;

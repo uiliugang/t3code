@@ -15,8 +15,10 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { AddUsageLimitSourceDialog } from "./AddUsageLimitSourceDialog";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+
+const CLI_PROXY_NAME = "CLI Proxy";
 
 export function UsageProviderSettings({
   environmentId,
@@ -30,6 +32,7 @@ export function UsageProviderSettings({
   readonly readOnly: boolean;
 }) {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const [adding, setAdding] = useState(false);
   const entries = Object.entries(sources);
@@ -58,7 +61,8 @@ export function UsageProviderSettings({
                 title={label}
                 description={
                   <span className="break-all">
-                    CLI Proxy{source.enabled ? "" : t(" · Disabled")}
+                    {CLI_PROXY_NAME}
+                    {source.enabled ? "" : t(" · Disabled")}
                     {label !== source.url ? ` · ${source.url}` : ""}
                   </span>
                 }

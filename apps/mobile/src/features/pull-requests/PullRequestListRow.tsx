@@ -1,8 +1,7 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import {
-  capitalizeTerm,
-  sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestTermKind } from "../../lib/changeRequestTerm";
+import { useGT, useMessages } from "gt-react-native";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -82,9 +81,25 @@ export const PullRequestListRow = memo(
       : props.sidebar
         ? "text-drawer-foreground-muted"
         : "text-foreground-tertiary";
-    const status = pullRequestStatus(item);
-    const conflict = pullRequestConflict(item);
-    const review = pullRequestListReviewStatus(item);
+    const gt = useGT();
+    const m = useMessages();
+    const status = pullRequestStatus(item, m);
+    const conflict = pullRequestConflict(item, m);
+    const review = pullRequestListReviewStatus(item, m);
+    const checksSpoken = item.checksState
+      ? {
+          passing: gt("checks passing"),
+          failing: gt("checks failing"),
+          pending: gt("checks pending"),
+        }[item.checksState]
+      : null;
+    const checksLabel = item.checksState
+      ? {
+          passing: gt("Checks passing"),
+          failing: gt("Checks failing"),
+          pending: gt("Checks pending"),
+        }[item.checksState]
+      : undefined;
     const checks = item.checksState ? pullRequestChecksStatus(item.checksState) : null;
     return (
       <View style={props.sidebar ? THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE : undefined}>
@@ -100,18 +115,21 @@ export const PullRequestListRow = memo(
             accessibilityLabel={t(
               "{value} {number}, {title}, {label}{value2}, by {value3}{value4}{value5}{value6}{value7}, {additions} additions, {deletions} deletions",
               {
-                value: String(
-                  capitalizeTerm(sourceControlClients.get(item.provider).changeRequest.singular),
+                value: gt(
+                  "{term, select, mr {Merge request} cr {Change request} other {Pull request}}",
+                  {
+                    term: changeRequestTermKind(
+                      sourceControlClients.get(item.provider).changeRequest,
+                    ),
+                  },
                 ),
                 number: String(item.number),
                 title: String(item.title),
-                label: t(status.label),
-                value2: conflict ? `, ${t(conflict.label)}` : "",
+                label: status.label,
+                value2: conflict ? `, ${conflict.label}` : "",
                 value3: item.author?.login ?? t("Unknown author"),
-                value4: review ? `, ${t(review.accessibleLabel)}` : "",
-                value5: item.checksState
-                  ? `, ${t("Checks {state}", { state: t(item.checksState) })}`
-                  : "",
+                value4: review ? `, ${review.accessibleLabel}` : "",
+                value5: checksSpoken ? `, ${checksSpoken}` : "",
                 value6: String(
                   item.stack
                     ? `, ${t("Stack layer {position} of {count}", { position: item.stack.position, count: item.stack.size })}`
@@ -205,12 +223,7 @@ export const PullRequestListRow = memo(
                   ) : null}
                 </View>
                 {checks ? (
-                  <View
-                    className="shrink-0"
-                    accessibilityLabel={t("Checks {checksState}", {
-                      checksState: String(item.checksState),
-                    })}
-                  >
+                  <View className="shrink-0" accessibilityLabel={checksLabel}>
                     <SymbolView name={checks.icon} size={13} tintColorClassName={checks.tint} />
                   </View>
                 ) : null}

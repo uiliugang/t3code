@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { MISSING_FILE_ACCESS_MESSAGE } from "@t3tools/client-runtime/state/assets";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { videoMimeType } from "@t3tools/shared/video";
+import { useGT, useMessages } from "gt-react-native";
 import { Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -38,6 +39,7 @@ function useMediaPlayback(source: MediaVideoPreviewSource): PlaybackState {
   const resource = "resource" in source ? source.resource : null;
   const connection = usePreparedConnection(environmentId);
   const asset = useAssetUrlState(environmentId, resource);
+  const gt = useGT();
   const refreshAssetUrl = useRefreshAssetUrl(environmentId, resource);
   const uri = mediaVideoPreviewUri(source, asset._tag === "Success" ? asset.url : null);
   return {
@@ -51,7 +53,7 @@ function useMediaPlayback(source: MediaVideoPreviewSource): PlaybackState {
       (connection._tag === "None" || asset._tag === "Failure"),
     unavailableDetail:
       asset._tag === "Failure" && asset.reason === "missing-file-access"
-        ? MISSING_FILE_ACCESS_MESSAGE
+        ? gt("This connection cannot read host files. Pair again with a new link to view it.")
         : undefined,
     error: null,
     actionsSource: source.actionsSource,
@@ -59,10 +61,14 @@ function useMediaPlayback(source: MediaVideoPreviewSource): PlaybackState {
 }
 
 function useLocalPlayback(source: LocalVideoPreviewSource): PlaybackState {
+  const gt = useGT();
+  const messages = useMessages();
   const { attachment } = source;
   const preview = useLocalAttachmentPreview(attachment);
   const { uri } = preview;
-  const error = preview.error ? preview.error.message || "Could not load this video." : null;
+  const error = preview.error
+    ? errorDisplayMessage(preview.error, messages) || gt("Could not load this video.")
+    : null;
   const mimeType = videoMimeType(attachment) ?? attachment.mimeType;
   return {
     uri,
@@ -107,6 +113,7 @@ function OpenVideoPreviewModal(props: {
   readonly onRequestClose: () => void;
 }) {
   const t = useUiTranslation();
+
   const { playback } = props;
   const insets = useSafeAreaInsets();
   const mediaActions = useMediaActions(playback.actionsSource, props.onRequestClose);

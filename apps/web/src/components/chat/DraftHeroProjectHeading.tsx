@@ -1,7 +1,10 @@
+import { useGT } from "gt-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { observeResize } from "~/lib/observeResize";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+
+const PROJECT_SLOT = "\uE000";
 
 export function DraftHeroProjectHeading({
   children,
@@ -11,10 +14,12 @@ export function DraftHeroProjectHeading({
   projectName: string;
 }) {
   const t = useUiTranslation();
-  const [beforeProject = "", afterProject = ""] = t("What should we build in {project}?").split(
-    "{project}",
-  );
-  const prefix = beforeProject.trimEnd();
+  const gt = useGT();
+  const [before = "", after = ""] = gt("What should we build in {project}?", {
+    project: PROJECT_SLOT,
+  }).split(PROJECT_SLOT);
+  const buildIn = before.trim();
+  const buildInSuffix = after.trimEnd();
   const containerRef = useRef<HTMLDivElement>(null);
   const inlineRef = useRef<HTMLSpanElement>(null);
   const [fitsInline, setFitsInline] = useState(false);
@@ -45,10 +50,10 @@ export function DraftHeroProjectHeading({
           ref={inlineRef}
           className="flex w-max items-baseline gap-2 whitespace-nowrap font-normal text-3xl tracking-tight"
         >
-          <span>{prefix}</span>
+          <span>{buildIn}</span>
           <span>
             <span className="font-medium">{projectName}</span>
-            {afterProject}
+            {buildInSuffix}
           </span>
         </span>
       </span>
@@ -57,12 +62,12 @@ export function DraftHeroProjectHeading({
           <span className="lg:group-data-[inline=true]/draft-hero:hidden">
             {t("What should we build?")}
           </span>
-          <span className="hidden lg:group-data-[inline=true]/draft-hero:inline">{prefix}</span>
+          <span className="hidden lg:group-data-[inline=true]/draft-hero:inline">{buildIn}</span>
         </span>
         <span className="flex min-w-0 max-w-full items-baseline justify-center text-base tracking-normal lg:group-data-[inline=true]/draft-hero:text-3xl lg:group-data-[inline=true]/draft-hero:tracking-tight">
           <span className="min-w-0">{children}</span>
-          <span className="hidden shrink-0 lg:group-data-[inline=true]/draft-hero:inline [@media(max-height:28rem)]:hidden!">
-            {afterProject}
+          <span className="hidden shrink-0 whitespace-pre lg:group-data-[inline=true]/draft-hero:inline [@media(max-height:28rem)]:hidden!">
+            {buildInSuffix}
           </span>
         </span>
       </h1>

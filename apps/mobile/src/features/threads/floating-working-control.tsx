@@ -1,6 +1,7 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { SubagentPillSegment } from "@t3tools/client-runtime/state/thread-subagents";
 import { GlassContainer, GlassView } from "expo-glass-effect";
+import { useGT } from "gt-react-native";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { type LayoutChangeEvent, Pressable, useWindowDimensions, View } from "react-native";
 import Animated, {
@@ -75,6 +76,7 @@ export function FloatingWorkingControl(props: {
 }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   const { width: windowWidth } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
   const [overlayWidth, setOverlayWidth] = useState(windowWidth);
@@ -269,8 +271,10 @@ export function FloatingWorkingControl(props: {
       {hasQueue ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t("Open queue, {count} messages", { count: props.queuedCount })}
-          accessibilityHint={t("Opens queued messages to send now, edit, or remove")}
+          accessibilityLabel={gt("{count, plural, other {Open queue, {count} messages}}", {
+            count: props.queuedCount,
+          })}
+          accessibilityHint={gt("Opens queued messages to send now, edit, or remove")}
           onPress={props.onOpenQueue}
           onLayout={(event) => setQueueWidth(settleWidth(event.nativeEvent.layout.width))}
           style={{ maxWidth: Math.min(overlayWidth, windowWidth) * 0.45 }}
@@ -281,7 +285,7 @@ export function FloatingWorkingControl(props: {
           ) : null}
           <SymbolView name="list.number" size={13} tintColorClassName="accent-foreground" />
           <Text className="shrink font-t3-medium text-xs tabular-nums" numberOfLines={1}>
-            {props.queuedCount} {t("queued")}
+            {gt("{count, plural, other {{count} queued}}", { count: props.queuedCount })}
           </Text>
         </Pressable>
       ) : null}
@@ -543,11 +547,10 @@ function StatusLabelRow(props: {
 }
 
 function ScrollToEndButton(props: { readonly disabled?: boolean; readonly onPress: () => void }) {
-  const t = useUiTranslation();
-
+  const gt = useGT();
   return (
     <ControlPill
-      accessibilityLabel={t("Scroll to end")}
+      accessibilityLabel={gt("Scroll to end")}
       activateOnPressIn
       className="h-11 w-11 bg-transparent"
       disabled={props.disabled}

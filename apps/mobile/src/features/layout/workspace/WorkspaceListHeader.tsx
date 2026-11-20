@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../../lib/useUiTranslation";
+import { useMessages } from "gt-react-native";
 import { useRef } from "react";
 import type { SearchBarCommands } from "react-native-screens";
 
@@ -21,6 +22,8 @@ function SidebarColumnHeader(
   },
 ) {
   const t = useUiTranslation();
+
+  const m = useMessages();
   const { search, sidebar } = props;
   const searchBarRef = useRef<SearchBarCommands>(null);
   useHardwareKeyboardCommand("focusSearch", () => {
@@ -42,6 +45,7 @@ function SidebarColumnHeader(
       items: props.filter.items,
     },
     onOpenSettings: props.onOpenSettings,
+    resolve: m,
   });
 
   return (
@@ -53,6 +57,7 @@ function SidebarColumnHeader(
           trailingItemCount: items.length,
           onOpenEnvironments: props.onOpenEnvironments,
           fallbackTitleStyle: { fontSize: 18, fontWeight: "800" },
+          resolve: m,
         }),
         headerSearchBarOptions: {
           ref: searchBarRef,

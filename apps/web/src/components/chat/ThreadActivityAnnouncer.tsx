@@ -8,6 +8,7 @@ import { memo, useEffect, useRef } from "react";
 
 import { useLiveRegion } from "../../hooks/useLiveRegion";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { m } from "../../i18n/messages";
 
 import { nextThreadAnnouncement } from "@t3tools/client-runtime/state/thread-activity-announcement";
 import { nextTurnDetailAnnouncement, NO_TURN_DETAIL, turnDetail } from "./turnDetailAnnouncement";
@@ -107,12 +108,11 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       return;
     }
     const previous = memoryRef.current?.threadKey === threadKey ? memoryRef.current : null;
-    const turn = nextThreadAnnouncement(previous?.memory ?? null, {
-      status,
-      requestId,
-      runId,
-      runStatus,
-    });
+    const turn = nextThreadAnnouncement(
+      previous?.memory ?? null,
+      { status, requestId, runId, runStatus },
+      m,
+    );
     // A new level starts from what the turn already holds, so raising it mid-turn replays nothing.
     const previousDetail = previous?.level === level ? previous.detail : null;
     const detail = nextTurnDetailAnnouncement(
@@ -120,7 +120,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       {
         ...(level === "status"
           ? NO_TURN_DETAIL
-          : turnDetail(entries, workspaceRoot, previousDetail?.tailId ?? null, t)),
+          : turnDetail(entries, workspaceRoot, previousDetail?.tailId ?? null, t, m)),
         level,
         status,
       },

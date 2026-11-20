@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import type { VoiceInputPhase, VoiceInputState } from "@t3tools/client-runtime/voice-input";
+import { useMessages } from "gt-react-native";
 import { memo, useState, type ReactNode } from "react";
 import { Linking, Pressable, Text as SystemText, View, type LayoutChangeEvent } from "react-native";
 import Animated, {
@@ -325,12 +326,13 @@ export function ComposerDictationError(props: {
   readonly onDismiss: () => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
 
   if (!props.error) return null;
   return (
     <View className="min-w-0 flex-row items-center gap-2 px-4 py-3">
       <Text accessibilityRole="alert" className="min-w-0 flex-1 text-sm text-danger-foreground">
-        {props.error}
+        {messages(props.error)}
       </Text>
       <Pressable
         accessibilityLabel={t("Dismiss voice input error")}

@@ -7,6 +7,7 @@ import type {
   PullRequestRef,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import { T, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
@@ -40,6 +41,7 @@ function LazyChecksBody({
   const t = useUiTranslation();
   const detailQuery = useEnvironmentQuery(
     pullRequestEnvironment.detail({ environmentId, input: reference }),
+    useMessages(),
   );
   if (detailQuery.error !== null) {
     return <p className="text-muted-foreground text-xs">{detailQuery.error}</p>;
@@ -62,6 +64,7 @@ function ChecksBody({
   threadRef: ScopedThreadRef | null;
 }) {
   const t = useUiTranslation();
+  const resolve = useMessages();
   const openLink = useOpenLink(threadRef);
   const [showAll, setShowAll] = useState(false);
   const { attention, running, completed } = groupPullRequestChecks(checks);
@@ -69,7 +72,11 @@ function ChecksBody({
   const visibleChecks = [...attention, ...running, ...(showAll || !canCollapse ? completed : [])];
   const hasDetails = visibleChecks.some((check) => check.url !== null);
   if (checks.length === 0) {
-    return <p className="text-muted-foreground text-xs">{t("No checks reported")}</p>;
+    return (
+      <p className="text-muted-foreground text-xs">
+        <T>No checks reported</T>
+      </p>
+    );
   }
   return (
     <>
@@ -94,7 +101,7 @@ function ChecksBody({
                   <TooltipPopup side="top">{check.description ?? check.name}</TooltipPopup>
                 </Tooltip>
                 <span className="justify-self-end whitespace-nowrap text-muted-foreground">
-                  {t(pullRequestCheckStatusLabel(check))}
+                  {pullRequestCheckStatusLabel(check, resolve)}
                 </span>
                 {check.url === null ? null : (
                   <button
@@ -155,7 +162,8 @@ export function PullRequestChecksPopover({
   render?: React.ReactElement;
 }) {
   const t = useUiTranslation();
-  const presentation = pullRequestChecksStatePresentation(checksState);
+  const resolve = useMessages();
+  const presentation = pullRequestChecksStatePresentation(checksState, resolve);
   const incompleteCount =
     checks?.filter((check) => check.status === "pending" || check.status === "action-required")
       .length ?? 0;
@@ -169,8 +177,8 @@ export function PullRequestChecksPopover({
         nativeButton={variant === "count"}
         aria-label={
           variant === "count"
-            ? t("Open checks: {summary}", { summary: summary ?? t(presentation.label) })
-            : t("Checks: {summary}", { summary: t(presentation.label) })
+            ? t("Open checks: {summary}", { summary: summary ?? presentation.label })
+            : t("Checks: {summary}", { summary: presentation.label })
         }
         render={
           variant === "count" ? (
@@ -205,7 +213,7 @@ export function PullRequestChecksPopover({
         ) : null}
       </PopoverTrigger>
       <PopoverPopup align="start" width="md" side="bottom">
-        <p className="mb-2 font-medium text-sm">{t(presentation.label)}</p>
+        <p className="mb-2 font-medium text-sm">{presentation.label}</p>
         {summary === null ? null : <p className="mb-2 text-muted-foreground text-xs">{summary}</p>}
         {stale ? (
           <p className="text-muted-foreground text-xs">

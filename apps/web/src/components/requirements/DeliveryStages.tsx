@@ -13,7 +13,7 @@ export function DeliveryStages({
   const t = useUiTranslation();
   return (
     <ol aria-label={t("Delivery progress")} className="grid grid-cols-5 gap-1 py-3">
-      {deliveryStages(provider, summary).map((stage) => (
+      {deliveryStages(provider, summary, t).map((stage) => (
         <li
           key={stage.key}
           className="flex min-w-0 flex-col items-center gap-1.5 text-center text-xs"
@@ -29,7 +29,7 @@ export function DeliveryStages({
               <span className="size-1.5 rounded-full bg-current" />
             )}
           </span>
-          <span>{t(stage.label)}</span>
+          <span>{stage.label}</span>
           <span className="text-2xs text-muted-foreground">
             {t(
               stage.state === "unknown"

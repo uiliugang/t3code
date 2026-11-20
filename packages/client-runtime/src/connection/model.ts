@@ -2,6 +2,8 @@ import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@t3tools/con
 import { RelayEnvironmentEndpointFailure } from "@t3tools/contracts/relay";
 import * as Schema from "effect/Schema";
 
+import { MarkedText } from "../errors/translatable.ts";
+
 const ConnectionTargetBase = {
   environmentId: EnvironmentId,
   label: Schema.String,
@@ -110,6 +112,7 @@ export class ConnectionTransientError extends Schema.TaggedError<
 >()("ConnectionTransientError", {
   reason: ConnectionTransientReason,
   detail: Schema.String,
+  i18nMessage: Schema.optionalKey(MarkedText),
   traceId: Schema.optionalKey(Schema.String),
   verificationCode: Schema.optionalKey(Schema.String),
   ...ConnectionFailureFields,
@@ -125,6 +128,7 @@ export class ConnectionBlockedError extends Schema.TaggedError<
 >()("ConnectionBlockedError", {
   reason: ConnectionBlockedReason,
   detail: Schema.String,
+  i18nMessage: Schema.optionalKey(MarkedText),
   traceId: Schema.optionalKey(Schema.String),
   ...ConnectionFailureFields,
 
@@ -148,7 +152,15 @@ export type PreparedHttpAuthorization =
       readonly _tag: "Dpop";
       readonly accessToken: string;
       readonly expiresAtEpochMs: number;
+      /** Set when the token renews directly with the host instead of through T3 Connect. */
+      readonly directConnection?: DirectDpopConnection;
     };
+
+export interface DirectDpopConnection {
+  /** The credential store key. */
+  readonly connectionId: string;
+  readonly httpBaseUrl: string;
+}
 
 export interface PreparedConnection {
   readonly environmentId: EnvironmentId;

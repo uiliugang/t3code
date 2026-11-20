@@ -95,7 +95,7 @@ export function ProjectRepositoriesEditor({ project }: { project: EnvironmentPro
     }
   };
   return (
-    <SettingsSection title="Repositories">
+    <SettingsSection title={t("Repositories")}>
       <View className="gap-4 p-4">
         <AppText className="text-sm text-foreground-muted">
           {t("New tasks use these repositories. Existing tasks keep their bound group.")}

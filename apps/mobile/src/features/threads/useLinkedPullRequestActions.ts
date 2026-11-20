@@ -3,6 +3,7 @@ import {
   pullRequestLinkProject,
   resolveLinkPullRequestInput,
 } from "@t3tools/client-runtime/pull-request-link-input";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -16,14 +17,14 @@ import {
   canStartThreadPullRequestWatch,
   planThreadPullRequestMutation,
 } from "@t3tools/client-runtime/thread-pull-request-compatibility";
-import {
-  capitalizeTerm,
-  sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { AuthOrchestrationOperateScope, type ThreadPullRequestLink } from "@t3tools/contracts";
 import * as Clipboard from "expo-clipboard";
+import { useGT } from "gt-react-native";
 
 import * as Dialog from "../../components/ui/Dialog";
+import { m } from "../../i18n/messages";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import type { MenuProps } from "../../components/ui/Menu.types";
 import type { EnvironmentRuntimeState } from "../../state/remote-runtime-types";
@@ -39,6 +40,7 @@ export function useLinkedPullRequestActions(input: {
   readonly runtime: EnvironmentRuntimeState | null;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { thread, project, runtime } = input;
   const terminology = sourceControlClients.get(project?.repositoryIdentity?.provider).changeRequest;
   const capabilities = runtime?.serverConfig?.environment.capabilities;
@@ -60,7 +62,7 @@ export function useLinkedPullRequestActions(input: {
     const result = await pending;
     if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
     const cause = squashAtomCommandFailure(result);
-    Dialog.alert(t(failureTitle), cause instanceof Error ? cause.message : t("Try again."));
+    Dialog.alert(failureTitle, errorDisplayMessage(cause, m) ?? gt("Try again."));
   };
 
   const setLinked = (
@@ -78,8 +80,14 @@ export function useLinkedPullRequestActions(input: {
     const environmentId = thread.environmentId;
     void run(
       linked
-        ? t("Could not link this {kind}", { kind: t(terminology.singular) })
-        : t("Could not unlink this {kind}", { kind: t(terminology.singular) }),
+        ? gt(
+            "{term, select, mr {Couldn't link this merge request} cr {Couldn't link this change request} other {Couldn't link this pull request}}",
+            { term: changeRequestTermKind(terminology) },
+          )
+        : gt(
+            "{term, select, mr {Couldn't unlink this merge request} cr {Couldn't unlink this change request} other {Couldn't unlink this pull request}}",
+            { term: changeRequestTermKind(terminology) },
+          ),
       mutation.type === "thread.pull-request.link"
         ? link({ environmentId, input: mutation.input })
         : unlink({ environmentId, input: mutation.input }),
@@ -87,30 +95,52 @@ export function useLinkedPullRequestActions(input: {
   };
 
   const promptLink = () => {
-    const { singular } = terminology;
+    const term = changeRequestTermKind(terminology);
     Dialog.prompt({
-      title: t("Link {kind}", { kind: t(singular) }),
-      message: t("Paste a {kind} URL, or enter 123 / #123 for this thread's repository.", {
-        kind: t(singular),
-      }),
-      placeholder: t("{kind} URL or #42", { kind: t(capitalizeTerm(singular)) }),
+      title: gt(
+        "{term, select, mr {Link merge request} cr {Link change request} other {Link pull request}}",
+        { term },
+      ),
+      message: gt(
+        "{term, select, mr {Paste a merge request URL, or enter 123 / #123 for this thread's repository.} cr {Paste a change request URL, or enter 123 / #123 for this thread's repository.} other {Paste a pull request URL, or enter 123 / #123 for this thread's repository.}}",
+        { term },
+      ),
+      placeholder: gt(
+        "{term, select, mr {Merge request URL or #42} cr {Change request URL or #42} other {Pull request URL or #42}}",
+        { term },
+      ),
       initialValue: "",
-      confirmText: t("Link"),
+      confirmText: gt("Link", { $context: "verb, confirms linking a pull request" }),
       onConfirm: (reference) => {
-        const resolved = resolveLinkPullRequestInput({
-          reference,
-          project: pullRequestLinkProject(project?.repositoryIdentity),
-          hasProject: () => true,
-        });
+        const resolved = resolveLinkPullRequestInput(
+          {
+            reference,
+            project: pullRequestLinkProject(project?.repositoryIdentity),
+            hasProject: () => true,
+          },
+          m,
+        );
         if (resolved === null) {
           Dialog.alert(
-            t("Could not link this {kind}", { kind: t(singular) }),
-            t("Use a {kind} URL, 123, or #123.", { kind: t(singular) }),
+            gt(
+              "{term, select, mr {Couldn't link this merge request} cr {Couldn't link this change request} other {Couldn't link this pull request}}",
+              { term },
+            ),
+            gt(
+              "{term, select, mr {Use a merge request URL, 123, or #123.} cr {Use a change request URL, 123, or #123.} other {Use a pull request URL, 123, or #123.}}",
+              { term },
+            ),
           );
           return;
         }
         if ("error" in resolved) {
-          Dialog.alert(t("Could not link this {kind}", { kind: t(singular) }), resolved.error);
+          Dialog.alert(
+            gt(
+              "{term, select, mr {Couldn't link this merge request} cr {Couldn't link this change request} other {Couldn't link this pull request}}",
+              { term },
+            ),
+            resolved.error,
+          );
           return;
         }
         setLinked(resolved.link, true);
@@ -151,13 +181,21 @@ export function useLinkedPullRequestActions(input: {
     else if (action === "browser")
       void tryOpenExternalUrl(link.url, "pull-request").then((opened) => {
         if (!opened) {
-          const { shortLabel, singular } = (
-            sourceControlClients.findByChangeRequestUrl(link.url) ??
-            sourceControlClients.get(undefined)
-          ).changeRequest;
+          const term = changeRequestTermKind(
+            (
+              sourceControlClients.findByChangeRequestUrl(link.url) ??
+              sourceControlClients.get(undefined)
+            ).changeRequest,
+          );
           Dialog.alert(
-            t("Unable to open {kind}", { kind: t(shortLabel) }),
-            t("The {kind} could not be opened.", { kind: t(singular) }),
+            gt(
+              "{term, select, mr {Unable to open MR} cr {Unable to open change request} other {Unable to open PR}}",
+              { term },
+            ),
+            gt(
+              "{term, select, mr {The merge request could not be opened.} cr {The change request could not be opened.} other {The pull request could not be opened.}}",
+              { term },
+            ),
           );
         }
       });

@@ -52,6 +52,7 @@ export function IssueCommentComposer(props: {
   readonly onFocusChange: (focused: boolean) => void;
 }) {
   const t = useUiTranslation();
+
   const editorRef = useRef<ComposerEditorHandle>(null);
   const [draft, setDraft] = useState("");
   // Read by dictation and by send after an await, when the render's `draft` may be stale.

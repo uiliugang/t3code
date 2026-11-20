@@ -4,6 +4,9 @@ import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { msg } from "gt-react";
+
+import { m } from "../i18n/messages";
 
 type DesktopCliCommandBridge = DesktopBridge["cliCommand"];
 
@@ -12,7 +15,7 @@ class DesktopCliCommandUnavailableError extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("DesktopCliCommandUnavailableError", {}) {
   override get message(): string {
-    return "The t3 command is unavailable.";
+    return m(msg("The t3 command is unavailable."));
   }
 }
 
@@ -21,7 +24,7 @@ class DesktopCliCommandLoadError extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("DesktopCliCommandLoadError", { cause: Schema.Defect() }) {
   override get message(): string {
-    return "Failed to load the t3 command state.";
+    return m(msg("Failed to load the t3 command state."));
   }
 }
 

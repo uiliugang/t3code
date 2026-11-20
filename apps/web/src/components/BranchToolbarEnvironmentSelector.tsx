@@ -46,6 +46,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   onAddToMachine,
 }: BranchToolbarEnvironmentSelectorProps) {
   const t = useUiTranslation();
+
   const composerFloatingLayerProps = useComposerMenuProps();
   const shortcutLabel = shortcutLabelForCommand(
     useAtomValue(primaryServerKeybindingsAtom),

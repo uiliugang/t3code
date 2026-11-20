@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+
 import { useSyncExternalStore, type ReactNode } from "react";
 import { Split, Stack } from "react-native-screens";
 

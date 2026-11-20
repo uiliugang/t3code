@@ -23,6 +23,7 @@ import {
   TagIcon,
   UserRoundIcon,
 } from "lucide-react";
+import { msg, useGT, useMessages } from "gt-react";
 import { type ElementType, useState } from "react";
 
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
@@ -57,6 +58,7 @@ import {
   type PullRequestAuthorFacet,
   type PullRequestLabelFacet,
 } from "./pullRequestList.logic";
+import { resolveFilterOptions } from "./pullRequestListOptions";
 import { PullRequestActorAvatar } from "./pullRequestPresentation";
 import { PullRequestGlyph } from "./pullRequestIcons";
 
@@ -152,23 +154,39 @@ export const pullRequestProjectKey = (project: {
 }) => JSON.stringify([project.environmentId, project.id]);
 
 const DRAFT_OPTIONS = [
-  { value: UNFILTERED_VALUE, label: "All", Icon: LayersIcon },
-  { value: "only", label: "Drafts only", Icon: PullRequestGlyph.draft },
-  { value: "hide", label: "Hide drafts", Icon: EyeOffIcon },
+  {
+    value: UNFILTERED_VALUE,
+    label: msg("All", { $context: "pull request filter" }),
+    Icon: LayersIcon,
+  },
+  { value: "only", label: msg("Drafts only"), Icon: PullRequestGlyph.draft },
+  { value: "hide", label: msg("Hide drafts"), Icon: EyeOffIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<string>>;
 
 const REVIEW_OPTIONS = [
-  { value: UNFILTERED_VALUE, label: "All", Icon: LayersIcon },
-  { value: "approved", label: "Approved", Icon: CircleCheckIcon },
-  { value: "changes-requested", label: "Changes requested", Icon: CircleXIcon },
-  { value: "review-required", label: "Review required", Icon: CircleDashedIcon },
-  { value: "none", label: "No reviews", Icon: CircleSlashIcon },
+  {
+    value: UNFILTERED_VALUE,
+    label: msg("All", { $context: "pull request filter" }),
+    Icon: LayersIcon,
+  },
+  {
+    value: "approved",
+    label: msg("Approved", { $context: "review decision" }),
+    Icon: CircleCheckIcon,
+  },
+  { value: "changes-requested", label: msg("Changes requested"), Icon: CircleXIcon },
+  { value: "review-required", label: msg("Review required"), Icon: CircleDashedIcon },
+  { value: "none", label: msg("No reviews"), Icon: CircleSlashIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<string>>;
 
 const CHECKS_OPTIONS = [
-  { value: UNFILTERED_VALUE, label: "All", Icon: LayersIcon },
-  { value: "passing", label: "Passing", Icon: CircleCheckIcon },
-  { value: "failing", label: "Failing", Icon: CircleXIcon },
+  {
+    value: UNFILTERED_VALUE,
+    label: msg("All", { $context: "pull request filter" }),
+    Icon: LayersIcon,
+  },
+  { value: "passing", label: msg("Passing", { $context: "checks filter" }), Icon: CircleCheckIcon },
+  { value: "failing", label: msg("Failing", { $context: "checks filter" }), Icon: CircleXIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<string>>;
 
 function PullRequestFilterRadioGroup<Value extends string>({
@@ -536,6 +554,8 @@ export function PullRequestFiltersMenu({
   onProject: (projectId: ProjectId | undefined, environmentId: EnvironmentId | undefined) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const resolve = useMessages();
   const selectedLabels = (filters.labels ?? []).flatMap((group) => group);
   const filterCount = [
     state !== "open",
@@ -623,21 +643,21 @@ export function PullRequestFiltersMenu({
           }
         />
         <PullRequestFilterRadioSubmenu
-          label={t("Draft")}
+          label={gt("Draft", { $context: "pull request filter" })}
           value={filters.draft ?? UNFILTERED_VALUE}
-          options={DRAFT_OPTIONS.map((option) => ({ ...option, label: t(option.label) }))}
+          options={resolveFilterOptions(DRAFT_OPTIONS, resolve)}
           onChange={(draft) => updateFilter("draft", draft)}
         />
         <PullRequestFilterRadioSubmenu
-          label={t("Review")}
+          label={gt("Review", { $context: "pull request filter" })}
           value={filters.review ?? UNFILTERED_VALUE}
-          options={REVIEW_OPTIONS.map((option) => ({ ...option, label: t(option.label) }))}
+          options={resolveFilterOptions(REVIEW_OPTIONS, resolve)}
           onChange={(review) => updateFilter("review", review)}
         />
         <PullRequestFilterRadioSubmenu
-          label={t("Checks")}
+          label={gt("Checks", { $context: "pull request filter" })}
           value={filters.checks ?? UNFILTERED_VALUE}
-          options={CHECKS_OPTIONS.map((option) => ({ ...option, label: t(option.label) }))}
+          options={resolveFilterOptions(CHECKS_OPTIONS, resolve)}
           onChange={(checks) => updateFilter("checks", checks)}
         />
         {hostOptions.length > 2 ? (

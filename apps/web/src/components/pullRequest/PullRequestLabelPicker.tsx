@@ -2,6 +2,7 @@ import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { EnvironmentId, PullRequestLabelCandidate, PullRequestRef } from "@t3tools/contracts";
 import { CheckIcon, TagIcon } from "lucide-react";
+import { useMessages } from "gt-react";
 import { useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -45,6 +46,7 @@ export function PullRequestLabelPicker({
 
   const candidatesQuery = useEnvironmentQuery(
     open ? pullRequestEnvironment.labelCandidates({ environmentId, input: reference }) : null,
+    useMessages(),
   );
   const setLabels = useAtomCommand(pullRequestEnvironment.setLabels, {
     reportFailure: false,

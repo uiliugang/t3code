@@ -36,6 +36,8 @@ import {
 import { Skeleton } from "../ui/skeleton";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useMessages } from "gt-react";
+import { type MessageResolver } from "../../i18n/messages";
 
 import { GitIcon, JujutsuIcon, type Icon } from "../Icons";
 import { MeituanCodeAuthorizationObserver } from "./MeituanCodeSettings";
@@ -53,8 +55,9 @@ import {
   SettingsSection,
   useSettingsSearchTargetId,
 } from "./settingsLayout";
-import { searchableSetting, sourceControlHostSettingsSearchId } from "./settingsSearch";
+import { useSearchableSetting, sourceControlHostSettingsSearchId } from "./settingsSearch";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { sourceControlInstallHintText } from "@t3tools/client-runtime/contract-labels";
 import { isSourceControlProviderOffered } from "@t3tools/client-runtime/operations/projects";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { sourceControlIcon } from "~/sourceControlPresentation";
@@ -147,10 +150,12 @@ function ItemSummary({
   item,
   auth,
   authAccount,
+  resolve,
 }: {
   readonly item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem;
   readonly auth: SourceControlProviderAuth | null;
   readonly authAccount: string | null;
+  readonly resolve: MessageResolver;
 }) {
   const t = useUiTranslation();
   if (isVcsNotReady(item)) {
@@ -185,7 +190,8 @@ function ItemSummary({
     const authDetail = optionLabel(auth.detail);
     return (
       <span>
-        {t("Could not verify {name}.", { name: item.label })} {authDetail ?? item.installHint}
+        {t("Could not verify {name}.", { name: item.label })}{" "}
+        {authDetail ?? sourceControlInstallHintText(item.installHint, resolve)}
       </span>
     );
   }
@@ -211,6 +217,7 @@ function DiscoveryItemRow({
   readonly children?: ReactNode;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const version = tool ? tool.version : optionLabel(item.version);
   const auth = isProviderDiscoveryItem(item) ? item.auth : null;
   const authAccount = auth ? optionLabel(auth.account) : null;
@@ -251,7 +258,7 @@ function DiscoveryItemRow({
             </div>
             {auth || !tool ? (
               <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-xs leading-normal text-muted-foreground/80">
-                <ItemSummary item={item} auth={auth} authAccount={authAccount} />
+                <ItemSummary item={item} auth={auth} authAccount={authAccount} resolve={messages} />
               </p>
             ) : null}
             {tool ? <SourceControlToolStatus tool={tool} /> : null}
@@ -367,6 +374,7 @@ function EmptySourceControlDiscovery({
   readonly onScan: () => void;
 }) {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const hasError = error !== null;
 
   return (
@@ -407,6 +415,7 @@ export function SourceControlSettingsPanel({
 }) {
   const t = useUiTranslation();
   const navigate = useNavigate();
+  const searchableSetting = useSearchableSetting();
   const { scope, environment, connectedEnvironments } = useSettingsScope();
 
   const environmentId =
@@ -430,6 +439,7 @@ export function SourceControlSettingsPanel({
           environmentId,
           input: {},
         }),
+    useMessages(),
   );
   const discovered = discovery.data ?? EMPTY_DISCOVERY_RESULT;
   const refreshDiscovery = discovery.refresh;

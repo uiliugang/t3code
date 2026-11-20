@@ -1,6 +1,8 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ProjectRepositoriesEditor } from "./components/ProjectRepositoriesEditor";
 import { ProjectConfigurationSettings } from "./ConfigurationSettings";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
+import { useGT } from "gt-react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -52,6 +54,7 @@ import { leaveSettingsPage } from "./settings-navigation";
 import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
 import { DEFAULT_SETTINGS_PAGE } from "../layout/workspace/workspace-tab-navigation";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
+import { m } from "../../i18n/messages";
 
 export function SettingsProjectOverviewRouteScreen() {
   const t = useUiTranslation();
@@ -188,6 +191,7 @@ function ProjectOverviewContent(props: {
   readonly onProjectRemoved: (projectKey: string | null) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const { isRemoving, setIsRemoving, startRemoval, finishRemoval } = props;
   const representative = props.members[0]!;
   const displayName = deriveProjectGroupLabel({
@@ -234,7 +238,10 @@ function ProjectOverviewContent(props: {
     setIsOrganizing(true);
     for (const member of allMembers) {
       if (!readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope)) {
-        Dialog.alert(t("Failed to update project"), t("This connection can no longer change it."));
+        Dialog.alert(
+          gt("Failed to update project"),
+          gt("This connection can no longer change it."),
+        );
         break;
       }
       const result = await organizeProject({
@@ -245,8 +252,10 @@ function ProjectOverviewContent(props: {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
           Dialog.alert(
-            t('Failed to update "{name}"', { name: member.title }),
-            t(error instanceof Error ? error.message : "An error occurred."),
+            gt('Failed to update "{project}"', { project: member.title }),
+            error instanceof Error
+              ? (errorDisplayMessage(error, m) ?? error.message)
+              : gt("An error occurred."),
           );
         }
         break;
@@ -266,10 +275,12 @@ function ProjectOverviewContent(props: {
       (entry) => entry.environmentId === denied.environmentId,
     );
     Dialog.alert(
-      t("Failed to remove project"),
-      t("This connection cannot change projects in {environment}.", {
-        environment: environment?.label ?? t("this environment"),
-      }),
+      gt("Failed to remove project"),
+      environment
+        ? gt("This connection cannot change projects in {environment}.", {
+            environment: environment.label,
+          })
+        : gt("This connection cannot change projects in this environment."),
     );
     return false;
   };
@@ -314,8 +325,10 @@ function ProjectOverviewContent(props: {
               if (!isAtomCommandInterrupted(result)) {
                 const error = squashAtomCommandFailure(result);
                 Dialog.alert(
-                  t('Failed to remove "{name}"', { name: member.title }),
-                  t(error instanceof Error ? error.message : "An error occurred."),
+                  gt('Failed to remove "{project}"', { project: member.title }),
+                  error instanceof Error
+                    ? (errorDisplayMessage(error, m) ?? error.message)
+                    : gt("An error occurred."),
                 );
               }
               return;
@@ -379,7 +392,7 @@ function ProjectOverviewContent(props: {
             textClassName="text-xl font-t3-semibold text-foreground"
           />
           <Text className="text-sm text-foreground-muted">
-            {t(props.members.length === 1 ? "{count} checkout" : "{count} checkouts", {
+            {gt("{count, plural, one {{count} checkout} other {{count} checkouts}}", {
               count: props.members.length,
             })}
           </Text>
@@ -431,27 +444,27 @@ function ProjectOverviewContent(props: {
         ) : null;
       })}
       {canOrganize ? (
-        <SettingsSection title={t("Organize")}>
+        <SettingsSection title={gt("Organize")}>
           <SettingsSwitchRow
             icon="pin"
-            label={t("Pin")}
-            subtitle={t(
+            label={gt("Pin", { $context: "verb, keep the project at the top" })}
+            subtitle={
               offline
-                ? "Connect every machine with this project to change this."
-                : "Pinned projects come first in project pickers.",
-            )}
+                ? gt("Connect every machine with this project to change this.")
+                : gt("Pinned projects come first in project pickers.")
+            }
             value={props.group.pinned}
             disabled={isOrganizing || offline}
             onValueChange={(pinned) => void organize({ pinned })}
           />
           <SettingsActionRow
             icon="archivebox"
-            label={t(props.group.archived ? "Unarchive project" : "Archive project")}
-            description={t(
+            label={props.group.archived ? gt("Unarchive project") : gt("Archive project")}
+            description={
               props.group.archived
-                ? "Hidden from project pickers. Threads and files are kept."
-                : "Hides the project from project pickers. Threads and files are kept.",
-            )}
+                ? gt("Hidden from project pickers. Threads and files are kept.")
+                : gt("Hides the project from project pickers. Threads and files are kept.")
+            }
             disabled={isOrganizing || offline}
             onPress={() => void organize({ archived: !props.group.archived })}
           />
@@ -495,12 +508,14 @@ function ProjectOverviewContent(props: {
           );
         })}
       </SettingsSection>
-      <SettingsSection title={t("Danger")}>
+      <SettingsSection
+        title={gt("Danger", { $context: "section heading for destructive actions" })}
+      >
         <SettingsActionRow
           icon="trash"
           label={t(
             props.hasOtherMembers
-              ? "Remove checkout"
+              ? gt("Remove checkout")
               : props.members.length > 1
                 ? "Remove this project everywhere"
                 : "Remove project",

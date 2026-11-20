@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { msg } from "gt-react";
 import { Link } from "@tanstack/react-router";
 import {
   canRemoveManagedWorktree,
@@ -68,7 +69,13 @@ function WorktreeRow({
 }) {
   const t = useUiTranslation();
   const cleanable = canRemoveManagedWorktree(group);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "worktree path" });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: {
+      target: "worktree path",
+      unavailableMessage: msg("Clipboard API is unavailable while copying workspace path."),
+      failureMessage: msg("Failed to copy workspace path to the clipboard."),
+    },
+  });
   const restorable = canRestoreManagedWorktree(group);
   const needsAttention = managedWorktreeSection(group) === "Needs attention";
   const resource = group.resources.length === 1 ? group.resources[0] : undefined;

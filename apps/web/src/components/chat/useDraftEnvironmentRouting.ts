@@ -1,3 +1,6 @@
+import { msg, useGT } from "gt-react";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import { useLoadBalancedEnvironment } from "../../hooks/useLoadBalancedEnvironment";
 import { useLogicalProjectEnvironments } from "../../hooks/useLogicalProjectEnvironments";
 import { useScratchProject } from "../../hooks/useScratchProject";
@@ -82,6 +85,7 @@ function carryFanoutSelections(
  */
 export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) {
   const t = useUiTranslation();
+  const gt = useGT();
   const {
     draftId,
     draftThread,
@@ -257,12 +261,12 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
   const onAutoEnvironmentStable = useStableCallback(onAutoEnvironment);
   const autoEnvironmentLabel = automaticEnvironment
     ? draftThread?.loadBalancedEnvironmentId
-      ? "Auto balance"
+      ? gt("Auto balance")
       : loadBalancing.pending
-        ? "Checking machines…"
+        ? gt("Checking machines…")
         : loadBalancing.failed
-          ? "Auto balance unavailable"
-          : "Auto balance"
+          ? gt("Auto balance unavailable")
+          : gt("Auto balance")
     : undefined;
 
   // A change in flight belongs to the draft and project it started on.
@@ -372,8 +376,8 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: t("Could not switch machine"),
-            description: error instanceof Error ? error.message : t("An error occurred."),
+            title: m(msg("Could not switch machine")),
+            description: thrownErrorMessage(error, m) ?? m(msg("An error occurred.")),
           }),
         );
       }
@@ -384,7 +388,7 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
       if (triagePrompt === null) return;
       const project =
         knownProject ??
-        (await openScratchProject(target.environmentId, "Could not switch machine"));
+        (await openScratchProject(target.environmentId, m(msg("Could not switch machine"))));
       if (project) retarget(project, triagePrompt);
     };
     setBusyEnvironmentChange(request);

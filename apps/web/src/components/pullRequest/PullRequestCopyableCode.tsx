@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useCopyToClipboard, type ClipboardTarget } from "~/hooks/useCopyToClipboard";
+
 import { cn } from "~/lib/utils";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -14,7 +15,7 @@ export function PullRequestCopyableCode({
   onError,
 }: {
   readonly value: string;
-  readonly target: string;
+  readonly target: ClipboardTarget;
   readonly copyLabel: string;
   readonly copiedLabel: string;
   readonly className?: string;
@@ -22,6 +23,7 @@ export function PullRequestCopyableCode({
   readonly onError?: (error: Error) => void;
 }) {
   const t = useUiTranslation();
+
   const { copyToClipboard, isCopied } = useCopyToClipboard({
     target,
     timeout: 1600,

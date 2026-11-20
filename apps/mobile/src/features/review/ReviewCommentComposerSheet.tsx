@@ -2,6 +2,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { TextInputWrapper } from "expo-paste-input";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useGT } from "gt-react-native";
 import { useMemo, useState } from "react";
 import { ScrollView, View, useWindowDimensions } from "react-native";
 import * as Dialog from "../../components/ui/Dialog";
@@ -42,6 +43,7 @@ type ReviewCommentComposerSheetProps = StaticScreenProps<{
 export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProps) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
   const { width } = useWindowDimensions();
   const { themeAppearance: selectedTheme } = useAppearancePreferences();
   const target = useReviewCommentTarget();
@@ -72,11 +74,13 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const selectionLabel =
     selectedLines.length === 1
       ? firstNumber !== null
-        ? t("Line {line}", { line: firstNumber })
-        : t("File comment")
+        ? gt("Line {line}", { line: firstNumber })
+        : gt("File comment")
       : firstNumber !== null && lastNumber !== null
-        ? t("Lines {from}-{to}", { from: firstNumber, to: lastNumber })
-        : t("{count} lines selected", { count: selectedLines.length });
+        ? gt("Lines {first}-{last}", { first: firstNumber, last: lastNumber })
+        : gt("{count, plural, one {{count} lines selected} other {{count} lines selected}}", {
+            count: selectedLines.length,
+          });
   const previewHeight = Math.max(
     Math.min(selectedLines.length, REVIEW_COMMENT_PREVIEW_MAX_LINES) * codeSurface.rowHeight,
     codeSurface.rowHeight,

@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
+
 import { useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -87,6 +88,7 @@ export function SettingsDiagnosticsRouteScreen() {
   const t = useUiTranslation();
   const insets = useSafeAreaInsets();
   const state = useCrashLogState();
+
   const [copied, setCopied] = useState(false);
 
   const records = state.status === "ready" ? state.records : [];
@@ -161,6 +163,7 @@ function CrashReportsSetting() {
   const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promiseExit" });
   // One change at a time, so a slow save never turns sending back on after a later opt-out.
   const [saving, setSaving] = useState(false);
+
   const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
   const enabled = AsyncResult.isSuccess(preferences)
     ? preferences.value.crashReportsEnabled !== false

@@ -17,6 +17,7 @@ import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentLabel,
 } from "@t3tools/shared/model";
+import { msg, useMessages } from "gt-react";
 import { memo } from "react";
 import { GaugeIcon } from "lucide-react";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -105,6 +106,7 @@ export function useTraitsSelection({
   const modelSelection =
     instanceId && model ? { instanceId, model, options: modelOptions ?? [] } : null;
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
+  const resolve = useMessages();
   const updateModelOptions = (nextOptions: ProviderOptions | undefined) => {
     if ("onModelOptionsChange" in persistence) {
       persistence.onModelOptionsChange(nextOptions);
@@ -129,6 +131,7 @@ export function useTraitsSelection({
     modelOptions,
     allowPromptInjectedEffort,
     includePlanAgent,
+    resolve,
   });
   return {
     ...selected,
@@ -161,12 +164,14 @@ export function useTraitsSelection({
   };
 }
 
-export const ULTRATHINK_IN_BODY_NOTE =
-  'Your prompt contains "ultrathink" in the text. Remove it to change this option.';
+export const ULTRATHINK_IN_BODY_NOTE = msg(
+  'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
+);
 
 const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelectionInput) {
   const t = useUiTranslation();
   const traits = useTraitsSelection(props);
+  const resolve = useMessages();
   const {
     descriptors,
     selectDescriptors,
@@ -214,7 +219,7 @@ const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelec
             </div>
             {ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id ? (
               <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">
-                {ULTRATHINK_IN_BODY_NOTE}
+                {resolve(ULTRATHINK_IN_BODY_NOTE)}
               </div>
             ) : null}
             <MenuRadioGroup
@@ -284,19 +289,23 @@ export const TraitsPicker = memo(function TraitsPicker({
 }) {
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled);
   const traits = useTraitsSelection(props);
+  const resolve = useMessages();
   if (!traits.hasAnyControls) {
     return null;
   }
-  const { label: triggerLabel } = buildTraitsTriggerDisplay({
-    descriptors: traits.descriptors,
-    primarySelectDescriptorId: traits.primarySelectDescriptor?.id ?? null,
-    ultrathinkPromptControlled: traits.ultrathinkPromptControlled,
-    modelSelection:
-      props.instanceId && props.model
-        ? { instanceId: props.instanceId, model: props.model, options: props.modelOptions ?? [] }
-        : null,
-    reportedModelSelection: props.reportedModelSelection,
-  });
+  const { label: triggerLabel } = buildTraitsTriggerDisplay(
+    {
+      descriptors: traits.descriptors,
+      primarySelectDescriptorId: traits.primarySelectDescriptor?.id ?? null,
+      ultrathinkPromptControlled: traits.ultrathinkPromptControlled,
+      modelSelection:
+        props.instanceId && props.model
+          ? { instanceId: props.instanceId, model: props.model, options: props.modelOptions ?? [] }
+          : null,
+      reportedModelSelection: props.reportedModelSelection,
+    },
+    resolve,
+  );
   const isCodexStyle = props.provider === "codex";
 
   return (

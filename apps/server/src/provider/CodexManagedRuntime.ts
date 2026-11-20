@@ -1,4 +1,4 @@
-import { codexRuntimeSource } from "@t3tools/shared/codexByok";
+import { CODEX_BYOK_ENVIRONMENT_NAMES, codexRuntimeSource } from "@t3tools/shared/codexByok";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveManagedCodexHomeLayout } from "./CodexManagedHome.ts";
@@ -22,6 +22,13 @@ export interface CodexEffectiveRuntime {
   readonly revision: string;
 }
 const decodeSettings = Schema.decodeSync(CodexSettings);
+const managedCodexEnvironmentOverrides = new Set([
+  ...CODEX_BYOK_ENVIRONMENT_NAMES,
+  "ACCESS_TOKEN",
+  "T3CODE_CODEX_LAUNCH_ARGS",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+]);
 const managedCodexLaunchArgs = (command: string, args: ReadonlyArray<string>) =>
   [
     'model_provider="openai_token_sharing"',
@@ -44,6 +51,8 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const hostEnvironment = yield* HostProcess.Environment;
+  const isWindows = yield* HostProcess.isWindows;
   const localBinary = expandHomePath(options.config.binaryPath, yield* HostProcess.HomeDirectory);
   const broker = yield* CodexManagedTokenBroker.CodexManagedTokenBroker;
   const environmentIdentity = yield* ServerEnvironment.ServerEnvironmentIdentity;
@@ -77,7 +86,7 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
       ),
     );
     const executable = yield* installation
-      .acquire(codexRuntimeSource(options.config), localBinary)
+      .acquire(codexRuntimeSource(options.config), localBinary, options.environment)
       .pipe(
         Effect.mapError(
           () =>
@@ -124,10 +133,12 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
       ...options.environment,
       CODEX_HOME: homePath,
     };
-    delete environment.ACCESS_TOKEN;
-    delete environment.T3CODE_CODEX_LAUNCH_ARGS;
-    delete environment.OPENAI_API_KEY;
-    delete environment.OPENAI_BASE_URL;
+    for (const key of managedCodexEnvironmentOverrides) environment[key] = undefined;
+    if (isWindows) {
+      for (const key of [...Object.keys(hostEnvironment), ...Object.keys(environment)]) {
+        if (managedCodexEnvironmentOverrides.has(key.toUpperCase())) environment[key] = undefined;
+      }
+    }
     return {
       config: decodeSettings({
         enabled: options.enabled,
@@ -146,6 +157,7 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
     installation,
     homePath,
     homeLayout,
-    resolveExecutable: () => installation.resolve(codexRuntimeSource(options.config), localBinary),
+    resolveExecutable: () =>
+      installation.resolve(codexRuntimeSource(options.config), localBinary, options.environment),
   };
 });

@@ -103,6 +103,9 @@ it.live.each(
           T3CODE_HOME: path.join(sharedHome, "wrong-server-home"),
           OPENAI_API_KEY: "dummy-global-key",
           OPENAI_BASE_URL: "https://user-proxy.test",
+          T3_CODEX_API_KEY: "dummy-byok-key",
+          T3_CODEX_BASE_URL: "https://byok-proxy.test",
+          openai_base_url: "https://instance-proxy.test",
           T3CODE_CODEX_LAUNCH_ARGS: "--config model_provider=global-proxy",
           PATH: hostEnv.PATH,
           SystemRoot: hostEnv.SystemRoot,
@@ -112,7 +115,13 @@ it.live.each(
           enabled: true,
           config: decodeSettings({ setupMode: "managed", homePath: sharedHome }),
           environment: ambient,
-        });
+        }).pipe(
+          Effect.provideService(HostProcess.Platform, "win32"),
+          Effect.provideService(HostProcess.Environment, {
+            ...hostEnv,
+            t3_codex_api_key: "dummy-parent-byok-key",
+          }),
+        );
         yield* Effect.gen(function* () {
           const effective = yield* runtime.resolve;
           assert.strictEqual(leases, 1);
@@ -136,10 +145,18 @@ it.live.each(
             );
             assert.isFalse(yield* fs.exists(path.join(effective.config.homePath, "auth.json")));
           }
-          assert.isUndefined(effective.environment.ACCESS_TOKEN);
-          assert.isUndefined(effective.environment.OPENAI_API_KEY);
-          assert.isUndefined(effective.environment.OPENAI_BASE_URL);
-          assert.isUndefined(effective.environment.T3CODE_CODEX_LAUNCH_ARGS);
+          for (const key of [
+            "ACCESS_TOKEN",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "T3_CODEX_API_KEY",
+            "T3_CODEX_BASE_URL",
+            "T3CODE_CODEX_LAUNCH_ARGS",
+            "openai_base_url",
+            "t3_codex_api_key",
+          ]) {
+            assert.propertyVal(effective.environment, key, undefined);
+          }
           const args = codexAppServerArgs(effective.config.launchArgs);
           assert.include(args, 'model_provider="openai_token_sharing"');
           const provider = args.find((arg) =>

@@ -5,6 +5,7 @@ import {
   type RelayProtectedError,
 } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
+import { mFallback, msg } from "gt-i18n";
 
 import { presentConnectionDiagnosis } from "./diagnosis.ts";
 import { mapManagedRelayError, mapRemoteEnvironmentError } from "./errors.ts";
@@ -153,6 +154,7 @@ describe("presentConnectionDiagnosis", () => {
       new ConnectionTransientError({
         reason: "approval-pending",
         detail: "Approve this device on Mac mini. It shows code K7QM-2XFD.",
+        i18nMessage: ["Approve this device on Mac mini. It shows code K7QM-2XFD."],
         verificationCode: "K7QM-2XFD",
         hop: "server",
         via: "relay",
@@ -165,6 +167,15 @@ describe("presentConnectionDiagnosis", () => {
     const localized = presentConnectionDiagnosis(
       { hostLabel: "Mac mini", state, via: "relay" },
       translateUi.bind(null, "zh-CN"),
+      (encoded) =>
+        mFallback(
+          encoded === "Approve this device on Mac mini. It shows code K7QM-2XFD."
+            ? (msg("请在 Mac mini 上批准验证码为 K7QM-2XFD 的设备。") as typeof encoded)
+            : encoded,
+        ),
+    );
+    expect(localized?.facts.map(([, value]) => value)).toContain(
+      "请在 Mac mini 上批准验证码为 K7QM-2XFD 的设备。",
     );
     expect(localized?.headline).toBe("Mac mini 正在等待批准此设备");
     expect(localized?.steps[0]).toContain("批准显示验证码 K7QM-2XFD 的设备");

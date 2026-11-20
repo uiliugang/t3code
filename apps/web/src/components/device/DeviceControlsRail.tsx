@@ -18,6 +18,7 @@ import {
   MoonIcon,
   SunIcon,
 } from "lucide-react";
+import { useMessages, msg } from "gt-react";
 import type { ReactNode } from "react";
 import { Button } from "~/components/ui/button";
 import {
@@ -56,6 +57,7 @@ export function DeviceControlsRail(props: {
   const inputDisabled = !handle?.inputConnected;
   const runsHostCommands = props.hostKind === "local" || props.hostKind === "ssh";
   const nextAppearance = settings?.appearance === "dark" ? "light" : "dark";
+  const m = useMessages();
   return (
     <aside
       aria-label={t("Device controls")}
@@ -174,15 +176,15 @@ export function DeviceControlsRail(props: {
                 >
                   {(
                     [
-                      ["small", "Small"],
-                      ["default", "Default"],
-                      ["large", "Large"],
-                      ["extra-large", "Extra large"],
+                      ["small", msg("Small")],
+                      ["default", msg("Default")],
+                      ["large", msg("Large")],
+                      ["extra-large", msg("Extra large")],
                     ] as const
                   ).map(([value, label]) => (
                     <MenuRadioItem key={value} value={value}>
                       <span className="flex items-center gap-2">
-                        <span className="flex-1">{t(label)}</span>
+                        <span className="flex-1">{m(label)}</span>
                         <MenuRadioItemIndicator />
                       </span>
                     </MenuRadioItem>

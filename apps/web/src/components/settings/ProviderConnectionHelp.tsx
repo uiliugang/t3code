@@ -10,33 +10,39 @@ export function ProviderConnectionHelp({ codex }: { readonly codex: boolean }) {
         {
           name: "ChatGPT account",
           route: ["T3", "Codex", "OpenAI"],
-          detail: "T3 manages your ChatGPT sign-in. Requests use your account's Codex allowance.",
+          detail: t(
+            "T3 manages your ChatGPT sign-in. Requests use your account's Codex allowance.",
+          ),
         },
         {
           name: "Use existing CLI",
           route: ["T3", "Configured Codex CLI", "Configured service"],
-          detail:
+          detail: t(
             "Uses the login and configuration in your Codex home. This can be a ChatGPT account or an API service.",
+          ),
         },
         {
           name: "API Key",
           route: ["T3", "Codex", "API base URL"],
-          detail:
+          detail: t(
             "Uses this connection's saved URL and key. The service must support the Responses API and bills its usage.",
+          ),
         },
       ]
     : [
         {
           name: "Claude account / existing CLI",
           route: ["T3", "Claude Code", "Configured service"],
-          detail:
+          detail: t(
             "Uses your existing Claude Code login and configuration. Sign in through the CLI on this environment.",
+          ),
         },
         {
           name: "API Key",
           route: ["T3", "Claude Code", "API base URL"],
-          detail:
+          detail: t(
             "Uses this connection's saved URL, key and protocol. Supports Anthropic Messages and OpenAI Chat Completions.",
+          ),
         },
       ];
   return (
@@ -68,7 +74,7 @@ export function ProviderConnectionHelp({ codex }: { readonly codex: boolean }) {
                   </li>
                 ))}
               </ol>
-              <p className="leading-relaxed text-muted-foreground">{t(method.detail)}</p>
+              <p className="leading-relaxed text-muted-foreground">{method.detail}</p>
             </div>
           ))}
           <p className="border-t border-border pt-3 leading-relaxed text-muted-foreground">

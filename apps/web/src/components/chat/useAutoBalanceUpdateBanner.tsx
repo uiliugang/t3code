@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { useState } from "react";
@@ -31,6 +32,7 @@ export function useAutoBalanceUpdateBanner(
   environments: readonly EnvironmentPresentation[],
 ): ComposerBannerStackItem | null {
   const t = useUiTranslation();
+  const m = useMessages();
   const updateStates = useAtomValue(
     environmentUpdateStatesAtom(
       environmentIdsKey(environments.map(({ environmentId }) => environmentId)),
@@ -44,7 +46,7 @@ export function useAutoBalanceUpdateBanner(
     () => new Set(),
   );
   const machines = states.flatMap(({ environment, state }) => {
-    const mismatch = resolveServerConfigVersionMismatch(environment.serverConfig);
+    const mismatch = resolveServerConfigVersionMismatch(environment.serverConfig, m);
     const dismissKey = mismatch
       ? buildVersionMismatchDismissalKey(environment.environmentId, mismatch)
       : null;

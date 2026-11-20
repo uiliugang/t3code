@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../../lib/useUiTranslation";
+
 import { useEffect, useState } from "react";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { BackHandler, Keyboard } from "react-native";
@@ -15,6 +16,7 @@ import {
 
 export function WorkspaceListHeader(props: WorkspaceListHeaderProps) {
   const t = useUiTranslation();
+
   const navigation = useNavigation();
   const workspace = useWorkspaceTabs();
   const isTabActive = workspace?.isTabActive;

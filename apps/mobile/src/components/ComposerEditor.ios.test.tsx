@@ -25,6 +25,9 @@ interface NativeProps {
   readonly ref?: Ref<unknown>;
   readonly controlledDocumentJson: string;
   readonly onComposerChange: (event: { readonly nativeEvent: NativeEvent }) => void;
+  readonly onComposerContextPress: (event: {
+    readonly nativeEvent: { readonly source: string; readonly start: number; readonly end: number };
+  }) => void;
 }
 
 // Mirrors the iOS editor's revision and reset bookkeeping (T3ComposerEditorView.setControlledDocumentJson).
@@ -118,7 +121,22 @@ vi.mock("expo-file-system", () => ({
 }));
 vi.mock("./ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("./ui/AppText", () => ({ AppText: ({ children }: { children?: ReactNode }) => children }));
-vi.mock("./ComposerContextSheet", () => ({ ComposerContextSheet: () => null }));
+vi.mock("./ComposerContextSheet", () => ({
+  ComposerContextSheet: () => <div role="dialog" aria-label="Context" />,
+}));
+vi.mock("./AssistantCitationSheet", () => ({
+  AssistantCitationSheet: ({
+    onCommentChange,
+  }: {
+    onCommentChange?: (comment: string) => void;
+  }) => (
+    <div role="dialog" aria-label="Quote">
+      <button type="button" onClick={() => onCommentChange?.("Follow up")}>
+        Comment
+      </button>
+    </div>
+  ),
+}));
 vi.mock("../features/threads/useOpenLinkedThread", () => ({ useOpenLinkedThread: () => vi.fn() }));
 vi.mock("../state/peerLinks", () => ({ useLinkedEnvironments: () => [] }));
 vi.mock("../state/model-mentions", () => ({ useModelMentions: () => [] }));
@@ -250,7 +268,8 @@ async function renderFlushableComposer() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const editor = createRef<ComposerEditorHandle>();
   setComposerDraftText(DRAFT_KEY, "");
-  const root = createRoot(document.createElement("div"));
+  const container = document.createElement("div");
+  const root = createRoot(container);
   await act(async () =>
     root.render(
       <RegistryContext.Provider value={appAtomRegistry}>
@@ -259,6 +278,7 @@ async function renderFlushableComposer() {
     ),
   );
   return {
+    container,
     editor,
     [Symbol.asyncDispose]: async () => act(() => root.unmount()),
   };
@@ -335,6 +355,26 @@ it.each(["selection", "response"] as const)(
       expect(draft.context?.records).toEqual([
         expect.objectContaining({ kind: "response", itemId: "item" }),
       ]);
+    const document = JSON.parse(native.props!.controlledDocumentJson);
+    const token = JSON.parse(document.tokensJson).find(
+      (token: { type: string }) => token.type === "context",
+    );
+    const start = draft.text.indexOf(token.source);
+    await act(async () =>
+      native.props!.onComposerContextPress({
+        nativeEvent: { source: token.source, start, end: start + token.source.length },
+      }),
+    );
+    const dialogs = screen.container.querySelectorAll('[role="dialog"]');
+    expect(Array.from(dialogs, (dialog) => dialog.getAttribute("aria-label"))).toEqual([
+      kind === "selection" ? "Quote" : "Context",
+    ]);
+    if (kind === "selection") {
+      await act(async () => screen.container.querySelector("button")!.click());
+      expect(getComposerDraftSnapshot(DRAFT_KEY).text).toBe(
+        `Hello world ${serializeAssistantCitation({ ...quote, comment: "Follow up" })} `,
+      );
+    }
   },
 );
 

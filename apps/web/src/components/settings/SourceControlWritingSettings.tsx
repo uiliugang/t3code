@@ -13,6 +13,7 @@ import {
   resolveReviewGuideModelSelection,
   resolveSourceControlWriterModelSelection,
 } from "@t3tools/shared/serverSettings";
+import { msg, useGT, useMessages } from "gt-react";
 
 import {
   useScopedSettings,
@@ -44,28 +45,35 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { AdvancedSettings } from "./AdvancedSettings";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; description: string }> =
   {
     repo_conventions: {
-      label: "Repository conventions",
-      description:
+      label: msg("Repository conventions"),
+      description: msg(
         "Commit messages and pull request titles and descriptions match each project's history.",
+      ),
     },
     conventional_commits: {
-      label: "Conventional Commits",
-      description: "Conventional Commit prefixes, with short pull request titles and descriptions.",
+      label: msg("Conventional Commits"),
+      description: msg(
+        "Conventional Commit prefixes, with short pull request titles and descriptions.",
+      ),
     },
     custom: {
-      label: "Custom instructions",
-      description:
+      label: msg("Custom instructions"),
+      description: msg(
         "Your instructions shape commit messages and pull request titles and descriptions.",
+      ),
     },
   };
 
 export function SourceControlWritingSettingsSection() {
   const t = useUiTranslation();
+  const messages = useMessages();
+  const setting = useSearchableSetting();
+  const gt = useGT();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const mixedReviewGuidesEnabled = useScopedSettingsMixed(["reviewGuidesEnabled"]);
@@ -201,8 +209,8 @@ export function SourceControlWritingSettingsSection() {
         serverScoped
         settingKeys={["sourceControlWritingStyle"]}
         mixed={writingStyleMixed}
-        {...searchableSetting("source-control-writing-style")}
-        description={MODE_OPTIONS[style.mode].description}
+        {...setting("source-control-writing-style")}
+        description={messages(MODE_OPTIONS[style.mode].description)}
         resetAction={
           isSourceControlWritingStyleDirty ? (
             <SettingResetButton
@@ -238,14 +246,14 @@ export function SourceControlWritingSettingsSection() {
             >
               <SelectValue>
                 {(value: SourceControlWritingStyleMode | null) =>
-                  t(value === null ? "Mixed" : MODE_OPTIONS[value].label)
+                  value === null ? t("Mixed") : messages(MODE_OPTIONS[value].label)
                 }
               </SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               {(Object.keys(MODE_OPTIONS) as SourceControlWritingStyleMode[]).map((mode) => (
                 <SelectItem key={mode} hideIndicator value={mode}>
-                  {t(MODE_OPTIONS[mode].label)}
+                  {messages(MODE_OPTIONS[mode].label)}
                 </SelectItem>
               ))}
             </SelectPopup>
@@ -318,8 +326,8 @@ export function SourceControlWritingSettingsSection() {
         serverScoped
         settingKeys={["reviewGuidesEnabled"]}
         mixed={mixedReviewGuidesEnabled}
-        {...searchableSetting("review-guides")}
-        description={t(
+        {...setting("review-guides")}
+        description={gt(
           "Add a Guide tab to pull requests. An agent explains the changes and points out decisions that need review.",
         )}
         control={
@@ -337,8 +345,8 @@ export function SourceControlWritingSettingsSection() {
           <SettingsRow
             serverScoped
             settingKeys={["reviewGuideModelSelection"]}
-            {...searchableSetting("review-guide-model")}
-            description={t(
+            {...setting("review-guide-model")}
+            description={gt(
               "Must be a coding agent: it reads the pull request over many steps. Off uses the writer model, or Codex or Claude if that model is a text generator.",
             )}
             control={
@@ -442,14 +450,14 @@ export function SourceControlWritingSettingsSection() {
           <SettingsRow
             serverScoped
             settingKeys={["reviewGuideInstructions"]}
-            {...searchableSetting("review-guide-instructions")}
-            description={t(
+            {...setting("review-guide-instructions")}
+            description={gt(
               "Your preferences for review guides: what to show first, dwell on, or skip. The guide's format and coverage stay the same.",
             )}
             resetAction={
               mixedReviewGuideInstructions || settings.reviewGuideInstructions !== "" ? (
                 <SettingResetButton
-                  label={t("review guide instructions")}
+                  ariaLabel={gt("Reset review guide instructions to default")}
                   onClick={() => updateSettings({ reviewGuideInstructions: "" })}
                 />
               ) : null
@@ -485,15 +493,15 @@ export function SourceControlWritingSettingsSection() {
       ) : null}
       <AdvancedSettings
         targetIds={[
-          searchableSetting("follow-change-request-templates").id,
-          searchableSetting("source-control-writer-model").id,
+          setting("follow-change-request-templates").id,
+          setting("source-control-writer-model").id,
         ]}
       >
         <SettingsRow
           serverScoped
           settingKeys={["sourceControlWritingStyle"]}
           mixed={templatesMixed}
-          {...searchableSetting("follow-change-request-templates")}
+          {...setting("follow-change-request-templates")}
           description={t(
             "Use the repository's template for change request descriptions when available.",
           )}
@@ -531,7 +539,7 @@ export function SourceControlWritingSettingsSection() {
         <SettingsRow
           serverScoped
           settingKeys={["sourceControlWriterModelSelection"]}
-          {...searchableSetting("source-control-writer-model")}
+          {...setting("source-control-writer-model")}
           description={t(
             "Model for source control text and branch or bookmark names. When disabled, use the text generation model configured for this environment.",
           )}

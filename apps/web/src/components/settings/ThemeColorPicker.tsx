@@ -1,5 +1,7 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { memo, useEffect, useRef, useState } from "react";
+import { m, type MessageResolver } from "../../i18n/messages";
 import { isThemeColor, themeColorToHex, type ThemeColorRole } from "../../themePalette";
 import { cn } from "../../lib/utils";
 import { hexToHsv, hsvToHex, type HsvColor } from "../../lib/color";
@@ -7,26 +9,27 @@ import { ColorHueSlider, ColorSaturationValuePlane } from "../ui/color-picker";
 import { Input } from "../ui/input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-export function getThemeRoleLabel(role: ThemeColorRole): string {
-  const labels: Partial<Record<ThemeColorRole, string>> = {
-    canvas: "Background",
-    input: "Input field",
-    toolbar: "Toolbar background",
-    toolbarForeground: "Toolbar text",
-    toolbarBorder: "Toolbar border",
-    toolbarControl: "Toolbar control",
-    toolbarControlForeground: "Toolbar control text",
-    toolbarControlHover: "Toolbar control hover",
-    accent: "Accent color",
-    errorForeground: "Error text",
-    errorSurface: "Error background",
-    warningForeground: "Warning text",
-    warningSurface: "Warning background",
-    updateForeground: "Update text",
-    updateSurface: "Update background",
-  };
-  const label = labels[role];
-  if (label) return label;
+const THEME_ROLE_LABELS: Partial<Record<ThemeColorRole, string>> = {
+  canvas: msg("Background"),
+  input: msg("Input field"),
+  toolbar: msg("Toolbar background"),
+  toolbarForeground: msg("Toolbar text"),
+  toolbarBorder: msg("Toolbar border"),
+  toolbarControl: msg("Toolbar control"),
+  toolbarControlForeground: msg("Toolbar control text"),
+  toolbarControlHover: msg("Toolbar control hover"),
+  accent: msg("Accent color"),
+  errorForeground: msg("Error text"),
+  errorSurface: msg("Error background"),
+  warningForeground: msg("Warning text"),
+  warningSurface: msg("Warning background"),
+  updateForeground: msg("Update text"),
+  updateSurface: msg("Update background"),
+};
+
+export function getThemeRoleLabel(role: ThemeColorRole, resolve: MessageResolver = m): string {
+  const label = THEME_ROLE_LABELS[role];
+  if (label) return resolve(label);
   return role.replace(/([A-Z])/g, " $1").replace(/^./, (character) => character.toUpperCase());
 }
 
@@ -163,8 +166,10 @@ function ThemeColorPickerPanel({
     <div className="w-72">
       <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
         <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-foreground">{t(label)}</p>
-          <p className="text-2xs text-muted-foreground">{t("Choose a color")}</p>
+          <p className="truncate text-xs font-semibold text-foreground">{label}</p>
+          <p className="text-2xs text-muted-foreground">
+            <T>Choose a color</T>
+          </p>
         </div>
         <span
           className="size-7 shrink-0 rounded-full shadow-sm"
@@ -255,6 +260,7 @@ function ThemeColorPicker({
   onInteract?: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [committer] = useState(createFrameCommitter);
   // Escape reverts the edit, so commits after it (the pending frame flushed on close, or a drag
   // still firing through the exit animation) are dropped instead of landing on the restored colors.
@@ -295,7 +301,7 @@ function ThemeColorPicker({
             />
           }
         />
-        <TooltipPopup side="top">{t("Choose {color} color", { color: t(label) })}</TooltipPopup>
+        <TooltipPopup side="top">{gt("Choose {label} color", { label })}</TooltipPopup>
       </Tooltip>
       <PopoverPopup
         align="end"
@@ -339,7 +345,8 @@ export const ThemeColorField = memo(function ThemeColorField({
   label?: string;
 }) {
   const t = useUiTranslation();
-  const label = t(customLabel ?? getThemeRoleLabel(role));
+  const messages = useMessages();
+  const label = customLabel ?? getThemeRoleLabel(role, messages);
   const isColorValue = isThemeColor(value);
   const swatchValue = isColorValue ? value : "#000000";
   const editorValue = value.trim().toLowerCase().startsWith("oklch(")
@@ -368,7 +375,7 @@ export const ThemeColorField = memo(function ThemeColorField({
               onClick={() => onToggleSelected?.(role)}
               type="button"
             >
-              <span className="min-w-0 flex-1 truncate">{t(label)}</span>
+              <span className="min-w-0 flex-1 truncate">{label}</span>
             </button>
           }
         />
@@ -380,7 +387,7 @@ export const ThemeColorField = memo(function ThemeColorField({
       </Tooltip>
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <ThemeColorPicker
-          label={t(label)}
+          label={label}
           onChange={(nextValue) => onChange(role, nextValue)}
           onEditCancel={() => onEditCancel?.(role)}
           onEditStart={() => onEditStart?.(role)}

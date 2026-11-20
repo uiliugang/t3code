@@ -82,6 +82,8 @@ import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/men
 
 type Mutate = (input: SkillMutation) => Promise<boolean>;
 type Inspect = (input: SkillInspect) => Promise<SkillInspection | null>;
+const SKILLS_COMMAND_EXAMPLE = "npx skills@1.7.4";
+
 function Action({
   label,
   children,
@@ -1501,7 +1503,7 @@ function SourceEditor({
                   aria-label={t("Installer for {name}", { name: skillSourceName(source, t) })}
                   value={draft.executable}
                   disabled={disabled}
-                  placeholder={source.kind === "skills" ? "npx skills@1.7.4" : "mtskills"}
+                  placeholder={source.kind === "skills" ? SKILLS_COMMAND_EXAMPLE : "mtskills"}
                   onChange={(event) => setDraft({ ...draft, executable: event.target.value })}
                 />
               </label>
@@ -1518,7 +1520,7 @@ function SourceEditor({
           )}
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Action
-              label={`Remove source ${skillSourceName(source, t)}`}
+              label={t("Remove source {name}", { name: skillSourceName(source, t) })}
               disabled={disabled}
               onClick={async () => {
                 if (

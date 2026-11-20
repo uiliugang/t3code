@@ -2,6 +2,7 @@ import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { EnvironmentId, SecretProviderConfig, SecretProviderId } from "@t3tools/contracts";
 import * as Result from "effect/Result";
 import { useState } from "react";
+import { useMessages } from "gt-react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
@@ -37,6 +38,7 @@ export function SecretProviderDialog({
   readonly existing?: { readonly id: SecretProviderId; readonly config: SecretProviderConfig };
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const [draft, setDraft] = useState<SecretProviderDraft>(
     existing ? draftFromSecretProvider(existing.config) : { name: "", account: "" },
@@ -46,6 +48,7 @@ export function SecretProviderDialog({
     draft,
     existingIds,
     existing ? { mode: "edit", id: existing.id } : { mode: "add" },
+    messages,
   );
   const issues = Result.isFailure(result) ? result.failure : {};
   const nameError = submitted ? issues.name : undefined;

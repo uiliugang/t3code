@@ -1,3 +1,5 @@
+import { useGT, useMessages } from "gt-react";
+import { threadErrorText } from "@t3tools/client-runtime/state/threads";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
@@ -88,6 +90,7 @@ import {
   TIMELINE_MINIMAP_TARGET_OFFSET,
   timelineTurnFoldRunIdsByEntryId,
   liveAnswerPreview,
+  formatTurnFoldLabel,
   type MessagesTimelineRow,
   type TimelineLatestRun,
 } from "./MessagesTimeline.logic";
@@ -430,6 +433,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   historyControls,
 }: MessagesTimelineProps) {
   const t = useUiTranslation();
+  const gt = useGT();
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
@@ -1224,12 +1228,15 @@ const ConversationTimeline = memo(function ConversationTimeline({
             detail={
               parentThreadLink.environmentLabel === undefined
                 ? parentThreadLink.title
-                : `${parentThreadLink.title} on ${parentThreadLink.environmentLabel}`
+                : gt("{title} on {environment}", {
+                    title: parentThreadLink.title,
+                    environment: parentThreadLink.environmentLabel,
+                  })
             }
             icon={parentThreadLink.sideChat ? MessagesSquareIcon : BotIcon}
             {...(parentThreadLink.open === undefined
               ? {}
-              : { actionLabel: "Open parent thread", onAction: parentThreadLink.open })}
+              : { actionLabel: gt("Open parent thread"), onAction: parentThreadLink.open })}
           />
         </div>
       </div>
@@ -1521,6 +1528,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
 
 function TimelineHistoryControl(props: MessagesTimelineHistoryControls) {
   const t = useUiTranslation();
+  const messages = useMessages();
   if (!props.hasMoreHistory && props.error === null) {
     return null;
   }
@@ -1544,7 +1552,7 @@ function TimelineHistoryControl(props: MessagesTimelineHistoryControls) {
         ) : null}
         {props.error !== null ? (
           <p role="status" className="text-center text-muted-foreground text-xs">
-            {props.error}
+            {threadErrorText(props.error, messages)}
           </p>
         ) : null}
       </div>
@@ -1733,9 +1741,12 @@ function ContextCompactionTimelineRow({
   row: Extract<TimelineRow, { kind: "context-compaction" }>;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const label =
-    row.title && row.label.startsWith("Context compacted")
-      ? row.title + row.label.slice("Context compacted".length)
+    row.title && row.compacted
+      ? row.tokenCounts
+        ? gt("{title} {before} → {after} tokens", { title: row.title, ...row.tokenCounts })
+        : row.title
       : row.label;
   const displayLabel = t(label);
   const content = (
@@ -1755,6 +1766,7 @@ function ContextCompactionTimelineRow({
         displayLabel
       )}
       {row.failure ? (
+        // oxlint-disable-next-line t3code/no-untranslated-copy -- separator before server-authored failure text
         <span className="min-w-0 truncate opacity-80">&middot; {row.failure}</span>
       ) : null}
     </span>
@@ -1785,6 +1797,7 @@ function useDeferredWorkLoading(
   row: { expanded: boolean; deferredWorkItemIds?: ReadonlyArray<string> },
   onToggle: () => void,
 ) {
+  const gt = useGT();
   const ctx = use(TimelineRowCtx);
   const loadWork = useAtomCommand(threadEnvironment.loadEarlierHistory, { reportFailure: false });
   const ref = parseScopedThreadKey(ctx.routeThreadKey);
@@ -1809,7 +1822,7 @@ function useDeferredWorkLoading(
   useEffect(() => {
     if (row.expanded && anchorsKey && environmentId && threadId) loadOnExpand();
   }, [row.expanded, anchorsKey, environmentId, threadId]);
-  const error = anchorsKey && failed ? "Couldn't load work. Click to retry." : null;
+  const error = anchorsKey && failed ? gt("Couldn't load work. Click to retry.") : null;
   const loading = ref !== null && row.expanded && anchorsKey !== "" && !failed;
   const toggle = () => {
     setFailed(false);
@@ -1856,10 +1869,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
           <span>
-            {t(
-              row.label.message,
-              row.label.duration === undefined ? undefined : { duration: row.label.duration },
-            )}
+            {formatTurnFoldLabel(row.label, t)}
             {error ? ` · ${error}` : ""}
           </span>
           {row.expanded ? (

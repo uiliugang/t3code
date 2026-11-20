@@ -1,5 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
@@ -13,6 +14,7 @@ import {
   type ThreadGuestShare,
 } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
+import { msg, useGT } from "gt-react-native";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 
@@ -20,6 +22,7 @@ import { Button } from "../../components/ui/Button";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import * as Dialog from "../../components/ui/Dialog";
+import { m } from "../../i18n/messages";
 import { useEnvironmentScope } from "../../state/session";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -49,14 +52,14 @@ export function useThreadGuestShare(threadRef: ScopedThreadRef | null): ThreadGu
 function alertOnFailure(failureTitle: string, result: AtomCommandResult<unknown, unknown>) {
   if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
     const error = squashAtomCommandFailure(result);
-    Dialog.alert(failureTitle, error instanceof Error ? error.message : "Try again.");
+    Dialog.alert(failureTitle, errorDisplayMessage(error, m) ?? m(msg("Try again.")));
   }
 }
 
 /**
  * Owner controls for a guest link, above the composer: who the link is for and a way to stop
- * sharing. Links are created on web. Waiting messages show in the feed, see
- * `ThreadGuestPendingMessage`.
+ * sharing. Links are created from the thread's menu, see `ThreadGuestShareSheet`. Waiting
+ * messages show in the feed, see `ThreadGuestPendingMessage`.
  */
 export function ThreadGuestShareBar(props: {
   readonly threadRef: ScopedThreadRef | null;
@@ -65,6 +68,7 @@ export function ThreadGuestShareBar(props: {
   const t = useUiTranslation();
 
   const { threadRef } = props;
+  const gt = useGT();
   const share = useThreadGuestShare(threadRef);
   const closeGuestShare = useAtomCommand(threadEnvironment.closeGuestShare, "stop guest sharing");
   const [busy, setBusy] = useState(false);
@@ -87,9 +91,9 @@ export function ThreadGuestShareBar(props: {
   const disabled = busy || !props.canOperateThread;
   const stopSharing = () =>
     Dialog.confirm({
-      title: "Stop sharing?",
-      message: "The guest loses access and the link stops working.",
-      confirmText: t("Stop sharing"),
+      title: gt("Stop sharing?"),
+      message: gt("The guest loses access and the link stops working."),
+      confirmText: gt("Stop sharing"),
       destructive: true,
       onConfirm: () => {
         if (disabled) return;
@@ -99,7 +103,7 @@ export function ThreadGuestShareBar(props: {
           input: { threadId: threadRef.threadId },
         }).then((result) => {
           setBusy(false);
-          alertOnFailure("Could not stop sharing", result);
+          alertOnFailure(gt("Could not stop sharing"), result);
         });
       },
     });
@@ -109,10 +113,10 @@ export function ThreadGuestShareBar(props: {
       <SymbolView name="person.2" size={12} tintColorClassName="accent-foreground-muted" />
       <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
         {expiredAt === share.expiresAt
-          ? "Guest link expired"
+          ? gt("Guest link expired")
           : share.guestName === null
-            ? "Guest link active"
-            : `${share.guestName} is a guest`}
+            ? gt("Guest link active")
+            : gt("{guestName} is a guest", { guestName: share.guestName })}
       </Text>
       <Button label={t("Stop sharing")} tone="text" disabled={disabled} onPress={stopSharing} />
     </View>
@@ -134,6 +138,7 @@ export function ThreadGuestPendingMessage(props: {
   const t = useUiTranslation();
 
   const { threadRef, guestName, message } = props;
+  const gt = useGT();
   const canOperate = useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope);
   const resolveGuestMessage = useAtomCommand(
     threadEnvironment.resolveGuestMessage,
@@ -156,7 +161,9 @@ export function ThreadGuestPendingMessage(props: {
     });
     setBusy(false);
     alertOnFailure(
-      decision === "send" ? "Could not send guest message" : "Could not dismiss guest message",
+      decision === "send"
+        ? gt("Could not send guest message")
+        : gt("Could not dismiss guest message"),
       result,
     );
   };
@@ -177,14 +184,14 @@ export function ThreadGuestPendingMessage(props: {
           <Button
             label={t("Dismiss")}
             tone="secondary"
-            accessibilityLabel={`Dismiss message from ${guestName}`}
+            accessibilityLabel={gt("Dismiss message from {guestName}", { guestName })}
             disabled={busy}
             onPress={() => void resolve("dismiss")}
           />
           <Button
             label={t("Send")}
             tone="primary"
-            accessibilityLabel={`Send message from ${guestName}`}
+            accessibilityLabel={gt("Send message from {guestName}", { guestName })}
             disabled={busy}
             onPress={() => void resolve("send")}
           />

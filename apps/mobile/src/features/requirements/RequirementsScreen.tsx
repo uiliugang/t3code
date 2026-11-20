@@ -1,7 +1,10 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
 import type { StaticScreenProps } from "@react-navigation/native";
 import { RegistryContext, useAtom, useAtomValue } from "@effect/atom-react";
-import { requirementViewsMatch } from "@t3tools/client-runtime/saved-views";
+import {
+  requirementViewsMatch,
+  type RequirementFilters,
+} from "@t3tools/client-runtime/saved-views";
 import { SavedViewsMenu } from "../layout/workspace/SavedViewsMenu";
 import { requirementLabelsAtom } from "../issues/issueListFilters";
 import { Chip } from "../../components/ui/Chip";
@@ -69,7 +72,7 @@ import {
 import { SymbolView } from "../../components/ui/AppSymbol";
 import {
   DELIVERY_PROGRESS_LABELS,
-  REQUIREMENT_GROUPS,
+  requirementGroups,
   prepareWorkItemCommandRetry,
   type RequirementSource,
 } from "@t3tools/client-runtime/work-item";
@@ -274,7 +277,7 @@ function UnifiedRequirementBoard({
   const sourceRef = initial?.sourceThreadId
     ? {
         threadId: initial.sourceThreadId,
-        title: initial.sourceTitle ?? sourceThread?.title ?? "Chat",
+        title: initial.sourceTitle ?? sourceThread?.title ?? t("Chat"),
         ...(initial.sourceMessageId ? { messageId: initial.sourceMessageId } : {}),
       }
     : undefined;
@@ -488,13 +491,13 @@ function UnifiedRequirementBoard({
       </View>
     </Pressable>
   );
-  const renderGroup = (group: (typeof REQUIREMENT_GROUPS)[number]) => {
+  const renderGroup = (group: ReturnType<typeof requirementGroups>[number]) => {
     const rows = entries.filter((entry) => entry.group === group.key);
     if (!rows.length) return null;
     return (
       <View key={group.key} style={view === "board" ? { width: 280 } : undefined}>
         <Disclosure
-          title={t(group.label)}
+          title={group.label}
           count={rows.length}
           open={!collapsed.includes(group.key)}
           onToggle={() => toggle(group.key)}
@@ -534,12 +537,12 @@ function UnifiedRequirementBoard({
   ];
   const sourceChoices = [
     { value: "all" as const, label: t("All sources") },
-    ...(meituanEnabled ? [{ value: "meituan" as const, label: "MEP ONES" }] : []),
-    { value: "github" as const, label: "GitHub Issues" },
+    ...(meituanEnabled ? [{ value: "meituan" as const, label: t("MEP ONES") }] : []),
+    { value: "github" as const, label: t("GitHub Issues") },
     ...(unified
       ? ([
           { value: "gitlab", label: "GitLab" },
-          { value: "linear", label: "Linear" },
+          { value: "linear", label: t("Linear") },
         ] as const)
       : []),
     { value: "local" as const, label: t("Local work items") },
@@ -756,11 +759,10 @@ function UnifiedRequirementBoard({
                 actions={environmentActions}
                 onSelect={applyFilterSelection}
               />
-              <SavedViewsMenu
+              <SavedViewsMenu<RequirementFilters>
                 read={(prefs) => prefs.requirementSavedViews}
                 write={(requirementSavedViews) => ({ requirementSavedViews })}
-                noun="requirement"
-                shortNoun="requirement"
+                list="requirement"
                 suggestedName=""
                 scope={{
                   environmentId: queryEnvironmentId,
@@ -890,14 +892,14 @@ function UnifiedRequirementBoard({
               </Text>
             ) : null}
             {view === "list" ? (
-              REQUIREMENT_GROUPS.map(renderGroup)
+              requirementGroups(t).map(renderGroup)
             ) : (
               <ScrollView
                 horizontal
                 contentContainerStyle={{ gap: 20 }}
                 showsHorizontalScrollIndicator
               >
-                {REQUIREMENT_GROUPS.map(renderGroup)}
+                {requirementGroups(t).map(renderGroup)}
               </ScrollView>
             )}
             {data.hasMore ? (
@@ -1058,9 +1060,9 @@ function RequirementCreateSheet({
     ...(localAllowed ? [{ value: "local", label: t("Local work item") }] : []),
     ...(issueAllowed
       ? [
-          { value: "github", label: "GitHub Issue" },
+          { value: "github", label: t("GitHub Issue") },
           ...(isMeituanServiceEnabled(config?.settings, "requirements")
-            ? [{ value: "meituan", label: "MEP ONES" }]
+            ? [{ value: "meituan", label: t("MEP ONES") }]
             : []),
         ]
       : []),
@@ -1582,7 +1584,7 @@ function IssueCreateFormBody({
           value={selectedProvider ?? ""}
           options={availableProviders.map((value) => ({
             value,
-            label: value === "github" ? "GitHub Issues" : "MEP ONES",
+            label: value === "github" ? t("GitHub Issues") : t("MEP ONES"),
           }))}
           disabled={busy || generating}
           onChange={(value) => {

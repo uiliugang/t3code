@@ -1,8 +1,10 @@
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { parsePullRequestAnchor } from "@t3tools/shared/pullRequestAnchor";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { type MouseEvent } from "react";
+import { msg } from "gt-react";
 
 import {
   resolveChangeRequestLinkTarget,
@@ -26,6 +28,7 @@ import {
   patchRequirementsSearch,
   requirementSelection,
 } from "../components/requirements/requirementPanelSearch";
+import { m } from "../i18n/messages";
 import {
   selectThreadBranchBaseRef,
   selectThreadDiffPanelSelection,
@@ -283,9 +286,9 @@ export function useOpenChangeRequestLink(
             const toastId = toastManager.add(
               stackedThreadToast({
                 type: "info",
-                title: "This commit is not in the thread's workspace",
+                title: m(msg("This commit is not in the thread's workspace")),
                 actionProps: {
-                  children: "Open link",
+                  children: m(msg("Open link")),
                   onClick: () => {
                     toastManager.close(toastId);
                     window.open(targetUrl, "_blank", "noopener,noreferrer");
@@ -330,8 +333,8 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Unable to open pull request link",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: m(msg("Unable to open pull request link")),
+          description: thrownErrorMessage(error, m) ?? m(msg("An error occurred.")),
         }),
       );
     });

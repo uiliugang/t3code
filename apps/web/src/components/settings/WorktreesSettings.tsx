@@ -1,5 +1,6 @@
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useGT } from "gt-react";
 
 import { AdvancedSettings } from "./AdvancedSettings";
 import { ManagedWorktreesSettings } from "./ManagedWorktreesSettings";
@@ -18,12 +19,13 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { WorktreeCleanupSection, WorktreesDirectoryRow } from "./StorageSettings";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 function StartFromRemoteRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -63,6 +65,7 @@ function StartFromRemoteRow() {
 
 function SharedDependenciesRow() {
   const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -102,12 +105,17 @@ function SharedDependenciesRow() {
 
 export function WorktreesSettingsPanel() {
   const t = useUiTranslation();
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
   const { scope } = useSettingsScope();
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="worktree-creation" title={t("Creation")}>
+      <SettingsSection
+        id="worktree-creation"
+        title={gt("Creation", { $context: "settings section about creating worktrees" })}
+      >
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
         <MainBranchOnlyRow />

@@ -49,7 +49,7 @@ export function ApkUpdateSettings() {
   const canInstall = state.status === "ready" || state.status === "installing";
 
   return (
-    <SettingsSection title="App updates" footer={description}>
+    <SettingsSection title={t("App updates")} footer={description}>
       <SettingsSwitchRow
         icon="arrow.down.circle"
         label={t("Automatically download APK updates")}

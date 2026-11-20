@@ -5,6 +5,7 @@ import type {
 } from "@pierre/trees";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
+import { useGT, useMessages } from "gt-react";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { type Ref, useEffect, useEffectEvent, useRef, useState } from "react";
 
@@ -157,6 +158,8 @@ export default function FileBrowserPanel({
   const t = useUiTranslation();
   const panelPath = (relativePath: string) =>
     hostFolder ? joinHostPath(cwd, relativePath) : relativePath;
+  const gt = useGT();
+  const messages = useMessages();
   const { resolvedTheme } = useTheme();
   const fileContextMenu = useFileContextMenu(environmentId);
   const {
@@ -173,6 +176,8 @@ export default function FileBrowserPanel({
   const pathSearch = useProjectPathSearch(
     { environmentId, cwd: hostFolder ? null : cwd, query: query.slice(0, 256) },
     200,
+    undefined,
+    messages,
   );
   const { entries, entryKinds, treePaths, directoryPaths, expandableDirectoryPaths } =
     buildTreeEntries(directoryEntries, pathSearch.entries, pathSearch.isPending, query);
@@ -531,7 +536,7 @@ export default function FileBrowserPanel({
           onClick={handleRefresh}
           className="p-4 text-left text-xs leading-relaxed text-destructive"
         >
-          {error ?? pathSearch.error} {t("Click to retry.")}
+          {gt("{error} Click to retry.", { error: error ?? pathSearch.error })}
         </button>
       ) : null}
       {query.trim() && pathSearch.truncated && !pathSearch.isPending ? (

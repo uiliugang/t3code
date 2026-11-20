@@ -6,6 +6,7 @@ import type {
   PullRequestReactionContent,
   PullRequestRef,
 } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { SmilePlusIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -44,6 +45,7 @@ export function ReactionBar({
   readonly className?: string | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pending, setPending] = useState<{
     readonly signature: string;
@@ -78,7 +80,11 @@ export function ReactionBar({
               <button
                 type="button"
                 aria-pressed={reaction.viewerHasReacted}
-                aria-label={`${t(pullRequestReactionName(reaction.content))}, ${reaction.count}`}
+                aria-label={gt("{reaction}, {count}", {
+                  reaction: pullRequestReactionName(reaction.content, t),
+                  count: reaction.count,
+                  $context: "reaction button: reaction name and how many people used it",
+                })}
                 disabled={!canReact}
                 className={cn(
                   PILL_CLASS,
@@ -124,7 +130,7 @@ export function ReactionBar({
                     key={content}
                     type="button"
                     aria-pressed={reacted}
-                    aria-label={t(pullRequestReactionName(content))}
+                    aria-label={pullRequestReactionName(content, t)}
                     className={cn(
                       "flex size-7 items-center justify-center rounded-md text-base outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       reacted && "bg-primary/10",

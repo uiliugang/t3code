@@ -31,6 +31,7 @@ import * as Schema from "effect/Schema";
 import type { HttpClient } from "effect/http";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { useId, useState } from "react";
+import { useMessages } from "gt-react";
 import { isSecretsFeatureEnabled } from "../../env";
 import {
   inEnvironmentSpeechRuntime,
@@ -165,6 +166,7 @@ export function CloudVoiceConfiguration({
   close: () => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const id = environment.environmentId;
   const name = CLOUD_SPEECH_LABELS[provider];
   const company = CLOUD_SPEECH_PROVIDER_NAMES[provider];
@@ -192,7 +194,7 @@ export function CloudVoiceConfiguration({
   const existing = environment.serverConfig?.settings?.cloudSpeechCredentials?.[provider];
   const sources =
     isSecretsFeatureEnabled && environment.serverConfig?.secretReferences
-      ? configuredSecretSources(environment.serverConfig.settings?.secretProviders ?? {})
+      ? configuredSecretSources(environment.serverConfig.settings?.secretProviders ?? {}, messages)
       : [];
   const reference =
     isSecretReference(existing) && sources.some((s) => s.id === existing.provider)
@@ -241,7 +243,7 @@ export function CloudVoiceConfiguration({
       commit?.();
       close();
     } catch {
-      setError("Couldn’t save this change. Check your connection and try again.");
+      setError(t("Couldn’t save this change. Check your connection and try again."));
     }
     setBusy(false);
   };

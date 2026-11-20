@@ -8,6 +8,7 @@ import {
   type EnvironmentId,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { useState, type ReactNode } from "react";
 import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
 
@@ -39,11 +40,14 @@ export function AddCodexAccountDialog({
   readonly renderSetup: (instanceId: ProviderInstanceId, provider: ServerProvider) => ReactNode;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
   const settings = useEnvironmentSettings(environmentId);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const update = useAtomCommand(serverEnvironment.updateSettings, "Add ChatGPT account");
-  const [name, setName] = useState("Personal");
+  const [name, setName] = useState(() =>
+    gt("Personal", { $context: "default name for a ChatGPT account" }),
+  );
   const displayName = `ChatGPT - ${name.trim()}`;
   const [instanceId, setInstanceId] = useState<ProviderInstanceId | null>(null);
   const [pending, setPending] = useState(false);
@@ -102,7 +106,10 @@ export function AddCodexAccountDialog({
             provider?.setup ? (
               renderSetup(instanceId, provider)
             ) : (
-              <SettingsRow title="Codex runtime" description={t("Preparing managed setup.")} />
+              <SettingsRow
+                title={gt("Codex runtime")}
+                description={gt("Preparing managed setup.")}
+              />
             )
           ) : (
             <form
@@ -114,15 +121,15 @@ export function AddCodexAccountDialog({
               }}
             >
               <SettingsRow
-                title="Account name"
-                description={t("Shown in the provider list and model picker.")}
+                title={gt("Account name")}
+                description={gt("Shown in the provider list and model picker.")}
                 control={
                   <Input
-                    aria-label={t("Account name")}
+                    aria-label={gt("Account name")}
                     value={name}
                     disabled={pending}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder={t("e.g. Personal or Work")}
+                    placeholder={gt("e.g. Personal or Work")}
                   />
                 }
               />

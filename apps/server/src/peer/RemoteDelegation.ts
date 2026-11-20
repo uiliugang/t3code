@@ -352,6 +352,7 @@ const make = Effect.gen(function* () {
           projectId,
           title,
           modelSelection: { instanceId, model, ...(options === undefined ? {} : { options }) },
+          workspaceStrategy: { type: "root" },
           ...(runtimeMode === undefined ? {} : { runtimeMode }),
           ...(interactionMode === undefined ? {} : { interactionMode }),
           message: task,

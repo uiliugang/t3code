@@ -1,7 +1,9 @@
+import { msg, useMessages } from "gt-react-native";
 import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import {
+  connectionErrorText,
   connectionStatusText,
   type EnvironmentConnectionPhase,
   type EnvironmentConnectionPresentation,
@@ -11,62 +13,85 @@ import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import type { MessageResolver } from "../../i18n/messages";
 
 function noticeTitle(
   phase: EnvironmentConnectionPhase,
   environmentLabel: string,
   awaitingApproval: boolean,
-  t: ReturnType<typeof useUiTranslation>,
+  resolve: MessageResolver,
 ): string {
+  const environment = environmentLabel;
   if (awaitingApproval)
-    return t("Waiting for {environment} to approve this device", { environment: environmentLabel });
+    return resolve(msg("Waiting for {environment} to approve this device", { environment }));
   switch (phase) {
     case "offline":
-      return t("You are offline");
+      return resolve(msg("You are offline"));
     case "connecting":
-      return t("Connecting to {environment}...", { environment: environmentLabel });
+      return resolve(msg("Connecting to {environment}...", { environment }));
     case "reconnecting":
-      return t("Reconnecting to {environment}...", { environment: environmentLabel });
+      return resolve(msg("Reconnecting to {environment}...", { environment }));
     case "unsupported":
-      return t("Client not supported");
+      return resolve(msg("Client not supported"));
     case "error":
-      return t("{environment} is unavailable", { environment: environmentLabel });
+      return resolve(msg("{environment} is unavailable", { environment }));
     case "available":
-      return t("{environment} is disconnected", { environment: environmentLabel });
+      return resolve(msg("{environment} is disconnected", { environment }));
     case "connected":
       return "";
   }
 }
 
+type ConnectionNoticeResource = "preview" | "review" | "terminal";
+
+const OFFLINE_DETAIL = {
+  preview: msg(
+    "Cached data remains available. The preview will load when your connection returns.",
+  ),
+  review: msg("Cached data remains available. The review will load when your connection returns."),
+  terminal: msg(
+    "Cached data remains available. The terminal will load when your connection returns.",
+  ),
+} satisfies Record<ConnectionNoticeResource, string>;
+
+const CONNECTING_DETAIL = {
+  preview: msg("The preview will load as soon as the environment is ready."),
+  review: msg("The review will load as soon as the environment is ready."),
+  terminal: msg("The terminal will load as soon as the environment is ready."),
+} satisfies Record<ConnectionNoticeResource, string>;
+
+const RECONNECT_DETAIL = {
+  preview: msg("Reconnect the environment to load the preview."),
+  review: msg("Reconnect the environment to load the review."),
+  terminal: msg("Reconnect the environment to load the terminal."),
+} satisfies Record<ConnectionNoticeResource, string>;
+
 function noticeDetail(
   connection: EnvironmentConnectionPresentation,
-  resourceName: string,
-  t: ReturnType<typeof useUiTranslation>,
+  resource: ConnectionNoticeResource,
+  translate: ReturnType<typeof useUiTranslation>,
+  resolve: MessageResolver,
 ): string {
-  const { phase, error } = connection;
-  if (connection.awaitingApproval) return connectionStatusText(connection, t);
+  const { phase } = connection;
+  if (connection.awaitingApproval) return connectionStatusText(connection, translate, resolve);
+  const error = connectionErrorText(connection, resolve);
   if (error) {
     return phase === "reconnecting"
-      ? t("The app will keep retrying automatically. {error}", { error: t(error) })
-      : t(error);
+      ? resolve(msg("The app will keep retrying automatically. {error}", { error }))
+      : error;
   }
 
   switch (phase) {
     case "offline":
-      return t(
-        "Cached data remains available. The {resource} will load when your connection returns.",
-        { resource: t(resourceName) },
-      );
+      return resolve(OFFLINE_DETAIL[resource]);
     case "connecting":
     case "reconnecting":
-      return t("The {resource} will load as soon as the environment is ready.", {
-        resource: t(resourceName),
-      });
+      return resolve(CONNECTING_DETAIL[resource]);
     case "unsupported":
-      return t("Use compatible versions of the app and server to connect.");
+      return resolve(msg("Use compatible versions of the app and server to connect."));
     case "available":
     case "error":
-      return t("Reconnect the environment to load the {resource}.", { resource: t(resourceName) });
+      return resolve(RECONNECT_DETAIL[resource]);
     case "connected":
       return "";
   }
@@ -75,10 +100,11 @@ function noticeDetail(
 export function EnvironmentConnectionNotice(props: {
   readonly environmentLabel: string;
   readonly connection: EnvironmentConnectionPresentation;
-  readonly resourceName: string;
+  readonly resource: ConnectionNoticeResource;
   readonly onRetry: () => void;
 }) {
   const t = useUiTranslation();
+  const resolve = useMessages();
   const isRetrying =
     props.connection.phase === "connecting" || props.connection.phase === "reconnecting";
 
@@ -101,11 +127,11 @@ export function EnvironmentConnectionNotice(props: {
             props.connection.phase,
             props.environmentLabel,
             props.connection.awaitingApproval === true,
-            t,
+            resolve,
           )}
         </Text>
         <Text className="text-center text-sm leading-normal text-foreground-muted">
-          {noticeDetail(props.connection, props.resourceName, t)}
+          {noticeDetail(props.connection, props.resource, t, resolve)}
           {props.connection.traceId ? (
             <ConnectionTraceId traceId={props.connection.traceId} />
           ) : null}

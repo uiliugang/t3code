@@ -1,14 +1,15 @@
-import { useUiTranslation } from "../../lib/useUiTranslation";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
 import type { PullRequestActor } from "@t3tools/contracts";
 import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
 import { Image } from "expo-image";
+import { useGT } from "gt-react-native";
 import { View } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
+import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { EmptyState } from "../../components/ui/EmptyState";
 
 export function PullRequestReadStatus(props: {
@@ -16,12 +17,17 @@ export function PullRequestReadStatus(props: {
   readonly error: string | null;
   readonly terminology: ChangeRequestTerminology;
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   return props.pending ? (
     <AppActivityIndicator className="my-12" colorClassName="accent-icon" />
   ) : props.error ? (
     <EmptyState
-      title={t("Couldn't load this {singular}", { singular: String(props.terminology.singular) })}
+      title={gt(
+        "Couldn't load this {term, select, mr {merge request} cr {change request} other {pull request}}",
+        {
+          term: changeRequestTermKind(props.terminology),
+        },
+      )}
       detail={props.error}
       variant="plain"
     />

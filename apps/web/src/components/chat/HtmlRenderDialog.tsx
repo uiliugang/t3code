@@ -4,6 +4,7 @@ import {
   htmlRenderFrameHeight,
   type HtmlRenderReference,
 } from "@t3tools/shared/htmlRender";
+
 import { MinusIcon, PlusIcon, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -21,6 +22,7 @@ export function HtmlRenderDialog(props: {
   readonly onClose: () => void;
 }) {
   const t = useUiTranslation();
+
   const { title } = props.htmlRender;
   const [zoom, setZoom] = useState(1);
   const closeButtonRef = useRef<HTMLButtonElement>(null);

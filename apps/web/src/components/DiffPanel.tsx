@@ -1,5 +1,6 @@
 import { useCodeTheme } from "~/hooks/useCodeTheme";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useGT, useMessages } from "gt-react";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
@@ -138,6 +139,7 @@ function DiffFileCollapseToggle({
   onToggle: (fileKey: string) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   return (
     <Tooltip>
       <TooltipTrigger
@@ -146,7 +148,11 @@ function DiffFileCollapseToggle({
             size="icon-micro"
             variant="ghost"
             className="-ms-0.5"
-            aria-label={collapsed ? `Expand ${filePath}` : `Collapse ${filePath}`}
+            aria-label={
+              collapsed
+                ? gt("Expand {path}", { path: filePath })
+                : gt("Collapse {path}", { path: filePath })
+            }
             aria-expanded={!collapsed}
             ref={(node) => {
               if (!node || !load) return;
@@ -236,7 +242,8 @@ export default function DiffPanel({
   workspaceMutationId,
   visible,
 }: DiffPanelProps) {
-  const uiLanguage = useClientSettings((settings) => settings.uiLanguage);
+  const gt = useGT();
+  const messages = useMessages();
   const resolvedTheme = useRenderedAppearance();
   const codeTheme = useCodeTheme();
   const settings = useClientSettings((settings) => ({
@@ -269,7 +276,7 @@ export default function DiffPanel({
   const routeThreadRef = useThreadRouteRef();
   const activeThreadId = routeThreadRef?.threadId ?? null;
   const activeThread = useQuietThreadShell(routeThreadRef);
-  const fileAccess = useFilesystemReadAccess(activeThread?.environmentId ?? null);
+  const fileAccess = useFilesystemReadAccess(activeThread?.environmentId ?? null, messages);
   const { canReadFiles } = fileAccess;
   const activeProjectId = activeThread?.projectId ?? null;
   const activeProject = useProject(
@@ -458,6 +465,7 @@ export default function DiffPanel({
           canRefreshGitDiff ? workspaceMutationId : undefined,
         )
       : null,
+    messages,
   );
   const branchCommitsQuery = useEnvironmentQuery(
     visible && isGitRepo && canReadFiles && activeThread && activeCwd
@@ -470,6 +478,7 @@ export default function DiffPanel({
           },
         })
       : null,
+    messages,
   );
   const branchCommits = openCommitMenu ?? branchCommitsQuery.data;
   const activeThreadRefreshKey = routeThreadRef
@@ -486,30 +495,34 @@ export default function DiffPanel({
           : "branch-range"),
   );
   const comparisonHeadRef = selectedGitSource?.headRef ?? gitStatusQuery.data?.refName ?? "HEAD";
-  const comparisonBaseRef = selectedGitSource?.baseRef ?? selectedBaseRef ?? "Automatic";
+  const comparisonBaseRef =
+    selectedGitSource?.baseRef ??
+    selectedBaseRef ??
+    gt("Automatic", { $context: "compare against the default base ref" });
   const selectedCommitSubject =
     selectedCommitSha !== null && selectedGitSource?.headRef === selectedCommitSha
       ? selectedGitSource.commitSubject
       : undefined;
   const selectedGitScopeLabel =
     selectedCommitSha !== null
-      ? (selectedCommitSubject ?? t("Commit {sha}", { sha: selectedCommitSha.slice(0, 7) }))
+      ? (selectedCommitSubject ?? gt("Commit {sha}", { sha: selectedCommitSha.slice(0, 7) }))
       : selectedGitScope === "unstaged"
-        ? t("Uncommitted")
-        : t("Changes");
+        ? gt("Uncommitted")
+        : gt("Changes");
+  const selectedTurnLabel = gt("Turn {count}", { count: selectedCheckpointTurnCount ?? "?" });
   const selectedScopeLabel = toolCallSelection
-    ? t("Tool call")
+    ? gt("Tool call")
     : selectedRunId === null
       ? selectedCommitSha !== null
-        ? (selectedCommitSubject ?? t("Commit"))
+        ? (selectedCommitSubject ?? gt("Commit", { $context: "a git commit" }))
         : selectedGitScopeLabel
       : selectedTurn?.runId === latestTurn?.runId
-        ? t("Latest turn")
-        : t("Turn {count}", { count: selectedCheckpointTurnCount ?? "?" });
+        ? gt("Latest turn")
+        : selectedTurnLabel;
   const reviewSectionTitle = toolCallSelection
-    ? t("Tool call")
+    ? gt("Tool call")
     : selectedTurn
-      ? t("Turn {count}", { count: selectedCheckpointTurnCount ?? "?" })
+      ? selectedTurnLabel
       : selectedGitScopeLabel;
   const headerCommitSha = selectedRunId === null ? selectedCommitSha : null;
   const selectedCommitUrl =
@@ -532,7 +545,9 @@ export default function DiffPanel({
   const gitDiff = selectedGitSource?.diff;
 
   const toolCallPreview =
-    toolCallSelection && toolCallItem?.type === "file_change" ? toolCallDiff(toolCallItem) : null;
+    toolCallSelection && toolCallItem?.type === "file_change"
+      ? toolCallDiff(toolCallItem, messages)
+      : null;
   const selectedPatch = toolCallSelection
     ? toolCallPreview?.patch
     : selectedTurn
@@ -577,6 +592,7 @@ export default function DiffPanel({
       compactPartialHunkOffsets: isGitSelection,
       ...(toolCallSelection ? { ignoreWhitespace: diffIgnoreWhitespace } : {}),
     },
+    messages,
   );
   const recordedToolCallFileCount =
     toolCallSelection && toolCallItem?.type === "file_change"
@@ -611,7 +627,7 @@ export default function DiffPanel({
       : undefined;
   const loadDiffFiles: FileDiffContentsLoader = useStableCallback(async (fileDiff) => {
     if (!currentLoadDiffFiles) {
-      throw new Error("Diff file contents are unavailable for this selection.");
+      throw new Error(gt("Diff file contents are unavailable for this selection."));
     }
     return currentLoadDiffFiles(fileDiff);
   });
@@ -1085,7 +1101,7 @@ export default function DiffPanel({
                             <span className="flex items-center gap-3">
                               <span className="min-w-0 flex-1 truncate">{commit.subject}</span>
                               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                {formatRelativeTimeLabel(commit.committedAt, undefined, uiLanguage)}
+                                {formatRelativeTimeLabel(commit.committedAt, undefined, messages)}
                               </span>
                             </span>
                           </TooltipTrigger>
@@ -1101,7 +1117,9 @@ export default function DiffPanel({
                                 href={commitUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                aria-label={`Open commit ${commit.sha.slice(0, 7)}`}
+                                aria-label={gt("Open commit {sha}", {
+                                  sha: commit.sha.slice(0, 7),
+                                })}
                               />
                             }
                             onClick={(event) => openCommitUrl(event, commitUrl)}
@@ -1133,7 +1151,10 @@ export default function DiffPanel({
                   <DropdownMenuItem disabled>{t("No commits on this branch.")}</DropdownMenuItem>
                 ) : branchCommits.truncated ? (
                   <DropdownMenuItem disabled>
-                    {`Showing latest ${branchCommits.commits.length} commits`}
+                    {gt(
+                      "{count, plural, one {Showing latest {count} commits} other {Showing latest {count} commits}}",
+                      { count: branchCommits.commits.length },
+                    )}
                   </DropdownMenuItem>
                 ) : null}
               </DropdownMenuSubContent>
@@ -1143,7 +1164,10 @@ export default function DiffPanel({
         {canSelectBranchBase && (
           <div
             className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden text-xs text-muted-foreground"
-            aria-label={`Comparing ${comparisonHeadRef} against ${comparisonBaseRef}`}
+            aria-label={gt("Comparing {head} against {base}", {
+              head: comparisonHeadRef,
+              base: comparisonBaseRef,
+            })}
           >
             <Tooltip>
               <TooltipTrigger
@@ -1185,7 +1209,9 @@ export default function DiffPanel({
               <ComboboxTrigger
                 render={<Button variant="ghost-muted" size="xs" />}
                 className="min-w-9 max-w-48 shrink-0"
-                aria-label={`Change comparison target. Currently ${comparisonBaseRef}`}
+                aria-label={gt("Change comparison target. Currently {base}", {
+                  base: comparisonBaseRef,
+                })}
               >
                 <span className="min-w-0 truncate">{comparisonBaseRef}</span>
                 <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
@@ -1233,7 +1259,9 @@ export default function DiffPanel({
                               onPointerDown={(event) => event.stopPropagation()}
                             >
                               <Switch
-                                aria-label={`Use remote version of ${choice.label}`}
+                                aria-label={gt("Use remote version of {ref}", {
+                                  ref: choice.label,
+                                })}
                                 checked={useRemote}
                                 className="[--thumb-size:--spacing(3)]"
                                 onCheckedChange={(checked) => {
@@ -1624,10 +1652,10 @@ export default function DiffPanel({
                     resizable
                     storageKey="t3code:diff-file-tree-width"
                     defaultWidthFraction={0.3}
-                    resizeLabel="Resize Changes files"
+                    resizeLabel={gt("Resize Changes files")}
                   >
                     <DiffFileTree
-                      ariaLabel={`${reviewSectionTitle} files`}
+                      ariaLabel={gt("{section} files", { section: reviewSectionTitle })}
                       entries={fileTreeEntries}
                       selectedPath={previewFilePath}
                       revealRequestId={selectedFileRevealRequestId}

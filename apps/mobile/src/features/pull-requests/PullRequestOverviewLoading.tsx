@@ -2,6 +2,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 import { Chip } from "../../components/ui/Chip";
 import { PullRequestSectionHeading } from "./PullRequestSectionHeading";
 import type { PullRequestListEntry, PullRequestSummary } from "@t3tools/contracts";
+import { useMessages } from "gt-react-native";
 import { View } from "react-native";
 import { PullRequestCardGroup, PullRequestCardRow } from "./PullRequestControls";
 import { PullRequestStackCard } from "./PullRequestStackCard";
@@ -20,10 +21,14 @@ export function PullRequestOverviewLoading({
   readonly stack: PullRequestStackState;
 }) {
   const t = useUiTranslation();
-  const review = pullRequestListReviewStatus({
-    reviewDecision: summary.reviewDecision ?? undefined,
-    viewerReviewRequested: "viewerReviewRequested" in summary && summary.viewerReviewRequested,
-  });
+  const m = useMessages();
+  const review = pullRequestListReviewStatus(
+    {
+      reviewDecision: summary.reviewDecision ?? undefined,
+      viewerReviewRequested: "viewerReviewRequested" in summary && summary.viewerReviewRequested,
+    },
+    m,
+  );
   const conflicting = summary.mergeability === "conflicting";
   const clean = summary.mergeability === "mergeable";
   return (

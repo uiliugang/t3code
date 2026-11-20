@@ -1,6 +1,11 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
+import {
+  managedCapabilityDenial,
+  managedRuntimeModeDenial,
+} from "@t3tools/client-runtime/contract-labels";
 import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
 import {
   AuthAccessWriteScope,
@@ -8,8 +13,6 @@ import {
   AuthRelayReadScope,
   type EnvironmentConnectReachability,
   type EnvironmentId,
-  managedCapabilityDenial,
-  managedRuntimeModeDenial,
   mcpClientScopes,
   sessionGrantsScope,
 } from "@t3tools/contracts";
@@ -18,6 +21,8 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import * as Result from "effect/Result";
+import { msg, T, useGT, useMessages, Var } from "gt-react";
+import { m } from "~/i18n/messages";
 import { type ReactNode, useEffect, useEffectEvent, useState } from "react";
 
 import { checkReachability, readLinkState } from "~/cloud/linkEnvironmentAtoms";
@@ -28,7 +33,11 @@ import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useT3ConnectTurnOn } from "~/cloud/useT3ConnectTurnOn";
-import { useCopyToClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import {
+  namedClipboardTarget,
+  useCopyToClipboard,
+  writeTextToClipboard,
+} from "~/hooks/useCopyToClipboard";
 import { useNowSecond } from "~/hooks/useNowSecond";
 import { readLocalApi } from "~/localApi";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -78,7 +87,8 @@ export function UseInAnotherAppDialogHost() {
 function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentId | null }) {
   const t = useUiTranslation();
   const { environment, label } = useAccessEnvironment(requested);
-  const title = t("Use T3 Code in another app (MCP) · {name}", { name: label ?? "T3 Code" });
+  const gt = useGT();
+  const title = `${gt("Use T3 Code in another app (MCP)")} · ${label ?? "T3 Code"}`;
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : close())}>
       <WizardPopup>
@@ -103,8 +113,12 @@ function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentI
   );
 }
 
-const STEPS = ["App", "Access", "Connect"] as const;
-const HOSTED_APPROVAL_STEPS = ["App", "Connect"] as const;
+const STEPS = [
+  msg("App", { $context: "wizard step: choose the app" }),
+  msg("Access", { $context: "wizard step: choose the access level" }),
+  msg("Connect", { $context: "wizard step: connect the app" }),
+] as const;
+const HOSTED_APPROVAL_STEPS = [STEPS[0], STEPS[2]] as const;
 type Step = 0 | 1 | 2;
 type Choice = McpApp | "other";
 
@@ -116,6 +130,8 @@ function Wizard({
   readonly title: string;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const gate = useGate(environment);
   const levels = useGrantableLevels(environment);
   const [step, setStep] = useState<Step>(0);
@@ -129,13 +145,16 @@ function Wizard({
   const steps = hostedApproval ? HOSTED_APPROVAL_STEPS : STEPS;
   const shownStep = hostedApproval && step === 2 ? 1 : step;
   const next = () => setStep(step === 0 ? (hostedApproval ? 2 : 1) : 2);
-  const appName = choice === null || choice === "other" ? t("the app") : choice.name;
+  const levelsHeading =
+    choice === null || choice === "other"
+      ? gt("What can the app do?")
+      : gt("What can {app} do?", { app: choice.name });
   return (
     <>
       <WizardHeader title={title}>
         {open ? (
           <WizardSteps
-            steps={steps.map((step) => t(step))}
+            steps={steps.map((label) => m(label))}
             currentStep={shownStep}
             isStepDisabled={(index) => index > shownStep}
             onStepChange={(index) => setStep(hostedApproval && index === 1 ? 2 : (index as Step))}
@@ -149,9 +168,9 @@ function Wizard({
           <AppStep choice={choice} onChoose={setChoice} />
         ) : step === 1 ? (
           <section className="space-y-3">
-            <h3 className="text-sm font-medium">{t("What can {name} do?", { name: appName })}</h3>
+            <h3 className="text-sm font-medium">{levelsHeading}</h3>
             <RadioGroup
-              aria-label={t("What can {name} do?", { name: appName })}
+              aria-label={levelsHeading}
               value={access}
               onValueChange={(value) => setPicked(value as AuthMcpClientAccess)}
             >
@@ -215,20 +234,26 @@ function useGrantableLevels(environment: EnvironmentPresentation) {
   const session = useEnvironmentSessionState(environmentId).data;
   const canMint = useEnvironmentScope(environmentId, AuthAccessWriteScope);
   const policy = useManagedPolicy(environmentId);
+  const gt = useGT();
+  const messages = useMessages();
   // The server refuses codes for any level when its policy keeps remote clients out.
-  const remoteDenial = managedCapabilityDenial(policy, "remoteClients");
+  const remoteDenial = managedCapabilityDenial(policy, "remoteClients", messages);
   return new Map(
     AuthMcpClientAccess.literals.flatMap((level) => {
       const reason =
         remoteDenial ??
         (!canMint
-          ? `This device needs the Manage access permission on ${environment.label}.`
+          ? gt("This device needs the Manage access permission on {environment}.", {
+              environment: environment.label,
+            })
           : session === null ||
               !mcpClientScopes(level).every((scope) => sessionGrantsScope(session, scope))
-            ? `This device cannot grant this on ${environment.label}.`
+            ? gt("This device cannot grant this on {environment}.", {
+                environment: environment.label,
+              })
             : level === "read-only"
               ? undefined
-              : managedRuntimeModeDenial(policy, level));
+              : managedRuntimeModeDenial(policy, level, messages));
       return reason === undefined ? [] : [[level, reason] as const];
     }),
   );
@@ -248,6 +273,7 @@ function useGate(environment: EnvironmentPresentation) {
   });
   const runCheck = useAtomCommand(checkReachability, { reportFailure: false });
   const readState = useAtomCommand(readLinkState, { reportFailure: false });
+  const m = useMessages();
   // The gate opens on a check it ran, or on a newer one the link state reports. A failed run
   // counts only server checks newer than `since` (see afterFailedCheck); null waits for a retry.
   const [check, setCheck] = useState<
@@ -261,34 +287,37 @@ function useGate(environment: EnvironmentPresentation) {
   const serverConfig = environment.serverConfig;
   const connected = environment.connection.phase === "connected";
   const relayEntry = discovery.environments.get(environmentId);
-  const gate = resolveMcpGate({
-    signedIn: isSignedIn,
-    connected,
-    approvalCodes:
-      serverConfig === null
-        ? undefined
-        : serverConfig.environment.capabilities.mcpApprovalCodes === true,
-    canReadRelay,
-    linkState,
-    linkStateError: controller.linkState.error,
-    thisMachine,
-    relay:
-      !discovery.refreshing && (discovery.offline || Option.isSome(discovery.error))
-        ? { status: "failed" }
-        : discovery.listed
-          ? {
-              status: "listed",
-              endpoint: relayEntry?.environment.endpoint,
-              availability: relayEntry?.availability,
-            }
-          : { status: "loading" },
-    reachability:
-      typeof check === "string"
-        ? "checking"
-        : reported !== undefined && check.since !== null && reported.checkedAt > check.since
-          ? reported
-          : check.result,
-  });
+  const gate = resolveMcpGate(
+    {
+      signedIn: isSignedIn,
+      connected,
+      approvalCodes:
+        serverConfig === null
+          ? undefined
+          : serverConfig.environment.capabilities.mcpApprovalCodes === true,
+      canReadRelay,
+      linkState,
+      linkStateError: controller.linkState.error,
+      thisMachine,
+      relay:
+        !discovery.refreshing && (discovery.offline || Option.isSome(discovery.error))
+          ? { status: "failed" }
+          : discovery.listed
+            ? {
+                status: "listed",
+                endpoint: relayEntry?.environment.endpoint,
+                availability: relayEntry?.availability,
+              }
+            : { status: "loading" },
+      reachability:
+        typeof check === "string"
+          ? "checking"
+          : reported !== undefined && check.since !== null && reported.checkedAt > check.since
+            ? reported
+            : check.result,
+    },
+    m,
+  );
   const runReachabilityCheck = async () => {
     setCheck("running");
     // A saved machine's address comes from T3 Connect's list, which can be stale.
@@ -366,6 +395,7 @@ function GateScreen({
 }) {
   const t = useUiTranslation();
   const name = environment.label;
+  const gt = useGT();
   const turnOnHere = useT3ConnectTurnOn(environment.environmentId);
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   const retry = (onClick: () => void) => (
@@ -373,6 +403,8 @@ function GateScreen({
       {t("Check again")}
     </Button>
   );
+  const offlineTitle = gt("{environment}''s T3 Connect is offline", { environment: name });
+  const cannotCheckTitle = gt("Can't check T3 Connect on {environment}", { environment: name });
   const checkAgain = retry(() => void check());
   switch (gate.kind) {
     case "checking":
@@ -409,33 +441,28 @@ function GateScreen({
       );
     case "disconnected":
       return gate.relay === null ? (
-        <GateMessage title={t("Connect to {name} first.", { name })} />
+        <GateMessage title={gt("Connect to {environment} first.", { environment: name })} />
       ) : (
-        <GateMessage
-          title={
-            gate.relay === "offline"
-              ? t("{name}’s T3 Connect is offline", { name })
-              : t("Cannot check T3 Connect on {name}", { name })
-          }
-        >
+        <GateMessage title={gate.relay === "offline" ? offlineTitle : cannotCheckTitle}>
           {retry(refreshList)}
         </GateMessage>
       );
     case "update":
-      return <GateMessage title={t("Update T3 Code on {name}", { name })} />;
+      return <GateMessage title={gt("Update T3 Code on {environment}", { environment: name })} />;
     case "no-relay-read":
       return (
         <GateMessage
-          title={t("Cannot check T3 Connect on {name}", { name })}
-          lines={[t("This device needs the View relay permission on {name}.", { name })]}
+          title={cannotCheckTitle}
+          lines={[
+            gt("This device needs the View relay permission on {environment}.", {
+              environment: name,
+            }),
+          ]}
         />
       );
     case "error":
       return (
-        <GateMessage
-          title={t("Cannot check T3 Connect on {name}", { name })}
-          lines={[gate.message]}
-        >
+        <GateMessage title={cannotCheckTitle} lines={[gate.message]}>
           {checkAgain}
         </GateMessage>
       );
@@ -445,12 +472,10 @@ function GateScreen({
         const reachability = gate.reachability;
         return (
           <GateMessage
-            title={
-              reachability
-                ? t("{name}’s T3 Connect is offline", { name })
-                : t("Cannot check T3 Connect on {name}", { name })
+            title={reachability ? offlineTitle : cannotCheckTitle}
+            lines={
+              reachability ? [reachability.reason, gt("Fix: {fix}", { fix: reachability.fix })] : []
             }
-            lines={reachability ? [reachability.reason, `Fix: ${reachability.fix}`] : []}
           >
             {checkAgain}
           </GateMessage>
@@ -579,14 +604,20 @@ function ConnectStep({
 }) {
   const t = useUiTranslation();
   const [anotherWay, setAnotherWay] = useState(choice === "other");
+  const gt = useGT();
+  const m = useMessages();
   const app = choice === "other" ? null : choice;
   const code =
     access === null ? (
       <p className="text-sm text-muted-foreground">
-        {t(
-          "When {name} opens the sign-in page, choose what it may do and approve with your T3 Connect account.",
-          { name: app?.name ?? t("the app") },
-        )}
+        {app === null
+          ? gt(
+              "When the app opens the sign-in page, choose what it may do and approve with your T3 Connect account.",
+            )
+          : gt(
+              "When {app} opens the sign-in page, choose what it may do and approve with your T3 Connect account.",
+              { app: app.name },
+            )}
       </p>
     ) : (
       <ApprovalCode
@@ -600,11 +631,13 @@ function ConnectStep({
     const message = app?.handoff.kind === "copy-message" ? app.handoff.message(mcpUrl) : null;
     return (
       <section className="space-y-4">
-        <CopyRow label="URL" value={mcpUrl} />
-        {message ? <CopyRow label={t("Message")} value={message} /> : null}
+        <CopyRow label={gt("URL")} value={mcpUrl} />
+        {message ? (
+          <CopyRow label={gt("Message", { $context: "message to send" })} value={message} />
+        ) : null}
         <ol className="list-decimal space-y-1 ps-5 text-sm">
           {(app?.steps ?? OTHER_MCP_APP_STEPS).map((step) => (
-            <li key={step}>{t(step)}</li>
+            <li key={step}>{m(step)}</li>
           ))}
         </ol>
         {app === null ? (
@@ -629,7 +662,7 @@ function ConnectStep({
   return (
     <section className="space-y-4">
       <PrimaryAction app={app} mcpUrl={mcpUrl} />
-      <CopyRow label="URL" value={mcpUrl} />
+      <CopyRow label={gt("URL")} value={mcpUrl} />
       {code}
       <TextButton onClick={() => setAnotherWay(true)}>{t("Set up another way")}</TextButton>
       <LinkedLine environment={environment} access={access} />
@@ -661,16 +694,17 @@ function openLink(url: string) {
     .catch((error: unknown) =>
       toastManager.add({
         type: "error",
-        title: "Could not open the link",
-        description: error instanceof Error ? error.message : url,
+        title: m(msg("Could not open the link")),
+        description: thrownErrorMessage(error, m) ?? url,
       }),
     );
 }
 
 function PrimaryAction({ app, mcpUrl }: { readonly app: McpApp; readonly mcpUrl: string }) {
+  const m = useMessages();
   const t = useUiTranslation();
-  const action = mcpHandoffAction(app, mcpUrl);
-  const note = app.note ? <p className="text-xs text-muted-foreground">{t(app.note)}</p> : null;
+  const action = mcpHandoffAction(app, mcpUrl, m);
+  const note = app.note ? <p className="text-xs text-muted-foreground">{m(app.note)}</p> : null;
   if (action === null) {
     return (
       <div className="space-y-2">
@@ -699,7 +733,9 @@ function PrimaryAction({ app, mcpUrl }: { readonly app: McpApp; readonly mcpUrl:
   const handOff = async () => {
     if (copy !== null) {
       // The app opens only once the copy lands, so it never gets an older clipboard.
-      const copied = await writeTextToClipboard(copy.text, copy.title).catch(() => false);
+      const copied = await writeTextToClipboard(copy.text, namedClipboardTarget(copy.title)).catch(
+        () => false,
+      );
       if (!copied) {
         toastManager.add({
           type: "error",
@@ -757,6 +793,8 @@ function ApprovalCode({
     readonly credential: string;
     readonly expiresAt: number;
   } | null>(null);
+  const gt = useGT();
+  const m = useMessages();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const now = useNowSecond();
@@ -780,12 +818,16 @@ function ApprovalCode({
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm">
-          {t("Code to approve")}{" "}
-          <span className="font-medium">{t(accessConfig[access].label)}</span>
+          <T>
+            Code to approve{" "}
+            <span className="font-medium">
+              <Var>{m(accessConfig[access].label)}</Var>
+            </span>
+          </T>
         </span>
         {live ? null : (
           <Button size="sm" variant="outline" disabled={pending} onClick={() => void mint()}>
-            {pending ? t("Getting code…") : code === null ? t("Get code") : t("New code")}
+            {pending ? gt("Getting code…") : code === null ? gt("Get code") : gt("New code")}
           </Button>
         )}
       </div>
@@ -809,8 +851,11 @@ function ApprovalCode({
 }
 
 function CopyRow({ label, value }: { readonly label: string; readonly value: string }) {
-  const t = useUiTranslation();
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ timeout: 1500, target: label });
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    timeout: 1500,
+    target: namedClipboardTarget(label),
+  });
+  const gt = useGT();
   return (
     <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
@@ -818,7 +863,7 @@ function CopyRow({ label, value }: { readonly label: string; readonly value: str
       <Button
         size="icon-xs"
         variant="ghost"
-        aria-label={t("Copy {label}", { label })}
+        aria-label={gt("Copy {label}", { label })}
         onClick={() => copyToClipboard(value, undefined)}
       >
         {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
@@ -845,6 +890,8 @@ function LinkedLine({
       : null,
   ).data?.links;
   const identities = useEnvironmentIdentities();
+  const gt = useGT();
+  const m = useMessages();
   if (!offered || links === undefined || links.length === 0) return null;
   const named = links.map((link) => {
     const name =
@@ -853,21 +900,25 @@ function LinkedLine({
     // A forwarded call keeps the lower of the app's level and the link's own.
     const level =
       access === null || levelRank(link.access) < levelRank(access) ? link.access : access;
-    return `${name} · ${link.status === "expired" ? "Expired" : accessConfig[level].label}`;
+    return `${name} · ${link.status === "expired" ? gt("Expired") : m(accessConfig[level].label)}`;
   });
-  return <p className="text-xs text-muted-foreground">Linked: {named.join(", ")}</p>;
+  return (
+    <p className="text-xs text-muted-foreground">
+      {gt("Linked: {environments}", { environments: named.join(", ") })}
+    </p>
+  );
 }
 
 /** Opens Sharing & access on this environment, where its clients and T3 Connect tunnels live. */
 function ManageAccessButton({
   environment,
-  label = "Manage access",
+  label,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly label?: string;
 }) {
-  const t = useUiTranslation();
   const navigate = useNavigate();
+  const gt = useGT();
   return (
     <Button
       variant="ghost"
@@ -876,7 +927,7 @@ function ManageAccessButton({
         void navigate({ to: "/settings/access", search: { machine: environment.environmentId } });
       }}
     >
-      {t(label)}
+      {label ?? gt("Manage access")}
     </Button>
   );
 }

@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { ChevronDownIcon } from "lucide-react";
 
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
@@ -11,11 +12,13 @@ import {
 import { Button } from "../ui/button";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 
 export function ThreadDetailsItemsRow() {
   const t = useUiTranslation();
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
   const visibility = useClientSettings(resolveThreadDetailsVisibility);
   const issuesDefault = useClientSettings(
     (settings) =>
@@ -33,7 +36,7 @@ export function ThreadDetailsItemsRow() {
       resetAction={
         isDefaultThreadDetailsVisibility(visibility) && issuesDefault ? null : (
           <SettingResetButton
-            label={t("thread details")}
+            ariaLabel={gt("Reset thread details to default")}
             onClick={() => updateClientSettings(RESET_THREAD_DETAILS_ITEMS)}
           />
         )

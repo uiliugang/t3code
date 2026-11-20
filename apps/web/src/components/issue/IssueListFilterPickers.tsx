@@ -1,6 +1,12 @@
 import type { IssueCandidatesTarget } from "@t3tools/client-runtime/state/issues";
-import type { IssueInvolvement, IssueListState } from "@t3tools/contracts";
-import { LayersIcon, ListFilterIcon, TagIcon, UserIcon } from "lucide-react";
+import type {
+  EnvironmentId,
+  IssueInvolvement,
+  IssueListState,
+  ProjectId,
+} from "@t3tools/contracts";
+import { FolderGit2Icon, LayersIcon, ListFilterIcon, TagIcon, UserIcon } from "lucide-react";
+import { T, useGT } from "gt-react";
 import { useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -21,13 +27,17 @@ import {
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useIssueFilterCandidates } from "~/state/issues";
 
+import type { ProjectFaviconProject } from "../ProjectFavicon";
+
 import {
   PullRequestFilterRadioSubmenu,
+  pullRequestProjectKey,
   type PullRequestFilterOption,
 } from "../pullRequest/PullRequestListFilters";
 import { pullRequestLabelColor } from "../pullRequest/pullRequestList.logic";
 
 const VISIBLE_CHOICES = 30;
+const ALL_PROJECTS = "all";
 const matches = (needle: string, ...fields: ReadonlyArray<string | null | undefined>) =>
   needle.length === 0 || fields.some((field) => field?.toLowerCase().includes(needle));
 
@@ -44,15 +54,40 @@ export function IssueFiltersMenu(props: {
   onLabels: (labels: ReadonlyArray<string>) => void;
   assignee: string | undefined;
   onAssignee: (assignee: string | undefined) => void;
+  projects: ReadonlyArray<ProjectFaviconProject & { readonly id: ProjectId }>;
+  project: { environmentId: EnvironmentId; projectId: ProjectId } | undefined;
+  onProject: (project: { environmentId: EnvironmentId; projectId: ProjectId } | undefined) => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [open, setOpen] = useState(false);
   const count = [
     props.state !== "open",
     props.involvement !== "all",
+    props.project,
     props.assignee,
     ...props.labels,
   ].filter(Boolean).length;
+  const projectValue = props.project
+    ? pullRequestProjectKey({
+        id: props.project.projectId,
+        environmentId: props.project.environmentId,
+      })
+    : ALL_PROJECTS;
+  const projectOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
+    { value: ALL_PROJECTS, label: gt("All projects"), Icon: LayersIcon },
+    // A remembered project this client does not list stays shown, so the filter can be taken off.
+    ...(projectValue !== ALL_PROJECTS &&
+    !props.projects.some((project) => pullRequestProjectKey(project) === projectValue)
+      ? [{ value: projectValue, label: gt("Unavailable project"), Icon: FolderGit2Icon }]
+      : []),
+    ...props.projects.map((project) => ({
+      value: pullRequestProjectKey(project),
+      label: project.title,
+      Icon: FolderGit2Icon,
+      project,
+    })),
+  ];
   // Read when the menu opens, not with every listing: one request per scope.
   const scopes = open ? props.scopes : [];
   return (
@@ -85,17 +120,36 @@ export function IssueFiltersMenu(props: {
           }))}
           onChange={props.onInvolvement}
         />
+        {props.projects.length > 1 || props.project ? (
+          <PullRequestFilterRadioSubmenu
+            label={gt("Project")}
+            value={projectValue}
+            options={projectOptions}
+            onChange={(next) => {
+              const project = props.projects.find((p) => pullRequestProjectKey(p) === next);
+              props.onProject(
+                project
+                  ? { environmentId: project.environmentId, projectId: project.id }
+                  : undefined,
+              );
+            }}
+          />
+        ) : null}
         <MenuSeparator />
         <MenuSub>
           <MenuSubTrigger>
             <TagIcon aria-hidden className="size-3.5" />
-            <span className="flex-1">{t("Labels")}</span>
+            <span className="flex-1">
+              <T>Labels</T>
+            </span>
             <span className="min-w-0 max-w-32 truncate text-xs text-muted-foreground">
               {props.labels.length === 0
-                ? t("Any")
+                ? gt("Any", { $context: "no label filter" })
                 : props.labels.length === 1
                   ? props.labels[0]
-                  : t("{count} labels", { count: props.labels.length })}
+                  : gt("{count, plural, one {{count} label} other {{count} labels}}", {
+                      count: props.labels.length,
+                    })}
             </span>
           </MenuSubTrigger>
           <MenuSubPopup>

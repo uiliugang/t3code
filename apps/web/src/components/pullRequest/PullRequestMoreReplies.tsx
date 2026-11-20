@@ -1,4 +1,5 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+
 import type { PullRequestReplyAvailability } from "./pullRequestDetail.logic";
 
 export function PullRequestMoreReplies({

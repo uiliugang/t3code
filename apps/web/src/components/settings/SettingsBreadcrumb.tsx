@@ -1,5 +1,5 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { msg, useMessages } from "gt-react";
+import { msg, useMessages, useGT } from "gt-react";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -23,11 +23,12 @@ function settingsBreadcrumbLabel(pathname: string): string | null {
 export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   const m = useMessages();
   const sectionLabel = settingsBreadcrumbLabel(pathname);
 
   return (
-    <WorkspaceBreadcrumb ariaLabel="Settings breadcrumb">
+    <WorkspaceBreadcrumb ariaLabel={gt("Settings breadcrumb")}>
       {sectionLabel ? (
         <>
           <WorkspaceBreadcrumbItem>{t(m(SETTINGS_LABEL))}</WorkspaceBreadcrumbItem>

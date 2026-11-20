@@ -1,5 +1,8 @@
+import { msg } from "gt-react-native";
+
+import { m, type MessageResolver } from "../../i18n/messages";
+import { runtimeConnectionErrorText } from "../connection/environmentStatusText";
 import type { WorkspaceState } from "../../state/workspaceModel";
-import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 
 export interface WorkspaceConnectionStatusPresentation {
   readonly label: string;
@@ -17,33 +20,45 @@ function shouldShowWorkspaceConnectionStatus(state: WorkspaceState): boolean {
   );
 }
 
-function workspaceConnectionStatusLabel(state: WorkspaceState, t: UiTranslator): string {
-  if (state.networkStatus === "offline") return t("You are offline");
+function workspaceConnectionStatusLabel(state: WorkspaceState, resolve: MessageResolver): string {
+  if (state.networkStatus === "offline") return resolve(msg("You are offline"));
   if (state.hasReadyEnvironment && state.hasSyncingConnectedEnvironment) {
-    return state.hasLoadedShellSnapshot ? t("Syncing threads...") : t("Loading threads...");
+    return state.hasLoadedShellSnapshot
+      ? resolve(msg("Syncing threads..."))
+      : resolve(msg("Loading threads..."));
   }
   if (state.connectingEnvironments.length === 1) {
-    return t("Reconnecting to {environment}", {
-      environment: state.connectingEnvironments[0]!.environmentLabel,
-    });
+    return resolve(
+      msg("Reconnecting to {environment}", {
+        environment: state.connectingEnvironments[0]!.environmentLabel,
+      }),
+    );
   }
   if (state.connectingEnvironments.length > 1) {
-    return t("Reconnecting {count} environments", { count: state.connectingEnvironments.length });
+    return resolve(
+      msg(
+        "{count, plural, one {Reconnecting {count} environment} other {Reconnecting {count} environments}}",
+        { count: state.connectingEnvironments.length },
+      ),
+    );
   }
-  if (state.connectionError !== null) return state.connectionError;
+  const connectionError = runtimeConnectionErrorText(state, resolve);
+  if (connectionError !== null) return connectionError;
   if (state.hasPendingShellSnapshot) {
-    return state.hasLoadedShellSnapshot ? t("Syncing threads...") : t("Loading threads...");
+    return state.hasLoadedShellSnapshot
+      ? resolve(msg("Syncing threads..."))
+      : resolve(msg("Loading threads..."));
   }
-  return t("Not connected");
+  return resolve(msg("Not connected"));
 }
 
 export function workspaceConnectionStatusPresentation(
   state: WorkspaceState,
-  t: UiTranslator = (message, values) => translateUi("en", message, values),
+  resolve: MessageResolver = m,
 ): WorkspaceConnectionStatusPresentation | null {
   if (!shouldShowWorkspaceConnectionStatus(state)) return null;
   return {
-    label: workspaceConnectionStatusLabel(state, t),
+    label: workspaceConnectionStatusLabel(state, resolve),
     showsProgress:
       state.networkStatus !== "offline" &&
       (state.hasReadyEnvironment || state.connectionError === null) &&

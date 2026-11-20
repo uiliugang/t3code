@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+
 import { useEffect } from "react";
 import { AccessibilityInfo, Platform, Pressable, View } from "react-native";
 

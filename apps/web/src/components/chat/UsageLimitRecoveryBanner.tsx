@@ -1,5 +1,7 @@
 import { getClientSettings } from "../../hooks/useSettings";
 import { translateUi } from "@t3tools/shared/uiLocale";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { m } from "~/i18n/messages";
 import {
   type OrchestrationV2LimitRecovery,
   type OrchestrationV2LimitRecoveryUpdate,
@@ -95,7 +97,7 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
       <>
         {recoveryActions}
         {workspaceLimit ? (
-          <Button size="xs" variant="ghost" onClick={() => copyAdminRequest(t)}>
+          <Button size="xs" variant="ghost" onClick={copyAdminRequest}>
             {t("Copy request for admin")}
           </Button>
         ) : (
@@ -140,7 +142,7 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
       toastManager.add({
         type: "error",
         title: t(action === "resume" ? "Could not change auto-resume" : "Could not snooze thread"),
-        description: cause instanceof Error ? cause.message : t("An error occurred."),
+        description: thrownErrorMessage(cause, m) ?? t("An error occurred."),
       });
     }
     setPending(false);

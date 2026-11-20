@@ -15,7 +15,7 @@ export function DeliveryStages({
   const t = useUiTranslation();
   return (
     <View className="flex-row py-3">
-      {deliveryStages(provider, summary).map((stage) => (
+      {deliveryStages(provider, summary, t).map((stage) => (
         <View key={stage.key} className="min-w-0 flex-1 items-center gap-2">
           <SymbolView
             name={
@@ -36,7 +36,7 @@ export function DeliveryStages({
                   : "accent-foreground-muted"
             }
           />
-          <Text className="text-center text-xs">{t(stage.label)}</Text>
+          <Text className="text-center text-xs">{stage.label}</Text>
           <Text className="text-center text-[10px] text-foreground-muted">
             {t(
               stage.state === "unknown"

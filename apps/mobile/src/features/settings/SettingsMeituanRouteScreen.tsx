@@ -228,7 +228,7 @@ function EnvironmentIntegration({
         : [
             {
               id: "meituan",
-              label: "Meituan Skills",
+              label: t("Meituan Skills"),
               kind: "mtskills",
               enabled: false,
               executable: "mtskills",
@@ -305,7 +305,7 @@ function EnvironmentIntegration({
           ) : (
             <SettingsRow
               icon="cube"
-              label="Meituan integration"
+              label={t("Meituan integration")}
               value={t("Server update required")}
             />
           )}
@@ -341,10 +341,10 @@ function EnvironmentIntegration({
         </Text>
       ) : null}
       {!section ? (
-        <SettingsSection title="Service configuration">
+        <SettingsSection title={t("Service configuration")}>
           <ServiceRow
             icon="arrow.triangle.branch"
-            label="Source control"
+            label={t("Source control")}
             value={t(
               !enabled
                 ? "Paused"
@@ -361,15 +361,18 @@ function EnvironmentIntegration({
           />
           <ServiceRow
             icon="ticket"
-            label="Requirements and delivery"
+            label={t("Requirements and delivery")}
             value={
               !enabled
                 ? t("Paused")
                 : !issuesEnabled
                   ? t("Disabled")
-                  : t(meituanAssociationCountLabel(projects.length, associationsQuery), {
-                      count: associatedProjectCount,
-                    })
+                  : meituanAssociationCountLabel(
+                      projects.length,
+                      associationsQuery,
+                      associatedProjectCount,
+                      t,
+                    )
             }
             onPress={() => navigation.navigate("SettingsMeituanIssues", { environmentId })}
             {...(canToggle ? { toggle: toggles.issues } : {})}
@@ -388,7 +391,7 @@ function EnvironmentIntegration({
           />
           <ServiceRow
             icon="doc.text"
-            label="Meituan Skills"
+            label={t("Meituan Skills")}
             value={t(!enabled ? "Paused" : skillsEnabled ? "Enabled" : "Disabled")}
             onPress={() => navigation.navigate("SettingsMeituanSkills", { environmentId })}
             {...(canToggle ? { toggle: toggles.skills } : {})}
@@ -404,7 +407,7 @@ function EnvironmentIntegration({
           />
         </>
       ) : section === "issues" ? (
-        <SettingsSection title="Project associations">
+        <SettingsSection title={t("Project associations")}>
           <View className="p-4">
             <ProjectSources
               environmentId={environmentId}
@@ -441,7 +444,7 @@ function MeituanSkillSource({
   const source: SkillSource = sources?.find((entry) => entry.enabled) ??
     sources?.[0] ?? {
       id: "meituan",
-      label: "Meituan Skills",
+      label: t("Meituan Skills"),
       kind: "mtskills",
       enabled: false,
       executable: "mtskills",
@@ -454,7 +457,7 @@ function MeituanSkillSource({
     query.refresh();
   };
   return (
-    <SettingsSection title="Meituan Skills">
+    <SettingsSection title={t("Meituan Skills")}>
       <View className="gap-4 p-4">
         <Text className="text-sm text-foreground-muted">{source.registry}</Text>
         <Text className="font-mono text-sm text-foreground-muted">

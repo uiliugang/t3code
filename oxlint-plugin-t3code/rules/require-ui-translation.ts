@@ -19,11 +19,23 @@ export default defineRule({
     },
   },
   create(context) {
+    const gtComponents = new Set<string>();
+    const isGtElement = (node: ESTree.JSXElement) => {
+      const name = node.openingElement.name;
+      return name.type === "JSXIdentifier" && gtComponents.has(name.name);
+    };
+    const insideGtElement = (node: ESTree.Node) => {
+      for (let parent = node.parent; parent; parent = parent.parent) {
+        if (parent.type === "JSXAttribute") return false;
+        if (parent.type === "JSXElement" && isGtElement(parent)) return true;
+      }
+      return false;
+    };
     const report = (node: ESTree.Node) =>
       context.report({
         node,
         message:
-          'Use useUiTranslation() and t("message", values) for UI copy. Add its Simplified Chinese key to packages/shared/src/uiLocale.ts; keep user content as data.',
+          'Use t("message", values) or a GT translation for UI copy. Add Simplified Chinese to its catalog; keep user content as data.',
       });
     const copyExpression = (node: ESTree.Node) => {
       if (node.type === "Literal" && typeof node.value === "string" && isCopy(node.value)) {
@@ -50,15 +62,32 @@ export default defineRule({
       }
     };
     return {
+      ImportDeclaration(node) {
+        if (node.importKind === "type") return;
+        if (node.source.value !== "gt-react" && node.source.value !== "gt-react-native") return;
+        for (const specifier of node.specifiers) {
+          if (
+            specifier.type === "ImportSpecifier" &&
+            specifier.importKind !== "type" &&
+            specifier.imported.type === "Identifier" &&
+            specifier.imported.name === "T"
+          ) {
+            gtComponents.add(specifier.local.name);
+          }
+        }
+      },
       JSXText(node) {
         const parent = node.parent;
         const name = parent?.type === "JSXElement" ? parent.openingElement.name : undefined;
         // Code and key names are syntax, not interface copy.
         if (name?.type === "JSXIdentifier" && ["code", "pre", "kbd"].includes(name.name)) return;
-        if (isCopy(node.value)) report(node);
+        if (isCopy(node.value) && !insideGtElement(node)) report(node);
       },
       JSXAttribute(node) {
         if (node.name.type !== "JSXIdentifier" || !COPY_PROPS.has(node.name.name) || !node.value)
+          return;
+        const element = node.parent.parent;
+        if (node.name.name === "context" && element?.type === "JSXElement" && isGtElement(element))
           return;
         if (node.value.type === "Literal") copyExpression(node.value);
       },
@@ -74,6 +103,8 @@ export default defineRule({
         if (node.parent?.type === "JSXAttribute") {
           const name = node.parent.name;
           if (name.type !== "JSXIdentifier" || !COPY_PROPS.has(name.name)) return;
+        } else if (insideGtElement(node)) {
+          return;
         }
         if (node.expression.type !== "JSXEmptyExpression") copyExpression(node.expression);
       },

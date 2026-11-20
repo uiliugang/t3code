@@ -47,6 +47,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { msg, useGT, useMessages } from "gt-react";
+
+import { m } from "~/i18n/messages";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { type PullRequestDetailTab, useRightPanelStore } from "~/rightPanelStore";
@@ -75,10 +78,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { PullRequestStackMenu } from "./PullRequestStackMenu";
 import { pullRequestCompletionScope } from "./PullRequestMarkdownTextarea";
 import { PullRequestChangeBreakdownStat } from "./PullRequestChangeBreakdownStat";
-import {
-  capitalizeTerm,
-  sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { PullRequestThreadLinks } from "./PullRequestThreadLinks";
 import { vcsEnvironment } from "~/state/vcs";
 import { RelativeTime } from "~/components/RelativeTime";
@@ -164,9 +164,11 @@ import {
   resolvePullRequestState,
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
+import { resolveFilterOptions } from "./pullRequestListOptions";
 import { PullRequestGuideTab } from "./PullRequestGuideTab";
 import { guideRunKey, useGuideRunStore } from "./guide/guideRunStore";
 import { useReviewGuideWriter } from "./guide/useReviewGuideWriter";
+import { changeRequestTermKind } from "./changeRequestTerm";
 
 const actionFailureLabels: Record<PullRequestAction, string> = {
   merge: "Could not merge this {term}",
@@ -204,14 +206,22 @@ const actionFailureHints: Record<PullRequestAction, string> = {
     "The host refused it. Check that you have Actions write access and that these workflow runs are still awaiting approval.",
 };
 
-const UPDATE_BRANCH_REBASE_FAILURE_HINT =
-  "The host refused it. A rebase stops at the first commit that does not apply cleanly; updating with a merge commit may still work.";
+const AUTO_MERGE_LABELS: Record<PullRequestMergeMethod, string> = {
+  merge: msg("Auto-merge (merge)"),
+  squash: msg("Auto-merge (squash and merge)"),
+  rebase: msg("Auto-merge (rebase and merge)"),
+  "fast-forward": msg("Auto-merge (fast-forward merge)"),
+};
+
+const UPDATE_BRANCH_REBASE_FAILURE_HINT = msg(
+  "The host refused it. A rebase stops at the first commit that does not apply cleanly; updating with a merge commit may still work.",
+);
 
 const TABS: ReadonlyArray<{ value: PullRequestDetailTab; label: string }> = [
-  { value: "summary", label: "Summary" },
-  { value: "guide", label: "Guide" },
-  { value: "timeline", label: "Timeline" },
-  { value: "code", label: "Code" },
+  { value: "summary", label: msg("Summary", { $context: "pull request tab" }) },
+  { value: "guide", label: msg("Guide", { $context: "pull request tab" }) },
+  { value: "timeline", label: msg("Timeline", { $context: "pull request tab" }) },
+  { value: "code", label: msg("Code", { $context: "pull request tab" }) },
 ];
 
 // Defer the diff viewer's worker pool until Code is approached.
@@ -333,6 +343,8 @@ export function PullRequestDetailPanel({
   onTabChange?: ((tab: PullRequestDetailTab) => void) | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const resolve = useMessages();
   const environmentConfigs = useServerConfigs();
   const projects = useProjects();
   const project = projects.find(
@@ -544,11 +556,21 @@ export function PullRequestDetailPanel({
   ).changeRequest;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { copyToClipboard: copyReference } = useCopyToClipboard<string>({
-    target: t("{term} reference", { term: t(terminology.singular) }),
-    onError: (error, label) =>
+    target: {
+      target: `${terminology.singular} reference`,
+      unavailableMessage: msg(
+        "Clipboard API is unavailable while copying {term, select, mr {merge request} cr {change request} other {pull request}} reference.",
+        { term: changeRequestTermKind(terminology) },
+      ),
+      failureMessage: msg(
+        "Failed to copy {term, select, mr {merge request} cr {change request} other {pull request}} reference to the clipboard.",
+        { term: changeRequestTermKind(terminology) },
+      ),
+    },
+    onError: (error, failureTitle) =>
       toastManager.add({
         type: "error",
-        title: t("Failed to copy {label}", { label }),
+        title: failureTitle,
         description: error.message,
       }),
   });
@@ -561,7 +583,14 @@ export function PullRequestDetailPanel({
     event.preventDefault();
     event.stopPropagation();
     if (!event.repeat)
-      copyReference(`#${reference.number}`, t("{term} number", { term: terminology.shortLabel }));
+      copyReference(
+        `#${reference.number}`,
+        m(
+          msg("Failed to copy {term, select, mr {MR} cr {change request} other {PR}} number", {
+            term: changeRequestTermKind(terminology),
+          }),
+        ),
+      );
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown capture listener for the copy-number shortcut
   useEffect(() => {
@@ -627,8 +656,8 @@ export function PullRequestDetailPanel({
   const mergeBlockedReason = canMergeSinglePullRequest
     ? null
     : nativeStackQuery.error
-      ? "Couldn't check stack membership"
-      : "Checking stack membership…";
+      ? gt("Couldn't check stack membership")
+      : gt("Checking stack membership…");
   const activityPending = activityQuery.isPending && activity === null;
   const activityError = activity === null ? activityQuery.error : null;
   const refreshDetail = () => {
@@ -699,7 +728,7 @@ export function PullRequestDetailPanel({
     timelineAnchor !== null &&
     detail !== null &&
     !activityQuery.isPending &&
-    !buildPullRequestTimeline(detail).some((event) =>
+    !buildPullRequestTimeline(detail, resolve).some((event) =>
       pullRequestTimelineEventMatches(event, timelineAnchor),
     )
       ? activityQuery.dataUpdatedAt
@@ -805,7 +834,7 @@ export function PullRequestDetailPanel({
       const failure = squashAtomCommandFailure(result);
       const hint =
         updateMethod === "rebase"
-          ? t(UPDATE_BRANCH_REBASE_FAILURE_HINT)
+          ? m(UPDATE_BRANCH_REBASE_FAILURE_HINT)
           : t(actionFailureHints[action], { term: t(terminology.singular) });
       toastManager.add({
         type: "error",
@@ -871,7 +900,7 @@ export function PullRequestDetailPanel({
   const attachTarget = composerDraftTarget ?? null;
   const canPrepareWorktree = prepareThread.isAllowed && canOperateThread;
   const canFixFindings = attachTarget !== null || canPrepareWorktree;
-  const handoffLabels = pullRequestHandoffLabels(attachTarget !== null);
+  const handoffLabels = pullRequestHandoffLabels(attachTarget !== null, resolve);
   const guideWriter = useReviewGuideWriter({
     environmentId,
     reference,
@@ -1071,7 +1100,7 @@ export function PullRequestDetailPanel({
                       term: t(terminology.singular),
                     }),
             }
-          : offHeadPullRequestCheckoutToast(terminology, t),
+          : offHeadPullRequestCheckoutToast(terminology),
       );
       return;
     }
@@ -1086,7 +1115,7 @@ export function PullRequestDetailPanel({
             title: t("Checkout ready"),
             description: t("The task is in the composer. Read it over, then send."),
           }
-        : offHeadPullRequestCheckoutToast(terminology, t),
+        : offHeadPullRequestCheckoutToast(terminology),
     );
   };
 
@@ -1201,7 +1230,7 @@ export function PullRequestDetailPanel({
     // The active editor may be answering a provider question rather than editing this draft.
     if (!hasReference) store.addReviewComment(attachTarget, reference, { insertAtCaret: false });
     store.addReviewComment(attachTarget, comment, { insertAtCaret: false });
-    toastManager.add({ type: "success", title: "Added to the composer" });
+    toastManager.add({ type: "success", title: m(msg("Added to the composer")) });
   };
 
   const startCheckout = (mode: "worktree" | "local") => {
@@ -1276,22 +1305,21 @@ export function PullRequestDetailPanel({
     projectDefaultMergeMethod,
     lastSelectedMergeMethod,
   );
-  const selectedMergeMethodLabel = t(PULL_REQUEST_MERGE_METHOD_LABELS[selectedMergeMethod]);
-  const pendingAutoMergeLabel = t("Auto-merge ({method})", {
-    method: selectedMergeMethodLabel.toLowerCase(),
-  });
+  const selectedMergeMethodLabel = resolve(PULL_REQUEST_MERGE_METHOD_LABELS[selectedMergeMethod]);
+  const pendingAutoMergeLabel = resolve(AUTO_MERGE_LABELS[selectedMergeMethod]);
   const conflicting = isPullRequestConflicting(detail);
   const autoMergeArmed = detail?.state === "open" && detail.autoMergeEnabled === true;
   const armedMergeMethod = detail?.autoMergeMethod;
   const armedAutoMergeLabel = armedMergeMethod
-    ? t("Auto-merge ({method})", {
-        method: t(PULL_REQUEST_MERGE_METHOD_LABELS[armedMergeMethod]).toLowerCase(),
-      })
-    : t("Auto-merge");
+    ? resolve(AUTO_MERGE_LABELS[armedMergeMethod])
+    : gt("Auto-merge");
   const workflowApprovalsRequired =
     detail?.state === "open" ? (detail.workflowApprovalsRequired ?? 0) : 0;
   const freshness = detail === null ? null : resolveBaseFreshness(detail);
-  const visibleTabs = TABS.filter((item) => isTabAvailable(item.value));
+  const visibleTabs = resolveFilterOptions(
+    TABS.filter((item) => isTabAvailable(item.value)),
+    resolve,
+  );
   const can = (action: PullRequestAction) =>
     detail?.capabilities.actions.includes(action) === true &&
     detail.viewerPermissions.actions.includes(action);
@@ -1347,7 +1375,7 @@ export function PullRequestDetailPanel({
     !conflicting &&
     allowedMergeMethods.length > 1;
   const statePresentation = detail
-    ? resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft })
+    ? resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft }, resolve)
     : null;
   const showsDeleteBranch = detail !== null && canDeletePullRequestBranch(detail);
   const environmentConnected = environments.some(
@@ -1376,7 +1404,7 @@ export function PullRequestDetailPanel({
   const checksSummary = checksStale
     ? checksState === null
       ? t("No checks reported")
-      : t(pullRequestChecksStatePresentation(checksState).label)
+      : pullRequestChecksStatePresentation(checksState, resolve).label
     : detail
       ? summarizePullRequestChecks(detail.checks, t)
       : null;
@@ -1390,7 +1418,7 @@ export function PullRequestDetailPanel({
   const checkoutControl =
     context === "page" ? (
       <PullRequestCheckoutMenu
-        term={terminology.singular}
+        term={changeRequestTermKind(terminology)}
         handoff={handoff}
         checkoutRoot={checkoutRoot}
         canPrepareWorktree={canPrepareWorktree}
@@ -1703,9 +1731,19 @@ export function PullRequestDetailPanel({
                     <PullRequestCopyableCode
                       key={checkoutCommand}
                       value={checkoutCommand}
-                      target={t("{term} checkout command", { term: t(terminology.singular) })}
-                      copyLabel={t("Copy checkout command")}
-                      copiedLabel={t("Checkout command copied")}
+                      target={{
+                        target: `${terminology.singular} checkout command`,
+                        unavailableMessage: msg(
+                          "Clipboard API is unavailable while copying {term, select, mr {merge request} cr {change request} other {pull request}} checkout command.",
+                          { term: changeRequestTermKind(terminology) },
+                        ),
+                        failureMessage: msg(
+                          "Failed to copy {term, select, mr {merge request} cr {change request} other {pull request}} checkout command to the clipboard.",
+                          { term: changeRequestTermKind(terminology) },
+                        ),
+                      }}
+                      copyLabel={gt("Copy checkout command")}
+                      copiedLabel={gt("Checkout command copied")}
                       className="ml-auto font-mono"
                       tooltipSide="bottom"
                       onError={(error) => reportCheckoutCommandError(error, t)}
@@ -1725,13 +1763,23 @@ export function PullRequestDetailPanel({
                   <PullRequestCopyableCode
                     key={detail.headBranch}
                     value={detail.headBranch}
-                    target={t("branch name")}
-                    copyLabel={t("Copy {term} branch", { term: t(terminology.singular) })}
-                    copiedLabel={t("Branch name copied")}
+                    target={{
+                      target: "branch name",
+                      unavailableMessage: msg(
+                        "Clipboard API is unavailable while copying branch name.",
+                      ),
+                      failureMessage: msg("Failed to copy branch name to the clipboard."),
+                    }}
+                    copyLabel={gt(
+                      "Copy {term, select, mr {merge request} cr {change request} other {pull request}} branch",
+                      { term: changeRequestTermKind(terminology) },
+                    )}
+                    copiedLabel={gt("Branch name copied")}
                   />
                 }
-                files={t(detail.changedFiles === 1 ? "{count} file" : "{count} files", {
-                  count: detail.changedFiles.toLocaleString(),
+                files={gt("{count, plural, one {{formatted} file} other {{formatted} files}}", {
+                  count: detail.changedFiles,
+                  formatted: detail.changedFiles.toLocaleString(),
                 })}
                 diffStat={
                   <PullRequestChangeBreakdownStat
@@ -1837,9 +1885,12 @@ export function PullRequestDetailPanel({
                       )}
                     >
                       <PullRequestReviewOutcomeIcon outcome="approved" className="size-3" />
-                      {approvalCount.toLocaleString()}
+                      <span aria-hidden>{approvalCount.toLocaleString()}</span>
                       <span className="sr-only">
-                        {approvalCount === 1 ? t("approval") : t("approvals")}
+                        {gt(
+                          "{count, plural, one {{formatted} approval} other {{formatted} approvals}}",
+                          { count: approvalCount, formatted: approvalCount.toLocaleString() },
+                        )}
                       </span>
                     </span>
                   ) : null}
@@ -1895,13 +1946,16 @@ export function PullRequestDetailPanel({
           <PullRequestsUnavailableState
             {...(isPullRequestNotFound(detailQuery.failure)
               ? {
-                  title: t("{term} #{number} not found", {
-                    term: t(capitalizeTerm(terminology.singular)),
-                    number: reference.number,
-                  }),
-                  error: t(
-                    "It may be an issue rather than a {term}, or this account can't see it.",
-                    { term: t(terminology.singular) },
+                  title: gt(
+                    "{term, select, mr {Merge request} cr {Change request} other {Pull request}} #{number} not found",
+                    {
+                      term: changeRequestTermKind(terminology),
+                      number: reference.number,
+                    },
+                  ),
+                  error: gt(
+                    "It may be an issue rather than a {term, select, mr {merge request} cr {change request} other {pull request}}, or this account can't see it.",
+                    { term: changeRequestTermKind(terminology) },
                   ),
                 }
               : { error: detailQuery.error })}
@@ -1984,7 +2038,7 @@ export function PullRequestDetailPanel({
                 ) : activityError ? (
                   <PullRequestActivityUnavailableState
                     error={activityError}
-                    term={terminology.singular}
+                    term={changeRequestTermKind(terminology)}
                     onRetry={activityQuery.refresh}
                   />
                 ) : (

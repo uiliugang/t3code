@@ -1,7 +1,9 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { CHATGPT_USAGE_URL, collectExternalUsageLinks } from "@t3tools/shared/usageLimits";
+import { CHATGPT_USAGE_URL } from "@t3tools/shared/usageLimits";
+import { collectExternalUsageLinks } from "@t3tools/shared/usageLimitsCopy";
+import { useMessages } from "gt-react-native";
 import { Linking, Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
@@ -14,11 +16,14 @@ export function ChatGptUsageSummary({
 }) {
   const t = useUiTranslation();
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
+  const m = useMessages();
   const selected =
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  const usage = collectExternalUsageLinks(selected).find((link) => link.url === CHATGPT_USAGE_URL);
+  const usage = collectExternalUsageLinks(selected, m).find(
+    (link) => link.url === CHATGPT_USAGE_URL,
+  );
   if (!usage) return null;
   return (
     <View className="gap-1">

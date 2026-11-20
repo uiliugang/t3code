@@ -9,7 +9,10 @@ import {
 import { type AuthMcpApprovalDetails, EnvironmentId } from "@t3tools/contracts";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import { msg, useGT } from "gt-react";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
+
+import { m } from "../../i18n/messages";
 
 import { isElectron } from "../../env";
 import { runConnectMcpApproval } from "../../state/connectMcpApproval";
@@ -46,7 +49,7 @@ function connectTransport(
         kind: "error",
         message: isUnavailable(result.failure)
           ? result.failure.message
-          : "Could not reach this environment. Try again.",
+          : m(msg("Could not reach this environment. Try again.")),
       };
     }
     onEnvironment({
@@ -209,10 +212,10 @@ function Message({
   readonly description: string;
   readonly children?: ReactNode;
 }) {
-  const t = useUiTranslation();
+  const gt = useGT();
   return (
     <StandalonePage>
-      <StandalonePageHeader context={t("Agent sign-in")} title={title} description={description} />
+      <StandalonePageHeader context={gt("Agent sign-in")} title={title} description={description} />
       {children}
     </StandalonePage>
   );

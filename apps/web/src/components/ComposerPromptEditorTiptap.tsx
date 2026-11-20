@@ -31,6 +31,7 @@ import {
 } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+
 import { newlineInCode, splitBlockKeepMarks } from "@tiptap/pm/commands";
 import { isHistoryTransaction } from "@tiptap/pm/history";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
@@ -294,6 +295,7 @@ const ComposerMentionExtension = Node.create({
 
 function ComposerMentionNodeView({ node }: NodeViewProps) {
   const t = useUiTranslation();
+
   const actions = use(ComposerContextActionsContext);
   const path = (node.attrs.path as string) ?? "";
   const nativeDrag = useNativeFileDrag(actions.environmentId, () =>

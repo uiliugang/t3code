@@ -1,4 +1,5 @@
 import { useAtomValue, useAtomSet } from "@effect/atom-react";
+import { useMessages } from "gt-react";
 import {
   type EnvironmentId,
   PROJECT_FOLDER_BATCH_LIMIT,
@@ -135,6 +136,7 @@ function ProjectFolderPicker({
   onClose: () => void;
 }) {
   const t = useUiTranslation();
+  const messages = useMessages();
   const { environments } = useEnvironments();
   const [directory, setDirectory] = useState(
     initialPath ?? getAddProjectInitialQuery(baseDirectory),
@@ -396,13 +398,14 @@ function ProjectFolderPicker({
                 candidate.existingProjectId ||
                 result?.status === "created" ||
                 result?.status === "existing";
+              const status = added ? t("Already added") : projectFolderStatus(candidate, messages);
               return (
                 <div
                   key={candidate.path}
                   className="flex min-h-12 items-center gap-3 border-b px-3 py-2 last:border-0 has-[[data-slot=checkbox][data-checked]]:bg-primary/5"
                 >
                   <Checkbox
-                    aria-label={`${t("Select folder")} ${candidate.title}`}
+                    aria-label={t("Select folder {title}", { title: candidate.title })}
                     disabled={busy || Boolean(added) || Boolean(candidate.error)}
                     checked={selected.some(
                       (entry) => entry.workspaceRoot === candidate.workspaceRoot,
@@ -422,20 +425,16 @@ function ProjectFolderPicker({
                     <TooltipTrigger
                       render={<p className="max-w-40 truncate text-xs text-muted-foreground" />}
                     >
-                      {added
-                        ? t("Already added")
-                        : candidate.error || candidate.matchingRepositoryProjectId
-                          ? t(projectFolderStatus(candidate))
-                          : t(candidate.repositoryKey ? "Git repository" : "Folder")}
+                      {added || candidate.error || candidate.matchingRepositoryProjectId
+                        ? status
+                        : t(candidate.repositoryKey ? "Git repository" : "Folder")}
                     </TooltipTrigger>
-                    <TooltipPopup>
-                      {added ? t("Already added") : t(projectFolderStatus(candidate))}
-                    </TooltipPopup>
+                    <TooltipPopup>{status}</TooltipPopup>
                   </Tooltip>
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    title={`${t("Open folder")} ${candidate.title}`}
+                    title={t("Open folder {title}", { title: candidate.title })}
                     aria-label={`${t("Open folder")} ${candidate.title}`}
                     disabled={busy}
                     onClick={() => navigate(candidate.path)}

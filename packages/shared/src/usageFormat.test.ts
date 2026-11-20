@@ -157,6 +157,16 @@ describe("hourly usage formatting", () => {
         "zh-CN",
       ),
     ).toBe("今天 12:00");
+    expect(
+      formatRelativeHourShort(
+        "2026-11-14T15:00:00Z",
+        "2026-11-15T00:00:00Z",
+        "UTC",
+        true,
+        (hour, daysAgo) => `${daysAgo}:${hour}`,
+        "zh-CN",
+      ),
+    ).toBe("1:下午3时");
   });
 
   it("disambiguates repeated hours during a fall-back transition", () => {

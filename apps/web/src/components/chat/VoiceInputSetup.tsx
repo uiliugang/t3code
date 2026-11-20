@@ -1,4 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { msg, useGT, useLocale } from "gt-react";
+import { m } from "~/i18n/messages";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import {
   listBrowserMicrophones,
@@ -47,6 +49,8 @@ export function VoiceInputSetup(props: {
   onStartRecording(): void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const locale = useLocale();
   const navigate = useNavigate();
   const environment = useEnvironment(props.environmentId);
   const canManage = useEnvironmentScope(props.environmentId, AuthSettingsWriteScope);
@@ -62,7 +66,7 @@ export function VoiceInputSetup(props: {
       setMicrophones(await listBrowserMicrophones(t));
       setMicrophoneError(null);
     } catch {
-      setMicrophoneError("Couldn’t list microphones. The system default still works.");
+      setMicrophoneError(m(msg("Couldn’t list microphones. The system default still works.")));
     }
     setLoadingMicrophones(false);
   });
@@ -113,13 +117,13 @@ export function VoiceInputSetup(props: {
                   <div className="flex items-baseline justify-between gap-3">
                     <h3 className="min-w-0 truncate font-medium">{model.name}</h3>
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                      {Math.round(model.size / 1024 / 1024)} MB
+                      {gt("{size} MB", { size: Math.round(model.size / 1024 / 1024) })}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {model.recommended && props.language
                       ? t("Recommended for {language}. ", {
-                          language: languageLabel(props.language),
+                          language: languageLabel(props.language, locale),
                         })
                       : ""}
                     {t("Includes a 1.2 MB silence detector.")}

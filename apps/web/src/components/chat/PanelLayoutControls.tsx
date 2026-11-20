@@ -5,6 +5,7 @@ import {
   Maximize2Icon,
   Minimize2Icon,
 } from "lucide-react";
+import { useGT } from "gt-react";
 import { memo, type ReactNode, useLayoutEffect, useRef } from "react";
 
 import { cn } from "~/lib/utils";
@@ -150,8 +151,8 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
   maximized: boolean;
   onToggle: () => void;
 }) {
-  const t = useUiTranslation();
-  const label = maximized ? t("Restore panel size") : t("Maximize panel");
+  const gt = useGT();
+  const label = maximized ? gt("Restore panel size") : gt("Maximize panel");
   return (
     <Tooltip>
       <TooltipTrigger

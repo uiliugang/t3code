@@ -3,6 +3,8 @@ import {
   capitalizeTerm,
   sourceControlClients,
 } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestTermKind } from "../pullRequest/changeRequestTerm";
+import { useGT, useMessages } from "gt-react";
 import { PullRequestChangeBreakdownRows } from "../pullRequest/PullRequestChangeBreakdownStat";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
@@ -114,6 +116,8 @@ export function ThreadDetailsPrRow({
   composerTarget?: ComposerThreadTarget | undefined;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
+  const m = useMessages();
   const serverConfigs = useServerConfigs();
   const supportsPullRequests = serverConfigs.get(environmentId) !== undefined;
   const repository = sourceControlClients.repositorySelector(project?.repositoryIdentity);
@@ -149,6 +153,7 @@ export function ThreadDetailsPrRow({
   const terminology = sourceControlClients.get(
     detail?.provider ?? project?.repositoryIdentity?.provider,
   ).changeRequest;
+  const term = changeRequestTermKind(terminology);
   const open = reference !== null && (detail?.state ?? pr?.state) === "open";
   const refreshKey = `${environmentId}:${project?.id}:${reference?.host}:${reference?.repository}:${number}`;
   useLiveRefresh(
@@ -166,7 +171,7 @@ export function ThreadDetailsPrRow({
     checks: detail?.checks ?? [],
   });
 
-  const { actionPending, perform } = usePullRequestActionRunner({
+  const { actionPending, pendingAction, perform } = usePullRequestActionRunner({
     environmentId,
     reference,
     terminology,
@@ -183,7 +188,10 @@ export function ThreadDetailsPrRow({
   );
   const [confirmingMerge, setConfirmingMerge] = useState(false);
 
-  const rowAction = resolveThreadPanelPullRequestAction(detail);
+  const rowAction =
+    pendingAction === "ready" || pendingAction === "merge"
+      ? pendingAction
+      : resolveThreadPanelPullRequestAction(detail);
   if (confirmingMerge && rowAction !== "merge") {
     setConfirmingMerge(false);
   }
@@ -196,7 +204,6 @@ export function ThreadDetailsPrRow({
     resolveProjectDefaultMergeMethod(),
     lastSelectedMergeMethod,
   );
-
   const selectedMergeMethodLabel = t(selectedMergeMethod);
 
   const handOff = (kind: "conflicts" | "findings", task: PullRequestThreadTask) => {
@@ -249,10 +256,13 @@ export function ThreadDetailsPrRow({
   const statePresentation =
     detail === null
       ? null
-      : resolvePullRequestState({
-          state: detail.state,
-          isDraft: detail.isDraft,
-        });
+      : resolvePullRequestState(
+          {
+            state: detail.state,
+            isDraft: detail.isDraft,
+          },
+          m,
+        );
   const icon = statePresentation ? (
     <statePresentation.Icon
       aria-hidden
@@ -269,19 +279,34 @@ export function ThreadDetailsPrRow({
 
   const stateLabel = (
     statePresentation ??
-    (pr ? resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true }) : null)
+    (pr ? resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true }, m) : null)
   )?.label.toLowerCase();
   const title = (detail?.title ?? pr?.title)?.trim();
-  const openAriaLabel = `${capitalizeTerm(terminology.singular)} #${number}${
-    stateLabel ? `, ${stateLabel}` : ""
-  }${title ? `: ${title}` : ""}`;
+  const openAriaLabel =
+    stateLabel && title
+      ? gt(
+          "{term, select, mr {Merge request} cr {Change request} other {Pull request}} #{number}, {state}: {title}",
+          { term, number, state: stateLabel, title },
+        )
+      : stateLabel
+        ? gt(
+            "{term, select, mr {Merge request} cr {Change request} other {Pull request}} #{number}, {state}",
+            { term, number, state: stateLabel },
+          )
+        : title
+          ? gt(
+              "{term, select, mr {Merge request} cr {Change request} other {Pull request}} #{number}: {title}",
+              { term, number, title },
+            )
+          : gt(
+              "{term, select, mr {Merge request} cr {Change request} other {Pull request}} #{number}",
+              { term, number },
+            );
 
   const rowTooltip =
     detail === null || statePresentation === null ? (
       <TooltipPopup side="top">
-        {status?.tooltip
-          ? t(status.tooltip)
-          : `${t(capitalizeTerm(terminology.singular))} #${number}`}
+        {status?.tooltip ?? `${t(capitalizeTerm(terminology.singular))} #${number}`}
       </TooltipPopup>
     ) : (
       <TooltipPopup
@@ -496,7 +521,9 @@ export function ThreadDetailsPrRow({
         <div className="pb-1.5">
           {openRow(detail.title, "row", true)}
           <div className="flex h-5 min-w-0 items-center gap-0.5 ps-9 pe-2.5 text-xs text-muted-foreground">
-            <span className="me-1 shrink-0 tabular-nums">#{number}</span>
+            <span aria-hidden className="me-1 shrink-0 tabular-nums">
+              #{number}
+            </span>
             {showChecks && checksRollup !== null ? (
               <PullRequestChecksPopover
                 checksState={checksRollup}

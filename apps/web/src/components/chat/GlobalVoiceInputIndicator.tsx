@@ -15,6 +15,7 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
  */
 export function GlobalVoiceInputIndicator({ hidden = false }: { hidden?: boolean }) {
   const t = useUiTranslation();
+
   const { prepared, grantId, cloudProvider, cloudModel } = useVoiceTranscriptionDestination();
   const session = useRetainedVoiceInputSession({ prepared, grantId, cloudProvider, cloudModel });
   const { state, target, recordingStartedAt } = useVoiceInputSessionSnapshot(session);

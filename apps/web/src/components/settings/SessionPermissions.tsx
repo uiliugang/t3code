@@ -3,6 +3,7 @@ import {
   AUTH_SCOPE_OPTIONS,
   sessionPermissionsUnavailableMessage,
 } from "@t3tools/shared/authScopeOptions";
+import { useGT, useMessages } from "gt-react";
 import { useEnvironmentSessionState } from "~/state/session";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 
@@ -15,6 +16,8 @@ export function SessionPermissions({
   readonly connected: boolean;
   readonly routeContext?: boolean;
 }) {
+  const gt = useGT();
+  const messages = useMessages();
   const session = useEnvironmentSessionState(environmentId);
   const t = useUiTranslation();
   return connected && !session.hasError && !session.isPending && session.data?.authenticated ? (
@@ -29,9 +32,11 @@ export function SessionPermissions({
       <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
         {AUTH_SCOPE_OPTIONS.map(({ scope, title }) => (
           <li key={scope} className="flex items-start justify-between gap-3">
-            <span>{t(title)}</span>
+            <span>{messages(title)}</span>
             <span className="shrink-0 text-muted-foreground">
-              {t(sessionGrantsScope(session.data!, scope) ? "Allowed" : "Not granted")}
+              {sessionGrantsScope(session.data!, scope)
+                ? gt("Allowed", { $context: "permission state" })
+                : gt("Not granted")}
             </span>
           </li>
         ))}
@@ -39,13 +44,14 @@ export function SessionPermissions({
     </div>
   ) : (
     <p className="py-3 text-xs text-muted-foreground">
-      {t(
-        sessionPermissionsUnavailableMessage({
+      {sessionPermissionsUnavailableMessage(
+        {
           connected,
           failed: session.hasError,
           rejected:
             !session.hasError && !session.isPending && session.data?.authenticated === false,
-        }),
+        },
+        messages,
       )}
     </p>
   );

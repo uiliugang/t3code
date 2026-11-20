@@ -1,3 +1,4 @@
+import { useMessages } from "gt-react-native";
 import { selectedNavigationTab, visibleNavigationTabs } from "./navigation-tab-order";
 import { Toolbar } from "../../../components/ui/Toolbar";
 import { useControlTheme } from "../../../components/ui/useControlTheme";
@@ -18,6 +19,7 @@ const ISSUE_ICON = require("../../../../assets/icons/issue.png");
 
 export function WorkspaceTabToolbarButtons() {
   const t = useUiTranslation();
+  const m = useMessages();
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
   const workspace = useWorkspaceTabs()!;
@@ -35,7 +37,7 @@ export function WorkspaceTabToolbarButtons() {
         <Toolbar.Button
           key={tab}
           identifier={`workspace-tab-${tab}`}
-          accessibilityLabel={t(WORKSPACE_TAB_LABELS[tab])}
+          accessibilityLabel={m(WORKSPACE_TAB_LABELS[tab])}
           icon={
             tab === "pullRequests"
               ? { type: "image", source: PULL_REQUEST_ICON, tinted: true }

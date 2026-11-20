@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../lib/useUiTranslation";
+import { useGT } from "gt-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import { WebView } from "react-native-webview";
@@ -9,6 +10,7 @@ import { webViewDecelerationRate } from "../lib/webViewDecelerationRate";
 export function PdfPreview(props: { readonly uri: string }) {
   const t = useUiTranslation();
 
+  const gt = useGT();
   const [error, setError] = useState<string | null>(null);
   return (
     <View className="flex-1 bg-card">
@@ -23,12 +25,18 @@ export function PdfPreview(props: { readonly uri: string }) {
         contentInsetAdjustmentBehavior="never"
         startInLoadingState
         onError={(event) =>
-          setError(event.nativeEvent.description || "The PDF could not be loaded.")
+          setError(event.nativeEvent.description || gt("The PDF could not be loaded."))
         }
         onHttpError={(event) =>
-          setError(`The server returned HTTP ${event.nativeEvent.statusCode}.`)
+          setError(
+            gt("The server returned HTTP {statusCode}.", {
+              statusCode: event.nativeEvent.statusCode,
+            }),
+          )
         }
-        renderLoading={() => <FilePreviewLoading message="Loading PDF..." background="card" />}
+        renderLoading={() => (
+          <FilePreviewLoading message={gt("Loading PDF...")} background="card" />
+        )}
         style={{ flex: 1, backgroundColor: "transparent" }}
       />
     </View>

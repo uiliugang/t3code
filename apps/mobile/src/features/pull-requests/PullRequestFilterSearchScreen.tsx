@@ -11,6 +11,7 @@ import {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { useGT } from "gt-react-native";
 import { useState } from "react";
 import { Platform } from "react-native";
 
@@ -56,6 +57,7 @@ export function PullRequestFilterSearchScreen({
 }: StaticScreenProps<PullRequestFilterSearchParams>) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
   const { kind, environmentId, environmentIds, suggestions, labelColors } = route.params;
   const listControls = usePullRequestListControls();
   const controls = listControls.controlsFor(environmentId);
@@ -114,13 +116,17 @@ export function PullRequestFilterSearchScreen({
       },
     });
   };
-  const placeholder = kind === "labels" ? "Search labels" : "Search authors";
+  const placeholder = kind === "labels" ? gt("Search labels") : gt("Search authors");
   return (
     <PullRequestSearchSheet
       title={kind === "labels" ? t("Filter by label") : t("Filter by author")}
       placeholder={placeholder}
-      closeAccessibilityLabel={kind === "labels" ? "Close label filter" : "Close author filter"}
-      clearAccessibilityLabel={kind === "labels" ? "Clear label search" : "Clear author search"}
+      closeAccessibilityLabel={
+        kind === "labels" ? gt("Close label filter") : gt("Close author filter")
+      }
+      clearAccessibilityLabel={
+        kind === "labels" ? gt("Clear label search") : gt("Clear author search")
+      }
       query={query}
       onQueryChange={setQuery}
     >

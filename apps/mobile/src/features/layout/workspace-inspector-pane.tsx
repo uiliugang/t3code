@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+
 import { useEffect, useRef, useState } from "react";
 import Animated, {
   cubicBezier,

@@ -236,7 +236,7 @@ export function ProjectConfigurationSettings({
         <p>{project.workspaceRoot}</p>
         {identity.repository ? (
           <p className="break-all text-xs text-muted-foreground">
-            Git: {identity.repository}
+            {t("Git: {repository}", { repository: identity.repository })}
             {identity.directory ? ` · ${identity.directory}` : ""}
           </p>
         ) : null}
