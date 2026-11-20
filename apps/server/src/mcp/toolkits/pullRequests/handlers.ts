@@ -526,11 +526,14 @@ const make = Effect.gen(function* () {
           : { number: branchPullRequest.number, repository: branchPullRequest.repository };
     if (named === null) return yield* new PullRequestBranchHasNoneError();
     const target = yield* resolveTarget(named, targetProject);
-    const ref: PullRequestRef = {
+    const ref: PullRequestService.CheckoutRef = {
       projectId: project.id,
       host: target.host,
       repository: target.repository,
       number: target.number,
+      ...(thread.projectWorkspaceRoot === undefined
+        ? {}
+        : { [PullRequestService.checkoutRoot]: thread.projectWorkspaceRoot }),
     };
     if (input.number === undefined && opened !== undefined && opened.snapshot === null) {
       // Not synced yet, so only the host knows which branch it was opened from.

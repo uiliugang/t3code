@@ -297,7 +297,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
             Effect.flatMap((thread) =>
               thread === null
                 ? Effect.undefined
-                : pullRequests.value.servesProject(thread.projectId),
+                : pullRequests.value.servesProject(thread.projectId, thread.projectWorkspaceRoot),
             ),
             Effect.orElseSucceed(() => undefined),
           ),

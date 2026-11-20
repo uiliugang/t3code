@@ -845,11 +845,11 @@ export const make = Effect.gen(function* () {
           ),
         );
       if (Option.isNone(shell)) return shell;
-      const project =
-        workspaceRoot === undefined || workspaceRoot === shell.value.workspaceRoot
-          ? shell.value
-          : { ...shell.value, workspaceRoot };
-      return Option.some(yield* enrichShell(project));
+      if (workspaceRoot === undefined || workspaceRoot === shell.value.workspaceRoot) {
+        return Option.some(yield* enrichShell(shell.value));
+      }
+      const repositoryIdentity = yield* projectEnrichment.readRepositoryIdentity(workspaceRoot);
+      return Option.some({ ...shell.value, workspaceRoot, repositoryIdentity });
     },
   );
 

@@ -1059,6 +1059,41 @@ it.effect("isolates the PR list cache for a thread's pinned checkout", () =>
   }),
 );
 
+it.effect("reads and updates a GitLab PR through the pinned checkout after a project moves", () =>
+  Effect.gen(function* () {
+    const current = project({
+      id: "p1",
+      title: "Project",
+      workspaceRoot: "/new",
+      repository: "team/new",
+    });
+    const previous = project({
+      id: "p1",
+      title: "Project",
+      workspaceRoot: "/old",
+      repository: "team/old",
+      provider: "gitlab",
+    });
+    const mutations: string[] = [];
+    const service = yield* makeService({
+      projects: [current],
+      checkoutProject: previous,
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
+          getChangeRequest: ({ cwd }) => Effect.succeed(hostedChangeRequest(cwd)),
+          updateChangeRequest: ({ cwd }) => Effect.sync(() => void mutations.push(cwd)),
+        }),
+      ],
+    });
+    const ref = { projectId: current.id, host: "gitlab.com", repository: "team/old", number: 1 };
+    const pinned = { ...ref, [PullRequestService.checkoutRoot]: previous.workspaceRoot };
+    assert.strictEqual((yield* service.detail(pinned)).body, "/old");
+    yield* service.update({ ...pinned, title: "Updated" });
+    assert.deepStrictEqual(mutations, ["/old"]);
+    assert.isTrue(Exit.isFailure(yield* Effect.exit(service.detail(ref))));
+  }),
+);
+
 it.effect.each([false, true])("lists forks independently of their upstream (batch: %s)", (batch) =>
   Effect.gen(function* () {
     const origin = {

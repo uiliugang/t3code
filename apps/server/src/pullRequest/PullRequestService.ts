@@ -177,7 +177,9 @@ const routingCredential = Context.Reference<{
   readonly viewer: string;
 } | null>("t3/PullRequestService/routingCredential", { defaultValue: () => null });
 const credentialNamespace = Symbol("pullRequestCredentialNamespace");
-type CredentialRef = PullRequestRef & { readonly [credentialNamespace]?: string };
+export const checkoutRoot = Symbol("pullRequestCheckoutRoot");
+export type CheckoutRef = PullRequestRef & { readonly [checkoutRoot]?: string };
+type CredentialRef = CheckoutRef & { readonly [credentialNamespace]?: string };
 
 export class PullRequestService extends Context.Service<
   PullRequestService,
@@ -261,7 +263,10 @@ export class PullRequestService extends Context.Service<
     /** Emits when the host reports a change; empty where the host has no event feed. */
     readonly changes: (input: PullRequestRef) => Stream.Stream<void>;
     /** Whether the project's checkout is on a forge T3 reads change requests from. */
-    readonly servesProject: (projectId: ProjectId) => Effect.Effect<boolean>;
+    readonly servesProject: (
+      projectId: ProjectId,
+      workspaceRoot?: string,
+    ) => Effect.Effect<boolean>;
     readonly threadComments: (
       input: PullRequestThreadCommentsInput,
     ) => Effect.Effect<PullRequestThreadCommentsResult, PullRequestError>;
@@ -1043,8 +1048,8 @@ export const make = Effect.gen(function* () {
     );
 
   // Azure derives organization from the checkout; require the matching repository.
-  const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
-    listWorkspaceProjects({ projectId: ref.projectId }).pipe(
+  const requireProject = (ref: CheckoutRef): Effect.Effect<SupportedProject, PullRequestError> =>
+    listWorkspaceProjects({ projectId: ref.projectId }, ref[checkoutRoot]).pipe(
       Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
         const own = supported[0];
         const repository = ref.repository.trim();
@@ -1072,7 +1077,9 @@ export const make = Effect.gen(function* () {
           sourceControlDefinitions.findByRepositoryKey(referenceKey) ? {} : { host },
         ).pipe(
           Effect.flatMap(({ supported }) => {
-            const onHost = supported.filter((candidate) => candidate.host === host);
+            const onHost = (
+              own !== undefined && ref[checkoutRoot] !== undefined ? [own, ...supported] : supported
+            ).filter((candidate) => candidate.host === host);
             const route =
               supported.find(
                 (candidate) =>
@@ -1089,7 +1096,7 @@ export const make = Effect.gen(function* () {
                 const publicHost = sourceControlDefinitions.findByPublicHost(host);
                 const api = publicHost === undefined ? null : registry.get(publicHost.kind);
                 if (api?.readsPublicHostWithoutCheckout) {
-                  const selected = yield* projects.getShell(ref.projectId).pipe(
+                  const selected = yield* projects.getShell(ref.projectId, ref[checkoutRoot]).pipe(
                     Effect.mapError(
                       (cause) =>
                         new PullRequestOperationError({
@@ -1149,7 +1156,7 @@ export const make = Effect.gen(function* () {
     );
 
   const canonicalRef = Effect.fn("PullRequestService.canonicalRef")(function* <
-    I extends PullRequestRef,
+    I extends CheckoutRef,
   >(input: I) {
     const project = yield* requireProject(input);
     return {
@@ -1157,12 +1164,18 @@ export const make = Effect.gen(function* () {
       projectId: project.project.id,
       host: project.host,
       repository: project.repository,
+      ...(input[checkoutRoot] === undefined
+        ? {}
+        : { [checkoutRoot]: project.project.workspaceRoot }),
     };
   });
 
   // A failed read keeps the tools: their calls report the failure.
-  const servesProject: PullRequestService["Service"]["servesProject"] = (projectId) =>
-    listWorkspaceProjects({ projectId }).pipe(
+  const servesProject: PullRequestService["Service"]["servesProject"] = (
+    projectId,
+    workspaceRoot,
+  ) =>
+    listWorkspaceProjects({ projectId }, workspaceRoot).pipe(
       Effect.map(({ supported }) => supported.length > 0),
       Effect.orElseSucceed(() => true),
     );
@@ -3079,19 +3092,29 @@ export const make = Effect.gen(function* () {
       ref.number,
       ref.expectedAccountId ?? null,
       ref[credentialNamespace] ?? null,
+      ref[checkoutRoot] ?? null,
     ]);
-  const refOfCacheKey = (key: string): PullRequestRef => {
-    const [, projectId, host, repository, number, expectedAccountId, fingerprint] = JSON.parse(
-      key,
-    ) as [number, string, string | null, string, number, string | null, string | null];
+  const refOfCacheKey = (key: string): CredentialRef => {
+    const [, projectId, host, repository, number, expectedAccountId, fingerprint, workspaceRoot] =
+      JSON.parse(key) as [
+        number,
+        ProjectId,
+        string | null,
+        string,
+        number,
+        string | null,
+        string | null,
+        string | null,
+      ];
     return {
       projectId,
       ...(host === null ? {} : { host }),
       ...(expectedAccountId === null ? {} : { expectedAccountId }),
       ...(fingerprint === null ? {} : { [credentialNamespace]: fingerprint }),
+      ...(workspaceRoot === null ? {} : { [checkoutRoot]: workspaceRoot }),
       repository,
       number,
-    } as PullRequestRef;
+    };
   };
   const statsCacheKey = (key: string) => JSON.stringify([listingsEpoch, key]);
   const recentStats = new Map<

@@ -965,6 +965,8 @@ it.effect("invalidates workspace-derived metadata when a project moves", () =>
         projectId,
         workspaceRoot: "/work/temporary",
       });
+      const pinned = Option.getOrThrow(yield* service.getShell(projectId, "/work/original"));
+      assert.equal(pinned.repositoryIdentity?.canonicalKey, "example.test/v2/work/original");
       yield* service.snapshot;
 
       yield* Ref.set(metadataVersion, 3);

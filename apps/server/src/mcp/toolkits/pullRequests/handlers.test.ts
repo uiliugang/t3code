@@ -983,7 +983,7 @@ describe("source control tools", () => {
     Effect.gen(function* () {
       const project = makeProject();
       const listed: Array<string | undefined> = [];
-      const updated: Array<PullRequestRef> = [];
+      const updated: PullRequestService.CheckoutRef[] = [];
       const workspaceRoot = "/workspace/previous";
       const harness = yield* makeHarness({
         thread: { ...branchThread, projectWorkspaceRoot: workspaceRoot },
@@ -1010,6 +1010,7 @@ describe("source control tools", () => {
         listed: [workspaceRoot],
         updated: [{ host: "github.com", repository: "contributor/previous", number: 42 }],
       });
+      expect(updated[0]?.[PullRequestService.checkoutRoot]).toBe(workspaceRoot);
     }),
   );
 

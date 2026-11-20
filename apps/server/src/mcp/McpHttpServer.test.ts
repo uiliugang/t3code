@@ -1785,6 +1785,7 @@ it.effect(
           ["parentToken", scopeFor("parentToken", false)],
           ["childToken", scopeFor("childToken", true)],
           ["noForgeToken", scopeFor("noForgeToken", false)],
+          ["movedForgeToken", scopeFor("movedForgeToken", false)],
         ]);
         const serverLayer = McpHttpServer.layerMcpTransport(
           McpHttpServer.layerPullRequestsToolkit,
@@ -1801,7 +1802,12 @@ it.effect(
               Layer.mock(ProjectService.ProjectService)({}),
               Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
               Layer.mock(PullRequestService.PullRequestService)({
-                servesProject: (projectId) => Effect.succeed(projectId !== "project-noForgeToken"),
+                servesProject: (projectId, workspaceRoot) =>
+                  Effect.succeed(
+                    projectId === "project-movedForgeToken"
+                      ? workspaceRoot === "/previous-checkout"
+                      : projectId !== "project-noForgeToken",
+                  ),
               }),
               Layer.mock(GitManager.GitManager)({}),
               Layer.mock(Orchestrator.OrchestratorV2)({}),
@@ -1809,6 +1815,9 @@ it.effect(
                 getThreadShell: (threadId) =>
                   Effect.succeed({
                     projectId: ProjectId.make(threadId.replace("thread-", "project-")),
+                    ...(threadId === "thread-movedForgeToken"
+                      ? { projectWorkspaceRoot: "/previous-checkout" }
+                      : {}),
                   } as never),
               }),
               NodeServices.layer,
@@ -1872,6 +1881,7 @@ it.effect(
           ]),
         );
         const noForgeTools = yield* listedTools("noForgeToken");
+        expect(yield* listedTools("movedForgeToken")).toContain("pull_request_read");
         expect(noForgeTools).toEqual(
           expect.arrayContaining(["link_pull_request", "watch_pull_request"]),
         );
