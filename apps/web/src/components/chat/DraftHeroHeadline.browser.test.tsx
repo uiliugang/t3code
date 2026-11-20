@@ -10,6 +10,7 @@ import "~/index.css";
 import { AppRoot } from "~/AppRoot";
 // The draft route loads ChatView lazily; importing it here keeps its first transform out of the test's timeout.
 import "~/components/ChatView";
+import { openCommandPalette } from "~/commandPaletteBus";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
@@ -149,5 +150,55 @@ it("the new-thread project picker follows the manual sidebar project order", asy
     selectedProjectIds: ["project-beta", PROJECT_ID],
     envMode: "worktree",
     groupTitle: "Client and API",
+  });
+});
+
+it("selects multiple repositories in the new-thread command palette before starting a draft", async () => {
+  using _environment = installFakeEnvironment([], {
+    capabilities: { multiRepositoryWorkspaces: true },
+    extraProjects: [
+      { id: ProjectId.make("project-alpha"), title: "alpha" },
+      { id: ProjectId.make("project-beta"), title: "beta" },
+    ],
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    uiLanguage: "en",
+    capitalizeProjectNames: false,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const draftId = DraftId.make("draft-palette-multi-project");
+  useComposerDraftStore
+    .getState()
+    .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId);
+  const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
+  openCommandPalette({ open: "new-thread-in" });
+  await expect
+    .element(page.getByRole("checkbox", { name: "Combine with alpha", exact: true }))
+    .toBeVisible();
+  await page.getByRole("checkbox", { name: "Combine with alpha", exact: true }).click();
+  await expect.element(page.getByRole("combobox")).toBeVisible();
+  await page.getByRole("checkbox", { name: "Combine with beta", exact: true }).click();
+  await expect
+    .element(page.getByRole("checkbox", { name: "Remove alpha from group" }))
+    .toBeChecked();
+  await expect
+    .element(page.getByRole("checkbox", { name: "Remove beta from group" }))
+    .toBeChecked();
+  await page.getByRole("button", { name: "Start (2)", exact: true }).click();
+  await vi.waitFor(() => {
+    expect(
+      Object.values(useComposerDraftStore.getState().draftThreadsByThreadKey).some(
+        (draft) =>
+          draft.selectedProjectIds?.join(",") === "project-alpha,project-beta" &&
+          draft.envMode === "worktree",
+      ),
+    ).toBe(true);
   });
 });
