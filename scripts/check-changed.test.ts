@@ -379,6 +379,7 @@ function launcherFixture() {
   for (const file of [
     "scripts/check-changed.ts",
     "scripts/check-changed-command.ts",
+    "scripts/check-changed-lock.ts",
     ".github/scripts/ci-changes.cjs",
   ]) {
     write(file, NodeFS.readFileSync(NodePath.join(import.meta.dirname, "..", file), "utf8"));
@@ -474,16 +475,31 @@ function launcherFixture() {
 it("checks changed source paths through the Windows launcher", () => {
   using project = launcherFixture();
   project.write(project.source, "export const value = 2;\n");
+  project.write("packages/example/example.test.ts", "export {};\n");
   const result = project.run();
   expect(result.status, result.stdout + result.stderr).toBe(0);
   const calls = project.calls();
   expect(calls.find(({ args }) => args[0] === "lint")).toEqual({
-    args: ["lint", "--no-error-on-unmatched-pattern", project.source],
+    args: [
+      "lint",
+      "--no-error-on-unmatched-pattern",
+      "packages/example/example.test.ts",
+      project.source,
+    ],
     cwd: project.root,
   });
   expect(calls.some(({ args }) => args[0] === "fmt" && args.includes(project.source))).toBe(true);
   expect(calls.some(({ args }) => args[0] === "run" && args.includes("typecheck"))).toBe(true);
   expect(calls.some(({ args }) => args[0] === "install")).toBe(false);
+  expect(calls.find(({ args }) => args[0] === "test")?.args).toEqual([
+    "test",
+    "run",
+    "--passWithNoTests",
+    "--maxWorkers",
+    "1",
+    "--no-file-parallelism",
+    "packages/example/example.test.ts",
+  ]);
   expect(result.stdout).toContain("fixture stdout: lint");
   expect(result.stdout).toContain("fixture stderr: lint");
 });

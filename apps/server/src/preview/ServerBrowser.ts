@@ -608,6 +608,7 @@ const make = Effect.gen(function* () {
   const contexts = new ServerBrowserContexts({
     profilesDir: NodePath.join(config.stateDir, "server-browser", "profiles"),
     idleBrowserMs: 5 * 60_000,
+    idleContextMs: 5 * 60_000,
     executable: () => runPromise(previewBrowser.executable),
     chrome: { version: PreviewBrowser.VERSION, platform: host.platform },
     // An agent scope keeps Chrome out of the server's memory protection and OOM score.
@@ -1126,18 +1127,23 @@ const make = Effect.gen(function* () {
       desktop === null &&
       ((snapshot.automationOwner !== undefined && snapshot.profileId === undefined) ||
         snapshot.profileId === INCOGNITO_BROWSER_PROFILE_ID);
-    const context =
-      adopted?.page.context() ??
-      desktop?.page.context() ??
-      (await contexts.contextFor(
-        snapshot.profileId ?? "default",
-        isolatedContext ? tabKey(snapshot.threadId, snapshot.tabId) : undefined,
-      ));
-    if (isolatedContext) opened.push(() => context.close());
-    if (adopted?.page.isClosed()) throw new Error("The popup closed before it opened.");
-    if (!desktop) await prepareContext(context);
-    const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
-    if (!desktop) opened.push(() => page.close());
+    const createPage = async (context: BrowserContext) => {
+      if (isolatedContext) opened.push(() => context.close());
+      if (adopted?.page.isClosed()) throw new Error("The popup closed before it opened.");
+      if (!desktop) await prepareContext(context);
+      const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
+      if (!desktop) opened.push(() => page.close());
+      return page;
+    };
+    const existingContext = adopted?.page.context() ?? desktop?.page.context();
+    const page = existingContext
+      ? await createPage(existingContext)
+      : await contexts.withContext(
+          snapshot.profileId ?? "default",
+          isolatedContext ? tabKey(snapshot.threadId, snapshot.tabId) : undefined,
+          createPage,
+        );
+    const context = page.context();
     const cdp = await context.newCDPSession(page);
     await installPdfDocumentNavigation(cdp);
     // The desktop's page is already a normal browser. A popup's first request

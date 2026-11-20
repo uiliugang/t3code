@@ -227,10 +227,14 @@ compares against the closest merge base with any remote's `main`, so a fork whos
 upstream still compares against upstream, or with a ref you pass. CI still runs the full
 test suites and the jobs the summary lists, so a local pass does not promise a green CI run.
 
-The steps run side by side, as many at once as the machine allows: one per two cores and per 6 GiB
-of available memory. On a large machine a run takes about as long as its slowest step, usually
-knip's exports pass at about 10 s. Pass `--concurrency <n>` or set `CHECK_CHANGED_CONCURRENCY` to
-change the limit (`1` runs the steps one by one). A step that runs past `--timeout <seconds>` or
+Checks from worktrees of the same repository run one at a time. A waiting check can be cancelled;
+waiting does not count toward a step's timeout. The lock lives in the common Git directory and is
+released when the check exits. Direct `vp test` commands and builds do not take this lock.
+
+Within a check, steps share a budget of one per two cores and per 6 GiB of available memory.
+Test steps take the entire budget and run test files one at a time with one worker, so they do not
+overlap typechecks or other checks. Pass `--concurrency <n>` or set `CHECK_CHANGED_CONCURRENCY` to
+change the step and typecheck limit (`1` runs the steps one by one). A step that runs past `--timeout <seconds>` or
 `CHECK_CHANGED_TIMEOUT` (default 900) is killed with every process it started and reported as
 `TIMEOUT`, not as a failing check. When the files are exactly those of the last passing run, it prints that
 run's summary instead of running again. Any change to a file, the install, or a generated file runs
