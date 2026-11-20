@@ -187,6 +187,7 @@ function PoolWindowCard({
   readonly wide: boolean;
 }) {
   const navigation = useNavigation();
+  const t = useUiTranslation();
   const gt = useGT();
   const m = useMessages();
   const [barWidth, setBarWidth] = useState(0);
@@ -207,20 +208,13 @@ function PoolWindowCard({
   const summary = (
     <>
       <View className={wide ? "gap-1" : "flex-row items-start justify-between gap-3"}>
-        <View className="gap-1">
+        <View className="min-w-0 shrink gap-1">
           {label !== null ? (
-            <Text className="text-sm font-t3-medium text-foreground">{label ?? pool.label}</Text>
+            <Text className="text-sm font-t3-medium text-foreground">{label ?? t(pool.label)}</Text>
           ) : null}
-          <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-sm text-foreground-muted">
-              <T>
-                <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
-                  <Var>{pool.remainingPercent}</Var>%
-                </Text>{" "}
-                left
-              </T>
-            </Text>
-          </View>
+          <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+            {t("{percent}% left", { percent: pool.remainingPercent })}
+          </Text>
         </View>
         {pool.pace ? (
           <Text className="text-xs text-foreground-tertiary">{m(PACE_LABEL[pool.pace])}</Text>
@@ -697,7 +691,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               ) : null}
             </View>
             <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
-              <Text className="text-sm font-t3-medium text-foreground">{window.label}</Text>
+              <Text className="text-sm font-t3-medium text-foreground">{t(window.label)}</Text>
               <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
                 <T>
                   <Var>{remainingPercent(window)}</Var>% left

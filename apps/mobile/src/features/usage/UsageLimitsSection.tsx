@@ -96,7 +96,7 @@ function WindowRow(props: {
   return (
     <View className="gap-1">
       <View className="flex-row items-baseline justify-between gap-3">
-        <Text className="text-sm text-foreground">{window.label}</Text>
+        <Text className="text-sm text-foreground">{t(window.label)}</Text>
         <Text className="text-sm font-t3-medium tabular-nums text-foreground">
           {t("{percent}% left", { percent: remaining })}
         </Text>

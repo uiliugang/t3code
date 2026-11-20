@@ -127,19 +127,35 @@ function providerStarting(
   return { providerStartingLabel: markedTextEnglish([label]), providerStartingLabelMsg: label };
 }
 
+function completedTurnThroughput(
+  turn: ThreadStructure["providerTurns"][number] | undefined,
+): number | undefined {
+  if (turn?.status !== "completed" || turn.startedAt === null || turn.completedAt === null) return;
+  const usage = turn.turnTokenUsage;
+  if (usage?.usageStatus !== "complete" || usage.localCommand || usage.outputTokens === 0) return;
+  const elapsed = DateTime.toEpochMillis(turn.completedAt) - DateTime.toEpochMillis(turn.startedAt);
+  return elapsed > 0 ? (usage.outputTokens * 1000) / elapsed : undefined;
+}
+
 function summarizeThreadRun(
   projection: ThreadStructure,
   run: OrchestrationV2ThreadProjection["runs"][number],
 ): ThreadRunSummary {
-  const turnStatus = ACTIVITY_RUN_STATUSES.has(run.status)
-    ? latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)?.status
-    : undefined;
+  const active = ACTIVITY_RUN_STATUSES.has(run.status);
+  const turn =
+    active || run.status === "completed"
+      ? latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)
+      : undefined;
+  const turnStatus = active ? turn?.status : undefined;
+  const outputTokensPerSecond =
+    run.status === "completed" ? completedTurnThroughput(turn) : undefined;
   return {
     runId: run.id,
     status: run.status,
     requestedAt: DateTime.formatIso(run.requestedAt),
     startedAt: run.startedAt === null ? null : DateTime.formatIso(run.startedAt),
     completedAt: run.completedAt === null ? null : DateTime.formatIso(run.completedAt),
+    ...(outputTokensPerSecond === undefined ? {} : { outputTokensPerSecond }),
     assistantMessageId:
       projection.messages.findLast(
         (message) => message.runId === run.id && message.role === "assistant",

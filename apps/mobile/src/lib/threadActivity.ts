@@ -273,6 +273,7 @@ export interface ThreadFeedLatestRun {
   readonly status: OrchestrationV2RunStatus;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
+  readonly outputTokensPerSecond?: number;
   readonly turnEnded?: boolean;
   readonly providerStartingLabel?: string;
   readonly providerStartingLabelMsg?: string;

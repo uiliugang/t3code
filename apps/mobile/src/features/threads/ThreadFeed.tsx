@@ -3958,6 +3958,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
   const reviewCommentColors = useReviewCommentColors();
   const unsettledTurnId = threadFeedRunIsUnsettled(props.latestRun) ? props.latestRun.runId : null;
+  const outputTokensPerSecond = props.latestRun?.outputTokensPerSecond;
   const compactionLabelsByEntryId = useMemo(
     () => threadFeedCompactionLabels(props.feed, m),
     [props.feed, m],
@@ -4634,8 +4635,17 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               </>
             }
             ListFooterComponent={
-              props.pendingHandoff || props.statusLines?.length ? (
+              props.pendingHandoff ||
+              props.statusLines?.length ||
+              outputTokensPerSecond !== undefined ? (
                 <>
+                  {outputTokensPerSecond === undefined ? null : (
+                    <Text className="py-1 text-xs tabular-nums text-foreground-muted">
+                      {t("Turn average: {rate} tokens/s", {
+                        rate: Math.round(outputTokensPerSecond * 10) / 10,
+                      })}
+                    </Text>
+                  )}
                   {props.pendingHandoff ? (
                     <ThreadHandoffDivider
                       environmentId={props.environmentId}

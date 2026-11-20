@@ -3478,22 +3478,6 @@
   "f78edbddd70ee41d": "Segment {index}, {account}, {remaining}% left, {credits, plural, other {{credits} reset credits banked}}",
   "9217e0c91cee3cf8": "Signed in",
   "5f12a194d158f9b1": "Source",
-  "65a7507ffde6d3f8": [
-    {
-      "t": "Text",
-      "i": 1,
-      "c": [
-        {
-          "i": 2,
-          "k": "_gt_value_2",
-          "v": "v"
-        },
-        "%"
-      ]
-    },
-    " ",
-    "left"
-  ],
   "412e3b93454812aa": [
     {
       "i": 1,

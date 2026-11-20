@@ -3462,22 +3462,6 @@
   "f78edbddd70ee41d": "分段 {index}，{account}，剩余 {remaining}%，{credits, plural, other {已存有 {credits} 个重置额度}}",
   "9217e0c91cee3cf8": "已登录",
   "5f12a194d158f9b1": "来源",
-  "65a7507ffde6d3f8": [
-    "剩余",
-    " ",
-    {
-      "t": "Text",
-      "i": 1,
-      "c": [
-        {
-          "i": 2,
-          "k": "_gt_value_2",
-          "v": "v"
-        },
-        "%"
-      ]
-    }
-  ],
   "412e3b93454812aa": [
     "剩余 ",
     {
