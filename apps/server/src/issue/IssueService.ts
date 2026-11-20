@@ -225,7 +225,13 @@ const make = Effect.gen(function* () {
           const shells = allShells.filter(
             (project) => !filter.excludeProjectIds?.includes(project.id),
           );
-          if (shells.length === 0) return { supported: [], unimplemented: new Map(), errors: [] };
+          const supported: SupportedProject[] = [];
+          const unimplemented = new Map<
+            string,
+            { tracker: IssueTrackerKind; projectIds: Set<ProjectId> }
+          >();
+          const errors: IssueListProjectError[] = [];
+          if (shells.length === 0) return { supported, unimplemented, errors };
           const bound = yield* standaloneBindings;
           const requirements = yield* requirementIssues.trackerSources.pipe(
             Effect.mapError(
@@ -237,7 +243,6 @@ const make = Effect.gen(function* () {
                 }),
             ),
           );
-          const errors: IssueListProjectError[] = [];
           const candidates = yield* Effect.forEach(
             shells.filter(
               (project) =>
@@ -279,11 +284,6 @@ const make = Effect.gen(function* () {
             { concurrency: SCOPE_CONCURRENCY },
           );
           const host = filter.host?.trim().toLowerCase();
-          const supported: SupportedProject[] = [];
-          const unimplemented = new Map<
-            string,
-            { tracker: IssueTrackerKind; projectIds: Set<ProjectId> }
-          >();
           for (const candidate of candidates.flat()) {
             if (
               host !== undefined &&
