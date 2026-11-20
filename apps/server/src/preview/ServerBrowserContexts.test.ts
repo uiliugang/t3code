@@ -53,6 +53,9 @@ const makeContext = () => {
       return page;
     }),
     isClosed: () => closed,
+    browser: vi.fn<BrowserContext["browser"]>(() => null),
+    cookies: vi.fn<BrowserContext["cookies"]>().mockResolvedValue([]),
+    addCookies: vi.fn<BrowserContext["addCookies"]>().mockResolvedValue(undefined),
     close: vi.fn(async () => {
       if (!closed) {
         closed = true;
@@ -88,6 +91,17 @@ const options = () => ({
   chrome: { version: "157.0.8103.78", platform: "linux" as NodeJS.Platform },
 });
 
+const sessionCookie = {
+  name: "session",
+  value: "signed-in",
+  domain: "preview.invalid",
+  path: "/",
+  expires: -1,
+  httpOnly: true,
+  secure: true,
+  sameSite: "Lax" as const,
+};
+
 const withLauncher = () => {
   const release = vi.fn(async () => {});
   return {
@@ -111,6 +125,10 @@ describe("ServerBrowserContexts", () => {
     vi.useFakeTimers();
     const first = makeContext();
     const next = makeContext();
+    first.cookies.mockResolvedValue([
+      sessionCookie,
+      { ...sessionCookie, name: "persistent", expires: 2147483647 },
+    ]);
     launches.persistent
       .mockResolvedValueOnce(first as unknown as BrowserContext)
       .mockResolvedValueOnce(next as unknown as BrowserContext);
@@ -133,11 +151,204 @@ describe("ServerBrowserContexts", () => {
       expect(first.close).toHaveBeenCalledOnce();
       expect(launches.rm).not.toHaveBeenCalled();
       expect(await pool.contextFor("work")).not.toBe(context);
+      expect(next.addCookies).toHaveBeenCalledExactlyOnceWith([sessionCookie]);
+      await pool.clearProfile("work");
+      const cleared = makeContext();
+      launches.persistent.mockResolvedValue(cleared as unknown as BrowserContext);
+      await pool.contextFor("work");
+      expect(cleared.addCookies).not.toHaveBeenCalled();
     } finally {
       await pool.close();
       vi.useRealTimers();
     }
   });
+
+  it("keeps a context usable when its session cookies cannot be read for retirement", async () => {
+    vi.useFakeTimers();
+    const context = makeContext();
+    context.cookies.mockRejectedValueOnce(new Error("cookie capture failed"));
+    launches.persistent.mockResolvedValue(context as unknown as BrowserContext);
+    const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+    try {
+      await pool.contextFor("work");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(context.close).not.toHaveBeenCalled();
+      await pool.withContext("work", undefined, (active) => active.newPage());
+      expect(launches.persistent).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(context.close).not.toHaveBeenCalled();
+    } finally {
+      await pool.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not reuse or delete a profile whose idle close failed and retains its browser for shutdown", async () => {
+    vi.useFakeTimers();
+    const context = makeContext();
+    const failure = new Error("context close failed");
+    const closeBrowser = vi.fn().mockResolvedValue(undefined);
+    context.browser.mockReturnValue({ close: closeBrowser } as unknown as Browser);
+    context.close.mockRejectedValueOnce(failure);
+    launches.persistent.mockResolvedValue(context as unknown as BrowserContext);
+    const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+    try {
+      await pool.contextFor("work");
+      await vi.advanceTimersByTimeAsync(10);
+      await expect(pool.contextFor("work")).rejects.toBe(failure);
+      await expect(pool.clearProfile("work")).rejects.toBe(failure);
+      expect(launches.persistent).toHaveBeenCalledOnce();
+      expect(launches.rm).not.toHaveBeenCalled();
+    } finally {
+      await pool.close();
+      vi.useRealTimers();
+    }
+    expect(closeBrowser).toHaveBeenCalledOnce();
+  });
+
+  it("rearms retirement when a request arriving during cookie capture fails to create a page", async () => {
+    vi.useFakeTimers();
+    const context = makeContext();
+    const cookies = Promise.withResolvers<Awaited<ReturnType<BrowserContext["cookies"]>>>();
+    context.cookies.mockReturnValueOnce(cookies.promise);
+    launches.persistent.mockResolvedValue(context as unknown as BrowserContext);
+    const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+    try {
+      await pool.contextFor("work");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(context.cookies).toHaveBeenCalledOnce();
+      const failure = new Error("page preparation failed");
+      const opening = expect(
+        pool.withContext("work", undefined, async () => {
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+      cookies.resolve([]);
+      await opening;
+      expect(context.close).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(context.close).toHaveBeenCalledOnce();
+      expect(launches.persistent).toHaveBeenCalledOnce();
+    } finally {
+      cookies.resolve([]);
+      await pool.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retains session cookies after a failed restore but does not resurrect them after logout", async () => {
+    vi.useFakeTimers();
+    const first = makeContext();
+    const failed = makeContext();
+    const restored = makeContext();
+    const loggedOut = makeContext();
+    first.cookies.mockResolvedValue([sessionCookie]);
+    const failure = new Error("cookie restore failed");
+    failed.addCookies.mockRejectedValueOnce(failure);
+    launches.persistent
+      .mockResolvedValueOnce(first as unknown as BrowserContext)
+      .mockResolvedValueOnce(failed as unknown as BrowserContext)
+      .mockResolvedValueOnce(restored as unknown as BrowserContext)
+      .mockResolvedValueOnce(loggedOut as unknown as BrowserContext);
+    const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+    try {
+      await pool.contextFor("work");
+      await vi.advanceTimersByTimeAsync(10);
+      await expect(pool.contextFor("work")).rejects.toBe(failure);
+      expect(failed.close).toHaveBeenCalledOnce();
+      await pool.contextFor("work");
+      expect(restored.addCookies).toHaveBeenCalledExactlyOnceWith([sessionCookie]);
+      await vi.advanceTimersByTimeAsync(10);
+      await pool.contextFor("work");
+      expect(loggedOut.addCookies).not.toHaveBeenCalled();
+    } finally {
+      await pool.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects a context whose cookies finish restoring during shutdown", async () => {
+    vi.useFakeTimers();
+    const first = makeContext();
+    const next = makeContext();
+    const restoring = Promise.withResolvers<void>();
+    const restored = Promise.withResolvers<void>();
+    first.cookies.mockResolvedValue([sessionCookie]);
+    next.addCookies.mockImplementation(async () => {
+      restoring.resolve();
+      await restored.promise;
+    });
+    launches.persistent
+      .mockResolvedValueOnce(first as unknown as BrowserContext)
+      .mockResolvedValueOnce(next as unknown as BrowserContext);
+    const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+    try {
+      await pool.contextFor("work");
+      await vi.advanceTimersByTimeAsync(10);
+      const opening = expect(pool.contextFor("work")).rejects.toThrow("closed");
+      await restoring.promise;
+      const closing = pool.close();
+      restored.resolve();
+      await Promise.all([opening, closing]);
+      expect(next.close).toHaveBeenCalledOnce();
+    } finally {
+      restored.resolve();
+      await pool.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["reopen", "clear", "shutdown", "clear-and-shutdown"])(
+    "retains a browser when restoring cookies and closing its context both fail during %s",
+    async (action) => {
+      vi.useFakeTimers();
+      const first = makeContext();
+      const next = makeContext();
+      const restoring = Promise.withResolvers<void>();
+      const restored = Promise.withResolvers<void>();
+      const restoreFailure = new Error("cookie restore failed");
+      const closeFailure = new Error("context close failed");
+      const closeBrowser = vi.fn().mockResolvedValue(undefined);
+      first.cookies.mockResolvedValue([sessionCookie]);
+      next.browser.mockReturnValue({ close: closeBrowser } as unknown as Browser);
+      next.close.mockRejectedValue(closeFailure);
+      next.addCookies.mockImplementation(async () => {
+        restoring.resolve();
+        await restored.promise;
+        throw restoreFailure;
+      });
+      launches.persistent
+        .mockResolvedValueOnce(first as unknown as BrowserContext)
+        .mockResolvedValue(next as unknown as BrowserContext);
+      const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+      try {
+        await pool.contextFor("work");
+        await vi.advanceTimersByTimeAsync(10);
+        const opening = expect(pool.contextFor("work")).rejects.toBe(restoreFailure);
+        await restoring.promise;
+        const clearing =
+          action === "clear" || action === "clear-and-shutdown"
+            ? expect(pool.clearProfile("work")).rejects.toBe(closeFailure)
+            : Promise.resolve();
+        const closing =
+          action === "shutdown" || action === "clear-and-shutdown"
+            ? pool.close()
+            : Promise.resolve();
+        restored.resolve();
+        await Promise.all([opening, clearing, closing]);
+        if (action === "reopen") {
+          await expect(pool.contextFor("work")).rejects.toBe(closeFailure);
+        }
+        expect(launches.persistent).toHaveBeenCalledTimes(2);
+        expect(launches.rm).not.toHaveBeenCalled();
+      } finally {
+        restored.resolve();
+        await pool.close();
+        vi.useRealTimers();
+      }
+      expect(closeBrowser).toHaveBeenCalledOnce();
+    },
+  );
 
   it("closes the shared browser only after it holds no context for the idle period", async () => {
     vi.useFakeTimers();
@@ -206,6 +417,7 @@ describe("ServerBrowserContexts", () => {
       vi.useFakeTimers();
       const first = makeContext();
       const next = makeContext();
+      first.cookies.mockResolvedValue([sessionCookie]);
       const closed = Promise.withResolvers<void>();
       const close = first.close.getMockImplementation()!;
       first.close.mockImplementation(async () => {
@@ -231,6 +443,7 @@ describe("ServerBrowserContexts", () => {
         expect(launches.persistent).toHaveBeenCalledTimes(2);
         expect(launches.rm).toHaveBeenCalledTimes(clear ? 1 : 0);
         expect(next.close).not.toHaveBeenCalled();
+        expect(next.addCookies.mock.calls).toEqual(clear ? [] : [[[sessionCookie]]]);
       } finally {
         closed.resolve();
         await pool.close();

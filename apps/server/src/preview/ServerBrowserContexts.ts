@@ -138,7 +138,14 @@ export class ServerBrowserContexts {
   private readonly options: Options;
   private readonly contexts = new Map<string, Promise<BrowserContext>>();
   private readonly clearing = new Map<string, Promise<void>>();
-  private readonly retiring = new Map<string, Promise<void>>();
+  private readonly retiring = new Map<
+    string,
+    { readonly context: BrowserContext; readonly done: Promise<void>; closed: boolean }
+  >();
+  private readonly sessionCookies = new Map<
+    string,
+    Awaited<ReturnType<BrowserContext["cookies"]>>
+  >();
   private readonly contextIdleTimers = new Map<BrowserContext, ReturnType<typeof setTimeout>>();
   private readonly pendingContextUses = new Map<string, number>();
   private browser: Promise<Browser> | undefined;
@@ -241,11 +248,30 @@ export class ServerBrowserContexts {
     this.contextIdleTimers.delete(context);
   }
 
+  private retireContext(key: string, context: BrowserContext, retire: () => Promise<void>) {
+    const retiring = {
+      context,
+      closed: false,
+      done: Promise.resolve()
+        .then(retire)
+        .catch((cause: unknown) => {
+          if (!retiring.closed) throw cause;
+        })
+        .then(() => {
+          if (this.retiring.get(key) === retiring) this.retiring.delete(key);
+        }),
+    };
+    this.retiring.set(key, retiring);
+    return retiring.done;
+  }
+
   private retireContextWhenIdle(
-    key: string,
+    profileId: string,
+    isolationKey: string | undefined,
     pending: Promise<BrowserContext>,
     context: BrowserContext,
   ) {
+    const key = JSON.stringify([profileId, isolationKey ?? null]);
     this.cancelContextRetirement(context);
     const delay = this.options.idleContextMs;
     if (
@@ -265,14 +291,29 @@ export class ServerBrowserContexts {
         context.pages().length > 0
       )
         return;
-      this.contexts.delete(key);
-      const retiring = Promise.resolve()
-        .then(() => context.close())
-        .catch(constVoid)
-        .finally(() => {
-          if (this.retiring.get(key) === retiring) this.retiring.delete(key);
-        });
-      this.retiring.set(key, retiring);
+      void this.retireContext(key, context, async () => {
+        if (isolationKey === undefined && profileId !== INCOGNITO_BROWSER_PROFILE_ID) {
+          // Chrome drops session cookies on exit, even for a persistent profile.
+          const cookies = await context.cookies().catch(() => undefined);
+          if (
+            !cookies ||
+            this.closing ||
+            this.contexts.get(key) !== pending ||
+            this.pendingContextUses.has(key) ||
+            context.pages().length > 0
+          )
+            return;
+          this.sessionCookies.set(
+            key,
+            cookies.filter((cookie) => cookie.expires === -1),
+          );
+        }
+        await context.close();
+      })
+        .then(() => {
+          this.retireContextWhenIdle(profileId, isolationKey, pending, context);
+        })
+        .catch(constVoid);
     }, delay);
     timer.unref();
     this.contextIdleTimers.set(context, timer);
@@ -285,9 +326,11 @@ export class ServerBrowserContexts {
   ): Promise<A> {
     const key = JSON.stringify([profileId, isolationKey ?? null]);
     this.pendingContextUses.set(key, (this.pendingContextUses.get(key) ?? 0) + 1);
-    const pending = this.contextFor(profileId, isolationKey);
+    let pending: Promise<BrowserContext> | undefined;
     let context: BrowserContext | undefined;
     try {
+      await this.retiring.get(key)?.done;
+      pending = this.contextFor(profileId, isolationKey);
       context = await pending;
       this.cancelContextRetirement(context);
       return await use(context);
@@ -295,35 +338,46 @@ export class ServerBrowserContexts {
       const remaining = (this.pendingContextUses.get(key) ?? 1) - 1;
       if (remaining === 0) this.pendingContextUses.delete(key);
       else this.pendingContextUses.set(key, remaining);
-      if (context) this.retireContextWhenIdle(key, pending, context);
+      if (context && pending) this.retireContextWhenIdle(profileId, isolationKey, pending, context);
     }
   }
 
   contextFor(profileId: string, isolationKey?: string): Promise<BrowserContext> {
     if (this.closing) return Promise.reject(new Error("The preview browser is closed."));
     const key = JSON.stringify([profileId, isolationKey ?? null]);
+    const retiring = this.retiring.get(key);
+    if (retiring) return retiring.done.then(() => this.contextFor(profileId, isolationKey));
     const cached = this.contexts.get(key);
     if (cached) return cached;
     const cleared = this.clearing.get(key)?.catch(constVoid) ?? Promise.resolve();
     const pending = cleared
-      .then(() => this.retiring.get(key))
+      .then(() => this.retiring.get(key)?.done)
       .then(() => this.createContext(profileId, isolationKey))
       .then(async (context) => {
         context.on("close", () => {
           this.cancelContextRetirement(context);
           if (this.contexts.get(key) === pending) this.contexts.delete(key);
+          const retiring = this.retiring.get(key);
+          if (retiring?.context === context) retiring.closed = true;
           this.options.onContextClose?.(context);
         });
         for (const page of context.pages()) await page.close().catch(constVoid);
-        if (this.closing) {
-          await context.close().catch(constVoid);
-          throw new Error("The preview browser is closed.");
+        const cookies = this.sessionCookies.get(key);
+        try {
+          if (cookies?.length && !this.closing) await context.addCookies(cookies);
+          if (this.closing) throw new Error("The preview browser is closed.");
+        } catch (cause) {
+          await this.retireContext(key, context, () => context.close()).catch(constVoid);
+          throw cause;
         }
+        this.sessionCookies.delete(key);
         context.on("page", (page) => {
           this.cancelContextRetirement(context);
-          page.once("close", () => this.retireContextWhenIdle(key, pending, context));
+          page.once("close", () =>
+            this.retireContextWhenIdle(profileId, isolationKey, pending, context),
+          );
         });
-        this.retireContextWhenIdle(key, pending, context);
+        this.retireContextWhenIdle(profileId, isolationKey, pending, context);
         return context;
       });
     this.contexts.set(key, pending);
@@ -394,11 +448,13 @@ export class ServerBrowserContexts {
     const clearing = (async () => {
       const pending = this.contexts.get(key);
       if (pending) this.contexts.delete(key);
-      await this.retiring.get(key);
+      await this.retiring.get(key)?.done;
       if (pending) {
         const context = await pending.catch(() => undefined);
-        await context?.close();
+        if (context && !context.isClosed()) await context.close();
       }
+      await this.retiring.get(key)?.done;
+      this.sessionCookies.delete(key);
       await NodeFSP.rm(this.profileDirectory(profileId), { recursive: true, force: true });
     })();
     this.clearing.set(key, clearing);
@@ -419,11 +475,19 @@ export class ServerBrowserContexts {
     for (const timer of this.contextIdleTimers.values()) clearTimeout(timer);
     this.contextIdleTimers.clear();
     await Promise.allSettled([
-      ...this.retiring.values(),
+      ...this.clearing.values(),
       ...[...this.contexts.values()].map(async (pending) => (await pending).close()),
     ]);
+    await Promise.allSettled(
+      [...this.retiring.values()].map(async ({ context, done }) => {
+        // A failed Playwright context close can leave it marked closing with its browser alive.
+        await done.catch(() => context.browser()?.close());
+      }),
+    );
     const browser = await this.browser?.catch(() => undefined);
     await browser?.close().catch(constVoid);
     this.contexts.clear();
+    this.retiring.clear();
+    this.sessionCookies.clear();
   }
 }
