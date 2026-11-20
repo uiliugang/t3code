@@ -1,12 +1,8 @@
 import type { TextGeneratorKind, TextGeneratorModel } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientRequest,
-  type HttpClientResponse,
-} from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 
 /** Where a text generator is reached, with its key already read from wherever settings keep it. */
 export interface TextGeneratorConnection {
@@ -80,6 +76,16 @@ const describeStatus = (label: string, status: number, message: string | undefin
 const endpoint = (connection: TextGeneratorConnection, path: string) =>
   `${connection.baseUrl.replace(/\/+$/, "")}${path}`;
 
+const isConnectionInterrupted = ({ reason }: HttpClientError.HttpClientError) => {
+  if (reason._tag !== "TransportError" && reason._tag !== "DecodeError") return false;
+  const cause = reason.cause;
+  const systemError = Predicate.hasProperty(cause, "cause") ? cause.cause : cause;
+  return (
+    Predicate.hasProperty(systemError, "code") &&
+    (systemError.code === "ECONNRESET" || systemError.code === "UND_ERR_SOCKET")
+  );
+};
+
 /** Sends a request and decodes a 2xx JSON body; anything else becomes a readable error. */
 const sendJson = Effect.fn("TextGenerator.sendJson")(function* <S extends Schema.Top>(
   label: string,
@@ -87,28 +93,39 @@ const sendJson = Effect.fn("TextGenerator.sendJson")(function* <S extends Schema
   schema: S,
 ) {
   const http = yield* HttpClient.HttpClient;
-  const response: HttpClientResponse.HttpClientResponse = yield* http.execute(request).pipe(
+  const { status, body } = yield* http.execute(request).pipe(
     // A redirect could carry the key to another origin.
     Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
     Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+    Effect.flatMap(({ status, json }) =>
+      json.pipe(
+        Effect.catchIf(
+          (error) => status < 200 || status >= 300 || !isConnectionInterrupted(error),
+          () => Effect.undefined,
+        ),
+        Effect.map((body) => ({ status, body })),
+      ),
+    ),
+    Effect.retry({ times: 1, while: isConnectionInterrupted }),
     Effect.mapError(
       (cause) =>
         new TextGeneratorRequestError({
-          detail: `Couldn't reach ${label}. Check the base URL and your connection.`,
+          detail: isConnectionInterrupted(cause)
+            ? `The connection to ${label} closed unexpectedly. Try again or check the model API gateway.`
+            : `Couldn't reach ${label}. Check the base URL and your connection.`,
           cause,
         }),
     ),
   );
-  const body = yield* response.json.pipe(Effect.orElseSucceed((): unknown => undefined));
-  if (response.status < 200 || response.status >= 300) {
+  if (status < 200 || status >= 300) {
     const error = decodeApiErrorBody(body).pipe((option) =>
       option._tag === "Some" ? option.value.error : undefined,
     );
     const parameter = decodeTokenParameter(error?.param);
     return yield* new TextGeneratorRequestError({
-      detail: describeStatus(label, response.status, error?.message),
+      detail: describeStatus(label, status, error?.message),
       tokenParameterIssue:
-        response.status === 400 && parameter._tag === "Some"
+        status === 400 && parameter._tag === "Some"
           ? {
               parameter: parameter.value,
               kind: error?.code === "unsupported_parameter" ? "unsupported" : "rejected",
@@ -116,7 +133,7 @@ const sendJson = Effect.fn("TextGenerator.sendJson")(function* <S extends Schema
           : undefined,
     });
   }
-  return yield* Schema.decodeUnknownEffect(schema)(body).pipe(
+  return yield* Schema.decodeEffect(schema)(body).pipe(
     Effect.mapError(
       (cause) =>
         new TextGeneratorRequestError({
