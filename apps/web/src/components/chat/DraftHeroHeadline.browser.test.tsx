@@ -6,6 +6,7 @@ import type * as Context from "effect/Context";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+import "~/index.css";
 import { AppRoot } from "~/AppRoot";
 // The draft route loads ChatView lazily; importing it here keeps its first transform out of the test's timeout.
 import "~/components/ChatView";
@@ -41,6 +42,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 
 it("the new-thread project picker follows the manual sidebar project order", async () => {
   using _environment = installFakeEnvironment([], {
+    capabilities: { multiRepositoryWorkspaces: true },
     extraProjects: [
       { id: ProjectId.make("project-alpha"), title: "alpha" },
       { id: ProjectId.make("project-beta"), title: "beta" },
@@ -77,7 +79,7 @@ it("the new-thread project picker follows the manual sidebar project order", asy
   const trigger = document.querySelector<HTMLElement>("[data-draft-project-trigger]");
   if (!trigger) throw new Error("The draft project picker did not render.");
   await userEvent.click(page.elementLocator(trigger));
-  await expect.element(page.getByRole("option", { name: "beta" })).toBeVisible();
+  await expect.element(page.getByRole("option", { name: /beta/ })).toBeVisible();
 
   // The draft's own project leads; the rest keep the sidebar's order.
   await vi.waitFor(() => {
@@ -92,5 +94,33 @@ it("the new-thread project picker follows the manual sidebar project order", asy
       expect.stringMatching(/alpha$/),
       "Add project",
     ]);
+  });
+
+  await page.getByRole("checkbox", { name: "Combine with beta", exact: true }).click();
+  await expect.element(page.getByRole("combobox", { name: "Search projects" })).toBeVisible();
+  await expect.element(page.getByRole("textbox", { name: "Group name" })).toBeVisible();
+  expect(
+    useComposerDraftStore.getState().getDraftSession(draftId)?.selectedProjectIds,
+  ).toBeUndefined();
+  await page.getByRole("textbox", { name: "Group name" }).fill("Client and API");
+  await page.getByRole("radio", { name: "beta", exact: true }).click();
+  await expect
+    .element(page.getByRole("textbox", { name: "Group name" }))
+    .toHaveValue("Client and API");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await vi.waitFor(() =>
+    expect(
+      Object.values(useComposerDraftStore.getState().draftThreadsByThreadKey).some(
+        (draft) => draft.selectedProjectIds?.length === 2,
+      ),
+    ).toBe(true),
+  );
+  const session = Object.values(useComposerDraftStore.getState().draftThreadsByThreadKey).find(
+    (draft) => (draft.selectedProjectIds?.length ?? 0) === 2,
+  );
+  expect(session).toMatchObject({
+    selectedProjectIds: ["project-beta", PROJECT_ID],
+    envMode: "worktree",
+    groupTitle: "Client and API",
   });
 });

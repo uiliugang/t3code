@@ -201,7 +201,10 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
       }
       if (
         props.scopedProjectKeys !== null &&
-        !props.scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`)
+        !props.scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`) &&
+        !(session.selectedProjectIds ?? []).some((id) =>
+          props.scopedProjectKeys!.has(`${session.environmentId}:${id}`),
+        )
       ) {
         continue;
       }
@@ -227,13 +230,19 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
     <>
       {drafts.map(({ composer, draftId, session }) => {
         const projectKey = `${session.environmentId}:${session.projectId}`;
+        const baseProject = props.projectByKey.get(projectKey) ?? null;
+        const isAdhocGroup = (session.selectedProjectIds?.length ?? 0) >= 2;
         return (
           <SidebarDraftRow
             key={draftId}
             draftId={draftId}
             composer={composer}
-            project={props.projectByKey.get(projectKey) ?? null}
-            projectDisplayName={props.projectDisplayNameByKey.get(projectKey) ?? null}
+            project={baseProject}
+            projectDisplayName={
+              (isAdhocGroup ? session.groupTitle : undefined) ??
+              props.projectDisplayNameByKey.get(projectKey) ??
+              null
+            }
             isActive={draftId === props.routeDraftId}
             onNavigate={props.onNavigateToDraft}
             onDiscard={discardComposerDraft}

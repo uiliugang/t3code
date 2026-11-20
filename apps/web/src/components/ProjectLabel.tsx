@@ -9,6 +9,7 @@ export function ProjectLabel({
   name,
   project,
   showKind = false,
+  kindOverride,
   className,
 }: {
   readonly name: string;
@@ -19,18 +20,20 @@ export function ProjectLabel({
       }
     | undefined;
   readonly showKind?: boolean;
+  readonly kindOverride?: "repo" | "group" | undefined;
   readonly className?: string;
 }) {
   const t = useUiTranslation();
   const capitalize = useClientSettings((settings) => settings.capitalizeProjectNames);
+  const kind = kindOverride ?? (project ? projectDisplayKind(project) : undefined);
   return (
     <span className={cn("inline-flex min-w-0 max-w-full items-center gap-1.5", className)}>
       <span className="min-w-0 truncate">
         {project?.isScratch ? t("No project") : formatProjectDisplayName(name, capitalize)}
       </span>
-      {showKind && project && !project.isScratch ? (
+      {(showKind || kindOverride !== undefined) && !project?.isScratch && kind ? (
         <Badge variant="secondary" size="sm">
-          {projectDisplayKind(project)}
+          {kind}
         </Badge>
       ) : null}
     </span>

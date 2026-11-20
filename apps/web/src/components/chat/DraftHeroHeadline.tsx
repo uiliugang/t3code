@@ -1,9 +1,15 @@
 import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
-import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  resolveEnvironmentMachineKind,
+  type EnvironmentId,
+  type ProjectId,
+  type ScopedProjectRef,
+} from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { FolderPlusIcon } from "lucide-react";
+import { CheckIcon, FolderPlusIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 
@@ -29,6 +35,8 @@ import {
 } from "~/sidebarProjectGrouping";
 import { useProjects } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import { useEnvironmentsWithScope } from "~/state/session";
+import { resolveDraftProjectSelection } from "../createWorkspace";
 import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { isProjectPinShortcut, ProjectPinButton } from "../ProjectPinButton";
@@ -45,7 +53,12 @@ import {
   useComboboxFilter,
 } from "../ui/combobox";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { InlineButton } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
+import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Radio, RadioGroup } from "../ui/radio-group";
 import { DraftProjectName } from "./DraftProjectName";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
 import { TriageDraftHero } from "./TriageDraftHero";
@@ -73,11 +86,18 @@ export function DraftHeroHeadline({
   const projects = useProjects();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const permittedEnvironments = useEnvironmentsWithScope(
+    environments,
+    AuthOrchestrationOperateScope,
+  );
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const setLogicalProjectDraftThreadId = useComposerDraftStore(
     (store) => store.setLogicalProjectDraftThreadId,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  const draftSession = useComposerDraftStore((store) =>
+    draftId ? store.getDraftSession(draftId) : null,
+  );
   // A boolean, so typing in a draft does not re-render the hero.
   const isTriageDraftPrompt = useComposerDraftStore((store) =>
     draftId ? isTriagePrompt(store.getComposerDraft(draftId)?.prompt ?? "") : false,
@@ -88,12 +108,28 @@ export function DraftHeroHeadline({
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
+  const [pendingSelection, setPendingSelection] = useState<{
+    environmentId: EnvironmentId;
+    projectIds: readonly ProjectId[];
+  } | null>(null);
+  const [pendingGroupTitle, setPendingGroupTitle] = useState<string | null>(null);
   const pickerFilter = useComboboxFilter();
   const highlightedPickerValueRef = useRef<string | null>(null);
+  const suppressNextChangeRef = useRef(false);
   const { canPinProjectGroup, toggleProjectGroupPin } = useProjectPin();
 
   const environmentLabelById = new Map(
     environments.map((environment) => [environment.environmentId, environment.label] as const),
+  );
+  const multiRepoEnvironmentIds = new Set<EnvironmentId>(
+    environments
+      .filter(
+        (environment) =>
+          environment.connection.phase === "connected" &&
+          environment.serverConfig?.environment.capabilities.multiRepositoryWorkspaces === true &&
+          permittedEnvironments.has(environment.environmentId),
+      )
+      .map((environment) => environment.environmentId),
   );
   const projectGroups = useSortedProjectGroups(environmentLabelById);
   const showProjectEnvironments = projectGroupsSpanEnvironments(projectGroups);
@@ -122,7 +158,10 @@ export function DraftHeroHeadline({
           ),
         ) ?? null);
   const activeProjectKey = activeProjectGroup?.projectKey ?? "";
-  const hasResolvedProject = activeProjectTitle !== null;
+  const isAdhocGroupDraft = (draftSession?.selectedProjectIds?.length ?? 0) >= 2;
+  const effectiveProjectTitle =
+    (isAdhocGroupDraft ? draftSession?.groupTitle : undefined) ?? activeProjectTitle;
+  const hasResolvedProject = effectiveProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
   const shouldShowProjectMenu = canChooseProject;
   const menuEntries = projectPickerEntries.filter(
@@ -143,6 +182,50 @@ export function DraftHeroHeadline({
     activeProject !== null &&
     isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
 
+  const selectedProjectIdsForDraft: readonly ProjectId[] =
+    pendingSelection?.projectIds ??
+    (isAdhocGroupDraft
+      ? (draftSession?.selectedProjectIds ?? [])
+      : activeProject && !isScratchDraft
+        ? [activeProject.id]
+        : []);
+  const selectedEnvironmentId: EnvironmentId | null =
+    pendingSelection?.environmentId ??
+    (isAdhocGroupDraft
+      ? (draftSession?.environmentId ?? activeProject?.environmentId ?? null)
+      : activeProject && !isScratchDraft
+        ? activeProject.environmentId
+        : null);
+
+  const resolveMemberForEnvironment = (
+    entry: (typeof menuEntries)[number],
+    preferredEnvironmentId: EnvironmentId | null,
+  ) =>
+    (preferredEnvironmentId
+      ? entry.group.memberProjects.find((member) => member.environmentId === preferredEnvironmentId)
+      : undefined) ?? entry.targetProject;
+
+  const isEntrySelected = (entry: (typeof menuEntries)[number]): boolean => {
+    if (selectedEnvironmentId === null || selectedProjectIdsForDraft.length === 0) return false;
+    return entry.group.memberProjects.some(
+      (member) =>
+        member.environmentId === selectedEnvironmentId &&
+        selectedProjectIdsForDraft.includes(member.id),
+    );
+  };
+
+  const canCombineEntry = (entry: (typeof menuEntries)[number]): boolean => {
+    if (selectedEnvironmentId !== null && selectedProjectIdsForDraft.length > 0) {
+      if (!multiRepoEnvironmentIds.has(selectedEnvironmentId)) return false;
+      return entry.group.memberProjects.some(
+        (member) => member.environmentId === selectedEnvironmentId,
+      );
+    }
+    return entry.group.memberProjects.some((member) =>
+      multiRepoEnvironmentIds.has(member.environmentId),
+    );
+  };
+
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
     [
@@ -161,12 +244,10 @@ export function DraftHeroHeadline({
             item.value !== ADD_PROJECT_VALUE &&
             pickerFilter.contains(item, pickerSearch, (candidate) => candidate.label),
         );
-  const selectedPickerItem = pickerItems.find((item) => item.value === activeProjectKey) ?? null;
+  const selectedPickerItem = isAdhocGroupDraft
+    ? null
+    : (pickerItems.find((item) => item.value === activeProjectKey) ?? null);
 
-  // The picker can change the draft's target while the no-project home is
-  // still being opened; a stale continuation must not retarget it again. Picking
-  // a project clears the pending request, and the draft session is compared
-  // against the store when the scratch project arrives.
   const pendingScratchRef = useRef<symbol | null>(null);
   const draftTargetKey = () => {
     const session = draftId ? useComposerDraftStore.getState().getDraftSession(draftId) : null;
@@ -185,9 +266,153 @@ export function DraftHeroHeadline({
       void openProjectDraft(projectRef);
       return;
     }
-    setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId);
+    setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
+      selectedProjectIds: null,
+      groupTitle: null,
+    });
     seedDraftModelSelection(draftId, projectRef);
   };
+
+  const applySelectedProjects = (nextProjects: readonly (typeof projects)[number][]) => {
+    if (!draftId || nextProjects.length === 0) return;
+    pendingScratchRef.current = null;
+    const targetEnvironmentId = nextProjects[0]!.environmentId;
+    const envProjects = projects.filter(
+      (candidate) => candidate.environmentId === targetEnvironmentId,
+    );
+    const resolved = resolveDraftProjectSelection(nextProjects, envProjects);
+    if (!resolved) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: t("Choose up to 16 repositories from one environment."),
+        }),
+      );
+      return;
+    }
+    if (resolved.kind === "single" || resolved.kind === "existing-group") {
+      const logicalKey = deriveLogicalProjectKeyFromSettings(
+        resolved.project,
+        projectGroupingSettings,
+      );
+      if (!composerDraftHasUserContent(getComposerDraft(draftId))) {
+        void openProjectDraft(
+          resolved.projectRef,
+          resolved.kind === "existing-group" ? { envMode: "worktree" } : undefined,
+        );
+        return;
+      }
+      setLogicalProjectDraftThreadId(logicalKey, resolved.projectRef, draftId, {
+        ...(resolved.kind === "existing-group" ? { envMode: "worktree" } : {}),
+        selectedProjectIds: null,
+        groupTitle: null,
+      });
+      seedDraftModelSelection(draftId, resolved.projectRef);
+      return;
+    }
+    if (!composerDraftHasUserContent(getComposerDraft(draftId))) {
+      void openProjectDraft(resolved.primaryProjectRef, {
+        logicalProjectKey: resolved.logicalProjectKey,
+        envMode: "worktree",
+        selectedProjectIds: resolved.selectedProjectIds,
+        groupTitle: pendingGroupTitle?.trim() || draftSession?.groupTitle?.trim() || resolved.title,
+      });
+      return;
+    }
+    setLogicalProjectDraftThreadId(
+      resolved.logicalProjectKey,
+      resolved.primaryProjectRef,
+      draftId,
+      {
+        envMode: "worktree",
+        selectedProjectIds: resolved.selectedProjectIds,
+        groupTitle: pendingGroupTitle?.trim() || draftSession?.groupTitle?.trim() || resolved.title,
+      },
+    );
+    seedDraftModelSelection(draftId, resolved.primaryProjectRef);
+  };
+
+  const stageSelectedProjects = (nextProjects: readonly (typeof projects)[number][]) => {
+    if (nextProjects.length === 0) return;
+    if (!resolveDraftProjectSelection(nextProjects, projects)) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: t("Choose up to 16 repositories from one environment."),
+        }),
+      );
+      return;
+    }
+    setPendingSelection({
+      environmentId: nextProjects[0]!.environmentId,
+      projectIds: nextProjects.map((project) => project.id),
+    });
+    setPendingGroupTitle((title) => title ?? draftSession?.groupTitle ?? null);
+  };
+
+  const toggleProjectEntry = (entry: (typeof menuEntries)[number]) => {
+    const member = resolveMemberForEnvironment(entry, selectedEnvironmentId);
+    const targetEnvId = selectedEnvironmentId ?? member.environmentId;
+    if (!multiRepoEnvironmentIds.has(targetEnvId)) return;
+    if (member.environmentId !== targetEnvId) return;
+
+    const envProjectsById = new Map(
+      projects
+        .filter((candidate) => candidate.environmentId === targetEnvId)
+        .map((candidate) => [candidate.id, candidate] as const),
+    );
+    const currentSelected = selectedProjectIdsForDraft.flatMap((id) => {
+      const found = envProjectsById.get(id);
+      return found ? [found] : [];
+    });
+    const alreadySelected = currentSelected.some((candidate) => candidate.id === member.id);
+    if (alreadySelected) {
+      if (currentSelected.length <= 1) return;
+      stageSelectedProjects(currentSelected.filter((candidate) => candidate.id !== member.id));
+      return;
+    }
+    stageSelectedProjects([...currentSelected, member]);
+  };
+
+  const makePrimaryProject = (projectId: ProjectId) => {
+    if (!selectedEnvironmentId || selectedProjectIdsForDraft.length < 2) return;
+    const envProjectsById = new Map(
+      projects
+        .filter((candidate) => candidate.environmentId === selectedEnvironmentId)
+        .map((candidate) => [candidate.id, candidate] as const),
+    );
+    const currentSelected = selectedProjectIdsForDraft.flatMap((id) => {
+      const found = envProjectsById.get(id);
+      return found ? [found] : [];
+    });
+    const nextPrimary = currentSelected.find((candidate) => candidate.id === projectId);
+    if (!nextPrimary || currentSelected[0]?.id === projectId) return;
+    stageSelectedProjects([
+      nextPrimary,
+      ...currentSelected.filter((candidate) => candidate.id !== projectId),
+    ]);
+  };
+
+  const selectedProjectsResolved =
+    selectedEnvironmentId === null
+      ? []
+      : selectedProjectIdsForDraft.flatMap((id) => {
+          const found = projects.find(
+            (candidate) => candidate.environmentId === selectedEnvironmentId && candidate.id === id,
+          );
+          return found ? [found] : [];
+        });
+  const pendingResolved = pendingSelection
+    ? resolveDraftProjectSelection(selectedProjectsResolved, projects)
+    : null;
+  const groupTitle =
+    pendingGroupTitle ??
+    (pendingResolved?.kind === "adhoc-group"
+      ? pendingResolved.title
+      : pendingResolved?.project.title) ??
+    draftSession?.groupTitle ??
+    "";
+
   const startScratch = async (): Promise<boolean> => {
     if (scratchTargetEnvironmentId === null || isScratchDraft) {
       return false;
@@ -215,20 +440,40 @@ export function DraftHeroHeadline({
       onItemHighlighted={(item) => {
         highlightedPickerValueRef.current = item?.value ?? null;
       }}
-      onOpenChange={(open) => {
+      onOpenChange={(open, eventDetails) => {
+        if (eventDetails.isCanceled) return;
+        if (open) suppressNextChangeRef.current = false;
         setPickerOpen(open);
         setPickerQuery("");
+        if (!open) {
+          setPendingSelection(null);
+          setPendingGroupTitle(null);
+        }
       }}
       value={selectedPickerItem}
-      onValueChange={(item) => {
+      onValueChange={(item, eventDetails) => {
+        if (suppressNextChangeRef.current) {
+          suppressNextChangeRef.current = false;
+          return;
+        }
         if (!item) return;
-        setPickerOpen(false);
         if (item.value === ADD_PROJECT_VALUE) {
+          setPickerOpen(false);
           openAddProject();
           return;
         }
         const entry = projectEntryByKey.get(item.value);
-        if (!entry || item.value === activeProjectKey) {
+        if (!entry) return;
+        const isToggleEvent =
+          eventDetails.event instanceof MouseEvent &&
+          (eventDetails.event.shiftKey || eventDetails.event.metaKey || eventDetails.event.ctrlKey);
+        if (isToggleEvent && canCombineEntry(entry)) {
+          eventDetails.cancel();
+          toggleProjectEntry(entry);
+          return;
+        }
+        setPickerOpen(false);
+        if (!isAdhocGroupDraft && item.value === activeProjectKey) {
           return;
         }
         selectProject(entry.targetProject, entry.group.projectKey);
@@ -245,41 +490,79 @@ export function DraftHeroHeadline({
           }
         >
           <ProjectLabel
-            name={isScratchDraft ? t("No project") : (activeProjectTitle ?? t("Choose a project"))}
+            name={
+              isScratchDraft ? t("No project") : (effectiveProjectTitle ?? t("Choose a project"))
+            }
             project={isScratchDraft ? undefined : (activeProjectGroup ?? undefined)}
+            {...(isAdhocGroupDraft ? { kindOverride: "group" as const } : {})}
           />
         </TooltipTrigger>
-        {activeProjectTitle && !isScratchDraft ? (
-          <TooltipPopup side="top">{activeProjectTitle}</TooltipPopup>
+        {effectiveProjectTitle && !isScratchDraft ? (
+          <TooltipPopup side="top">{effectiveProjectTitle}</TooltipPopup>
         ) : null}
       </Tooltip>
-      <ComboboxPopup align="center" className="w-72 overflow-hidden">
+      <ComboboxPopup align="center" className="w-80 overflow-hidden">
         <ComboboxSearchInput
           aria-label={t("Search projects")}
           placeholder={t("Search projects...")}
           value={pickerQuery}
           onChange={(event) => setPickerQuery(event.target.value)}
           onKeyDown={(event) => {
-            const highlighted = highlightedPickerValueRef.current;
-            const group = highlighted ? projectEntryByKey.get(highlighted)?.group : undefined;
-            if (!group || !canPinProjectGroup(group) || !isProjectPinShortcut(event, keybindings)) {
+            if (event.defaultPrevented || event.nativeEvent.isComposing || event.keyCode === 229) {
               return;
             }
-            event.preventDefault();
-            event.stopPropagation();
-            toggleProjectGroupPin(group);
+            const highlighted = highlightedPickerValueRef.current;
+            const entry = highlighted ? projectEntryByKey.get(highlighted) : undefined;
+            const group = entry?.group;
+            if (group && canPinProjectGroup(group) && isProjectPinShortcut(event, keybindings)) {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleProjectGroupPin(group);
+              return;
+            }
+            if (
+              entry &&
+              canCombineEntry(entry) &&
+              event.shiftKey &&
+              !event.ctrlKey &&
+              !event.altKey &&
+              !event.metaKey &&
+              event.key === "Enter"
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleProjectEntry(entry);
+            }
           }}
         />
         <ComboboxEmpty>{t("No matching projects.")}</ComboboxEmpty>
         <ComboboxList>
           {(item: PickerItem) => {
             const entry = projectEntryByKey.get(item.value);
+            const selected = entry ? isEntrySelected(entry) : false;
+            const combinable = entry ? canCombineEntry(entry) : false;
             return (
-              <ComboboxItem key={item.value} hideIndicator value={item}>
+              <ComboboxItem
+                key={item.value}
+                hideIndicator
+                selectedFill={!isAdhocGroupDraft}
+                value={item}
+              >
                 {item.value === ADD_PROJECT_VALUE ? (
                   <FolderPlusIcon className="size-4 shrink-0" />
                 ) : entry ? (
-                  <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
+                  <span className="relative flex shrink-0">
+                    <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
+                    {selectedProjectIdsForDraft.length > 1 && selected ? (
+                      <span className="pointer-events-none absolute -right-1 -bottom-1 grid size-3 place-items-center rounded-full bg-primary ring-2 ring-popover">
+                        <CheckIcon
+                          className="size-2 text-primary-foreground"
+                          strokeWidth={4}
+                          aria-hidden
+                        />
+                      </span>
+                    ) : null}
+                  </span>
                 ) : null}
                 <Tooltip>
                   <TooltipTrigger render={<span className="min-w-0 flex-1 text-sm" />}>
@@ -295,6 +578,30 @@ export function DraftHeroHeadline({
                     onToggle={() => toggleProjectGroupPin(entry.group)}
                   />
                 ) : null}
+                {entry && multiRepoEnvironmentIds.size > 0 ? (
+                  <span className="flex shrink-0">
+                    <Checkbox
+                      checked={selected}
+                      tabIndex={-1}
+                      aria-label={
+                        selected
+                          ? t("Remove {name} from group", { name: entry.group.displayName })
+                          : t("Combine with {name}", { name: entry.group.displayName })
+                      }
+                      disabled={!combinable || (selected && selectedProjectIdsForDraft.length <= 1)}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        suppressNextChangeRef.current = true;
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        suppressNextChangeRef.current = false;
+                      }}
+                      onCheckedChange={() => toggleProjectEntry(entry)}
+                    />
+                  </span>
+                ) : null}
                 {entry && showProjectEnvironments ? (
                   <ProjectEnvironmentBadge
                     group={entry.group}
@@ -306,6 +613,62 @@ export function DraftHeroHeadline({
             );
           }}
         </ComboboxList>
+        {(pendingSelection || isAdhocGroupDraft) && draftId ? (
+          <div className="space-y-2 border-t border-border/70 px-3 py-2.5">
+            <Label>{t("Primary repository")}</Label>
+            <div className="max-h-32 overflow-y-auto">
+              <RadioGroup
+                aria-label={t("Primary repository")}
+                value={selectedProjectIdsForDraft[0] ?? ""}
+                onValueChange={(value) => {
+                  const project = selectedProjectsResolved.find((entry) => entry.id === value);
+                  if (project) makePrimaryProject(project.id);
+                }}
+              >
+                {selectedProjectsResolved.map((project) => (
+                  <Label key={project.id}>
+                    <Radio value={project.id} />
+                    <span className="truncate">{project.title}</span>
+                  </Label>
+                ))}
+              </RadioGroup>
+            </div>
+            {selectedProjectIdsForDraft.length > 1 ? (
+              <Input
+                size="sm"
+                aria-label={t("Group name")}
+                placeholder={t("Group name")}
+                value={groupTitle}
+                maxLength={200}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    applySelectedProjects(selectedProjectsResolved);
+                    setPickerOpen(false);
+                  }
+                }}
+                onChange={(event) => {
+                  setPendingGroupTitle(event.target.value);
+                }}
+              />
+            ) : null}
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (pendingSelection || pendingGroupTitle !== null)
+                    applySelectedProjects(selectedProjectsResolved);
+                  setPendingSelection(null);
+                  setPendingGroupTitle(null);
+                  setPickerOpen(false);
+                }}
+              >
+                {t("Done")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </ComboboxPopup>
     </Combobox>
   ) : (
@@ -314,7 +677,7 @@ export function DraftHeroHeadline({
       onClick={openAddProject}
       className="pointer-events-auto inline min-w-0 max-w-full cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      <DraftProjectName value={activeProjectTitle ?? t("Add a project")} singleLine />
+      <DraftProjectName value={effectiveProjectTitle ?? t("Add a project")} singleLine />
     </button>
   );
 
@@ -358,7 +721,7 @@ export function DraftHeroHeadline({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       {hasResolvedProject && !isScratchDraft ? (
-        <DraftHeroProjectHeading projectName={activeProjectTitle ?? t("Choose a project")}>
+        <DraftHeroProjectHeading projectName={effectiveProjectTitle ?? t("Choose a project")}>
           {projectSelector}
         </DraftHeroProjectHeading>
       ) : (

@@ -407,6 +407,8 @@ const PersistedDraftThreadState = Schema.Struct({
   threadId: ThreadId,
   environmentId: Schema.String,
   projectId: ProjectId,
+  selectedProjectIds: Schema.optionalKey(Schema.Array(ProjectId)),
+  groupTitle: Schema.optionalKey(Schema.String),
   logicalProjectKey: Schema.optionalKey(Schema.String),
   environmentSelection: Schema.optionalKey(Schema.Literals(["auto", "manual"])),
   loadBalancedEnvironmentId: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -506,6 +508,9 @@ export interface DraftSessionState {
   threadId: ThreadId;
   environmentId: EnvironmentId;
   projectId: ProjectId;
+  /** Projects chosen together for an ad-hoc group; resolved into a group project on first send. */
+  selectedProjectIds?: readonly ProjectId[];
+  groupTitle?: string;
   logicalProjectKey: string;
   environmentSelection?: "auto" | "manual";
   loadBalancedEnvironmentId?: EnvironmentId | null;
@@ -591,6 +596,8 @@ interface ComposerDraftStoreState {
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
+      selectedProjectIds?: readonly ProjectId[] | null;
+      groupTitle?: string | null;
     },
   ) => void;
   setProjectDraftThreadId: (
@@ -608,6 +615,8 @@ interface ComposerDraftStoreState {
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
+      selectedProjectIds?: readonly ProjectId[] | null;
+      groupTitle?: string | null;
     },
   ) => void;
   setDraftThreadContext: (
@@ -624,6 +633,8 @@ interface ComposerDraftStoreState {
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
       checkoutPullRequest?: DraftCheckoutPullRequest | null;
+      selectedProjectIds?: readonly ProjectId[] | null;
+      groupTitle?: string | null;
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -1707,6 +1718,22 @@ function toProjectDraftSession(
   };
 }
 
+function projectIdsEqual(
+  left: readonly ProjectId[] | undefined,
+  right: readonly ProjectId[] | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((id, index) => id === right[index]);
+}
+
+function normalizeSelectedProjectIds(
+  value: readonly ProjectId[] | null | undefined,
+): readonly ProjectId[] | undefined {
+  const ids = value ? [...new Set(value)] : [];
+  return ids.length >= 2 ? ids : undefined;
+}
+
 function createDraftThreadState(
   projectRef: ScopedProjectRef,
   threadId: ThreadId,
@@ -1724,14 +1751,31 @@ function createDraftThreadState(
     environmentSelection?: "auto" | "manual";
     loadBalancedEnvironmentId?: EnvironmentId | null;
     checkoutPullRequest?: DraftCheckoutPullRequest | null;
+    selectedProjectIds?: readonly ProjectId[] | null;
+    groupTitle?: string | null;
   },
 ): DraftThreadState {
   const projectChanged =
     existingThread !== undefined &&
     (existingThread.environmentId !== projectRef.environmentId ||
       existingThread.projectId !== projectRef.projectId);
-  const nextWorktreePath =
-    options?.worktreePath === undefined
+  const logicalProjectChanged =
+    existingThread !== undefined && existingThread.logicalProjectKey !== logicalProjectKey;
+  const nextSelectedProjectIds =
+    options?.selectedProjectIds !== undefined
+      ? normalizeSelectedProjectIds(options.selectedProjectIds)
+      : projectChanged || logicalProjectChanged
+        ? undefined
+        : existingThread?.selectedProjectIds;
+  const nextGroupTitle =
+    nextSelectedProjectIds === undefined
+      ? undefined
+      : options?.groupTitle !== undefined
+        ? (options.groupTitle ?? undefined)
+        : existingThread?.groupTitle;
+  const nextWorktreePath = nextSelectedProjectIds
+    ? null
+    : options?.worktreePath === undefined
       ? projectChanged
         ? null
         : (existingThread?.worktreePath ?? null)
@@ -1746,36 +1790,41 @@ function createDraftThreadState(
     options?.startFromOrigin === undefined
       ? (existingThread?.startFromOrigin ?? false)
       : options.startFromOrigin;
-  const environmentSelection =
-    options?.environmentSelection ?? existingThread?.environmentSelection;
-  const checkoutPullRequest = resolveCheckoutPullRequest(
-    existingThread,
-    options?.checkoutPullRequest,
-    projectChanged,
-  );
+  const environmentSelection = nextSelectedProjectIds
+    ? "manual"
+    : (options?.environmentSelection ?? existingThread?.environmentSelection);
+  const checkoutPullRequest = nextSelectedProjectIds
+    ? null
+    : resolveCheckoutPullRequest(existingThread, options?.checkoutPullRequest, projectChanged);
   return {
     threadId,
     environmentId: projectRef.environmentId,
     projectId: projectRef.projectId,
+    ...(nextSelectedProjectIds ? { selectedProjectIds: nextSelectedProjectIds } : {}),
+    ...(nextGroupTitle !== undefined ? { groupTitle: nextGroupTitle } : {}),
     logicalProjectKey,
     ...(environmentSelection ? { environmentSelection } : {}),
-    ...(options?.loadBalancedEnvironmentId !== undefined
-      ? { loadBalancedEnvironmentId: options.loadBalancedEnvironmentId }
-      : existingThread?.loadBalancedEnvironmentId !== undefined
-        ? {
-            loadBalancedEnvironmentId: projectChanged
-              ? null
-              : existingThread.loadBalancedEnvironmentId,
-          }
-        : {}),
+    ...(nextSelectedProjectIds
+      ? { loadBalancedEnvironmentId: null }
+      : options?.loadBalancedEnvironmentId !== undefined
+        ? { loadBalancedEnvironmentId: options.loadBalancedEnvironmentId }
+        : existingThread?.loadBalancedEnvironmentId !== undefined
+          ? {
+              loadBalancedEnvironmentId: projectChanged
+                ? null
+                : existingThread.loadBalancedEnvironmentId,
+            }
+          : {}),
     createdAt: options?.createdAt ?? existingThread?.createdAt ?? new Date().toISOString(),
     runtimeMode: options?.runtimeMode ?? existingThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
     interactionMode:
       options?.interactionMode ?? existingThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
     branch: nextBranch,
     worktreePath: nextWorktreePath,
-    envMode:
-      options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
+    envMode: nextSelectedProjectIds
+      ? "worktree"
+      : (options?.envMode ??
+        (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local"))),
     startFromOrigin: nextStartFromOrigin,
     ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
     promotedTo: null,
@@ -1819,6 +1868,8 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.threadId === right.threadId &&
     left.environmentId === right.environmentId &&
     left.projectId === right.projectId &&
+    projectIdsEqual(left.selectedProjectIds, right.selectedProjectIds) &&
+    left.groupTitle === right.groupTitle &&
     left.logicalProjectKey === right.logicalProjectKey &&
     left.environmentSelection === right.environmentSelection &&
     left.loadBalancedEnvironmentId === right.loadBalancedEnvironmentId &&
@@ -1965,10 +2016,22 @@ function normalizePersistedDraftThreads(
         continue;
       }
       const normalizedEnvironmentId = environmentId as EnvironmentId;
+      const rawSelectedProjectIds = Array.isArray(candidateDraftThread.selectedProjectIds)
+        ? candidateDraftThread.selectedProjectIds.flatMap((id) =>
+            typeof id === "string" && id.length > 0 ? [id as ProjectId] : [],
+          )
+        : undefined;
+      const selectedProjectIds = normalizeSelectedProjectIds(rawSelectedProjectIds);
+      const groupTitle =
+        selectedProjectIds && typeof candidateDraftThread.groupTitle === "string"
+          ? candidateDraftThread.groupTitle
+          : undefined;
       draftThreadsByThreadKey[threadKey] = {
         threadId,
         environmentId: normalizedEnvironmentId,
         projectId: projectId as ProjectId,
+        ...(selectedProjectIds ? { selectedProjectIds } : {}),
+        ...(groupTitle !== undefined ? { groupTitle } : {}),
         logicalProjectKey:
           typeof candidateDraftThread.logicalProjectKey === "string" &&
           candidateDraftThread.logicalProjectKey.length > 0
@@ -2474,9 +2537,7 @@ export function partializeComposerDraftStoreState(
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
-  const persistedDraftThreadsByThreadKey: DeepMutable<
-    PersistedComposerDraftStoreState["draftThreadsByThreadKey"]
-  > = {};
+  const persistedDraftThreadsByThreadKey: Record<string, PersistedDraftThreadState> = {};
   for (const [threadKey, draftThread] of Object.entries(state.draftThreadsByThreadKey)) {
     if (!keptSessionKeys.has(threadKey)) {
       continue;
@@ -2752,10 +2813,17 @@ function toHydratedThreadDraft(
 function toHydratedDraftThreadState(
   persistedDraftThread: PersistedDraftThreadState,
 ): DraftThreadState {
+  const selectedProjectIds = normalizeSelectedProjectIds(persistedDraftThread.selectedProjectIds);
+  const groupTitle =
+    selectedProjectIds && persistedDraftThread.groupTitle !== undefined
+      ? persistedDraftThread.groupTitle
+      : undefined;
   return {
     threadId: persistedDraftThread.threadId,
     environmentId: persistedDraftThread.environmentId as EnvironmentId,
     projectId: persistedDraftThread.projectId,
+    ...(selectedProjectIds ? { selectedProjectIds } : {}),
+    ...(groupTitle !== undefined ? { groupTitle } : {}),
     logicalProjectKey:
       persistedDraftThread.logicalProjectKey ??
       projectDraftKey(
@@ -3021,8 +3089,21 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const projectChanged =
               nextProjectRef.environmentId !== existing.environmentId ||
               nextProjectRef.projectId !== existing.projectId;
-            const nextWorktreePath =
-              options.worktreePath === undefined
+            const nextSelectedProjectIds =
+              options.selectedProjectIds !== undefined
+                ? normalizeSelectedProjectIds(options.selectedProjectIds)
+                : projectChanged
+                  ? undefined
+                  : existing.selectedProjectIds;
+            const nextGroupTitle =
+              nextSelectedProjectIds === undefined
+                ? undefined
+                : options.groupTitle !== undefined
+                  ? (options.groupTitle ?? undefined)
+                  : existing.groupTitle;
+            const nextWorktreePath = nextSelectedProjectIds
+              ? null
+              : options.worktreePath === undefined
                 ? projectChanged
                   ? null
                   : existing.worktreePath
@@ -3037,24 +3118,26 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               options.startFromOrigin === undefined
                 ? existing.startFromOrigin
                 : options.startFromOrigin;
-            const environmentSelection =
-              options.environmentSelection ??
-              (options.branch != null || options.worktreePath != null
-                ? "manual"
-                : existing.environmentSelection);
-            const checkoutPullRequest = resolveCheckoutPullRequest(
-              existing,
-              options.checkoutPullRequest,
-              projectChanged,
-            );
+            const environmentSelection = nextSelectedProjectIds
+              ? "manual"
+              : (options.environmentSelection ??
+                (options.branch != null || options.worktreePath != null
+                  ? "manual"
+                  : existing.environmentSelection));
+            const checkoutPullRequest = nextSelectedProjectIds
+              ? null
+              : resolveCheckoutPullRequest(existing, options.checkoutPullRequest, projectChanged);
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
               projectId: nextProjectRef.projectId,
+              ...(nextSelectedProjectIds ? { selectedProjectIds: nextSelectedProjectIds } : {}),
+              ...(nextGroupTitle !== undefined ? { groupTitle: nextGroupTitle } : {}),
               logicalProjectKey: existing.logicalProjectKey,
               ...(environmentSelection ? { environmentSelection } : {}),
-              loadBalancedEnvironmentId:
-                options.loadBalancedEnvironmentId === undefined
+              loadBalancedEnvironmentId: nextSelectedProjectIds
+                ? null
+                : options.loadBalancedEnvironmentId === undefined
                   ? projectChanged
                     ? null
                     : (existing.loadBalancedEnvironmentId ?? null)
@@ -3067,8 +3150,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               interactionMode: options.interactionMode ?? existing.interactionMode,
               branch: nextBranch,
               worktreePath: nextWorktreePath,
-              envMode:
-                options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
+              envMode: nextSelectedProjectIds
+                ? "worktree"
+                : (options.envMode ??
+                  (nextWorktreePath ? "worktree" : (existing.envMode ?? "local"))),
               startFromOrigin: nextStartFromOrigin,
               ...(checkoutPullRequest ? { checkoutPullRequest } : {}),
               promotedTo: existing.promotedTo ?? null,
@@ -3076,6 +3161,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const isUnchanged =
               nextDraftThread.environmentId === existing.environmentId &&
               nextDraftThread.projectId === existing.projectId &&
+              projectIdsEqual(nextDraftThread.selectedProjectIds, existing.selectedProjectIds) &&
+              nextDraftThread.groupTitle === existing.groupTitle &&
               nextDraftThread.logicalProjectKey === existing.logicalProjectKey &&
               nextDraftThread.environmentSelection === existing.environmentSelection &&
               nextDraftThread.loadBalancedEnvironmentId === existing.loadBalancedEnvironmentId &&

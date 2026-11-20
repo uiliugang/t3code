@@ -21,6 +21,7 @@ import {
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
 import {
   AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
   DEFAULT_MODEL,
   type EnvironmentId,
   type ModelSelection,
@@ -65,8 +66,11 @@ import { type ChatMessage, DEFAULT_INTERACTION_MODE } from "../../types";
 import { recordPromptSent } from "../GitHubStarPrompt";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { newMessageId, newThreadId } from "~/lib/utils";
+import { newMessageId, newProjectId, newThreadId } from "~/lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { readProjects } from "../../state/entities";
+import { projectEnvironment } from "../../state/projects";
+import { resolveDraftProjectSelection, workspaceCreateInput } from "../createWorkspace";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,
@@ -379,6 +383,59 @@ export function useComposerSend(input: ComposerSendInput) {
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
+  const createProject = useOrchestrationCommand(projectEnvironment.create, {
+    reportFailure: false,
+  });
+
+  const materializeDraftGroupProject = () =>
+    settlePromise(async (): Promise<EnvironmentProject> => {
+      if (!activeProject) throw new Error(t("Choose a project first"));
+      const selectedProjectIds = draftThread?.selectedProjectIds;
+      if (!selectedProjectIds || selectedProjectIds.length < 2) {
+        return activeProject;
+      }
+      if (
+        readEnvironmentPresentation(environmentId)?.serverConfig?.environment.capabilities
+          .multiRepositoryWorkspaces !== true
+      ) {
+        throw new Error(t("This environment does not support multi-repository workspaces."));
+      }
+      const allProjects = readProjects().filter(
+        (candidate) => candidate.environmentId === environmentId,
+      );
+      const byId = new Map(allProjects.map((candidate) => [candidate.id, candidate] as const));
+      const orderedSelected = selectedProjectIds.map((id) => {
+        const found = byId.get(id);
+        if (!found || found.archivedAt != null)
+          throw new Error(t("A selected project is no longer available. Choose projects again."));
+        return found;
+      });
+      const includeSetupScripts = readEnvironmentScope(environmentId, AuthSettingsWriteScope);
+      const resolved = resolveDraftProjectSelection(orderedSelected, allProjects, {
+        includeSetupScripts,
+      });
+      if (!resolved) {
+        throw new Error(t("Choose up to 16 repositories from one environment."));
+      }
+      if (resolved.kind !== "adhoc-group") {
+        return resolved.project;
+      }
+      const projectId = newProjectId();
+      const groupTitle = draftThread?.groupTitle?.trim() || resolved.title;
+      const createResult = await createProject({
+        environmentId,
+        input: workspaceCreateInput({
+          projectId,
+          title: groupTitle,
+          roots: resolved.flattened.roots,
+          primaryRootId: resolved.flattened.primaryRootId,
+        }),
+      });
+      if (createResult._tag === "Failure") {
+        throw squashAtomCommandFailure(createResult);
+      }
+      return { ...createResult.value, environmentId };
+    });
   const uploadThreadFeedback = useOrchestrationCommand(threadEnvironment.uploadFeedback, {
     reportFailure: false,
   });
@@ -1298,9 +1355,33 @@ export function useComposerSend(input: ComposerSendInput) {
       draftTarget: composerDraftTarget,
     });
     if (multipleModelSelections !== null) {
+      let targetProject = activeProject;
+      if (isLocalDraftThread && (draftThread?.selectedProjectIds?.length ?? 0) >= 2) {
+        const materialized = await materializeDraftGroupProject();
+        if (materialized._tag === "Failure") {
+          sendInFlightRef.current = false;
+          resetLocalDispatch();
+          const error = squashAtomCommandFailure(materialized);
+          setThreadError(
+            threadIdForSend,
+            thrownErrorMessage(error, m) ?? t("Could not create group."),
+          );
+          return;
+        }
+        targetProject = materialized.value;
+        if (draftId && targetProject.id !== activeProject.id) {
+          useComposerDraftStore.getState().setDraftThreadContext(draftId, {
+            projectRef: scopeProjectRef(environmentId, targetProject.id),
+            branch: activeThreadBranch,
+            envMode: "worktree",
+            selectedProjectIds: null,
+            groupTitle: null,
+          });
+        }
+      }
       await sendToMultipleModels({
         threadId: threadIdForSend,
-        project: activeProject,
+        project: targetProject,
         branch: activeThreadBranch!,
         selections: multipleModelSelections,
         targets: multipleTargets,
@@ -1437,6 +1518,29 @@ export function useComposerSend(input: ComposerSendInput) {
       }
     }
 
+    let targetProject = activeProject;
+    if (
+      failure === null &&
+      isLocalDraftThread &&
+      (draftThread?.selectedProjectIds?.length ?? 0) >= 2
+    ) {
+      const materialized = await materializeDraftGroupProject();
+      if (materialized._tag === "Failure") {
+        failure = materialized;
+      } else {
+        targetProject = materialized.value;
+        if (draftId && targetProject.id !== activeProject.id) {
+          useComposerDraftStore.getState().setDraftThreadContext(draftId, {
+            projectRef: scopeProjectRef(environmentId, targetProject.id),
+            branch: activeThreadBranch,
+            envMode: "worktree",
+            selectedProjectIds: null,
+            groupTitle: null,
+          });
+        }
+      }
+    }
+
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
@@ -1446,7 +1550,7 @@ export function useComposerSend(input: ComposerSendInput) {
               ...(isLocalDraftThread
                 ? {
                     createThread: {
-                      projectId: activeProject.id,
+                      projectId: targetProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
@@ -1460,7 +1564,7 @@ export function useComposerSend(input: ComposerSendInput) {
               ...(baseBranchForWorktree
                 ? {
                     prepareWorktree: {
-                      projectCwd: activeProject.workspaceRoot,
+                      projectCwd: targetProject.workspaceRoot,
                       baseBranch: baseBranchForWorktree,
                       startFromOrigin,
                     },
@@ -1510,7 +1614,7 @@ export function useComposerSend(input: ComposerSendInput) {
         try {
           backgroundDraftOpened = Boolean(
             await handleNewThread(
-              scopeProjectRef(activeProject.environmentId, activeProject.id),
+              scopeProjectRef(targetProject.environmentId, targetProject.id),
               resolveBackgroundDraftWorkspaceOptions({
                 envMode: sendEnvMode,
                 branch: activeThreadBranch,

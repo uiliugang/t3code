@@ -66,10 +66,13 @@ imports are kept if another folder fails; retry the remaining folders after corr
 
 ## Repository groups
 
-Choose **Create group** beside **Add project** in the sidebar, or search for it in the
-command palette. Choose an environment, name the group, select 1–16 existing repositories
-or enter their directories, and choose the primary repository. Creating a group keeps the
-existing projects and opens a new task with **Worktree** selected.
+On web and desktop, start a new thread and check multiple projects in the project picker,
+or use **New thread in...** in the command palette. Choose projects from one environment,
+with at most 16 distinct repository directories. The first selection supplies the primary
+repository; you can change it and the group name in the draft's project picker.
+Confirm with **Done** to keep the selection in your draft with **Worktree** selected.
+The group is saved on the first message, reusing an existing group with the same directories
+and primary repository. The original projects are kept.
 
 In **Settings → Projects → Repositories**, you can later edit the directories for the repositories
 that belong to a task, such as a frontend and backend. Give each a name and short context,

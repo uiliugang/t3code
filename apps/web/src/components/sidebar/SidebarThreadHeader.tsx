@@ -1,6 +1,5 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { FolderPlusIcon, LayersIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
-import { openCreateWorkspace } from "../CreateWorkspaceDialog";
+import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -164,10 +163,6 @@ export function SidebarThreadHeader({
             <MenuItem onClick={onNewProject}>
               <FolderPlusIcon />
               <MenuItemLabel>{t("Add project")}</MenuItemLabel>
-            </MenuItem>
-            <MenuItem onClick={() => openCreateWorkspace()}>
-              <LayersIcon />
-              <MenuItemLabel>{t("Create group")}</MenuItemLabel>
             </MenuItem>
           </MenuPopup>
         </Menu>

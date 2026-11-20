@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
 import { T, useGT } from "gt-react";
 
@@ -80,7 +81,13 @@ export function buildProjectSearchItems(input: ProjectItemsInput, resolve: Messa
 
 /** Projects as targets of the "New thread in..." submenu. */
 export function buildNewThreadInProjectItems(
-  input: ProjectItemsInput & { readonly currentProjectKey: string | null },
+  input: ProjectItemsInput & {
+    readonly currentProjectKey: string | null;
+    readonly renderTrailingContent?: (project: CommandPaletteProject) => ReactNode;
+    readonly checked?: (project: CommandPaletteProject) => boolean | undefined;
+    readonly keepOpen?: (project: CommandPaletteProject) => boolean | undefined;
+    readonly disabled?: (project: CommandPaletteProject) => boolean;
+  },
 ) {
   return buildProjectActionItems({
     projects: input.projects,
@@ -104,6 +111,10 @@ export function buildNewThreadInProjectItems(
     renderTitle: (project) => (
       <ProjectLabel name={project.displayName} project={project} showKind />
     ),
+    ...(input.renderTrailingContent ? { renderTrailingContent: input.renderTrailingContent } : {}),
+    ...(input.checked ? { checked: input.checked } : {}),
+    ...(input.keepOpen ? { keepOpen: input.keepOpen } : {}),
+    ...(input.disabled ? { disabled: input.disabled } : {}),
     runProject: input.runProject,
     ...(input.pin ? { pin: input.pin } : {}),
   });
