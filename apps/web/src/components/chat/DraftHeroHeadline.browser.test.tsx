@@ -179,18 +179,28 @@ it("selects multiple repositories in the new-thread command palette before start
   });
   await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
   openCommandPalette({ open: "new-thread-in" });
-  await expect
-    .element(page.getByRole("checkbox", { name: "Combine with alpha", exact: true }))
-    .toBeVisible();
-  await page.getByRole("checkbox", { name: "Combine with alpha", exact: true }).click();
+  const alpha = page.getByRole("option", { name: /alpha/ });
+  const beta = page.getByRole("option", { name: /beta/ });
+  await expect.element(page.getByRole("button", { name: "Start (0)", exact: true })).toBeDisabled();
+  await alpha.click();
   await expect.element(page.getByRole("combobox")).toBeVisible();
-  await page.getByRole("checkbox", { name: "Combine with beta", exact: true }).click();
-  await expect
-    .element(page.getByRole("checkbox", { name: "Remove alpha from group" }))
-    .toBeChecked();
-  await expect
-    .element(page.getByRole("checkbox", { name: "Remove beta from group" }))
-    .toBeChecked();
+  await expect.element(alpha).toHaveAttribute("aria-checked", "true");
+  await expect.element(page.getByRole("button", { name: "Start (1)", exact: true })).toBeEnabled();
+  await alpha.click();
+  await expect.element(alpha).toHaveAttribute("aria-checked", "false");
+  await expect.element(page.getByRole("button", { name: "Start (0)", exact: true })).toBeDisabled();
+  await alpha.click();
+  await beta.click();
+  await expect.element(page.getByRole("button", { name: "Start (2)", exact: true })).toBeEnabled();
+  await userEvent.keyboard("{Escape}");
+  openCommandPalette({ open: "new-thread-in" });
+  await expect.element(alpha).toHaveAttribute("aria-checked", "false");
+  await expect.element(beta).toHaveAttribute("aria-checked", "false");
+  await alpha.click();
+  await page.getByRole("combobox").fill("beta");
+  await userEvent.keyboard("{Enter}");
+  await expect.element(beta).toHaveAttribute("aria-checked", "true");
+  await expect.element(page.getByRole("button", { name: "Start (2)", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Start (2)", exact: true }).click();
   await vi.waitFor(() => {
     expect(

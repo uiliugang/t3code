@@ -66,11 +66,12 @@ imports are kept if another folder fails; retry the remaining folders after corr
 
 ## Repository groups
 
-On web and desktop, start a new thread and check multiple projects in the project picker,
-or use **New thread in...** in the command palette. Choose projects from one environment,
+On web and desktop, use **New thread in...** in the command palette to select projects,
+then choose **Start**. Select a project again to remove it from the selection.
+You can also combine projects in a new draft's project picker. Choose projects from one environment,
 with at most 16 distinct repository directories. The first selection supplies the primary
 repository; you can change it and the group name in the draft's project picker.
-Confirm with **Done** to keep the selection in your draft with **Worktree** selected.
+In the draft's project picker, confirm with **Done** to keep the selection with **Worktree** selected.
 The group is saved on the first message, reusing an existing group with the same directories,
 primary repository, access permissions, and base branches. The original projects are kept.
 

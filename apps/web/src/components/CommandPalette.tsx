@@ -643,6 +643,14 @@ function OpenCommandPaletteDialog(props: {
     );
   };
 
+  const canSelectNewThreadProjects =
+    currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP &&
+    pickerProjects.some((project) => {
+      const member = resolvePaletteMemberForSelection(project);
+      return member !== null && canCombineInEnvironment(member.environmentId);
+    });
+  const selectedNewThreadProjectCount = newThreadSelection?.projectIds.length ?? 0;
+
   const toggleNewThreadProjectSelection = (project: CommandPaletteProject): boolean => {
     const member = resolvePaletteMemberForSelection(project);
     if (!member || !canCombineInEnvironment(member.environmentId)) return false;
@@ -993,46 +1001,29 @@ function OpenCommandPaletteDialog(props: {
         ...(isInNewThreadSubmenu
           ? {
               checked: (project) => {
-                if (!newThreadSelection) return undefined;
                 const member = resolvePaletteMemberForSelection(project);
-                return member ? newThreadSelection.projectIds.includes(member.id) : undefined;
+                return member && canCombineInEnvironment(member.environmentId)
+                  ? (newThreadSelection?.projectIds.includes(member.id) ?? false)
+                  : undefined;
               },
-              keepOpen: () => newThreadSelection !== null,
+              keepOpen: (project) => {
+                const member = resolvePaletteMemberForSelection(project);
+                return member !== null && canCombineInEnvironment(member.environmentId);
+              },
               disabled: (project) => {
                 if (!newThreadSelection) return false;
                 const member = resolvePaletteMemberForSelection(project);
                 return !member || !canCombineInEnvironment(member.environmentId);
               },
-              renderTrailingContent: (project) => {
-                const member = resolvePaletteMemberForSelection(project);
-                if (!member || !canCombineInEnvironment(member.environmentId)) return null;
-                const isSelected = newThreadSelection?.projectIds.includes(member.id) === true;
-                return (
-                  <span className="flex shrink-0">
-                    <Checkbox
-                      checked={isSelected}
-                      tabIndex={-1}
-                      aria-label={
-                        isSelected
-                          ? t("Remove {name} from group", { name: project.displayName })
-                          : t("Combine with {name}", { name: project.displayName })
-                      }
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                      }}
-                      onCheckedChange={() => toggleNewThreadProjectSelection(project)}
-                    />
-                  </span>
-                );
-              },
             }
           : {}),
         runProject: async (project) => {
-          if (isInNewThreadSubmenu && newThreadSelection !== null) {
-            toggleNewThreadProjectSelection(project);
-            return;
+          if (isInNewThreadSubmenu) {
+            const member = resolvePaletteMemberForSelection(project);
+            if (member && canCombineInEnvironment(member.environmentId)) {
+              toggleNewThreadProjectSelection(project);
+              return;
+            }
           }
           const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
           const contextualRefBelongsToGroup =
@@ -3257,14 +3248,14 @@ function OpenCommandPaletteDialog(props: {
           }
         }}
       />
-    ) : currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP && newThreadSelection !== null ? (
+    ) : canSelectNewThreadProjects ? (
       <CommandPaletteSubmitButton
         id={submitButtonId}
-        label={t("Start ({count})", { count: newThreadSelection.projectIds.length })}
+        label={t("Start ({count})", { count: selectedNewThreadProjectCount })}
         shortcutLabel={`${submitModifierLabel} Enter`}
-        ariaLabel={t("Start ({count})", { count: newThreadSelection.projectIds.length })}
-        tooltip={t("Start ({count})", { count: newThreadSelection.projectIds.length })}
-        disabled={newThreadSelection.projectIds.length === 0}
+        ariaLabel={t("Start ({count})", { count: selectedNewThreadProjectCount })}
+        tooltip={t("Start ({count})", { count: selectedNewThreadProjectCount })}
+        disabled={selectedNewThreadProjectCount === 0}
         onSubmit={() => {
           void submitNewThreadSelection();
         }}
@@ -3309,8 +3300,7 @@ function OpenCommandPaletteDialog(props: {
       inputAccessory={inputAccessory}
       inputProps={{
         className:
-          hasHighlightedNewProjectItem ||
-          (currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP && newThreadSelection !== null)
+          hasHighlightedNewProjectItem || canSelectNewThreadProjects
             ? "*:data-[slot=autocomplete-input]:pe-38!"
             : addProjectCloneFlow?.step === "repository" || newProjectFlow !== null
               ? "*:data-[slot=autocomplete-input]:pe-32!"
