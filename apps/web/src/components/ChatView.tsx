@@ -2653,6 +2653,8 @@ export default function ChatView(props: ChatViewProps) {
           recovery: activeThreadShell.limitRecovery ?? null,
           snoozedUntil: activeThreadShell.snoozedUntil,
           timestampFormat,
+          uiLanguage: settings.uiLanguage,
+          t,
           onChange: async (limitRecovery) => {
             const result = await updateThreadMetadata({
               environmentId,

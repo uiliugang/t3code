@@ -1,5 +1,6 @@
 import "~/index.css";
 import { EnvironmentId, ProviderDriverKind, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import * as DateTime from "effect/DateTime";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
@@ -9,7 +10,9 @@ vi.mock(import("./CommandOutputPanel"), () => ({
 }));
 
 import { render } from "../../../test/render";
-import { backgroundWorkNowItem } from "./ThreadActivityBanners";
+import { m } from "../../i18n/messages";
+import { makeThreadFixture } from "../../test-fixtures";
+import { backgroundWorkNowItem, childInputNowItem } from "./ThreadActivityBanners";
 import { ThreadNow } from "./ThreadNow";
 
 it("opens full command details for short labels and keeps pending tasks current", async () => {
@@ -126,4 +129,49 @@ it("gives a subagent the same status as the background work line", async () => {
   await expect
     .element(page.getByRole("dialog").getByText("Waiting", { exact: true }))
     .toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+
+  const zh = translateUi.bind(null, "zh-CN");
+  const child = makeThreadFixture({
+    id: ThreadId.make("child"),
+    title: "Review refactor diffs",
+  });
+  await screen.rerender(
+    <ThreadNow
+      attention={childInputNowItem(
+        {
+          childThreadInputs: [{ ...child, hasPendingApprovals: true }],
+          parentAwaitingUser: false,
+          onOpenThread: () => undefined,
+        },
+        m,
+        zh,
+      )}
+      syncPhase={null}
+      goal={null}
+      work={backgroundWorkNowItem(
+        {
+          environmentId: EnvironmentId.make("test"),
+          threadId: ThreadId.make("thread"),
+          tasks: [
+            {
+              taskId: "subagent-task",
+              kind: "subagent",
+              description: "Review refactor diffs",
+              childThreadId: ThreadId.make("child"),
+            },
+          ],
+          turnItems: [],
+          stopDisabled: false,
+          stopping: false,
+          onStop: async () => undefined,
+          onOpenThread: () => undefined,
+        },
+        m,
+        zh,
+      )}
+    />,
+  );
+  await expect.element(page.getByText("子代理需要审批", { exact: false })).toBeVisible();
+  await expect.element(page.getByText("等待中 · Review refactor diffs")).toBeVisible();
 });

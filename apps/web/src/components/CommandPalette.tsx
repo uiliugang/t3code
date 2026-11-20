@@ -633,7 +633,7 @@ function OpenCommandPaletteDialog(props: {
           isPrimary,
           machine: resolveEnvironmentMachineKind(environment.serverConfig),
           isConnected: canCreateProjectInEnvironment(environment.connection.phase),
-          status: connectionStatusText(environment.connection, messages),
+          status: connectionStatusText(environment.connection, t, messages),
         };
       });
 

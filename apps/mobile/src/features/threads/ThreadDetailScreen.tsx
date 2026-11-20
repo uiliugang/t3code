@@ -521,7 +521,7 @@ function ThreadDetailBody(
     : "showAll";
   const queuedCount = useThreadQueuedCount(props.selectedThreadDetailRef);
   const turnSubagents = useThreadTurnSubagents(props.selectedThreadDetailRef);
-  const agentsSegment = resolveSubagentPillSegment(turnSubagents, messages);
+  const agentsSegment = resolveSubagentPillSegment(turnSubagents, t);
   const defaultComposerEditorRef = useRef<ComposerEditorHandle>(null);
   const composerEditorRef = props.draftMode?.editorRef ?? defaultComposerEditorRef;
   const isProviderSubagent = isProviderNativeSubagentThread(props.selectedThread.source);
@@ -728,7 +728,7 @@ function ThreadDetailBody(
   };
   const pendingBackgroundWork = presentPendingBackgroundWork(
     props.selectedThread.pendingBackgroundTasks,
-    messages,
+    t,
   );
   const extensionStatus = props.extensionStatuses?.length
     ? {
@@ -855,7 +855,7 @@ function ThreadDetailBody(
     if (childInput && contentPresentationKind === "ready") {
       return {
         kind: "child-input",
-        label: childThreadInputsTitle(childThreadInputs, messages),
+        label: childThreadInputsTitle(childThreadInputs, t),
         accessibilityLabel: childInput.hasPendingApprovals
           ? gt("Open approval from {title}", { title: childInput.title })
           : gt("Open question from {title}", { title: childInput.title }),

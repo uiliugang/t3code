@@ -215,6 +215,7 @@ function EnvironmentOptionRow(
   },
 ) {
   const { environment, ...row } = props;
+  const t = useUiTranslation();
   const messages = useMessages();
   return (
     <ListRow
@@ -231,6 +232,7 @@ function EnvironmentOptionRow(
                   : { i18nError: environment.i18nConnectionError }),
                 traceId: environment.connectionErrorTraceId,
               },
+              t,
               messages,
             )
       }

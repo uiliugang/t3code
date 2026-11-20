@@ -3,9 +3,9 @@
 // gt-react-native's Babel plugin would inject these; plain imports keep the Metro and Babel config unchanged.
 import "@formatjs/intl-getcanonicallocales/polyfill";
 import "@formatjs/intl-locale/polyfill";
-import "@formatjs/intl-displaynames/polyfill";
+import "@formatjs/intl-displaynames/polyfill-force";
 import "@formatjs/intl-displaynames/locale-data/en";
-import "@formatjs/intl-pluralrules/polyfill";
+import "@formatjs/intl-pluralrules/polyfill-force";
 import "@formatjs/intl-pluralrules/locale-data/en";
 import "@formatjs/intl-pluralrules/locale-data/de";
 import "@formatjs/intl-pluralrules/locale-data/es";

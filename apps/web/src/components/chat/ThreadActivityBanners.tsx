@@ -58,6 +58,7 @@ export function childInputNowItem(
     readonly onOpenThread: (threadId: ThreadId, environmentId: EnvironmentId) => void;
   },
   resolve: MessageResolver = m,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): (ThreadNowItem & { readonly waitingLabel: string }) | null {
   const { childThreadInputs, onOpenThread } = input;
   const first = childThreadInputs[0];
@@ -70,7 +71,7 @@ export function childInputNowItem(
     ) : (
       <MessageCircleIcon className="text-info-foreground" />
     ),
-    title: childThreadInputsTitle(childThreadInputs, resolve),
+    title: childThreadInputsTitle(childThreadInputs, t),
     waitingLabel: childThreadInputs.every((child) => child.lineage.sideChat === true)
       ? resolve(msg("Side chat waiting"))
       : resolve(msg("Subagent waiting")),
@@ -207,9 +208,10 @@ export function backgroundWorkNowItem(
     readonly onOpenThread: (threadId: ThreadId) => void;
   },
   resolve: MessageResolver = m,
+  t: UiTranslator = translateUi.bind(null, "en"),
 ): ThreadNowItem | null {
   const { onOpenThread } = input;
-  const presentation = presentPendingBackgroundWork(input.tasks, resolve);
+  const presentation = presentPendingBackgroundWork(input.tasks, t);
   if (presentation === null) return null;
   const rows = presentation.items.map((task) => {
     const itemKey =
