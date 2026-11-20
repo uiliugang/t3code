@@ -1271,7 +1271,7 @@ export function PullRequestsPage() {
         <PullRequestsUnavailableState
           error={listError}
           refreshing={listQuery.isPending}
-          onRetry={() => listQuery.refresh()}
+          onRetry={listQuery.retry}
         />
       ) : carriedToNothing ? (
         <PullRequestListGhost rows={7} />
@@ -1317,7 +1317,7 @@ export function PullRequestsPage() {
           <span>
             {listError} {t("Showing the last pull requests loaded.")}
           </span>
-          <Button size="xs" variant="outline" onClick={() => listQuery.refresh()}>
+          <Button size="xs" variant="outline" onClick={listQuery.retry}>
             {t("Retry")}
           </Button>
         </div>

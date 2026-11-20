@@ -11,7 +11,8 @@ import Animated from "react-native-reanimated";
 import { PR_ROW_LAYOUT, PR_DISCLOSURE_ENTER, PR_ROW_EXIT } from "./pullRequestAnimations";
 import { useGT, useMessages } from "gt-react-native";
 import { useState } from "react";
-import { Linking, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Menu } from "../../components/ui/Menu";
@@ -187,7 +188,7 @@ export function PullRequestChecksRow(props: RowProps) {
                   tint={status.tint}
                   value={t(status.label)}
                   detail={check.description ?? undefined}
-                  onPress={url ? () => void Linking.openURL(url) : undefined}
+                  onPress={url ? () => void tryOpenExternalUrl(url, "pull-request") : undefined}
                 />
               );
             })}
@@ -200,8 +201,9 @@ export function PullRequestChecksRow(props: RowProps) {
             title={t("Open checks on provider")}
             icon="arrow.up.right"
             onPress={() =>
-              void Linking.openURL(
+              void tryOpenExternalUrl(
                 definition.changeRequestChecksUrl?.(props.pr.url) ?? props.pr.url,
+                "pull-request",
               )
             }
           />
@@ -400,7 +402,7 @@ export function PullRequestReviewersRow(props: RowProps) {
             <PullRequestCardRow
               title={t("View reviewers on provider")}
               icon="arrow.up.right"
-              onPress={() => void Linking.openURL(props.pr.url)}
+              onPress={() => void tryOpenExternalUrl(props.pr.url, "pull-request")}
             />
           )}
         </Animated.View>
