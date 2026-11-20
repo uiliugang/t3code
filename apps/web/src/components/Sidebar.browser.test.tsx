@@ -13,7 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { page, userEvent } from "vite-plus/test/browser";
+import { userEvent } from "vite-plus/test/browser";
 
 import { act, fakeTimers, render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
@@ -121,7 +121,6 @@ describe("sidebar header new thread", () => {
       await userEvent.click(trigger, { modifiers: ["Shift"] });
     } else {
       await userEvent.click(trigger);
-      await page.getByRole("menuitem", { name: /^New thread/ }).click();
     }
 
     if (scenario.picker) {

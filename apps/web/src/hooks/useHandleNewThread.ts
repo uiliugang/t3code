@@ -3,7 +3,12 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { DEFAULT_SERVER_SETTINGS, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  type ProjectId,
+  type ScopedProjectRef,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { type AnyRouter, useRouter } from "@tanstack/react-router";
 import {
   composerDraftHasUserContent,
@@ -69,6 +74,8 @@ interface NewThreadWorkspaceOptions {
   worktreePath?: string | null;
   envMode?: DraftThreadEnvMode;
   startFromOrigin?: boolean;
+  selectedProjectIds?: readonly ProjectId[] | null;
+  groupTitle?: string | null;
 }
 
 function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undefined) {
@@ -77,6 +84,10 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
     ...(options?.worktreePath !== undefined ? { worktreePath: options.worktreePath } : {}),
     ...(options?.envMode !== undefined ? { envMode: options.envMode } : {}),
     ...(options?.startFromOrigin !== undefined ? { startFromOrigin: options.startFromOrigin } : {}),
+    ...(options?.selectedProjectIds !== undefined
+      ? { selectedProjectIds: options.selectedProjectIds }
+      : {}),
+    ...(options?.groupTitle !== undefined ? { groupTitle: options.groupTitle } : {}),
   };
 }
 
@@ -99,6 +110,9 @@ export function createNewThreadHandler(router: AnyRouter) {
       worktreePath?: string | null;
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
+      logicalProjectKey?: string;
+      selectedProjectIds?: readonly ProjectId[] | null;
+      groupTitle?: string | null;
       replace?: boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;
@@ -230,9 +244,11 @@ export function createNewThreadHandler(router: AnyRouter) {
           ) > 0,
       });
     };
-    const logicalProjectKey = project
-      ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
-      : scopedProjectKey(projectRef);
+    const logicalProjectKey =
+      options?.logicalProjectKey ??
+      (project
+        ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
+        : scopedProjectKey(projectRef));
     // Another opener (home's own first-project draft) may have reached this project's draft first.
     // Matches lag the location during a navigation, so compare against the location.
     const resultIfAbandoned = () => {
@@ -252,6 +268,8 @@ export function createNewThreadHandler(router: AnyRouter) {
     const hasWorktreePathOption = options?.worktreePath !== undefined;
     const hasEnvModeOption = options?.envMode !== undefined;
     const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
+    const hasSelectedProjectIdsOption = options?.selectedProjectIds !== undefined;
+    const hasGroupTitleOption = options?.groupTitle !== undefined;
     const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
     const storedDraftThreadRef = storedDraftThread
       ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
@@ -282,7 +300,12 @@ export function createNewThreadHandler(router: AnyRouter) {
           currentRouteTarget?.kind === "draft" &&
           currentRouteTarget.draftId === emptyStoredDraftThread.draftId;
         const hasExplicitWorkspaceOption =
-          hasBranchOption || hasWorktreePathOption || hasEnvModeOption || hasStartFromOriginOption;
+          hasBranchOption ||
+          hasWorktreePathOption ||
+          hasEnvModeOption ||
+          hasStartFromOriginOption ||
+          hasSelectedProjectIdsOption ||
+          hasGroupTitleOption;
         let workspaceContext: NewThreadWorkspaceOptions | null = null;
         if (hasExplicitWorkspaceOption) {
           workspaceContext = pickExplicitWorkspaceOptions(options);
@@ -381,7 +404,9 @@ export function createNewThreadHandler(router: AnyRouter) {
         hasBranchOption ||
         hasWorktreePathOption ||
         hasEnvModeOption ||
-        hasStartFromOriginOption
+        hasStartFromOriginOption ||
+        hasSelectedProjectIdsOption ||
+        hasGroupTitleOption
       ) {
         setDraftThreadContext(currentRouteTarget.draftId, pickExplicitWorkspaceOptions(options));
       }
@@ -441,6 +466,10 @@ export function createNewThreadHandler(router: AnyRouter) {
             envMode: initialEnvMode,
             newWorktreesStartFromOrigin: projectSettings.settings.newWorktreesStartFromOrigin,
           }),
+        ...(options?.selectedProjectIds !== undefined
+          ? { selectedProjectIds: options.selectedProjectIds }
+          : {}),
+        ...(options?.groupTitle !== undefined ? { groupTitle: options.groupTitle } : {}),
         runtimeMode: defaultRuntimeMode,
         ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
       });

@@ -1,6 +1,6 @@
 import { ProjectLabel } from "./ProjectLabel";
 import { useUiTranslation } from "../hooks/useUiTranslation";
-import { openCreateWorkspace } from "./CreateWorkspaceDialog";
+import { resolveDraftProjectSelection } from "./createWorkspace";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { decodeMsg, msg, T, useGT, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "../i18n/messages";
@@ -59,6 +59,7 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
+  type ProjectId,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
@@ -76,7 +77,6 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
-  LayersIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -577,6 +577,10 @@ function OpenCommandPaletteDialog(props: {
   const cloneLookupGeneration = useRef(0);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
+  const [newThreadSelection, setNewThreadSelection] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly projectIds: readonly ProjectId[];
+  } | null>(null);
   const { environmentLabelById, projectEnvironmentLocationById } = useEnvironmentLookups();
   const projectGroups = useSortedProjectGroups(environmentLabelById);
   const contextualProjectRef = resolveThreadActionProjectRef({
@@ -588,6 +592,7 @@ function OpenCommandPaletteDialog(props: {
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: pickableProjectGroups(projectGroups),
     preferredProjectRef: contextualProjectRef,
+    ...(newThreadSelection ? { selectionEnvironmentId: newThreadSelection.environmentId } : {}),
   });
   const pickerProjects = projectPickerEntries.map(({ group, targetProject }) => ({
     ...targetProject,
@@ -613,6 +618,79 @@ function OpenCommandPaletteDialog(props: {
           toggle: () => toggleProjectGroupPin(group),
         }
       : null;
+  };
+
+  const canCombineInEnvironment = (environmentId: EnvironmentId): boolean => {
+    const environment = environments.find((entry) => entry.environmentId === environmentId);
+    return (
+      environment?.connection.phase === "connected" &&
+      environment.serverConfig?.environment.capabilities.multiRepositoryWorkspaces === true &&
+      readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
+    );
+  };
+
+  const canSelectNewThreadProject = (project: CommandPaletteProject) =>
+    (!newThreadSelection || newThreadSelection.environmentId === project.environmentId) &&
+    canCombineInEnvironment(project.environmentId);
+  const selectedNewThreadProjectCount = newThreadSelection?.projectIds.length ?? 0;
+
+  const toggleNewThreadProjectSelection = (project: CommandPaletteProject): boolean => {
+    if (!canSelectNewThreadProject(project)) return false;
+    const current = newThreadSelection?.projectIds ?? [];
+    const projectIds = current.includes(project.id)
+      ? current.filter((id) => id !== project.id)
+      : [...current, project.id];
+    const envProjects = projects.filter((entry) => entry.environmentId === project.environmentId);
+    const selected = projectIds.flatMap((id) => envProjects.filter((entry) => entry.id === id));
+    if (selected.length > 0 && !resolveDraftProjectSelection(selected, envProjects)) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: t("Choose up to 16 repositories from one environment."),
+        }),
+      );
+      return false;
+    }
+    setNewThreadSelection(
+      projectIds.length === 0 ? null : { environmentId: project.environmentId, projectIds },
+    );
+    return true;
+  };
+
+  const submitNewThreadSelection = async (): Promise<void> => {
+    if (!newThreadSelection || newThreadSelection.projectIds.length === 0) return;
+    const envProjects = projects.filter(
+      (candidate) => candidate.environmentId === newThreadSelection.environmentId,
+    );
+    const byId = new Map(envProjects.map((candidate) => [candidate.id, candidate] as const));
+    const ordered = newThreadSelection.projectIds.flatMap((id) => {
+      const found = byId.get(id);
+      return found ? [found] : [];
+    });
+    const resolved = resolveDraftProjectSelection(ordered, envProjects);
+    if (!resolved || ordered.length !== newThreadSelection.projectIds.length) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: t("A selected project is no longer available. Choose projects again."),
+        }),
+      );
+      return;
+    }
+    setOpen(false);
+    if (resolved.kind === "single" || resolved.kind === "existing-group") {
+      await handleNewThread(
+        resolved.projectRef,
+        resolved.kind === "existing-group" ? { envMode: "worktree" } : undefined,
+      );
+      return;
+    }
+    await handleNewThread(resolved.primaryProjectRef, {
+      logicalProjectKey: resolved.logicalProjectKey,
+      envMode: "worktree",
+      selectedProjectIds: resolved.selectedProjectIds,
+      groupTitle: resolved.title,
+    });
   };
 
   const addProjectEnvironmentOptions = (() => {
@@ -893,15 +971,32 @@ function OpenCommandPaletteDialog(props: {
         currentProjectId === null
           ? undefined
           : projectPickerEntries.find((entry) => entry.isPreferred);
+      const isInNewThreadSubmenu = currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP;
       const projectItems = buildNewThreadInProjectItems({
         projects: pickerProjects.filter((project) => !isScratch(project)),
-        currentProjectKey: currentEntry
-          ? `${currentEntry.targetProject.environmentId}:${currentEntry.targetProject.id}`
-          : null,
+        currentProjectKey:
+          currentEntry && currentEntry.targetProject.environmentId === currentProjectEnvironmentId
+            ? `${currentEntry.targetProject.environmentId}:${currentEntry.targetProject.id}`
+            : null,
         projectGroupByTargetKey,
         locationByEnvironmentId: projectEnvironmentLocationById,
         pin: projectPin,
+        ...(isInNewThreadSubmenu
+          ? {
+              checked: (project) =>
+                canSelectNewThreadProject(project)
+                  ? (newThreadSelection?.projectIds.includes(project.id) ?? false)
+                  : undefined,
+              keepOpen: canSelectNewThreadProject,
+              disabled: (project) =>
+                newThreadSelection !== null && !canSelectNewThreadProject(project),
+            }
+          : {}),
         runProject: async (project) => {
+          if (isInNewThreadSubmenu && canSelectNewThreadProject(project)) {
+            toggleNewThreadProjectSelection(project);
+            return;
+          }
           const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
           const contextualRefBelongsToGroup =
             contextualProjectRef !== null &&
@@ -955,6 +1050,9 @@ function OpenCommandPaletteDialog(props: {
   const projectThreadItems = openingOrderThreadItems.map(
     (item) => projectJumpItems.get(item.value) ?? item,
   );
+  const canSelectNewThreadProjects = projectThreadItems.some(
+    (item) => "checked" in item && item.checked !== undefined,
+  );
 
   const {
     threadItems: allThreadItems,
@@ -988,6 +1086,7 @@ function OpenCommandPaletteDialog(props: {
     browseNavigation.invalidate();
     setAddProjectCloneFlow(null);
     setNewProjectFlow(null);
+    setNewThreadSelection(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
     } else if (newProjectFlow?.sourcesEnvironmentId) {
@@ -1685,25 +1784,6 @@ function OpenCommandPaletteDialog(props: {
     },
   };
   actionItems.push(addProjectAction);
-
-  actionItems.push({
-    kind: "action",
-    value: "action:create-workspace",
-    searchTerms: [
-      "group",
-      "workspace",
-      "repositories",
-      "multi repo",
-      "创建分组",
-      "创建工作区",
-      "多仓",
-    ],
-    title: t("Create group"),
-    icon: <LayersIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      openCreateWorkspace();
-    },
-  });
 
   if (wslAddProjectEnvironmentOption) {
     actionItems.push({
@@ -2838,6 +2918,48 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
+    if (
+      currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP &&
+      !event.nativeEvent.isComposing &&
+      event.keyCode !== 229
+    ) {
+      if (
+        event.key === "Enter" &&
+        event.shiftKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey
+      ) {
+        const candidateValue =
+          highlightedItemValue ??
+          (autoHighlightsFirstRow ? (resultRows.itemValues[0] ?? null) : null);
+        if (
+          candidateValue?.startsWith("new-thread-in:") &&
+          candidateValue !== NEW_THREAD_NO_PROJECT_VALUE
+        ) {
+          const projectKey = candidateValue.slice("new-thread-in:".length);
+          const candidateProject = pickerProjects.find(
+            (entry) => `${entry.environmentId}:${entry.id}` === projectKey,
+          );
+          if (candidateProject && toggleNewThreadProjectSelection(candidateProject)) {
+            (
+              event as typeof event & { preventBaseUIHandler?: () => void }
+            ).preventBaseUIHandler?.();
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+      }
+      if (newThreadSelection !== null && event.key === "Enter" && isPrimaryModifierPressed(event)) {
+        (event as typeof event & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
+        event.preventDefault();
+        event.stopPropagation();
+        void submitNewThreadSelection();
+        return;
+      }
+    }
+
     if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
 
     if (event.key === "Tab" && isBrowsing && !relativePathNeedsActiveProject) {
@@ -3101,6 +3223,18 @@ function OpenCommandPaletteDialog(props: {
           }
         }}
       />
+    ) : canSelectNewThreadProjects ? (
+      <CommandPaletteSubmitButton
+        id={submitButtonId}
+        label={t("Start ({count})", { count: selectedNewThreadProjectCount })}
+        shortcutLabel={`${submitModifierLabel} Enter`}
+        ariaLabel={t("Start ({count})", { count: selectedNewThreadProjectCount })}
+        tooltip={t("Start ({count})", { count: selectedNewThreadProjectCount })}
+        disabled={selectedNewThreadProjectCount === 0}
+        onSubmit={() => {
+          void submitNewThreadSelection();
+        }}
+      />
     ) : null;
 
   const footerActionLabel =
@@ -3140,16 +3274,17 @@ function OpenCommandPaletteDialog(props: {
       footerTrailing={footerTrailing}
       inputAccessory={inputAccessory}
       inputProps={{
-        className: hasHighlightedNewProjectItem
-          ? "*:data-[slot=autocomplete-input]:pe-38!"
-          : addProjectCloneFlow?.step === "repository" || newProjectFlow !== null
-            ? "*:data-[slot=autocomplete-input]:pe-32!"
-            : isBrowsing
-              ? browseInputEndPaddingClass({
-                  willCreateProjectPath,
-                  hasHighlightedBrowseItem,
-                })
-              : undefined,
+        className:
+          hasHighlightedNewProjectItem || canSelectNewThreadProjects
+            ? "*:data-[slot=autocomplete-input]:pe-38!"
+            : addProjectCloneFlow?.step === "repository" || newProjectFlow !== null
+              ? "*:data-[slot=autocomplete-input]:pe-32!"
+              : isBrowsing
+                ? browseInputEndPaddingClass({
+                    willCreateProjectPath,
+                    hasHighlightedBrowseItem,
+                  })
+                : undefined,
         placeholder: inputPlaceholder,
         "aria-describedby": inputAccessory ? submitButtonId : undefined,
         ...(isSubmenu

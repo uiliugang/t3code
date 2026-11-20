@@ -617,10 +617,14 @@ export function installFakeEnvironment(
   options?: {
     readonly acceptCommands?: boolean;
     readonly keybindings?: ResolvedKeybindingsConfig;
-    readonly extraProjects?: ReadonlyArray<Pick<OrchestrationProjectShell, "id" | "title">>;
+    readonly extraProjects?: ReadonlyArray<
+      Pick<OrchestrationProjectShell, "id" | "title"> &
+        Partial<Pick<OrchestrationProjectShell, "repositoryIdentity">>
+    >;
     /** Commands left unanswered even when accepting, until `rejectPendingCommand`. */
     readonly holdCommand?: (command: OrchestrationV2Command) => boolean;
     readonly providers?: ReadonlyArray<unknown>;
+    readonly capabilities?: Partial<ServerConfig["environment"]["capabilities"]>;
   },
 ): Disposable {
   threads = fixtures;
@@ -630,6 +634,13 @@ export function installFakeEnvironment(
       fixtures.some((thread) => (thread.issues?.length ?? 0) > 0),
     ),
     keybindings: options?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
+  };
+  baseServerConfig = {
+    ...baseServerConfig,
+    environment: {
+      ...baseServerConfig.environment,
+      capabilities: { ...baseServerConfig.environment.capabilities, ...options?.capabilities },
+    },
   };
   publishServerConfig();
   dispatched = [];

@@ -389,11 +389,18 @@ export function buildProjectActionItems(input: {
   searchTerms?: (project: CommandPaletteProject) => ReadonlyArray<string>;
   renderDescription?: (project: CommandPaletteProject) => ReactNode;
   renderTitle?: (project: CommandPaletteProject) => ReactNode;
+  renderTrailingContent?: (project: CommandPaletteProject) => ReactNode;
+  checked?: (project: CommandPaletteProject) => boolean | undefined;
+  keepOpen?: (project: CommandPaletteProject) => boolean | undefined;
+  disabled?: (project: CommandPaletteProject) => boolean;
   shortcutCommand?: KeybindingCommand;
   pin?: (project: CommandPaletteProject) => CommandPaletteItemPin | null;
 }): CommandPaletteActionItem[] {
   return input.projects.map((project) => {
     const pin = input.pin?.(project) ?? null;
+    const titleTrailingContent = input.renderTrailingContent?.(project);
+    const checked = input.checked?.(project);
+    const keepOpen = input.keepOpen?.(project);
     return {
       kind: "action",
       value: `${input.valuePrefix}:${project.environmentId}:${project.id}`,
@@ -407,6 +414,10 @@ export function buildProjectActionItems(input: {
       ...(input.renderTitle ? { searchTitle: project.displayName } : {}),
       description: input.renderDescription?.(project) ?? project.workspaceRoot,
       icon: input.icon(project),
+      ...(titleTrailingContent ? { titleTrailingContent } : {}),
+      ...(checked !== undefined ? { checked } : {}),
+      ...(keepOpen !== undefined ? { keepOpen } : {}),
+      ...(input.disabled ? { disabled: input.disabled(project) } : {}),
       ...(input.shortcutCommand !== undefined ? { shortcutCommand: input.shortcutCommand } : {}),
       ...(pin ? { pin } : {}),
       run: async () => {

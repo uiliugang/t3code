@@ -978,6 +978,43 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)).toBeUndefined();
   });
 
+  it("persists a multi-project draft, keeps worktrees isolated, and clears selection on retarget", () => {
+    const store = useComposerDraftStore.getState();
+    const selectedProjectIds = [projectRef.projectId, otherProjectRef.projectId];
+    store.setLogicalProjectDraftThreadId("adhoc-group", projectRef, draftId, {
+      threadId,
+      selectedProjectIds,
+      groupTitle: "Frontend + API",
+      envMode: "local",
+      worktreePath: "/existing-single-worktree",
+    });
+    store.setPrompt(draftId, "keep this prompt");
+    store.setDraftThreadContext(draftId, { groupTitle: "New group ", envMode: "local" });
+    expect(store.getDraftSession(draftId)).toMatchObject({
+      selectedProjectIds,
+      groupTitle: "New group ",
+      envMode: "worktree",
+      worktreePath: null,
+      environmentSelection: "manual",
+    });
+    const restored = useComposerDraftStore.persist.getOptions().merge!(
+      partializeComposerDraftStoreState(useComposerDraftStore.getState()),
+      useComposerDraftStore.getState(),
+    );
+    expect(restored.draftThreadsByThreadKey[draftId]).toMatchObject({
+      selectedProjectIds,
+      groupTitle: "New group ",
+      envMode: "worktree",
+    });
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      selectedProjectIds: null,
+      groupTitle: null,
+    });
+    expect(store.getDraftSession(draftId)?.selectedProjectIds).toBeUndefined();
+    expect(store.getDraftSession(draftId)?.groupTitle).toBeUndefined();
+    expect(store.getComposerDraft(draftId)?.prompt).toBe("keep this prompt");
+  });
+
   // regression: #1264 deleting a project must release its draft thread's image blob URLs
   it("revokes draft image blob URLs when clearing a project's draft thread", () => {
     const store = useComposerDraftStore.getState();
