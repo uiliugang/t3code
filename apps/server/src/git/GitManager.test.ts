@@ -647,6 +647,7 @@ function makeManager(input?: {
   providerScenario?: FakeProviderScenario;
   pullRequests?: Partial<PullRequestService.PullRequestService["Service"]>;
   sourceControlProvider?: SourceControlProvider["Service"];
+  failProviderResolutionAfterCreate?: boolean;
   textGeneration?: Partial<FakeGitTextGeneration>;
   serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   setupScriptRunner?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"];
@@ -745,7 +746,19 @@ function makeManager(input?: {
           resolveLink: (input) => provider.resolveLink?.(input),
           get: () => Effect.succeed(provider),
           resolveHandle: () => Effect.succeed({ provider, context: null }),
-          resolve: () => Effect.succeed(provider),
+          resolve: ({ cwd }) =>
+            Effect.suspend(() =>
+              input?.failProviderResolutionAfterCreate && created(providerCalls).length > 0
+                ? Effect.fail(
+                    new SourceControlProviderFailure({
+                      provider: provider.kind,
+                      operation: "resolve",
+                      cwd,
+                      detail: "Source control settings unavailable after creation.",
+                    }),
+                  )
+                : Effect.succeed(provider),
+            ),
           discover: Effect.succeed([]),
         }),
       ),
@@ -4730,18 +4743,25 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       // A new PR asked for as a draft is opened as one, never ready first.
       const newActions: Array<PullRequestActionInput> = [];
       const fresh = yield* makeManager({
-        providerScenario: { prListSequence: [[], [open]] },
+        providerScenario: { prListSequence: [[]] },
+        failProviderResolutionAfterCreate: true,
         pullRequests: {
           summary: () => Effect.succeed({ isDraft: false } as never),
           runAction: (action) => Effect.sync(() => void newActions.push(action)),
         },
       });
-      yield* fresh.manager.createPullRequest({
+      const draft = yield* fresh.manager.createPullRequest({
         cwd: repoDir,
         projectId: ProjectId.make("project-1"),
         title: "Feature",
         body: "Body",
         draft: true,
+      });
+      expect(draft).toEqual({
+        status: "created",
+        baseBranch: "main",
+        headBranch: "feature/unpushed",
+        title: "Feature",
       });
       expect(
         fresh.providerCalls.flatMap((call) =>

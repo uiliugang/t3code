@@ -2617,6 +2617,7 @@ export const make = Effect.gen(function* () {
     if (existing) {
       return {
         status: "opened_existing" as const,
+        openedAsDraft: false,
         url: existing.url,
         number: existing.number,
         baseBranch: existing.baseRefName,
@@ -2661,6 +2662,7 @@ export const make = Effect.gen(function* () {
       phase: "pr",
       label: `Creating ${terms.singular}...`,
     });
+    const openedAsDraft = draft && provider.createsDraftChangeRequests === true;
     yield* provider
       .createChangeRequest({
         cwd,
@@ -2694,6 +2696,7 @@ export const make = Effect.gen(function* () {
     if (!created) {
       return {
         status: "created" as const,
+        openedAsDraft,
         baseBranch,
         headBranch: headContext.headBranch,
         title: generated.title,
@@ -2702,6 +2705,7 @@ export const make = Effect.gen(function* () {
 
     return {
       status: "created" as const,
+      openedAsDraft,
       url: created.url,
       number: created.number,
       baseBranch: created.baseRefName,
@@ -2758,12 +2762,12 @@ export const make = Effect.gen(function* () {
             projectId: settings.projectId,
           });
         }),
-    );
+    ).pipe(Effect.map(({ openedAsDraft: _, ...result }) => result));
 
   const createPullRequest: GitManager["Service"]["createPullRequest"] = Effect.fn(
     "GitManager.createPullRequest",
   )(function* (input) {
-    const result = yield* openPrFromBranch(
+    const { openedAsDraft, ...result } = yield* openPrFromBranch(
       input.cwd,
       null,
       () => Effect.void,
@@ -2774,9 +2778,6 @@ export const make = Effect.gen(function* () {
     );
     // The thread's branch PR comes from status, which may hold the lookup from before.
     if (result.status === "created") yield* invalidateStatus(input.cwd);
-    const openedAsDraft =
-      result.status === "created" &&
-      (yield* sourceControlProvider(input.cwd)).createsDraftChangeRequests === true;
     if (input.draft === true && !openedAsDraft && !(yield* draftOpened(input, result))) {
       // A retry finds the open PR and drafts it then.
       return yield* new GitManagerError({

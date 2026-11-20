@@ -1194,6 +1194,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           }
           const started = backgroundShells.get(shell.id);
           if (started === undefined) return;
+          const generation = wakeGeneration;
           backgroundShells.delete(shell.id);
           yield* publishBackgroundShells(providerThreadId);
           // Nobody waits to hear about a shell the agent or a Stop killed.
@@ -1208,7 +1209,6 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           ) {
             return;
           }
-          const generation = wakeGeneration;
           yield* continuationRequests.offer({
             threadId: turnInput.threadId,
             providerThreadId,

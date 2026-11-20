@@ -19,10 +19,12 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as ChildProcess from "effect/process/ChildProcess";
 import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -2522,14 +2524,26 @@ describe("CursorAdapterV2", () => {
           { tasks: ["7 awaited", "8"], sessionScoped: true },
         ]);
 
-        yield* report({
+        const clock = yield* Clock.Clock;
+        const publishingExit = yield* Deferred.make<void>();
+        const releaseExit = yield* Deferred.make<void>();
+        const exiting = yield* report({
           ...shell("8"),
           type: "ended",
           stopped: false,
           exitCode: 1,
           outputPath: "/terminals/8.txt",
-        });
-        assert.deepStrictEqual(yield* nextUpdate, [{ tasks: ["7 awaited"], sessionScoped: true }]);
+        }).pipe(
+          Effect.provideService(Clock.Clock, {
+            ...clock,
+            currentTimeMillis: Deferred.succeed(publishingExit, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseExit)),
+              Effect.andThen(clock.currentTimeMillis),
+            ),
+          }),
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(publishingExit);
 
         // Rolling back stops what the discarded runs left running, so it cannot wake the thread.
         yield* runtime.rollbackThread({
@@ -2545,6 +2559,13 @@ describe("CursorAdapterV2", () => {
         // A wake still queued when the rollback landed is dropped.
         assert.deepStrictEqual(
           yield* wakes[0]!.dispatchIfCurrent!(Effect.succeed("woken")),
+          Option.none(),
+        );
+        yield* Deferred.succeed(releaseExit, undefined);
+        yield* Fiber.join(exiting);
+        assert.deepStrictEqual(yield* nextUpdate, [{ tasks: ["7 awaited"], sessionScoped: true }]);
+        assert.deepStrictEqual(
+          yield* wakes[1]!.dispatchIfCurrent!(Effect.succeed("woken")),
           Option.none(),
         );
         yield* report({
