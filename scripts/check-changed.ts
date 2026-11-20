@@ -40,6 +40,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { decide, readWorkspace } from "../.github/scripts/ci-changes.cjs";
 import { vitePlusCommand } from "./check-changed-command.ts";
+import { withCheckLock } from "./check-changed-lock.ts";
 
 const GiB = 1024 ** 3;
 
@@ -546,20 +547,28 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
               "test",
               "run",
               "--passWithNoTests",
+              "--maxWorkers",
+              "1",
+              "--no-file-parallelism",
               ...vitestTests,
             ]),
             serial: true,
+            weight: concurrency,
           },
         ]
       : []),
     ...(nodeTests.length > 0
       ? [
-          command(`node --test (${nodeTests.length} files)`, [
-            "exec",
-            "node",
-            "--test",
-            ...nodeTests,
-          ]),
+          {
+            ...command(`node --test (${nodeTests.length} files)`, [
+              "exec",
+              "node",
+              "--test",
+              "--test-concurrency=1",
+              ...nodeTests,
+            ]),
+            weight: concurrency,
+          },
         ]
       : []),
     ...(compilerApps.length > 0
@@ -568,11 +577,15 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
             ...command(`react compiler (${compilerFiles} files)`, [
               "test",
               "run",
+              "--maxWorkers",
+              "1",
+              "--no-file-parallelism",
               ...compilerApps.map((app) => app.test),
               "-t",
               compilerApps.flatMap((app) => app.pattern).join("|"),
             ]),
             serial: true,
+            weight: concurrency,
           },
         ]
       : []),
@@ -638,7 +651,15 @@ export const checkChangedCommand = Command.make(
     ),
   },
   (input) =>
-    checkChanged(input).pipe(
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const root = yield* path.fromFileUrl(new URL("..", import.meta.url));
+      const commonDir = (yield* git(root, ["rev-parse", "--git-common-dir"])).toString().trim();
+      return yield* withCheckLock(
+        path.resolve(root, commonDir, "t3-check-changed.sqlite"),
+        checkChanged(input),
+      );
+    }).pipe(
       Effect.catch((message) => Console.error(message).pipe(Effect.as(false))),
       // exitCode, not a failed exit: runMain calls process.exit() on failure, and
       // piped stdout is asynchronous on macOS, so it would cut off step output.

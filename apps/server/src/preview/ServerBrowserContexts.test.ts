@@ -30,11 +30,28 @@ vi.mock("node:fs/promises", () => ({ mkdir: launches.mkdir, rm: launches.rm }));
 
 const makeContext = () => {
   const events = new NodeEvents.EventEmitter();
+  const pages: Array<{ once: ReturnType<typeof vi.fn>; close: () => Promise<void> }> = [];
   let closed = false;
   return {
-    on: vi.fn((event: string, listener: () => void) => events.on(event, listener)),
-    pages: vi.fn(() => []),
-    newPage: vi.fn(async () => ({ once: vi.fn() })),
+    on: vi.fn((event: string, listener: (...args: unknown[]) => void) =>
+      events.on(event, listener),
+    ),
+    pages: vi.fn(() => [...pages]),
+    newPage: vi.fn(async () => {
+      const pageEvents = new NodeEvents.EventEmitter();
+      const page = {
+        once: vi.fn((event: string, listener: () => void) => pageEvents.once(event, listener)),
+        close: async () => {
+          const index = pages.indexOf(page);
+          if (index < 0) return;
+          pages.splice(index, 1);
+          pageEvents.emit("close");
+        },
+      };
+      pages.push(page);
+      events.emit("page", page);
+      return page;
+    }),
     isClosed: () => closed,
     close: vi.fn(async () => {
       if (!closed) {
@@ -90,6 +107,38 @@ beforeEach(() => {
 });
 
 describe("ServerBrowserContexts", () => {
+  it("retires an empty profile after the idle period without deleting its data or closing live pages", async () => {
+    vi.useFakeTimers();
+    const first = makeContext();
+    const next = makeContext();
+    launches.persistent
+      .mockResolvedValueOnce(first as unknown as BrowserContext)
+      .mockResolvedValueOnce(next as unknown as BrowserContext);
+    const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+    try {
+      const context = await pool.contextFor("work");
+      const page = await context.newPage();
+      const peer = await context.newPage();
+      await page.close();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(first.close).not.toHaveBeenCalled();
+      await peer.close();
+      await vi.advanceTimersByTimeAsync(9);
+      expect(first.close).not.toHaveBeenCalled();
+      const reopened = await context.newPage();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(first.close).not.toHaveBeenCalled();
+      await reopened.close();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(first.close).toHaveBeenCalledOnce();
+      expect(launches.rm).not.toHaveBeenCalled();
+      expect(await pool.contextFor("work")).not.toBe(context);
+    } finally {
+      await pool.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("closes the shared browser only after it holds no context for the idle period", async () => {
     vi.useFakeTimers();
     try {
@@ -120,6 +169,75 @@ describe("ServerBrowserContexts", () => {
       vi.useRealTimers();
     }
   });
+
+  it("keeps an empty context alive while a page is being prepared", async () => {
+    vi.useFakeTimers();
+    const context = makeContext();
+    launches.persistent.mockResolvedValue(context as unknown as BrowserContext);
+    const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+    const preparing = Promise.withResolvers<void>();
+    const prepared = Promise.withResolvers<void>();
+    try {
+      const opening = pool.withContext("work", undefined, async (context) => {
+        preparing.resolve();
+        await prepared.promise;
+        return context.newPage();
+      });
+      await preparing.promise;
+      await vi.advanceTimersByTimeAsync(30);
+      expect(context.close).not.toHaveBeenCalled();
+      prepared.resolve();
+      const page = await opening;
+      await vi.advanceTimersByTimeAsync(10);
+      expect(context.close).not.toHaveBeenCalled();
+      await page.close();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(context.close).toHaveBeenCalledOnce();
+    } finally {
+      prepared.resolve();
+      await pool.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])(
+    "waits for idle retirement before reopening a profile (clear: %s)",
+    async (clear) => {
+      vi.useFakeTimers();
+      const first = makeContext();
+      const next = makeContext();
+      const closed = Promise.withResolvers<void>();
+      const close = first.close.getMockImplementation()!;
+      first.close.mockImplementation(async () => {
+        await closed.promise;
+        await close();
+      });
+      launches.persistent
+        .mockResolvedValueOnce(first as unknown as BrowserContext)
+        .mockResolvedValueOnce(next as unknown as BrowserContext);
+      const pool = new ServerBrowserContexts({ ...options(), idleContextMs: 10 });
+      try {
+        await pool.contextFor("work");
+        await vi.advanceTimersByTimeAsync(10);
+        expect(first.close).toHaveBeenCalledOnce();
+        const clearing = clear ? pool.clearProfile("work") : Promise.resolve();
+        const reopening = pool.withContext("work", undefined, (context) => context.newPage());
+        await vi.advanceTimersByTimeAsync(10);
+        expect(launches.persistent).toHaveBeenCalledTimes(1);
+        expect(launches.rm).not.toHaveBeenCalled();
+        closed.resolve();
+        await clearing;
+        await reopening;
+        expect(launches.persistent).toHaveBeenCalledTimes(2);
+        expect(launches.rm).toHaveBeenCalledTimes(clear ? 1 : 0);
+        expect(next.close).not.toHaveBeenCalled();
+      } finally {
+        closed.resolve();
+        await pool.close();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("closes a scratch context when creating its page fails", async () => {
     const browser = makeBrowser();

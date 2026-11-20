@@ -69,6 +69,13 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
     async scratchPage() {
       return encoderPageOverride ?? (makeEncoderPage() as unknown as Page);
     }
+    async withContext<A>(
+      profileId: string,
+      isolationKey: string | undefined,
+      use: (context: BrowserContext) => Promise<A>,
+    ) {
+      return use(await this.contextFor(profileId, isolationKey));
+    }
     async connectDesktopPage(endpoint: string) {
       const context = makeContext(undefined, desktopPageUrl);
       context.page.viewportSize.mockReturnValue(null);
