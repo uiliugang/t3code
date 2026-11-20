@@ -428,6 +428,7 @@ it("keeps a linked test file expanded when a refresh changes the rest of the dif
 async function renderShortPages(stack: AsyncDisposableStack) {
   setup({ paged: true });
   mocks.shortPages = true;
+  window.localStorage.setItem("t3code.pullRequestFileTreeOpen", "false");
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, diffFilesCollapsed: false });
   stack.defer(() => {
     window.localStorage.removeItem("t3code.diffHideTestFiles");
@@ -454,36 +455,36 @@ async function renderShortPages(stack: AsyncDisposableStack) {
     await expect.element(loadMore).not.toBeInTheDocument();
     await screen.getByRole("button", { name: "Hide file tree", exact: true }).click();
   };
-  // The later page sits at the bottom of the list, which grows as expanded files render.
   const diffToggle = async (path: string) => {
-    const scroller = container.querySelector(".diff-render-surface")!;
-    const header = await vi.waitFor(() => {
-      scroller.scrollTop = scroller.scrollHeight;
-      return screen.getByText(path, { exact: true }).element();
-    });
-    const { host } = header.getRootNode() as ShadowRoot;
+    const header = screen.getByText(path, { exact: true });
+    await expect.element(header).toBeVisible();
+    const { host } = header.element().getRootNode() as ShadowRoot;
     return page.elementLocator(host).getByRole("button", { name: /^(Expand|Collapse) diff$/ });
   };
-  const filter = screen.getByRole("button", { name: "Hide test files" });
-  return { screen, loadNextPage, diffToggle, filter };
+  return { screen, loadNextPage, diffToggle };
 }
 
 it("keeps a later test file folded by hand through a refresh and bulk toggles while hidden", async () => {
   await using stack = new AsyncDisposableStack();
-  const { screen, loadNextPage, diffToggle, filter } = await renderShortPages(stack);
+  const { screen, loadNextPage, diffToggle } = await renderShortPages(stack);
   await loadNextPage();
+  await screen.getByRole("button", { name: "Show file tree", exact: true }).click();
+  await screen.getByRole("treeitem", { name: "late.test.ts", exact: true }).click();
+  await screen.getByRole("button", { name: "Hide file tree", exact: true }).click();
   const lateTest = await diffToggle("late.test.ts");
   await lateTest.click();
   await expect.element(lateTest).toHaveAttribute("aria-expanded", "false");
-  await filter.click();
+  await screen.getByRole("button", { name: "Hide test files", exact: true }).click();
 
   // A refresh drops the loaded later page, so the bulk toggles below run without it.
   await screen.rerender(tab(1));
-  await expect.element(screen.getByText("1 test file hidden", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "1 file hidden", exact: true }))
+    .toBeVisible();
   await screen.getByRole("button", { name: "Collapse all files", exact: true }).click();
   await screen.getByRole("button", { name: "Expand all files", exact: true }).click();
   await loadNextPage();
-  await filter.click();
+  await screen.getByRole("button", { name: "Show test files", exact: true }).click();
 
   await expect.element(screen.getByText("4 files", { exact: true })).toBeVisible();
   await expect.element(await diffToggle("late.test.ts")).toHaveAttribute("aria-expanded", "false");

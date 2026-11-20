@@ -29,7 +29,7 @@ vi.mock(import("../../package.json"), async (original) => ({
   default: {
     ...(await original()).default,
     version: "0.0.3",
-    providerCompatibilityVersion: "0.1.7",
+    providerCompatibilityVersion: "0.1.10",
   },
 }));
 

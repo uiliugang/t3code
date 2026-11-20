@@ -1349,11 +1349,9 @@ export const layer: Layer.Layer<
           }
           // Most providers refuse to fork a busy thread, so a source that started a turn after
           // dispatch planned this fork gets the portable context dispatch gives a busy source.
-          const sourceBusy =
-            session.providerSession.capabilities.threads.canForkWhileSourceRunning !== true &&
-            sourceProjection.runs.some(
-              (candidate) => candidate.ordinal > sourceRun.ordinal && isActiveRun(candidate),
-            );
+          const sourceBusy = sourceProjection.runs.some(
+            (candidate) => candidate.ordinal > sourceRun.ordinal && isActiveRun(candidate),
+          );
           let nativeForkFailure: string | undefined;
           if (
             (sourceRun.status === "completed" || sourceRun.status === "waiting") &&

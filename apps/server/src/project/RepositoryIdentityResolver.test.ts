@@ -146,7 +146,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
-  it.effect("keeps a literal .git in an Azure DevOps repository name", () =>
+  it.effect("resolves an Azure DevOps remote as generic Git", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const cwd = yield* fileSystem.makeTempDirectoryScoped({
@@ -164,9 +164,10 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const identity = yield* resolver.resolve(cwd);
 
-      expect(identity?.displayName).toBe("Acme/Platform/_git/Tool.git");
-      expect(identity?.name).toBe("Tool.git");
-      expect(sourceControlDefinitions.repositorySelector(identity)).toBe("Tool.git");
+      expect(identity?.provider).toBe("unknown");
+      expect(identity?.displayName).toBe("Acme/Platform/_git/Tool");
+      expect(identity?.name).toBe("Tool");
+      expect(sourceControlDefinitions.repositorySelector(identity)).toBe("Acme/Platform/_git/Tool");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 

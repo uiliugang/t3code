@@ -18,6 +18,11 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("../../state/assets", () => ({ refreshAssetUrl: harness.refreshAssetUrl }));
+vi.mock("../../lib/useUiTranslation", () => ({ useUiTranslation: () => (text: string) => text }));
+vi.mock("gt-react-native", async (importOriginal) => {
+  const gt = await importOriginal<typeof import("gt-react-native")>();
+  return { ...gt, useGT: () => gt.mFallback };
+});
 vi.mock("../../lib/localAttachmentPreview", () => ({ loadLocalAttachmentPreview: vi.fn() }));
 vi.mock("../../lib/attachmentDownload", () => ({
   downloadAndShareAttachment: vi.fn(),

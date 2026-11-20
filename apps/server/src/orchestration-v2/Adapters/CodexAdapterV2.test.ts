@@ -2645,6 +2645,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           config: {
             ...(requests[0] as { config: Record<string, unknown> }).config,
             "shell_environment_policy.set.T3CODE_THREAD_ID": forkTargetId,
+            "mcp_servers.envprobe.env.T3CODE_THREAD_ID": forkTargetId,
           },
         });
       }).pipe(

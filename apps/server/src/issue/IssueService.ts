@@ -225,6 +225,7 @@ const make = Effect.gen(function* () {
           const shells = allShells.filter(
             (project) => !filter.excludeProjectIds?.includes(project.id),
           );
+          if (shells.length === 0) return { supported: [], unimplemented: new Map(), errors: [] };
           const bound = yield* standaloneBindings;
           const requirements = yield* requirementIssues.trackerSources.pipe(
             Effect.mapError(

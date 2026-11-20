@@ -96,6 +96,14 @@ vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("../../components/ProjectFavicon", () => ({ ProjectFavicon: () => null }));
+vi.mock("../../lib/useUiTranslation", () => ({ useUiTranslation: () => (text: string) => text }));
+vi.mock("../../lib/useProjectPresentation", () => ({
+  useProjectPresentation: () => ({
+    capitalizeProjectNames: false,
+    showRepositoryIcons: false,
+    showGroupIcons: false,
+  }),
+}));
 vi.mock("../connection/environmentStatusText", () => ({ runtimeConnectionErrorText: () => null }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => [regular, scratch],

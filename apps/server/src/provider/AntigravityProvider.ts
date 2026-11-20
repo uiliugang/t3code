@@ -431,7 +431,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             label: options.auth?.label ?? "Google account",
           },
           checkedAt: updatedAt,
-          models: buildAntigravityModelsFromSession(started.sessionSetupResult, thinkingLevels),
+          models: modelsFromSession(started.sessionSetupResult),
           supportedRuntimeModes: antigravityRuntimeModes(started.sessionSetupResult),
           supportsTextGeneration,
           ...(cwd

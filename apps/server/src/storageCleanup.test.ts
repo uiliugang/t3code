@@ -4571,7 +4571,7 @@ describe("storage cleanup reports and local file policies", () => {
       Effect.gen(function* () {
         const { service, fs, repo, worktree, command, setThreads, setStoredWorktreePaths } =
           yield* cleanupFixture({
-            ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+            ...disabledCleanup,
             worktreeUnchanged: true,
           });
         const second = `${worktree}-2`;
