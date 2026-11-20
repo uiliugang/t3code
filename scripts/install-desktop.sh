@@ -172,6 +172,24 @@ if ! mkdir "$install_dir/.t3-desktop-install.lock"; then
 fi
 lock="$install_dir/.t3-desktop-install.lock"
 [ ! -L "$destination" ] || fail "refusing to replace a symbolic link at $destination"
+if [ "$platform" = Darwin ]; then
+  other_name=
+  case "${destination##*/}" in
+    'T3 Code.app') other_name='T3 Code (Beta).app' ;;
+    'T3 Code (Beta).app')
+      if [ -e "$destination" ]; then
+        fail "Move $destination out of the install directory before retrying. The installer cannot verify the origin of the existing Beta app."
+      fi
+      other_name='T3 Code.app'
+      ;;
+  esac
+  if [ -n "$other_name" ]; then
+    other_app="$install_dir/$other_name"
+    if [ -e "$other_app" ] || [ -L "$other_app" ]; then
+      fail "Move $other_app out of the install directory before retrying. The installer will not remove it automatically."
+    fi
+  fi
+fi
 if [ -e "$destination" ]; then
   if [ "$platform" = Darwin ]; then
     [ -d "$destination" ] &&

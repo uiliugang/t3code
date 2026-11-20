@@ -59,10 +59,7 @@ so the fork retains its install and update identity. This file contains no servi
 Upstream Firebase and Connect policy still controls access; obtaining an FCM token does not verify
 end-to-end delivery. These builds do not provision a private relay or fork-specific cloud authentication.
 
-Beta is the product label, not a release channel or version suffix. Release channels
-remain stable and nightly. To ship 0.1.0 Beta, use `channel=stable` and
-`version=0.1.0`. Removing the Beta label later is a branding change independent of
-the version.
+The stable product name is T3 Code. The release channels remain stable and nightly.
 
 ## What the workflow does
 
