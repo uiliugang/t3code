@@ -151,6 +151,7 @@ export function DraftHeroHeadline({
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: pickableProjectGroups(projectGroups),
     preferredProjectRef: activeProjectRef,
+    ...(pendingSelection ? { selectionEnvironmentId: pendingSelection.environmentId } : {}),
   });
   const projectEntryByKey = new Map(
     projectPickerEntries.map((entry) => [entry.group.projectKey, entry] as const),
@@ -203,34 +204,15 @@ export function DraftHeroHeadline({
         ? activeProject.environmentId
         : null);
 
-  const resolveMemberForEnvironment = (
-    entry: (typeof menuEntries)[number],
-    preferredEnvironmentId: EnvironmentId | null,
-  ) =>
-    (preferredEnvironmentId
-      ? entry.group.memberProjects.find((member) => member.environmentId === preferredEnvironmentId)
-      : undefined) ?? entry.targetProject;
-
-  const isEntrySelected = (entry: (typeof menuEntries)[number]): boolean => {
-    if (selectedEnvironmentId === null || selectedProjectIdsForDraft.length === 0) return false;
-    return entry.group.memberProjects.some(
+  const selectedMember = (entry: (typeof menuEntries)[number]) =>
+    entry.group.memberProjects.find(
       (member) =>
         member.environmentId === selectedEnvironmentId &&
         selectedProjectIdsForDraft.includes(member.id),
     );
-  };
-
-  const canCombineEntry = (entry: (typeof menuEntries)[number]): boolean => {
-    if (selectedEnvironmentId !== null && selectedProjectIdsForDraft.length > 0) {
-      if (!multiRepoEnvironmentIds.has(selectedEnvironmentId)) return false;
-      return entry.group.memberProjects.some(
-        (member) => member.environmentId === selectedEnvironmentId,
-      );
-    }
-    return entry.group.memberProjects.some((member) =>
-      multiRepoEnvironmentIds.has(member.environmentId),
-    );
-  };
+  const canCombineEntry = ({ targetProject }: (typeof menuEntries)[number]) =>
+    (selectedEnvironmentId === null || targetProject.environmentId === selectedEnvironmentId) &&
+    multiRepoEnvironmentIds.has(targetProject.environmentId);
 
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
@@ -357,10 +339,10 @@ export function DraftHeroHeadline({
   };
 
   const toggleProjectEntry = (entry: (typeof menuEntries)[number]) => {
-    const member = resolveMemberForEnvironment(entry, selectedEnvironmentId);
-    const targetEnvId = selectedEnvironmentId ?? member.environmentId;
-    if (!multiRepoEnvironmentIds.has(targetEnvId)) return;
-    if (member.environmentId !== targetEnvId) return;
+    if (!canCombineEntry(entry)) return;
+    const selected = selectedMember(entry);
+    const member = selected ?? entry.targetProject;
+    const targetEnvId = member.environmentId;
 
     const envProjectsById = new Map(
       projects
@@ -371,8 +353,7 @@ export function DraftHeroHeadline({
       const found = envProjectsById.get(id);
       return found ? [found] : [];
     });
-    const alreadySelected = currentSelected.some((candidate) => candidate.id === member.id);
-    if (alreadySelected) {
+    if (selected) {
       if (currentSelected.length <= 1) return;
       stageSelectedProjects(currentSelected.filter((candidate) => candidate.id !== member.id));
       return;
@@ -545,7 +526,7 @@ export function DraftHeroHeadline({
         <ComboboxList>
           {(item: PickerItem) => {
             const entry = projectEntryByKey.get(item.value);
-            const selected = entry ? isEntrySelected(entry) : false;
+            const selected = entry !== undefined && selectedMember(entry) !== undefined;
             const combinable = entry ? canCombineEntry(entry) : false;
             return (
               <ComboboxItem

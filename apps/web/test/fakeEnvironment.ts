@@ -617,7 +617,10 @@ export function installFakeEnvironment(
   options?: {
     readonly acceptCommands?: boolean;
     readonly keybindings?: ResolvedKeybindingsConfig;
-    readonly extraProjects?: ReadonlyArray<Pick<OrchestrationProjectShell, "id" | "title">>;
+    readonly extraProjects?: ReadonlyArray<
+      Pick<OrchestrationProjectShell, "id" | "title"> &
+        Partial<Pick<OrchestrationProjectShell, "repositoryIdentity">>
+    >;
     /** Commands left unanswered even when accepting, until `rejectPendingCommand`. */
     readonly holdCommand?: (command: OrchestrationV2Command) => boolean;
     readonly providers?: ReadonlyArray<unknown>;

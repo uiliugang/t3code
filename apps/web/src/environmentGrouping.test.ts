@@ -277,6 +277,15 @@ describe("environment grouping", () => {
       environmentId: primaryEnvironmentId,
       id: fallbackPrimary.id,
     });
+    const locked = buildSidebarProjectPickerEntries({
+      groups,
+      preferredProjectRef: { environmentId: remoteEnvironmentId, projectId: currentRemote.id },
+      selectionEnvironmentId: primaryEnvironmentId,
+    });
+    expect(
+      locked.find((entry) => entry.group.projectKey === destinationRepositoryIdentity.canonicalKey)
+        ?.targetProject.id,
+    ).toBe(destinationPrimary.id);
   });
 
   it("puts the preferred project before pinned projects", () => {

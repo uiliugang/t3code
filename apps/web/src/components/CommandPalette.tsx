@@ -592,6 +592,7 @@ function OpenCommandPaletteDialog(props: {
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: pickableProjectGroups(projectGroups),
     preferredProjectRef: contextualProjectRef,
+    ...(newThreadSelection ? { selectionEnvironmentId: newThreadSelection.environmentId } : {}),
   });
   const pickerProjects = projectPickerEntries.map(({ group, targetProject }) => ({
     ...targetProject,
@@ -628,37 +629,18 @@ function OpenCommandPaletteDialog(props: {
     );
   };
 
-  const resolvePaletteMemberForSelection = (project: CommandPaletteProject) => {
-    const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-    if (newThreadSelection) {
-      return (
-        group?.memberProjects.find(
-          (member) => member.environmentId === newThreadSelection.environmentId,
-        ) ?? null
-      );
-    }
-    return (
-      group?.memberProjects.find((member) => canCombineInEnvironment(member.environmentId)) ??
-      project
-    );
-  };
-
-  const canSelectNewThreadProjects =
-    currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP &&
-    pickerProjects.some((project) => {
-      const member = resolvePaletteMemberForSelection(project);
-      return member !== null && canCombineInEnvironment(member.environmentId);
-    });
+  const canSelectNewThreadProject = (project: CommandPaletteProject) =>
+    (!newThreadSelection || newThreadSelection.environmentId === project.environmentId) &&
+    canCombineInEnvironment(project.environmentId);
   const selectedNewThreadProjectCount = newThreadSelection?.projectIds.length ?? 0;
 
   const toggleNewThreadProjectSelection = (project: CommandPaletteProject): boolean => {
-    const member = resolvePaletteMemberForSelection(project);
-    if (!member || !canCombineInEnvironment(member.environmentId)) return false;
+    if (!canSelectNewThreadProject(project)) return false;
     const current = newThreadSelection?.projectIds ?? [];
-    const projectIds = current.includes(member.id)
-      ? current.filter((id) => id !== member.id)
-      : [...current, member.id];
-    const envProjects = projects.filter((entry) => entry.environmentId === member.environmentId);
+    const projectIds = current.includes(project.id)
+      ? current.filter((id) => id !== project.id)
+      : [...current, project.id];
+    const envProjects = projects.filter((entry) => entry.environmentId === project.environmentId);
     const selected = projectIds.flatMap((id) => envProjects.filter((entry) => entry.id === id));
     if (selected.length > 0 && !resolveDraftProjectSelection(selected, envProjects)) {
       toastManager.add(
@@ -670,7 +652,7 @@ function OpenCommandPaletteDialog(props: {
       return false;
     }
     setNewThreadSelection(
-      projectIds.length === 0 ? null : { environmentId: member.environmentId, projectIds },
+      projectIds.length === 0 ? null : { environmentId: project.environmentId, projectIds },
     );
     return true;
   };
@@ -992,38 +974,28 @@ function OpenCommandPaletteDialog(props: {
       const isInNewThreadSubmenu = currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP;
       const projectItems = buildNewThreadInProjectItems({
         projects: pickerProjects.filter((project) => !isScratch(project)),
-        currentProjectKey: currentEntry
-          ? `${currentEntry.targetProject.environmentId}:${currentEntry.targetProject.id}`
-          : null,
+        currentProjectKey:
+          currentEntry && currentEntry.targetProject.environmentId === currentProjectEnvironmentId
+            ? `${currentEntry.targetProject.environmentId}:${currentEntry.targetProject.id}`
+            : null,
         projectGroupByTargetKey,
         locationByEnvironmentId: projectEnvironmentLocationById,
         pin: projectPin,
         ...(isInNewThreadSubmenu
           ? {
-              checked: (project) => {
-                const member = resolvePaletteMemberForSelection(project);
-                return member && canCombineInEnvironment(member.environmentId)
-                  ? (newThreadSelection?.projectIds.includes(member.id) ?? false)
-                  : undefined;
-              },
-              keepOpen: (project) => {
-                const member = resolvePaletteMemberForSelection(project);
-                return member !== null && canCombineInEnvironment(member.environmentId);
-              },
-              disabled: (project) => {
-                if (!newThreadSelection) return false;
-                const member = resolvePaletteMemberForSelection(project);
-                return !member || !canCombineInEnvironment(member.environmentId);
-              },
+              checked: (project) =>
+                canSelectNewThreadProject(project)
+                  ? (newThreadSelection?.projectIds.includes(project.id) ?? false)
+                  : undefined,
+              keepOpen: canSelectNewThreadProject,
+              disabled: (project) =>
+                newThreadSelection !== null && !canSelectNewThreadProject(project),
             }
           : {}),
         runProject: async (project) => {
-          if (isInNewThreadSubmenu) {
-            const member = resolvePaletteMemberForSelection(project);
-            if (member && canCombineInEnvironment(member.environmentId)) {
-              toggleNewThreadProjectSelection(project);
-              return;
-            }
+          if (isInNewThreadSubmenu && canSelectNewThreadProject(project)) {
+            toggleNewThreadProjectSelection(project);
+            return;
           }
           const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
           const contextualRefBelongsToGroup =
@@ -1077,6 +1049,9 @@ function OpenCommandPaletteDialog(props: {
   );
   const projectThreadItems = openingOrderThreadItems.map(
     (item) => projectJumpItems.get(item.value) ?? item,
+  );
+  const canSelectNewThreadProjects = projectThreadItems.some(
+    (item) => "checked" in item && item.checked !== undefined,
   );
 
   const {

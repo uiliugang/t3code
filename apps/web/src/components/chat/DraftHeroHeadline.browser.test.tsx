@@ -154,10 +154,21 @@ it("the new-thread project picker follows the manual sidebar project order", asy
 });
 
 it("selects multiple repositories in the new-thread command palette before starting a draft", async () => {
+  const alphaId = ProjectId.make("project-alpha");
+  const repositoryIdentity = {
+    canonicalKey: "example.com/team/alpha",
+    name: "alpha",
+    locator: {
+      source: "git-remote" as const,
+      remoteName: "origin",
+      remoteUrl: "https://example.com/team/alpha.git",
+    },
+  };
   using _environment = installFakeEnvironment([], {
     capabilities: { multiRepositoryWorkspaces: true },
     extraProjects: [
-      { id: ProjectId.make("project-alpha"), title: "alpha" },
+      { id: ProjectId.make("older-alpha"), title: "older-alpha", repositoryIdentity },
+      { id: alphaId, title: "alpha", repositoryIdentity },
       { id: ProjectId.make("project-beta"), title: "beta" },
     ],
   });
@@ -170,18 +181,19 @@ it("selects multiple repositories in the new-thread command palette before start
   const draftId = DraftId.make("draft-palette-multi-project");
   useComposerDraftStore
     .getState()
-    .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId);
+    .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, alphaId), draftId);
   const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
   await router.load();
   await using _app = await render(<AppRoot router={router} />, {
     // AppRoot brings its own router.
     router: false,
   });
-  await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
+  await expect.element(page.getByText("alpha", { exact: true }).first()).toBeVisible();
   openCommandPalette({ open: "new-thread-in" });
   const alpha = page.getByRole("option", { name: /alpha/ });
   const beta = page.getByRole("option", { name: /beta/ });
   await expect.element(page.getByRole("button", { name: "Start (0)", exact: true })).toBeDisabled();
+  await expect.element(alpha.getByText("/workspace/alpha", { exact: true })).toBeVisible();
   await alpha.click();
   await expect.element(page.getByRole("combobox")).toBeVisible();
   await expect.element(alpha).toHaveAttribute("aria-checked", "true");
@@ -211,4 +223,10 @@ it("selects multiple repositories in the new-thread command palette before start
       ),
     ).toBe(true);
   });
+  const trigger = document.querySelector<HTMLElement>("[data-draft-project-trigger]");
+  if (!trigger) throw new Error("The draft project picker did not render.");
+  await userEvent.click(page.elementLocator(trigger));
+  await page.getByRole("checkbox", { name: "Remove alpha from group", exact: true }).click();
+  await expect.element(page.getByRole("radio", { name: "beta", exact: true })).toBeChecked();
+  expect(page.getByRole("radio").elements()).toHaveLength(1);
 });
