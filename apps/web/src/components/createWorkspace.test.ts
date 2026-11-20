@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProjectId, WorkspaceRootId } from "@t3tools/contracts";
+import { projectScriptAppliesToRoots } from "@t3tools/shared/projectScripts";
 import {
   buildRootsFromSelectedProjects,
   deriveAdhocGroupLogicalKey,
@@ -133,6 +134,22 @@ describe("draft project selection", () => {
     expect(
       resolveDraftProjectSelection([a, b], [a, b, { ...existing, archivedAt: "2026-01-01" }])?.kind,
     ).toBe("adhoc-group");
+    for (const changedRoot of [
+      { ...roots.roots[0]!, accessIntent: "read_only" as const },
+      { ...roots.roots[0]!, defaultBaseRef: "release" },
+    ]) {
+      const configuredGroup = {
+        ...existing,
+        workspaceConfig: {
+          ...existing.workspaceConfig!,
+          roots: [changedRoot, roots.roots[1]!],
+        },
+      };
+      expect(resolveDraftProjectSelection([a, b], [configuredGroup])?.kind).toBe("adhoc-group");
+      expect(resolveDraftProjectSelection([configuredGroup, b], [existing])?.kind).toBe(
+        "adhoc-group",
+      );
+    }
   });
 
   it("expands groups, deduplicates paths, and preserves root configuration", () => {
@@ -171,6 +188,45 @@ describe("draft project selection", () => {
       "/code/backend",
     );
     expect(buildRootsFromSelectedProjects([group, a])?.roots[0]?.setupScript).toBeUndefined();
+    const reordered = buildRootsFromSelectedProjects([a, group])!;
+    expect
+      .soft(reordered.roots.find((root) => root.sourcePath === a.workspaceRoot)?.accessIntent)
+      .toBe("read_only");
+    const readonlyGroup = {
+      ...group,
+      workspaceConfig: {
+        ...group.workspaceConfig!,
+        primaryRootId: frontend.id,
+        roots: [{ ...frontend, accessIntent: "read_only" as const }],
+      },
+    };
+    expect(resolveDraftProjectSelection([a, readonlyGroup], [a, readonlyGroup])).toMatchObject({
+      kind: "existing-group",
+      project: readonlyGroup,
+    });
+    const scopedGroup = {
+      ...group,
+      workspaceConfig: {
+        ...group.workspaceConfig!,
+        roots: [
+          {
+            ...frontend,
+            setupScript: { ...script, repositoryRootIds: [frontend.id] },
+          },
+          {
+            ...backend,
+            setupScript: { ...script, repositoryRootIds: [frontend.id] },
+          },
+        ],
+      },
+    };
+    const scopedRoots = buildRootsFromSelectedProjects([scopedGroup, project("other")], {
+      includeSetupScripts: true,
+    })!.roots;
+    expect(projectScriptAppliesToRoots(scopedRoots[0]!.setupScript!, [scopedRoots[0]!.id])).toBe(
+      true,
+    );
+    expect(scopedRoots[1]!.setupScript).toBeUndefined();
   });
 
   it("rejects invalid selections instead of silently dropping repositories", () => {

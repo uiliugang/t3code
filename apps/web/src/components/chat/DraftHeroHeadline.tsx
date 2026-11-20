@@ -117,6 +117,12 @@ export function DraftHeroHeadline({
   const highlightedPickerValueRef = useRef<string | null>(null);
   const suppressNextChangeRef = useRef(false);
   const { canPinProjectGroup, toggleProjectGroupPin } = useProjectPin();
+  const closePicker = () => {
+    setPickerOpen(false);
+    setPickerQuery("");
+    setPendingSelection(null);
+    setPendingGroupTitle(null);
+  };
 
   const environmentLabelById = new Map(
     environments.map((environment) => [environment.environmentId, environment.label] as const),
@@ -442,13 +448,13 @@ export function DraftHeroHeadline({
       }}
       onOpenChange={(open, eventDetails) => {
         if (eventDetails.isCanceled) return;
-        if (open) suppressNextChangeRef.current = false;
-        setPickerOpen(open);
-        setPickerQuery("");
         if (!open) {
-          setPendingSelection(null);
-          setPendingGroupTitle(null);
+          closePicker();
+          return;
         }
+        suppressNextChangeRef.current = false;
+        setPickerOpen(true);
+        setPickerQuery("");
       }}
       value={selectedPickerItem}
       onValueChange={(item, eventDetails) => {
@@ -458,7 +464,7 @@ export function DraftHeroHeadline({
         }
         if (!item) return;
         if (item.value === ADD_PROJECT_VALUE) {
-          setPickerOpen(false);
+          closePicker();
           openAddProject();
           return;
         }
@@ -472,7 +478,7 @@ export function DraftHeroHeadline({
           toggleProjectEntry(entry);
           return;
         }
-        setPickerOpen(false);
+        closePicker();
         if (!isAdhocGroupDraft && item.value === activeProjectKey) {
           return;
         }
@@ -642,10 +648,14 @@ export function DraftHeroHeadline({
                 maxLength={200}
                 onKeyDown={(event) => {
                   event.stopPropagation();
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") {
                     event.preventDefault();
                     applySelectedProjects(selectedProjectsResolved);
-                    setPickerOpen(false);
+                    closePicker();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    closePicker();
                   }
                 }}
                 onChange={(event) => {
@@ -659,9 +669,7 @@ export function DraftHeroHeadline({
                 onClick={() => {
                   if (pendingSelection || pendingGroupTitle !== null)
                     applySelectedProjects(selectedProjectsResolved);
-                  setPendingSelection(null);
-                  setPendingGroupTitle(null);
-                  setPickerOpen(false);
+                  closePicker();
                 }}
               >
                 {t("Done")}

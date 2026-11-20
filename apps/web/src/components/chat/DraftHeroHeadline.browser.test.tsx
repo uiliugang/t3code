@@ -107,6 +107,33 @@ it("the new-thread project picker follows the manual sidebar project order", asy
   await expect
     .element(page.getByRole("textbox", { name: "Group name" }))
     .toHaveValue("Client and API");
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+      ...composition,
+    });
+    page.getByRole("textbox", { name: "Group name" }).element().dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  }
+  await expect.element(page.getByRole("textbox", { name: "Group name" })).toBeVisible();
+  expect(
+    useComposerDraftStore.getState().getDraftSession(draftId)?.selectedProjectIds,
+  ).toBeUndefined();
+  await page.getByRole("textbox", { name: "Group name" }).click();
+  await userEvent.keyboard("{Escape}");
+  await expect.element(page.getByRole("textbox", { name: "Group name" })).not.toBeInTheDocument();
+  expect(
+    useComposerDraftStore.getState().getDraftSession(draftId)?.selectedProjectIds,
+  ).toBeUndefined();
+  await userEvent.click(page.elementLocator(trigger));
+  await expect
+    .element(page.getByRole("checkbox", { name: "Combine with beta", exact: true }))
+    .not.toBeChecked();
+  await page.getByRole("checkbox", { name: "Combine with beta", exact: true }).click();
+  await page.getByRole("textbox", { name: "Group name" }).fill("Client and API");
+  await page.getByRole("radio", { name: "beta", exact: true }).click();
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await vi.waitFor(() =>
     expect(

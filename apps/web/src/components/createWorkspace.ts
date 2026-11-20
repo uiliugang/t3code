@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import type { CreateProjectInput } from "@t3tools/client-runtime/state/projects";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
+import { projectScriptAppliesToRoots } from "@t3tools/shared/projectScripts";
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 
 const MAX_GROUP_REPOSITORIES = 16;
@@ -137,7 +138,7 @@ export function buildRootsFromSelectedProjects(
   const includeSetupScripts = options?.includeSetupScripts ?? false;
   const makeRootId =
     options?.makeRootId ?? ((index: number) => WorkspaceRootId.make(`root-${index + 1}`));
-  const seenPaths = new Set<string>();
+  const rootIndexByPath = new Map<string, number>();
   const usedAliases = new Set<string>();
   const roots: ProjectWorkspaceRoot[] = [];
   let primaryRootId: WorkspaceRootId | null = null;
@@ -167,28 +168,39 @@ export function buildRootsFromSelectedProjects(
 
     for (const candidate of sourceRoots) {
       const normalizedPath = normalizeProjectPathForComparison(candidate.sourcePath);
-      if (!normalizedPath || seenPaths.has(normalizedPath)) {
+      if (!normalizedPath) continue;
+      const existingIndex = rootIndexByPath.get(normalizedPath);
+      if (existingIndex !== undefined) {
+        const existing = roots[existingIndex]!;
+        if (candidate.accessIntent === "read_only") {
+          roots[existingIndex] = { ...existing, accessIntent: "read_only" };
+        }
         if (
           primaryRootId === null &&
           preferredPrimarySourcePath &&
           normalizeProjectPathForComparison(preferredPrimarySourcePath) === normalizedPath
         ) {
-          const existing = roots.find(
-            (entry) => normalizeProjectPathForComparison(entry.sourcePath) === normalizedPath,
-          );
-          if (existing) primaryRootId = existing.id;
+          primaryRootId = existing.id;
         }
         continue;
       }
       if (roots.length >= MAX_GROUP_REPOSITORIES) return null;
-      seenPaths.add(normalizedPath);
+      rootIndexByPath.set(normalizedPath, roots.length);
       const id = makeRootId(roots.length);
       const alias = uniqueAlias(
         candidate.alias || project.title,
         candidate.sourcePath,
         usedAliases,
       );
-      const setupScript = includeSetupScripts ? candidate.setupScript : undefined;
+      const setupScript =
+        includeSetupScripts &&
+        candidate.setupScript &&
+        projectScriptAppliesToRoots(candidate.setupScript, [candidate.id])
+          ? {
+              ...candidate.setupScript,
+              ...(candidate.setupScript.repositoryRootIds ? { repositoryRootIds: [id] } : {}),
+            }
+          : undefined;
       roots.push({
         id,
         alias,
@@ -250,11 +262,11 @@ function findMatchingGroupProject<T extends GroupableProject>(
   environmentId: EnvironmentId,
   flattened: FlattenedProjectRoots,
 ): T | null {
-  const targetPaths = new Set(
-    flattened.roots.map((root) => normalizeProjectPathForComparison(root.sourcePath)),
+  const targetRoots = new Map(
+    flattened.roots.map((root) => [normalizeProjectPathForComparison(root.sourcePath), root]),
   );
   const primaryRoot = flattened.roots.find((root) => root.id === flattened.primaryRootId);
-  if (!primaryRoot || targetPaths.size < 2) return null;
+  if (!primaryRoot) return null;
   const targetPrimaryPath = normalizeProjectPathForComparison(primaryRoot.sourcePath);
 
   for (const project of projects) {
@@ -269,7 +281,7 @@ function findMatchingGroupProject<T extends GroupableProject>(
     const projectSelectedRoots = project.workspaceConfig.roots.filter(
       (root) => root.defaultSelected,
     );
-    if (projectSelectedRoots.length !== targetPaths.size) continue;
+    if (projectSelectedRoots.length !== targetRoots.size) continue;
     const projectPrimary = project.workspaceConfig.roots.find(
       (root) => root.id === project.workspaceConfig?.primaryRootId,
     );
@@ -279,9 +291,14 @@ function findMatchingGroupProject<T extends GroupableProject>(
     ) {
       continue;
     }
-    const allMatch = projectSelectedRoots.every((root) =>
-      targetPaths.has(normalizeProjectPathForComparison(root.sourcePath)),
-    );
+    const allMatch = projectSelectedRoots.every((root) => {
+      const target = targetRoots.get(normalizeProjectPathForComparison(root.sourcePath));
+      return (
+        target !== undefined &&
+        target.accessIntent === root.accessIntent &&
+        (target.defaultBaseRef ?? "HEAD") === (root.defaultBaseRef ?? "HEAD")
+      );
+    });
     if (allMatch) return project;
   }
   return null;
@@ -329,7 +346,10 @@ export function resolveDraftProjectSelection<T extends GroupableProject>(
       },
     };
   }
-  if (flattened.roots.length === 1) {
+  if (
+    flattened.roots.length === 1 &&
+    selectedProjects.every((project) => project.workspaceConfig === undefined)
+  ) {
     return {
       kind: "single",
       project: primaryProject,
