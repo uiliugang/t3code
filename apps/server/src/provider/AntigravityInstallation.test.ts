@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
+  ServerSettingsError,
 } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -274,6 +275,26 @@ const expectPreviousRelease = Effect.fn("test.expectPreviousAntigravityRelease")
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity installation", (it) => {
+  it.effect("activates without pruning when the protected paths cannot be read", () =>
+    Effect.gen(function* () {
+      const { installation, fs, path } = yield* makeHarness({
+        previous: true,
+        withProtectedBinaryPaths: () =>
+          Effect.fail(
+            new ServerSettingsError({ operation: "read-file", settingsPath: "settings.json" }),
+          ),
+      });
+      yield* installation.start;
+      expect(yield* terminalState(installation)).toMatchObject({
+        phase: "succeeded",
+        installedVersion: assetVersion,
+      });
+      expect(
+        yield* fs.exists(path.join(installation.managedDirectory, "versions", previousReleaseId)),
+      ).toBe(true);
+    }),
+  );
+
   it.effect("keeps an inactive runtime referenced later in a provider's PATH", () =>
     Effect.gen(function* () {
       const { installation, fs, path, baseDir } = yield* makeHarness({ previous: true });
@@ -305,6 +326,35 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
         withProtectedBinaryPaths: (use) => use(protectedPaths, DEFAULT_SERVER_SETTINGS),
       });
       expect(yield* fs.exists(previous.executablePath)).toBe(true);
+    }),
+  );
+
+  it.effect("prunes unused versions after a stale version path fails to resolve", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const staleId = "0".repeat(64);
+      const { installation, path, stagingReleased } = yield* makeHarness({
+        previous: true,
+        fileSystem: FileSystem.FileSystem.of({
+          ...fs,
+          readDirectory: (target, options) =>
+            fs
+              .readDirectory(target, options)
+              .pipe(
+                Effect.map((entries) =>
+                  target.endsWith("versions") ? entries.toSorted() : entries,
+                ),
+              ),
+          realPath: (target) =>
+            fs.realPath(target.endsWith(staleId) ? `${target}-missing` : target),
+        }),
+      });
+      const versions = path.join(installation.managedDirectory, "versions");
+      yield* fs.makeDirectory(path.join(versions, staleId));
+      yield* installation.start;
+      expect((yield* terminalState(installation)).phase).toBe("succeeded");
+      yield* Deferred.await(stagingReleased);
+      expect(yield* fs.exists(path.join(versions, previousReleaseId))).toBe(false);
     }),
   );
 

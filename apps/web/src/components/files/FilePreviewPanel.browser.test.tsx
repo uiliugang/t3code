@@ -425,7 +425,6 @@ describe("source file scroll", () => {
       expectedIncludedLine,
     }) => {
       using _settings = setup();
-      localStorage.setItem("t3code.renderMarkdown", "false");
       const style = document.createElement("style");
       style.textContent = appCss;
       document.head.append(style);
@@ -442,17 +441,24 @@ describe("source file scroll", () => {
       };
 
       await using screen = await render(
-        <div style={{ width: 560, height: 400, display: "flex", flexDirection: "column" }}>
+        <div
+          style={{
+            width: "100%",
+            marginTop: 80,
+            height: 400,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
           {filePreview("notes.md")}
         </div>,
       );
+      await screen.getByRole("button", { name: "Show markdown source", exact: true }).click();
 
       const shadowRoot = () => screen.container.querySelector("diffs-container")?.shadowRoot;
       const rows = () => shadowRoot()?.querySelectorAll<HTMLElement>("[data-line]") ?? [];
       await vi.waitFor(() =>
-        expect(
-          shadowRoot()?.querySelector('[data-content][contenteditable="true"]'),
-        ).not.toBeNull(),
+        expect(shadowRoot()?.querySelector('[data-content][contenteditable="true"]')).toBeTruthy(),
       );
 
       const scroller = screen.container.querySelector<HTMLElement>(".file-preview-virtualizer")!;

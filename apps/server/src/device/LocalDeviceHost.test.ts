@@ -281,9 +281,9 @@ describe("AgentDevice startup", () => {
           () => Effect.succeed(processOutput(0)),
           processOutput(0),
           undefined,
+          false,
           environment,
         );
-        // ensureReady is the hub's first start; the probe ran with the fixture's empty help.
         hub.cameraHelp = "emulated none";
         hub.running = false;
         yield* host.ensureReady(() => Effect.void);

@@ -835,7 +835,9 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         if (entry === active.releaseId || !/^[a-f0-9]{64}$/u.test(entry)) continue;
         const directory = path.join(versionsDirectory, entry);
         if (leases.has(directory)) continue;
-        const resolvedDirectory = yield* fs.realPath(directory);
+        const resolved = yield* fs.realPath(directory).pipe(Effect.option);
+        if (Option.isNone(resolved)) continue;
+        const resolvedDirectory = resolved.value;
         if (
           protectedPaths.some(
             (binary) =>
@@ -857,7 +859,17 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
   const pruneInactiveReleases = (
     options.withProtectedBinaryPaths?.(pruneUnreferenced) ?? pruneUnreferenced([])
   ).pipe(Effect.ignore, Effect.withSpan("AntigravityInstallation.pruneInactiveReleases"));
-  const withProtectedPaths = options.withProtectedBinaryPaths;
+  const withProtectedPaths = <A, E, R>(
+    use: (paths: ReadonlyArray<string> | null) => Effect.Effect<A, E, R>,
+  ) => {
+    const snapshot = options.withProtectedBinaryPaths;
+    return snapshot === undefined
+      ? use([])
+      : snapshot((paths) => Effect.result(use(paths))).pipe(
+          Effect.catch(() => Effect.result(use(null))),
+          Effect.flatMap(Effect.fromResult),
+        );
+  };
 
   const install = Effect.fn("AntigravityInstallation.install")(
     function* (asset: AntigravityCliReleaseAsset) {
@@ -881,7 +893,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       const destination = path.join(versionsDirectory, releaseId);
       const writeAndActivate = Effect.fn("AntigravityInstallation.writeAndActivate")(function* (
         pointerDirectory: string,
-        binaryPaths: ReadonlyArray<string>,
+        binaryPaths: ReadonlyArray<string> | null,
       ) {
         yield* ensureRealManagedRoot("activate");
         yield* ensureEligible(asset.version);
@@ -899,7 +911,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
           mode: 0o600,
         });
         yield* fs.rename(pointerPath, activePath);
-        yield* pruneInactiveReleasesBody(binaryPaths).pipe(Effect.ignore);
+        if (binaryPaths !== null) yield* pruneInactiveReleasesBody(binaryPaths).pipe(Effect.ignore);
         yield* SubscriptionRef.update(
           state,
           (current) =>
@@ -917,14 +929,14 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
             directory: managedDirectory,
             prefix: "active.json.",
           });
-          const activateWithPaths = (binaryPaths: ReadonlyArray<string>) =>
+          const activateWithPaths = (binaryPaths: ReadonlyArray<string> | null) =>
             gate.withPermit(
               withManagedLock(
                 "activate",
                 writeAndActivate(pointerDirectory, binaryPaths).pipe(Effect.uninterruptible),
               ),
             );
-          yield* withProtectedPaths?.(activateWithPaths) ?? activateWithPaths([]);
+          yield* withProtectedPaths(activateWithPaths);
         },
         Effect.scoped,
         Effect.mapError(
@@ -1102,7 +1114,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         yield* fs.chmod(executablePath, 0o555);
         yield* fs.chmod(path.join(pairDirectory, RELEASE_RECORD), 0o400);
       }
-      const publishWithPaths = (binaryPaths: ReadonlyArray<string>) =>
+      const publishWithPaths = (binaryPaths: ReadonlyArray<string> | null) =>
         Effect.scoped(
           Effect.gen(function* () {
             const pointerDirectory = yield* fs.makeTempDirectoryScoped({
@@ -1230,7 +1242,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
             );
           }),
         );
-      const published = yield* withProtectedPaths?.(publishWithPaths) ?? publishWithPaths([]);
+      const published = yield* withProtectedPaths(publishWithPaths);
       if (published._tag === "existing") {
         yield* validate(published.executable, asset.version).pipe(
           Effect.scoped,
