@@ -126,6 +126,7 @@ const applicationServerSettingsTransferPolicy = {
   reviewGuideInstructions: "portable",
   pullRequestMergeMethod: "portable",
   observability: "local",
+  enablePreviewTunnel: "local",
   sourceControlHosts: "local",
   issueProjectSources: "local",
   daxiang: "local",

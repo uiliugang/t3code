@@ -106,7 +106,10 @@ vi.mock(import("./ThreadDetailsCard"), () => ({
   ),
 }));
 vi.mock(import("../BranchToolbar"), () => ({ BranchToolbar: (() => <></>) as never }));
-vi.mock(import("../GitActionsControl"), () => ({ default: () => null }));
+vi.mock(import("../GitActionsControl"), async () => {
+  const { memo } = await import("react");
+  return { default: memo(() => <></>) };
+});
 vi.mock(import("../ProjectScriptsControl"), () => ({ default: () => <></> }));
 vi.mock(import("./RepositoryDetails"), () => ({ RepositoryDetails: () => <></> }));
 vi.mock(import("./BranchIssuesPanel"), () => ({ BranchIssuesPanel: () => null }));

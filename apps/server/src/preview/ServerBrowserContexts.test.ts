@@ -8,7 +8,6 @@ import * as NodePath from "node:path";
 
 import { INCOGNITO_BROWSER_PROFILE_ID } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as NetService from "@t3tools/shared/Net";
 import { it as effectIt } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { chromium, type Browser, type BrowserContext, type BrowserType } from "playwright-core";
@@ -362,13 +361,15 @@ describe("ServerBrowserContexts", () => {
   });
 
   it("uploads a file over 50 MB to a desktop tab, which shares the server's filesystem", async () => {
-    const port = await Effect.flatMap(NetService.NetService, (net) =>
-      net.reserveLoopbackPort(),
-    ).pipe(Effect.provide(NetService.layer), Effect.runPromise);
     const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-desktop-upload-"));
     const userDataDir = NodePath.join(directory, "profile");
     const pool = new ServerBrowserContexts(options());
     try {
+      // Chromium can write DevToolsActivePort after Playwright's launch resolves, so the port is chosen here.
+      const reserved = NodeHttp.createServer();
+      await new Promise<void>((resolve) => reserved.listen(0, "127.0.0.1", resolve));
+      const { port } = reserved.address() as NodeNet.AddressInfo;
+      await new Promise((resolve) => reserved.close(resolve));
       const desktop = await launchPersistentChromium(userDataDir, {
         headless: true,
         args: [`--remote-debugging-port=${port}`],

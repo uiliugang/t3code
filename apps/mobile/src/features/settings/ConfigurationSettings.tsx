@@ -1,4 +1,4 @@
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import {
   applicationSettingsImportPatch,
   createApplicationSettingsFile,
@@ -13,8 +13,6 @@ import {
 } from "@t3tools/client-runtime/settings-transfer";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { ServerSettings, EnvironmentId } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
-import * as Exit from "effect/Exit";
 import * as Struct from "effect/Struct";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
@@ -25,7 +23,7 @@ import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { ListActionRow } from "../../components/ui/ListActionRow";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -360,7 +358,7 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
   const upsertBinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
     reportFailure: false,
   });
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promiseExit" });
+  const savePreferences = useAtomCommand(saveMobilePreferences, { reportFailure: false });
   const supportsProjectImport =
     environment.serverConfig.environment.capabilities.projectConfigurationImport === true;
   const exportProjects = useAtomCommand(sourceControlEnvironment.exportProjectConfigurations, {
@@ -426,10 +424,10 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
             ...mobilePreferencesFromClientSettings(file.clientSettings),
             ...preferences,
           });
-          if (Exit.isFailure(saved))
+          if (saved._tag === "Failure")
             throw new Error(
               t("Import incomplete: environment settings were saved, but app preferences failed."),
-              { cause: Cause.squash(saved.cause) },
+              { cause: squashAtomCommandFailure(saved) },
             );
         }}
       />

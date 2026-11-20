@@ -1,7 +1,7 @@
 // Must stay first: the render counter and behavior probe wrap the DevTools hook before any React commit.
 import "./src/features/development/render-counter-entry";
 import "./src/features/development/behavior-probe-entry";
-// GT validates locales with Intl APIs that Hermes lacks, including during the observer's preference load.
+// Crash reporting loads preferences, which can load GT and capture Hermes's Intl constructors.
 import "./src/i18n/intl-polyfills";
 // Record errors thrown while the rest of the app loads.
 import "./src/features/observability/observe";

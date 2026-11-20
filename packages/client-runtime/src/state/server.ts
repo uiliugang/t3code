@@ -47,7 +47,6 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentSubscriptionAtomFamily,
   createRuntimeCommand,
-  scheduleAtomCommandEffect,
 } from "./runtime.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
@@ -1106,9 +1105,8 @@ export function createServerEnvironmentAtoms<R, E>(
           Effect.andThen(Deferred.succeed(desktopReconnected, undefined)),
           Effect.forkChild,
         );
-        const result = yield* scheduleAtomCommandEffect(
+        const result = yield* configScheduler.schedule(
           atomRegistry,
-          configScheduler,
           configConcurrency,
           target,
           Effect.gen(function* () {

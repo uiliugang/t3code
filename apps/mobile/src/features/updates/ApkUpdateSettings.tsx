@@ -1,13 +1,12 @@
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
-import * as Exit from "effect/Exit";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
 
 import * as Dialog from "../../components/ui/Dialog";
 import { ListActionRow } from "../../components/ui/ListActionRow";
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
 import {
@@ -20,7 +19,7 @@ export function ApkUpdateSettings() {
   const t = useUiTranslation();
   const state = useAtomValue(apkUpdateStateAtom);
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const save = useAtomSet(updateMobilePreferencesAtom, { mode: "promiseExit" });
+  const save = useAtomCommand(saveMobilePreferences, { reportFailure: false });
   const [saving, setSaving] = useState(false);
   const ready = AsyncResult.isSuccess(preferences);
   const enabled = ready && preferences.value.apkAutoUpdateEnabled !== false;
@@ -29,9 +28,9 @@ export function ApkUpdateSettings() {
   const changeAutomaticUpdates = async (value: boolean) => {
     if (saving) return;
     setSaving(true);
-    const result = await settlePromise(() => save({ apkAutoUpdateEnabled: value }));
+    const result = await save({ apkAutoUpdateEnabled: value });
     setSaving(false);
-    if (result._tag === "Failure" || Exit.isFailure(result.value)) {
+    if (result._tag === "Failure") {
       Dialog.alert(t("Update failed"), t("Could not save update preferences."));
     }
   };

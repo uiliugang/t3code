@@ -288,6 +288,7 @@ export const make = Effect.gen(function* () {
       meituanTools: true,
       toolStatusFollowsSettings: true,
       ...(hostPlatform === "win32" ? {} : { localServerStop: true }),
+      previewTunnelSetting: true,
       environmentIcon: true,
       environmentName: true,
       projectCloneTracking: true,

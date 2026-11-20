@@ -1,10 +1,11 @@
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 import type { Preferences } from "../../persistence/mobile-preferences";
 
 export function ProjectTag({ title }: { title: string }) {
@@ -19,7 +20,7 @@ export function ProjectTag({ title }: { title: string }) {
 
 export function useRequirementGroups() {
   const preferences = useAtomValue(mobilePreferencesAtom);
-  const update = useAtomSet(updateMobilePreferencesAtom, { mode: "promise" });
+  const update = useAtomCommand(saveMobilePreferences);
   const collapsed = AsyncResult.getOrElse(preferences, (): Preferences => ({}))
     .requirementCollapsedGroups ?? ["done", "local:done"];
   return {
