@@ -450,6 +450,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     draftMessage: draftMessage,
     ownerKey: composerDraftKey,
     environmentId: props.environmentId,
+    environmentLabel: props.environmentLabel,
     threadShells: useVisibleThreadShells(),
     environments: offersLinkedEnvironments(props.serverConfig)
       ? mentionableEnvironments

@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -24,6 +24,10 @@ function shell(
     latestUserMessageAt: null,
     opens: null,
     archivedAt: null,
+    runtime: null,
+    latestRun: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
     lineage: { rootThreadId: ThreadId.make(id), parentThreadId: null, relationshipToParent: null },
     ...overrides,
   };
@@ -78,7 +82,7 @@ it("offers the composer thread's own used side chats, but not other threads' sid
     now: Date.parse("2026-10-23T00:00:00.000Z"),
   });
   expect(items.map(({ thread, description }) => ({ id: thread.threadId, description }))).toEqual([
-    { id: "mine", description: "Side chat" },
+    { id: "mine", description: "Local machine · Side chat · Ready · Last active 1d ago" },
   ]);
 });
 
@@ -87,23 +91,94 @@ it("also offers threads on linked machines, naming the machine, but no other mac
   const items = matchComposerThreadItems({
     shells: [
       shell("here", "Deploy script"),
-      shell("there", "Deploy script", { environmentId: vps }),
+      shell("there", "Deploy script", {
+        environmentId: vps,
+        latestRun: {
+          runId: RunId.make("run-deploy"),
+          status: "completed",
+          requestedAt: "2026-10-22T20:00:00.000Z",
+          startedAt: "2026-10-22T20:01:00.000Z",
+          completedAt: "2026-10-22T23:50:00.000Z",
+          assistantMessageId: null,
+        },
+      }),
+      shell("working", "Deploy script", {
+        environmentId: vps,
+        updatedAt: "2026-10-22T23:59:00.000Z",
+        latestUserMessageAt: "2026-10-22T20:00:00.000Z",
+        runtime: {
+          status: "running",
+          activeRunId: RunId.make("run-working"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          providerName: "Codex",
+          lastError: null,
+          updatedAt: "2026-10-22T23:59:00.000Z",
+        },
+        latestRun: {
+          runId: RunId.make("run-working"),
+          status: "running",
+          requestedAt: "2026-10-22T20:00:00.000Z",
+          startedAt: "2026-10-22T20:01:00.000Z",
+          completedAt: null,
+          assistantMessageId: null,
+        },
+      }),
       shell("unlinked", "Deploy notes", { environmentId: EnvironmentId.make("env-unlinked") }),
     ],
     environmentId,
+    environmentLabel: "Gmac Air",
     linkedEnvironments: new Map([[vps, "Hetzner VPS"]]),
     excludeThreadId: null,
     query: "deploy",
     now: Date.parse("2026-10-23T00:00:00.000Z"),
   });
   expect(items.map(({ thread, label, description }) => ({ thread, label, description }))).toEqual([
-    { thread: { environmentId, threadId: "here" }, label: "Deploy script", description: "Thread" },
+    {
+      thread: { environmentId: vps, threadId: "working" },
+      label: "Deploy script",
+      description: "Hetzner VPS · Running · Last active 1m ago",
+    },
+    {
+      thread: { environmentId, threadId: "here" },
+      label: "Deploy script",
+      description: "Gmac Air · Ready · Created 22d ago",
+    },
     {
       thread: { environmentId: vps, threadId: "there" },
       label: "Deploy script",
-      description: "Thread on Hetzner VPS",
+      description: "Hetzner VPS · Completed · Last active 10m ago",
     },
   ]);
+});
+
+it.each([
+  ["running", { hasPendingApprovals: true, hasPendingUserInput: true }, "Needs approval"],
+  ["running", { hasPendingUserInput: true }, "Needs input"],
+  ["running", { pendingSubagentRequest: "approval" }, "Needs approval"],
+  ["running", { pendingSubagentRequest: "user_input" }, "Needs input"],
+  ["running", { blockedOnThreadWait: true }, "Waiting"],
+] as const)("shows %s with %o as %s", (status, overrides, label) => {
+  const items = matchComposerThreadItems({
+    shells: [
+      shell("deploy", "Deploy script", {
+        runtime: {
+          status,
+          activeRunId: null,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          providerName: "Codex",
+          lastError: null,
+          updatedAt: "2026-10-01T00:00:00.000Z",
+        },
+        ...overrides,
+      }),
+    ],
+    environmentId,
+    linkedEnvironments: new Map(),
+    excludeThreadId: null,
+    query: "deploy",
+    now: Date.parse("2026-10-23T00:00:00.000Z"),
+  });
+  expect(items[0]?.description).toBe(`Local machine · ${label} · Created 22d ago`);
 });
 
 describe("matchComposerEnvironmentItems", () => {

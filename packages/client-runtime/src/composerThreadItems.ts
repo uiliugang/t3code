@@ -9,13 +9,62 @@ import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/sh
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
 import { threadSearchSubject, type ThreadSearchShell } from "./state/threadSearch.ts";
+import { resolveThreadActivityTimestamp } from "./state/threadSort.ts";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
 const COMPOSER_THREAD_RESULT_LIMIT = 5;
 
 export type ComposerThreadCandidate = ThreadSearchShell &
-  Pick<EnvironmentThreadShell, "archivedAt" | "lineage">;
+  Pick<
+    EnvironmentThreadShell,
+    | "archivedAt"
+    | "lineage"
+    | "runtime"
+    | "latestRun"
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "pendingSubagentRequest"
+    | "blockedOnThreadWait"
+  >;
+
+const THREAD_STATUS_LABELS: Record<
+  NonNullable<EnvironmentThreadShell["runtime"]>["status"],
+  string
+> = {
+  preparing: msg("Preparing"),
+  queued: msg("Queued"),
+  starting: msg("Starting"),
+  running: msg("Running"),
+  waiting: msg("Waiting"),
+  idle: msg("Waiting"),
+  completed: msg("Completed"),
+  interrupted: msg("Interrupted"),
+  failed: msg("Failed"),
+  cancelled: msg("Cancelled"),
+  rolled_back: msg("Rolled back"),
+};
+
+function threadStatusLabel(shell: ComposerThreadCandidate, resolve: MFunctionType): string {
+  if (shell.hasPendingApprovals || shell.pendingSubagentRequest === "approval") {
+    return resolve(msg("Needs approval"));
+  }
+  if (shell.hasPendingUserInput || shell.pendingSubagentRequest === "user_input") {
+    return resolve(msg("Needs input"));
+  }
+  const status = shell.runtime?.status ?? shell.latestRun?.status;
+  if (status === "running" && shell.blockedOnThreadWait) return resolve(msg("Waiting"));
+  return resolve(status === undefined ? msg("Ready") : THREAD_STATUS_LABELS[status]);
+}
+
+function relativeTime(timestamp: string, now: number, resolve: MFunctionType): string {
+  const minutes = Math.max(0, Math.floor((now - Date.parse(timestamp)) / 60_000));
+  if (minutes < 1) return resolve(msg("just now"));
+  if (minutes < 60) return resolve(msg("{count}m ago", { count: minutes }));
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return resolve(msg("{count}h ago", { count: hours }));
+  return resolve(msg("{count}d ago", { count: Math.floor(hours / 24) }));
+}
 
 export interface ComposerThreadItem {
   readonly id: string;
@@ -35,6 +84,7 @@ export function matchComposerThreadItems(
   input: {
     shells: ReadonlyArray<ComposerThreadCandidate>;
     environmentId: EnvironmentId;
+    environmentLabel?: string | null;
     /** The machines the composer's environment links to, by name. */
     linkedEnvironments: ReadonlyMap<EnvironmentId, string>;
     excludeThreadId: ThreadId | null;
@@ -70,18 +120,29 @@ export function matchComposerThreadItems(
     .map(({ item: shell }) => {
       const machine =
         shell.environmentId === input.environmentId
-          ? undefined
+          ? (input.environmentLabel ?? resolve(msg("Local machine")))
           : input.linkedEnvironments.get(shell.environmentId);
+      const activityTimestamp = resolveThreadActivityTimestamp(shell) ?? shell.createdAt;
+      const timestamp =
+        Date.parse(shell.updatedAt) > Date.parse(activityTimestamp)
+          ? shell.updatedAt
+          : activityTimestamp;
+      const time = relativeTime(timestamp, input.now, resolve);
+      const timestampLabel =
+        Date.parse(timestamp) > Date.parse(shell.createdAt)
+          ? resolve(msg("Last active {time}", { time }))
+          : resolve(msg("Created {time}", { time }));
       return {
         id: `thread:${shell.environmentId}:${shell.id}`,
         type: "thread",
         thread: { environmentId: shell.environmentId, threadId: shell.id },
         label: shell.title,
-        description: isOwnSideChat(shell)
-          ? resolve(msg("Side chat"))
-          : machine === undefined
-            ? resolve(msg("Thread", { $context: "noun, search result type" }))
-            : resolve(msg("Thread on {machine}", { machine })),
+        description: [
+          machine,
+          ...(isOwnSideChat(shell) ? [resolve(msg("Side chat"))] : []),
+          threadStatusLabel(shell, resolve),
+          timestampLabel,
+        ].join(" · "),
       };
     });
 }

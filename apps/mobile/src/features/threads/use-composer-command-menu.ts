@@ -13,6 +13,7 @@ import {
   matchComposerThreadItems,
 } from "@t3tools/client-runtime/composerThreadItems";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import { useNowMinuteMs } from "../../lib/clock";
 
 const EMPTY_THREAD_SHELLS: ReadonlyArray<EnvironmentThreadShell> = [];
 const EMPTY_ENVIRONMENTS: ReadonlyArray<ComposerEnvironmentCandidate> = [];
@@ -252,6 +253,7 @@ export function useComposerCommandMenu({
   draftMessage,
   ownerKey,
   environmentId,
+  environmentLabel = null,
   threadShells = EMPTY_THREAD_SHELLS,
   environments = EMPTY_ENVIRONMENTS,
   linkedEnvironments = NO_LINKED_ENVIRONMENTS,
@@ -276,6 +278,7 @@ export function useComposerCommandMenu({
   readonly draftMessage: string;
   readonly ownerKey: string | null;
   readonly environmentId: EnvironmentId | null;
+  readonly environmentLabel?: string | null;
   readonly threadShells?: ReadonlyArray<EnvironmentThreadShell>;
   readonly environments?: ReadonlyArray<ComposerEnvironmentCandidate>;
   /** The machines `environmentId` links to, by name, whose threads the picker also offers. */
@@ -306,8 +309,7 @@ export function useComposerCommandMenu({
     ownerKey,
     ...composerSelectionAtEnd(draftMessage),
   }));
-  // Thread mentions rank by recency as of when the composer mounted.
-  const [now] = useState(() => Date.now());
+  const now = useNowMinuteMs();
   const insertedSelection = useComposerDraftSelection(ownerKey, draftMessage);
   const selection = resolveComposerMenuSelection({
     draftMessage,
@@ -523,6 +525,7 @@ export function useComposerCommandMenu({
             {
               shells: threadShells,
               environmentId,
+              environmentLabel,
               linkedEnvironments,
               excludeThreadId: currentThreadId,
               query: trigger.query,
