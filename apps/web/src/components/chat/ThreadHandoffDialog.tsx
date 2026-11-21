@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef, scopedProjectKey } from "@t3tools/client-runtime/environment";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -144,7 +145,10 @@ function ThreadHandoffDialog({
           return;
         }
         const file = threadContextAttachment(source.ref.environmentId, result.value);
-        if (attachmentLimit === undefined || file.size > attachmentLimit) {
+        const liveLimit = appAtomRegistry
+          .get(environmentServerConfigsAtom)
+          .get(target.ref.environmentId)?.environment.capabilities.fileAttachments?.maxUploadBytes;
+        if (liveLimit === undefined || file.size > clampFileAttachmentUploadBytes(liveLimit)) {
           setError(
             t(
               "The thread record cannot be attached on this machine. Open the draft without it to add a summary.",
@@ -159,6 +163,7 @@ function ThreadHandoffDialog({
           mimeType: file.type,
           sizeBytes: file.size,
           file,
+          uploadOnSend: true,
         };
       }
       if (

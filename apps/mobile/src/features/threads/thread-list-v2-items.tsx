@@ -27,6 +27,7 @@ import {
 } from "@t3tools/client-runtime/state/models";
 import {
   AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
   type EnvironmentId,
   type EnvironmentMachineKind,
@@ -949,6 +950,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const canShareWithGuest = useCanShareWithGuest(thread.environmentId);
+  const canHandoff = useEnvironmentScope(thread.environmentId, AuthOrchestrationReadScope);
   const navigation = useNavigation();
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
@@ -1124,6 +1126,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             },
           ]
         : []),
+      ...(canHandoff
+        ? [
+            {
+              id: "handoff-to-machine",
+              title: t("Continue on another machine"),
+              image: "arrow.left.arrow.right",
+            },
+          ]
+        : []),
       { id: "copy-thread", title: gt("Copy thread"), image: "text.bubble" },
       { id: "copy-thread-id", title: gt("Copy thread ID"), image: "doc.on.doc" },
       ...(canShareWithGuest
@@ -1208,6 +1219,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     );
   }, [
     autoSettleMenuItems,
+    canHandoff,
     canShareWithGuest,
     canUnsettle,
     pinMenuItems,
@@ -1217,6 +1229,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     snoozedRow,
     gt,
     m,
+    t,
     swipeActions.secondary,
     thread.branch,
     titleMenuItems,
@@ -1262,6 +1275,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         navigation.navigate("ThreadGuestShare", {
           environmentId: thread.environmentId,
           threadId: thread.id,
+        });
+      }
+      if (nativeEvent.event === "handoff-to-machine") {
+        navigation.navigate("ThreadHandoff", {
+          environmentId: thread.environmentId,
+          threadId: thread.id,
+          title: thread.title,
         });
       }
       if (nativeEvent.event === "delete") handleDelete();

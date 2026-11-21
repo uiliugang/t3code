@@ -1,4 +1,6 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useNavigation } from "@react-navigation/native";
+import { AuthOrchestrationReadScope, EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
@@ -8,6 +10,7 @@ import {
 } from "../layout/AdaptiveWorkspaceLayout";
 import type { ThreadInspectorMode } from "./thread-inspector-navigation";
 import { useWorkspaceBackNavigation } from "../layout/workspace/useAndroidWorkspaceNavigation";
+import { useEnvironmentScope } from "../../state/session";
 import {
   useThreadTerminalMenu,
   useThreadGitMenuDefinition,
@@ -26,6 +29,12 @@ export function ThreadHeader(props: {
   readonly onOpenFilesInspector: () => void;
 }) {
   const t = useUiTranslation();
+  const navigation = useNavigation();
+  const environmentId = EnvironmentId.make(String(props.gitControls.environmentId));
+  const canHandoff = useEnvironmentScope(
+    props.draft ? null : environmentId,
+    AuthOrchestrationReadScope,
+  );
   const goBack = useWorkspaceBackNavigation();
   const { toggleAuxiliaryPane, startNewTask } = useAdaptiveWorkspaceLayout();
   const { panes } = useWorkspacePaneState();
@@ -52,6 +61,25 @@ export function ThreadHeader(props: {
     });
   }
   const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
+  if (canHandoff) {
+    menus.push({
+      title: t("More actions"),
+      icon: "ellipsis",
+      items: [
+        {
+          id: "handoff-to-machine",
+          title: t("Continue on another machine"),
+          icon: "arrow.left.arrow.right",
+          onPress: () =>
+            navigation.navigate("ThreadHandoff", {
+              environmentId,
+              threadId: ThreadId.make(String(props.gitControls.threadId)),
+              title: props.title,
+            }),
+        },
+      ],
+    });
+  }
 
   return (
     <AppBar

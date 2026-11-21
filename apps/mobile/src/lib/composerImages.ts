@@ -46,6 +46,7 @@ export interface DraftComposerFileAttachment {
   readonly sizeBytes: number;
   readonly fileUri: string;
   readonly source?: PastedTextAttachmentSource;
+  readonly uploadOnSend?: true;
   readonly uploadedAttachmentId?: string;
   readonly uploadEnvironmentId?: EnvironmentId;
 }
@@ -55,14 +56,31 @@ export async function createPastedTextComposerAttachment(input: {
   readonly name: string;
   readonly maxBytes: number;
 }): Promise<DraftComposerFileAttachment> {
-  const bytes = new TextEncoder().encode(input.text).byteLength;
-  if (bytes <= 0) {
+  const sizeBytes = new TextEncoder().encode(input.text).byteLength;
+  if (sizeBytes <= 0) {
     throw new Error(m(msg("Clipboard is empty.")));
   }
-  if (bytes > input.maxBytes) {
+  if (sizeBytes > input.maxBytes) {
     throw new Error(fileAttachmentTooLargeMessage(input.name, input.maxBytes, m));
   }
 
+  return {
+    ...(await writeComposerFileAttachment({
+      text: input.text,
+      sizeBytes,
+      name: input.name,
+      mimeType: "text/plain;charset=utf-8",
+    })),
+    source: { _tag: "pasted-text" },
+  };
+}
+
+export async function writeComposerFileAttachment(input: {
+  readonly text: string;
+  readonly sizeBytes: number;
+  readonly name: string;
+  readonly mimeType: string;
+}): Promise<DraftComposerFileAttachment> {
   const { Directory, File, Paths } = await import("expo-file-system");
   const directory = new Directory(Paths.document, COMPOSER_ATTACHMENT_DIRECTORY);
   directory.create({ idempotent: true, intermediates: true });
@@ -72,10 +90,9 @@ export async function createPastedTextComposerAttachment(input: {
     id: uuidv4(),
     type: "file",
     name: input.name,
-    mimeType: "text/plain;charset=utf-8",
-    sizeBytes: bytes,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes,
     fileUri: file.uri,
-    source: { _tag: "pasted-text" },
   };
 }
 

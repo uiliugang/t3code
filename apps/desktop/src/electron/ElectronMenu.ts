@@ -82,6 +82,7 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
           : sourceItem.label,
       destructive: sourceItem.destructive === true,
       disabled: sourceItem.disabled === true,
+      ...(sourceItem.icon === "arrow-left-right" ? { icon: sourceItem.icon } : {}),
       ...(sourceItem.separatorBefore === true ? { separatorBefore: true } : {}),
       ...(typeof sourceItem.checked === "boolean" ? { checked: sourceItem.checked } : {}),
     };
@@ -116,28 +117,27 @@ const normalizePosition = (
 /** @public */
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
-  let destructiveMenuIconCache: Option.Option<Electron.NativeImage> | undefined;
+  const menuIcons = new Map<string, Option.Option<Electron.NativeImage>>();
 
-  const getDestructiveMenuIcon = (): Option.Option<Electron.NativeImage> => {
+  const getMenuIcon = (name: string): Option.Option<Electron.NativeImage> => {
     if (platform !== "darwin") {
       return Option.none();
     }
-    if (destructiveMenuIconCache !== undefined) {
-      return destructiveMenuIconCache;
-    }
+    const cached = menuIcons.get(name);
+    if (cached !== undefined) return cached;
 
+    let result = Option.none<Electron.NativeImage>();
     try {
-      const icon = Electron.nativeImage.createFromNamedImage("trash").resize({
+      const icon = Electron.nativeImage.createFromNamedImage(name).resize({
         width: 12,
         height: 12,
       });
       icon.setTemplateImage(true);
-      destructiveMenuIconCache = icon.isEmpty() ? Option.none() : Option.some(icon);
-    } catch {
-      destructiveMenuIconCache = Option.none();
-    }
+      if (!icon.isEmpty()) result = Option.some(icon);
+    } catch {}
 
-    return destructiveMenuIconCache;
+    menuIcons.set(name, result);
+    return result;
   };
 
   const buildTemplate = (
@@ -177,10 +177,15 @@ export const make = Effect.gen(function* () {
       } else {
         itemOption.click = () => complete(Option.some(item.id));
       }
-      if (item.destructive && (!item.children || item.children.length === 0)) {
-        const destructiveIcon = getDestructiveMenuIcon();
-        if (Option.isSome(destructiveIcon)) {
-          itemOption.icon = destructiveIcon.value;
+      if (!item.children || item.children.length === 0) {
+        const iconName = item.destructive
+          ? "trash"
+          : item.icon === "arrow-left-right"
+            ? "arrow.left.arrow.right"
+            : null;
+        if (iconName !== null) {
+          const icon = getMenuIcon(iconName);
+          if (Option.isSome(icon)) itemOption.icon = icon.value;
         }
       }
 

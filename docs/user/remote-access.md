@@ -180,7 +180,7 @@ different permissions.
 
 ### Continue a thread on another machine
 
-In web or desktop, open the thread's menu and choose **Continue on another machine**. Select a
+Open the thread's menu and choose **Continue on another machine**. Select a
 project on another connected machine. You can attach the source thread's record, including tool
 output, or leave it out and write a summary. Review the new draft and choose a model before sending.
 The original thread stays where it is, and workspace files and live provider sessions do not transfer.

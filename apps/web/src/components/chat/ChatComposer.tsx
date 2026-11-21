@@ -141,6 +141,7 @@ import {
   fileAttachmentStagingLimit,
   isPreviewableComposerVideo,
   shouldHandleComposerAttachmentPaste,
+  shouldPreuploadComposerFile,
 } from "./composerAttachmentFiles";
 import {
   releaseAttachmentUpload,
@@ -893,12 +894,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const uploadableFiles =
       maxFileAttachmentBytes === null
         ? []
-        : composerFiles.filter((file) => file.sizeBytes <= maxFileAttachmentBytes);
+        : composerFiles.filter(
+            (file) => file.sizeBytes <= maxFileAttachmentBytes && shouldPreuploadComposerFile(file),
+          );
     const uploadableAttachments = [...composerImages, ...uploadableFiles];
     for (const attachment of uploadableAttachments) {
-      if (attachment.type === "file" && composerFileNeedsReattach(attachment)) {
-        continue;
-      }
       startAttachmentUpload({
         environmentId,
         image: attachment,

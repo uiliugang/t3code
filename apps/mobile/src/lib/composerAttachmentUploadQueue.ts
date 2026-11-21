@@ -103,6 +103,7 @@ export function composerAttachmentsStillUploading(input: {
   readonly states: Readonly<Record<string, ComposerAttachmentUploadState>>;
 }): boolean {
   return input.attachments.some((attachment) => {
+    if (attachment.type === "file" && attachment.uploadOnSend) return false;
     if (!canUploadComposerAttachment(attachment, input.serverConfig)) return false;
     const state = input.states[composerAttachmentUploadKey(input.environmentId, attachment.id)];
     return state?.status !== "ready" && state?.status !== "failed";

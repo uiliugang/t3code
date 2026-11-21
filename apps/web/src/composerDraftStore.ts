@@ -268,11 +268,14 @@ export interface ComposerImageAttachment extends Omit<ChatImageAttachment, "prev
 
 export interface ComposerFileAttachment extends Omit<ChatFileAttachment, "previewUrl"> {
   file: File | null;
+  readonly uploadOnSend?: true;
   uploadedAttachmentId?: string;
   uploadEnvironmentId?: EnvironmentId;
 }
 
-export function composerFileNeedsReattach(file: ComposerFileAttachment): boolean {
+export function composerFileNeedsReattach(
+  file: Pick<ComposerFileAttachment, "file" | "uploadedAttachmentId">,
+): boolean {
   return file.file === null && file.uploadedAttachmentId === undefined;
 }
 

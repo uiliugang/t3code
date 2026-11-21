@@ -167,7 +167,7 @@ export function buildThreadActionMenuItems(
           {
             id: "handoff-to-machine" as const,
             label: t("Continue on another machine"),
-            icon: "message-square-plus",
+            icon: "arrow-left-right",
           },
         ]
       : []),

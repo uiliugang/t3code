@@ -14,10 +14,19 @@ import {
   fileAttachmentCapabilityBlockReason,
   fileAttachmentStagingLimit,
   normalizeComposerImageFileMimeType,
+  shouldPreuploadComposerFile,
   shouldHandleComposerAttachmentPaste,
 } from "./composerAttachmentFiles";
 
 describe("composer attachment files", () => {
+  it("does not preupload handoff transcripts or missing local files", () => {
+    const file = new File(["thread record"], "thread.jsonl");
+    expect(shouldPreuploadComposerFile({ file })).toBe(true);
+    expect(shouldPreuploadComposerFile({ file, uploadOnSend: true })).toBe(false);
+    expect(shouldPreuploadComposerFile({ file: null })).toBe(false);
+    expect(shouldPreuploadComposerFile({ file: null, uploadedAttachmentId: "pending" })).toBe(true);
+  });
+
   it("keeps previewable images providers cannot accept on the file path", () => {
     expect(classifyComposerAttachmentFile({ name: "diagram.svg", type: "image/svg+xml" })).toBe(
       "file",
