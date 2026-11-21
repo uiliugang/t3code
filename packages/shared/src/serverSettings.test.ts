@@ -736,11 +736,13 @@ describe("serverSettings helpers", () => {
       ).toEqual(removed.virtualModels);
       const restored = applyServerSettingsPatch(removed, { virtualModels: { [id]: { binding } } });
       expect(resolveVirtualModel(restored, restored.defaultModelSelection)).toEqual(binding);
-      expect(
-        applyServerSettingsPatch(restored, {
-          virtualModels: { [id]: null, other: null, incoming: null },
-        }).virtualModels,
-      ).toEqual({});
+      const empty = applyServerSettingsPatch(restored, {
+        virtualModels: { [id]: null, other: null, incoming: null },
+      });
+      const reloaded = migrateVirtualModels(decodeServerSettings(encodeServerSettings(empty)));
+      expect(reloaded.virtualModels).toEqual({});
+      expect(reloaded.defaultModelSelection).toEqual(ref);
+      expect(resolveVirtualModel(reloaded, reloaded.defaultModelSelection)).toEqual(ref);
     },
   );
 
