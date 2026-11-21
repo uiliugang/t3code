@@ -62,6 +62,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.sourceControlToolsSubscribe
   | typeof WS_METHODS.meituanToolsSubscribe
   | typeof WS_METHODS.wechatSubscribe
+  | typeof WS_METHODS.daxiangApprovalSubscribe
   | typeof WS_METHODS.skillsSubscribe
   | typeof WS_METHODS.providerAuthSubscribe
   | typeof WS_METHODS.providerInstallSubscribe
@@ -570,6 +571,34 @@ export const subscribeSourceControlTools = (
     () => Effect.succeed(input),
     toolStreamFor("sourceControlToolMaintenance"),
     retryingTools,
+  );
+const retryingDaxiangApproval = {
+  retryValue: {
+    status: "disabled" as const,
+    loggedIn: false,
+    uid: null,
+    expiresAt: null,
+    error: null,
+    records: [] as const,
+  },
+};
+export const subscribeDaxiangApproval = (
+  input: EnvironmentRpcInput<typeof WS_METHODS.daxiangApprovalSubscribe>,
+) =>
+  subscribeDynamicMapped(
+    WS_METHODS.daxiangApprovalSubscribe,
+    () => Effect.succeed(input),
+    (session, stream) =>
+      Stream.unwrap(
+        sessionCapabilities(session).pipe(
+          Effect.map((capabilities) =>
+            capabilities.daxiangApprovalMonitor === true
+              ? stream
+              : Stream.succeed(retryingDaxiangApproval.retryValue),
+          ),
+        ),
+      ),
+    retryingDaxiangApproval,
   );
 
 export const subscribeVcsBranch = (

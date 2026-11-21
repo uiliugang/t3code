@@ -27,7 +27,7 @@ export const SourceControlTool = Schema.Struct({
 });
 export type SourceControlTool = typeof SourceControlTool.Type;
 
-export const MeituanToolId = Schema.Literals(["ones2", "mcm", "mtskills"]);
+export const MeituanToolId = Schema.Literals(["ones2", "mcm", "mtskills", "dumbo-web"]);
 export type MeituanToolId = typeof MeituanToolId.Type;
 export const MeituanTool = Schema.Struct({
   ...SourceControlTool.fields,

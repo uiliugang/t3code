@@ -1897,6 +1897,66 @@ const zhCN: Readonly<Record<string, string>> = {
   "Could not save DaXiang credentials.": "无法保存大象凭证。",
   "Could not send the PR link. Check DaXiang in Connections > Communication.":
     "无法发送 PR 链接，请检查连接 → 通讯中的大象配置。",
+  "Approval link monitoring": "审批链接监听",
+  "Enable approval link monitoring": "启用审批链接监听",
+  "Listen to DaXiang through dumbo-web. Pull requests and MCM can be approved through their official CLIs; Lion, RDS and DMS remain manual.":
+    "通过 dumbo-web 监听大象。PR 和 MCM 可通过官方 CLI 自动审批；Lion、RDS 和 DMS 仍需人工处理。",
+  "Listen through dumbo-web. PR and MCM use official CLIs; Lion, RDS and DMS remain manual.":
+    "通过 dumbo-web 监听。PR 和 MCM 使用官方 CLI；Lion、RDS 和 DMS 仍需人工处理。",
+  "Monitoring disabled": "监听已停用",
+  "dumbo-web is not installed": "未安装 dumbo-web",
+  "DaXiang login required": "需要登录大象",
+  "Connecting to DaXiang": "正在连接大象",
+  "Listening for approval links": "正在监听审批链接",
+  "Listener error": "监听异常",
+  "Listener status": "监听状态",
+  "Restart listener": "重启监听",
+  "Import DaXiang login": "导入大象登录态",
+  "Chrome CDP port": "Chrome CDP 端口",
+  "Open x.sankuai.com in a dedicated Chrome session with this loopback debugging port, finish SSO, then import. Credentials stay on this server.":
+    "在独立 Chrome 会话中使用此本地调试端口打开 x.sankuai.com，完成 SSO 后导入。凭据仅保存在此服务器。",
+  "Open x.sankuai.com in a dedicated Chrome session with this loopback debugging port, finish SSO, then import.":
+    "在独立 Chrome 会话中使用此本地调试端口打开 x.sankuai.com，完成 SSO 后导入。",
+  "Include group chats": "包含群聊",
+  "Also process approval links received in groups. Direct messages and approval bot messages are always included.":
+    "同时处理群聊中的审批链接。私聊和审批机器人消息始终包含。",
+  "Automatically approve pull requests": "自动通过 PR",
+  "Check that the PR is open and not authored by you, add yourself as a reviewer when needed, comment, then approve. Never merge.":
+    "确认 PR 未关闭且不是本人创建，必要时将自己加入评审人，先评论再通过；绝不自动合并。",
+  "Check the PR, add yourself as a reviewer when needed, comment, then approve. Never merge.":
+    "检查 PR，必要时将自己加入评审人，先评论再通过；绝不自动合并。",
+  "PR review comment": "PR 评审评论",
+  "Automatically approve MCM plans and events": "自动通过 MCM 计划与事件",
+  "Verify the pending approval state and current MCM plan level before approving. This never executes the change itself.":
+    "审批前核实待审状态和 MCM 计划当前层级，只审批，不执行变更。",
+  "Verify the pending state and current MCM plan level before approving. Never execute the change itself.":
+    "审批前核实待审状态和 MCM 计划当前层级，绝不执行变更。",
+  "MCM approval comment": "MCM 审批评论",
+  "Remind me about manual approvals": "人工审批提醒",
+  "Show a notification and keep a recent record for Lion, RDS, DMS, or automatic approvals switched off. A DaXiang direct message is also sent when bot credentials and MIS are configured.":
+    "对 Lion、RDS、DMS 或已关闭自动审批的链接显示通知并保留最近记录；配置机器人凭据和 MIS 后也会发送大象私聊。",
+  "Notify and keep a record for Lion, RDS, DMS, or automatic approvals switched off.":
+    "对 Lion、RDS、DMS 或已关闭自动审批的链接发送通知并保留记录。",
+  "Open manual approvals in the browser": "在浏览器中打开人工审批页",
+  "Open Lion, RDS and DMS links on this server for one-click manual review. No approval button is clicked automatically.":
+    "在此服务器的浏览器中打开 Lion、RDS 和 DMS 链接以便人工审核，不自动点击审批按钮。",
+  "Open manual links on the server. No approval button is clicked automatically.":
+    "在服务器上打开人工审批链接，不自动点击审批按钮。",
+  "Reply to the sender": "回复发送人",
+  "Send a short DaXiang reply after an approval or manual reminder. Replies are not sent for public-account messages.":
+    "审批或人工提醒后回复一条大象消息，公众号消息不回复。",
+  "Send a short DaXiang reply after an approval or manual reminder when the chat supports replies.":
+    "审批或人工提醒后，在支持回复的会话中发送一条大象回复。",
+  "Could not update the approval listener. Check its settings and try again.":
+    "无法更新审批监听，请检查配置后重试。",
+  "Recent approval activity": "最近审批活动",
+  "No approval activity yet.": "暂无审批活动。",
+  approved: "已通过",
+  notified: "已提醒",
+  "Browser opened": "已在浏览器打开",
+  "Approval completed": "审批已完成",
+  "Approval needs attention": "审批需要处理",
+  "Approval failed": "审批失败",
   "Linked issues": "关联需求",
   "Unlinked branches": "未关联分支",
   "Collapse unlinked branches": "收起未关联分支",

@@ -5,6 +5,7 @@ import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as PullRequestNotifications from "./communication/PullRequestNotificationService.ts";
 import * as DaxiangMessages from "./communication/DaxiangMessageService.ts";
+import * as DaxiangApproval from "./communication/DaxiangApprovalService.ts";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
 import * as WorkspaceCheckout from "./workspace/WorkspaceCheckout.ts";
@@ -1540,6 +1541,7 @@ export const layerWsRpc = (
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const wechat = yield* WechatBridge.WechatBridge;
+      const daxiangApproval = yield* DaxiangApproval.DaxiangApprovalService;
       const pullRequestNotifications =
         yield* PullRequestNotifications.PullRequestNotificationService;
       const issues = yield* IssueService.IssueService;
@@ -2995,6 +2997,8 @@ export const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.requestReviewers(input)),
         [WS_METHODS.wechatSubscribe]: () => wechat.subscribe,
         [WS_METHODS.wechatMutate]: (input) => wechat.mutate(input),
+        [WS_METHODS.daxiangApprovalSubscribe]: () => daxiangApproval.subscribe,
+        [WS_METHODS.daxiangApprovalMutate]: (input) => daxiangApproval.mutate(input),
         [WS_METHODS.wechatSend]: (input) => wechat.send(input.text),
         [WS_METHODS.pullRequestsSendReviewLink]: (input) =>
           pullRequestNotifications.sendReviewLink(input),

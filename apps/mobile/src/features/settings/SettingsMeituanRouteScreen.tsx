@@ -190,6 +190,7 @@ function EnvironmentIntegration({
     code: codeEnabled,
     issues: issuesEnabled,
     skills: skillsEnabled,
+    daxiang: enabled && settings.daxiang.approvalMonitor.enabled,
   });
   const refreshTools = useAtomCommand(sourceControlEnvironment.refreshTools);
   const discovery = useEnvironmentQuery(

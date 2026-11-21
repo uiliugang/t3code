@@ -92,6 +92,9 @@ import {
 } from "./threadPrediction.ts";
 import * as Schema from "effect/Schema";
 import {
+  DaxiangApprovalError,
+  DaxiangApprovalMutation,
+  DaxiangApprovalState,
   DaxiangSendError,
   DaxiangSendResult,
   PullRequestSendReviewLinkInput,
@@ -798,6 +801,8 @@ export const WS_METHODS = {
   wechatSubscribe: "wechat.subscribe",
   wechatMutate: "wechat.mutate",
   wechatSend: "wechat.send",
+  daxiangApprovalSubscribe: "daxiangApproval.subscribe",
+  daxiangApprovalMutate: "daxiangApproval.mutate",
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
 
@@ -1598,6 +1603,17 @@ const WsWechatSendRpc = Rpc.make(WS_METHODS.wechatSend, {
   payload: WechatSendInput,
   success: Schema.Void,
   error: Schema.Union([WechatError, EnvironmentAuthorizationError]),
+});
+const WsDaxiangApprovalSubscribeRpc = Rpc.make(WS_METHODS.daxiangApprovalSubscribe, {
+  payload: Schema.Struct({}),
+  success: DaxiangApprovalState,
+  error: Schema.Union([DaxiangApprovalError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+const WsDaxiangApprovalMutateRpc = Rpc.make(WS_METHODS.daxiangApprovalMutate, {
+  payload: DaxiangApprovalMutation,
+  success: Schema.Void,
+  error: Schema.Union([DaxiangApprovalError, EnvironmentAuthorizationError]),
 });
 const WsPullRequestsSendReviewLinkRpc = Rpc.make(WS_METHODS.pullRequestsSendReviewLink, {
   payload: PullRequestSendReviewLinkInput,
@@ -2916,6 +2932,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWechatSubscribeRpc,
   WsWechatMutateRpc,
   WsWechatSendRpc,
+  WsDaxiangApprovalSubscribeRpc,
+  WsDaxiangApprovalMutateRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
   WsSourceControlLookupRepositoryRpc,

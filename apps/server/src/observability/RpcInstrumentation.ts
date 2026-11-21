@@ -167,6 +167,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.wechatSubscribe]: "communication",
   [WS_METHODS.wechatMutate]: "communication",
   [WS_METHODS.wechatSend]: "communication",
+  [WS_METHODS.daxiangApprovalSubscribe]: "communication",
+  [WS_METHODS.daxiangApprovalMutate]: "communication",
   [WS_METHODS.pullRequestsSendReviewLink]: "pull-requests",
   [WS_METHODS.pullRequestsLabelCandidates]: "pull-requests",
   [WS_METHODS.pullRequestsSetLabels]: "pull-requests",

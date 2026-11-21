@@ -2,6 +2,7 @@ import * as WorkItems from "./work-items/WorkItemService.ts";
 import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
 import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
 import * as WechatBridge from "./communication/WechatBridge.ts";
+import * as DaxiangApproval from "./communication/DaxiangApprovalService.ts";
 import * as WorkspaceRecovery from "./workspace/WorkspaceRecovery.ts";
 import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
 import * as WorkspaceCheckout from "./workspace/WorkspaceCheckout.ts";
@@ -991,6 +992,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
 
 const layerConfigSources = Layer.mergeAll(
   Layer.mock(WechatBridge.WechatBridge)({}),
+  Layer.mock(DaxiangApproval.DaxiangApprovalService)({}),
   Keybindings.layer,
   AssetSigner.layer.pipe(Layer.provide(ServerSecretStore.layer)),
   WorkspacePreviewRevisions.layer,
@@ -1224,6 +1226,7 @@ it.effect.each([
           send: () => Effect.void,
           start: Effect.void,
         }),
+        Layer.mock(DaxiangApproval.DaxiangApprovalService)({}),
         layerUnusedConfigRpcServices,
         Layer.mock(ExternalLauncher.ExternalLauncher)({
           resolveAvailableEditors: () =>
@@ -1611,6 +1614,7 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
         send: () => Effect.void,
         start: Effect.void,
       }),
+      Layer.mock(DaxiangApproval.DaxiangApprovalService)({}),
       layerUnusedConfigRpcServices,
       Layer.mock(ExternalLauncher.ExternalLauncher)({
         resolveAvailableEditors: () => Effect.succeed([]),
@@ -2177,6 +2181,7 @@ it.effect("a publish whose push fails still refreshes the new remote", () =>
     const services = Layer.mergeAll(
       layerUnusedConfigRpcServices,
       Layer.mock(WechatBridge.WechatBridge)({}),
+      Layer.mock(DaxiangApproval.DaxiangApprovalService)({}),
       Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
         publishRepository: (input) =>
           Effect.fail(

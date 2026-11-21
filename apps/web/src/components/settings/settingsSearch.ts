@@ -1598,7 +1598,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "meituan-integration",
     title: msg("Meituan integration"),
     to: "/settings/meituan",
-    searchTerms: ["Meituan 美团 MIS MEP ONES MCM mtskills daxiang 大象 client id secret"],
+    searchTerms: [
+      "Meituan 美团 MIS MEP ONES MCM mtskills daxiang 大象 client id secret dumbo-web approval approve lion rds dms pr LGTM 审批 自动审批",
+    ],
   },
   {
     id: "wechat",

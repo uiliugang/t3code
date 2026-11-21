@@ -461,6 +461,7 @@ function EnvironmentMeituanSettings({
     code: codeEnabled,
     issues: issuesEnabled,
     skills: skillsEnabled,
+    daxiang: enabled && settings.daxiang.approvalMonitor.enabled,
   });
   const discovery = useEnvironmentQuery(
     codeEnabled ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,

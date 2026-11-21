@@ -122,6 +122,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlToolsSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.meituanToolsSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.daxiangApprovalSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlToolsRefresh]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthDiagnosticsReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthDiagnosticsReadScope,

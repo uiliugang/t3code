@@ -64,6 +64,7 @@ import {
   runStream,
   runStreamInSession,
   subscribe,
+  subscribeDaxiangApproval,
   subscribeDynamicWithSession,
   type EnvironmentRpcInput,
 } from "../rpc/client.ts";
@@ -1549,6 +1550,16 @@ export function createServerEnvironmentAtoms<R, E>(
     sendWechat: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:wechat:send",
       tag: WS_METHODS.wechatSend,
+    }),
+    daxiangApproval: createEnvironmentSubscriptionAtomFamily(runtime, {
+      label: "environment-data:daxiang-approval",
+      subscribe: subscribeDaxiangApproval,
+      idleTtlMs: 0,
+    }),
+    mutateDaxiangApproval: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:daxiang-approval:mutate",
+      tag: WS_METHODS.daxiangApprovalMutate,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
     residualWorktrees: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:managed-worktrees:list-residuals",

@@ -35,6 +35,11 @@ const MEITUAN_DEFINITIONS = {
   ones2: { label: "ONES CLI", executable: "ones2", packageName: "@ee/mep-ones-cli" },
   mcm: { label: "MCM CLI", executable: "mcm", packageName: "@dp/mcm-cli" },
   mtskills: { label: "Meituan Skills CLI", executable: "mtskills", packageName: "@mtfe/mtskills" },
+  "dumbo-web": {
+    label: "Dumbo Web CLI",
+    executable: "dumbo-web",
+    packageName: "@sailor/dumbo-cdp",
+  },
 } as const;
 
 export const sourceControlToolLabel = (id: SourceControlToolId) => DEFINITIONS[id].label;
@@ -49,11 +54,20 @@ export function isSourceControlToolEnabled(
 
 export function isMeituanToolEnabled(
   id: MeituanToolId,
-  settings: Parameters<typeof isMeituanServiceEnabled>[0],
+  settings:
+    | (Parameters<typeof isMeituanServiceEnabled>[0] & {
+        readonly daxiang?: { readonly approvalMonitor?: { readonly enabled?: boolean } };
+      })
+    | null
+    | undefined,
 ) {
-  return id === "mtskills"
-    ? settings?.meituanIntegrationEnabled === true
-    : isMeituanServiceEnabled(settings, "requirements");
+  if (id === "mtskills") return settings?.meituanIntegrationEnabled === true;
+  if (id === "dumbo-web")
+    return (
+      settings?.meituanIntegrationEnabled === true &&
+      settings.daxiang?.approvalMonitor?.enabled === true
+    );
+  return isMeituanServiceEnabled(settings, "requirements");
 }
 
 export interface ToolInstallationPlan {
@@ -301,7 +315,9 @@ const make = Effect.gen(function* () {
         ? yield* Effect.gen(function* () {
             const args = ["--version"];
             const invocation =
-              id === "mtskills" ? yield* skillInstallerNode(executablePath, args, env) : undefined;
+              id === "mtskills" || id === "dumbo-web"
+                ? yield* skillInstallerNode(executablePath, args, env)
+                : undefined;
             return yield* probe(
               invocation?.command ?? executablePath,
               invocation?.args ?? args,

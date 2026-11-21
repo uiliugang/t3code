@@ -342,7 +342,7 @@ describe("settings transfer", () => {
         defaultAppearanceSetAt: "2026-11-14T00:00:00.000Z",
         worktreesDirectory: "/private/path",
         cloudSpeechCredentials: { ...source.cloudSpeechCredentials, openai: "must-not-export" },
-        daxiang: { clientId: "fixture", clientSecret: "must-not-export" },
+        daxiang: { ...source.daxiang, clientId: "fixture", clientSecret: "must-not-export" },
         textGenerators: {
           [ProviderInstanceId.make("generator")]: {
             kind: "openaiCompatible",

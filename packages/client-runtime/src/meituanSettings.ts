@@ -13,7 +13,7 @@ export function toolSubscriptionsFor(
       ids.some((id) => id === "git" || id === "github" || id === "meituan"),
     meituan:
       capabilities.meituanTools === true &&
-      ids.some((id) => id === "ones2" || id === "mcm" || id === "mtskills"),
+      ids.some((id) => id === "ones2" || id === "mcm" || id === "mtskills" || id === "dumbo-web"),
   };
 }
 
@@ -35,15 +35,16 @@ export function shouldDiscoverMeituanProjectSources(section?: MeituanSettingsSec
 
 export function meituanToolIdsForSection(
   section: MeituanSettingsSection | undefined,
-  enabled: { code: boolean; issues: boolean; skills: boolean },
+  enabled: { code: boolean; issues: boolean; skills: boolean; daxiang?: boolean },
 ): MaintainableTool["id"][] {
   if (section === "code") return enabled.code ? ["meituan"] : [];
   if (section === "issues") return enabled.issues ? ["ones2", "mcm"] : [];
   if (section === "skills") return enabled.skills ? ["mtskills"] : [];
-  if (section === "daxiang") return [];
+  if (section === "daxiang") return enabled.daxiang ? ["dumbo-web"] : [];
   return [
     ...(enabled.code ? (["meituan"] as const) : []),
     ...(enabled.issues ? (["ones2", "mcm"] as const) : []),
+    ...(enabled.daxiang ? (["dumbo-web"] as const) : []),
     ...(enabled.skills ? (["mtskills"] as const) : []),
   ];
 }

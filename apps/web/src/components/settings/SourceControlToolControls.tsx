@@ -98,7 +98,8 @@ export function SourceControlToolControls({
       pending ||
       selected.id === "ones2" ||
       selected.id === "mcm" ||
-      selected.id === "mtskills"
+      selected.id === "mtskills" ||
+      selected.id === "dumbo-web"
     )
       return;
     setPending(true);

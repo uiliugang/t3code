@@ -1,5 +1,8 @@
 import * as WechatBridge from "./communication/WechatBridge.ts";
 import * as WechatClient from "./communication/WechatClient.ts";
+import * as DaxiangMessages from "./communication/DaxiangMessageService.ts";
+import * as DaxiangApproval from "./communication/DaxiangApprovalService.ts";
+import * as DaxiangApprovalExecutor from "./communication/DaxiangApprovalExecutor.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
@@ -767,6 +770,11 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provide(RuntimeLayer.layerEventSink),
     Layer.provide(WechatClient.layer.pipe(Layer.provide(FetchHttpClient.layer))),
   ),
+  DaxiangApproval.layer.pipe(
+    Layer.provide(DaxiangApprovalExecutor.layer.pipe(Layer.provide(ProcessRunner.layer))),
+    Layer.provide(ExternalLauncher.layer),
+    Layer.provide(DaxiangMessages.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+  ),
   SourceControlToolMaintenance.layer.pipe(
     Layer.provide(SourceControlToolInstaller.layer.pipe(Layer.provide(VcsProcess.layer))),
     Layer.provideMerge(
@@ -1465,7 +1473,12 @@ const layerMakeServer = Layer.unwrap(
         Effect.gen(function* () {
           const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
           const wechat = yield* WechatBridge.WechatBridge;
+          const daxiangApproval = yield* DaxiangApproval.DaxiangApprovalService;
           yield* startup.awaitCommandReady.pipe(Effect.andThen(wechat.start), Effect.forkScoped);
+          yield* startup.awaitCommandReady.pipe(
+            Effect.andThen(daxiangApproval.start),
+            Effect.forkScoped,
+          );
         }),
       ),
       layerRoutes,
