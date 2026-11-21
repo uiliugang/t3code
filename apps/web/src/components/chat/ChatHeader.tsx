@@ -46,7 +46,6 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
-import { NavigationHistoryControls } from "../NavigationHistoryControls";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -433,7 +432,6 @@ export const ChatHeader = memo(function ChatHeader({
               </TooltipPopup>
             </Tooltip>
           ) : null}
-          <NavigationHistoryControls />
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}

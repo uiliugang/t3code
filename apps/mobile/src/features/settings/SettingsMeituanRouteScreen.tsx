@@ -190,6 +190,7 @@ function EnvironmentIntegration({
     code: codeEnabled,
     issues: issuesEnabled,
     skills: skillsEnabled,
+    daxiang: enabled && settings.daxiang.approvalMonitor.enabled,
   });
   const refreshTools = useAtomCommand(sourceControlEnvironment.refreshTools);
   const discovery = useEnvironmentQuery(
@@ -417,7 +418,13 @@ function EnvironmentIntegration({
           </View>
         </SettingsSection>
       ) : section === "daxiang" ? (
-        <DaxiangSettingsSection environmentId={environmentId} disabled={disabled} />
+        <DaxiangSettingsSection
+          environmentId={environmentId}
+          disabled={disabled}
+          approvalMonitorSupported={
+            environment.serverConfig.environment.capabilities.daxiangApprovalMonitor === true
+          }
+        />
       ) : (
         <MeituanSkillSource environmentId={environmentId} disabled={disabled} />
       )}

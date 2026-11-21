@@ -35,6 +35,7 @@ export class SourceControlToolMaintenance extends Context.Service<
 
 class MeituanScanConfig extends Data.Class<{
   readonly requirements: boolean;
+  readonly daxiangApproval: boolean;
   readonly source: SkillSource | undefined;
 }> {}
 
@@ -57,16 +58,19 @@ const make = Effect.gen(function* () {
     meituanIntegrationEnabled: false,
     meituanRequirementsEnabled: false,
     meituanSourceControlEnabled: false,
+    daxiang: { approvalMonitor: { enabled: false } },
   };
   const rememberSettings = ({
     meituanIntegrationEnabled,
     meituanRequirementsEnabled,
     meituanSourceControlEnabled,
+    daxiang,
   }: ServerSettings) =>
     (lastSettings = {
       meituanIntegrationEnabled,
       meituanRequirementsEnabled,
       meituanSourceControlEnabled,
+      daxiang: { approvalMonitor: { enabled: daxiang.approvalMonitor.enabled } },
     });
   const enabledSettings = settings.getSettings.pipe(
     Effect.map(rememberSettings),
@@ -91,12 +95,15 @@ const make = Effect.gen(function* () {
     (saved, source) =>
       new MeituanScanConfig({
         requirements: SourceControlToolInstaller.isMeituanToolEnabled("ones2", saved),
+        daxiangApproval: SourceControlToolInstaller.isMeituanToolEnabled("dumbo-web", saved),
         source: saved.meituanIntegrationEnabled ? source : undefined,
       }),
   ).pipe(
     Stream.changesWith(
       (previous, next) =>
-        previous.requirements === next.requirements && previous.source === next.source,
+        previous.requirements === next.requirements &&
+        previous.daxiangApproval === next.daxiangApproval &&
+        previous.source === next.source,
     ),
   );
   const inspectSourceTools = Effect.fn("SourceControlToolMaintenance.inspectSourceTools")(
@@ -179,14 +186,18 @@ const make = Effect.gen(function* () {
     sourceScanPending = false;
   }, lock.withPermits(1));
   const meituanScans = yield* Cache.make({
-    capacity: 8,
+    capacity: 16,
     timeToLive: 0,
-    lookup: ({ requirements, source }: MeituanScanConfig) =>
+    lookup: ({ requirements, daxiangApproval, source }: MeituanScanConfig) =>
       meituanLock.withPermits(1)(
         Effect.gen(function* () {
           const meituanTools = yield* Effect.forEach(
-            (["ones2", "mcm", "mtskills"] as const).filter((id) =>
-              id === "mtskills" ? source !== undefined : requirements,
+            (["ones2", "mcm", "mtskills", "dumbo-web"] as const).filter((id) =>
+              id === "mtskills"
+                ? source !== undefined
+                : id === "dumbo-web"
+                  ? daxiangApproval
+                  : requirements,
             ),
             (id) =>
               installer.inspectMeituan(id, id === "mtskills" ? source?.executable : undefined).pipe(

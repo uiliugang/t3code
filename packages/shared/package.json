@@ -31,6 +31,10 @@
       "types": "./src/uiLocale.ts",
       "import": "./src/uiLocale.ts"
     },
+    "./boundedSet": {
+      "types": "./src/boundedSet.ts",
+      "import": "./src/boundedSet.ts"
+    },
     "./png": {
       "types": "./src/png.ts",
       "import": "./src/png.ts"

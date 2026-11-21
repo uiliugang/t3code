@@ -8,13 +8,16 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Button } from "../ui/button";
+import { DaxiangApprovalSettings } from "./DaxiangApprovalSettings";
 
 export function DaxiangSettings({
   environmentId,
   label,
+  approvalMonitorSupported,
 }: {
   environmentId: EnvironmentId;
   label: string;
+  approvalMonitorSupported: boolean;
 }) {
   const t = useUiTranslation();
   const saved = useEnvironmentSettings(environmentId, (settings) => settings.daxiang);
@@ -25,63 +28,66 @@ export function DaxiangSettings({
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const value = draft ?? saved;
   return (
-    <form
-      className="grid gap-3 px-4 py-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!canSave || busy || draft === null) return;
-        setBusy(true);
-        setError(false);
-        void update({
-          environmentId,
-          input: {
-            patch: {
-              daxiang: { clientId: value.clientId.trim(), clientSecret: value.clientSecret },
+    <>
+      <form
+        className="grid gap-3 px-4 py-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canSave || busy || draft === null) return;
+          setBusy(true);
+          setError(false);
+          void update({
+            environmentId,
+            input: {
+              patch: {
+                daxiang: { clientId: value.clientId.trim(), clientSecret: value.clientSecret },
+              },
             },
-          },
-        }).then((result) => {
-          setBusy(false);
-          if (result._tag === "Success") setDraft(null);
-          else setError(true);
-        });
-      }}
-    >
-      <h3 className="text-sm font-medium">
-        {t("DaXiang")} · {label}
-      </h3>
-      <div className="grid gap-3 sm:max-w-sm">
-        <div className="grid gap-1.5">
-          <Label htmlFor={`dx-id-${environmentId}`}>{t("Client ID")}</Label>
-          <Input
-            id={`dx-id-${environmentId}`}
-            value={value.clientId}
-            disabled={!canSave || busy}
-            autoComplete="off"
-            onChange={(event) => setDraft({ ...value, clientId: event.target.value })}
-          />
+          }).then((result) => {
+            setBusy(false);
+            if (result._tag === "Success") setDraft(null);
+            else setError(true);
+          });
+        }}
+      >
+        <h3 className="text-sm font-medium">
+          {t("DaXiang")} · {label}
+        </h3>
+        <div className="grid gap-3 sm:max-w-sm">
+          <div className="grid gap-1.5">
+            <Label htmlFor={`dx-id-${environmentId}`}>{t("Client ID")}</Label>
+            <Input
+              id={`dx-id-${environmentId}`}
+              value={value.clientId}
+              disabled={!canSave || busy}
+              autoComplete="off"
+              onChange={(event) => setDraft({ ...value, clientId: event.target.value })}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor={`dx-secret-${environmentId}`}>{t("Client Secret")}</Label>
+            <Input
+              id={`dx-secret-${environmentId}`}
+              type="password"
+              value={value.clientSecret}
+              disabled={!canSave || busy}
+              autoComplete="new-password"
+              onChange={(event) => setDraft({ ...value, clientSecret: event.target.value })}
+            />
+          </div>
         </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor={`dx-secret-${environmentId}`}>{t("Client Secret")}</Label>
-          <Input
-            id={`dx-secret-${environmentId}`}
-            type="password"
-            value={value.clientSecret}
-            disabled={!canSave || busy}
-            autoComplete="new-password"
-            onChange={(event) => setDraft({ ...value, clientSecret: event.target.value })}
-          />
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {t("Could not save DaXiang credentials.")}
+          </p>
+        ) : null}
+        <div>
+          <Button type="submit" size="sm" disabled={!canSave || busy || draft === null}>
+            {t(busy ? "Saving..." : "Save")}
+          </Button>
         </div>
-      </div>
-      {error ? (
-        <p role="alert" className="text-xs text-destructive">
-          {t("Could not save DaXiang credentials.")}
-        </p>
-      ) : null}
-      <div>
-        <Button type="submit" size="sm" disabled={!canSave || busy || draft === null}>
-          {t(busy ? "Saving..." : "Save")}
-        </Button>
-      </div>
-    </form>
+      </form>
+      {approvalMonitorSupported ? <DaxiangApprovalSettings environmentId={environmentId} /> : null}
+    </>
   );
 }

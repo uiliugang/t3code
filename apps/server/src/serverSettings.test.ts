@@ -2003,6 +2003,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       assert.deepEqual((yield* serverSettings.getSettings).daxiang, {
         clientId: "other-app",
         clientSecret: "dx-secret",
+        approvalMonitor: DEFAULT_SERVER_SETTINGS.daxiang.approvalMonitor,
       });
       yield* serverSettings.updateSettings({
         daxiang: { clientId: "other-app", clientSecret: "" },
@@ -2012,7 +2013,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         (yield* decodeServerSettingsJson(
           yield* fileSystem.readFileString(serverConfig.settingsPath),
         )).daxiang,
-        { clientId: "other-app", clientSecret: "" },
+        {
+          clientId: "other-app",
+          clientSecret: "",
+          approvalMonitor: DEFAULT_SERVER_SETTINGS.daxiang.approvalMonitor,
+        },
       );
     }).pipe(Effect.provide(layerServerSettings())),
   );

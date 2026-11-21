@@ -43,7 +43,9 @@ import {
 } from "./ThreadNotificationCoordinator.logic";
 import { toastManager } from "./ui/toast";
 import { serverEnvironment } from "../state/server";
+import { readLocalApi } from "../localApi";
 import { translateUi } from "@t3tools/shared/uiLocale";
+import { boundedAdd } from "@t3tools/shared/boundedSet";
 
 interface NotificationState extends ThreadNotificationObservation {
   readonly raw: OrchestrationV2ThreadShell;
@@ -394,6 +396,81 @@ export function startThreadNotifications(
         if (state) present(environmentId, state, kind);
       }),
     };
+    let stopApprovalAlerts = () => {};
+    let approvalAlertsInitialized = false;
+    const announcedApprovalRecords = new Set<string>();
+    const unsubscribeApprovalConfig = registry.subscribe(
+      serverEnvironment.configValueAtom(environmentId),
+      (config) => {
+        stopApprovalAlerts();
+        stopApprovalAlerts = () => {};
+        if (
+          config?.environment.capabilities.daxiangApprovalMonitor !== true ||
+          !config.settings.daxiang.approvalMonitor.enabled
+        )
+          return;
+        stopApprovalAlerts = registry.subscribe(
+          serverEnvironment.daxiangApproval({ environmentId, input: {} }),
+          (result) => {
+            const snapshot = AsyncResult.getOrElse(result, () => null);
+            if (!snapshot || snapshot.status === "disabled") return;
+            if (!approvalAlertsInitialized) {
+              approvalAlertsInitialized = true;
+              for (const record of snapshot.records) {
+                boundedAdd(announcedApprovalRecords, `${record.id}:${record.outcome}`, 1000);
+              }
+              return;
+            }
+            for (const record of snapshot.records) {
+              if (announcedApprovalRecords.has(`${record.id}:${record.outcome}`)) continue;
+              boundedAdd(announcedApprovalRecords, `${record.id}:${record.outcome}`, 1000);
+              if (record.outcome === "skipped") continue;
+              const settings = getClientSettings();
+              const messageKey =
+                record.outcome === "approved"
+                  ? "Approval completed"
+                  : record.outcome === "failed"
+                    ? "Approval failed"
+                    : "Approval needs attention";
+              const title = translateUi(settings.uiLanguage, messageKey);
+              const description = record.detail
+                ? `${record.title} · ${record.detail}`
+                : record.title;
+              const open = () => void readLocalApi()?.shell.openExternal(record.url);
+              if (settings.inAppNotificationsEnabled)
+                toastManager.add({
+                  type: record.outcome === "approved" ? "success" : "warning",
+                  title,
+                  description,
+                  actionProps: {
+                    children: translateUi(settings.uiLanguage, "Open"),
+                    onClick: open,
+                  },
+                });
+              if (
+                hasDesktopNotifications(settings.notificationMode) &&
+                typeof Notification !== "undefined" &&
+                Notification.permission === "granted" &&
+                document.visibilityState !== "visible"
+              ) {
+                try {
+                  const notification = new Notification(title, {
+                    body: description,
+                    tag: `approval:${environmentId}:${record.id}`,
+                    silent: true,
+                  });
+                  notification.addEventListener("click", open);
+                } catch {
+                  /* Notification delivery can be unavailable in a remote browser. */
+                }
+              }
+            }
+          },
+          { immediate: true },
+        );
+      },
+      { immediate: true },
+    );
     let threads: ReadonlyArray<OrchestrationV2ThreadShell> | null = null;
     const unsubscribeShell = registry.subscribe(
       environmentShell.stateValueAtom(environmentId),
@@ -425,6 +502,8 @@ export function startThreadNotifications(
     entry.unsubscribe = () => {
       unsubscribeDeliveryConfig();
       stopDeliveryAlerts();
+      unsubscribeApprovalConfig();
+      stopApprovalAlerts();
       unsubscribeShell();
       unsubscribeRequests();
       unsubscribeDelegated();

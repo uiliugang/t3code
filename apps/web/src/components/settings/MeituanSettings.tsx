@@ -461,6 +461,7 @@ function EnvironmentMeituanSettings({
     code: codeEnabled,
     issues: issuesEnabled,
     skills: skillsEnabled,
+    daxiang: enabled && settings.daxiang.approvalMonitor.enabled,
   });
   const discovery = useEnvironmentQuery(
     codeEnabled ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
@@ -722,7 +723,11 @@ function EnvironmentMeituanSettings({
               associations={associations}
             />
           ) : active === "daxiang" ? (
-            <DaxiangSettings environmentId={environmentId} label={label} />
+            <DaxiangSettings
+              environmentId={environmentId}
+              label={label}
+              approvalMonitorSupported={capabilities.daxiangApprovalMonitor === true}
+            />
           ) : (
             <MeituanSkillSource
               environmentId={environmentId}

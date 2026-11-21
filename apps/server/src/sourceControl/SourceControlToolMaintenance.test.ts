@@ -110,7 +110,7 @@ it.effect("keeps an environment busy through verification and publishes the veri
     let installed = false;
     let toolVersion = "1.0.0";
     const installer = {
-      inspectMeituan: (id: "ones2" | "mcm" | "mtskills") =>
+      inspectMeituan: (id: "ones2" | "mcm" | "mtskills" | "dumbo-web") =>
         Effect.succeed({
           ...plan().tool,
           id,

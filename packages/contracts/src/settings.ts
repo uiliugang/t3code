@@ -1704,7 +1704,25 @@ export const ServerSettings = Schema.Struct({
   daxiang: Schema.Struct({
     clientId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
     clientSecret: secretSetting(Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("")))),
-  }).pipe(Schema.withDecodingDefault(Effect.succeed({ clientId: "", clientSecret: "" }))),
+    approvalMonitor: Schema.Struct({
+      enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+      chromeCdpPort: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })).pipe(
+        Schema.withDecodingDefault(Effect.succeed(9224)),
+      ),
+      includeGroupChats: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+      replyOnHandled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+      autoApprovePullRequest: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+      pullRequestComment: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("LGTM"))),
+      autoApproveMcm: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+      mcmApproveComment: TrimmedString.pipe(
+        Schema.withDecodingDefault(Effect.succeed("自动审批通过")),
+      ),
+      notifyUnsupportedLinks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+      autoOpenUnsupportedInBrowser: Schema.Boolean.pipe(
+        Schema.withDecodingDefault(Effect.succeed(false)),
+      ),
+    }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -2151,8 +2169,24 @@ export const ServerSettingsPatch = Schema.Struct({
   meituanRequirementsEnabled: Schema.optionalKey(Schema.Boolean),
   daxiang: Schema.optionalKey(
     Schema.Struct({
-      clientId: Schema.String,
-      clientSecret: secretSetting(Schema.String),
+      clientId: Schema.optionalKey(Schema.String),
+      clientSecret: Schema.optionalKey(secretSetting(Schema.String)),
+      approvalMonitor: Schema.optionalKey(
+        Schema.Struct({
+          enabled: Schema.optionalKey(Schema.Boolean),
+          chromeCdpPort: Schema.optionalKey(
+            Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })),
+          ),
+          includeGroupChats: Schema.optionalKey(Schema.Boolean),
+          replyOnHandled: Schema.optionalKey(Schema.Boolean),
+          autoApprovePullRequest: Schema.optionalKey(Schema.Boolean),
+          pullRequestComment: Schema.optionalKey(TrimmedString),
+          autoApproveMcm: Schema.optionalKey(Schema.Boolean),
+          mcmApproveComment: Schema.optionalKey(TrimmedString),
+          notifyUnsupportedLinks: Schema.optionalKey(Schema.Boolean),
+          autoOpenUnsupportedInBrowser: Schema.optionalKey(Schema.Boolean),
+        }),
+      ),
     }),
   ),
   offeredSourceControlProviders: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),

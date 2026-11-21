@@ -63,7 +63,8 @@ export function SourceControlToolsSection({
       pending ||
       tool.id === "ones2" ||
       tool.id === "mcm" ||
-      tool.id === "mtskills"
+      tool.id === "mtskills" ||
+      tool.id === "dumbo-web"
     )
       return;
     setPending(true);
