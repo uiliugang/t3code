@@ -81,7 +81,11 @@ function run(id: string, ordinal: number, status: OrchestrationV2RunStatus) {
 describe("thread execution presentation", () => {
   it("reports output throughput only for completed provider turns with measured usage", () => {
     const attemptId = RunAttemptId.make("throughput-attempt");
-    const completed = { ...run("throughput", 1, "completed"), activeAttemptId: attemptId };
+    const completed = {
+      ...run("throughput", 1, "completed"),
+      activeAttemptId: attemptId,
+      completedAt: DateTime.makeUnsafe("2026-07-28T10:00:02.500Z"),
+    };
     const turn = {
       id: ProviderTurnId.make("throughput-turn"),
       providerThreadId: ProviderThreadId.make("throughput-thread"),
@@ -104,7 +108,8 @@ describe("thread execution presentation", () => {
     };
     const projection = { ...v2Projection, runs: [completed] };
     const speed = (providerTurns: typeof v2Projection.providerTurns) =>
-      deriveThreadActivityRun({ ...projection, providerTurns })?.outputTokensPerSecond;
+      deriveThreadActivityRun({ ...projection, providerTurns })
+        ?.latestCompletedOutputTokensPerSecond;
     expect(speed([turn])).toBe(50);
     expect(speed([{ ...turn, completedAt: now }])).toBeUndefined();
     expect(speed([{ ...turn, status: "failed" }])).toBeUndefined();
@@ -114,6 +119,49 @@ describe("thread execution presentation", () => {
     ).toBeUndefined();
     expect(
       speed([{ ...turn, turnTokenUsage: { ...turn.turnTokenUsage, usageStatus: "partial" } }]),
+    ).toBeUndefined();
+    const earlierAttempt = RunAttemptId.make("earlier-completion");
+    const earlierTurn = {
+      ...turn,
+      id: ProviderTurnId.make("earlier-turn"),
+      runAttemptId: earlierAttempt,
+      completedAt: DateTime.makeUnsafe("2026-07-28T10:00:01.000Z"),
+    };
+    const outOfOrder = {
+      ...projection,
+      runs: [
+        completed,
+        {
+          ...run("started-first", 2, "completed"),
+          activeAttemptId: earlierAttempt,
+          completedAt: earlierTurn.completedAt,
+        },
+      ],
+      providerTurns: [turn, earlierTurn],
+    };
+    expect(deriveThreadActivityRun(outOfOrder)).toMatchObject({
+      runId: RunId.make("started-first"),
+      latestCompletedOutputTokensPerSecond: 50,
+    });
+    expect(
+      deriveThreadActivityRun({ ...outOfOrder, providerTurns: [earlierTurn] })
+        ?.latestCompletedOutputTokensPerSecond,
+    ).toBeUndefined();
+    for (const status of ["failed", "interrupted", "rolled_back"] as const) {
+      const ended = {
+        ...run("ended", 3, status),
+        completedAt: DateTime.makeUnsafe("2026-07-28T10:00:03.500Z"),
+      };
+      expect(
+        deriveThreadActivityRun({ ...outOfOrder, runs: [...outOfOrder.runs, ended] })
+          ?.latestCompletedOutputTokensPerSecond,
+      ).toBeUndefined();
+    }
+    expect(
+      deriveThreadActivityRun({
+        ...outOfOrder,
+        runs: [...outOfOrder.runs, run("active", 3, "running")],
+      })?.latestCompletedOutputTokensPerSecond,
     ).toBeUndefined();
   });
 

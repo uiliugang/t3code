@@ -3246,7 +3246,7 @@ export default function ChatView(props: ChatViewProps) {
       .join(" · ") || null;
   // The end of the timeline holds the thread's present and next turns: what it is doing now,
   // its lifecycle status, guest messages awaiting you, then your queued messages.
-  const outputTokensPerSecond = activeActivityRun?.outputTokensPerSecond;
+  const outputTokensPerSecond = activeActivityRun?.latestCompletedOutputTokensPerSecond;
   const timelineFooter =
     pendingHandoff === null &&
     !hasThreadNow &&

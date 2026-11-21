@@ -4034,6 +4034,20 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             }),
           );
         const cohortRunIds = cohortJson("runId");
+        const latestExecuted =
+          window !== undefined &&
+          window.anchorItemId === undefined &&
+          window.requiredRunId === undefined
+            ? (yield* sql<{ readonly run_id: string; readonly attempt_id: string | null }>`
+                SELECT run_id, CASE WHEN status = 'completed'
+                  THEN json_extract(payload_json, '$.activeAttemptId') END AS attempt_id
+                FROM orchestration_v2_projection_runs
+                WHERE thread_id = ${threadId} AND status <> 'queued'
+                  AND NOT (status = 'cancelled' AND json_extract(payload_json, '$.startedAt') IS NULL)
+                ORDER BY (completed_at IS NULL) DESC, completed_at DESC, ordinal DESC, run_id DESC
+                LIMIT 1
+              `)[0]
+            : undefined;
         const cohortNodeIds =
           window === undefined ||
           (fields !== undefined &&
@@ -4241,6 +4255,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               AND (status IN ('queued','preparing','starting','running','waiting')
                 OR run_id IN (SELECT value FROM json_each(${cohortRunIds}))
                 OR run_id = ${window.requiredRunId ?? null}
+                OR run_id = ${latestExecuted?.run_id ?? null}
                 ${
                   // Keep the shell's latest run even when its items are outside the newest window.
                   window.anchorItemId === undefined && window.requiredRunId === undefined
@@ -4489,6 +4504,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT payload_json FROM orchestration_v2_projection_provider_turns
             WHERE thread_id = ${threadId}
               AND (status IN ('starting','running','waiting')
+                OR provider_turn_id = (
+                  SELECT provider_turn_id FROM orchestration_v2_projection_provider_turns
+                  WHERE run_attempt_id = ${latestExecuted?.attempt_id ?? null}
+                  ORDER BY ordinal DESC, provider_turn_id DESC LIMIT 1
+                )
                 OR provider_turn_id IN (SELECT value FROM json_each(${cohortProviderTurnIds}))
                 OR node_id IN (SELECT value FROM json_each(${cohortNodeIds})))
             ORDER BY provider_thread_id ASC, ordinal ASC

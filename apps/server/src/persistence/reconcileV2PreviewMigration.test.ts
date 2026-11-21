@@ -95,8 +95,14 @@ describe("V2 preview upgrade", () => {
         [113, "TurnStartReadIndexes"],
         [114, "DelegatedTaskReadIndexes"],
         [115, "ThreadItemCounts"],
+        [116, "UsageOutputThroughputIndex"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(
+        yield* sql`SELECT name FROM sqlite_master
+          WHERE type = 'index' AND name = 'orchestration_v2_projection_provider_turns_completed_at_idx'`,
+        [{ name: "orchestration_v2_projection_provider_turns_completed_at_idx" }],
+      );
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
       const history = yield* sql<{ readonly migration_id: number; readonly name: string }>`
         SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id
@@ -233,6 +239,7 @@ describe("V2 preview upgrade", () => {
         [113, "TurnStartReadIndexes"],
         [114, "DelegatedTaskReadIndexes"],
         [115, "ThreadItemCounts"],
+        [116, "UsageOutputThroughputIndex"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

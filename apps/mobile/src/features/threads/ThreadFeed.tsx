@@ -3958,7 +3958,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
   const reviewCommentColors = useReviewCommentColors();
   const unsettledTurnId = threadFeedRunIsUnsettled(props.latestRun) ? props.latestRun.runId : null;
-  const outputTokensPerSecond = props.latestRun?.outputTokensPerSecond;
+  const outputTokensPerSecond = props.latestRun?.latestCompletedOutputTokensPerSecond;
   const compactionLabelsByEntryId = useMemo(
     () => threadFeedCompactionLabels(props.feed, m),
     [props.feed, m],

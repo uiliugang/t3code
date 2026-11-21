@@ -142,20 +142,15 @@ function summarizeThreadRun(
   run: OrchestrationV2ThreadProjection["runs"][number],
 ): ThreadRunSummary {
   const active = ACTIVITY_RUN_STATUSES.has(run.status);
-  const turn =
-    active || run.status === "completed"
-      ? latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)
-      : undefined;
-  const turnStatus = active ? turn?.status : undefined;
-  const outputTokensPerSecond =
-    run.status === "completed" ? completedTurnThroughput(turn) : undefined;
+  const turnStatus = active
+    ? latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)?.status
+    : undefined;
   return {
     runId: run.id,
     status: run.status,
     requestedAt: DateTime.formatIso(run.requestedAt),
     startedAt: run.startedAt === null ? null : DateTime.formatIso(run.startedAt),
     completedAt: run.completedAt === null ? null : DateTime.formatIso(run.completedAt),
-    ...(outputTokensPerSecond === undefined ? {} : { outputTokensPerSecond }),
     assistantMessageId:
       projection.messages.findLast(
         (message) => message.runId === run.id && message.role === "assistant",
@@ -198,10 +193,21 @@ export function deriveLatestThreadRun(projection: ThreadStructure): ThreadRunSum
 }
 
 export function deriveThreadActivityRun(projection: ThreadStructure): ThreadRunSummary | null {
-  const run =
-    latestMatchingRun(projection, (candidate) => ACTIVITY_RUN_STATUSES.has(candidate.status)) ??
-    presentedLatestRun(projection);
-  return run === null ? null : summarizeThreadRun(projection, run);
+  const activeRun = latestMatchingRun(projection, (candidate) =>
+    ACTIVITY_RUN_STATUSES.has(candidate.status),
+  );
+  if (activeRun !== null) return summarizeThreadRun(projection, activeRun);
+  const run = presentedLatestRun(projection);
+  if (run === null) return null;
+  const summary = summarizeThreadRun(projection, run);
+  const latestExecuted = latestExecutedRun(projection.runs);
+  if (latestExecuted?.status !== "completed" || latestExecuted.completedAt === null) return summary;
+  const latestCompletedOutputTokensPerSecond = completedTurnThroughput(
+    latestProviderTurnForAttempt(projection.providerTurns, latestExecuted.activeAttemptId),
+  );
+  return latestCompletedOutputTokensPerSecond === undefined
+    ? summary
+    : { ...summary, latestCompletedOutputTokensPerSecond };
 }
 
 /**
