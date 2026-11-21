@@ -585,6 +585,7 @@ interface ComposerDraftStoreState {
     projectRef: ScopedProjectRef,
     draftId: DraftId,
     options?: {
+      preserveProjectDraft?: boolean;
       threadId?: ThreadId;
       branch?: string | null;
       worktreePath?: string | null;
@@ -3002,8 +3003,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                     mappedDraftId !== draftId || logicalKey === normalizedLogicalProjectKey,
                 ),
               );
-            nextLogicalProjectDraftThreadKeyByLogicalProjectKey[normalizedLogicalProjectKey] =
-              draftId;
+            if (!options?.preserveProjectDraft) {
+              nextLogicalProjectDraftThreadKeyByLogicalProjectKey[normalizedLogicalProjectKey] =
+                draftId;
+            }
             const nextDraftThreadsByThreadKey: Record<string, DraftThreadState> = {
               ...state.draftThreadsByThreadKey,
               [draftId]: nextDraftThread,
@@ -3032,6 +3035,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 : nextDraftThreadsByThreadKey[previousThreadKeyForLogicalProject];
             // Keep populated drafts unmapped: sidebar rows still expose them when a new draft is opened.
             if (
+              !options?.preserveProjectDraft &&
               previousThreadKeyForLogicalProject &&
               previousThreadKeyForLogicalProject !== draftId &&
               !isComposerThreadKeyInUse(

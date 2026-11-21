@@ -925,6 +925,20 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(store.getComposerDraft(draftId)?.prompt).toBe("keep this prompt");
   });
 
+  it("keeps the project draft when registering an independent handoff draft", () => {
+    const store = useComposerDraftStore.getState();
+    const handoffDraftId = DraftId.make("handoff-draft");
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+
+    store.setLogicalProjectDraftThreadId(scopedProjectKey(projectRef), projectRef, handoffDraftId, {
+      preserveProjectDraft: true,
+      environmentSelection: "manual",
+    });
+
+    expect(store.getDraftThreadByProjectRef(projectRef)?.draftId).toBe(draftId);
+    expect(store.getDraftSession(handoffDraftId)?.environmentSelection).toBe("manual");
+  });
+
   it("rotates a failed bootstrap thread id without losing its draft", () => {
     const store = useComposerDraftStore.getState();
     const retryThreadId = ThreadId.make("thread-retry");

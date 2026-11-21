@@ -8,6 +8,7 @@ import { m, type MessageResolver } from "../i18n/messages";
 export type ThreadActionMenuId =
   | "find"
   | "new-thread-on-branch"
+  | "handoff-to-machine"
   | "filter-by-project"
   | "turn-into-project"
   | "project-settings"
@@ -97,6 +98,7 @@ export function buildDraftActionMenuItems(
 export interface ThreadActionMenuState {
   readonly canOperate: boolean;
   readonly canFind?: boolean;
+  readonly canHandoffToMachine?: boolean;
   /** False where no inline title editor is rendered, such as sidebar search results. */
   readonly canRename?: boolean;
   readonly branch: string | null;
@@ -131,6 +133,7 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
   return ![
     "find",
     "new-thread-on-branch",
+    "handoff-to-machine",
     "project-settings",
     "mark-unread",
     "share-guest",
@@ -155,6 +158,15 @@ export function buildThreadActionMenuItems(
           {
             id: "new-thread-on-branch" as const,
             label: t("New thread on {branch}", { branch: state.branch }),
+            icon: "message-square-plus",
+          },
+        ]
+      : []),
+    ...(state.canHandoffToMachine
+      ? [
+          {
+            id: "handoff-to-machine" as const,
+            label: t("Continue on another machine"),
             icon: "message-square-plus",
           },
         ]
