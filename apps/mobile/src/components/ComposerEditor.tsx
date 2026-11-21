@@ -338,9 +338,9 @@ export function ComposerEditor({
               scopedThreadKey(citation.environmentId, citation.threadId),
               citation.messageId,
             );
-            openLinkedThread({
-              environmentId: String(citation.environmentId),
-              threadId: String(citation.threadId),
+            openThreadLink({
+              environmentId: citation.environmentId,
+              threadId: citation.threadId,
             });
           }}
           {...(selectedSkill?.description ? { skillDescription: selectedSkill.description } : {})}

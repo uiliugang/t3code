@@ -1,4 +1,12 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import {
+  withCheckpointRestoreReservation,
+  withTurnStartReservation,
+  withWorkspaceLease,
+} from "../workspace/workspaceLease.ts";
 import {
   CheckpointScopeId,
   ChatAttachmentId,
@@ -83,11 +91,13 @@ const rootAppThread = (id: ThreadId) =>
     lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
   }) as OrchestrationV2AppThread;
 
+const layerRunExecutionPlatform = RunExecutionService.layer.pipe(Layer.provide(NodeServices.layer));
+
 const layerTurnItemPositionsTest = Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({
   allocate: () => Effect.succeed(1),
 });
 
-const layerRunExecutionTest = RunExecutionService.layer.pipe(
+const layerRunExecutionTest = layerRunExecutionPlatform.pipe(
   Layer.provide(
     Layer.mergeAll(
       McpAppModelContext.layerEmpty,
@@ -970,7 +980,7 @@ it.effect("passes the thread's MCP app context to the provider under a safe key"
     ]);
   }).pipe(
     Effect.provide(
-      RunExecutionService.layer.pipe(
+      layerRunExecutionPlatform.pipe(
         Layer.provide(
           Layer.mergeAll(
             PreviewAgentActivity.layer,
@@ -1012,7 +1022,7 @@ it.effect("fails the run when its ownership check cannot be read before calling 
     const runId = RunId.make("run:run-execution-start-guard-read");
     const attemptId = RunAttemptId.make("attempt:run-execution-start-guard-read");
     const providerInstanceId = ProviderInstanceId.make("codex");
-    const layerTest = RunExecutionService.layer.pipe(
+    const layerTest = layerRunExecutionPlatform.pipe(
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
@@ -1221,7 +1231,7 @@ it.effect.each([
         effects: ReadonlyArray<PendingOrchestrationEffectV2>;
       }>
     >([]);
-    const layerTest = RunExecutionService.layer.pipe(
+    const layerTest = layerRunExecutionPlatform.pipe(
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
@@ -1344,7 +1354,7 @@ it.effect("prompts the provider only after a forked baseline capture finishes", 
     } as OrchestrationV2CheckpointScope;
     const run = { id: runId, threadId, ordinal: 1, providerInstanceId } as OrchestrationV2Run;
     const order = yield* Ref.make<ReadonlyArray<string>>([]);
-    const layerTest = RunExecutionService.layer.pipe(
+    const layerTest = layerRunExecutionPlatform.pipe(
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
@@ -1445,7 +1455,7 @@ it.effect.each(["failure", "interruption", "stale-attempt", "start-guard"] as co
       const refreshes = yield* Ref.make(0);
       const guardedWrites = yield* Ref.make(0);
       const writes = yield* Ref.make<ReadonlyArray<ReadonlyArray<OrchestrationV2DomainEvent>>>([]);
-      const layerTest = RunExecutionService.layer.pipe(
+      const layerTest = layerRunExecutionPlatform.pipe(
         Layer.provide(
           Layer.mergeAll(
             McpAppModelContext.layerEmpty,
@@ -1620,7 +1630,7 @@ it.effect("ingests new member threads of an owned child after the root turn term
     const order = yield* Ref.make<ReadonlyArray<string>>([]);
     const origins = yield* Ref.make<ReadonlyArray<readonly [string, unknown, unknown]>>([]);
     const requests = yield* Ref.make<ReadonlyArray<string>>([]);
-    const layerTest = RunExecutionService.layer.pipe(
+    const layerTest = layerRunExecutionPlatform.pipe(
       Layer.provide(
         Layer.mergeAll(
           Layer.succeed(ProviderUsageAnalytics.ProviderTurnAnalytics, {
@@ -1891,7 +1901,7 @@ it.effect("ends a nested native subagent and its thread when the root run is int
     const nestedId = NodeId.make(`node:${key}:nested`);
     const grandchildRootId = NodeId.make(`node:${key}:grandchild-root`);
     const finalized = yield* Deferred.make<ReadonlyArray<OrchestrationV2DomainEvent>>();
-    const layerTest = RunExecutionService.layer.pipe(
+    const layerTest = layerRunExecutionPlatform.pipe(
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
@@ -2509,7 +2519,7 @@ it.effect(
       const written = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
       const ingested = yield* Ref.make<ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>>([]);
       const ingestionDone = yield* Deferred.make<void>();
-      const layerTest = RunExecutionService.layer.pipe(
+      const layerTest = layerRunExecutionPlatform.pipe(
         Layer.provide(
           Layer.mergeAll(
             McpAppModelContext.layerEmpty,
@@ -2946,7 +2956,7 @@ it.effect("settles native subagents when a workspace handoff completes the root 
     const providerInstanceId = ProviderInstanceId.make("codex");
     const written = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
     const ingestionDone = yield* Deferred.make<void>();
-    const layerTest = RunExecutionService.layer.pipe(
+    const layerTest = layerRunExecutionPlatform.pipe(
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
@@ -3832,6 +3842,175 @@ it.effect.each(["completed", "failed"] as const)(
     }),
 );
 
+it.effect.each([
+  "completed",
+  "failed",
+  "cancelled",
+  "stream-failure",
+  "consumer-interrupt",
+] as const)("reserves granted repositories until the real event consumer ends with %s", (outcome) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const repositoryPath = yield* fileSystem.realPath(
+      yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-run-reservation-" }),
+    );
+    const synchronousFileSystem = FileSystem.makeNoop({
+      realPath: (candidate) => Effect.succeed(candidate),
+    });
+    const configuration = { trackedFolders: [repositoryPath] };
+    const currentWorkspace = () => ({
+      folders: configuration.trackedFolders.map((folder) => ({
+        name: "web",
+        path: folder,
+        isGitRepository: true,
+      })),
+      extraRoots: [...configuration.trackedFolders],
+    });
+    const release = yield* Deferred.make<void>();
+    const order: string[] = [];
+    let stillStreaming = true;
+    yield* captureRootRunTermination({
+      key: `repository-reservation:${outcome}`,
+      shouldFinalizeRun: () => Effect.succeed(true),
+      workspaceFolders: currentWorkspace(),
+      startTurn: () => Effect.sync(() => order.push("provider accepted")),
+      events: (ids) =>
+        Stream.fromEffect(Deferred.await(release)).pipe(
+          Stream.flatMap(() =>
+            outcome === "stream-failure"
+              ? Stream.fail(
+                  new ProviderAdapter.ProviderAdapterEventStreamError({
+                    driver,
+                    providerSessionId: ProviderSessionId.make(
+                      `session:repository-reservation:${outcome}`,
+                    ),
+                    cause: "provider process exited",
+                  }),
+                )
+              : outcome === "consumer-interrupt"
+                ? Stream.failCause(Cause.interrupt())
+                : Stream.make(rootTerminalEvent(ids, outcome)),
+          ),
+          Stream.ensuring(
+            Effect.sync(() => {
+              stillStreaming = false;
+            }),
+          ),
+        ),
+      afterStart: (closed) =>
+        Effect.gen(function* () {
+          order.push("startRootRun returned");
+          assert.isTrue(stillStreaming);
+          configuration.trackedFolders = [];
+          assert.deepEqual(currentWorkspace().extraRoots, []);
+          yield* withTurnStartReservation(
+            synchronousFileSystem,
+            path,
+            repositoryPath,
+            Effect.sync(() => order.push("parallel turn")),
+          );
+          yield* withWorkspaceLease(process.cwd(), Effect.void);
+          const restore = yield* withCheckpointRestoreReservation(
+            synchronousFileSystem,
+            path,
+            repositoryPath,
+            Effect.sync(() => order.push("files restored")),
+          ).pipe(Effect.forkChild({ startImmediately: true }));
+          assert.deepEqual(order, ["provider accepted", "startRootRun returned", "parallel turn"]);
+          yield* Deferred.succeed(release, undefined);
+          yield* Deferred.await(closed);
+          yield* Fiber.join(restore);
+          assert.isFalse(stillStreaming);
+          assert.equal(order.at(-1), "files restored");
+        }),
+    });
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "cancels a startup waiting for a repository restore without prompting or leaking its subscription",
+  () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const root = "/repository-startup-cancel";
+      const restoreHeld = yield* Deferred.make<void>();
+      const releaseRestore = yield* Deferred.make<void>();
+      const waiting = yield* Deferred.make<void>();
+      const closed = yield* Deferred.make<void>();
+      const fileSystem = FileSystem.makeNoop({
+        realPath: (candidate) => Effect.succeed(candidate),
+      });
+      const restore = yield* withCheckpointRestoreReservation(
+        fileSystem,
+        path,
+        root,
+        Deferred.succeed(restoreHeld, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseRestore)),
+        ),
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(restoreHeld);
+      let prompted = false;
+      const startup = yield* captureRootRunTermination({
+        key: "repository-startup-cancel",
+        shouldFinalizeRun: () => Effect.succeed(true),
+        workspaceFolders: { folders: [], extraRoots: [root] },
+        fileSystem: FileSystem.makeNoop({
+          realPath: (candidate) => Deferred.succeed(waiting, undefined).pipe(Effect.as(candidate)),
+        }),
+        events: () => Stream.never,
+        startTurn: () =>
+          Effect.sync(() => {
+            prompted = true;
+          }),
+        onSubscriptionClose: Deferred.succeed(closed, undefined),
+      }).pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(waiting);
+      assert.isFalse(prompted);
+      yield* Fiber.interrupt(startup);
+      yield* Deferred.await(closed);
+      yield* Deferred.succeed(releaseRestore, undefined);
+      yield* Fiber.join(restore);
+      yield* withCheckpointRestoreReservation(fileSystem, path, root, Effect.void);
+      assert.isFalse(prompted);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("releases a repository reservation when startup is cancelled after acquisition", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fileSystem.realPath(
+      yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-run-reservation-cancel-" }),
+    );
+    const contextRead = yield* Deferred.make<void>();
+    const contextRelease = yield* Deferred.make<void>();
+    const closed = yield* Deferred.make<void>();
+    let prompted = false;
+    const startup = yield* captureRootRunTermination({
+      key: "repository-startup-context-cancel",
+      shouldFinalizeRun: () => Effect.succeed(true),
+      workspaceFolders: { folders: [], extraRoots: [root] },
+      events: () => Stream.never,
+      startTurn: () =>
+        Effect.sync(() => {
+          prompted = true;
+        }),
+      appContext: Deferred.succeed(contextRead, undefined).pipe(
+        Effect.andThen(Deferred.await(contextRelease)),
+        Effect.as([]),
+      ),
+      onSubscriptionClose: Deferred.succeed(closed, undefined),
+    }).pipe(Effect.forkChild({ startImmediately: true }));
+    yield* Deferred.await(contextRead);
+    assert.isFalse(prompted);
+    yield* Fiber.interrupt(startup);
+    assert.isTrue(yield* Deferred.isDone(closed));
+    yield* withCheckpointRestoreReservation(fileSystem, path, root, Effect.void);
+    assert.isFalse(prompted);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 // Background commands keep the consumer alive for the whole session; only the agent's own
 // turn and the children it drives should hold the browser tab focused.
 it.effect.each([
@@ -4015,6 +4194,8 @@ function captureRootRunTermination(input: {
     ProviderAdapter.ProviderAdapterV2Event,
     ProviderAdapter.ProviderAdapterV2Error
   >;
+  readonly workspaceFolders?: ProviderAdapter.ProviderAdapterV2RuntimePolicy["workspaceFolders"];
+  readonly fileSystem?: FileSystem.FileSystem;
   readonly startTurn?: ProviderAdapter.ProviderAdapterV2SessionRuntime["startTurn"];
   readonly interruptTurn?: ProviderAdapter.ProviderAdapterV2SessionRuntime["interruptTurn"];
   readonly messageText?: string;
@@ -4092,6 +4273,14 @@ function captureRootRunTermination(input: {
         }
       });
     const layerTest = RunExecutionService.layer.pipe(
+      Layer.provide(
+        Layer.merge(
+          NodeServices.layer,
+          input.fileSystem === undefined
+            ? Layer.empty
+            : Layer.succeed(FileSystem.FileSystem, input.fileSystem),
+        ),
+      ),
       Layer.provide(
         Layer.mergeAll(
           Layer.mock(McpAppModelContext.McpAppModelContext)({
@@ -4265,6 +4454,9 @@ function captureRootRunTermination(input: {
           runtimeMode: "full-access",
           interactionMode: "default",
           cwd: process.cwd(),
+          ...(input.workspaceFolders === undefined
+            ? {}
+            : { workspaceFolders: input.workspaceFolders }),
           approvalPolicy: "never",
           sandboxPolicy: {
             type: "readOnly",
@@ -4667,7 +4859,7 @@ function runBackgroundItemScenario(
             true,
           )
         : undefined;
-    const layerTest = RunExecutionService.layer.pipe(
+    const layerTest = layerRunExecutionPlatform.pipe(
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,

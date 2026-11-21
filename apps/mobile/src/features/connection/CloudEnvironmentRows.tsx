@@ -1,4 +1,4 @@
-import { useMessages } from "gt-react-native";
+import { useGT, useMessages } from "gt-react-native";
 import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ConnectionTraceId } from "./ConnectionTraceId";
@@ -353,6 +353,7 @@ function CloudEnvironmentRowShell(props: {
         : { text: measuredErrorText, lineCount: nextLineCount },
     );
   };
+  const gt = useGT();
   const rowActionLabel = props.onOpen
     ? gt("Manage {environment}", { environment: props.label })
     : props.onRemove

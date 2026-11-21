@@ -3107,9 +3107,9 @@ function UserMessageContent(props: UserMessageContentProps) {
               scopedThreadKey(citation.environmentId, citation.threadId),
               citation.messageId,
             );
-            openLinkedThread({
-              environmentId: String(citation.environmentId),
-              threadId: String(citation.threadId),
+            openThreadLink({
+              environmentId: citation.environmentId,
+              threadId: citation.threadId,
             });
           }}
           onClose={() => {

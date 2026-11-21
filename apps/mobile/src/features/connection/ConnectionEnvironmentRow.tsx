@@ -1,5 +1,5 @@
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
-import { useMessages } from "gt-react-native";
+import { useGT, useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -114,6 +114,7 @@ export function ConnectionEnvironmentRow(props: {
     );
   };
 
+  const gt = useGT();
   const toggleLabel = props.opensDetails
     ? gt("Manage {environment}", { environment: props.environment.environmentLabel })
     : props.expanded

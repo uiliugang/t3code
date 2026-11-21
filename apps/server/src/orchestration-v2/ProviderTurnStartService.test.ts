@@ -52,7 +52,6 @@ import * as CheckpointService from "./CheckpointService.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import {
   withCheckpointRestoreReservation,
-  withTurnStartReservation,
   withWorkspaceLease,
   withWorkspaceLeases,
 } from "../workspace/workspaceLease.ts";
@@ -1810,6 +1809,7 @@ effectIt.effect("preserves a replacement committed before exhausted start settle
       ),
     );
     const executionLayer = RunExecutionService.layer.pipe(
+      Layer.provide(NodeServices.layer),
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
@@ -3200,62 +3200,6 @@ effectIt.effect.each([
       yield* Fiber.join(startup);
       expect(order).toEqual(["checkpoint files restored", "provider session opened"]);
     }).pipe(Effect.provide(Path.layer)),
-);
-
-effectIt.effect("reserves a running turn's granted roots after a folder is untracked", () =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path;
-    const fileSystem = FileSystem.makeNoop({
-      exists: () => Effect.succeed(true),
-      realPath: (candidate) => Effect.succeed(candidate),
-    });
-    const worktreePath = "/tmp/running-turn-reservation/shop";
-    const repositoryPath = "/tmp/running-turn-reservation/web";
-    const workspaceFolders = {
-      folders: [{ name: "web", path: repositoryPath, isGitRepository: true }],
-      extraRoots: [repositoryPath],
-    };
-    const harness = makeLocalCommandHarness({
-      text: "Continue",
-      worktreePath,
-      workspaceFolders,
-      fileSystem,
-      failReadsAfterRunning: true,
-    });
-    const turnEntered = yield* Deferred.make<void>();
-    const releaseTurn = yield* Deferred.make<void>();
-    const order: string[] = [];
-    harness.startRootRun.mockImplementation((input) =>
-      Effect.gen(function* () {
-        expect(input.runtimePolicy.workspaceFolders?.extraRoots).toEqual([repositoryPath]);
-        yield* Deferred.succeed(turnEntered, undefined);
-        yield* Deferred.await(releaseTurn);
-        order.push("turn completed");
-      }),
-    );
-    const running = yield* harness.start.pipe(Effect.forkChild({ startImmediately: true }));
-    yield* Deferred.await(turnEntered);
-    workspaceFolders.folders = [];
-    workspaceFolders.extraRoots = [];
-    yield* withTurnStartReservation(
-      fileSystem,
-      path,
-      repositoryPath,
-      Effect.sync(() => order.push("concurrent turn")),
-    );
-    yield* withWorkspaceLease(worktreePath, Effect.void);
-    const restore = yield* withCheckpointRestoreReservation(
-      fileSystem,
-      path,
-      repositoryPath,
-      Effect.sync(() => order.push("files restored")),
-    ).pipe(Effect.forkChild({ startImmediately: true }));
-    expect(order).toEqual(["concurrent turn"]);
-    yield* Deferred.succeed(releaseTurn, undefined);
-    yield* Fiber.join(running);
-    yield* Fiber.join(restore);
-    expect(order).toEqual(["concurrent turn", "turn completed", "files restored"]);
-  }).pipe(Effect.provide(Path.layer)),
 );
 
 effectIt.effect("reads current startup state after waiting for the workspace lease", () =>

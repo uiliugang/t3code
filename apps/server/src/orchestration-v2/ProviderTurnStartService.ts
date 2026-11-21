@@ -2246,16 +2246,9 @@ export const layer: Layer.Layer<
         });
       });
       const extraRoots = resolvedRuntimePolicy.workspaceFolders?.extraRoots ?? [];
-      if (extraRoots.length === 0) return yield* startWithPolicy;
-      const providerTurn = yield* withTurnStartReservation(
-        fileSystem,
-        path,
-        extraRoots,
-        startWithPolicy,
-      );
-      return providerTurn === undefined
-        ? undefined
-        : withTurnStartReservation(fileSystem, path, extraRoots, providerTurn);
+      return yield* extraRoots.length === 0
+        ? startWithPolicy
+        : withTurnStartReservation(fileSystem, path, extraRoots, startWithPolicy);
     });
 
     return ProviderTurnStartServiceV2.of({
