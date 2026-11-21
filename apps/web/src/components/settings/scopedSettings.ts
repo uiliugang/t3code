@@ -24,6 +24,7 @@ import {
   type ProjectSettingSource,
 } from "@t3tools/shared/projectSettings";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import * as Equal from "effect/Equal";
 import * as Cause from "effect/Cause";
 import { Atom } from "effect/reactivity";
@@ -524,15 +525,23 @@ function writeWasDropped(value: unknown, before: unknown, saved: unknown): boole
 /** Older servers silently drop unknown keys; report them so rows cannot stay mixed forever. */
 function droppedSettingKeys(write: ScopedServerWrite, saved: ServerSettings | undefined) {
   if (saved === undefined) return [];
-  return Object.entries(write.patch).flatMap(([key, value]) =>
-    writeWasDropped(
-      value,
-      write.previous[key as keyof ServerSettings],
-      saved[key as keyof ServerSettings],
-    )
-      ? [key]
-      : [],
-  );
+  return Object.entries(write.patch).flatMap(([key, value]) => {
+    const dropped =
+      key === "backgroundActivity"
+        ? writeWasDropped(
+            resolveServerBackgroundActivitySettings(
+              applyServerSettingsPatch(write.previous, write.patch),
+            ),
+            resolveServerBackgroundActivitySettings(write.previous),
+            resolveServerBackgroundActivitySettings(saved),
+          )
+        : writeWasDropped(
+            value,
+            write.previous[key as keyof ServerSettings],
+            saved[key as keyof ServerSettings],
+          );
+    return dropped ? [key] : [];
+  });
 }
 
 type ScopedSettingsPlan = ReturnType<typeof planScopedSettingsPatch>;
