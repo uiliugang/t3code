@@ -439,3 +439,43 @@ it("does not upload a disconnected colon environment's draft to its connected pr
   });
   expect(requests).toEqual([]);
 });
+
+it("keeps a handoff transcript local until the message is queued for sending", () => {
+  const transcript = {
+    id: "handoff-attachment",
+    type: "file",
+    name: "thread.jsonl",
+    mimeType: "application/x-ndjson",
+    sizeBytes: 64,
+    fileUri: "file:///documents/t3-composer-attachments/thread.jsonl",
+    uploadOnSend: true,
+  } satisfies DraftComposerAttachment;
+  const serverConfig = {
+    environment: { capabilities: { fileAttachments: { maxUploadBytes: 1024 } } },
+  };
+  const input = {
+    drafts: { [draftKey]: { attachments: [transcript] } },
+    editingQueuedMessageIds: {},
+    knownEnvironmentIds: [environmentId],
+    connectedEnvironmentIds: new Set([environmentId]),
+    operableEnvironmentIds: new Set([environmentId]),
+    serverConfigs: new Map([[environmentId, serverConfig]]),
+  };
+  expect(composerAttachmentUploadRequests({ ...input, queuedMessagesByThreadKey: {} })).toEqual([]);
+  expect(
+    composerAttachmentsStillUploading({
+      environmentId,
+      attachments: [transcript],
+      serverConfig,
+      states: {},
+    }),
+  ).toBe(false);
+  expect(
+    composerAttachmentUploadRequests({
+      ...input,
+      queuedMessagesByThreadKey: {
+        [draftKey]: [{ ...queuedMessage(), attachments: [transcript] }],
+      },
+    }),
+  ).toEqual([{ environmentId, attachment: transcript }]);
+});

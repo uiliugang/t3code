@@ -268,11 +268,14 @@ export interface ComposerImageAttachment extends Omit<ChatImageAttachment, "prev
 
 export interface ComposerFileAttachment extends Omit<ChatFileAttachment, "previewUrl"> {
   file: File | null;
+  readonly uploadOnSend?: true;
   uploadedAttachmentId?: string;
   uploadEnvironmentId?: EnvironmentId;
 }
 
-export function composerFileNeedsReattach(file: ComposerFileAttachment): boolean {
+export function composerFileNeedsReattach(
+  file: Pick<ComposerFileAttachment, "file" | "uploadedAttachmentId">,
+): boolean {
   return file.file === null && file.uploadedAttachmentId === undefined;
 }
 
@@ -591,6 +594,7 @@ interface ComposerDraftStoreState {
     projectRef: ScopedProjectRef,
     draftId: DraftId,
     options?: {
+      preserveProjectDraft?: boolean;
       threadId?: ThreadId;
       branch?: string | null;
       worktreePath?: string | null;
@@ -3044,8 +3048,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                     mappedDraftId !== draftId || logicalKey === normalizedLogicalProjectKey,
                 ),
               );
-            nextLogicalProjectDraftThreadKeyByLogicalProjectKey[normalizedLogicalProjectKey] =
-              draftId;
+            if (!options?.preserveProjectDraft) {
+              nextLogicalProjectDraftThreadKeyByLogicalProjectKey[normalizedLogicalProjectKey] =
+                draftId;
+            }
             const nextDraftThreadsByThreadKey: Record<string, DraftThreadState> = {
               ...state.draftThreadsByThreadKey,
               [draftId]: nextDraftThread,
@@ -3074,6 +3080,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 : nextDraftThreadsByThreadKey[previousThreadKeyForLogicalProject];
             // Keep populated drafts unmapped: sidebar rows still expose them when a new draft is opened.
             if (
+              !options?.preserveProjectDraft &&
               previousThreadKeyForLogicalProject &&
               previousThreadKeyForLogicalProject !== draftId &&
               !isComposerThreadKeyInUse(

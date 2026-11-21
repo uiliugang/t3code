@@ -1601,6 +1601,24 @@ const zhCN: Readonly<Record<string, string>> = {
   Dismiss: "关闭",
   "Context handoff pending": "等待上下文移交",
   "Context handoff": "上下文移交",
+  "Continue on another machine": "在另一台机器继续",
+  "Open a new draft. Nothing is sent and the original thread stays on this machine.":
+    "打开新草稿，不会发送消息，原线程保留在当前机器。",
+  "Source thread": "来源线程",
+  "Destination project": "目标项目",
+  "Attach thread record, including tool output": "附带线程记录（含工具输出）",
+  "No projects are available on another connected machine.": "其他已连接的机器上没有可用项目。",
+  "Could not load the thread record. Retry or open the draft without it.":
+    "无法加载线程记录。请重试，或取消附带记录后打开草稿。",
+  "The thread record cannot be attached on this machine. Open the draft without it to add a summary.":
+    "无法在目标机器附带此记录。可取消附带记录，在草稿中填写摘要。",
+  "The destination project is no longer available.": "目标项目已不可用。",
+  "Could not open draft.": "无法打开草稿。",
+  "Preparing draft…": "正在准备草稿…",
+  "Open draft": "打开草稿",
+  'Continue work from "{title}" using the attached thread record. Check the current workspace before making changes.':
+    "参考附带的线程记录，继续处理“{title}”。修改前请先检查当前工作区。",
+  'Continue work from "{title}".\n\nHandoff summary:\n': "继续处理“{title}”。\n\n交接摘要：\n",
   "Close inspector": "关闭检查面板",
   "Navigate up": "返回上一级",
   "Close search": "关闭搜索",

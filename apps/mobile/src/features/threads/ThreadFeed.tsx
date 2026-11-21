@@ -1,5 +1,6 @@
 import { CollapsibleUserMessageBody } from "./CollapsibleUserMessageBody";
 import { WorkItemMessageAction } from "../work-items/WorkItemMessageAction";
+import { useCanHandoffThread } from "./thread-handoff-destinations";
 import { mobileResponseContext } from "../../lib/assistantCitations";
 import { requestThreadMessageJump } from "./threadMessageJump";
 import { threadForkFailure } from "./threadForkFailure";
@@ -2897,6 +2898,16 @@ function renderFeedEntry(
                 />
               </Pressable>
             ) : null}
+            {!message.streaming ? (
+              <AssistantHandoffButton
+                environmentId={props.environmentId}
+                threadId={props.threadId}
+                title={props.threadTitle}
+                buttonSize={props.replyActionSize.button}
+                iconSize={props.replyActionSize.icon}
+                tintColor={iconSubtleColor}
+              />
+            ) : null}
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {timestampLabel}
             </Text>
@@ -2993,6 +3004,39 @@ type UserMessageContentProps = {
   readonly linkHandlers: MarkdownLinkHandlers;
   readonly renderImage: MarkdownImageRenderer;
 };
+
+function AssistantHandoffButton({
+  environmentId,
+  threadId,
+  title,
+  buttonSize,
+  iconSize,
+  tintColor,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly title: string;
+  readonly buttonSize: number;
+  readonly iconSize: number;
+  readonly tintColor: ColorValue;
+}) {
+  const t = useUiTranslation();
+  const navigation = useNavigation();
+  const canHandoff = useCanHandoffThread(environmentId);
+  if (!canHandoff) return null;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t("Continue on another machine")}
+      hitSlop={8}
+      className="items-center justify-center"
+      style={{ width: buttonSize, height: buttonSize }}
+      onPress={() => navigation.navigate("ThreadHandoff", { environmentId, threadId, title })}
+    >
+      <SymbolView name="arrow.left.arrow.right" size={iconSize} tintColor={tintColor} />
+    </Pressable>
+  );
+}
 
 function UserMessageContent(props: UserMessageContentProps) {
   const gt = useGT();

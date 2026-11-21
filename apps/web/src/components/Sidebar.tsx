@@ -244,6 +244,7 @@ import {
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { titleRegenerationToast } from "./threadTitleRegenerationToast";
 import { copyThreadReference } from "../lib/copyThreadReference";
+import { canOpenThreadHandoff, openThreadHandoff } from "./chat/ThreadHandoffDialog";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { Button } from "./ui/button";
 import { isProjectPinShortcut, ProjectPinButton } from "./ProjectPinButton";
@@ -2694,6 +2695,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   AuthOrchestrationOperateScope,
                 ),
                 branch: thread.branch ?? null,
+                canHandoffToMachine: canOpenThreadHandoff(threadRef.environmentId),
                 // An archived project is not a filter choice.
                 projectFilter:
                   threadProjectGroup && !threadProjectGroup.archived
@@ -2745,6 +2747,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           return;
         }
         switch (clicked.value) {
+          case "handoff-to-machine":
+            openThreadHandoff(threadRef, thread.title);
+            return;
           case "filter-by-project":
             if (threadProjectGroup) {
               setProjectScopeKeys(

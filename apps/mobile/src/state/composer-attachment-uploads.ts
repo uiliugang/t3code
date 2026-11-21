@@ -109,7 +109,9 @@ export function composerAttachmentUploadRequests(input: {
     ...Object.entries(input.drafts).flatMap(([key, draft]) =>
       uploadable(
         composerDraftEnvironmentId(key, input.knownEnvironmentIds, queued, draft),
-        draft.attachments,
+        draft.attachments.filter(
+          (attachment) => attachment.type !== "file" || !attachment.uploadOnSend,
+        ),
       ),
     ),
     // Sending mid-upload hands the attachment to the outbox; requesting it here keeps that

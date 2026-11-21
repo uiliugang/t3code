@@ -13,6 +13,7 @@ import { type AnyRouter, useRouter } from "@tanstack/react-router";
 import {
   composerDraftHasUserContent,
   markPromotedDraftThreadByRef,
+  type ComposerFileAttachment,
   type DraftId,
   type DraftThreadEnvMode,
   type DraftThreadState,
@@ -118,6 +119,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       replace?: boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;
+      handoff?: { readonly attachment?: ComposerFileAttachment };
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     const projects = readProjects();
@@ -132,6 +134,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       getDraftSession,
       getDraftThread,
       applyStickyState,
+      addFiles,
       setDraftThreadContext,
       setLogicalProjectDraftThreadId,
       setModelSelection,
@@ -166,12 +169,15 @@ export function createNewThreadHandler(router: AnyRouter) {
     const composerModelSelection = composerActiveProvider
       ? (carrySourceComposer?.modelSelectionByProvider[composerActiveProvider] ?? null)
       : null;
-    const carryModelSelection = composerModelSelection ?? carrySourceShell?.modelSelection ?? null;
-    const carryInteractionMode =
-      carrySourceComposer?.interactionMode ??
-      carrySourceShell?.interactionMode ??
-      carrySourceDraft?.interactionMode ??
-      null;
+    const carryModelSelection = options?.handoff
+      ? null
+      : (composerModelSelection ?? carrySourceShell?.modelSelection ?? null);
+    const carryInteractionMode = options?.handoff
+      ? null
+      : (carrySourceComposer?.interactionMode ??
+        carrySourceShell?.interactionMode ??
+        carrySourceDraft?.interactionMode ??
+        null);
     const project = projects.find(
       (candidate) =>
         candidate.id === projectRef.projectId &&
@@ -188,7 +194,8 @@ export function createNewThreadHandler(router: AnyRouter) {
     const fallbackResolution = resolveNewThreadModelSelection({
       defaultSelection:
         configuredDefaultModelSelection ??
-        (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
+        (carryModelSelection ||
+        (!options?.handoff && useComposerDraftStore.getState().stickyActiveProvider !== null)
           ? null
           : resolveProjectDefaultProviderModelSelection(
               environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
@@ -201,9 +208,10 @@ export function createNewThreadHandler(router: AnyRouter) {
       projectId: projectRef.projectId,
       now: Date.now(),
     });
-    const projectDefaultModelSelection = fallbackResolution.fallback
-      ? fallbackResolution.selection
-      : configuredDefaultModelSelection;
+    const projectDefaultModelSelection =
+      fallbackResolution.fallback || options?.handoff
+        ? fallbackResolution.selection
+        : configuredDefaultModelSelection;
     const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({
@@ -254,6 +262,7 @@ export function createNewThreadHandler(router: AnyRouter) {
     // Another opener (home's own first-project draft) may have reached this project's draft first.
     // Matches lag the location during a navigation, so compare against the location.
     const resultIfAbandoned = () => {
+      if (options?.handoff) return null;
       const draft = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       if (draft === null || draft.promotedTo != null || readProject(projectRef) === null) {
         return null;
@@ -272,7 +281,9 @@ export function createNewThreadHandler(router: AnyRouter) {
     const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
     const hasSelectedProjectIdsOption = options?.selectedProjectIds !== undefined;
     const hasGroupTitleOption = options?.groupTitle !== undefined;
-    const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
+    const storedDraftThread = options?.handoff
+      ? null
+      : getDraftSessionByLogicalProjectKey(logicalProjectKey);
     const storedDraftThreadRef = storedDraftThread
       ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
       : null;
@@ -396,6 +407,7 @@ export function createNewThreadHandler(router: AnyRouter) {
     }
 
     if (
+      !options?.handoff &&
       latestActiveDraftThread &&
       currentRouteTarget?.kind === "draft" &&
       latestActiveDraftThread.logicalProjectKey === logicalProjectKey &&
@@ -437,6 +449,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       // Reuse drafts registered while awaiting so their pending navigation cannot lose them.
       const racedDraft = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       if (
+        !options?.handoff &&
         racedDraft &&
         racedDraft.draftId !== storedDraftThread?.draftId &&
         readThreadShell(scopeThreadRef(racedDraft.environmentId, racedDraft.threadId)) === null
@@ -473,14 +486,20 @@ export function createNewThreadHandler(router: AnyRouter) {
           : {}),
         ...(options?.groupTitle !== undefined ? { groupTitle: options.groupTitle } : {}),
         runtimeMode: defaultRuntimeMode,
+        ...(options?.handoff
+          ? { preserveProjectDraft: true, environmentSelection: "manual" as const }
+          : {}),
         ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
       });
-      applyStickyState(draftId);
+      if (!options?.handoff) applyStickyState(draftId);
       const modelSelectionOverride = resolveModelSelectionOverride(draftId);
       if (modelSelectionOverride) {
         setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
       }
       seedPrompt(draftId);
+      if (options?.handoff?.attachment) {
+        addFiles(draftId, [options.handoff.attachment], { appendReference: true });
+      }
       await router.navigate({
         to: "/draft/$draftId",
         params: { draftId },

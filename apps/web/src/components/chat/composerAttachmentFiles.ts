@@ -10,6 +10,7 @@ import {
 import { msg } from "gt-react";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";
+import { composerFileNeedsReattach } from "../../composerDraftStore";
 import { m, type MessageResolver } from "../../i18n/messages";
 import { isHeicImageFile } from "../../lib/imageCompression";
 import { isVideoAttachment, videoMimeType } from "../../types";
@@ -237,6 +238,12 @@ export function attachmentsToReleaseOnUploadCapabilityLoss(
   return attachments.filter(
     (attachment) => !(attachment.type === "file" && attachment.uploadedAttachmentId !== undefined),
   );
+}
+
+export function shouldPreuploadComposerFile(
+  file: Pick<ComposerFileAttachment, "file" | "uploadedAttachmentId" | "uploadOnSend">,
+): boolean {
+  return !file.uploadOnSend && !composerFileNeedsReattach(file);
 }
 
 export function shouldHandleComposerAttachmentPaste(input: {

@@ -178,6 +178,13 @@ shown there apply only to the route marked **In use**; other routes are not
 checked. Direct pairing and T3 Connect have separate sessions and may grant
 different permissions.
 
+### Continue a thread on another machine
+
+Open the thread's menu and choose **Continue on another machine**. Select a
+project on another connected machine. You can attach the source thread's record, including tool
+output, or leave it out and write a summary. Review the new draft and choose a model before sending.
+The original thread stays where it is, and workspace files and live provider sessions do not transfer.
+
 ### Balance new threads across machines
 
 Auto balance is off by default. On web and desktop, enable it in

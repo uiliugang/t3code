@@ -19,7 +19,6 @@ export function ThreadHeader(props: {
   readonly subtitle: string;
   readonly gitControls: ThreadGitControlsProps;
   readonly onReturnToThread?: () => void;
-  readonly onOpenTaskBoard?: () => void;
   readonly draft?: boolean;
   readonly hasThreadCwd: boolean;
   readonly inspectorMode: ThreadInspectorMode | null;
@@ -44,13 +43,6 @@ export function ThreadHeader(props: {
         },
       ]
     : [];
-  if (props.onOpenTaskBoard) {
-    actions.push({
-      accessibilityLabel: t("Requirements board"),
-      icon: "checkmark.circle",
-      onPress: props.onOpenTaskBoard,
-    });
-  }
   const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
 
   return (

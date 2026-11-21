@@ -1038,9 +1038,14 @@ describe("mobile composer drafts", () => {
       mimeType: "text/plain",
       sizeBytes: 4,
       fileUri: "file:///repeat.txt",
+      uploadOnSend: true as const,
     };
     appendComposerDraftAttachments(key, [file], { appendReference: true });
-    const link = getComposerDraftSnapshot(key).text;
+    const draft = getComposerDraftSnapshot(key);
+    expect(draft.context?.records).toEqual([
+      expect.objectContaining({ kind: "file", attachmentId: file.id }),
+    ]);
+    const link = draft.text;
     setComposerDraftText(key, `${link} ${link}`);
     const insertion = captureComposerDraftInsertion(key, { start: 0, end: link.length });
     expect(countComposerDraftAttachmentsAfterSelection(key, insertion)).toBe(1);
