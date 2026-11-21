@@ -1991,6 +1991,7 @@ function RunFoldButton({
   iconColor: ColorValue;
 }) {
   const gt = useGT();
+  const t = useUiTranslation();
   const loadWork = useAtomCommand(threadEnvironment.loadEarlierHistory, { reportFailure: false });
   const anchorsKey = entry.deferredWorkItemIds?.join("\n") ?? "";
   const [failed, setFailed] = useState(false);
@@ -2022,9 +2023,11 @@ function RunFoldButton({
   return (
     <View className="min-w-0 flex-1">
       <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: entry.expanded, busy: loading }}
-        onPress={toggle}
+        accessibilityRole={entry.summaryOnly ? undefined : "button"}
+        accessibilityState={
+          entry.summaryOnly ? undefined : { expanded: entry.expanded, busy: loading }
+        }
+        onPress={entry.summaryOnly ? undefined : toggle}
         hitSlop={4}
         className="min-h-11 min-w-0 flex-1 flex-row items-center gap-2"
         style={{ minHeight: Math.max(TURN_FOLD_HEIGHT - 3.5, rowSizing.estimatedRowHeight) }}
@@ -2035,14 +2038,21 @@ function RunFoldButton({
           className="shrink font-t3-medium text-sm tabular-nums text-foreground-muted"
         >
           {entry.label}
+          {entry.outputTokensPerSecond === undefined
+            ? null
+            : ` · ${t("{rate} tokens/s", {
+                rate: Math.round(entry.outputTokensPerSecond * 10) / 10,
+              })}`}
           {error ? ` · ${error}` : ""}
         </Text>
-        <ThreadDisclosureChevron
-          expanded={entry.expanded}
-          collapsedDirection="right"
-          size={15}
-          tintColor={iconColor}
-        />
+        {entry.summaryOnly ? null : (
+          <ThreadDisclosureChevron
+            expanded={entry.expanded}
+            collapsedDirection="right"
+            size={15}
+            tintColor={iconColor}
+          />
+        )}
       </Pressable>
       {loading ? (
         <View
@@ -4080,6 +4090,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     guestShare,
     m,
   );
+  const speed = props.latestRun?.latestCompletedOutputSpeed;
+  const showFallbackSpeed =
+    speed !== undefined &&
+    !presentedFeed.some(
+      (entry) => entry.type === "run-fold" && entry.outputTokensPerSecond !== undefined,
+    );
   const pendingFoldMessageId =
     presentedFeed.findLast((entry) => entry.type === "pending-fold")?.messageId ?? null;
   const jumpRunId =
@@ -4634,8 +4650,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               </>
             }
             ListFooterComponent={
-              props.pendingHandoff || props.statusLines?.length ? (
+              props.pendingHandoff || props.statusLines?.length || showFallbackSpeed ? (
                 <>
+                  {showFallbackSpeed ? (
+                    <Text className="py-1 text-xs tabular-nums text-foreground-muted">
+                      {t("Turn average: {rate} tokens/s", {
+                        rate: Math.round(speed.tokensPerSecond * 10) / 10,
+                      })}
+                    </Text>
+                  ) : null}
                   {props.pendingHandoff ? (
                     <ThreadHandoffDivider
                       environmentId={props.environmentId}
@@ -4660,6 +4683,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           />
         </View>
         {presentedFeed.length === 0 &&
+        !showFallbackSpeed &&
         !props.worktreeSetup &&
         props.activeWorkStartedAt === null &&
         props.contentPresentation.kind === "ready" ? (

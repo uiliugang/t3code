@@ -1028,6 +1028,25 @@ describe("buildThreadFeed", () => {
         "zh",
       );
     expect(localized(latestRun)[1]).toMatchObject({ label: "工作用时 2 秒" });
+    const replyOnly = buildThreadFeed([
+      projected(userMessage(), 0),
+      projected(assistantMessage(), 1),
+    ]);
+    expect(
+      deriveThreadFeedPresentation(
+        replyOnly,
+        {
+          ...latestRun,
+          latestCompletedOutputSpeed: { runId, tokensPerSecond: 50.1 },
+        },
+        new Set(),
+      )[1],
+    ).toMatchObject({
+      type: "run-fold",
+      summaryOnly: true,
+      label: "Worked for 2s",
+      outputTokensPerSecond: 50.1,
+    });
     expect(localized({ ...latestRun, status: "interrupted" })[1]).toMatchObject({
       label: "运行 2 秒 后由你停止",
     });

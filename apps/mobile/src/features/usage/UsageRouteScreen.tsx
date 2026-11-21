@@ -696,6 +696,15 @@ function TotalsSection(props: {
           value={formatPercent(merged.costQuality.unpricedShare)}
           detail={t("of records, excluded from cost")}
         />
+        {merged.outputTokensPerSecond === undefined ? null : (
+          <MetricCell
+            columns={props.columns}
+            label={t("Average output speed")}
+            value={t("{rate} tokens/s", {
+              rate: Math.round(merged.outputTokensPerSecond * 10) / 10,
+            })}
+          />
+        )}
       </View>
     </SettingsSection>
   );
@@ -793,14 +802,16 @@ function ShareBar(props: {
 function MetricCell(props: {
   readonly label: string;
   readonly value: string;
-  readonly detail: string;
+  readonly detail?: string;
   readonly columns: number;
 }) {
   return (
     <View className="gap-0.5 p-4" style={{ width: `${100 / props.columns}%` }}>
       <Text className="text-sm text-foreground-muted">{props.label}</Text>
       <Text className="text-xl font-t3-medium tabular-nums text-foreground">{props.value}</Text>
-      <Text className="text-xs text-foreground-tertiary">{props.detail}</Text>
+      {props.detail ? (
+        <Text className="text-xs text-foreground-tertiary">{props.detail}</Text>
+      ) : null}
     </View>
   );
 }
@@ -863,6 +874,13 @@ function ModelsSection(props: {
                         tokens: formatTokens(model.totalTokens),
                       })}
               </Text>
+              {model.outputTokensPerSecond === undefined ? null : (
+                <Text className="text-sm tabular-nums text-foreground-muted">
+                  {t("{rate} tokens/s", {
+                    rate: Math.round(model.outputTokensPerSecond * 10) / 10,
+                  })}
+                </Text>
+              )}
             </View>
             <Text className="text-base tabular-nums text-foreground">
               {metric === "tokens"

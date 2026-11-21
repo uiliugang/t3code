@@ -255,6 +255,8 @@ type ThreadFeedEntryContent =
       readonly createdAt: string;
       readonly runId: RunId;
       readonly label: string;
+      readonly outputTokensPerSecond?: number;
+      readonly summaryOnly?: true;
       readonly expanded: boolean;
     }
   | {
@@ -273,6 +275,10 @@ export interface ThreadFeedLatestRun {
   readonly status: OrchestrationV2RunStatus;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
+  readonly latestCompletedOutputSpeed?: {
+    readonly runId: RunId;
+    readonly tokensPerSecond: number;
+  };
   readonly turnEnded?: boolean;
   readonly providerStartingLabel?: string;
   readonly providerStartingLabelMsg?: string;
@@ -1103,6 +1109,8 @@ interface ThreadFeedRunFold {
   readonly createdAt: string;
   readonly hiddenEntryIds: ReadonlySet<string>;
   readonly label: string;
+  readonly outputTokensPerSecond?: number;
+  readonly summaryOnly?: true;
 }
 
 export function failedFeedRunIds(
@@ -1316,7 +1324,9 @@ function deriveThreadFeedRunFolds(
           hiddenEntryIds.has(entry.id) &&
           !(entry.type === "activity-group" && isContextCompactionActivityGroup(entry)),
       );
-    if (!hidesNonCompactionWork(group.entries)) continue;
+    const speed = latestRun?.latestCompletedOutputSpeed;
+    const outputTokensPerSecond = speed?.runId === runId ? speed.tokensPerSecond : undefined;
+    if (!hidesNonCompactionWork(group.entries) && outputTokensPerSecond === undefined) continue;
     const terminalEntry = terminalAssistantId
       ? group.entries.find((entry) => entry.id === terminalAssistantId)
       : null;
@@ -1373,7 +1383,21 @@ function deriveThreadFeedRunFolds(
     ];
     for (const segment of segments) {
       const firstHiddenEntry = segment.entries.find((entry) => hiddenEntryIds.has(entry.id));
-      if (!firstHiddenEntry || !hidesNonCompactionWork(segment.entries)) continue;
+      const segmentSpeed = segment.runId === runId ? outputTokensPerSecond : undefined;
+      if (!firstHiddenEntry || !hidesNonCompactionWork(segment.entries)) {
+        const anchor = segment.entries[0];
+        if (segmentSpeed !== undefined && anchor) {
+          foldsByAnchorId.set(anchor.id, {
+            runId,
+            createdAt: anchor.createdAt,
+            hiddenEntryIds: new Set(),
+            label: segment.label,
+            outputTokensPerSecond: segmentSpeed,
+            summaryOnly: true,
+          });
+        }
+        continue;
+      }
       const deferredWorkItemIds = segment.entries.flatMap((entry) =>
         entry.type === "activity-group"
           ? entry.activities.flatMap((activity) =>
@@ -1391,6 +1415,7 @@ function deriveThreadFeedRunFolds(
           segment.entries.flatMap((entry) => (hiddenEntryIds.has(entry.id) ? [entry.id] : [])),
         ),
         label: segment.label,
+        ...(segmentSpeed === undefined ? {} : { outputTokensPerSecond: segmentSpeed }),
       });
     }
   }
@@ -1472,6 +1497,9 @@ function latestRunsEqual(left: ThreadFeedLatestRun | null, right: ThreadFeedLate
       left.status === right.status &&
       left.startedAt === right.startedAt &&
       left.completedAt === right.completedAt &&
+      left.latestCompletedOutputSpeed?.runId === right.latestCompletedOutputSpeed?.runId &&
+      left.latestCompletedOutputSpeed?.tokensPerSecond ===
+        right.latestCompletedOutputSpeed?.tokensPerSecond &&
       left.turnEnded === right.turnEnded &&
       left.providerStartingLabel === right.providerStartingLabel &&
       left.providerStartingLabelMsg === right.providerStartingLabelMsg)
@@ -1865,6 +1893,8 @@ export function deriveThreadFeedPresentation(
         row.runId !== fold.runId ||
         row.createdAt !== fold.createdAt ||
         row.label !== fold.label ||
+        row.outputTokensPerSecond !== fold.outputTokensPerSecond ||
+        row.summaryOnly !== fold.summaryOnly ||
         row.expanded !== expanded ||
         row.deferredWorkItemIds?.join("|") !== fold.deferredWorkItemIds?.join("|")
       ) {
@@ -1875,6 +1905,10 @@ export function deriveThreadFeedPresentation(
           createdAt: fold.createdAt,
           runId: fold.runId,
           label: fold.label,
+          ...(fold.outputTokensPerSecond === undefined
+            ? {}
+            : { outputTokensPerSecond: fold.outputTokensPerSecond }),
+          ...(fold.summaryOnly ? { summaryOnly: true } : {}),
           expanded,
         };
         runFoldRowsCache.set(entry, row);

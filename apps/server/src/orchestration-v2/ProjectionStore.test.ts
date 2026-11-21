@@ -4313,6 +4313,45 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         (yield* humanWindow()).projection.turnItems,
         THREAD_HISTORY_TURN_SNAPSHOT_ROW_LIMIT,
       );
+      const latestCompletedRunId = RunId.make("run:bounded-sql-history:1");
+      const latestCompletedAttemptId = RunAttemptId.make("attempt:bounded-sql-history:1");
+      const latestCompletedTurnId = ProviderTurnId.make("turn:bounded-sql-history:1");
+      const completedAt = "2026-11-21T01:00:00.000Z";
+      const startedAt = "2026-11-21T00:59:55.000Z";
+      yield* sql`
+        UPDATE orchestration_v2_projection_runs SET completed_at = ${completedAt},
+          payload_json = json_set(payload_json, '$.completedAt', ${completedAt},
+            '$.activeAttemptId', ${latestCompletedAttemptId})
+        WHERE run_id = ${latestCompletedRunId}
+      `;
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_provider_turns
+          (provider_turn_id, thread_id, provider_thread_id, node_id, run_attempt_id, ordinal,
+           status, started_at, completed_at, payload_json)
+        VALUES (${latestCompletedTurnId}, ${threadId}, 'provider-thread:bounded-sql-history',
+          'node:bounded-sql-history:1', ${latestCompletedAttemptId}, 1, 'completed',
+          ${startedAt}, ${completedAt}, ${encodeUnknownJsonString({
+            id: latestCompletedTurnId,
+            providerThreadId: "provider-thread:bounded-sql-history",
+            nodeId: "node:bounded-sql-history:1",
+            runAttemptId: latestCompletedAttemptId,
+            nativeTurnRef: null,
+            ordinal: 1,
+            status: "completed",
+            startedAt,
+            completedAt,
+          })})
+      `;
+      const reopened = (yield* committed(humanWindow())).projection;
+      assert.lengthOf(reopened.turnItems, THREAD_HISTORY_TURN_SNAPSHOT_ROW_LIMIT);
+      assert.include(
+        reopened.runs.map((run) => run.id),
+        latestCompletedRunId,
+      );
+      assert.include(
+        reopened.providerTurns.map((turn) => turn.id),
+        latestCompletedTurnId,
+      );
       // With the newest user turn 1,000 rows back, the window pages from inside it.
       const setNewestTurnType = (type: "command_execution" | "user_message") => sql`
         UPDATE orchestration_v2_projection_turn_items

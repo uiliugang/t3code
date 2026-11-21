@@ -2,7 +2,8 @@ import type { ServerProvider } from "@t3tools/contracts";
 
 export function canManageProvider(provider: ServerProvider) {
   return Boolean(
-    provider.setup?.canAuthenticate || (provider.driver === "acpRegistry" && provider.installed),
+    provider.enabled &&
+    (provider.setup?.canAuthenticate || (provider.driver === "acpRegistry" && provider.installed)),
   );
 }
 

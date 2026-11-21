@@ -1222,6 +1222,27 @@ describe("deriveMessagesTimelineRows", () => {
     expect(foldRow?.runId).toBe("turn-1");
     expect(foldRow?.expanded).toBe(false);
     expect(foldRow?.label).toEqual({ status: "worked", duration: "22s" });
+    const replyOnlyRows = deriveMessagesTimelineRows({
+      timelineEntries: timelineEntries.filter((entry) =>
+        ["user-entry", "assistant-final-entry"].includes(entry.id),
+      ),
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      latestRun: {
+        runId: RunId.make("turn-1"),
+        status: "completed",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: "2026-01-01T00:00:22Z",
+        latestCompletedOutputSpeed: { runId: RunId.make("turn-1"), tokensPerSecond: 50.1 },
+      },
+    });
+    expect(replyOnlyRows[1]).toMatchObject({
+      kind: "turn-fold",
+      summaryOnly: true,
+      label: { status: "worked", duration: "22s" },
+      outputTokensPerSecond: 50.1,
+    });
     expect(collapsedRows.map((row) => row.id)).toEqual([
       "user-entry",
       "turn-fold:turn-1",
@@ -3675,6 +3696,22 @@ it.each([
   expect(
     computeStableMessagesTimelineRows([{ ...nextRow, deferredWorkItemIds: [...after] }], next),
   ).toBe(next);
+});
+
+it("updates the cached turn fold when its speed disappears", () => {
+  const row: Extract<MessagesTimelineRow, { kind: "turn-fold" }> = {
+    kind: "turn-fold",
+    id: "turn-fold:run",
+    runId: RunId.make("run"),
+    createdAt: "2026-01-01T00:00:00Z",
+    label: { status: "worked", duration: "1m" },
+    expanded: false,
+  };
+  const previous = computeStableMessagesTimelineRows([{ ...row, outputTokensPerSecond: 50 }], {
+    result: [],
+    byId: new Map(),
+  });
+  expect(computeStableMessagesTimelineRows([row], previous).result).toEqual([row]);
 });
 
 describe("streaming v2 row projection", () => {

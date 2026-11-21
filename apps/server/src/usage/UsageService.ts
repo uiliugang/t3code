@@ -26,6 +26,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientResponse } from "effect/http";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { formatMalformedUsageWarning } from "@t3tools/shared/usageFormat";
@@ -40,6 +41,7 @@ import type {
   UsageRecord,
 } from "@t3tools/provider-core/server/usage";
 import { canonicalModelFilter, resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
+import { readUsageOutputThroughput } from "./usageOutputThroughput.ts";
 import {
   createOverrideRateTable,
   isUnlistedModel,
@@ -165,6 +167,7 @@ export class UsageService extends Context.Service<
 >()("t3/usage/UsageService") {}
 
 export const make = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
@@ -1193,9 +1196,20 @@ export const make = Effect.gen(function* () {
   ) {
     const { summary, fromMemory } = yield* scanSummary(input, settings, provisional);
     // With nothing marked refreshing the client would keep a saved answer as final.
-    return fromMemory && !summary.sources.some((source) => source.refreshing === true)
-      ? (yield* scanSummary(input, settings, false)).summary
-      : summary;
+    const scanned =
+      fromMemory && !summary.sources.some((source) => source.refreshing === true)
+        ? (yield* scanSummary(input, settings, false)).summary
+        : summary;
+    const outputThroughput = yield* readUsageOutputThroughput(
+      input,
+      resolveModelAliases(settings.usageModelAliases),
+    ).pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+      Effect.catch((error) =>
+        Effect.logWarning("Could not read output throughput", error).pipe(Effect.as(undefined)),
+      ),
+    );
+    return outputThroughput === undefined ? scanned : { ...scanned, outputThroughput };
   });
 
   const inflightScans = new Map<string, Deferred.Deferred<UsageSummary, UsageReadError>>();
