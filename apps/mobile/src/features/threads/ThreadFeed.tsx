@@ -70,6 +70,7 @@ import {
 } from "@t3tools/client-runtime/user-message";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
+import { turnChanges } from "@t3tools/client-runtime/state/thread-repositories";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
@@ -99,7 +100,7 @@ import {
   parseAssistantCitationHref,
 } from "@t3tools/shared/assistantCitations";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
-import { hostedThreadLink, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+import { hasThreadLinks, hostedThreadLink, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
 import {
   parseComposerContextHref,
@@ -310,6 +311,7 @@ import {
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useEnvironmentQuery } from "../../state/query";
+import { useLinkedEnvironments } from "../../state/peerLinks";
 import { serverEnvironment } from "../../state/server";
 import { useModelMentions } from "../../state/model-mentions";
 import { composerDocumentAttachmentRecord } from "../../lib/composerContext";
@@ -335,6 +337,7 @@ import { resolveUserMessageIntentBadge } from "./userMessageIntentBadge";
 import { fileChipClipboardPath, fileChipMenu, resolveFileChipTarget } from "./fileChipMenu";
 import { useFileChipShare } from "./useFileChipShare";
 import { useOpenLinkedThread } from "./useOpenLinkedThread";
+import { useOpenThreadLink } from "./useOpenThreadLink";
 import {
   MarkdownImageAvailableWidthContext,
   ThreadMarkdownImage,
@@ -1423,7 +1426,11 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill> | undefined;
 }) {
   const gt = useGT();
-  const liveMarkdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
+  const liveMarkdown = useLiveThreadLinkLabels(
+    props.markdown,
+    props.environmentId,
+    useLinkedEnvironments(hasThreadLinks(props.markdown) ? props.environmentId : null),
+  );
   const [quoteSelection, setQuoteSelection] = useState<{
     markdown: string;
     selectors: ReturnType<typeof collectMobileAssistantTextSelectors>;
@@ -2916,20 +2923,45 @@ function TurnDiffStat(props: {
   readonly checkpoint: ThreadCheckpointSummary;
   readonly onOpenTurnDiff: (checkpoint: ThreadCheckpointSummary) => void;
 }) {
-  const { files } = props.checkpoint;
-  const additions = files.reduce((total, file) => total + file.additions, 0);
-  const deletions = files.reduce((total, file) => total + file.deletions, 0);
   const gt = useGT();
+  const { repositories, rootFiles, totals } = turnChanges(props.checkpoint);
+  const { additions, deletions } = totals;
+  const folderCount = repositories.length + (rootFiles.length > 0 ? 1 : 0);
+  const repositoriesLabel =
+    repositories.length === 0
+      ? null
+      : folderCount === 1
+        ? repositories[0]!.name
+        : gt("{count} repos", { count: folderCount });
+  const changedIn =
+    repositories.length === 0
+      ? null
+      : [
+          ...(rootFiles.length > 0 ? [gt("this folder")] : []),
+          ...repositories.map((repository) => repository.name),
+        ].join(", ");
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={gt(
-        "{files, plural, one {Review {files} file changed, {additions} additions, {deletions} deletions} other {Review {files} files changed, {additions} additions, {deletions} deletions}}",
-        { files: files.length, additions, deletions },
-      )}
+      accessibilityLabel={
+        changedIn === null
+          ? gt(
+              "{files, plural, one {Review {files} file changed, {additions} additions, {deletions} deletions} other {Review {files} files changed, {additions} additions, {deletions} deletions}}",
+              { files: totals.count, additions, deletions },
+            )
+          : gt(
+              "{files, plural, one {Review {files} file changed in {folders}, {additions} additions, {deletions} deletions} other {Review {files} files changed in {folders}, {additions} additions, {deletions} deletions}}",
+              { files: totals.count, folders: changedIn, additions, deletions },
+            )
+      }
       onPress={() => props.onOpenTurnDiff(props.checkpoint)}
       className="min-h-11 shrink-0 flex-row items-center gap-2 px-2 active:bg-subtle"
     >
+      {repositoriesLabel ? (
+        <Text className="max-w-28 text-xs text-foreground-muted" numberOfLines={1}>
+          {repositoriesLabel}
+        </Text>
+      ) : null}
       <Text className="font-t3-medium text-xs tabular-nums text-adaptive-emerald-700-300">
         +{formatDiffCount(additions)}
       </Text>
@@ -2957,9 +2989,13 @@ function UserMessageContent(props: UserMessageContentProps) {
   const [selected, setSelected] = useState<{ contextId: string; label: string } | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<AssistantCitation | null>(null);
   const navigation = useNavigation();
-  const openLinkedThread = useOpenLinkedThread();
+  const openThreadLink = useOpenThreadLink(props.environmentId);
   const { selectedThread } = useThreadSelection();
-  const liveText = useLiveThreadLinkLabels(props.text, props.environmentId);
+  const liveText = useLiveThreadLinkLabels(
+    props.text,
+    props.environmentId,
+    useLinkedEnvironments(hasThreadLinks(props.text) ? props.environmentId : null),
+  );
   const threadIcons = useThreadChipIcons(props.environmentId, liveText, props.context?.records);
   const text = replaceComposerContextReferences(liveText, (ref) => {
     const available = props.context?.records.some((record) => record.contextId === ref.contextId);
@@ -2982,10 +3018,7 @@ function UserMessageContent(props: UserMessageContentProps) {
       return;
     }
     if (record?.kind === "thread" && "threadId" in record) {
-      openLinkedThread({
-        environmentId: String(record.environmentId),
-        threadId: String(record.threadId),
-      });
+      openThreadLink(scopeThreadRef(record.environmentId, record.threadId));
       return;
     }
     const document = composerDocumentAttachmentRecord(record);
@@ -3321,7 +3354,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
   const openPullRequest = useOpenPullRequest();
   const navigation = useNavigation();
-  const openLinkedThread = useOpenLinkedThread();
+  const openThreadLink = useOpenThreadLink(props.environmentId);
   const openLocalPreview = useOpenLocalPreview();
   const previewTunnelOff = useEnvironmentPreviewTunnelOff(props.environmentId);
   // Without the tunnel, loopback links fall through to the system browser like any other link.
@@ -3619,12 +3652,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
     if (parseThreadLinkHref(href)) {
       const target = resolveLinkedThread(href);
-      if (target) {
-        openLinkedThread({
-          environmentId: String(target.environmentId),
-          threadId: String(target.threadId),
-        });
-      }
+      if (target) openThreadLink(target);
       return;
     }
     const media = resolveMarkdownMediaPreview(href, {

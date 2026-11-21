@@ -24,7 +24,15 @@ export type DiffPanelSelection =
   | { kind: "branch"; baseRef: string | null }
   | { kind: "unstaged" }
   | { kind: "commit"; sha: string; baseRef: string | null }
-  | { kind: "turn"; turnId: RunId; filePath: string | null; revealRequestId: number };
+  | {
+      kind: "turn";
+      turnId: RunId;
+      /** From the thread's folder, so a tracked repository's file carries that repository's folder. */
+      filePath: string | null;
+      revealRequestId: number;
+      /** A turn diff section key to narrow to; absent shows every repository. */
+      repository?: string;
+    };
 
 const DEFAULT_SELECTION: DiffPanelSelection = { kind: "branch", baseRef: null };
 
@@ -40,6 +48,7 @@ interface DiffPanelStoreState {
   selectCommit: (ref: ScopedThreadRef, sha: string, keepSelectionOnOpen?: boolean) => void;
   keepSelectionOnOpenThreadKey: string | null;
   consumeKeepSelectionOnOpen: (ref: ScopedThreadRef) => boolean;
+  selectTurnRepository: (ref: ScopedThreadRef, turnId: RunId, repository: string | null) => void;
   reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<RunId>) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
@@ -130,14 +139,39 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
             state.selectedRepositoryByThreadKey[scopedThreadKey(ref)],
           );
           const previous = state.byThreadKey[threadKey];
+          // Git reports paths with their edge whitespace; only a blank one means no file.
+          const requestedPath = filePath !== undefined && filePath.trim() !== "" ? filePath : null;
           return {
             byThreadKey: {
               ...state.byThreadKey,
               [threadKey]: {
                 kind: "turn",
                 turnId,
-                filePath: filePath ?? null,
+                filePath: requestedPath,
                 revealRequestId: previous?.kind === "turn" ? previous.revealRequestId + 1 : 1,
+                // A requested file may sit outside the repository the view was narrowed to.
+                ...(requestedPath === null &&
+                previous?.kind === "turn" &&
+                previous.repository !== undefined
+                  ? { repository: previous.repository }
+                  : {}),
+              },
+            },
+          };
+        }),
+      selectTurnRepository: (ref, turnId, repository) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const previous = state.byThreadKey[threadKey];
+          return {
+            byThreadKey: {
+              ...state.byThreadKey,
+              [threadKey]: {
+                kind: "turn",
+                turnId,
+                filePath: null,
+                revealRequestId: previous?.kind === "turn" ? previous.revealRequestId : 0,
+                ...(repository === null ? {} : { repository }),
               },
             },
           };

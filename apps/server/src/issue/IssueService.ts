@@ -157,9 +157,10 @@ export class IssueService extends Context.Service<
     readonly update: (input: IssueUpdateInput) => Effect.Effect<void, IssueError>;
     readonly setState: (input: IssueSetStateInput) => Effect.Effect<void, IssueError>;
     readonly react: (input: IssueReactionInput) => Effect.Effect<void, IssueError>;
-    /** The tracker and container a project's own issues live in. */
+    /** The tracker and container a project's own issues live in, or the one `key` names. */
     readonly projectScope: (
       projectId: ProjectId,
+      key?: string,
     ) => Effect.Effect<IssueScopeRef & { readonly host: string }, IssueError>;
     /**
      * Resolve through a matching project, preferring `preferredProjectId`; other scopes are read-only.
@@ -448,7 +449,7 @@ const make = Effect.gen(function* () {
           if (page._tag === "Failure") {
             if (cursor !== undefined) nextCursors[key] = cursor;
             recordFailure(project, page.failure);
-            // A fork reads two repositories, so its failure names the one that failed.
+            // A fork or a multi-team binding reads several scopes; the failure names its own.
             const forked = supported.some(
               (other) => other.project.id === project.project.id && other.scope !== project.scope,
             );
@@ -690,9 +691,12 @@ const make = Effect.gen(function* () {
 
   const projectScope: IssueService["Service"]["projectScope"] = Effect.fn(
     "IssueService.projectScope",
-  )(function* (projectId) {
+  )(function* (projectId, key) {
     const { supported } = yield* listProjects({ projectId });
-    const [own] = supported;
+    const prefix = key?.toLowerCase();
+    const own =
+      supported.find((candidate) => prefix?.startsWith(`${candidate.scope.toLowerCase()}-`)) ??
+      supported[0];
     if (own === undefined) {
       return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
     }

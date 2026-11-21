@@ -93,3 +93,27 @@ for a fling inside that rectangle. Verify movement with a fresh snapshot. The ou
 wrapper's reported edge does not establish the content's scroll position.
 After `--settle`, use its emitted scoped refs, including the `~` suffix, or take
 a fresh `snapshot -i` before using short refs again.
+
+## Accessibility audit
+
+For mobile UI changes, run the local `mobile:audit` CLI on the touched screens
+with the session's AgentDevice launcher:
+
+```bash
+vp run mobile:audit capture --platform <ios|android> --screen <name> \
+  --out /tmp/mobile-audit/after --agent-device "$agent_device_command" \
+  -- "${agent_device_target_args[@]}"
+
+# Compare against a base capture (exits non-zero on regressions):
+vp run mobile:audit compare --before /tmp/mobile-audit/before \
+  --after /tmp/mobile-audit/after --out /tmp/mobile-audit/diff \
+  --fail-on-regression
+
+# Or annotate a single capture when there is no baseline:
+vp run mobile:audit report --dir /tmp/mobile-audit/after \
+  --out /tmp/mobile-audit/report
+```
+
+Attach the generated `report.md` summary and annotated PNG(s) to your response
+to the user (embedded by absolute file path) and to the PR description (uploaded
+via `ghdrop` or forge assets; never commit generated audit artifacts).

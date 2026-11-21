@@ -106,6 +106,7 @@ describe("getChangedUnifiedSettingLabels", () => {
           ...DEFAULT_UNIFIED_SETTINGS,
           glassOpacity: 0.5,
           sendShortcut: "mod-enter",
+          sideThreadOpenTarget: "main",
           contextWindowMeterEnabled: !DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
           newWorktreesMainBranchOnly: !DEFAULT_UNIFIED_SETTINGS.newWorktreesMainBranchOnly,
           childWorktreesMainBranchOnly: !DEFAULT_UNIFIED_SETTINGS.childWorktreesMainBranchOnly,
@@ -124,6 +125,7 @@ describe("getChangedUnifiedSettingLabels", () => {
     expect(labels).toEqual([
       "Glass opacity",
       "Send shortcut",
+      "Subagents and side chats",
       "上下文窗口指示器",
       "普通会话的工作树仅限 main/master",
       "子代理与侧边对话的工作树仅限 main/master",

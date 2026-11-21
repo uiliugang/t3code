@@ -296,6 +296,9 @@ export function getChangedUnifiedSettingLabels(
     ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut
       ? [resolve(msg("Send shortcut"))]
       : []),
+    ...(settings.sideThreadOpenTarget !== DEFAULT_UNIFIED_SETTINGS.sideThreadOpenTarget
+      ? [resolve(msg("Subagents and side chats"))]
+      : []),
     ...(settings.showPredictedMessages !== DEFAULT_UNIFIED_SETTINGS.showPredictedMessages
       ? [resolve(msg("Show predicted messages"))]
       : []),

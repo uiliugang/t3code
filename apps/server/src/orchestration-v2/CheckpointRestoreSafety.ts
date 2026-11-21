@@ -5,8 +5,10 @@ import {
   type OrchestrationV2CheckpointScope,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ThreadShell,
+  type TaskFolder,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import type * as WorkspaceFolders from "../workspace/WorkspaceFolders.ts";
 import type * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import type * as Path from "effect/Path";
@@ -23,11 +25,14 @@ const isCheckoutRestoreIsolated = Effect.fn("orchestrationV2.isCheckpointRestore
   function* (
     thread: Pick<OrchestrationV2AppThread, "id" | "worktreePath">,
     scope: Pick<OrchestrationV2CheckpointScope, "cwd">,
+    /** The task folder the thread works in: a file restore reaches its repository worktrees too. */
+    taskFolder: Pick<TaskFolder, "repositories"> | null,
     dependencies: {
       readonly fileSystem: FileSystem.FileSystem;
       readonly projections: ProjectionStoreV2["Service"];
       readonly projects: ProjectStore.ProjectStoreV2["Service"];
       readonly path: Path.Path;
+      readonly workspaceFolders: Pick<WorkspaceFolders.WorkspaceFolders["Service"], "forThread">;
     },
   ) {
     const { fileSystem, projections, projects, path } = dependencies;
@@ -53,6 +58,12 @@ const isCheckoutRestoreIsolated = Effect.fn("orchestrationV2.isCheckpointRestore
       const worktreeCwd = yield* resolve(worktreePath);
       shared = cwd !== worktreeCwd;
       if (!shared) {
+        const restored = [
+          cwd,
+          ...(yield* Effect.forEach(taskFolder?.repositories ?? [], (repository) =>
+            resolve(repository.worktreePath),
+          )),
+        ];
         const shell = yield* projections.getShellSnapshot();
         const threads = [...shell.threads, ...shell.archivedThreads];
         const threadsById = new Map(threads.map((candidate) => [candidate.id, candidate]));
@@ -76,6 +87,7 @@ const isCheckoutRestoreIsolated = Effect.fn("orchestrationV2.isCheckpointRestore
           ReadonlyArray<OrchestrationV2ProviderThread>
         >();
         const checkedPaths = new Set<string>();
+        const folderPathsByWorkspace = new Map<string, ReadonlyArray<string>>();
         for (const otherThread of threads) {
           if (otherThread.id === thread.id || otherThread.deletedAt !== null) continue;
           // An idle side chat that only answered questions never touched the shared worktree.
@@ -194,6 +206,22 @@ const isCheckoutRestoreIsolated = Effect.fn("orchestrationV2.isCheckpointRestore
               ...(otherThread.workspaceConfiguration?.roots.map((root) => root.sourcePath) ?? []),
             );
           }
+          if (otherThread.workspace === undefined) {
+            const key =
+              otherThread.worktreePath === null
+                ? `project:${otherThread.projectId}`
+                : `worktree:${otherThread.worktreePath}`;
+            let folderPaths = folderPathsByWorkspace.get(key);
+            if (folderPaths === undefined) {
+              const folders = yield* dependencies.workspaceFolders.forThread(otherThread);
+              folderPaths = [
+                ...folders.folders.map((folder) => folder.path),
+                ...folders.extraRoots,
+              ];
+              folderPathsByWorkspace.set(key, folderPaths);
+            }
+            paths.push(...folderPaths);
+          }
           for (const candidate of paths) {
             if (checkedPaths.has(candidate)) continue;
             checkedPaths.add(candidate);
@@ -203,7 +231,10 @@ const isCheckoutRestoreIsolated = Effect.fn("orchestrationV2.isCheckpointRestore
                 (_error) => Effect.succeed(null),
               ),
             );
-            if (otherCwd !== null && (contains(cwd, otherCwd) || contains(otherCwd, cwd))) {
+            if (
+              otherCwd !== null &&
+              restored.some((folder) => contains(folder, otherCwd) || contains(otherCwd, folder))
+            ) {
               shared = true;
               break;
             }
@@ -221,12 +252,13 @@ export const isCheckpointRestoreIsolated = Effect.fn(
 )(function* (
   thread: Pick<OrchestrationV2AppThread, "id" | "worktreePath" | "workspace">,
   scope: Pick<OrchestrationV2CheckpointScope, "cwd" | "workspace">,
-  dependencies: Parameters<typeof isCheckoutRestoreIsolated>[2],
+  taskFolder: Pick<TaskFolder, "repositories"> | null,
+  dependencies: Parameters<typeof isCheckoutRestoreIsolated>[3],
 ) {
   if (scope.workspace === undefined)
     return (
       thread.workspace === undefined &&
-      (yield* isCheckoutRestoreIsolated(thread, scope, dependencies))
+      (yield* isCheckoutRestoreIsolated(thread, scope, taskFolder, dependencies))
     );
   if (
     thread.workspace?.id !== scope.workspace.id ||
@@ -238,6 +270,7 @@ export const isCheckpointRestoreIsolated = Effect.fn(
       !(yield* isCheckoutRestoreIsolated(
         { id: thread.id, worktreePath: resource.checkoutRoot },
         { cwd: resource.checkoutRoot },
+        null,
         dependencies,
       ))
     )

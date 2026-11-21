@@ -9,13 +9,20 @@ import { useBranches } from "./queries";
 import { useEnvironmentQuery } from "./query";
 import { sourceControlEnvironment } from "./sourceControl";
 import { useVcsActionState } from "./use-vcs-action-state";
+import type { GitRepositoryTarget } from "./thread-git-target";
 import { useThreadSelection } from "./use-thread-selection";
 import { useSelectedThreadWorktree } from "./use-selected-thread-worktree";
 
-export function useSelectedThreadGitState(resourceId?: ThreadRepositorySelection) {
+export function useSelectedThreadGitState(
+  target?: ThreadRepositorySelection | GitRepositoryTarget,
+) {
+  const repository = typeof target === "object" && "cwd" in target ? target : undefined;
+  const resourceId = typeof target === "object" && "cwd" in target ? undefined : target;
   const messages = useMessages();
   const { selectedThread } = useThreadSelection();
-  const { selectedThreadCwd, repositoryTarget } = useSelectedThreadWorktree(resourceId);
+  const threadWorktree = useSelectedThreadWorktree(resourceId);
+  const selectedThreadCwd = repository?.cwd ?? threadWorktree.selectedThreadCwd;
+  const repositoryTarget = repository === undefined ? threadWorktree.repositoryTarget : undefined;
 
   const selectedThreadGitTarget = {
     environmentId: selectedThread?.environmentId ?? null,

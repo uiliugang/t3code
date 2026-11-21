@@ -9,12 +9,11 @@ import { __setClientSettingsForTests } from "../../hooks/useSettings";
 
 const stoppedAt = new Date(2026, 9, 20, 12, 0);
 
-function bannerDescription(
+function bannerItem(
   resetAt: Date,
-  timestampFormat: TimestampFormat,
+  timestampFormat: TimestampFormat = "24-hour",
   uiLanguage: "en" | "zh-CN" = "en",
 ) {
-  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage });
   return usageLimitRecoveryBannerItem({
     runId: RunId.make("run-1"),
     errorCode: null,
@@ -25,8 +24,9 @@ function bannerDescription(
     snoozedUntil: null,
     recovery: null,
     timestampFormat,
+    uiLanguage,
     onChange: async () => {},
-  }).description;
+  });
 }
 
 describe("usageLimitRecoveryBannerItem", () => {
@@ -35,15 +35,15 @@ describe("usageLimitRecoveryBannerItem", () => {
     ["24-hour", "Resets 17:30"],
   ] as const)("formats a same-day reset with the %s setting", (timestampFormat, expected) => {
     using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
-    expect(bannerDescription(new Date(2026, 9, 20, 17, 30), timestampFormat)).toBe(expected);
+    expect(bannerItem(new Date(2026, 9, 20, 17, 30), timestampFormat).description).toBe(expected);
   });
 
   it("names the day when the reset is tomorrow", () => {
     using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
-    expect(bannerDescription(new Date(2026, 9, 21, 17, 30), "24-hour")).toBe(
+    expect(bannerItem(new Date(2026, 9, 21, 17, 30), "24-hour").description).toBe(
       "Resets tomorrow at 17:30",
     );
-    expect(bannerDescription(new Date(2026, 9, 21, 17, 30), "24-hour", "zh-CN")).toBe(
+    expect(bannerItem(new Date(2026, 9, 21, 17, 30), "24-hour", "zh-CN").description).toBe(
       "重置时间：明天 17:30",
     );
     __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
@@ -63,5 +63,54 @@ describe("usageLimitRecoveryBannerItem", () => {
     });
     expect(reactive.title).toBe("已达到用量限制");
     expect(reactive.description).toBe("重置时间：明天 17:30");
+  });
+
+  it("uses past-tense copy after the reset time has passed", () => {
+    const resetAt = new Date(2026, 9, 20, 15, 0);
+    {
+      using _before = vi
+        .spyOn(Date, "now")
+        .mockReturnValue(new Date(2026, 9, 20, 14, 57).getTime());
+      expect(bannerItem(resetAt).description).toBe("Resets 15:00");
+    }
+    {
+      using _after = vi.spyOn(Date, "now").mockReturnValue(new Date(2026, 9, 20, 15, 14).getTime());
+      expect(bannerItem(resetAt).description).toBe("Reset 15:00");
+    }
+  });
+
+  it("keeps Resumes copy until a later snooze wake time, then falls back to Reset", () => {
+    const resetAt = new Date(2026, 9, 20, 15, 0);
+    const snoozedUntil = new Date(2026, 9, 20, 16, 0);
+    const runId = RunId.make("run-1");
+    const makeScheduled = () =>
+      usageLimitRecoveryBannerItem({
+        runId,
+        errorCode: null,
+        resetAt: resetAt.toISOString(),
+        stoppedAt: stoppedAt.toISOString(),
+        settled: false,
+        requestPending: false,
+        snoozedUntil: snoozedUntil.toISOString(),
+        recovery: {
+          runId,
+          resetAt: resetAt.toISOString(),
+          autoResume: true,
+        },
+        timestampFormat: "24-hour",
+        onChange: async () => {},
+      });
+    {
+      using _between = vi
+        .spyOn(Date, "now")
+        .mockReturnValue(new Date(2026, 9, 20, 15, 14).getTime());
+      expect(makeScheduled().description).toBe("Resumes 16:00");
+    }
+    {
+      using _afterSnooze = vi
+        .spyOn(Date, "now")
+        .mockReturnValue(new Date(2026, 9, 20, 16, 5).getTime());
+      expect(makeScheduled().description).toBe("Reset 15:00");
+    }
   });
 });

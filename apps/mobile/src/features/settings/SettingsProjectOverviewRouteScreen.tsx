@@ -48,6 +48,7 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import { ProjectRepositoriesSection } from "./ProjectRepositoriesSection";
 import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 import { leaveSettingsPage } from "./settings-navigation";
@@ -424,12 +425,17 @@ function ProjectOverviewContent(props: {
         </View>
       </SettingsSection>
 
-      {props.members.map((project) => (
-        <ProjectRepositoriesEditor
-          key={`${project.environmentId}:${project.id}`}
-          project={project}
-        />
-      ))}
+      {props.members
+        .filter(
+          (project) =>
+            project.workspaceConfig !== undefined || (project.trackedFolders?.length ?? 0) === 0,
+        )
+        .map((project) => (
+          <ProjectRepositoriesEditor
+            key={`${project.environmentId}:${project.id}`}
+            project={project}
+          />
+        ))}
       {props.members.map((project) => {
         const environment = props.environments.find(
           (entry) => entry.environmentId === project.environmentId,
@@ -508,6 +514,29 @@ function ProjectOverviewContent(props: {
           );
         })}
       </SettingsSection>
+      {props.members
+        .filter(
+          (member) =>
+            member.workspaceConfig === undefined && (member.trackedFolders?.length ?? 0) > 0,
+        )
+        .map((member) => {
+          const environment = props.environments.find(
+            (entry) => entry.environmentId === member.environmentId,
+          )?.label;
+          return (
+            <ProjectRepositoriesSection
+              key={`${member.environmentId}:${member.id}`}
+              member={member}
+              title={
+                props.members.length === 1
+                  ? gt("Repositories")
+                  : gt("Repositories · {environment}", {
+                      environment: environment ?? gt("Environment"),
+                    })
+              }
+            />
+          );
+        })}
       <SettingsSection
         title={gt("Danger", { $context: "section heading for destructive actions" })}
       >

@@ -161,6 +161,7 @@ export function RepositoryDetails({
           ) : null}
           <GitActionsControl
             key={`${workspace.id}:${resource.id}`}
+            name={resource.name}
             gitCwd={resource.checkoutRoot}
             activeThreadRef={{ environmentId, threadId }}
             repositoryTarget={target}

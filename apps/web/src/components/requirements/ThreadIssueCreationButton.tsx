@@ -74,7 +74,7 @@ export function ThreadIssueCreationButton({
   );
   const openSideChat = async (sideChatId: ThreadId) => {
     if (await waitForThreadShell(scopeThreadRef(environmentId, sideChatId)))
-      useRightPanelStore.getState().openSideChat({ environmentId, threadId }, sideChatId);
+      useRightPanelStore.getState().openThread({ environmentId, threadId }, sideChatId);
   };
   const run = async (source: IssueSource) => {
     setBusy(true);

@@ -137,7 +137,7 @@ vi.mock("./AssistantCitationSheet", () => ({
     </div>
   ),
 }));
-vi.mock("../features/threads/useOpenLinkedThread", () => ({ useOpenLinkedThread: () => vi.fn() }));
+vi.mock("../features/threads/useOpenThreadLink", () => ({ useOpenThreadLink: () => vi.fn() }));
 vi.mock("../state/peerLinks", () => ({ useLinkedEnvironments: () => [] }));
 vi.mock("../state/model-mentions", () => ({ useModelMentions: () => [] }));
 vi.mock("../state/preferences", async () => {

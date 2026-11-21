@@ -4,7 +4,6 @@ import type { DraftId } from "../composerDraftStore";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/shell";
 import { useAtomValue } from "@effect/atom-react";
-import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { isMainOrMasterBranch } from "@t3tools/shared/git";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -27,7 +26,6 @@ import {
 } from "@t3tools/contracts";
 import { msg, useGT, useMessages } from "gt-react";
 import { GitBranchIcon } from "lucide-react";
-import { m } from "../i18n/messages";
 import {
   useEffect,
   useContext,
@@ -84,6 +82,7 @@ import {
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
   shouldPreserveWorktreeBaseBranch,
+  toBranchActionErrorMessage,
 } from "./BranchToolbar.logic";
 import { ThreadPullRequestBadgeControl } from "./ThreadStatusIndicators";
 
@@ -117,10 +116,6 @@ interface BranchToolbarBranchSelectorProps {
 }
 
 const WORKTREE_CHANGE_BLOCKED_MESSAGE = msg("Stop the current turn to switch worktrees.");
-
-function toBranchActionErrorMessage(error: unknown): string {
-  return thrownErrorMessage(error, m) ?? m(msg("An error occurred."));
-}
 
 export function BranchToolbarBranchSelector({
   repository: requestedRepository,

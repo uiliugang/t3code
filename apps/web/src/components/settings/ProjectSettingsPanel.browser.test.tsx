@@ -167,7 +167,10 @@ const environments = [primaryId, remoteId].map((environmentId) => ({
   serverConfig: {
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     settings: DEFAULT_SERVER_SETTINGS,
-    environment: { platform: { machine: "server" }, capabilities: { projectOrganization: true } },
+    environment: {
+      platform: { machine: "server" },
+      capabilities: { projectOrganization: true, multiRepositoryWorkspaces: true },
+    },
   },
 }));
 const session = (scopes: ReadonlyArray<AuthEnvironmentScope>): AuthSessionState => ({
@@ -555,13 +558,16 @@ describe("project identity reset", () => {
         input: { projectId: state.projects[0]!.id, title: "No project" },
       }),
     );
-    await userEvent.click(resetButton(screen, "project icon")!);
+    const iconReset = resetButton(screen, "project icon")!;
+    const iconRow = iconReset.closest('[data-slot="settings-row"]');
+    await userEvent.click(iconReset);
     await vi.waitFor(() =>
       expect(state.update).toHaveBeenLastCalledWith({
         environmentId: primaryId,
         input: { projectId: state.projects[0]!.id, faviconPath: null, projectIcon: scratchIcon },
       }),
     );
+    expect(document.activeElement).toBe(iconRow);
   });
 
   it("resets each member of a mixed group to its own default icon", async () => {
@@ -677,6 +683,13 @@ describe("project settings scope", () => {
         machine: remoteId,
         ...(checkout ? { checkout } : {}),
       });
+      await expect
+        .element(
+          page.getByText(
+            "New tasks use these repositories. Existing tasks keep their bound group.",
+          ),
+        )
+        .toBeVisible();
       await expect.element(page.getByRole("textbox", { name: "Project name" })).toBeVisible();
       state.projects = state.projects.map((project) => ({
         ...project,
@@ -696,6 +709,13 @@ describe("project settings scope", () => {
       await act(async () => {
         appAtomRegistry.set(state.projectsRevision!, 1);
       });
+      await expect
+        .element(
+          page.getByText(
+            "New tasks use these repositories. Existing tasks keep their bound group.",
+          ),
+        )
+        .toBeVisible();
       await expect.element(page.getByRole("textbox", { name: "Project name" })).toBeVisible();
       await vi.waitFor(() =>
         expect(screen.router.state.location.search).toEqual({

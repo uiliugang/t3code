@@ -14,7 +14,7 @@ import type { ProjectScriptActionResult } from "../ProjectScriptsControl";
 import type { ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { WorkspaceRecoveryControl } from "./WorkspaceRecoveryControl";
-import { useProject, useQuietThreadShell } from "../../state/entities";
+import { useProject, useQuietThreadShell, useServerConfigs } from "../../state/entities";
 import { useDiffPanelStore } from "../../diffPanelStore";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
@@ -37,12 +37,14 @@ import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
+import { ThreadRepositorySections } from "./ThreadRepositorySections";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 import { ThreadDetailsContext, ThreadDetailsUsage } from "./ThreadDetailsUsage";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
-import { useServerConfigs } from "../../state/entities";
+import { filesystemEnvironment } from "../../state/filesystem";
+import { useEnvironmentQuery } from "../../state/query";
 import { ThreadDetailsThreadPrRows } from "./ThreadDetailsPrRows";
 import { cn } from "../../lib/utils";
 import { SlidersHorizontalIcon } from "lucide-react";
@@ -148,6 +150,20 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
   const terminals = useThreadTerminalActions(workspace ? null : activeThreadRef);
   const serverConfig = useServerConfigs().get(props.environmentId);
+  const tracksFolders = (project?.trackedFolders?.length ?? 0) > 0;
+  // A worktree thread reaches tracked repositories only through its own task folder.
+  const taskFolderQuery = useEnvironmentQuery(
+    // Asked whatever the project tracks now: a thread keeps its task folder when that changes.
+    props.isServerThread && props.worktreePath !== null
+      ? filesystemEnvironment.taskFolder({
+          environmentId: props.environmentId,
+          input: { worktreePath: props.worktreePath },
+        })
+      : null,
+  );
+  const taskFolder = taskFolderQuery.data?.taskFolder ?? null;
+  // A task folder's plain project directory can sit inside someone else's repository.
+  const folderIsRepo = props.isGitRepo && taskFolder?.projectIsWorktree !== false;
   // A No project thread's folder sits inside the shared scratch root, so it must never get git.
   // Until the config and project load, a No project thread looks like any other folder.
   const offersGit =
@@ -156,7 +172,7 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
     project !== null &&
     !isScratchProject(project, serverConfig.scratchWorkspaceRoot);
   const branchToolbarProps = {
-    showGitControls: props.isGitRepo,
+    showGitControls: folderIsRepo,
     environmentId: props.environmentId,
     threadId: props.threadId,
     projectId: props.projectId,
@@ -243,13 +259,17 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
             ((density !== "essential" && props.showOpenInPicker) ||
               (showTerminalButton && props.gitCwd !== null)),
           scripts: visible.scripts && props.activeProjectScripts !== undefined,
-          branch: offersGit && props.isGitRepo && visible.branch,
+          branch: offersGit && folderIsRepo && visible.branch,
           // Without a branch selector, linked pull requests still need somewhere to show.
-          pullRequests: !(offersGit && props.isGitRepo) && visible.branch,
+          pullRequests: !(offersGit && folderIsRepo) && visible.branch,
+          // A plain folder that tracks repositories is not asked to become one itself.
           git:
             offersGit &&
             props.activeProjectName !== undefined &&
-            (visible.gitActions || (visible.changes && props.isGitRepo)),
+            (folderIsRepo || (!tracksFolders && taskFolder === null)) &&
+            (visible.gitActions || (visible.changes && folderIsRepo)),
+          // Also for a project that tracks nothing: a thread can change a submodule.
+          repositories: offersGit && density !== "essential" && visible.gitActions,
         };
         return (
           <>
@@ -374,7 +394,7 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                     }}
                   />
                 ))
-              ) : props.gitCwd && (show.branch || show.pullRequests || show.git) ? (
+              ) : show.branch || show.pullRequests || show.git || show.repositories ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
                   title={t("Version Control")}
@@ -403,10 +423,27 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                         showActions={visible.gitActions}
                         showChanges={visible.changes}
                         gitCwd={props.gitCwd}
+                        name={props.activeProjectName ?? ""}
                         workspaceMutationId={props.workspaceMutationId}
                         activeThreadRef={activeThreadRef}
                         {...(props.draftId ? { draftId: props.draftId } : {})}
                         {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
+                      />
+                    ) : null}
+                    {show.repositories ? (
+                      <ThreadRepositorySections
+                        environmentId={props.environmentId}
+                        threadId={props.threadId}
+                        projectId={props.projectId}
+                        isServerThread={props.isServerThread}
+                        threadCwd={props.gitCwd}
+                        taskFolder={taskFolder}
+                        reachesTracked={
+                          props.worktreePath === null ? tracksFolders : taskFolder !== null
+                        }
+                        onTaskFolderChange={taskFolderQuery.refresh}
+                        explainsEmpty={!folderIsRepo}
+                        showActions={visible.gitActions}
                       />
                     ) : null}
                   </div>

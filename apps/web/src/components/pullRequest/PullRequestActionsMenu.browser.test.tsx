@@ -32,6 +32,7 @@ vi.mock(import("~/state/server"), async () => {
     primaryServerEnvironmentThemesAtom: Atom.make([]),
   } as never;
 });
+vi.mock(import("~/browser/useOpenLink"), () => ({ useOpenLink: () => async () => {} }));
 vi.mock(import("./PullRequestThreadLinks"), () => ({ PullRequestThreadLinks: () => null }));
 vi.mock(
   import("./PullRequestDetailActions"),
@@ -83,6 +84,7 @@ function setup() {
       pullRequestKey="owner/repo/7"
       detail={detail}
       terminology={sourceControlClients.get("github").changeRequest}
+      threadRef={null}
       linkThreadRef={null}
       onThreadPickerOpenChange={() => {}}
       refreshing={false}

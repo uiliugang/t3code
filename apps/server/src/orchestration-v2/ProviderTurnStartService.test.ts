@@ -52,6 +52,7 @@ import * as CheckpointService from "./CheckpointService.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import {
   withCheckpointRestoreReservation,
+  withTurnStartReservation,
   withWorkspaceLease,
   withWorkspaceLeases,
 } from "../workspace/workspaceLease.ts";
@@ -62,7 +63,11 @@ import {
   ThreadWorktreeRestore,
 } from "../workspace/restoreMissingWorktree.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import { layerRealGit, makeLayerRealGit } from "./ProviderTurnStartService.testkit.ts";
+import {
+  layerNoTaskFolders,
+  layerRealGit,
+  makeLayerRealGit,
+} from "./ProviderTurnStartService.testkit.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -191,6 +196,7 @@ function startWithMissingWorktree(
                 ),
         } as never),
         layerWorktreeLocation(),
+        layerNoTaskFolders,
         Layer.mock(GitWorkflow.GitWorkflowService)({
           pruneWorktrees,
           createWorktree,
@@ -311,6 +317,7 @@ const restoreLeaseCreateWorktree = vi.fn(() => Effect.succeed({} as never));
 const layerRestoreLeaseTest = layerThreadWorktreeRestore.pipe(
   Layer.provide(
     Layer.mergeAll(
+      layerNoTaskFolders,
       Layer.succeed(FileSystem.FileSystem, {
         exists: restoreLeaseExists,
         realPath: (target: string) => Effect.succeed(normalize(target)),
@@ -382,6 +389,7 @@ effectIt.effect("restores into a leftover worktree folder that cannot itself be 
       layerThreadWorktreeRestore.pipe(
         Layer.provide(
           Layer.mergeAll(
+            layerNoTaskFolders,
             Layer.succeed(FileSystem.FileSystem, {
               exists: (target: string) => Effect.succeed(!target.endsWith("/.git")),
               readDirectory: () => Effect.succeed(["node_modules"]),
@@ -431,6 +439,7 @@ it.each([
       layerThreadWorktreeRestore.pipe(
         Layer.provide(
           Layer.mergeAll(
+            layerNoTaskFolders,
             Layer.succeed(FileSystem.FileSystem, {
               exists: () => Effect.succeed(false),
               realPath: (target: string) => Effect.succeed(target),
@@ -471,6 +480,7 @@ function makeLocalCommandHarness(input: {
   readonly exposesNativeTurnId?: boolean;
   readonly goalDriver?: "opencode" | "antigravity";
   readonly worktreePath?: string;
+  readonly workspaceFolders?: ProviderAdapter.ProviderAdapterV2RuntimePolicy["workspaceFolders"];
   readonly worktreesDir?: string;
   readonly workspaceRoot?: string;
   readonly gitWorkflow?: GitWorkflow.GitWorkflowService["Service"];
@@ -1297,6 +1307,14 @@ function makeLocalCommandHarness(input: {
       Effect.succeed({
         cwd: thread.worktreePath ?? "/tmp/native-account-command",
         runtimeMode: thread.runtimeMode,
+        ...(input.workspaceFolders === undefined
+          ? {}
+          : {
+              workspaceFolders: {
+                folders: [...input.workspaceFolders.folders],
+                extraRoots: [...input.workspaceFolders.extraRoots],
+              },
+            }),
       } as never),
   );
   const createWorktree = vi.fn<GitWorkflow.GitWorkflowService["Service"]["createWorktree"]>(() =>
@@ -1375,6 +1393,7 @@ function makeLocalCommandHarness(input: {
         IdAllocator.layer,
         Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         layerWorktreeLocation(input.worktreesDir, input.newWorktreesMainBranchOnly),
+        layerNoTaskFolders,
         input.fileSystem === undefined
           ? FileSystem.layerNoop({ exists: () => Effect.succeed(true) })
           : Layer.succeed(FileSystem.FileSystem, input.fileSystem),
@@ -1397,7 +1416,7 @@ function makeLocalCommandHarness(input: {
           getRuntimeRecoveryProjection,
           getRun,
           getTurnStartHistory: () =>
-            input.sideChat !== undefined
+            input.sideChat !== undefined || input.previousTurn !== undefined
               ? Effect.succeed([])
               : Effect.fail(
                   new ProjectionStore.ProjectionStoreReadError({
@@ -3094,6 +3113,7 @@ effectIt.effect.each([
     worktreePath: undefined,
     realPaths: {},
     missing: [],
+    extraRoots: [],
   },
   {
     overlap: "a symlink alias of the restoring checkout",
@@ -3101,6 +3121,7 @@ effectIt.effect.each([
     worktreePath: "/tmp/restore-overlap/checkout",
     realPaths: { "/tmp/restore-overlap/link": "/tmp/restore-overlap/checkout" },
     missing: [],
+    extraRoots: [],
   },
   {
     overlap: "a directory inside the restoring checkout",
@@ -3108,20 +3129,30 @@ effectIt.effect.each([
     worktreePath: "/tmp/restore-overlap/checkout/packages/app",
     realPaths: {},
     missing: [],
+    extraRoots: [],
   },
   {
     overlap: "a not-yet-recreated worktree under a symlink alias of the restoring one",
     restorePath: "/tmp/restore-overlap/link/missing-child",
     worktreePath: "/tmp/restore-overlap/checkout/missing-child",
     realPaths: { "/tmp/restore-overlap/link": "/tmp/restore-overlap/checkout" },
+    extraRoots: [],
     missing: [
       "/tmp/restore-overlap/link/missing-child",
       "/tmp/restore-overlap/checkout/missing-child",
     ],
   },
+  {
+    overlap: "a tracked repository outside the thread checkout",
+    restorePath: "/tmp/restore-overlap/task/web",
+    worktreePath: "/tmp/restore-overlap/task/shop",
+    realPaths: {},
+    missing: [],
+    extraRoots: ["/tmp/restore-overlap/task/web"],
+  },
 ] as const)(
   "does not start provider work in $overlap until the restore finishes",
-  ({ restorePath, worktreePath, realPaths, missing }) =>
+  ({ restorePath, worktreePath, realPaths, missing, extraRoots }) =>
     Effect.gen(function* () {
       const order: Array<string> = [];
       const releaseRestore = yield* Deferred.make<void>();
@@ -3144,6 +3175,7 @@ effectIt.effect.each([
         text: "Continue",
         ...(worktreePath === undefined ? {} : { worktreePath }),
         fileSystem,
+        workspaceFolders: { folders: [], extraRoots },
         failReadsAfterRunning: true,
       });
       const open = harness.open.getMockImplementation()!;
@@ -3168,6 +3200,62 @@ effectIt.effect.each([
       yield* Fiber.join(startup);
       expect(order).toEqual(["checkpoint files restored", "provider session opened"]);
     }).pipe(Effect.provide(Path.layer)),
+);
+
+effectIt.effect("reserves a running turn's granted roots after a folder is untracked", () =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const fileSystem = FileSystem.makeNoop({
+      exists: () => Effect.succeed(true),
+      realPath: (candidate) => Effect.succeed(candidate),
+    });
+    const worktreePath = "/tmp/running-turn-reservation/shop";
+    const repositoryPath = "/tmp/running-turn-reservation/web";
+    const workspaceFolders = {
+      folders: [{ name: "web", path: repositoryPath, isGitRepository: true }],
+      extraRoots: [repositoryPath],
+    };
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      worktreePath,
+      workspaceFolders,
+      fileSystem,
+      failReadsAfterRunning: true,
+    });
+    const turnEntered = yield* Deferred.make<void>();
+    const releaseTurn = yield* Deferred.make<void>();
+    const order: string[] = [];
+    harness.startRootRun.mockImplementation((input) =>
+      Effect.gen(function* () {
+        expect(input.runtimePolicy.workspaceFolders?.extraRoots).toEqual([repositoryPath]);
+        yield* Deferred.succeed(turnEntered, undefined);
+        yield* Deferred.await(releaseTurn);
+        order.push("turn completed");
+      }),
+    );
+    const running = yield* harness.start.pipe(Effect.forkChild({ startImmediately: true }));
+    yield* Deferred.await(turnEntered);
+    workspaceFolders.folders = [];
+    workspaceFolders.extraRoots = [];
+    yield* withTurnStartReservation(
+      fileSystem,
+      path,
+      repositoryPath,
+      Effect.sync(() => order.push("concurrent turn")),
+    );
+    yield* withWorkspaceLease(worktreePath, Effect.void);
+    const restore = yield* withCheckpointRestoreReservation(
+      fileSystem,
+      path,
+      repositoryPath,
+      Effect.sync(() => order.push("files restored")),
+    ).pipe(Effect.forkChild({ startImmediately: true }));
+    expect(order).toEqual(["concurrent turn"]);
+    yield* Deferred.succeed(releaseTurn, undefined);
+    yield* Fiber.join(running);
+    yield* Fiber.join(restore);
+    expect(order).toEqual(["concurrent turn", "turn completed", "files restored"]);
+  }).pipe(Effect.provide(Path.layer)),
 );
 
 effectIt.effect("reads current startup state after waiting for the workspace lease", () =>
