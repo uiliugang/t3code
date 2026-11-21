@@ -3246,22 +3246,13 @@ export default function ChatView(props: ChatViewProps) {
       .join(" · ") || null;
   // The end of the timeline holds the thread's present and next turns: what it is doing now,
   // its lifecycle status, guest messages awaiting you, then your queued messages.
-  const outputTokensPerSecond = activeActivityRun?.latestCompletedOutputTokensPerSecond;
   const timelineFooter =
     pendingHandoff === null &&
     !hasThreadNow &&
     threadStatusLine === null &&
-    outputTokensPerSecond === undefined &&
     pendingGuestMessageCount === 0 &&
     !hasQueuedTurns ? null : (
       <>
-        {outputTokensPerSecond === undefined ? null : (
-          <div className="chat-content-lane py-1 text-xs text-muted-foreground tabular-nums">
-            {t("Turn average: {rate} tokens/s", {
-              rate: Math.round(outputTokensPerSecond * 10) / 10,
-            })}
-          </div>
-        )}
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
             <HandoffRow

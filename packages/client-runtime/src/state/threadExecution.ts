@@ -202,12 +202,12 @@ export function deriveThreadActivityRun(projection: ThreadStructure): ThreadRunS
   const summary = summarizeThreadRun(projection, run);
   const latestExecuted = latestExecutedRun(projection.runs);
   if (latestExecuted?.status !== "completed" || latestExecuted.completedAt === null) return summary;
-  const latestCompletedOutputTokensPerSecond = completedTurnThroughput(
+  const tokensPerSecond = completedTurnThroughput(
     latestProviderTurnForAttempt(projection.providerTurns, latestExecuted.activeAttemptId),
   );
-  return latestCompletedOutputTokensPerSecond === undefined
+  return tokensPerSecond === undefined
     ? summary
-    : { ...summary, latestCompletedOutputTokensPerSecond };
+    : { ...summary, latestCompletedOutputSpeed: { runId: latestExecuted.id, tokensPerSecond } };
 }
 
 /**

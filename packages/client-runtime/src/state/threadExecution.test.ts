@@ -108,8 +108,8 @@ describe("thread execution presentation", () => {
     };
     const projection = { ...v2Projection, runs: [completed] };
     const speed = (providerTurns: typeof v2Projection.providerTurns) =>
-      deriveThreadActivityRun({ ...projection, providerTurns })
-        ?.latestCompletedOutputTokensPerSecond;
+      deriveThreadActivityRun({ ...projection, providerTurns })?.latestCompletedOutputSpeed
+        ?.tokensPerSecond;
     expect(speed([turn])).toBe(50);
     expect(speed([{ ...turn, completedAt: now }])).toBeUndefined();
     expect(speed([{ ...turn, status: "failed" }])).toBeUndefined();
@@ -141,11 +141,11 @@ describe("thread execution presentation", () => {
     };
     expect(deriveThreadActivityRun(outOfOrder)).toMatchObject({
       runId: RunId.make("started-first"),
-      latestCompletedOutputTokensPerSecond: 50,
+      latestCompletedOutputSpeed: { runId: completed.id, tokensPerSecond: 50 },
     });
     expect(
       deriveThreadActivityRun({ ...outOfOrder, providerTurns: [earlierTurn] })
-        ?.latestCompletedOutputTokensPerSecond,
+        ?.latestCompletedOutputSpeed,
     ).toBeUndefined();
     for (const status of ["failed", "interrupted", "rolled_back"] as const) {
       const ended = {
@@ -154,14 +154,14 @@ describe("thread execution presentation", () => {
       };
       expect(
         deriveThreadActivityRun({ ...outOfOrder, runs: [...outOfOrder.runs, ended] })
-          ?.latestCompletedOutputTokensPerSecond,
+          ?.latestCompletedOutputSpeed,
       ).toBeUndefined();
     }
     expect(
       deriveThreadActivityRun({
         ...outOfOrder,
         runs: [...outOfOrder.runs, run("active", 3, "running")],
-      })?.latestCompletedOutputTokensPerSecond,
+      })?.latestCompletedOutputSpeed,
     ).toBeUndefined();
   });
 

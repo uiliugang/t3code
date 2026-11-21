@@ -1,4 +1,5 @@
 import { UsageProviderKind, type UsageSummary, type UsageSummaryInput } from "@t3tools/contracts";
+import { parseOpenCodeModelSlug } from "@t3tools/provider-opencode/server/OpenCodeRuntime";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -67,13 +68,15 @@ export const readUsageOutputThroughput = Effect.fn("UsageService.readOutputThrou
   const samples: NonNullable<UsageSummary["outputThroughput"]>[number][] = [];
   for (const row of rows) {
     if (row.durationMs <= 0 || !isUsageProvider(row.provider)) continue;
-    const model = row.model?.trim() ?? "";
+    const usageModel = (model: string) =>
+      row.provider === "opencode" ? (parseOpenCodeModelSlug(model)?.modelID ?? model) : model;
+    const model = usageModel(row.model?.trim() ?? "");
     if (row.mixedModels !== null) {
       const models = decodeMixedModels(row.mixedModels);
       if (
         Option.isNone(models) ||
         !models.value.every((entry) =>
-          keepsUsageRecord(input.modelFilter, { provider: row.provider, model: entry }),
+          keepsUsageRecord(input.modelFilter, { provider: row.provider, model: usageModel(entry) }),
         )
       )
         continue;

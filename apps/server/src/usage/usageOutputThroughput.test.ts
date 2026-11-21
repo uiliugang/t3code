@@ -11,12 +11,14 @@ it.effect("aggregates only measured root turns in the selected window and models
     yield* sql`
       INSERT INTO orchestration_v2_projection_runs
         (run_id, thread_id, ordinal, provider, status, requested_at, payload_json)
-      VALUES ('run', 'thread', 1, 'codex', 'completed', '2026-11-01T06:59:00.000Z', '{}')
+      VALUES ('run', 'thread', 1, 'codex', 'completed', '2026-11-01T06:59:00.000Z', '{}'),
+        ('opencode-run', 'thread', 2, 'opencode', 'completed', '2026-11-01T06:59:00.000Z', '{}')
     `;
     yield* sql`
       INSERT INTO orchestration_v2_projection_run_attempts
         (attempt_id, thread_id, run_id, attempt_ordinal, root_node_id, provider, provider_thread_id, status, payload_json)
-      VALUES ('attempt', 'thread', 'run', 1, 'root', 'codex', 'provider-thread', 'completed', '{}')
+      VALUES ('attempt', 'thread', 'run', 1, 'root', 'codex', 'provider-thread', 'completed', '{}'),
+        ('opencode-attempt', 'thread', 'opencode-run', 1, 'opencode-root', 'opencode', 'opencode-thread', 'completed', '{}')
     `;
     const complete = { usageStatus: "complete", outputTokens: 100 };
     const previous = "2026-11-01T06:59:59.999Z";
@@ -72,6 +74,39 @@ it.effect("aggregates only measured root turns in the selected window and models
         { provider: "codex", model: "slow-alias", outputTokens: 100, durationMs: 2000 },
       ],
     );
+    for (const [index, models] of [
+      ["openrouter/vendor/model"],
+      ["openrouter/vendor/model", "anthropic/sonnet"],
+    ].entries()) {
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_provider_turns
+          (provider_turn_id, thread_id, provider_thread_id, node_id, run_attempt_id, ordinal,
+           status, started_at, completed_at, payload_json)
+        VALUES (${`opencode-${index}`}, 'thread', 'opencode-thread', 'opencode-root', 'opencode-attempt', ${index + 1},
+          'completed', '2026-11-01T06:59:59.000Z', ${opening},
+          ${JSON.stringify({ turnTokenUsage: { ...complete, models } })})
+      `;
+    }
+    assert.deepStrictEqual(
+      yield* readUsageOutputThroughput(
+        { ...input, modelFilter: { include: [{ provider: "opencode", model: "vendor/model" }] } },
+        new Map([["vendor/model", "renamed-model"]]),
+      ),
+      [{ provider: "opencode", model: "renamed-model", outputTokens: 100, durationMs: 1000 }],
+    );
+    assert.deepStrictEqual(
+      yield* readUsageOutputThroughput(
+        {
+          ...input,
+          modelFilter: { include: [{ model: "vendor/model" }, { model: "sonnet" }] },
+        },
+        new Map(),
+      ),
+      [
+        { provider: "opencode", outputTokens: 100, durationMs: 1000 },
+        { provider: "opencode", model: "vendor/model", outputTokens: 100, durationMs: 1000 },
+      ],
+    );
     assert.deepStrictEqual(
       yield* readUsageOutputThroughput(
         {
@@ -95,6 +130,8 @@ it.effect("aggregates only measured root turns in the selected window and models
       [
         { provider: "codex", outputTokens: 100, durationMs: 1000 },
         { provider: "codex", model: "fast", outputTokens: 100, durationMs: 500 },
+        { provider: "opencode", outputTokens: 100, durationMs: 1000 },
+        { provider: "opencode", model: "vendor/model", outputTokens: 100, durationMs: 1000 },
       ],
     );
   }).pipe(Effect.provide(Sqlite.layerMemory)),

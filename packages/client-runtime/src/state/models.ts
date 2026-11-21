@@ -86,7 +86,10 @@ export interface ThreadRunSummary {
   readonly startedAt: string | null;
   readonly completedAt: string | null;
   readonly assistantMessageId: MessageId | null;
-  readonly latestCompletedOutputTokensPerSecond?: number;
+  readonly latestCompletedOutputSpeed?: {
+    readonly runId: RunId;
+    readonly tokensPerSecond: number;
+  };
   /**
    * The run is still open, but its provider turn already ended, so nothing is
    * generating while the server settles it.
