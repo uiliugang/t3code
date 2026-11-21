@@ -418,7 +418,13 @@ function EnvironmentIntegration({
           </View>
         </SettingsSection>
       ) : section === "daxiang" ? (
-        <DaxiangSettingsSection environmentId={environmentId} disabled={disabled} />
+        <DaxiangSettingsSection
+          environmentId={environmentId}
+          disabled={disabled}
+          approvalMonitorSupported={
+            environment.serverConfig.environment.capabilities.daxiangApprovalMonitor === true
+          }
+        />
       ) : (
         <MeituanSkillSource environmentId={environmentId} disabled={disabled} />
       )}

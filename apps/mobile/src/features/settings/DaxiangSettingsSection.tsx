@@ -14,9 +14,11 @@ import { DaxiangApprovalSettingsSection } from "./DaxiangApprovalSettingsSection
 export function DaxiangSettingsSection({
   environmentId,
   disabled = false,
+  approvalMonitorSupported,
 }: {
   environmentId: EnvironmentId;
   disabled?: boolean;
+  approvalMonitorSupported: boolean;
 }) {
   const t = useUiTranslation();
   const saved = useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.daxiang;
@@ -78,7 +80,9 @@ export function DaxiangSettingsSection({
           />
         </View>
       </SettingsSection>
-      <DaxiangApprovalSettingsSection environmentId={environmentId} disabled={disabled} />
+      {approvalMonitorSupported ? (
+        <DaxiangApprovalSettingsSection environmentId={environmentId} disabled={disabled} />
+      ) : null}
     </>
   );
 }

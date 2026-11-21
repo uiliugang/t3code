@@ -28,6 +28,8 @@ const outcomeMessages = {
   approved: msg("approved"),
   notified: msg("notified"),
   opened: msg("Browser opened"),
+  localOnly: msg("Recorded locally only"),
+  deliveryUnknown: msg("Delivery unknown"),
   skipped: msg("skipped"),
   failed: msg("failed"),
 } as const;
@@ -39,6 +41,9 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
     (settings) => settings.daxiang.approvalMonitor,
   );
   const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
+  const canMutate = useAtomValue(
+    serverEnvironment.mutateDaxiangApproval.permissionAtom(environmentId),
+  );
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const mutate = useAtomCommand(serverEnvironment.mutateDaxiangApproval, { reportFailure: false });
   const query = useEnvironmentQuery(
@@ -46,10 +51,21 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
   );
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [port, setPort] = useState(String(monitor.chromeCdpPort));
-  const [prComment, setPrComment] = useState(monitor.pullRequestComment);
-  const [mcmComment, setMcmComment] = useState(monitor.mcmApproveComment);
+  const [drafts, setDrafts] = useState<{
+    port?: string;
+    prComment?: string;
+    mcmComment?: string;
+  }>({});
+  const port = drafts.port ?? String(monitor.chromeCdpPort);
+  const prComment = drafts.prComment ?? monitor.pullRequestComment;
+  const mcmComment = drafts.mcmComment ?? monitor.mcmApproveComment;
+  const editDraft = (key: "port" | "prComment" | "mcmComment", value: string) =>
+    setDrafts((current) => ({ ...current, [key]: value }));
+  const clearDraft = (key: "port" | "prComment" | "mcmComment") =>
+    setDrafts((current) => ({ ...current, [key]: undefined }));
   const state = query.data;
+  const portNumber = Number(port);
+  const validPort = /^\d+$/u.test(port) && portNumber >= 1 && portNumber <= 65535;
 
   const save = async (patch: MonitorPatch) => {
     if (!allowed || busy) return;
@@ -66,7 +82,8 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
   const run = async (
     input: { type: "refresh" | "restart" | "clear_records" } | { type: "login"; port: number },
   ) => {
-    if (busy) return;
+    if (!canMutate || busy) return;
+    if (input.type === "login" && !validPort) return;
     setBusy(true);
     setFailed(false);
     const result = await mutate({ environmentId, input });
@@ -118,15 +135,15 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
             <Button
               size="xs"
               variant="outline"
-              disabled={busy}
+              disabled={!canMutate || busy}
               onClick={() => void run({ type: "restart" })}
             >
               {t("Restart listener")}
             </Button>
             <Button
               size="xs"
-              disabled={busy || !/^\d+$/u.test(port)}
-              onClick={() => void run({ type: "login", port: Number(port) })}
+              disabled={!canMutate || busy || !validPort}
+              onClick={() => void run({ type: "login", port: portNumber })}
             >
               {t("Import DaXiang login")}
             </Button>
@@ -140,9 +157,12 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
             value={port}
             inputMode="numeric"
             disabled={!allowed || busy}
-            onChange={(event) => setPort(event.target.value.replace(/\D/gu, "").slice(0, 5))}
+            onChange={(event) =>
+              editDraft("port", event.target.value.replace(/\D/gu, "").slice(0, 5))
+            }
             onBlur={() => {
               const value = Number(port);
+              clearDraft("port");
               if (value >= 1 && value <= 65535 && value !== monitor.chromeCdpPort) {
                 void save({ chromeCdpPort: value });
               }
@@ -173,10 +193,12 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
             id={`approval-pr-comment-${environmentId}`}
             value={prComment}
             disabled={!allowed || busy}
-            onChange={(event) => setPrComment(event.target.value)}
+            onChange={(event) => editDraft("prComment", event.target.value)}
             onBlur={() => {
-              if (prComment.trim() && prComment !== monitor.pullRequestComment) {
-                void save({ pullRequestComment: prComment.trim() });
+              const value = prComment.trim() || "LGTM";
+              clearDraft("prComment");
+              if (value !== monitor.pullRequestComment) {
+                void save({ pullRequestComment: value });
               }
             }}
           />
@@ -194,10 +216,12 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
             id={`approval-mcm-comment-${environmentId}`}
             value={mcmComment}
             disabled={!allowed || busy}
-            onChange={(event) => setMcmComment(event.target.value)}
+            onChange={(event) => editDraft("mcmComment", event.target.value)}
             onBlur={() => {
-              if (mcmComment.trim() && mcmComment !== monitor.mcmApproveComment) {
-                void save({ mcmApproveComment: mcmComment.trim() });
+              const value = mcmComment.trim() || "自动审批通过";
+              clearDraft("mcmComment");
+              if (value !== monitor.mcmApproveComment) {
+                void save({ mcmApproveComment: value });
               }
             }}
           />
@@ -210,7 +234,7 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
         {toggle(
           "autoOpenUnsupportedInBrowser",
           "Open manual approvals in the browser",
-          "Open Lion, RDS and DMS links on this server for one-click manual review. No approval button is clicked automatically.",
+          "Open Lion, RDS, DMS, or other manual approval links on this server for one-click review. No approval button is clicked automatically.",
         )}
         {toggle(
           "replyOnHandled",
@@ -231,7 +255,7 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
           <Button
             size="xs"
             variant="ghost"
-            disabled={busy || !state?.records.length}
+            disabled={!canMutate || busy || !state?.records.length}
             onClick={() => void run({ type: "clear_records" })}
           >
             {t("Clear")}

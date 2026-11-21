@@ -11,18 +11,24 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-export function NavigationHistoryControls() {
+export function NavigationHistoryControls({ onBackdrop = false }: { onBackdrop?: boolean }) {
   if (typeof window === "undefined" || !window.navigation) return null;
 
   return (
-    <div className="hidden shrink-0 items-center @lg/thread-header:flex">
-      <HistoryNavigationButton direction="back" />
-      <HistoryNavigationButton direction="forward" />
+    <div className="relative z-10 hidden shrink-0 items-center md:flex">
+      <HistoryNavigationButton direction="back" onBackdrop={onBackdrop} />
+      <HistoryNavigationButton direction="forward" onBackdrop={onBackdrop} />
     </div>
   );
 }
 
-function HistoryNavigationButton({ direction }: { direction: HistoryDirection }) {
+function HistoryNavigationButton({
+  direction,
+  onBackdrop,
+}: {
+  direction: HistoryDirection;
+  onBackdrop: boolean;
+}) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const enabled = useCanNavigateHistory(direction);
   const label = direction === "back" ? "Go back" : "Go forward";
@@ -37,11 +43,11 @@ function HistoryNavigationButton({ direction }: { direction: HistoryDirection })
         render={
           <Button
             aria-label={label}
-            className="[-webkit-app-region:no-drag]"
+            className="relative top-auto translate-y-0 [-webkit-app-region:no-drag]"
             disabled={!enabled}
             onClick={() => navigateHistory(direction)}
             size="icon-sm"
-            variant="ghost"
+            variant={onBackdrop ? "media-navigation" : "ghost"}
           />
         }
       >

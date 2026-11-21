@@ -51,6 +51,8 @@ export const DaxiangApprovalOutcome = Schema.Literals([
   "approved",
   "notified",
   "opened",
+  "localOnly",
+  "deliveryUnknown",
   "skipped",
   "failed",
 ]);
@@ -83,7 +85,14 @@ export class DaxiangApprovalError extends Schema.TaggedError<
   DaxiangApprovalError,
   { readonly brand: unique symbol }
 >()("DaxiangApprovalError", {
-  reason: Schema.Literals(["disabled", "missing_cli", "login_failed", "process_failed", "storage"]),
+  reason: Schema.Literals([
+    "disabled",
+    "missing_cli",
+    "login_failed",
+    "process_failed",
+    "unknown",
+    "storage",
+  ]),
   detail: Schema.optional(Schema.String),
 }) {
   override get message() {

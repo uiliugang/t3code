@@ -24,6 +24,7 @@ import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { issueEnvironment } from "../../state/issues";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { T3Wordmark } from "../T3Wordmark";
+import { NavigationHistoryControls } from "../NavigationHistoryControls";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -94,6 +95,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </div>
         ) : null}
       </div>
+      <NavigationHistoryControls onBackdrop={backdropVariant !== null} />
     </div>
   );
 });
@@ -117,6 +119,9 @@ export function SidebarBrandWidthProbe({
     >
       <div className="ml-[var(--workspace-titlebar-content-left)] flex gap-1">
         <SidebarBrandMark onBackdrop={false} />
+        {typeof window !== "undefined" && window.navigation ? (
+          <div className="w-16 shrink-0" />
+        ) : null}
       </div>
     </div>
   );

@@ -30,6 +30,8 @@ const outcomeMessages = {
   approved: msg("approved"),
   notified: msg("notified"),
   opened: msg("Browser opened"),
+  localOnly: msg("Recorded locally only"),
+  deliveryUnknown: msg("Delivery unknown"),
   skipped: msg("skipped"),
   failed: msg("failed"),
 } as const;
@@ -46,6 +48,9 @@ export function DaxiangApprovalSettingsSection({
     .approvalMonitor;
   const allowed =
     useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId)) && !disabled;
+  const canMutate =
+    useAtomValue(serverEnvironment.mutateDaxiangApproval.permissionAtom(environmentId)) &&
+    !disabled;
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const mutate = useAtomCommand(serverEnvironment.mutateDaxiangApproval, { reportFailure: false });
   const query = useEnvironmentQuery(
@@ -58,6 +63,9 @@ export function DaxiangApprovalSettingsSection({
   const [mcmComment, setMcmComment] = useState<string | null>(null);
   if (!monitor) return null;
   const state = query.data;
+  const portValue = port ?? String(monitor.chromeCdpPort);
+  const portNumber = Number(portValue);
+  const validPort = /^\d+$/u.test(portValue) && portNumber >= 1 && portNumber <= 65535;
 
   const save = async (patch: MonitorPatch) => {
     if (!allowed || busy) return;
@@ -74,7 +82,8 @@ export function DaxiangApprovalSettingsSection({
   const run = async (
     input: { type: "restart" | "clear_records" } | { type: "login"; port: number },
   ) => {
-    if (busy) return;
+    if (!canMutate || busy) return;
+    if (input.type === "login" && !validPort) return;
     setBusy(true);
     setFailed(false);
     const result = await mutate({ environmentId, input });
@@ -135,16 +144,14 @@ export function DaxiangApprovalSettingsSection({
           <View className="flex-row flex-wrap gap-2">
             <Button
               label={t("Import DaXiang login")}
-              disabled={busy}
+              disabled={!canMutate || busy || !validPort}
               loading={busy}
-              onPress={() =>
-                void run({ type: "login", port: Number(port ?? monitor.chromeCdpPort) })
-              }
+              onPress={() => void run({ type: "login", port: portNumber })}
             />
             <Button
               label={t("Restart listener")}
               tone="secondary"
-              disabled={busy}
+              disabled={!canMutate || busy}
               onPress={() => void run({ type: "restart" })}
             />
           </View>
@@ -173,8 +180,8 @@ export function DaxiangApprovalSettingsSection({
             editable={allowed && !busy}
             onChangeText={setPrComment}
             onBlur={() => {
-              const value = (prComment ?? monitor.pullRequestComment).trim();
-              if (value && value !== monitor.pullRequestComment) {
+              const value = (prComment ?? monitor.pullRequestComment).trim() || "LGTM";
+              if (value !== monitor.pullRequestComment) {
                 void save({ pullRequestComment: value });
               }
               setPrComment(null);
@@ -195,8 +202,8 @@ export function DaxiangApprovalSettingsSection({
             editable={allowed && !busy}
             onChangeText={setMcmComment}
             onBlur={() => {
-              const value = (mcmComment ?? monitor.mcmApproveComment).trim();
-              if (value && value !== monitor.mcmApproveComment) {
+              const value = (mcmComment ?? monitor.mcmApproveComment).trim() || "自动审批通过";
+              if (value !== monitor.mcmApproveComment) {
                 void save({ mcmApproveComment: value });
               }
               setMcmComment(null);
@@ -242,7 +249,7 @@ export function DaxiangApprovalSettingsSection({
               <Button
                 label={t("Clear")}
                 tone="secondary"
-                disabled={busy}
+                disabled={!canMutate || busy}
                 onPress={() => void run({ type: "clear_records" })}
               />
             </View>

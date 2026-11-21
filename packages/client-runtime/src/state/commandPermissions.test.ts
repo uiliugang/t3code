@@ -142,6 +142,30 @@ describe("command permissions", () => {
       }),
     ),
   );
+  it.effect("requires the destination settings-write grant for approval monitor mutations", () =>
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      const command = createCommandPermissions(runtime, WS_METHODS.daxiangApprovalMutate);
+      const input = { type: "restart" as const };
+      registry.set(sessions(env), AsyncResult.success(grant(false)));
+      expect(registry.get(command.permissionAtom(env, input))).toBe(false);
+      expect(yield* command.authorize(registry, env, input).pipe(Effect.flip)).toMatchObject({
+        requiredPermission: AuthSettingsWriteScope,
+      });
+      registry.set(
+        sessions(env),
+        AsyncResult.success({
+          ...grant(false),
+          scopes: [AuthSettingsWriteScope],
+          permissions: [AuthSettingsWriteScope],
+        }),
+      );
+      expect(registry.get(command.permissionAtom(env, input))).toBe(true);
+      yield* command.authorize(registry, env, input);
+      registry.set(sessions(other), AsyncResult.success(grant(false)));
+      expect(registry.get(command.permissionAtom(other, input))).toBe(false);
+    }),
+  );
   it.effect("requires the destination read grant to refresh providers", () =>
     Effect.gen(function* () {
       const registry = yield* setup;

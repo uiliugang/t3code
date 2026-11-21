@@ -32,6 +32,18 @@ import { makeSkillInstallerNode } from "../skills/skillInstallerNode.ts";
 import * as DaxiangMessages from "./DaxiangMessageService.ts";
 import * as Executor from "./DaxiangApprovalExecutor.ts";
 import {
+  approvalMessageKey,
+  approvalWatchSettingsKey,
+  autoApprovalDedupeKey,
+  boundedAdd,
+  isProductionMcmTarget,
+  isSelfAuthoredApprovalEvent,
+  manualApprovalOutcome,
+  shouldHandleMessageOutcome,
+  shouldRememberApprovalOutcome,
+  shouldReplyToSender,
+} from "./daxiangApprovalState.ts";
+import {
   approvalTargetLabel,
   extractApprovalTargets,
   isDirectAutoApproveKind,
@@ -55,9 +67,11 @@ const DumboWatchMessage = Schema.Struct({
   event: Schema.String,
   msgId: Schema.optional(Schema.String),
   msgUuid: Schema.optional(Schema.String),
+  cts: Schema.optional(Schema.Number),
   sessionType: Schema.String,
   sessionId: Schema.String,
   fromName: Schema.optional(Schema.String),
+  fromUid: Schema.optional(Schema.String),
   text: Schema.optional(Schema.String),
   body: Schema.optional(Schema.Unknown),
   extension: Schema.optional(Schema.Unknown),
@@ -104,6 +118,7 @@ const make = Effect.gen(function* () {
   const reconcileLock = yield* Semaphore.make(1);
   const handledTargets = new Set<string>();
   const handledMessages = new Set<string>();
+  let anonymousMessageSequence = 0;
   let watchFiber: Fiber.Fiber<void, never> | undefined;
 
   const publishStatus = (status: DaxiangApprovalStatus, error: string | null = null) =>
@@ -116,8 +131,8 @@ const make = Effect.gen(function* () {
     SubscriptionRef.update(state, (current) => ({
       ...current,
       loggedIn: input.loggedIn,
-      uid: input.uid ?? null,
-      expiresAt: input.expiresAt ?? null,
+      uid: input.uid === undefined ? current.uid : input.uid,
+      expiresAt: input.expiresAt === undefined ? current.expiresAt : input.expiresAt,
     }));
 
   const resolveInvocation = Effect.fn("DaxiangApprovalService.resolveInvocation")(
@@ -195,15 +210,26 @@ const make = Effect.gen(function* () {
     detail: string,
   ) {
     const mis = readMis(saved.sourceControlHosts.meituan);
-    if (!saved.daxiang.clientId.trim() || !saved.daxiang.clientSecret || !mis) return;
-    yield* messages
+    if (!saved.daxiang.clientId.trim() || !saved.daxiang.clientSecret || !mis) {
+      return "not_configured" as const;
+    }
+    return yield* messages
       .sendLink({
         recipients: [mis],
         title: `审批提醒：${approvalTargetLabel(target)}`,
         description: detail,
         url: target.url,
       })
-      .pipe(Effect.ignoreCause({ log: true }));
+      .pipe(
+        Effect.map((result): "sent" | "failed" | "unknown" => {
+          if (result.recipients.some((recipient) => recipient.status === "sent")) return "sent";
+          if (result.recipients.some((recipient) => recipient.status === "unknown")) {
+            return "unknown";
+          }
+          return "failed";
+        }),
+        Effect.orElseSucceed(() => "failed" as const),
+      );
   });
 
   const replyToSender = Effect.fn("DaxiangApprovalService.replyToSender")(function* (
@@ -259,14 +285,15 @@ const make = Effect.gen(function* () {
       autoKind && autoDisabled
         ? "Automatic approval is disabled; review this link manually."
         : "This platform has no supported automatic approval CLI; review this link manually.";
-    if (shouldNotify) yield* notifyOwner(saved, target, detail);
-    const outcome = browserOpened
-      ? ("opened" as const)
-      : openError
-        ? ("failed" as const)
-        : shouldNotify
-          ? ("notified" as const)
-          : ("skipped" as const);
+    const daXiangDelivery = shouldNotify
+      ? yield* notifyOwner(saved, target, detail)
+      : ("not_configured" as const);
+    const outcome = manualApprovalOutcome({
+      browserOpened,
+      openError,
+      shouldNotify,
+      daXiangDelivery,
+    });
     const record: DaxiangApprovalRecord = {
       id: `${messageKey}:${target.key}`,
       kind: target.kind,
@@ -274,15 +301,20 @@ const make = Effect.gen(function* () {
       url: target.url,
       senderName: event.fromName ?? null,
       outcome,
-      detail: openError ? `${detail} Browser: ${openError}` : detail,
+      detail:
+        outcome === "deliveryUnknown"
+          ? `${detail} DaXiang delivery is unknown; not retrying automatically.`
+          : openError
+            ? `${detail} Browser: ${openError}`
+            : detail,
       browserOpened,
       createdAt: yield* Clock.currentTimeMillis,
     };
-    yield* appendRecord(record);
-    if (outcome !== "failed") handledTargets.add(target.key);
-    if (monitor.replyOnHandled) {
+    yield* Effect.uninterruptible(appendRecord(record));
+    if (monitor.replyOnHandled && shouldReplyToSender(outcome)) {
       yield* replyToSender(event, `${detail}\n${target.url}`);
     }
+    return outcome;
   });
 
   const handleTarget = Effect.fn("DaxiangApprovalService.handleTarget")(function* (
@@ -294,13 +326,14 @@ const make = Effect.gen(function* () {
     const monitor = saved.daxiang.approvalMonitor;
     const shouldExecute =
       isDirectAutoApproveKind(target.kind) &&
+      isProductionMcmTarget(target) &&
       (target.kind === "pr" ? monitor.autoApprovePullRequest : monitor.autoApproveMcm);
-    if (!shouldExecute || handledTargets.has(target.key)) {
-      if (handledTargets.has(target.key)) return;
+    if (!shouldExecute) {
       return yield* handleManualTarget(saved, target, event, messageKey);
     }
+    if (handledTargets.has(autoApprovalDedupeKey(target.key))) return "skipped" as const;
     const result = yield* executor.execute(target, monitor);
-    if (handledTargets.has(result.key)) return;
+    if (handledTargets.has(autoApprovalDedupeKey(result.key))) return "skipped" as const;
     if (result.outcome === "skipped" && result.detail?.includes("disabled")) {
       return yield* handleManualTarget(saved, target, event, messageKey);
     }
@@ -315,41 +348,48 @@ const make = Effect.gen(function* () {
       browserOpened: false,
       createdAt: yield* Clock.currentTimeMillis,
     };
-    yield* appendRecord(record);
-    if (result.outcome !== "failed") handledTargets.add(result.key);
-    if (monitor.replyOnHandled) {
+    yield* Effect.uninterruptible(appendRecord(record));
+    if (shouldRememberApprovalOutcome(result.outcome, result.detail)) {
+      boundedAdd(handledTargets, autoApprovalDedupeKey(result.key), 2000);
+      if (result.outcome === "deliveryUnknown" && target.kind !== "pr") {
+        boundedAdd(handledTargets, autoApprovalDedupeKey(target.key), 2000);
+      }
+    }
+    if (monitor.replyOnHandled && shouldReplyToSender(result.outcome)) {
       const summary = result.detail ?? `Approval ${result.outcome}`;
       yield* replyToSender(event, `${approvalTargetLabel(target)}: ${summary}`);
     }
+    return result.outcome;
   });
 
   const handleEvent = Effect.fn("DaxiangApprovalService.handleEvent")(function* (
-    saved: ServerSettings,
     event: DumboWatchMessage,
+    ownUid?: string,
   ) {
-    if (event.event !== "message") return;
+    if (event.event !== "message" || isSelfAuthoredApprovalEvent(event, ownUid)) return;
+    const saved = yield* settings.getSettings.pipe(
+      Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
+    );
+    if (!saved.meituanIntegrationEnabled || !saved.daxiang.approvalMonitor.enabled) return;
     if (event.sessionType === "groupchat" && !saved.daxiang.approvalMonitor.includeGroupChats) {
       return;
     }
     const targets = extractApprovalTargets(event);
     if (targets.length === 0) return;
-    const messageKey = event.msgUuid ?? event.msgId ?? `${event.sessionId}:${targets[0]!.key}`;
+    const messageKey = approvalMessageKey(event, targets, ++anonymousMessageSequence);
     for (const target of targets) {
       const targetMessageKey = `${messageKey}:${target.key}`;
       if (handledMessages.has(targetMessageKey)) continue;
-      yield* handleTarget(saved, target, event, messageKey);
-      handledMessages.add(targetMessageKey);
-    }
-    if (handledMessages.size > 5000) {
-      const recent = [...handledMessages].slice(-2000);
-      handledMessages.clear();
-      for (const key of recent) handledMessages.add(key);
+      const outcome = yield* handleTarget(saved, target, event, messageKey);
+      if (shouldHandleMessageOutcome(outcome)) {
+        boundedAdd(handledMessages, targetMessageKey, 5000);
+      }
     }
   });
 
   const watchOnce = Effect.fn("DaxiangApprovalService.watchOnce")(function* (
     invocation: CliInvocation,
-    saved: ServerSettings,
+    ownUid?: string,
   ) {
     const lastError = yield* Ref.make("");
     yield* Effect.scoped(
@@ -365,13 +405,15 @@ const make = Effect.gen(function* () {
           .pipe(
             Effect.mapError(() => cliError("process_failed", "Could not start dumbo-web watch.")),
           );
+        yield* publishCredentials({ loggedIn: true });
+        yield* publishStatus("listening");
         const stdout = child.stdout.pipe(
           Stream.decodeText(),
           Stream.splitLines,
           Stream.runForEach((line) =>
             line.trim()
               ? decodeWatchMessage(line).pipe(
-                  Effect.flatMap((event) => handleEvent(saved, event)),
+                  Effect.flatMap((event) => handleEvent(event, ownUid)),
                   Effect.ignoreCause({ log: true }),
                 )
               : Effect.void,
@@ -400,10 +442,10 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const startWatch = (invocation: CliInvocation, saved: ServerSettings) => {
+  const startWatch = (invocation: CliInvocation, ownUid?: string) => {
     const loop: Effect.Effect<void, never> = Effect.gen(function* () {
       yield* publishStatus("connecting");
-      const outcome = yield* watchOnce(invocation, saved).pipe(Effect.result);
+      const outcome = yield* watchOnce(invocation, ownUid).pipe(Effect.result);
       if (outcome._tag === "Failure") {
         const error = outcome.failure;
         yield* publishCredentials({ loggedIn: error.reason !== "login_failed" });
@@ -442,7 +484,7 @@ const make = Effect.gen(function* () {
           "Import DaXiang web credentials from your logged-in Chrome session.",
         );
       }
-      watchFiber = yield* startWatch(invocation, saved);
+      watchFiber = yield* startWatch(invocation, status.uid);
     },
     reconcileLock.withPermits(1),
     (effect) =>
@@ -487,8 +529,21 @@ const make = Effect.gen(function* () {
 
   const start = Effect.fn("DaxiangApprovalService.start")(
     function* () {
-      yield* reconcile();
-      yield* Stream.unwrap(settings.subscribeChanges).pipe(
+      const changes = settings.subscribeChanges.pipe(
+        Effect.map((updates) =>
+          Stream.fromEffect(
+            settings.getSettings.pipe(
+              Effect.map(approvalWatchSettingsKey),
+              Effect.orElseSucceed(() => null),
+            ),
+          ).pipe(
+            Stream.map((key) => key ?? "initial-reconcile"),
+            Stream.concat(updates.pipe(Stream.map(approvalWatchSettingsKey))),
+          ),
+        ),
+      );
+      yield* Stream.unwrap(changes).pipe(
+        Stream.changes,
         Stream.runForEach(() => reconcile().pipe(Effect.ignoreCause({ log: true }))),
         Effect.forkScoped,
       );

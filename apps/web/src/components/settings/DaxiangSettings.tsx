@@ -13,9 +13,11 @@ import { DaxiangApprovalSettings } from "./DaxiangApprovalSettings";
 export function DaxiangSettings({
   environmentId,
   label,
+  approvalMonitorSupported,
 }: {
   environmentId: EnvironmentId;
   label: string;
+  approvalMonitorSupported: boolean;
 }) {
   const t = useUiTranslation();
   const saved = useEnvironmentSettings(environmentId, (settings) => settings.daxiang);
@@ -85,7 +87,7 @@ export function DaxiangSettings({
           </Button>
         </div>
       </form>
-      <DaxiangApprovalSettings environmentId={environmentId} />
+      {approvalMonitorSupported ? <DaxiangApprovalSettings environmentId={environmentId} /> : null}
     </>
   );
 }

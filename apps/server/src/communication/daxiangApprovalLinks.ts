@@ -101,7 +101,6 @@ export function parseApprovalLink(rawUrl: string): ParsedApprovalTarget | null {
   }
   const host = url.hostname.toLowerCase();
 
-  // 1. MCode Pull Request (dev.sankuai.com or git.sankuai.com)
   if (host === "dev.sankuai.com") {
     const match = /^\/code\/repo-detail\/([^/]+\/[^/]+)\/pr\/([1-9]\d*)(?:\/|$)/u.exec(
       url.pathname,
@@ -135,7 +134,6 @@ export function parseApprovalLink(rawUrl: string): ParsedApprovalTarget | null {
     }
   }
 
-  // 2. MCM Change Plan & Change Event
   if (
     host === "mcm.mws.sankuai.com" ||
     host === "mcm.mws-test.sankuai.com" ||
@@ -163,7 +161,6 @@ export function parseApprovalLink(rawUrl: string): ParsedApprovalTarget | null {
     }
   }
 
-  // 3. Lion Native Audit
   if (
     host === "lion.mws.sankuai.com" ||
     host === "lion.mws-test.sankuai.com" ||
@@ -187,7 +184,6 @@ export function parseApprovalLink(rawUrl: string): ParsedApprovalTarget | null {
     }
   }
 
-  // 4. RDS Legacy Mission Detail
   if (
     host === "rds.mws.sankuai.com" ||
     host === "rds.mws-test.sankuai.com" ||
@@ -204,7 +200,6 @@ export function parseApprovalLink(rawUrl: string): ParsedApprovalTarget | null {
     }
   }
 
-  // 5. DMS (RDS 3.0) Mission Detail
   if (
     host === "dms.mws.sankuai.com" ||
     host === "dms.mws-test.sankuai.com" ||

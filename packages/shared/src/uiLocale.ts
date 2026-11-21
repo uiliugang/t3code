@@ -1938,8 +1938,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Notify and keep a record for Lion, RDS, DMS, or automatic approvals switched off.":
     "对 Lion、RDS、DMS 或已关闭自动审批的链接发送通知并保留记录。",
   "Open manual approvals in the browser": "在浏览器中打开人工审批页",
-  "Open Lion, RDS and DMS links on this server for one-click manual review. No approval button is clicked automatically.":
-    "在此服务器的浏览器中打开 Lion、RDS 和 DMS 链接以便人工审核，不自动点击审批按钮。",
+  "Open Lion, RDS, DMS, or other manual approval links on this server for one-click review. No approval button is clicked automatically.":
+    "在此服务器的浏览器中打开 Lion、RDS、DMS 或其他人工审批链接以便审核，不自动点击审批按钮。",
   "Open manual links on the server. No approval button is clicked automatically.":
     "在服务器上打开人工审批链接，不自动点击审批按钮。",
   "Reply to the sender": "回复发送人",
@@ -1954,6 +1954,8 @@ const zhCN: Readonly<Record<string, string>> = {
   approved: "已通过",
   notified: "已提醒",
   "Browser opened": "已在浏览器打开",
+  "Recorded locally only": "仅本地记录",
+  "Delivery unknown": "发送结果未知",
   "Approval completed": "审批已完成",
   "Approval needs attention": "审批需要处理",
   "Approval failed": "审批失败",

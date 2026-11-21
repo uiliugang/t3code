@@ -45,6 +45,7 @@ import { toastManager } from "./ui/toast";
 import { serverEnvironment } from "../state/server";
 import { readLocalApi } from "../localApi";
 import { translateUi } from "@t3tools/shared/uiLocale";
+import { boundedAdd } from "@t3tools/shared/boundedSet";
 
 interface NotificationState extends ThreadNotificationObservation {
   readonly raw: OrchestrationV2ThreadShell;
@@ -396,6 +397,7 @@ export function startThreadNotifications(
       }),
     };
     let stopApprovalAlerts = () => {};
+    let approvalAlertsInitialized = false;
     const announcedApprovalRecords = new Set<string>();
     const unsubscribeApprovalConfig = registry.subscribe(
       serverEnvironment.configValueAtom(environmentId),
@@ -407,20 +409,21 @@ export function startThreadNotifications(
           !config.settings.daxiang.approvalMonitor.enabled
         )
           return;
-        let initialized = false;
         stopApprovalAlerts = registry.subscribe(
           serverEnvironment.daxiangApproval({ environmentId, input: {} }),
           (result) => {
             const snapshot = AsyncResult.getOrElse(result, () => null);
-            if (!snapshot) return;
-            if (!initialized) {
-              initialized = true;
-              for (const record of snapshot.records) announcedApprovalRecords.add(record.id);
+            if (!snapshot || snapshot.status === "disabled") return;
+            if (!approvalAlertsInitialized) {
+              approvalAlertsInitialized = true;
+              for (const record of snapshot.records) {
+                boundedAdd(announcedApprovalRecords, `${record.id}:${record.outcome}`, 1000);
+              }
               return;
             }
             for (const record of snapshot.records) {
-              if (announcedApprovalRecords.has(record.id)) continue;
-              announcedApprovalRecords.add(record.id);
+              if (announcedApprovalRecords.has(`${record.id}:${record.outcome}`)) continue;
+              boundedAdd(announcedApprovalRecords, `${record.id}:${record.outcome}`, 1000);
               if (record.outcome === "skipped") continue;
               const settings = getClientSettings();
               const messageKey =
