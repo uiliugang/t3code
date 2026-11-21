@@ -98,7 +98,7 @@ vi.mock("../../components/ui/NativePresentation", () => ({
   PresentationSource: harness.Passthrough,
 }));
 vi.mock("../../state/mediaActions", () => ({ useMediaActions: () => ({ actions: [] }) }));
-vi.mock("../../state/assets", () => ({ useAssetUrlState: vi.fn() }));
+vi.mock("../../state/assets", () => ({ useAssetUrlState: vi.fn(), useRefreshAssetUrl: vi.fn() }));
 
 import { RegistryContext } from "@effect/atom-react";
 import { AtomRegistry } from "effect/reactivity";
@@ -159,6 +159,7 @@ it("retries a failed image once its URI comes back through null", async () => {
   try {
     await act(async () => root.render(view("https://example.test/a.png")));
     await act(async () => harness.failImage());
+    await act(async () => harness.failImage());
     expect(container.textContent).toContain("Image unavailable");
 
     await act(async () => root.render(view(null)));
@@ -170,7 +171,54 @@ it("retries a failed image once its URI comes back through null", async () => {
   }
 });
 
-it("fetches a failed SVG again on the next mount but keeps a parsed one", async () => {
+it("retries a failed download and refreshes the signed URL on manual retry", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const uri = "https://remote.example.test/api/assets/signed/screenshot.png";
+  const renewedUri = "https://remote.example.test/api/assets/renewed/screenshot.png";
+  const refreshUri = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(renewedUri);
+  const onPressPreview = vi.fn();
+  const view = (signedUri: string | null, refresh = refreshUri) => (
+    <ThreadMarkdownImageView
+      uri={signedUri}
+      sourceKey="workspace:screenshot.png"
+      unavailable={signedUri === null}
+      alt={null}
+      refreshUri={refresh}
+      onPressPreview={onPressPreview}
+    />
+  );
+  try {
+    await act(async () => root.render(view(uri)));
+    const initialImage = container.querySelector("img");
+    await act(async () => harness.failImage());
+    expect(container.querySelector("img")).not.toBeNull();
+    expect(container.querySelector("img")).not.toBe(initialImage);
+
+    await act(async () => harness.failImage());
+    expect(container.textContent).toContain("Image unavailable");
+    expect(refreshUri).not.toHaveBeenCalled();
+    await act(async () => harness.pressable.onPress?.(undefined));
+    await act(async () => root.render(view(null)));
+    expect(container.textContent).toContain("Image unavailable");
+    expect(container.textContent).toContain("Retry");
+    await act(async () => {
+      harness.pressable.onPress?.(undefined);
+      root.render(view(renewedUri));
+    });
+    expect(container.querySelector("img")).not.toBeNull();
+    await act(async () => harness.loadImage({ source: { width: 1000, height: 585 } }));
+    await act(async () => harness.pressable.onPress?.({ nativeEvent: {} }));
+    expect(onPressPreview).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "image", uri: renewedUri }),
+    );
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("retries a failed SVG in place and keeps the parsed image across mounts", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   // Microtask scheduling lets act() flush an unmounted atom's removal before the next render.
   const registry = AtomRegistry.make({
@@ -203,9 +251,8 @@ it("fetches a failed SVG again on the next mount but keeps a parsed one", async 
     await act(async () => root.render(view(true)));
     await vi.waitFor(() => expect(container.textContent).toContain("Image unavailable"));
 
-    await act(async () => root.render(view(false)));
     fetchSvg.mockResolvedValue({ ok: true, status: 200, text: async () => "<svg />" } as never);
-    await act(async () => root.render(view(true)));
+    await act(async () => harness.pressable.onPress?.(undefined));
     await vi.waitFor(() => expect(container.textContent).not.toContain("Image unavailable"));
     expect(fetchSvg).toHaveBeenCalledTimes(2);
 
