@@ -19,11 +19,17 @@ import { randomUUID } from "../../lib/utils";
 import { threadContextAttachment } from "../../lib/threadContextAttachment";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { readProjects, useProjects } from "../../state/entities";
-import { useConnectedEnvironmentIds, useEnvironments } from "../../state/environments";
+import { useEnvironments } from "../../state/environments";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { environmentSummaries } from "../../state/presentation";
+import { environmentProjects } from "../../state/projects";
 import { environmentServerConfigsAtom } from "../../state/server";
-import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
+import {
+  environmentSession,
+  readEnvironmentScope,
+  sessionHasScope,
+  useEnvironmentScope,
+} from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -50,22 +56,40 @@ const sourceAtom = Atom.make<{ readonly ref: ScopedThreadRef; readonly title: st
   null,
 ).pipe(Atom.keepAlive, Atom.withLabel("thread-handoff:source"));
 
-function isDestinationProject(
-  project: ReturnType<typeof readProjects>[number],
-  source: EnvironmentId,
-) {
-  return project.environmentId !== source && project.archivedAt == null && !project.isScratch;
+function isDestinationProject(project: ReturnType<typeof readProjects>[number]) {
+  return project.archivedAt == null && !project.isScratch;
 }
 
-export function canOpenThreadHandoff(source: EnvironmentId): boolean {
-  if (!readEnvironmentScope(source, AuthOrchestrationReadScope)) return false;
-  const connected = appAtomRegistry.get(environmentSummaries.connectedEnvironmentIdsAtom);
-  return readProjects().some(
-    (project) =>
-      isDestinationProject(project, source) &&
-      connected.includes(project.environmentId) &&
-      readEnvironmentScope(project.environmentId, AuthOrchestrationOperateScope),
+const handoffDestinationIdsAtom = Atom.make((get) => {
+  const projectEnvironmentIds = new Set(
+    get(environmentProjects.projectsAtom)
+      .filter(isDestinationProject)
+      .map(({ environmentId }) => environmentId),
   );
+  return get(environmentSummaries.connectedEnvironmentIdsAtom).filter(
+    (environmentId) =>
+      projectEnvironmentIds.has(environmentId) &&
+      sessionHasScope(
+        get(environmentSession.sessionStateAtom(environmentId)),
+        AuthOrchestrationOperateScope,
+      ),
+  );
+});
+
+export function canOpenThreadHandoff(source: EnvironmentId): boolean {
+  return (
+    readEnvironmentScope(source, AuthOrchestrationReadScope) &&
+    appAtomRegistry.get(handoffDestinationIdsAtom).some((destination) => destination !== source)
+  );
+}
+
+export function useCanOpenThreadHandoff(source: EnvironmentId | null): boolean {
+  const canRead = useEnvironmentScope(source, AuthOrchestrationReadScope);
+  const hasDestination = useAtomValue(
+    handoffDestinationIdsAtom,
+    (destinations) => source !== null && destinations.some((destination) => destination !== source),
+  );
+  return canRead && hasDestination;
 }
 
 export function openThreadHandoff(ref: ScopedThreadRef, title: string) {
@@ -89,17 +113,18 @@ function ThreadHandoffDialog({
   const t = useUiTranslation();
   const { environments } = useEnvironments();
   const projects = useProjects();
-  const connected = useConnectedEnvironmentIds();
-  const permitted = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
+  const destinationIds = useAtomValue(handoffDestinationIdsAtom);
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const destinations = environments.flatMap((environment) => {
-    if (!connected.includes(environment.environmentId) || !permitted.has(environment.environmentId))
+    if (
+      environment.environmentId === source.ref.environmentId ||
+      !destinationIds.includes(environment.environmentId)
+    )
       return [];
     const choices = projects
       .filter(
         (project) =>
-          project.environmentId === environment.environmentId &&
-          isDestinationProject(project, source.ref.environmentId),
+          project.environmentId === environment.environmentId && isDestinationProject(project),
       )
       .map((project) => {
         const ref = scopeProjectRef(project.environmentId, project.id);
@@ -175,7 +200,7 @@ function ThreadHandoffDialog({
           (project) =>
             project.id === target.ref.projectId &&
             project.environmentId === target.ref.environmentId &&
-            isDestinationProject(project, source.ref.environmentId),
+            isDestinationProject(project),
         )
       ) {
         setError(t("The destination project is no longer available."));

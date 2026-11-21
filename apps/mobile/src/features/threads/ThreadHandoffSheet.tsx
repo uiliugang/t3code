@@ -30,7 +30,7 @@ import { orchestrationEnvironment } from "../../state/orchestration";
 import { connectedEnvironmentIdsAtom } from "../../state/presentation";
 import { environmentProjects } from "../../state/projects";
 import { environmentServerConfigsAtom } from "../../state/server";
-import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
+import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   appendComposerDraftAttachments,
@@ -39,9 +39,7 @@ import {
   waitForComposerDraftsLoaded,
 } from "../../state/use-composer-drafts";
 
-function availableProject(project: { archivedAt?: unknown; isScratch?: boolean } | null) {
-  return project !== null && project.archivedAt == null && !project.isScratch;
-}
+import { handoffDestinationIdsAtom, isHandoffProject } from "./thread-handoff-destinations";
 
 export function ThreadHandoffSheet({
   route,
@@ -56,18 +54,13 @@ export function ThreadHandoffSheet({
   const { environments } = useEnvironments();
   const projects = useProjects();
   const configs = useServerConfigs();
-  const connected = useAtomValue(connectedEnvironmentIdsAtom);
-  const permitted = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
+  const destinationIds = useAtomValue(handoffDestinationIdsAtom);
   const destinations = environments.flatMap((environment) => {
     const { environmentId } = environment;
-    if (
-      environmentId === source.environmentId ||
-      !connected.includes(environmentId) ||
-      !permitted.has(environmentId)
-    )
+    if (environmentId === source.environmentId || !destinationIds.includes(environmentId))
       return [];
     const choices = projects
-      .filter((project) => project.environmentId === environmentId && availableProject(project))
+      .filter((project) => project.environmentId === environmentId && isHandoffProject(project))
       .map((project) => ({ project, key: scopedProjectKey(environmentId, project.id) }));
     return choices.length ? [{ environment, choices }] : [];
   });
@@ -138,7 +131,7 @@ export function ThreadHandoffSheet({
       if (
         !readEnvironmentScope(target.environmentId, AuthOrchestrationOperateScope) ||
         !appAtomRegistry.get(connectedEnvironmentIdsAtom).includes(target.environmentId) ||
-        !availableProject(appAtomRegistry.get(environmentProjects.projectAtom(ref)))
+        !isHandoffProject(appAtomRegistry.get(environmentProjects.projectAtom(ref)))
       ) {
         setError(t("The destination project is no longer available."));
         return;

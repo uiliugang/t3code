@@ -7,7 +7,7 @@ import { useGT, useMessages } from "gt-react";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
-import { FolderGit2Icon, GitForkIcon, ReplyIcon } from "lucide-react";
+import { ArrowLeftRightIcon, FolderGit2Icon, GitForkIcon, ReplyIcon } from "lucide-react";
 import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { responseContextRecord } from "~/lib/composerContextRecords";
 import { Button } from "../ui/button";
@@ -21,6 +21,7 @@ import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import {
   readResponseSubagents,
+  readThreadShell,
   useAssistantMessageText,
   useProject,
   useQuietThreadShell,
@@ -39,6 +40,7 @@ import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts"
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { vcsEnvironment } from "../../state/vcs";
+import { openThreadHandoff, useCanOpenThreadHandoff } from "./ThreadHandoffDialog";
 
 const NO_VCS_STATUS = Atom.make(AsyncResult.initial());
 
@@ -311,6 +313,7 @@ function AssistantMessageMeta({
       {!message.streaming && projectedItem ? (
         <AssistantReplyButton message={message} itemId={projectedItem.sourceItemId} />
       ) : null}
+      {!message.streaming && ctx.threadRef ? <AssistantHandoffButton /> : null}
       {!message.streaming && (
         <Tooltip>
           <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -328,6 +331,35 @@ function AssistantMessageMeta({
         </Tooltip>
       )}
     </div>
+  );
+}
+
+function AssistantHandoffButton() {
+  const t = useUiTranslation();
+  const { threadRef } = use(TimelineRowCtx);
+  const canHandoff = useCanOpenThreadHandoff(threadRef?.environmentId ?? null);
+  if (!threadRef || !canHandoff) return null;
+  const label = t("Continue on another machine");
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost-muted"
+            aria-label={label}
+            onClick={() => {
+              const thread = readThreadShell(threadRef);
+              if (thread) openThreadHandoff(threadRef, thread.title);
+            }}
+          />
+        }
+      >
+        <ArrowLeftRightIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
   );
 }
 

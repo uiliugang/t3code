@@ -13,6 +13,14 @@ test(
       title: "Release checklist",
       messages: ["Review the release checklist"],
     });
+    const sourceEnvironment = await runPromise(environmentId(app.baseUrl ?? ""));
+    const sourceUrl = `/${sourceEnvironment}/${source.threadId}`;
+    const action = screen
+      .getByRole("button", /Continue on another machine|在另一台机器继续/)
+      .last();
+    await t3.open(sourceUrl);
+    await expect(screen.getByRole("button", /Copy message|复制消息/).last()).toBeVisible();
+    await expect(action).toHaveCount(0);
     const second = startSecondServer(app.baseUrl ?? "");
     try {
       const { host, token } = await second.ready;
@@ -25,17 +33,10 @@ test(
       await pairing.getByRole("button", /Add environment|添加环境/).tap();
       await expect(pairing).toBeHidden();
 
-      const sourceEnvironment = await runPromise(environmentId(app.baseUrl ?? ""));
-      await app.open(`/${sourceEnvironment}/${source.threadId}`);
-      await screen
-        .getByRole(
-          "button",
-          /Thread actions for Release checklist|Release checklist.*操作|操作.*Release checklist/,
-        )
-        .tap();
-      const action = screen.getByRole("menuitem", /Continue on another machine|在另一台机器继续/);
+      await app.open(sourceUrl);
       await expect(action).toBeVisible();
-      await app.screenshot("handoff-menu");
+      await action.hover();
+      await app.screenshot("handoff-reply-actions");
       await action.tap();
       const handoff = screen.getByRole("dialog", /Continue on another machine|在另一台机器继续/);
       await expect(handoff.getByText(/ · target-project/)).toBeVisible();
