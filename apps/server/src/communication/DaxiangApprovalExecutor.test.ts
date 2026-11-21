@@ -2,6 +2,8 @@ import { assert, it } from "@effect/vitest";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -34,29 +36,36 @@ type Reply =
 
 function testLayer(
   calls: string[],
-  reply: (command: string, args: ReadonlyArray<string>) => Reply,
+  reply: (
+    command: string,
+    args: ReadonlyArray<string>,
+  ) => Reply | Effect.Effect<Reply, ProcessRunner.ProcessRunError>,
   baseDir?: string,
 ) {
   const run: ProcessRunner.ProcessRunner["Service"]["run"] = (input) =>
-    Effect.sync(() => {
+    Effect.suspend(() => {
       const resolvedCodeCli =
         input.command.includes("/node") && input.args[0]?.includes("code-cli");
       const command = resolvedCodeCli ? "code-cli" : input.command;
       const args = resolvedCodeCli ? input.args.slice(1) : input.args;
       calls.push([command, ...args].join(" "));
       const result = reply(command, args);
-      const normalized = typeof result === "string" ? { stdout: result } : result;
-      return {
-        stdout: normalized.stdout ?? "",
-        stderr: normalized.stderr ?? "",
-        code: ChildProcessSpawner.ExitCode(normalized.code ?? 0),
-        timedOut: normalized.timedOut ?? false,
-        stdoutTruncated: false,
-        stderrTruncated: false,
-        stdoutInvalidUtf8: false,
-        stderrInvalidUtf8: false,
-      };
-    });
+      return Effect.isEffect(result) ? result : Effect.succeed(result);
+    }).pipe(
+      Effect.map((result) => {
+        const normalized = typeof result === "string" ? { stdout: result } : result;
+        return {
+          stdout: normalized.stdout ?? "",
+          stderr: normalized.stderr ?? "",
+          code: ChildProcessSpawner.ExitCode(normalized.code ?? 0),
+          timedOut: normalized.timedOut ?? false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+          stdoutInvalidUtf8: false,
+          stderrInvalidUtf8: false,
+        };
+      }),
+    );
   return Executor.layer.pipe(
     Layer.provide(Layer.succeed(ProcessRunner.ProcessRunner, { run })),
     Layer.provide(
@@ -110,7 +119,7 @@ it.effect("adds the reviewer, posts LGTM once, then approves the PR at its curre
 );
 
 it.effect(
-  "retries a failed approval without duplicate LGTM, but comments again on a new commit",
+  "retries an approval that never spawned without duplicate LGTM, but comments again on a new commit",
   () =>
     Effect.gen(function* () {
       const calls: string[] = [];
@@ -125,12 +134,20 @@ it.effect(
             state: "OPEN",
             author: { mis: "author01" },
             fromRef: { commitId },
-            reviewers: approveAttempts > 0 ? [{ mis: "liugang59", approved: true }] : [],
+            reviewers: approveAttempts > 1 ? [{ mis: "liugang59", approved: true }] : [],
           });
         }
         if (command === "code-cli" && args[3] === "review") {
           approveAttempts += 1;
-          return approveAttempts === 1 ? { stderr: "approval failed", code: 1 } : "{}";
+          return approveAttempts === 1
+            ? Effect.fail(
+                new ProcessRunner.ProcessSpawnError({
+                  command,
+                  argumentCount: args.length,
+                  cause: new Error("spawn failed before the CLI started"),
+                }),
+              )
+            : "{}";
         }
         return "{}";
       });
@@ -187,11 +204,12 @@ it.effect("approves an MCM plan only at the current level assigned to the viewer
       }
       return "{}";
     });
-    const result = yield* Executor.DaxiangApprovalExecutor.pipe(
-      Effect.flatMap((service) => service.execute(target(planUrl), behavior)),
-      Effect.provide(layer),
-    );
+    const service = yield* Executor.DaxiangApprovalExecutor.pipe(Effect.provide(layer));
+    const result = yield* service.execute(target(planUrl), behavior);
     assert.strictEqual(result.outcome, "approved", result.detail ?? undefined);
+    const repeated = yield* service.execute(target(planUrl), behavior);
+    assert.strictEqual(repeated.outcome, "skipped", repeated.detail ?? undefined);
+    assert.strictEqual(calls.filter((command) => command.includes("plan approve 456")).length, 1);
     assert.isTrue(
       calls.some((command) =>
         command.includes("plan approve 456 --approve-level 2 --comment 自动审批通过 -y -f json"),
@@ -261,6 +279,7 @@ it.effect("accepts only MCM events that are still AUDITING", () =>
   Effect.gen(function* () {
     const calls: string[] = [];
     const layer = testLayer(calls, (command, args) => {
+      if (command === "mcm" && args[0] === "user") return JSON.stringify({ mis: "liugang59" });
       if (command === "mcm" && args[0] === "event" && args[1] === "list") {
         return JSON.stringify({ items: [{ id: 789 }] });
       }
@@ -269,11 +288,11 @@ it.effect("accepts only MCM events that are still AUDITING", () =>
       }
       return "{}";
     });
-    const result = yield* Executor.DaxiangApprovalExecutor.pipe(
-      Effect.flatMap((service) => service.execute(target(eventUrl), behavior)),
-      Effect.provide(layer),
-    );
+    const service = yield* Executor.DaxiangApprovalExecutor.pipe(Effect.provide(layer));
+    const result = yield* service.execute(target(eventUrl), behavior);
     assert.strictEqual(result.outcome, "approved", result.detail ?? undefined);
+    assert.strictEqual((yield* service.execute(target(eventUrl), behavior)).outcome, "skipped");
+    assert.strictEqual(calls.filter((command) => command.includes("event accept 789")).length, 1);
     assert.isTrue(calls.some((command) => command.includes("event accept 789")));
   }),
 );
@@ -282,6 +301,7 @@ it.effect("skips an MCM event that is not assigned to the current user", () =>
   Effect.gen(function* () {
     const calls: string[] = [];
     const layer = testLayer(calls, (command, args) => {
+      if (command === "mcm" && args[0] === "user") return JSON.stringify({ mis: "liugang59" });
       if (command === "mcm" && args[0] === "event" && args[1] === "list") {
         return JSON.stringify({ items: [{ id: 123 }] });
       }
@@ -536,6 +556,7 @@ it.effect("finds an MCM event assigned beyond the first TODO page", () =>
   Effect.gen(function* () {
     const calls: string[] = [];
     const layer = testLayer(calls, (command, args) => {
+      if (command === "mcm" && args[0] === "user") return JSON.stringify({ mis: "liugang59" });
       if (command === "mcm" && args[0] === "event" && args[1] === "list") {
         const page = args[5];
         return JSON.stringify({
@@ -681,33 +702,60 @@ it.effect("preserves PR comment and approval dedupe across executor restarts", (
   ).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))),
 );
 
-it.effect("allows the next MCM approval level after the previous level succeeds", () =>
-  Effect.gen(function* () {
-    const calls: string[] = [];
-    let approveLevel = 2;
-    const layer = testLayer(calls, (command, args) => {
-      if (command === "mcm" && args[0] === "user") return JSON.stringify({ mis: "liugang59" });
-      if (command === "mcm" && args[0] === "plan" && args[1] === "detail") {
-        return JSON.stringify({
-          status: 1,
-          approveLevel,
-          planApproves: [{ level: approveLevel, status: 0, user: { mis: "liugang59" } }],
-        });
-      }
-      if (command === "mcm" && args[0] === "plan" && args[1] === "approve") {
+it.effect(
+  "deduplicates MCM approvals across restarts without blocking the next level or viewer",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-mcm-approved-" });
+        const calls: string[] = [];
+        let approveLevel = 2;
+        let viewer = "liugang59";
+        const reply = (command: string, args: ReadonlyArray<string>): Reply => {
+          if (command === "mcm" && args[0] === "user") return JSON.stringify({ mis: viewer });
+          if (command === "mcm" && args[0] === "plan" && args[1] === "detail") {
+            return JSON.stringify({
+              status: 1,
+              approveLevel,
+              planApproves: [{ level: approveLevel, status: 0, user: { mis: viewer } }],
+            });
+          }
+          if (command === "mcm" && args[0] === "plan" && args[1] === "approve") {
+            approveLevel = 3;
+          }
+          return "{}";
+        };
+        const service = yield* Executor.DaxiangApprovalExecutor.pipe(
+          Effect.provide(testLayer(calls, reply, baseDir)),
+        );
+        const first = yield* service.execute(target(planUrl), behavior);
+        assert.strictEqual(first.outcome, "approved", first.detail ?? undefined);
+        assert.strictEqual(first.key, "mcm-plan:mcm.mws.sankuai.com:456@level2");
+        approveLevel = 2;
+        const restarted = yield* Executor.DaxiangApprovalExecutor.pipe(
+          Effect.provide(testLayer(calls, reply, baseDir)),
+        );
+        assert.strictEqual(
+          (yield* restarted.execute(target(planUrl), behavior)).outcome,
+          "skipped",
+        );
+        assert.strictEqual(
+          calls.filter((command) => command.includes("plan approve 456")).length,
+          1,
+        );
         approveLevel = 3;
-      }
-      return "{}";
-    });
-    const service = yield* Executor.DaxiangApprovalExecutor.pipe(Effect.provide(layer));
-    const first = yield* service.execute(target(planUrl), behavior);
-    assert.strictEqual(first.outcome, "approved", first.detail ?? undefined);
-    assert.strictEqual(first.key, "mcm-plan:mcm.mws.sankuai.com:456@level2");
-    const second = yield* service.execute(target(planUrl), behavior);
-    assert.strictEqual(second.outcome, "approved", second.detail ?? undefined);
-    assert.strictEqual(second.key, "mcm-plan:mcm.mws.sankuai.com:456@level3");
-    assert.isTrue(calls.some((command) => command.includes("plan approve 456 --approve-level 3")));
-  }),
+        const second = yield* restarted.execute(target(planUrl), behavior);
+        assert.strictEqual(second.outcome, "approved", second.detail ?? undefined);
+        assert.strictEqual(second.key, "mcm-plan:mcm.mws.sankuai.com:456@level3");
+        assert.isTrue(
+          calls.some((command) => command.includes("plan approve 456 --approve-level 3")),
+        );
+        viewer = "another-reviewer";
+        const otherViewer = yield* restarted.execute(target(planUrl), behavior);
+        assert.strictEqual(otherViewer.outcome, "approved", otherViewer.detail ?? undefined);
+      }),
+    ).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))),
 );
 
 it.effect("revalidates a cached PR approval when the viewer withdraws the review", () =>
@@ -776,6 +824,170 @@ it.effect("preserves unknown MCM outcomes across executor restarts", () =>
       assert.strictEqual(second.outcome, "deliveryUnknown", second.detail ?? undefined);
       assert.strictEqual(calls.filter((command) => command.includes("plan detail 456")).length, 1);
       assert.strictEqual(calls.filter((command) => command.includes("plan approve 456")).length, 1);
+    }),
+  ).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))),
+);
+
+it.effect("stops automatic approval when saved dedupe state is corrupt or cannot be written", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const calls: string[] = [];
+      const reply = (command: string, args: ReadonlyArray<string>): Reply => {
+        if (command === "code-cli" && args[0] === "auth") {
+          return "Logged in to http://git.sankuai.com as liugang59";
+        }
+        if (command === "code-cli" && args[3] === "view") {
+          return JSON.stringify({
+            state: "OPEN",
+            author: { mis: "author01" },
+            fromRef: { commitId: "abc123" },
+            reviewers: [],
+          });
+        }
+        return "{}";
+      };
+      const corruptBase = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-corrupt-" });
+      yield* fs.makeDirectory(`${corruptBase}/userdata`, { recursive: true });
+      yield* fs.writeFileString(`${corruptBase}/userdata/daxiang-approval-pr-commits.json`, "{");
+      const corrupt = yield* Executor.DaxiangApprovalExecutor.pipe(
+        Effect.flatMap((service) => service.execute(target(prUrl), behavior)),
+        Effect.provide(testLayer(calls, reply, corruptBase)),
+      );
+      assert.strictEqual(corrupt.outcome, "failed", corrupt.detail ?? undefined);
+      const unwritableBase = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-unwritable-" });
+      const service = yield* Executor.DaxiangApprovalExecutor.pipe(
+        Effect.provide(testLayer(calls, reply, unwritableBase)),
+      );
+      yield* fs.makeDirectory(`${unwritableBase}/userdata/daxiang-approval-pr-commits.json`);
+      const unwritable = yield* service.execute(target(prUrl), behavior);
+      assert.strictEqual(unwritable.outcome, "failed", unwritable.detail ?? undefined);
+      const attemptedCalls = calls.length;
+      yield* fs.remove(`${unwritableBase}/userdata/daxiang-approval-pr-commits.json`, {
+        recursive: true,
+      });
+      assert.strictEqual((yield* service.execute(target(prUrl), behavior)).outcome, "failed");
+      assert.strictEqual(calls.length, attemptedCalls);
+      assert.isFalse(calls.some((command) => /add-reviewer| comment | review /u.test(command)));
+    }),
+  ).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))),
+);
+
+it.effect("does not evict unresolved writes when the safety journal reaches capacity", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-journal-full-" });
+      const statePath = `${baseDir}/userdata/daxiang-approval-pr-commits.json`;
+      const contents = JSON.stringify({
+        approved: [],
+        commented: [],
+        unknown: Array.from({ length: 2000 }, (_, index) => `viewer:pr:other/repo#${index}@abc`),
+        mcmUnknown: [],
+      });
+      yield* fs.makeDirectory(`${baseDir}/userdata`);
+      yield* fs.writeFileString(statePath, contents);
+      const calls: string[] = [];
+      const service = yield* Executor.DaxiangApprovalExecutor.pipe(
+        Effect.provide(
+          testLayer(
+            calls,
+            (command, args) => {
+              if (command === "code-cli" && args[0] === "auth") {
+                return "Logged in to http://git.sankuai.com as liugang59";
+              }
+              return JSON.stringify({
+                state: "OPEN",
+                author: { mis: "author01" },
+                fromRef: { commitId: "abc123" },
+                reviewers: [],
+              });
+            },
+            baseDir,
+          ),
+        ),
+      );
+      const result = yield* service.execute(target(prUrl), behavior);
+      assert.strictEqual(result.outcome, "failed", result.detail ?? undefined);
+      assert.strictEqual(yield* fs.readFileString(statePath), contents);
+      assert.isFalse(calls.some((command) => /add-reviewer| comment | review /u.test(command)));
+    }),
+  ).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))),
+);
+
+it.effect("does not retry a comment after a CLI disconnect reported as a nonzero exit", () =>
+  Effect.gen(function* () {
+    const calls: string[] = [];
+    const layer = testLayer(calls, (command, args) => {
+      if (command === "code-cli" && args[0] === "auth") {
+        return "Logged in to http://git.sankuai.com as liugang59";
+      }
+      if (command === "code-cli" && args[3] === "view") {
+        return JSON.stringify({
+          state: "OPEN",
+          author: { mis: "author01" },
+          fromRef: { commitId: "abc123" },
+          reviewers: [],
+        });
+      }
+      if (command === "code-cli" && args[3] === "comment") {
+        return { code: 1, stderr: "ECONNRESET: connection closed after request" };
+      }
+      return "{}";
+    });
+    const service = yield* Executor.DaxiangApprovalExecutor.pipe(Effect.provide(layer));
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = yield* service.execute(target(prUrl), behavior);
+      assert.strictEqual(result.outcome, "deliveryUnknown", result.detail ?? undefined);
+    }
+    assert.strictEqual(calls.filter((command) => command.includes(" comment 123 ")).length, 1);
+    assert.isFalse(calls.some((command) => command.includes("review 123 --approve")));
+  }),
+);
+
+it.effect("records an in-flight comment before cancellation so restart cannot post it again", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-interrupted-" });
+      const started = yield* Deferred.make<void>();
+      const calls: string[] = [];
+      const reply = (
+        command: string,
+        args: ReadonlyArray<string>,
+      ): Reply | Effect.Effect<Reply> => {
+        if (command === "code-cli" && args[0] === "auth") {
+          return "Logged in to http://git.sankuai.com as liugang59";
+        }
+        if (command === "code-cli" && args[3] === "view") {
+          return JSON.stringify({
+            state: "OPEN",
+            author: { mis: "author01" },
+            fromRef: { commitId: "abc123" },
+            reviewers: [],
+          });
+        }
+        if (
+          command === "code-cli" &&
+          args[3] === "comment" &&
+          calls.filter((call) => call.includes(" comment 123 ")).length === 1
+        ) {
+          return Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never));
+        }
+        return "{}";
+      };
+      const service = yield* Executor.DaxiangApprovalExecutor.pipe(
+        Effect.provide(testLayer(calls, reply, baseDir)),
+      );
+      const running = yield* Effect.forkChild(service.execute(target(prUrl), behavior));
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(running);
+      const restarted = yield* Executor.DaxiangApprovalExecutor.pipe(
+        Effect.flatMap((executor) => executor.execute(target(prUrl), behavior)),
+        Effect.provide(testLayer(calls, reply, baseDir)),
+      );
+      assert.strictEqual(restarted.outcome, "deliveryUnknown", restarted.detail ?? undefined);
+      assert.strictEqual(calls.filter((command) => command.includes(" comment 123 ")).length, 1);
     }),
   ).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))),
 );

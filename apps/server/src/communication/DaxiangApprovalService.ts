@@ -367,19 +367,19 @@ const make = Effect.gen(function* () {
     ownUid?: string,
   ) {
     if (event.event !== "message" || isSelfAuthoredApprovalEvent(event, ownUid)) return;
-    const saved = yield* settings.getSettings.pipe(
-      Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
-    );
-    if (!saved.meituanIntegrationEnabled || !saved.daxiang.approvalMonitor.enabled) return;
-    if (event.sessionType === "groupchat" && !saved.daxiang.approvalMonitor.includeGroupChats) {
-      return;
-    }
     const targets = extractApprovalTargets(event);
     if (targets.length === 0) return;
     const messageKey = approvalMessageKey(event, targets, ++anonymousMessageSequence);
     for (const target of targets) {
       const targetMessageKey = `${messageKey}:${target.key}`;
       if (handledMessages.has(targetMessageKey)) continue;
+      const saved = yield* settings.getSettings.pipe(
+        Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
+      );
+      if (!saved.meituanIntegrationEnabled || !saved.daxiang.approvalMonitor.enabled) return;
+      if (event.sessionType === "groupchat" && !saved.daxiang.approvalMonitor.includeGroupChats) {
+        return;
+      }
       const outcome = yield* handleTarget(saved, target, event, messageKey);
       if (shouldHandleMessageOutcome(outcome)) {
         boundedAdd(handledMessages, targetMessageKey, 5000);

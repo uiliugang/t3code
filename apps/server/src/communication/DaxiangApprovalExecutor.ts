@@ -5,11 +5,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { resolveMCodeCommand } from "../sourceControl/MCodeRuntime.ts";
 import { approvalTargetLabel, type ParsedApprovalTarget } from "./daxiangApprovalLinks.ts";
 import { boundedAdd, isProductionMcmTarget } from "./daxiangApprovalState.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 
 export interface ApprovalExecutionResult {
   readonly key: string;
@@ -67,6 +69,7 @@ const PrCommitState = Schema.Struct({
   commented: Schema.Array(Schema.String),
   unknown: Schema.optional(Schema.Array(Schema.String)),
   mcmUnknown: Schema.optional(Schema.Array(Schema.String)),
+  mcmApproved: Schema.optional(Schema.Array(Schema.String)),
 });
 const encodePrCommitState = Schema.encodeEffect(Schema.fromJsonString(PrCommitState));
 
@@ -96,47 +99,57 @@ const make = Effect.gen(function* () {
   const approvedPrCommits = new Set<string>();
   const unknownPrCommits = new Set<string>();
   const unknownMcmTargets = new Set<string>();
+  const approvedMcmTargets = new Set<string>();
   const prResultKeys = new WeakMap<object, string>();
-  const prCacheKeys = new WeakMap<object, string>();
-  const prWriteAttempted = new WeakMap<object, true>();
+  const executionLock = yield* Semaphore.make(1);
   const prCommitStatePath = path.join(config.stateDir, "daxiang-approval-pr-commits.json");
-  const persisted = yield* fs.readFileString(prCommitStatePath).pipe(
-    Effect.flatMap(Schema.decodeEffect(Schema.fromJsonString(PrCommitState))),
-    Effect.catch(() =>
-      Effect.logWarning("Could not read PR approval dedupe state").pipe(
-        Effect.as({ approved: [], commented: [], unknown: [], mcmUnknown: [] }),
-      ),
-    ),
+  const emptyState = { approved: [], commented: [], unknown: [], mcmUnknown: [], mcmApproved: [] };
+  const loaded = yield* fs.readFileString(prCommitStatePath).pipe(
+    Effect.matchEffect({
+      onFailure: (cause) =>
+        cause.reason._tag === "NotFound" ? Effect.succeed(emptyState) : Effect.fail(cause),
+      onSuccess: Schema.decodeEffect(Schema.fromJsonString(PrCommitState)),
+    }),
+    Effect.result,
   );
+  let storageReady = loaded._tag === "Success";
+  const persisted = loaded._tag === "Success" ? loaded.success : emptyState;
   for (const key of persisted.approved) approvedPrCommits.add(key);
   for (const key of persisted.commented) commentedPrCommits.add(key);
   for (const key of persisted.unknown ?? []) unknownPrCommits.add(key);
   for (const key of persisted.mcmUnknown ?? []) unknownMcmTargets.add(key);
+  for (const key of persisted.mcmApproved ?? []) approvedMcmTargets.add(key);
   const persistPrCommits = Effect.fn("DaxiangApprovalExecutor.persistPrCommits")(
     function* () {
-      yield* fs.makeDirectory(config.stateDir, { recursive: true });
       const contents = yield* encodePrCommitState({
         approved: [...approvedPrCommits],
         commented: [...commentedPrCommits],
         unknown: [...unknownPrCommits],
         mcmUnknown: [...unknownMcmTargets],
+        mcmApproved: [...approvedMcmTargets],
       });
-      const temporaryPath = `${prCommitStatePath}.${process.pid}.tmp`;
-      yield* fs.writeFileString(temporaryPath, contents, { mode: 0o600 });
-      yield* fs.rename(temporaryPath, prCommitStatePath);
+      yield* writeFileStringAtomically({ filePath: prCommitStatePath, contents }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+      );
     },
     (effect) =>
       effect.pipe(
-        Effect.catch(() =>
-          Effect.logWarning("Failed to persist PR approval dedupe state").pipe(Effect.asVoid),
-        ),
+        Effect.mapError(() => {
+          storageReady = false;
+          return new DaxiangApprovalError({
+            reason: "storage",
+            detail:
+              "Could not save approval dedupe state. Automatic approvals are paused until the state is repaired and the server restarts.",
+          });
+        }),
       ),
   );
 
   const run = Effect.fn("DaxiangApprovalExecutor.run")(function* (
     command: string,
     args: ReadonlyArray<string>,
-    mutation = false,
+    mutation?: { readonly kind: "pr" | "mcm"; readonly key: string },
   ) {
     const invocation = yield* resolveMCodeCommand({
       operation: "DaxiangApprovalExecutor.run",
@@ -155,7 +168,19 @@ const make = Effect.gen(function* () {
           }),
       ),
     );
-    const result = yield* runner
+    const pending = mutation?.kind === "pr" ? unknownPrCommits : unknownMcmTargets;
+    if (mutation) {
+      if (pending.size >= 2000 && !pending.has(mutation.key)) {
+        return yield* new DaxiangApprovalError({
+          reason: "storage",
+          detail:
+            "Too many unresolved approval operations. Resolve them before starting another automatic approval.",
+        });
+      }
+      pending.add(mutation.key);
+      yield* persistPrCommits();
+    }
+    const execution = yield* runner
       .run({
         ...invocation,
         timeout: "45 seconds",
@@ -163,15 +188,19 @@ const make = Effect.gen(function* () {
         maxOutputBytes: 2_000_000,
         outputMode: "truncate",
       })
-      .pipe(
-        Effect.mapError(
-          () =>
-            new DaxiangApprovalError({
-              reason: "process_failed",
-              detail: `Could not run ${command}. Check its installation and authentication.`,
-            }),
-        ),
-      );
+      .pipe(Effect.result);
+    if (execution._tag === "Failure") {
+      const spawnFailed = execution.failure._tag === "ProcessSpawnError";
+      if (mutation && spawnFailed) {
+        pending.delete(mutation.key);
+        yield* persistPrCommits();
+      }
+      return yield* new DaxiangApprovalError({
+        reason: mutation && !spawnFailed ? "unknown" : "process_failed",
+        detail: `Could not complete ${command}. Check its installation and authentication.`,
+      });
+    }
+    const result = execution.success;
     if (result.timedOut) {
       return yield* new DaxiangApprovalError({
         reason: mutation ? "unknown" : "process_failed",
@@ -181,7 +210,7 @@ const make = Effect.gen(function* () {
     if (result.code !== 0) {
       const detail = result.stderr.trim() || result.stdout.trim();
       return yield* new DaxiangApprovalError({
-        reason: "process_failed",
+        reason: mutation ? "unknown" : "process_failed",
         detail: detail.slice(0, 500) || `${command} exited without completing the operation.`,
       });
     }
@@ -225,7 +254,6 @@ const make = Effect.gen(function* () {
       const key = `${target.key}@${headCommit || "unknown"}`;
       const cacheKey = `${viewer.toLowerCase()}:${key}`;
       prResultKeys.set(target, key);
-      prCacheKeys.set(target, cacheKey);
       if (!headCommit) {
         return {
           key,
@@ -258,6 +286,7 @@ const make = Effect.gen(function* () {
             "A previous approval attempt has an unknown outcome; it is not retried automatically.",
         };
       }
+      const mutation = { kind: "pr" as const, key: cacheKey };
       const currentReviewer = pr.reviewers.find(
         (reviewer) => reviewer.mis.toLowerCase() === viewer.toLowerCase(),
       );
@@ -277,20 +306,21 @@ const make = Effect.gen(function* () {
             "--reviewer",
             viewer,
           ],
-          true,
+          mutation,
         );
+        unknownPrCommits.delete(cacheKey);
+        yield* persistPrCommits();
       }
       const alreadyCommented = commentedPrCommits.has(cacheKey);
       const comment = behavior.pullRequestComment.trim() || "LGTM";
       if (!alreadyCommented) {
-        prWriteAttempted.set(target, true);
         yield* run(
           "code-cli",
           ["pr", "-R", target.repository, "comment", String(target.number), "--body", comment],
-          true,
+          mutation,
         );
-        prWriteAttempted.delete(target);
         boundedAdd(commentedPrCommits, cacheKey, 2000);
+        unknownPrCommits.delete(cacheKey);
         yield* persistPrCommits();
       }
       const latest = yield* readPullRequest(target);
@@ -301,11 +331,10 @@ const make = Effect.gen(function* () {
           detail: "The pull request head changed during approval; the new commit was not approved.",
         };
       }
-      prWriteAttempted.set(target, true);
       yield* run(
         "code-cli",
         ["pr", "-R", target.repository, "review", String(target.number), "--approve"],
-        true,
+        mutation,
       );
       const approved = yield* readPullRequest(target).pipe(
         Effect.mapError(
@@ -333,6 +362,7 @@ const make = Effect.gen(function* () {
         });
       }
       boundedAdd(approvedPrCommits, cacheKey, 2000);
+      unknownPrCommits.delete(cacheKey);
       yield* persistPrCommits();
       return {
         key,
@@ -359,7 +389,11 @@ const make = Effect.gen(function* () {
     const detailOutput = yield* run("mcm", ["plan", "detail", target.planId, "-f", "json"]);
     const plan = yield* decodeJson(McmPlan, detailOutput);
     const key = `${target.key}@level${plan.approveLevel}`;
+    const cacheKey = `${viewer.toLowerCase()}:${key}`;
     prResultKeys.set(target, key);
+    if (approvedMcmTargets.has(cacheKey)) {
+      return { key, outcome: "skipped" as const, detail: "Already approved at this MCM level." };
+    }
     if (plan.status !== 1) {
       return {
         key,
@@ -396,8 +430,11 @@ const make = Effect.gen(function* () {
         "-f",
         "json",
       ],
-      true,
+      { kind: "mcm", key: target.key },
     );
+    unknownMcmTargets.delete(target.key);
+    boundedAdd(approvedMcmTargets, cacheKey, 2000);
+    yield* persistPrCommits();
     return {
       key,
       outcome: "approved" as const,
@@ -440,6 +477,15 @@ const make = Effect.gen(function* () {
           "A previous MCM approval attempt has an unknown outcome; it is not retried automatically.",
       };
     }
+    const viewer = yield* mcmViewer();
+    const cacheKey = `${viewer.toLowerCase()}:${target.key}`;
+    if (approvedMcmTargets.has(cacheKey)) {
+      return {
+        key: target.key,
+        outcome: "skipped" as const,
+        detail: "This MCM event was already approved by the current viewer.",
+      };
+    }
     if (!(yield* mcmEventPending(target))) {
       return {
         key: target.key,
@@ -467,8 +513,11 @@ const make = Effect.gen(function* () {
         "-f",
         "json",
       ],
-      true,
+      { kind: "mcm", key: target.key },
     );
+    unknownMcmTargets.delete(target.key);
+    boundedAdd(approvedMcmTargets, cacheKey, 2000);
+    yield* persistPrCommits();
     return { key: target.key, outcome: "approved" as const, detail: "MCM event accepted." };
   });
 
@@ -503,6 +552,14 @@ const make = Effect.gen(function* () {
         detail: `Automatic ${target.kind === "pr" ? "pull request" : "MCM"} approval is disabled.`,
       } satisfies ApprovalExecutionResult;
     }
+    if (!storageReady) {
+      return {
+        key: target.key,
+        outcome: "failed" as const,
+        detail:
+          "Approval dedupe state is unavailable. Repair it and restart the server before enabling automatic approvals.",
+      } satisfies ApprovalExecutionResult;
+    }
     const operation: Effect.Effect<ApprovalExecutionResult, DaxiangApprovalError> =
       target.kind === "pr"
         ? executePullRequest(target, behavior)
@@ -511,33 +568,14 @@ const make = Effect.gen(function* () {
           : executeMcmEvent(target, behavior);
     return yield* operation.pipe(
       Effect.catch((error) =>
-        Effect.gen(function* () {
-          const cacheKey = prCacheKeys.get(target);
-          if (error.reason === "unknown" && cacheKey && prWriteAttempted.get(target)) {
-            boundedAdd(unknownPrCommits, cacheKey, 2000);
-          }
-          if (error.reason === "unknown" && target.kind !== "pr") {
-            boundedAdd(unknownMcmTargets, target.key, 2000);
-          }
-          if (error.reason === "unknown") yield* persistPrCommits();
-          const nonRetryable =
-            error.reason === "unknown" &&
-            (target.kind !== "pr" || prWriteAttempted.get(target) === true);
-          return nonRetryable
-            ? {
-                key: prResultKeys.get(target) ?? target.key,
-                outcome: "deliveryUnknown" as const,
-                detail: `${approvalTargetLabel(target)}: ${errorMessage(error)} Do not retry automatically.`,
-              }
-            : {
-                key: prResultKeys.get(target) ?? target.key,
-                outcome: "failed" as const,
-                detail: `${approvalTargetLabel(target)}: ${errorMessage(error)}`,
-              };
+        Effect.succeed({
+          key: prResultKeys.get(target) ?? target.key,
+          outcome: error.reason === "unknown" ? ("deliveryUnknown" as const) : ("failed" as const),
+          detail: `${approvalTargetLabel(target)}: ${errorMessage(error)}${error.reason === "unknown" ? " Do not retry automatically." : ""}`,
         }),
       ),
     );
-  });
+  }, executionLock.withPermit);
 
   return DaxiangApprovalExecutor.of({ execute });
 });
