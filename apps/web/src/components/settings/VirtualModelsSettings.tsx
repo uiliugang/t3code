@@ -34,7 +34,7 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { SettingsSection, SettingsRow, SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
-import { settingModelLabel } from "./VirtualModelPicker";
+import { settingModelLabel } from "./VirtualModelPicker.logic";
 
 type Props = {
   environmentId: EnvironmentId;
@@ -45,30 +45,22 @@ export function VirtualModelsSettings({ environmentId, providers, readOnly }: Pr
   const t = useUiTranslation();
   const settings = useEnvironmentSettings(environmentId);
   const [editing, setEditing] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
   if (!settings.virtualModels) return null;
-  const rows = Object.entries(settings.virtualModels)
-    .map(([id, entry]) => {
-      const name = entry.name ?? virtualModelName(id, t);
-      const value = resolveVirtualModel(settings, virtualModelReference(id));
-      const description = value.virtualModelId
-        ? t("Not bound")
-        : typeof entry.binding === "string"
-          ? settingModelLabel(settings, entry.binding, providers, t, true)
-          : [
-              providers.find((p) => p.instanceId === value.instanceId)?.displayName ??
-                value.instanceId,
-              value.model,
-              ...(value.options ?? []).map((o) => `${o.id}: ${o.value}`),
-            ].join(" · ");
-      return { id, name, description };
-    })
-    .filter((row) =>
-      [row.name, row.description]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(query.trim().toLocaleLowerCase()),
-    );
+  const rows = Object.entries(settings.virtualModels).map(([id, entry]) => {
+    const name = entry.name ?? virtualModelName(id, t);
+    const value = resolveVirtualModel(settings, virtualModelReference(id));
+    const description = value.virtualModelId
+      ? t("Not bound")
+      : typeof entry.binding === "string"
+        ? settingModelLabel(settings, entry.binding, providers, t, true)
+        : [
+            providers.find((p) => p.instanceId === value.instanceId)?.displayName ??
+              value.instanceId,
+            value.model,
+            ...(value.options ?? []).map((o) => `${o.id}: ${o.value}`),
+          ].join(" · ");
+    return { id, name, description };
+  });
   return (
     <SettingsSection
       title={t("Virtual models")}
@@ -82,14 +74,6 @@ export function VirtualModelsSettings({ environmentId, providers, readOnly }: Pr
         ) : null
       }
     >
-      <div className="px-3 py-2">
-        <Input
-          aria-label={t("Search virtual models")}
-          placeholder={t("Search virtual models")}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
       {rows.map((row) => (
         <SettingsRow
           key={row.id}
@@ -110,7 +94,7 @@ export function VirtualModelsSettings({ environmentId, providers, readOnly }: Pr
         />
       ))}
       {!rows.length ? (
-        <p className="px-3 py-2 text-sm text-muted-foreground">{t("No matching models")}</p>
+        <p className="px-3 py-2 text-sm text-muted-foreground">{t("No models found")}</p>
       ) : null}
       {editing !== null && !readOnly ? (
         <BindingEditor

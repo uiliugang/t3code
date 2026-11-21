@@ -1,8 +1,6 @@
 import type {
   SettingsModelSelection as ModelSelection,
   ProviderInstanceId,
-  ServerProvider,
-  UnifiedSettings,
 } from "@t3tools/contracts";
 import {
   inheritedModelRole,
@@ -12,7 +10,6 @@ import {
   virtualModelReference,
   type VirtualModelRole,
 } from "@t3tools/shared/virtualModels";
-import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { Check, ChevronDown, Cpu, Link2, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -35,45 +32,7 @@ import {
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-
-export function settingModelLabel(
-  settings: UnifiedSettings,
-  role: VirtualModelRole,
-  providers: readonly ServerProvider[],
-  t: UiTranslator,
-  inherited = false,
-) {
-  let key = role;
-  const visited = new Set<string>();
-  while (!visited.has(key)) {
-    visited.add(key);
-    const selected = settings[key];
-    const id = selected?.virtualModelId;
-    const alias = id ? settings.virtualModels?.[id] : null;
-    const parent =
-      !inherited && typeof alias?.binding === "string"
-        ? alias.binding
-        : selected === null
-          ? inheritedModelRole(key)
-          : null;
-    if (parent) {
-      key = parent;
-      inherited = true;
-      continue;
-    }
-    if (id)
-      return t("Inherit ({model})", {
-        model: t("{name} virtual model", { name: alias?.name ?? virtualModelName(id, t) }),
-      });
-    if (!selected) return t(key === "fallbackModelSelection" ? "None" : "Automatic");
-    const name =
-      providers
-        .find((p) => p.instanceId === selected.instanceId)
-        ?.models.find((m) => m.slug === selected.model)?.name ?? selected.model;
-    return inherited ? t("Inherit ({model})", { model: name }) : name;
-  }
-  return t("Not bound");
-}
+import { settingModelLabel } from "./VirtualModelPicker.logic";
 
 export function VirtualModelPicker({ role }: { role: VirtualModelRole }) {
   const t = useUiTranslation();

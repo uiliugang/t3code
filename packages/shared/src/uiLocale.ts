@@ -23,7 +23,6 @@ const zhCN: Readonly<Record<string, string>> = {
   "Not bound": "暂未绑定",
   "Inherit ({model})": "继承（{model}）",
   "{name} virtual model": "{name}虚拟模型",
-  "Search virtual models": "搜索虚拟模型或绑定",
   "Edit binding: {name}": "编辑绑定：{name}",
   "Edit binding": "编辑绑定",
   "Virtual model name": "虚拟模型名称",
