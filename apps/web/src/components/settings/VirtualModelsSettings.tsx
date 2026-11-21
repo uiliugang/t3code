@@ -11,7 +11,7 @@ import {
   virtualModelReference,
   virtualModelRoles,
 } from "@t3tools/shared/virtualModels";
-import { Link2, Pencil, Plus } from "lucide-react";
+import { Link2, MoreVertical, Plus } from "lucide-react";
 import { useState } from "react";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -25,6 +25,16 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import {
   Dialog,
   DialogPopup,
@@ -44,7 +54,10 @@ type Props = {
 export function VirtualModelsSettings({ environmentId, providers, readOnly }: Props) {
   const t = useUiTranslation();
   const settings = useEnvironmentSettings(environmentId);
+  const update = useUpdateEnvironmentSettings(environmentId);
   const [editing, setEditing] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   if (!settings.virtualModels) return null;
   const rows = Object.entries(settings.virtualModels).map(([id, entry]) => {
     const name = entry.name ?? virtualModelName(id, t);
@@ -61,6 +74,7 @@ export function VirtualModelsSettings({ environmentId, providers, readOnly }: Pr
           ].join(" · ");
     return { id, name, description };
   });
+  const removingRow = rows.find((row) => row.id === removing);
   return (
     <SettingsSection
       title={t("Virtual models")}
@@ -80,16 +94,28 @@ export function VirtualModelsSettings({ environmentId, providers, readOnly }: Pr
           title={row.name}
           description={row.description}
           control={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("Edit binding: {name}", { name: row.name })}
-              title={t("Edit binding: {name}", { name: row.name })}
-              disabled={readOnly}
-              onClick={() => setEditing(row.id)}
-            >
-              <Pencil />
-            </Button>
+            readOnly ? null : (
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button
+                      variant="ghost-muted"
+                      size="icon-sm"
+                      aria-label={t("More actions for {name}", { name: row.name })}
+                      title={t("More actions for {name}", { name: row.name })}
+                    />
+                  }
+                >
+                  <MoreVertical />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  <MenuItem onClick={() => setEditing(row.id)}>{t("Edit")}</MenuItem>
+                  <MenuItem variant="destructive" onClick={() => setRemoving(row.id)}>
+                    {t("Remove")}
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
+            )
           }
         />
       ))}
@@ -106,6 +132,50 @@ export function VirtualModelsSettings({ environmentId, providers, readOnly }: Pr
           onClose={() => setEditing(null)}
         />
       ) : null}
+      <AlertDialog
+        open={removingRow !== undefined && !readOnly}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setRemoving(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("Remove {name}?", { name: removingRow?.name ?? "" })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "This removes the virtual model without changing existing references. Requests using those references will fail.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" disabled={deleting} />}>
+              {t("Cancel")}
+            </AlertDialogClose>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => {
+                if (readOnly || removing === null) return;
+                setDeleting(true);
+                update(
+                  { virtualModels: { [removing]: null } },
+                  {
+                    onSaved: () => {
+                      setRemoving(null);
+                      setDeleting(false);
+                    },
+                    onFailed: () => setDeleting(false),
+                  },
+                );
+              }}
+            >
+              {t("Remove")}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </SettingsSection>
   );
 }

@@ -17,6 +17,11 @@ import { resolveServerBackgroundActivitySettings } from "./backgroundActivitySet
 import { createModelSelection } from "./model.ts";
 import { resolveProjectScripts } from "./projectScripts.ts";
 import {
+  migrateVirtualModels,
+  resolveVirtualModel,
+  virtualModelReference,
+} from "./virtualModels.ts";
+import {
   applyServerSettingsPatch,
   fallbackTextGenerationModelSelection,
   modelPreferencesMigrationPatch,
@@ -29,6 +34,7 @@ import {
 } from "./serverSettings.ts";
 
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
+const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
@@ -695,6 +701,48 @@ describe("serverSettings helpers", () => {
       providerInstances: {},
     });
   });
+
+  it.each(["team", "defaultModelSelection"])(
+    "edits and removes virtual model %s without rewriting references or other bindings",
+    (id) => {
+      const ref = virtualModelReference(id);
+      const projectId = ProjectId.make("virtual-model-project");
+      const binding = { instanceId: ProviderInstanceId.make("codex"), model: "small" };
+      const current = {
+        ...migrateVirtualModels(DEFAULT_SERVER_SETTINGS),
+        defaultModelSelection: ref,
+        textGenerationModelSelection: ref,
+        projectSettingsOverrides: { [projectId]: { defaultModelSelection: ref } },
+        virtualModels: { [id]: { name: "Old name", binding } },
+      };
+      const edited = applyServerSettingsPatch(current, {
+        virtualModels: { [id]: { binding: { ...binding, model: "new" } }, other: { binding } },
+      });
+      expect(edited.virtualModels?.[id]).toEqual({ binding: { ...binding, model: "new" } });
+      const removed = applyServerSettingsPatch(
+        edited,
+        decodeServerSettingsPatch({
+          virtualModels: { [id]: null },
+          importVirtualModels: { [id]: { binding }, incoming: { binding: null } },
+        }),
+      );
+      expect(removed.virtualModels).toEqual({ other: { binding }, incoming: { binding: null } });
+      expect(removed.defaultModelSelection).toEqual(ref);
+      expect(removed.textGenerationModelSelection).toEqual(ref);
+      expect(removed.projectSettingsOverrides).toEqual(current.projectSettingsOverrides);
+      expect(resolveVirtualModel(removed, removed.defaultModelSelection)).toEqual(ref);
+      expect(
+        migrateVirtualModels(decodeServerSettings(encodeServerSettings(removed))).virtualModels,
+      ).toEqual(removed.virtualModels);
+      const restored = applyServerSettingsPatch(removed, { virtualModels: { [id]: { binding } } });
+      expect(resolveVirtualModel(restored, restored.defaultModelSelection)).toEqual(binding);
+      expect(
+        applyServerSettingsPatch(restored, {
+          virtualModels: { [id]: null, other: null, incoming: null },
+        }).virtualModels,
+      ).toEqual({});
+    },
+  );
 
   it("upserts and removes usageLimitSources per entry so concurrent edits cannot clobber", () => {
     const hubA = UsageLimitSourceId.make("cliproxy-a");

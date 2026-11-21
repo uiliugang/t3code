@@ -1990,7 +1990,9 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
-  virtualModels: Schema.optionalKey(VirtualModels),
+  virtualModels: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, Schema.NullOr(VirtualModel)),
+  ),
   importVirtualModels: Schema.optionalKey(VirtualModels),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),

@@ -716,15 +716,17 @@ export function applyServerSettingsPatch(
     ...(virtualModels === undefined && importVirtualModels === undefined
       ? {}
       : {
-          virtualModels: {
-            ...current.virtualModels,
-            ...Object.fromEntries(
-              Object.entries(importVirtualModels ?? {}).filter(
-                ([id]) => current.virtualModels?.[id]?.binding == null,
+          virtualModels: mergeSettingsEntries(
+            {
+              ...current.virtualModels,
+              ...Object.fromEntries(
+                Object.entries(importVirtualModels ?? {}).filter(
+                  ([id]) => current.virtualModels?.[id]?.binding == null,
+                ),
               ),
-            ),
-            ...virtualModels,
-          },
+            },
+            virtualModels ?? {},
+          ),
         }),
     ...(secretProvidersPatch !== undefined
       ? { secretProviders: mergeSettingsEntries(current.secretProviders, secretProvidersPatch) }

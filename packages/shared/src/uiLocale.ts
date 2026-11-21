@@ -29,6 +29,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Choose real model": "选择真实模型",
   "Save binding": "保存绑定",
   "Add virtual model": "添加虚拟模型",
+  "This removes the virtual model without changing existing references. Requests using those references will fail.":
+    "移除虚拟模型后，现有引用将保留，但使用这些引用的请求会报错。",
   Fallback: "备用",
   "Source control writer": "源码写作",
   "Voice cleanup": "语音后处理",

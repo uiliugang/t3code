@@ -174,9 +174,10 @@ const APPLICATION_SERVER_SETTINGS_KEYS = Struct.keys(
     applicationServerSettingsTransferPolicy[key] === "portable",
 );
 
-const ApplicationServerSettings = Schema.Struct(
-  Struct.pick(ClientServerSettingsPatch.fields, APPLICATION_SERVER_SETTINGS_KEYS),
-);
+const ApplicationServerSettings = Schema.Struct({
+  ...Struct.pick(ClientServerSettingsPatch.fields, APPLICATION_SERVER_SETTINGS_KEYS),
+  virtualModels: Schema.optionalKey(Schema.toType(VirtualModels)),
+});
 const encodeApplicationServerSettings = Schema.encodeSync(
   Schema.Struct(Struct.pick(ServerSettings.fields, APPLICATION_SERVER_SETTINGS_KEYS)),
 );

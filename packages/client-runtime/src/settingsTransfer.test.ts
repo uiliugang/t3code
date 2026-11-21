@@ -150,6 +150,11 @@ describe("settings transfer", () => {
       ),
     );
     if (file.scope !== "application") throw new Error("Expected application settings");
+    expect(() =>
+      parseSettingsFile(
+        JSON.stringify({ ...file, server: { ...file.server, virtualModels: { team: null } } }),
+      ),
+    ).toThrow();
     const target = migrateVirtualModels(settings());
     const restored = applyServerSettingsPatch(target, applicationSettingsImportPatch(file, target));
     expect(
