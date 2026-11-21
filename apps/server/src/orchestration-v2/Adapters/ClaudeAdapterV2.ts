@@ -763,6 +763,7 @@ export interface ClaudeAgentSdkQuerySession {
     ReadonlyArray<ClaudePermissionRule>,
     ClaudeAgentSdkQueryRunnerError
   >;
+  readonly canReplayPrompt?: Effect.Effect<boolean>;
   readonly interrupt: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
 }
@@ -972,6 +973,7 @@ async function sendClaudeControlRequest(
   queryRuntime: ClaudeQuery,
   request: {
     readonly subtype:
+      | "get_hooks_listing"
       | "mcp_call"
       | "list_permission_rules"
       | "rename_session"
@@ -1009,6 +1011,23 @@ const ClaudePermissionRules = Schema.Struct({
 });
 export type ClaudePermissionRule = (typeof ClaudePermissionRules.Type)["state"]["rules"][number];
 const decodeClaudePermissionRules = Schema.decodeUnknownEffect(ClaudePermissionRules);
+
+const decodeClaudeHooksListing = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    hooks: Schema.Array(
+      Schema.Struct({
+        event: Schema.String,
+        disabled: Schema.optional(Schema.Boolean),
+      }),
+    ),
+    policy: Schema.Struct({
+      disabledByPolicy: Schema.Boolean,
+      managedOnly: Schema.Boolean,
+      policyHookCount: Schema.Number,
+      policyUnreadable: Schema.optional(Schema.Boolean),
+    }),
+  }),
+);
 
 // Without these, tools carry no `_meta.ui` and a model-shaped result would reach the app.
 const CLAUDE_MCP_APP_CAPABILITIES = [
@@ -2014,6 +2033,25 @@ export const layerQueryRunner: Layer.Layer<
           Effect.map(({ state }) => state.rules),
           Effect.mapError((cause) => queryRunnerError(cause, "listPermissionRules")),
         ),
+        canReplayPrompt: Effect.tryPromise({
+          try: () => sendClaudeControlRequest(queryRuntime, { subtype: "get_hooks_listing" }),
+          catch: (cause) => queryRunnerError(cause, "getHooksListing"),
+        }).pipe(
+          Effect.flatMap(decodeClaudeHooksListing),
+          Effect.map(
+            ({ hooks, policy }) =>
+              policy.disabledByPolicy ||
+              (!policy.policyUnreadable &&
+                !policy.managedOnly &&
+                policy.policyHookCount === 0 &&
+                hooks.every(
+                  (hook) =>
+                    hook.disabled || hook.event === "SessionStart" || hook.event === "Setup",
+                )),
+          ),
+          Effect.timeout("1 second"),
+          Effect.orElseSucceed(() => false),
+        ),
         interrupt: Effect.tryPromise({
           try: () => queryRuntime.interrupt(),
           catch: (cause) => queryRunnerError(cause, "interrupt"),
@@ -2469,6 +2507,7 @@ export function makeClaudeQueryOptions(input: {
         ? "bypassPermissions"
         : (input.permissionMode ?? "default")),
     includePartialMessages: true,
+    includeHookEvents: true,
     promptSuggestions: input.promptSuggestions === true,
     ...(compiledSelection.effort === undefined
       ? {}
@@ -5212,7 +5251,20 @@ function formatClaudeUsageLimitWait(waitMs: number): string {
   return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
+const CLAUDE_GATEWAY_FALLBACK = "Sorry, I encountered an error processing your request.";
+const CLAUDE_GATEWAY_MAX_RETRIES = 2;
+
 interface ActiveClaudeTurnContext {
+  gatewayRetry: {
+    readonly prompt: SDKUserMessage;
+    readonly stopped: Deferred.Deferred<void>;
+    readonly bytes: number;
+    readonly pages: number;
+    attempts: number;
+  } | null;
+  gatewayErrorStream: boolean;
+  gatewayRetryAwaitingResponse: boolean;
+  hasGatewayRetried: boolean;
   retryBudgetFailure?: OrchestrationV2ProviderFailure;
   // Set when the prompt starts or a request goes out; cleared by the turn's next frame.
   unansweredRequestSince?: DateTime.Utc | undefined;
@@ -5288,6 +5340,7 @@ interface ActiveClaudeTurnContext {
   authenticationFailureMessage: string | undefined;
   readonly rejectedRateLimitTypes: Set<string>;
   readonly rateLimitResetTimes: Map<string, string | null>;
+  latestAssistantGatewayError: boolean;
   latestAssistantRateLimit: {
     readonly type: string | null;
     readonly resetAt: string | null;
@@ -5307,7 +5360,7 @@ interface ActiveClaudeTurnContext {
   readonly rootModels: Set<string>;
   readonly subagentsByTaskId: Map<string, ActiveClaudeSubagent>;
   readonly subagentsByToolUseId: Map<string, ActiveClaudeSubagent>;
-  readonly promptUuid: string | null;
+  promptUuid: string | null;
   promptEcho: "pending" | "confirmed";
   // MCP app notes this turn's prompt carries, recorded as delivered only if the turn completes.
   appContextOffered?: ReadonlyMap<string, string> | undefined;
@@ -6718,6 +6771,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             Effect.map(Ref.get(activeTurn), (active) => active === context),
           );
         });
+
+        const watchForUnansweredRequest = Effect.fn("ClaudeAdapterV2.watchForUnansweredRequest")(
+          function* (context: ActiveClaudeTurnContext) {
+            const since = yield* DateTime.now;
+            context.unansweredRequestSince = since;
+            yield* failUnansweredRequest(context, since).pipe(
+              Effect.delay(PROVIDER_RETRY_BUDGET_MS),
+              Effect.forkIn(sessionScope),
+            );
+          },
+        );
 
         const failStalledTurn = Effect.fn("ClaudeAdapterV2.failStalledTurn")(function* (
           context: ActiveClaudeTurnContext,
@@ -11053,16 +11117,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 message.status === "requesting") ||
               (lifecycle?.state === "started" && lifecycle.uuid === context.promptUuid)
             ) {
-              const since = yield* DateTime.now;
-              context.unansweredRequestSince = since;
-              yield* failUnansweredRequest(context, since).pipe(
-                Effect.delay(PROVIDER_RETRY_BUDGET_MS),
-                Effect.forkIn(sessionScope),
-              );
+              yield* watchForUnansweredRequest(context);
             } else if (
               // Background tasks from earlier turns keep streaming while the root request hangs.
               // Only the root starts depth-1 tasks, so such a start (a forked skill) is this turn's.
               Reflect.get(message, "parent_tool_use_id") == null &&
+              (!context.gatewayRetryAwaitingResponse ||
+                message.type === "assistant" ||
+                message.type === "stream_event" ||
+                (message.type === "result" && !isClaudeTaskNotificationOriginResult(message))) &&
               !(
                 message.type === "system" &&
                 message.subtype.startsWith("task_") &&
@@ -11070,6 +11133,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               )
             ) {
               context.unansweredRequestSince = undefined;
+              context.gatewayRetryAwaitingResponse = false;
             }
           }
           const focusedPlugin = claudeFocusRequestedPanePlugin(message);
@@ -11098,6 +11162,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;
+            if (event.type === "message_start") {
+              context.gatewayErrorStream = event.message.model === "error";
+            }
+            if (
+              context.gatewayRetry !== null &&
+              ((event.type === "content_block_start" &&
+                (event.content_block.type === "tool_use" ||
+                  event.content_block.type === "server_tool_use" ||
+                  (event.content_block.type === "text" &&
+                    !context.gatewayErrorStream &&
+                    event.content_block.text.trim() !== ""))) ||
+                (event.type === "content_block_delta" &&
+                  (event.delta.type === "input_json_delta" ||
+                    (event.delta.type === "text_delta" &&
+                      !context.gatewayErrorStream &&
+                      event.delta.text.trim() !== ""))))
+            ) {
+              context.gatewayRetry = null;
+            }
+            if (context.gatewayErrorStream) return;
             const reasoning = context.reasoning;
             if (event.type === "message_start") {
               reasoning.messageId = event.message.id;
@@ -11198,6 +11282,37 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             }
             return;
           }
+          if (message.type === "assistant" && !message.parent_tool_use_id) {
+            const [block] = message.message.content;
+            if (
+              message.message.model === "error" &&
+              message.error == null &&
+              message.message.content.length === 1 &&
+              block?.type === "text" &&
+              block.text.trim() === CLAUDE_GATEWAY_FALLBACK
+            ) {
+              context.latestAssistantGatewayError = true;
+              context.nativeMessageCursor = message.uuid;
+              return;
+            }
+            if (
+              context.gatewayRetry !== null &&
+              message.message.content.some((block) =>
+                block.type === "text"
+                  ? block.text.trim() !== ""
+                  : block.type !== "thinking" && block.type !== "redacted_thinking",
+              )
+            ) {
+              context.gatewayRetry = null;
+            }
+          }
+          if (
+            message.type === "user" &&
+            typeof message.message.content !== "string" &&
+            message.message.content.some((block) => block.type === "tool_result")
+          ) {
+            context.gatewayRetry = null;
+          }
           // Snapshot text the stream did not deliver, once any of it streamed.
           const unstreamedSnapshotText: Array<string> = [];
           let streamedSnapshotReply: NonNullable<
@@ -11286,8 +11401,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
           if (message.type === "assistant" && input.replayed !== true) {
             if (message.parent_tool_use_id === null) {
+              context.latestAssistantGatewayError = false;
               // CLI notices and API errors arrive as assistant messages from "<synthetic>".
-              if (message.message.model && message.message.model !== "<synthetic>") {
+              if (
+                message.message.model &&
+                !["<synthetic>", "error"].includes(message.message.model)
+              ) {
                 context.rootModels.add(message.message.model);
                 context.executedModel = resolveClaudeReportedModelSlug(
                   modelCatalog,
@@ -12212,9 +12331,28 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             });
           }
 
+          const gatewayFailure =
+            message.type === "result" &&
+            message.subtype === "success" &&
+            !message.is_error &&
+            message.api_error_status == null &&
+            (message.terminal_reason == null || message.terminal_reason === "completed") &&
+            context.authenticationFailureMessage === undefined &&
+            context.latestAssistantRateLimit === null &&
+            context.rejectedRateLimitTypes.size === 0 &&
+            context.latestAssistantGatewayError &&
+            message.result.trim() === CLAUDE_GATEWAY_FALLBACK
+              ? makeProviderFailure({
+                  message:
+                    "The model gateway returned an error without details. Try again or select another model.",
+                  code: "gateway_model_error",
+                  class: "provider_error",
+                })
+              : null;
           const resultText =
             message.type === "result" &&
-            ((message.subtype === "success" && message.is_error) ||
+            (gatewayFailure !== null ||
+              (message.subtype === "success" && message.is_error) ||
               terminalStatusFromResult(message) === "failed")
               ? null
               : resultTextFromSdkMessage(message);
@@ -12245,9 +12383,91 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (resultsReportingNewContextWindow.has(message) && contextUsage !== undefined) {
               yield* emitContextUsage(context, contextUsage);
             }
-            const completedAt = yield* DateTime.now;
-            const interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
+            let interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
             const wasSteered = (yield* Ref.get(steeredTurns)).has(context.providerTurnId);
+            const gatewayRetry = context.gatewayRetry;
+            if (
+              gatewayFailure !== null &&
+              gatewayRetry !== null &&
+              !interrupted &&
+              !wasSteered &&
+              context.steerUuids.size === 0 &&
+              context.toolCalls.size === 0 &&
+              context.subagentsByTaskId.size === 0 &&
+              !isClaudeTaskNotificationOriginResult(message) &&
+              gatewayRetry.attempts < CLAUDE_GATEWAY_MAX_RETRIES
+            ) {
+              yield* Deferred.await(gatewayRetry.stopped).pipe(Effect.timeoutOption("2 seconds"));
+              interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
+              if (
+                !interrupted &&
+                context.gatewayRetry === gatewayRetry &&
+                context.steerUuids.size === 0 &&
+                !liveQuery.stopping &&
+                (yield* Ref.get(queryContext)) === liveQuery &&
+                (yield* liveQuery.query.canReplayPrompt ?? Effect.succeed(false))
+              ) {
+                const uuid = yield* random.uuidV4();
+                const budget = pdfBudgets.get(context.nativeThreadId);
+                if (
+                  isClaudePromptUuid(uuid) &&
+                  budget !== undefined &&
+                  budget.remainingBytes >= gatewayRetry.bytes &&
+                  budget.remainingPages >= gatewayRetry.pages
+                ) {
+                  const sent = yield* Effect.gen(function* () {
+                    const reservation = yield* reserveClaudePdfBudget(
+                      budget,
+                      persistAttachmentBudget(context.nativeThreadId),
+                    );
+                    if (
+                      (yield* Ref.get(interruptedTurns)).has(context.providerTurnId) ||
+                      (yield* Ref.get(queryContext)) !== liveQuery ||
+                      context.gatewayRetry !== gatewayRetry ||
+                      context.steerUuids.size > 0 ||
+                      liveQuery.stopping
+                    )
+                      return false;
+                    reservation.bytes = gatewayRetry.bytes;
+                    reservation.pages = gatewayRetry.pages;
+                    budget.pending.bytes += reservation.bytes;
+                    budget.pending.pages += reservation.pages;
+                    context.promptUuid = uuid;
+                    context.promptEcho = "pending";
+                    context.promptStarted = false;
+                    context.gatedFramesBeforeEcho = 0;
+                    context.latestAssistantGatewayError = false;
+                    context.gatewayErrorStream = false;
+                    return yield* liveQuery.query
+                      .offer({ ...gatewayRetry.prompt, uuid }, () => reservation.commit())
+                      .pipe(
+                        Effect.tap(() => Effect.sync(() => reservation.commit())),
+                        Effect.isSuccess,
+                      );
+                  }).pipe(Effect.scoped);
+                  if (sent) {
+                    gatewayRetry.attempts++;
+                    context.hasGatewayRetried = true;
+                    context.gatewayRetryAwaitingResponse = true;
+                    yield* watchForUnansweredRequest(context);
+                    yield* Effect.logInfo("orchestration-v2.claude-gateway-retry", {
+                      providerTurnId: context.providerTurnId,
+                      attempt: gatewayRetry.attempts,
+                      maxRetries: CLAUDE_GATEWAY_MAX_RETRIES,
+                    });
+                    context.steeredSegmentUsage.push(message.usage);
+                    context.steeredLedgerUsage = addClaudeLedgerUsage(
+                      context.steeredLedgerUsage,
+                      resultLedgerUsage.get(message),
+                    );
+                    return;
+                  }
+                  interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
+                }
+              }
+              interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
+            }
+            const completedAt = yield* DateTime.now;
             absorbHeldResult(context);
             if (!interrupted && wasSteered && isClaudeActiveSteeringAbortResult(message)) {
               const cutOffReply = context.assistant.lastReply;
@@ -12338,12 +12558,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message: limitedCompaction.message ?? failureHint,
                     code: "compaction_failed",
                   })
-                : providerFailureFromResult(
+                : (gatewayFailure ??
+                  providerFailureFromResult(
                     message,
                     bufferedResultArrivals.get(message) ?? completedAt,
                     failureHint,
                     usageLimited,
-                  );
+                  ));
             const resultResetAt =
               resultFailure?.class === "usage_limit" ? resultFailure.resetAt : null;
             // An untyped rejection without a reset is the gateway's own 429; its text names the reset.
@@ -12372,7 +12593,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 : resultFailure;
             const status = interrupted
               ? "interrupted"
-              : limitedCompaction !== null
+              : limitedCompaction !== null || gatewayFailure !== null
                 ? "failed"
                 : terminalStatusFromResult(message, failureHint);
             // Claude answers a steer it has not read yet as the next native turn, which echoes
@@ -12468,6 +12689,31 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const message = input.message;
           const context = yield* Ref.get(activeTurn);
           const liveQuery = yield* Ref.get(queryContext);
+          if (
+            context?.hasGatewayRetried &&
+            liveQuery?.query === input.query &&
+            message.type === "result"
+          ) {
+            const echoed = claudeEchoedPromptUuids(message);
+            if (
+              echoed.length > 0 &&
+              !echoed.some((uuid) => uuid === context.promptUuid || context.steerUuids.has(uuid))
+            ) {
+              return;
+            }
+          }
+          if (
+            context !== null &&
+            liveQuery?.query === input.query &&
+            message.type === "system" &&
+            (message.subtype === "hook_started" ||
+              message.subtype === "hook_progress" ||
+              message.subtype === "hook_response") &&
+            message.hook_event !== "SessionStart" &&
+            message.hook_event !== "Setup"
+          ) {
+            context.gatewayRetry = null;
+          }
           // The API answering again is recovery; a long text or tool input block emits nothing
           // else. Judged here, in arrival order: held and buffered frames are handled later.
           if (
@@ -12627,6 +12873,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
 
           const nativeRequestId = callbackOptions.toolUseID;
+          context.gatewayRetry = null;
           const nativeToolInput = claudeNativeToolInputFromRecord(toolInput);
           const heldForEcho = context.heldRootFrames.length > 0;
           const startToolCall = toolName !== "Agent" && options?.startToolCall !== false;
@@ -13722,8 +13969,32 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               turnInput.modelSelection,
               querySession.launchArgSettings,
             );
+            const nativeContent = userMessage?.message.content;
+            const lastNativeBlock = Array.isArray(nativeContent) ? nativeContent.at(-1) : undefined;
+            const nativePromptText =
+              typeof nativeContent === "string"
+                ? nativeContent
+                : lastNativeBlock?.type === "text"
+                  ? lastNativeBlock.text
+                  : "";
             const context: ActiveClaudeTurnContext = {
               input: turnInput,
+              gatewayRetry:
+                userMessage !== null &&
+                !turnInput.resume &&
+                !nativePromptText.trimStart().startsWith("/") &&
+                !turnInput.message.text.trimStart().startsWith("/")
+                  ? {
+                      prompt: userMessage,
+                      stopped: yield* Deferred.make<void>(),
+                      bytes: pdfReservation.bytes,
+                      pages: pdfReservation.pages,
+                      attempts: 0,
+                    }
+                  : null,
+              gatewayErrorStream: false,
+              gatewayRetryAwaitingResponse: false,
+              hasGatewayRetried: false,
               autoCompactWindow,
               queryPolicy: querySession.queryPolicy,
               nativeThreadId,
@@ -13763,6 +14034,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               authenticationFailureMessage: undefined,
               rejectedRateLimitTypes: new Set(),
               rateLimitResetTimes: new Map(),
+              latestAssistantGatewayError: false,
               latestAssistantRateLimit: null,
               compactionFailure: null,
               nativeSessionTitle: null,
@@ -14080,6 +14352,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               next.add(turnInput.providerTurnId);
               return next;
             });
+            if (currentTurn.gatewayRetry !== null) {
+              yield* Deferred.succeed(currentTurn.gatewayRetry.stopped, undefined);
+            }
             if (!(yield* Deferred.isDone(existing.closed))) {
               yield* existing.query.interrupt.pipe(
                 Effect.timeoutOption("10 seconds"),
