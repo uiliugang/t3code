@@ -8,7 +8,6 @@ import {
   matchComposerThreadItems,
 } from "@t3tools/client-runtime/composerThreadItems";
 import { useAtomValue } from "@effect/atom-react";
-import { useState } from "react";
 import type {
   EnvironmentId,
   ProjectId,
@@ -44,6 +43,7 @@ import {
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { useComposerPathSearch, useDebouncedValue, useThreadSearch } from "~/state/queries";
 import {
   matchesPullRequestQuery,
@@ -111,8 +111,7 @@ export function useComposerMenuItems({
   const t = useUiTranslation();
   const gt = useGT();
   const messages = useMessages();
-  // Thread mentions rank by recency as of when the composer mounted.
-  const [now] = useState(() => Date.now());
+  const now = Date.parse(`${useNowMinute()}:00Z`);
   const composerTriggerKind = composerTrigger?.kind ?? null;
   const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
   const pullRequestTriggerQuery =
@@ -218,6 +217,9 @@ export function useComposerMenuItems({
           {
             shells: environmentThreadShells,
             environmentId,
+            environmentLabel:
+              environmentIdentities.find((identity) => identity.environmentId === environmentId)
+                ?.label ?? null,
             linkedEnvironments,
             excludeThreadId: activeThreadId,
             query: composerTrigger.query,
