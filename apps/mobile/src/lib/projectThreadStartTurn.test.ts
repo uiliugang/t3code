@@ -95,6 +95,7 @@ describe("project thread title", () => {
       projectCwd: "/workspace",
       baseBranch: "HEAD",
       branch: "t3/new",
+      startFromOrigin: false,
       repositories: [{ path: "/workspace/api" }],
     });
   });
