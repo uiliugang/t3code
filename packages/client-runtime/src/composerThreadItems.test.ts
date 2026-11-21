@@ -1,5 +1,7 @@
 import { EnvironmentId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import * as DateTime from "effect/DateTime";
+import { recordServerClock } from "./clock.ts";
 
 import {
   matchComposerEnvironmentItems,
@@ -150,6 +152,47 @@ it("also offers threads on linked machines, naming the machine, but no other mac
     },
   ]);
 });
+
+it.each([3_600_000, -3_600_000])(
+  "corrects each machine's activity time with a %i ms clock offset",
+  (offset) => {
+    const remoteEnvironmentId = EnvironmentId.make(`env-clock-offset-${offset}`);
+    const now = Date.parse("2026-10-23T12:00:00.000Z");
+    recordServerClock(remoteEnvironmentId, {
+      serverTimeMs: now + offset,
+      requestedAtMs: now,
+      receivedAtMs: now,
+    });
+    try {
+      const items = matchComposerThreadItems({
+        shells: [
+          shell("local", "Deploy locally", { updatedAt: "2026-10-23T11:45:00.000Z" }),
+          shell("remote", "Deploy remotely", {
+            environmentId: remoteEnvironmentId,
+            updatedAt: DateTime.formatIso(DateTime.makeUnsafe(now + offset - 5 * 60_000)),
+          }),
+        ],
+        environmentId,
+        linkedEnvironments: new Map([[remoteEnvironmentId, "Clock host"]]),
+        excludeThreadId: null,
+        query: "deploy",
+        now,
+      });
+      expect(new Map(items.map((item) => [item.thread.threadId, item.description]))).toEqual(
+        new Map([
+          ["local", "Local machine · Ready · Last active 15m ago"],
+          ["remote", "Clock host · Ready · Last active 5m ago"],
+        ]),
+      );
+    } finally {
+      recordServerClock(remoteEnvironmentId, {
+        serverTimeMs: undefined,
+        requestedAtMs: now,
+        receivedAtMs: now,
+      });
+    }
+  },
+);
 
 it.each([
   ["running", { hasPendingApprovals: true, hasPendingUserInput: true }, "Needs approval"],

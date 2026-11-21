@@ -8,6 +8,7 @@ import {
 import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
+import { toServerClock } from "./clock.ts";
 import { threadSearchSubject, type ThreadSearchShell } from "./state/threadSearch.ts";
 import { resolveThreadActivityTimestamp } from "./state/threadSort.ts";
 import { mFallback, msg } from "gt-i18n";
@@ -127,7 +128,7 @@ export function matchComposerThreadItems(
         Date.parse(shell.updatedAt) > Date.parse(activityTimestamp)
           ? shell.updatedAt
           : activityTimestamp;
-      const time = relativeTime(timestamp, input.now, resolve);
+      const time = relativeTime(timestamp, toServerClock(shell.environmentId, input.now), resolve);
       const timestampLabel =
         Date.parse(timestamp) > Date.parse(shell.createdAt)
           ? resolve(msg("Last active {time}", { time }))
