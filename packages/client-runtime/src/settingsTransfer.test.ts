@@ -13,6 +13,7 @@ import {
   AuthSettingsWriteScope,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
 import * as Struct from "effect/Struct";
 
 import {
@@ -30,7 +31,15 @@ import {
   type TransferProject,
 } from "./settingsTransfer.ts";
 import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
-import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import {
+  applyServerSettingsPatch,
+  loadVirtualGeneratorCatalog,
+} from "@t3tools/shared/serverSettings";
+import {
+  migrateVirtualModels,
+  resolveVirtualModel,
+  virtualModelReference,
+} from "@t3tools/shared/virtualModels";
 
 const project = (remote = "git@github.com:Team/Repo.git", directory = ""): TransferProject => ({
   id: ProjectId.make("project-1"),
@@ -123,6 +132,136 @@ describe("projectTransferIdentity", () => {
 });
 
 describe("settings transfer", () => {
+  it("restores stable virtual references without requiring their source provider or replacing local bindings", () => {
+    const selection = {
+      instanceId: ProviderInstanceId.make("office"),
+      model: "small",
+      options: [{ id: "effort", value: "high" }],
+    };
+    const ref = virtualModelReference("team");
+    const source = {
+      ...migrateVirtualModels(settings()),
+      defaultModelSelection: ref,
+      virtualModels: { team: { name: "Team", binding: selection } },
+    };
+    const file = parseSettingsFile(
+      serializeSettingsFile(
+        createApplicationSettingsFile({ server: source, clientSettings: {}, keybindings: [] }),
+      ),
+    );
+    if (file.scope !== "application") throw new Error("Expected application settings");
+    const target = migrateVirtualModels(settings());
+    const restored = applyServerSettingsPatch(target, applicationSettingsImportPatch(file, target));
+    expect(
+      applyServerSettingsPatch(target, {
+        textGenerationModelSelection: { virtualModelId: "team" },
+      }).textGenerationModelSelection,
+    ).toEqual(ref);
+    expect(restored.virtualModels?.team).toEqual({ name: "Team", binding: null });
+    expect(resolveVirtualModel(restored, restored.defaultModelSelection)).toEqual(ref);
+    const local = { ...selection, instanceId: ProviderInstanceId.make("local") };
+    const rebound = applyServerSettingsPatch(restored, {
+      virtualModels: { team: { binding: local } },
+    });
+    const again = applyServerSettingsPatch(rebound, applicationSettingsImportPatch(file, rebound));
+    expect(resolveVirtualModel(again, again.defaultModelSelection)).toEqual(local);
+    const preparedBeforeBinding = applicationSettingsImportPatch(file, target);
+    const concurrent = applyServerSettingsPatch(rebound, preparedBeforeBinding);
+    expect(resolveVirtualModel(concurrent, concurrent.defaultModelSelection)).toEqual(local);
+  });
+  it("rejects virtual settings before writing to an environment without virtual model support", () => {
+    const legacy = settings();
+    const file = createApplicationSettingsFile({
+      server: migrateVirtualModels(legacy),
+      clientSettings: {},
+      keybindings: [],
+    });
+    expect(() => applicationSettingsImportPatch(file, legacy)).toThrow(/virtual models/i);
+  });
+  it.effect("restores a discovered generator model only when its destination lists it", () =>
+    Effect.gen(function* () {
+      const id = ProviderInstanceId.make("text-api");
+      const target = {
+        ...migrateVirtualModels(settings()),
+        textGenerators: {
+          [id]: {
+            kind: "openaiCompatible" as const,
+            enabled: true,
+            apiKey: "",
+            baseUrl: "https://example.test",
+          },
+        },
+      };
+      const binding = { instanceId: id, model: "discovered" };
+      const virtualModels = {
+        team: { binding },
+        missing: { binding: { ...binding, model: "gone" } },
+      };
+      const file = parseSettingsFile(
+        serializeSettingsFile(
+          createApplicationSettingsFile({
+            server: { ...target, virtualModels },
+            clientSettings: {},
+            keybindings: [],
+          }),
+        ),
+      );
+      if (file.scope !== "application") throw new Error("Expected application settings");
+      const catalog = yield* loadVirtualGeneratorCatalog(virtualModels, target, () =>
+        Effect.succeed({ models: [{ id: "discovered", name: "Discovered" }] }),
+      );
+      const imported = applicationSettingsImportPatch(file, target, undefined, [], catalog);
+      expect(imported.importVirtualModels).toEqual({
+        team: { binding },
+        missing: { binding: null },
+      });
+    }),
+  );
+  it("imports optional model edits only for a matching virtual binding provider", () => {
+    const target = migrateVirtualModels(settings());
+    const office = ProviderInstanceId.make("office");
+    const physical = { instanceId: office, model: "small" };
+    const file = createApplicationSettingsFile({
+      server: {
+        ...target,
+        defaultModelSelection: virtualModelReference("team"),
+        virtualModels: { team: { binding: physical } },
+        favorites: [{ provider: office, model: "small" }],
+        providerModelPreferences: { [office]: { hiddenModels: [], modelOrder: ["small"] } },
+        providerInstances: {
+          [office]: {
+            driver: ProviderDriverKind.make("codex"),
+            config: { customModels: ["small"] },
+          },
+        },
+      },
+      clientSettings: {},
+      keybindings: [],
+    });
+    const restored = applyServerSettingsPatch(
+      target,
+      applicationSettingsImportPatch(file, target, undefined, []),
+    );
+    expect(restored.virtualModels?.team?.binding).toBeNull();
+    expect(restored.providerInstances[office]).toBeUndefined();
+    expect(restored.favorites).toEqual([]);
+    expect(restored.providerModelPreferences?.[office]).toBeUndefined();
+    const configured = {
+      ...target,
+      providerInstances: { [office]: { driver: ProviderDriverKind.make("codex") } },
+    };
+    const bound = applyServerSettingsPatch(
+      configured,
+      applicationSettingsImportPatch(file, configured, undefined, []),
+    );
+    expect(bound.virtualModels?.team?.binding).toEqual(physical);
+    expect(() =>
+      applicationSettingsImportPatch(
+        { ...file, server: { ...file.server, fallbackModelSelection: physical } },
+        target,
+      ),
+    ).toThrow("same driver");
+  });
   it("transfers model edits while preserving destination provider credentials and installation settings", () => {
     const codex = ProviderInstanceId.make("codex");
     const claude = ProviderInstanceId.make("claudeAgent");

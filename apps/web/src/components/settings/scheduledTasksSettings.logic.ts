@@ -1,4 +1,5 @@
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import { isListedThreadLineage, isWebhookDedupeTemplate } from "@t3tools/contracts";
 import {
   EnvironmentId,
@@ -445,9 +446,12 @@ export function scheduledTaskDefaultModel(
       entry.isAvailable &&
       entry.snapshot.auth.status !== "unauthenticated",
   );
-  const configured = resolveProjectSettings(settings, project?.id ?? null, project).settings
-    .defaultModelSelection;
-  for (const selection of [configured, settings.defaultModelSelection]) {
+  const scoped = resolveProjectSettings(settings, project?.id ?? null, project).settings;
+  for (const selection of [
+    resolveVirtualModel(scoped, scoped.defaultModelSelection),
+    resolveVirtualModel(settings, settings.defaultModelSelection),
+  ]) {
+    if (selection?.virtualModelId) return null;
     if (
       selection &&
       available.some(

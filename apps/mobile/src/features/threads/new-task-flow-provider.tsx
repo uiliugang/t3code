@@ -3,8 +3,10 @@ import { isMainOrMasterBranch } from "@t3tools/shared/git";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { msg, useMessages } from "gt-react-native";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
+import { resolveVirtualModel, virtualModelName } from "@t3tools/shared/virtualModels";
 import { useNowMinuteMs } from "../../lib/clock";
 import { m, type MessageResolver } from "../../i18n/messages";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import * as Dialog from "../../components/ui/Dialog";
 import React, { useRef, useState } from "react";
 
@@ -247,6 +249,7 @@ export function NewTaskFlowProvider(
 ) {
   const projects = useProjects();
   const messages = useMessages();
+  const t = useUiTranslation();
   const threads = useThreadShells();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const groupingSettings = useMobileProjectGroupingSettings();
@@ -471,11 +474,17 @@ export function NewTaskFlowProvider(
     selectedProjectDraft.modelSelection ?? null,
     selectedProject?.id ?? null,
   );
-  const projectDefaultModelSelection = resolveDefaultableModelSelection(
-    selectedEnvironmentServerConfig,
+  const configuredModel = resolveVirtualModel(
+    projectSettings.settings,
     projectSettings.settings.defaultModelSelection,
-    selectedProject?.id ?? null,
   );
+  const projectDefaultModelSelection = configuredModel?.virtualModelId
+    ? configuredModel
+    : resolveDefaultableModelSelection(
+        selectedEnvironmentServerConfig,
+        configuredModel,
+        selectedProject?.id ?? null,
+      );
   const stickyModelSelection = resolveDefaultableModelSelection(
     selectedEnvironmentServerConfig,
     storedStickyModelSelection,
@@ -500,9 +509,7 @@ export function NewTaskFlowProvider(
       draftModelSelection ?? (projectDefaultModelSelection ? null : stickyModelSelection),
     fallbackSelection: selectedEnvironmentServerConfig?.settings.fallbackModelSelection ?? null,
     providers: selectedEnvironmentServerConfig?.providers ?? [],
-    ...(selectedEnvironmentServerConfig
-      ? { settings: selectedEnvironmentServerConfig.settings }
-      : {}),
+    ...(selectedEnvironmentServerConfig ? { settings: projectSettings.settings } : {}),
     projectId: selectedProject?.id ?? null,
     now: modelSelectionNow,
   }).selection;
@@ -807,6 +814,19 @@ export function NewTaskFlowProvider(
         draft.modelSelection ?? null,
         selectedProject.id,
       ) ?? selectedModel;
+    if (
+      draftModelSelection &&
+      "virtualModelId" in draftModelSelection &&
+      typeof draftModelSelection.virtualModelId === "string"
+    ) {
+      const id = draftModelSelection.virtualModelId;
+      setPendingConnectionError(
+        t('Virtual model "{model}" is not bound. Configure it in Settings → Providers.', {
+          model: projectSettings.settings.virtualModels?.[id]?.name ?? virtualModelName(id, t),
+        }),
+      );
+      return null;
+    }
     if ((text.length === 0 && draft.attachments.length === 0) || !draftModelSelection) {
       return null;
     }

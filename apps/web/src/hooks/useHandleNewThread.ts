@@ -204,18 +204,22 @@ export function createNewThreadHandler(router: AnyRouter) {
             )),
       fallbackSelection: targetServerSettings.fallbackModelSelection ?? null,
       providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
-      settings: targetServerSettings,
+      settings: projectSettings.settings,
       projectId: projectRef.projectId,
       now: Date.now(),
     });
     const projectDefaultModelSelection =
-      fallbackResolution.fallback || options?.handoff
+      fallbackResolution.fallback ||
+      options?.handoff ||
+      configuredDefaultModelSelection?.virtualModelId
         ? fallbackResolution.selection
         : configuredDefaultModelSelection;
     const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({
-        projectDefaultSelection: projectDefaultModelSelection ?? null,
+        projectDefaultSelection: projectDefaultModelSelection?.virtualModelId
+          ? null
+          : (projectDefaultModelSelection ?? null),
         carrySelection: carryModelSelection,
         carrySourceDraftId:
           currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,

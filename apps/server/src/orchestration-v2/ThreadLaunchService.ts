@@ -3,6 +3,7 @@ import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import {
   CommandId,
   DEFAULT_SERVER_SETTINGS,
@@ -10,6 +11,7 @@ import {
   type ChatAttachment,
   type MessageId,
   type ModelSelection,
+  type SettingsModelSelection,
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
   type OrchestrationV2DelegatedFrom,
@@ -1664,11 +1666,29 @@ const make = Effect.gen(function* () {
       }
       // Scratch has no Git repository. Normalize before folder allocation so
       // durable preparation and retries use the thread's own Scratch folder.
-      const input: ThreadLaunchInput =
+      let input: ThreadLaunchInput =
         request.workspaceStrategy.type === "worktree" &&
         (yield* managedFolders.isScratchProject(request.projectId))
           ? { ...request, workspaceStrategy: { type: "root" } }
           : request;
+      const requested: SettingsModelSelection = input.modelSelection;
+      if (requested.virtualModelId) {
+        const settings = resolveProjectSettings(
+          yield* serverSettings.getSettings.pipe(
+            Effect.mapError(mapError(input, "resolve-project")),
+          ),
+          input.projectId,
+        ).settings;
+        const modelSelection = resolveVirtualModel(settings, requested);
+        if (modelSelection.virtualModelId)
+          return yield* mapError(
+            input,
+            "create-thread",
+          )(
+            `Virtual model '${settings.virtualModels?.[modelSelection.virtualModelId]?.name ?? modelSelection.virtualModelId}' is not bound. Configure it in Settings → Providers.`,
+          );
+        input = { ...input, modelSelection };
+      }
       yield* ProjectCloneTracker.rejectCommandsDuringClone(cloneTracker, {
         type: "thread.create",
         projectId: input.projectId,

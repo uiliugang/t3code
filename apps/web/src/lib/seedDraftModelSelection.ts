@@ -14,11 +14,13 @@ export function seedDraftModelSelection(draftId: DraftId, projectRef: ScopedProj
   if (hasExplicitComposerModelSelection(store.getComposerDraft(draftId))) return;
   store.applyStickyState(draftId);
   const project = readProject(projectRef);
-  const settings = readEnvironment(projectRef.environmentId)?.serverConfig?.settings;
+  const serverSettings = readEnvironment(projectRef.environmentId)?.serverConfig?.settings;
+  const settings =
+    serverSettings &&
+    resolveProjectSettings(serverSettings, projectRef.projectId, project ?? undefined).settings;
   const providers = readEnvironmentProviders(projectRef.environmentId) ?? [];
   const defaultSelection = settings
-    ? resolveProjectSettings(settings, projectRef.projectId, project ?? undefined).settings
-        .defaultModelSelection
+    ? settings.defaultModelSelection
     : (project?.defaultModelSelection ?? null);
   const resolution = resolveNewThreadModelSelection({
     defaultSelection:
@@ -32,6 +34,7 @@ export function seedDraftModelSelection(draftId: DraftId, projectRef: ScopedProj
     projectId: projectRef.projectId,
     now: Date.now(),
   });
-  const selection = resolution.fallback ? resolution.selection : defaultSelection;
+  const selection = resolution.fallback || defaultSelection ? resolution.selection : null;
+  if (selection?.virtualModelId) return;
   if (selection) store.setModelSelection(draftId, selection, { replaceOptions: true });
 }

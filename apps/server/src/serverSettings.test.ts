@@ -1226,7 +1226,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         assert.deepEqual(next.sourceControlWriterModelSelection, sourceControlWriterModelSelection);
         assert.deepEqual(
           ServerSettingsModule.resolveSourceControlWriterModelSelection(next, undefined, null),
-          next.textGenerationModelSelection,
+          resolveVirtualModel(next, next.textGenerationModelSelection),
         );
         assert.deepEqual(
           (yield* serverSettings.getSettings).sourceControlWriterModelSelection,
@@ -3722,3 +3722,4 @@ it.effect("publishes edits made before the restored settings watch is registered
     }).pipe(Effect.provide(settingsLayer));
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";

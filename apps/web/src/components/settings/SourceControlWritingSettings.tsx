@@ -32,6 +32,7 @@ import {
 import { useEnvironmentProviders } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { VirtualModelPicker } from "./VirtualModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -354,6 +355,8 @@ export function SourceControlWritingSettingsSection() {
                 <span className="text-sm text-muted-foreground">
                   {t("Connect an environment to choose its review guide model.")}
                 </span>
+              ) : settings.virtualModels ? (
+                <VirtualModelPicker role="reviewGuideModelSelection" />
               ) : (
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   {(usesReviewGuideModel || mixedReviewGuideModel) && canEnableReviewGuideModel ? (
@@ -548,6 +551,8 @@ export function SourceControlWritingSettingsSection() {
               <span className="text-sm text-muted-foreground">
                 {t("Connect an environment to choose its source control writer model.")}
               </span>
+            ) : settings.virtualModels ? (
+              <VirtualModelPicker role="sourceControlWriterModelSelection" />
             ) : (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {usesDedicatedModel && !canEnableDedicatedModel ? (

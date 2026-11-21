@@ -21,6 +21,7 @@ import { firstManagedDenial } from "../../state/managedPolicy";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { resolveEnvModeLabel, WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { VirtualModelPicker } from "./VirtualModelPicker";
 import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { TraitsPicker } from "../chat/TraitsPicker";
@@ -155,10 +156,12 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                 "Automatic defaults differ. Select one environment or choose a shared model to edit effort.",
               )
             : gt("Defaults differ. Select one environment or choose a shared model to edit effort.")
-          : (presentation.providerNote ?? effortDisabledReason)
+          : settings.virtualModels
+            ? null
+            : (presentation.providerNote ?? effortDisabledReason)
       }
       resetAction={
-        settings.defaultModelSelection !== null ? (
+        !settings.virtualModels && settings.defaultModelSelection !== null ? (
           <SettingResetButton
             ariaLabel={gt("Reset default model to default")}
             onClick={() => setModel(null)}
@@ -166,7 +169,9 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
         ) : null
       }
       control={
-        selection ? (
+        settings.virtualModels ? (
+          <VirtualModelPicker role="defaultModelSelection" />
+        ) : selection ? (
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
             <ProviderModelPicker
               environmentId={representative?.environmentId ?? null}
@@ -273,7 +278,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       {...searchableSetting("fallback-model")}
       description={t("Used for new threads when the default model's provider is out of usage.")}
       resetAction={
-        mixedFallback || settings.fallbackModelSelection !== null ? (
+        !settings.virtualModels && (mixedFallback || settings.fallbackModelSelection !== null) ? (
           <SettingResetButton
             ariaLabel={gt("Reset fallback model to default")}
             onClick={() => updateSettings({ fallbackModelSelection: null })}
@@ -281,7 +286,9 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
         ) : null
       }
       control={
-        fallbackSelection ? (
+        settings.virtualModels ? (
+          <VirtualModelPicker role="fallbackModelSelection" />
+        ) : fallbackSelection ? (
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
             <ProviderModelPicker
               environmentId={representative?.environmentId ?? null}

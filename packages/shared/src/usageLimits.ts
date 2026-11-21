@@ -1,6 +1,6 @@
 import {
   type EnvironmentId,
-  type ModelSelection,
+  type SettingsModelSelection as ModelSelection,
   type ServerSettings,
   type ProjectId,
   resolveProjectProviderInstanceEnabled,
@@ -20,6 +20,7 @@ import {
 
 import * as DateTime from "effect/DateTime";
 import type { UiTranslator } from "./uiLocale.ts";
+import { resolveVirtualModel } from "./virtualModels.ts";
 
 import { isLocalLoopbackHost, isWildcardHost } from "./hostClassification.ts";
 
@@ -88,14 +89,24 @@ export function resolveNewThreadModelSelection(input: {
   readonly settings?: ServerSettings;
   readonly projectId?: ProjectId | null;
 }) {
-  const selection = input.explicitSelection ?? input.defaultSelection;
+  const configured = input.explicitSelection ?? input.defaultSelection;
+  const selection = input.settings ? resolveVirtualModel(input.settings, configured) : configured;
+  const fallbackSelection = input.settings
+    ? resolveVirtualModel(input.settings, input.fallbackSelection)
+    : input.fallbackSelection;
   const unchanged = { selection, fallback: null };
-  if (input.explicitSelection || !selection || !input.fallbackSelection) return unchanged;
+  if (input.explicitSelection || !selection || selection.virtualModelId || !fallbackSelection)
+    return unchanged;
   const provider = input.providers.find((entry) => entry.instanceId === selection.instanceId);
   const window = exhaustedUsageWindow(provider, input.now, selection.model);
   const fallback = input.providers.find(
-    (entry) => entry.instanceId === input.fallbackSelection?.instanceId,
+    (entry) => entry.instanceId === fallbackSelection.instanceId,
   );
+  if (provider && window && fallbackSelection.virtualModelId)
+    return {
+      selection: fallbackSelection,
+      fallback: { provider, resetsAt: window.resetsAt ?? null },
+    };
   if (
     !provider ||
     !window ||
@@ -103,7 +114,7 @@ export function resolveNewThreadModelSelection(input: {
     !fallback.installed ||
     fallback.auth.status === "unauthenticated" ||
     !isProviderAvailable(fallback) ||
-    exhaustedUsageWindow(fallback, input.now, input.fallbackSelection.model) ||
+    exhaustedUsageWindow(fallback, input.now, fallbackSelection.model) ||
     (input.settings &&
       !resolveProjectProviderInstanceEnabled(
         input.settings,
@@ -113,7 +124,7 @@ export function resolveNewThreadModelSelection(input: {
   )
     return unchanged;
   return {
-    selection: input.fallbackSelection,
+    selection: fallbackSelection,
     fallback: { provider, resetsAt: window.resetsAt ?? null },
   };
 }

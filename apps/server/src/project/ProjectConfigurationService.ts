@@ -19,6 +19,13 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { canonicalRepositoryCloneKey } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { bindingProviders, projectVirtualModels } from "@t3tools/shared/virtualModels";
+import {
+  configuredTransferDriver,
+  importVirtualBindings,
+  loadVirtualGeneratorCatalog,
+} from "@t3tools/shared/serverSettings";
+import { TextGenerators } from "../textGeneration/TextGenerators.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -44,6 +51,7 @@ import * as SourceControlRepositoryService from "../sourceControl/SourceControlR
 import * as ProjectService from "./ProjectService.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
 import { BUILT_IN_DRIVERS } from "../provider/builtInDrivers.ts";
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 
 const SavedImport = Schema.Struct({
   ...ProjectImportSnapshot.fields,
@@ -97,7 +105,9 @@ function providerIds(settings: ProjectSettingsOverrides) {
       settings.textGenerationModelSelection,
       settings.sourceControlWriterModelSelection,
       settings.reviewGuideModelSelection,
-    ].flatMap((selection) => (selection ? [selection.instanceId] : [])),
+    ].flatMap((selection) =>
+      selection && !selection.virtualModelId ? [selection.instanceId] : [],
+    ),
   ]);
 }
 
@@ -128,6 +138,8 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const projects = yield* ProjectService.ProjectService;
   const settings = yield* ServerSettings.ServerSettingsService;
+  const providerRegistry = yield* ProviderRegistry;
+  const generators = yield* TextGenerators;
   const repositories = yield* SourceControlRepositoryService.SourceControlRepositoryService;
   const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const statePath = path.join(config.stateDir, "project-imports.json");
@@ -240,6 +252,7 @@ const make = Effect.gen(function* () {
               }),
             );
             const overrides = resolveProjectSettings(server, project.id, project).overrides;
+            const virtualModels = projectVirtualModels(overrides, server);
             return {
               projectId: project.id,
               configuration: {
@@ -248,10 +261,11 @@ const make = Effect.gen(function* () {
                 ...(Object.hasOwn(server.issueProjectSources, project.id)
                   ? { issueSources: server.issueProjectSources[project.id] }
                   : {}),
+                ...(Object.keys(virtualModels).length ? { virtualModels } : {}),
                 providers: Object.fromEntries(
-                  [...providerIds(overrides)].map((id) => [
+                  [...providerIds(overrides), ...bindingProviders(virtualModels)].map((id) => [
                     id,
-                    server.providerInstances[id]?.driver ?? ProviderDriverKind.make(id),
+                    configuredTransferDriver(server, id) ?? ProviderDriverKind.make(id),
                   ]),
                 ),
                 workspace: {
@@ -523,13 +537,31 @@ const make = Effect.gen(function* () {
               driver.metadata.hasDefaultInstance !== false,
           );
           const destinationDriver =
-            server.providerInstances[instanceId]?.driver ?? defaultDriver?.driverKind;
+            configuredTransferDriver(server, instanceId) ?? defaultDriver?.driverKind;
           if (destinationDriver !== definition.providers[instanceId])
             return yield* Effect.fail("settings_failed" as const);
         }
         const scripts = definition.settings.defaultProjectScripts?.map(remapScript);
         yield* settings
           .updateSettings({
+            ...importVirtualBindings(
+              definition.virtualModels,
+              server,
+              (id) => {
+                const driver =
+                  configuredTransferDriver(server, id) ??
+                  BUILT_IN_DRIVERS.find(
+                    (d) =>
+                      defaultInstanceIdForDriver(d.driverKind) === id &&
+                      d.metadata.hasDefaultInstance !== false,
+                  )?.driverKind;
+                return driver !== undefined && driver === definition.providers[id];
+              },
+              yield* providerRegistry.getProviders,
+              yield* loadVirtualGeneratorCatalog(definition.virtualModels, server, (id) =>
+                generators.listModels({ id }),
+              ),
+            ),
             ...(definition.issueSources !== undefined
               ? {
                   issueProjectSources: {

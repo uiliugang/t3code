@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   applicationSettingsImportPatch,
+  importGeneratorCatalog,
   createApplicationSettingsFile,
   createProjectSettingsFile,
   projectSettingsImportPatch,
@@ -149,7 +150,20 @@ export function ApplicationConfigurationSettings() {
               serverEnvironment.settingsValueAtom(environment.environmentId),
             );
             if (!current) throw new Error(t("Reconnect this environment before importing."));
-            const patch = applicationSettingsImportPatch(file, current, t);
+            const patch = applicationSettingsImportPatch(
+              file,
+              current,
+              t,
+              appAtomRegistry.get(serverEnvironment.configValueAtom(environment.environmentId))
+                ?.providers,
+              await importGeneratorCatalog(
+                file,
+                current,
+                environment.environmentId,
+                appAtomRegistry,
+                serverEnvironment.listTextGeneratorModels,
+              ),
+            );
             const bindings = settingsKeybindingsToImport(
               file.keybindings,
               appAtomRegistry.get(serverEnvironment.configValueAtom(environment.environmentId))
@@ -273,7 +287,8 @@ export function ProjectConfigurationSettings({
           const definition = exported.value[0]?.configuration;
           if (!definition) throw new Error(t("This project is no longer available."));
           return {
-            ...Struct.omit(file, ["issueSources"]),
+            ...Struct.omit(file, ["issueSources", "virtualModels"]),
+            ...(definition.virtualModels ? { virtualModels: definition.virtualModels } : {}),
             settings: definition.settings,
             providers: definition.providers,
             workspace: definition.workspace,
@@ -290,7 +305,23 @@ export function ProjectConfigurationSettings({
           if (!current) throw new Error(t("Reconnect this environment before importing."));
           const result = await update({
             environmentId: project.environmentId,
-            input: { patch: projectSettingsImportPatch(file, project, current, t) },
+            input: {
+              patch: projectSettingsImportPatch(
+                file,
+                project,
+                current,
+                t,
+                appAtomRegistry.get(serverEnvironment.configValueAtom(project.environmentId))
+                  ?.providers,
+                await importGeneratorCatalog(
+                  file,
+                  current,
+                  project.environmentId,
+                  appAtomRegistry,
+                  serverEnvironment.listTextGeneratorModels,
+                ),
+              ),
+            },
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         }}

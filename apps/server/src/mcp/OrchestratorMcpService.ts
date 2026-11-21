@@ -70,6 +70,7 @@ import { getProviderOptionCurrentValue, withLegacyUltracodeEffort } from "@t3too
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { threadPullRequestUpdatedAtMs } from "@t3tools/shared/threadPullRequests";
 import {
@@ -1344,8 +1345,13 @@ const make = Effect.gen(function* () {
     const settings = yield* serverSettings.getSettings.pipe(
       Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
     );
-    const selection = resolveProjectSettings(settings, project.id, project).settings
-      .defaultModelSelection;
+    const scoped = resolveProjectSettings(settings, project.id, project).settings;
+    const selection = resolveVirtualModel(scoped, scoped.defaultModelSelection);
+    if (selection?.virtualModelId)
+      return yield* failure(
+        "invalid_request",
+        `Virtual model '${scoped.virtualModels?.[selection.virtualModelId]?.name ?? selection.virtualModelId}' is not bound. Configure it in Settings → Providers.`,
+      );
     if (selection === null)
       return yield* failure(
         "invalid_request",

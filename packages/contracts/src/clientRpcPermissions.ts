@@ -158,6 +158,23 @@ export function clientRpcRequiredScopes(
   if (method === WS_METHODS.projectsImportFolders)
     return [AuthOrchestrationOperateScope, AuthFilesystemReadScope];
   if (
+    method === WS_METHODS.projectsImportConfiguration &&
+    typeof input === "object" &&
+    input !== null &&
+    "projects" in input &&
+    Array.isArray(input.projects) &&
+    input.projects.some(
+      (project: unknown) =>
+        typeof project === "object" && project !== null && "virtualModels" in project,
+    )
+  )
+    return [
+      AuthSourceControlWriteScope,
+      AuthOrchestrationOperateScope,
+      AuthSettingsWriteScope,
+      AuthProvidersManageScope,
+    ];
+  if (
     method === WS_METHODS.projectsImportConfiguration ||
     method === WS_METHODS.projectsRetryImport
   )

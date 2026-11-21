@@ -1,3 +1,4 @@
+import { migrateVirtualModels, resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import {
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
@@ -637,7 +638,8 @@ function resolveTextGenerationProvider(
   settings: ServerSettings,
   isDriverAllowed: DriverAllowed = anyDriver,
 ): ServerSettings {
-  const selection = settings.textGenerationModelSelection;
+  const selection = resolveVirtualModel(settings, settings.textGenerationModelSelection);
+  if (selection.virtualModelId) return settings;
   return isModelSelectionProviderEnabled(settings, selection) &&
     selectionSupportsTextGeneration(settings, selection) &&
     isDriverAllowed(
@@ -660,7 +662,7 @@ function fallbackTextGenerationProvider(
       resolveProviderInstanceEnabled(
         settings.providerInstances[instanceId] ?? { driver, config: {} },
       ),
-    { defaultModelSelection: settings.defaultModelSelection },
+    { defaultModelSelection: resolveVirtualModel(settings, settings.defaultModelSelection) },
   );
   return fallback === null ? settings : { ...settings, textGenerationModelSelection: fallback };
 }
@@ -804,6 +806,7 @@ const make = Effect.gen(function* () {
     settings: managed,
     providers: managedProviders,
     summary: managedPolicy,
+    document: policyDocument,
   } = yield* ManagedPolicy.ManagedPolicy;
   // Locks are laid over every settings value that leaves this service, never persisted.
   const toEffective = (settings: ServerSettings) =>
@@ -1125,7 +1128,13 @@ const make = Effect.gen(function* () {
         yield* secretStore.remove(move.from).pipe(Effect.ignore);
       }
     }
-    return { settings: migrated, parseFailure };
+    // Delay writing the new representation until an actual edit, including for symlinked settings.
+    return {
+      settings: settingsFileTrusted
+        ? migrateVirtualModels(migrated, Object.keys(policyDocument?.settings ?? {}))
+        : migrated,
+      parseFailure,
+    };
   });
 
   const settingsCache = yield* Cache.makeWith((_key: typeof cacheKey) => loadSettingsFromDisk, {

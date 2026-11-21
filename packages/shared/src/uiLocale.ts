@@ -14,6 +14,27 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Virtual models": "虚拟模型",
+  "Update this environment's server before importing virtual models.":
+    "请升级此环境的服务器后再导入虚拟模型。",
+  "Real models": "真实模型",
+  "Virtual model": "虚拟模型",
+  "Default option": "默认选项",
+  "Not bound": "暂未绑定",
+  "Inherit ({model})": "继承（{model}）",
+  "{name} virtual model": "{name}虚拟模型",
+  "Search virtual models": "搜索虚拟模型或绑定",
+  "Edit binding: {name}": "编辑绑定：{name}",
+  "Edit binding": "编辑绑定",
+  "Virtual model name": "虚拟模型名称",
+  "Choose real model": "选择真实模型",
+  "Save binding": "保存绑定",
+  "Add virtual model": "添加虚拟模型",
+  Fallback: "备用",
+  "Source control writer": "源码写作",
+  "Voice cleanup": "语音后处理",
+  'Virtual model "{model}" is not bound. Configure it in Settings → Providers.':
+    "虚拟模型“{model}”暂未绑定。请在设置 → 模型提供商中绑定模型。",
   "Resume now": "立即恢复",
   "Reset {time}": "已重置：{time}",
   "App updates": "应用更新",

@@ -5,6 +5,7 @@ import {
   type ThreadPredictionResult,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import { threadPredictionSourceRun } from "@t3tools/shared/threadPrediction";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -89,8 +90,9 @@ const make = Effect.gen(function* () {
       const empty = { sourceRunId: input.sourceRunId, text: null };
       const shell = yield* projections.getThreadShell(input.threadId);
       if (threadPredictionSourceRun(shell) !== input.sourceRunId || !shell) return empty;
-      const modelSelection = resolveProjectSettings(yield* settings.getSettings, shell.projectId)
-        .settings.textGenerationModelSelection;
+      const scoped = resolveProjectSettings(yield* settings.getSettings, shell.projectId).settings;
+      const modelSelection = resolveVirtualModel(scoped, scoped.textGenerationModelSelection);
+      if (modelSelection.virtualModelId) return empty;
       const text = yield* Cache.get(
         cache,
         new PredictionCacheKey({ ...input, model: yield* encodeModel(modelSelection) }),
