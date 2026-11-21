@@ -87,6 +87,7 @@ export interface UsageContractMismatch {
 }
 
 export interface MergedUsage {
+  readonly outputTokensPerSecond?: number;
   readonly costUsd: number;
   readonly uncachedInputTokens: number;
   readonly cachedInputTokens: number;
@@ -354,6 +355,15 @@ export function mergeUsage(
   }
 
   const sourceKey = sourceIdentity(current);
+  let measuredOutputTokens = 0;
+  let measuredDurationMs = 0;
+  for (const { summary } of current) {
+    for (const sample of summary.outputThroughput ?? []) {
+      if (sample.durationMs <= 0) continue;
+      measuredOutputTokens += sample.outputTokens;
+      measuredDurationMs += sample.durationMs;
+    }
+  }
   const {
     ownerScanByFingerprint,
     supplementalBucketsByEnvironment,
@@ -580,6 +590,9 @@ export function mergeUsage(
   );
 
   return {
+    ...(measuredDurationMs > 0
+      ? { outputTokensPerSecond: (measuredOutputTokens * 1000) / measuredDurationMs }
+      : {}),
     costUsd,
     uncachedInputTokens,
     cachedInputTokens,

@@ -105,7 +105,10 @@ export function resolveModelAliases(
 }
 
 /** Matches original IDs, so an alias cannot pull excluded usage into a kept model. */
-function keepsUsageRecord(filter: UsageModelFilter | undefined, record: UsageRecord): boolean {
+export function keepsUsageRecord(
+  filter: UsageModelFilter | undefined,
+  record: { readonly model: string; readonly provider: string },
+): boolean {
   if (filter === undefined) return true;
   const model = record.model.trim();
   const matches = (selector: UsageModelSelector) =>

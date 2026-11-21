@@ -2289,6 +2289,8 @@ const zhCN: Readonly<Record<string, string>> = {
   Monthly: "月限额",
   "{percent}% left": "剩余 {percent}%",
   "Turn average: {rate} tokens/s": "本轮平均：{rate} Token/秒",
+  "Average output speed": "平均输出速度",
+  "{rate} tokens/s": "{rate} Token/秒",
   "{provider}: weekly usage unavailable": "{provider}：暂无每周用量数据",
   "{provider}: {percent}% weekly remaining": "{provider}：每周剩余 {percent}%",
   "Sharing & access": "共享与访问",

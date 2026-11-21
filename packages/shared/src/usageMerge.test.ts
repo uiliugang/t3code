@@ -82,6 +82,28 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 }
 
 describe("mergeUsage", () => {
+  it("weights output speed by measured duration without including legacy usage totals", () => {
+    const legacy = summary([bucket()], []);
+    expect(
+      mergeUsage([environment("legacy", legacy)], USAGE_CONTRACT_VERSION).outputTokensPerSecond,
+    ).toBeUndefined();
+    const merged = mergeUsage(
+      [
+        environment("legacy", legacy),
+        environment("fast", {
+          ...legacy,
+          outputThroughput: [{ provider: "codex", outputTokens: 100, durationMs: 1000 }],
+        }),
+        environment("slow", {
+          ...legacy,
+          outputThroughput: [{ provider: "claude", outputTokens: 80, durationMs: 3000 }],
+        }),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    expect(merged.outputTokensPerSecond).toBe(45);
+  });
+
   it("counts a Cursor account once across servers while retaining each server's other providers", () => {
     const account = {
       provider: "cursor" as const,

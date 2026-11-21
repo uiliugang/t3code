@@ -131,6 +131,13 @@ function withoutProviders(
             sources: environment.summary.sources.filter(
               (source) => !hiddenProviders.has(source.fingerprint.provider),
             ),
+            ...(environment.summary.outputThroughput === undefined
+              ? {}
+              : {
+                  outputThroughput: environment.summary.outputThroughput.filter(
+                    (sample) => !hiddenProviders.has(sample.provider),
+                  ),
+                }),
           },
         },
   );

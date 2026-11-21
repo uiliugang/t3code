@@ -849,6 +849,15 @@ function UsageOverview({
             label={t("Output")}
             value={formatTokens(merged.outputTokens)}
           />
+          {merged.outputTokensPerSecond === undefined ? null : (
+            <Metric
+              loading={loadingPartial}
+              label={t("Average output speed")}
+              value={t("{rate} tokens/s", {
+                rate: Math.round(merged.outputTokensPerSecond * 10) / 10,
+              })}
+            />
+          )}
           <Metric
             loading={loadingPartial}
             label={gt("Cache savings")}
