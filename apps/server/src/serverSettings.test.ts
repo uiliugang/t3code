@@ -415,6 +415,25 @@ function strictSecretReferencePaths(
 }
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings", (it) => {
+  it.effect(
+    "rejects stale virtual model edits without restoring a changed or deleted binding",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const original = { name: "Team", binding: null };
+        const renamed = { ...original, name: "Renamed" };
+        yield* service.updateSettings({ virtualModels: { team: original } });
+        const save = yield* decodeServerSettingsPatch({
+          virtualModels: { team: { expected: original, save: renamed } },
+        });
+        const saved = yield* service.updateSettings(save);
+        assert.deepEqual(saved.virtualModels?.team, renamed);
+        yield* Effect.flip(service.updateSettings(save));
+        yield* service.updateSettings({ virtualModels: { team: null } });
+        yield* Effect.flip(service.updateSettings(save));
+        assert.isUndefined((yield* service.getSettings).virtualModels?.team);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
@@ -1226,7 +1245,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         assert.deepEqual(next.sourceControlWriterModelSelection, sourceControlWriterModelSelection);
         assert.deepEqual(
           ServerSettingsModule.resolveSourceControlWriterModelSelection(next, undefined, null),
-          next.textGenerationModelSelection,
+          resolveVirtualModel(next, next.textGenerationModelSelection),
         );
         assert.deepEqual(
           (yield* serverSettings.getSettings).sourceControlWriterModelSelection,
@@ -3727,3 +3746,4 @@ it.effect("publishes edits made before the restored settings watch is registered
     }).pipe(Effect.provide(settingsLayer));
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";

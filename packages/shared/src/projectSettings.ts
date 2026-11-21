@@ -1,5 +1,5 @@
 import {
-  type ModelSelection,
+  type SettingsModelSelection as ModelSelection,
   PROJECT_FILE_BACKED_SETTINGS,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   type ProjectFileBackedSettingKey,
@@ -18,6 +18,7 @@ import {
 import { readCustomModelEntries } from "./model.ts";
 import { normalizeProjectPathForComparison } from "./path.ts";
 import { fallbackTextGenerationModelSelection } from "./serverSettings.ts";
+import { resolveVirtualModel } from "./virtualModels.ts";
 
 export type ProjectSettingSource = "environment" | "project" | "t3.json";
 
@@ -138,42 +139,41 @@ function resolveProjectOverrides(
     const value = overrides[key];
     // Forward-compatible decoding can leave a present undefined, which is not an override.
     if (value === undefined) continue;
-    if (
-      (key === "textGenerationModelSelection" || key === "defaultModelSelection") &&
-      value !== undefined &&
-      value !== null &&
-      !(
-        key === "textGenerationModelSelection"
-          ? resolveTextGenerationSelectionEnabled
-          : resolveProjectProviderInstanceEnabled
-      )(settings, projectId, (value as ModelSelection).instanceId)
-    ) {
-      continue;
-    }
-    // Clients resolve a hidden model to the catalog's first visible one, so a
-    // hidden project default would silently pick a model nobody chose.
-    // Custom models stay visible even when listed as hidden, as in the clients.
-    if (key === "defaultModelSelection" && value !== null) {
-      const { instanceId, model } = value as ModelSelection;
-      const config = settings.providerInstances[instanceId]?.config as
-        | { customModels?: unknown }
-        | undefined;
-      if (
-        settings.providerModelPreferences?.[instanceId]?.hiddenModels.includes(model) &&
-        !readCustomModelEntries(config?.customModels).some((entry) => entry.slug === model)
-      ) {
-        continue;
-      }
-    }
     effective[key] = value;
     sources[key] = "project";
   }
-  const textGeneration = effective.textGenerationModelSelection as ModelSelection;
-  if (!resolveTextGenerationSelectionEnabled(settings, projectId, textGeneration.instanceId)) {
+  const scoped = effective as ServerSettings;
+  // Resolve against the merged scope: a binding can inherit another project override.
+  for (const key of ["textGenerationModelSelection", "defaultModelSelection"] as const) {
+    if (sources[key] !== "project") continue;
+    const selection = resolveVirtualModel(scoped, scoped[key]);
+    if (!selection || selection.virtualModelId) continue;
+    const { instanceId, model } = selection;
+    const enabled =
+      key === "textGenerationModelSelection"
+        ? resolveTextGenerationSelectionEnabled
+        : resolveProjectProviderInstanceEnabled;
+    const config = settings.providerInstances[instanceId]?.config as
+      | { customModels?: unknown }
+      | undefined;
+    const hidden =
+      key === "defaultModelSelection" &&
+      settings.providerModelPreferences?.[instanceId]?.hiddenModels.includes(model) &&
+      !readCustomModelEntries(config?.customModels).some((entry) => entry.slug === model);
+    if (hidden || !enabled(settings, projectId, instanceId)) {
+      effective[key] = settings[key];
+      sources[key] = "environment";
+    }
+  }
+  const textGeneration = resolveVirtualModel(scoped, scoped.textGenerationModelSelection);
+  if (
+    !textGeneration.virtualModelId &&
+    !resolveTextGenerationSelectionEnabled(settings, projectId, textGeneration.instanceId)
+  ) {
     const fallback = fallbackTextGenerationModelSelection(
       settings.providerInstances,
       (instanceId) => resolveProjectProviderInstanceEnabled(settings, projectId, instanceId),
-      { defaultModelSelection: effective.defaultModelSelection as ModelSelection | null },
+      { defaultModelSelection: resolveVirtualModel(scoped, scoped.defaultModelSelection) },
     );
     if (fallback !== null) effective.textGenerationModelSelection = fallback;
   }

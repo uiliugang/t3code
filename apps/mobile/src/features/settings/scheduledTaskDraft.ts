@@ -1,4 +1,5 @@
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import { isWebhookDedupeTemplate, scheduledTaskThreadMode } from "@t3tools/contracts";
 import type {
   ModelSelection,
@@ -35,11 +36,16 @@ export function scheduledTaskDefaultModel(
   project: (LegacyProjectSettingsFields & { readonly id: ProjectId }) | null,
 ): ModelSelection | null {
   const settings = config?.settings ?? DEFAULT_SERVER_SETTINGS;
-  const configured = resolveProjectSettings(settings, project?.id ?? null, project).settings
-    .defaultModelSelection;
+  const scoped = resolveProjectSettings(settings, project?.id ?? null, project).settings;
+  const configured = resolveVirtualModel(scoped, scoped.defaultModelSelection);
+  if (configured?.virtualModelId) return null;
   const projectDefaultSelection =
     resolveDefaultableModelSelection(config, configured, project?.id ?? null) ??
-    resolveDefaultableModelSelection(config, settings.defaultModelSelection, project?.id ?? null);
+    resolveDefaultableModelSelection(
+      config,
+      resolveVirtualModel(settings, settings.defaultModelSelection),
+      project?.id ?? null,
+    );
   return resolveNewTaskModelSelection({
     draftSelection: null,
     projectDefaultSelection,

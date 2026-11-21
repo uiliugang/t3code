@@ -56,6 +56,7 @@ import {
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { VirtualModelPicker } from "./VirtualModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
@@ -2107,7 +2108,7 @@ export function ThreadsSettingsPanel() {
             "For thread titles and other generated text. Source control has its own setting. Text generators from Providers also appear here.",
           )}
           resetAction={
-            hasServerTargets && isTextGenerationModelDirty ? (
+            hasServerTargets && !settings.virtualModels && isTextGenerationModelDirty ? (
               <SettingResetButton
                 ariaLabel={gt("Reset text generation model to default")}
                 onClick={() =>
@@ -2124,6 +2125,8 @@ export function ThreadsSettingsPanel() {
               <span className="text-sm text-muted-foreground">
                 {t("Connect an environment to choose its text generation model.")}
               </span>
+            ) : settings.virtualModels ? (
+              <VirtualModelPicker role="textGenerationModelSelection" />
             ) : !hasTextGenerationProvider ? (
               <span className="text-sm text-muted-foreground">
                 {t("No text generation providers available.")}

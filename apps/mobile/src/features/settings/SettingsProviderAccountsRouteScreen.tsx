@@ -16,7 +16,8 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
+import { VirtualModelSections } from "./VirtualModelSections";
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from "react-native";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -75,29 +76,36 @@ export function SettingsProviderAccountsRouteScreen() {
         {selectedTargets.length === 0 ? (
           <Text className="text-foreground-muted">{t("Select a connected environment.")}</Text>
         ) : (
-          selectedTargets.map((environment) =>
-            !permittedEnvironments.has(environment.environmentId) ? (
-              <SettingsSection key={environment.environmentId} title={environment.label}>
-                <View className="gap-1 p-4">
-                  <Text className="text-base text-foreground">
-                    <T>Limited permissions</T>
-                  </Text>
-                  <Text className="text-sm text-foreground-muted">
-                    {gt(
-                      "This session can view {environment}''s providers but can't change their settings.",
-                      { environment: environment.label },
-                    )}
-                  </Text>
-                </View>
-              </SettingsSection>
-            ) : (
-              <EnvironmentProviders
-                key={environment.environmentId}
+          selectedTargets.map((environment) => (
+            <Fragment key={environment.environmentId}>
+              {!permittedEnvironments.has(environment.environmentId) ? (
+                <SettingsSection title={environment.label}>
+                  <View className="gap-1 p-4">
+                    <Text className="text-base text-foreground">
+                      <T>Limited permissions</T>
+                    </Text>
+                    <Text className="text-sm text-foreground-muted">
+                      {gt(
+                        "This session can view {environment}''s providers but can't change their settings.",
+                        { environment: environment.label },
+                      )}
+                    </Text>
+                  </View>
+                </SettingsSection>
+              ) : (
+                <EnvironmentProviders
+                  key={environment.environmentId}
+                  environment={environment}
+                  providers={managedProviders(environment, providersByEnvironment)}
+                />
+              )}
+              <VirtualModelSections
                 environment={environment}
                 providers={managedProviders(environment, providersByEnvironment)}
+                canManage={permittedEnvironments.has(environment.environmentId)}
               />
-            ),
-          )
+            </Fragment>
+          ))
         )}
       </ScreenScrollView>
     </SettingsScreen>

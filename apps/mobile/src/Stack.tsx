@@ -111,6 +111,7 @@ import { SettingsAppearanceRouteScreen } from "./features/settings/SettingsAppea
 import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsClientStorageRouteScreen";
 import { SettingsDiagnosticsRouteScreen } from "./features/diagnostics/SettingsDiagnosticsRouteScreen";
 import { SettingsProviderAccountsRouteScreen } from "./features/settings/SettingsProviderAccountsRouteScreen";
+import { SettingsVirtualModelRouteScreen } from "./features/settings/SettingsVirtualModelRouteScreen";
 import { SettingsSkillsRouteScreen } from "./features/settings/SettingsSkillsRouteScreen";
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentDetailRouteScreen } from "./features/settings/SettingsEnvironmentDetailRouteScreen";
@@ -368,6 +369,10 @@ const SETTINGS_SCREENS = {
   SettingsProviderAccounts: createNativeStackScreen({
     screen: SettingsProviderAccountsRouteScreen,
     linking: "settings/provider-accounts",
+    options: settingsPage(),
+  }),
+  SettingsVirtualModel: createNativeStackScreen({
+    screen: SettingsVirtualModelRouteScreen,
     options: settingsPage(),
   }),
   SettingsSkills: createNativeStackScreen({

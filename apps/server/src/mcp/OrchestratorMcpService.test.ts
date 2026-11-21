@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import { virtualModelReference } from "@t3tools/shared/virtualModels";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -4161,7 +4162,10 @@ describe("OrchestratorMcpService provider resolution", () => {
             ServerSettings.layerTest(
               defaults.environment === undefined
                 ? {}
-                : { defaultModelSelection: defaults.environment },
+                : {
+                    defaultModelSelection: virtualModelReference("team"),
+                    virtualModels: { team: { binding: defaults.environment } },
+                  },
             ),
             Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
             Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({

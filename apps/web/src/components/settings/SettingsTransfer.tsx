@@ -1,5 +1,6 @@
 import {
   assertSettingsFileSize,
+  assertVirtualModelsSupported,
   parseSettingsFile,
   projectConfigurationsForImport,
   serializeSettingsFile,
@@ -12,6 +13,8 @@ import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { randomUUID } from "../../lib/utils";
 import { sourceControlEnvironment } from "../../state/sourceControl";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 
 import { Button } from "../ui/button";
@@ -119,6 +122,9 @@ export function SettingsTransfer({
           throw new Error(
             "This export has no clone information. Export it again from an updated environment.",
           );
+        const current = appAtomRegistry.get(serverEnvironment.settingsValueAtom(environmentId));
+        if (!current) throw new Error(t("Reconnect this environment before importing."));
+        assertVirtualModelsSupported(pending, current, t);
         const started = await startImport({
           environmentId,
           input: {

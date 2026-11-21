@@ -16,6 +16,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Stream from "effect/Stream";
 import { buildServerProvider } from "@t3tools/provider-core/server/snapshotProbe";
+import { virtualModelReference } from "@t3tools/shared/virtualModels";
 import * as Layer from "effect/Layer";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -86,7 +87,10 @@ function fixture() {
   const layer = NativeCli.layer.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
-        ServerSettings.layerTest({ defaultModelSelection: defaultModel }),
+        ServerSettings.layerTest({
+          defaultModelSelection: virtualModelReference("team"),
+          virtualModels: { team: { binding: defaultModel } },
+        }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadShell: () => Effect.sync(() => thread as OrchestrationV2ThreadShell | null),
           getRun: () => Effect.sync(() => run as OrchestrationV2Run | undefined),

@@ -49,3 +49,23 @@ export const ModelSelection = ModelSelectionSource.pipe(
   ),
 );
 export type ModelSelection = typeof ModelSelection.Type;
+
+export type SettingsModelSelection = ModelSelection & { readonly virtualModelId?: string };
+const VirtualReference = Schema.Struct({ virtualModelId: TrimmedNonEmptyString });
+const ReferenceSelection = VirtualReference.pipe(
+  Schema.decodeTo(
+    Schema.Struct({ ...ModelSelectionWire.fields, ...VirtualReference.fields }),
+    SchemaTransformation.transform({
+      decode: ({ virtualModelId }) => ({
+        virtualModelId,
+        instanceId: "t3-virtual",
+        model: virtualModelId,
+      }),
+      encode: ({ virtualModelId }) => ({ virtualModelId }),
+    }),
+  ),
+);
+export const SettingsModelSelection: Schema.Codec<
+  SettingsModelSelection,
+  typeof VirtualReference.Encoded | typeof ModelSelection.Encoded
+> = Schema.Union([ReferenceSelection, ModelSelection]);

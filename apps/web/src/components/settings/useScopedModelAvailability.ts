@@ -4,6 +4,7 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts";
 import { useGT } from "gt-react";
+import { memoize } from "effect/Function";
 
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { mergeEnvironmentSettings } from "../../hooks/useSettings";
@@ -29,6 +30,35 @@ export function useScopedModelDisabledReason(
   const { targets } = useSettingsScope();
   const { environments } = useEnvironments();
   const providersByEnvironment = useEnvironmentProviders();
+  const optionsForInstance = textGeneration
+    ? getTextGenerationModelOptionsByInstance
+    : getCustomModelOptionsByInstance;
+  const catalogFor = memoize((candidate: (typeof targets)[number]) => {
+    const providers = providersByEnvironment.get(candidate.environmentId);
+    if (!providers) return null;
+    const options = optionsForInstance(
+      mergeEnvironmentSettings(candidate.settings, settings),
+      providers,
+    );
+    return new Map(
+      applyProviderInstanceSettings(
+        deriveProviderInstanceEntries(providers),
+        candidate.settings,
+        candidate.projectId,
+      ).map((entry) => [
+        entry.instanceId,
+        {
+          entry,
+          models: new Set(
+            options
+              .get(entry.instanceId)
+              ?.filter((option) => !option.isUnavailable)
+              .map((option) => option.slug),
+          ),
+        },
+      ]),
+    );
+  });
   return (instanceId: ProviderInstanceId, model: string): string | null => {
     const sourceEntry = entries.find((entry) => entry.instanceId === instanceId);
     const shownGenerator = textGeneratorForSelection(settings, instanceId);
@@ -56,25 +86,15 @@ export function useScopedModelDisabledReason(
         }
         continue;
       }
-      const providers = providersByEnvironment.get(candidate.environmentId);
-      if (!environment?.serverConfig || !providers) continue;
-      const entry = applyProviderInstanceSettings(
-        deriveProviderInstanceEntries(providers),
-        candidate.settings,
-        candidate.projectId,
-      ).find((option) => option.instanceId === instanceId);
-      const optionsForInstance = textGeneration
-        ? getTextGenerationModelOptionsByInstance
-        : getCustomModelOptionsByInstance;
-      const options = optionsForInstance(
-        mergeEnvironmentSettings(candidate.settings, settings),
-        providers,
-      ).get(instanceId);
+      if (!environment?.serverConfig) continue;
+      const catalog = catalogFor(candidate);
+      if (!catalog) continue;
+      const option = catalog.get(instanceId);
       if (
-        !entry?.enabled ||
-        !entry.isAvailable ||
-        entry.driverKind !== sourceEntry?.driverKind ||
-        !options?.some((option) => option.slug === model && !option.isUnavailable)
+        !option?.entry.enabled ||
+        !option.entry.isAvailable ||
+        option.entry.driverKind !== sourceEntry?.driverKind ||
+        !option.models.has(model)
       ) {
         return unavailable;
       }

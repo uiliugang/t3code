@@ -1,7 +1,11 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ModelSelection, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import type {
+  SettingsModelSelection as ModelSelection,
+  ProjectId,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import {
   isProviderAvailable,
   isProviderTextGenerationCapable,
@@ -10,6 +14,8 @@ import {
 import * as DateTime from "effect/DateTime";
 import { exhaustedUsageWindow } from "@t3tools/shared/usageLimits";
 import { fallbackTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as ServerSettings from "../serverSettings.ts";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 import { TextGenerationError } from "@t3tools/contracts";
@@ -89,6 +95,35 @@ export const make = Effect.gen(function* () {
       modelSelection: ModelSelection,
     ) => Effect.Effect<A, TextGenerationError>,
   ) {
+    if (selection.virtualModelId) {
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation,
+              detail: "Could not read virtual model settings.",
+              cause,
+            }),
+        ),
+      );
+      selection = resolveVirtualModel(
+        resolveProjectSettings(settings, projectId ?? null).settings,
+        selection,
+      );
+      if (selection.virtualModelId)
+        return yield* new TextGenerationError({
+          operation,
+          detail: `Virtual model '${settings.virtualModels?.[selection.virtualModelId]?.name ?? selection.virtualModelId}' is not bound. Configure it in Settings → Providers.`,
+        });
+      if (
+        !resolveProjectProviderInstanceEnabled(settings, projectId ?? null, selection.instanceId) &&
+        !settings.textGenerators[selection.instanceId]?.enabled
+      )
+        return yield* new TextGenerationError({
+          operation,
+          detail: "The provider bound to the virtual model is disabled.",
+        });
+    }
     const textGenerator = yield* textGenerators.runner(selection.instanceId);
     // A review guide reaches a text generator only through a fallback; it needs an agent instead.
     const textGeneratorId = selection.instanceId;
@@ -147,7 +182,7 @@ export const make = Effect.gen(function* () {
               !exhaustedUsageWindow(provider, now, model)
             );
           },
-          { defaultModelSelection: settings.defaultModelSelection },
+          { defaultModelSelection: resolveVirtualModel(settings, settings.defaultModelSelection) },
         ) ?? selection;
     }
     if (textGeneratorCannotRun && selection.instanceId === textGeneratorId) {

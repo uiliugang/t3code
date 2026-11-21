@@ -35,7 +35,10 @@ import {
   DEFAULT_TEXT_GENERATION_MODEL,
   ProviderOptionSelections,
 } from "./model.ts";
-import { ModelSelection } from "./modelSelection.ts";
+import {
+  ModelSelection as PhysicalModelSelection,
+  SettingsModelSelection as ModelSelection,
+} from "./modelSelection.ts";
 import { ProjectScript, type ProjectMutation } from "./project.ts";
 import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
@@ -1450,7 +1453,22 @@ export const CloudSpeechCredentials = Schema.Struct({
   openrouter: CloudSpeechCredential,
 });
 
+export const VirtualModel = Schema.Struct({
+  name: Schema.optionalKey(TrimmedNonEmptyString),
+  binding: Schema.NullOr(
+    Schema.Union([
+      PhysicalModelSelection,
+      Schema.Literals(["textGenerationModelSelection", "sourceControlWriterModelSelection"]),
+    ]),
+  ),
+});
+export type VirtualModel = typeof VirtualModel.Type;
+export const VirtualModels = Schema.Record(TrimmedNonEmptyString, VirtualModel);
+
 export const ServerSettings = Schema.Struct({
+  virtualModels: Schema.NullOr(VirtualModels).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   providerModelPreferences: Schema.NullOr(ProviderModelPreferences).pipe(
@@ -1983,12 +2001,24 @@ export const DEFAULT_UNIFIED_SETTINGS: UnifiedSettings = {
 };
 
 const ModelSelectionPatch = Schema.Struct({
+  virtualModelId: Schema.optionalKey(TrimmedNonEmptyString),
   instanceId: Schema.optionalKey(ProviderInstanceId),
   model: Schema.optionalKey(TrimmedNonEmptyString),
   options: Schema.optionalKey(ProviderOptionSelections),
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  virtualModels: Schema.optionalKey(
+    Schema.Record(
+      TrimmedNonEmptyString,
+      Schema.Union([
+        Schema.NullOr(VirtualModel),
+        Schema.Literal("unbind"),
+        Schema.Struct({ expected: VirtualModel, save: VirtualModel }),
+      ]),
+    ),
+  ),
+  importVirtualModels: Schema.optionalKey(VirtualModels),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
   ),
@@ -2236,6 +2266,8 @@ export function requiredScopesForServerSettingsPatch(
       key === "providerInstances" ||
       key === "usageLimitSources" ||
       key === "textGenerators" ||
+      key === "virtualModels" ||
+      key === "importVirtualModels" ||
       key === "secretProviders"
     ) {
       changesProviders = true;

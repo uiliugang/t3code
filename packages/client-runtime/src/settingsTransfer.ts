@@ -12,17 +12,33 @@ import {
   ProviderInstanceId,
   ServerSettings,
   ServerSettingsPatch,
+  VirtualModels,
+  type ServerProvider,
   globalIdleCompaction,
   TrimmedNonEmptyString,
   WorkspaceRootId,
   type ClientSettings,
   type EnvironmentId,
+  type ListTextGeneratorModelsResult,
   type Project,
   type ResolvedKeybindingsConfig,
   type KeybindingWhenNode,
   type ResolvedKeybindingRule,
 } from "@t3tools/contracts";
 import { canonicalRepositoryCloneKey } from "@t3tools/shared/git";
+import {
+  bindingProviders,
+  projectVirtualModels,
+  virtualModelRoles,
+} from "@t3tools/shared/virtualModels";
+import {
+  configuredTransferDriver,
+  importVirtualBindings,
+  loadVirtualGeneratorCatalog,
+} from "@t3tools/shared/serverSettings";
+import * as Effect from "effect/Effect";
+import type { AtomRegistry } from "effect/reactivity";
+import type { AtomCommand } from "./state/runtime.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { compileResolvedKeybindingRule } from "@t3tools/shared/keybindings";
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
@@ -137,6 +153,8 @@ const applicationServerSettingsTransferPolicy = {
   providerInstances: "local",
   usageLimitSources: "local",
   textGenerators: "local",
+  virtualModels: "portable",
+  importVirtualModels: "local",
   secretProviders: "local",
   usageHistoryRetentionDays: "local",
   usagePriceOverrides: "portable",
@@ -156,9 +174,10 @@ const APPLICATION_SERVER_SETTINGS_KEYS = Struct.keys(
     applicationServerSettingsTransferPolicy[key] === "portable",
 );
 
-const ApplicationServerSettings = Schema.Struct(
-  Struct.pick(ClientServerSettingsPatch.fields, APPLICATION_SERVER_SETTINGS_KEYS),
-);
+const ApplicationServerSettings = Schema.Struct({
+  ...Struct.pick(ClientServerSettingsPatch.fields, APPLICATION_SERVER_SETTINGS_KEYS),
+  virtualModels: Schema.optionalKey(Schema.toType(VirtualModels)),
+});
 const encodeApplicationServerSettings = Schema.encodeSync(
   Schema.Struct(Struct.pick(ServerSettings.fields, APPLICATION_SERVER_SETTINGS_KEYS)),
 );
@@ -206,6 +225,7 @@ const ApplicationSettingsFile = Schema.Struct({
 const ProjectSettingsFile = Schema.Struct({
   ...commonFields,
   scope: Schema.Literal("project"),
+  virtualModels: Schema.optionalKey(Schema.toType(VirtualModels)),
   name: TrimmedNonEmptyString,
   identity: ProjectTransferIdentity,
   settings: Schema.toType(ProjectSettingsOverrides),
@@ -260,7 +280,10 @@ export function projectTransferIdentity(project: TransferProject) {
   };
 }
 
-function providerReferences(settings: ProjectSettingsOverrides | ServerSettingsPatch) {
+function providerReferences(
+  settings: ProjectSettingsOverrides | ServerSettingsPatch,
+  includePreferences = true,
+) {
   return new Set([
     ...[
       settings.defaultModelSelection,
@@ -271,10 +294,14 @@ function providerReferences(settings: ProjectSettingsOverrides | ServerSettingsP
         : null,
       settings.sourceControlWriterModelSelection,
       settings.reviewGuideModelSelection,
-    ].flatMap((selection) => (selection?.instanceId ? [selection.instanceId] : [])),
+    ].flatMap((selection) =>
+      selection?.instanceId && !selection.virtualModelId ? [selection.instanceId] : [],
+    ),
     ...Object.keys(settings.providerInstances ?? {}).map((id) => ProviderInstanceId.make(id)),
-    ...("favorites" in settings ? (settings.favorites ?? []).map((entry) => entry.provider) : []),
-    ...("providerModelPreferences" in settings
+    ...(includePreferences && "favorites" in settings
+      ? (settings.favorites ?? []).map((entry) => entry.provider)
+      : []),
+    ...(includePreferences && "providerModelPreferences" in settings
       ? Object.keys(settings.providerModelPreferences ?? {}).map((id) =>
           ProviderInstanceId.make(id),
         )
@@ -290,13 +317,81 @@ function providerDrivers(
   return Object.fromEntries(
     [...new Set([...providerReferences(settings), ...extraProviderIds])].map((id) => [
       id,
-      source.providerInstances[id]?.driver ?? ProviderDriverKind.make(id),
+      configuredTransferDriver(source, id) ?? ProviderDriverKind.make(id),
     ]),
   );
 }
 
+export function importGeneratorCatalog<E>(
+  file: SettingsFile,
+  target: ServerSettings,
+  environmentId: EnvironmentId,
+  registry: AtomRegistry.AtomRegistry,
+  command: AtomCommand<
+    { environmentId: EnvironmentId; input: { id: ProviderInstanceId } },
+    ListTextGeneratorModelsResult,
+    E
+  >,
+) {
+  return Effect.runPromise(
+    loadVirtualGeneratorCatalog(
+      file.scope === "project" ? file.virtualModels : file.server.virtualModels,
+      target,
+      (id) => command.run(registry, { environmentId, input: { id } }),
+    ),
+  );
+}
+
+function importedVirtualModels(
+  file: SettingsFile,
+  target: ServerSettings,
+  providers?: readonly ServerProvider[],
+  generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
+) {
+  const incoming = file.scope === "project" ? file.virtualModels : file.server.virtualModels;
+  return importVirtualBindings(
+    incoming,
+    target,
+    (id) => {
+      const client = getProviderClient(id);
+      const driver =
+        configuredTransferDriver(target, id) ??
+        (client?.hasDefaultInstance !== false ? client?.driverKind : undefined);
+      return driver !== undefined && driver === file.providers[id];
+    },
+    providers,
+    generators,
+  );
+}
+
+export function assertVirtualModelsSupported(
+  file: SettingsFile,
+  target: ServerSettings,
+  t: UiTranslator,
+) {
+  if (target.virtualModels != null) return;
+  const usesReferences = (settings: ServerSettingsPatch | ProjectSettingsOverrides) =>
+    virtualModelRoles.some((role) => (settings as ServerSettingsPatch)[role]?.virtualModelId);
+  const hasVirtual =
+    file.scope === "project"
+      ? file.virtualModels !== undefined || usesReferences(file.settings)
+      : file.server.virtualModels !== undefined ||
+        usesReferences(file.server) ||
+        file.projects?.some(
+          (project) => project.virtualModels !== undefined || usesReferences(project.settings),
+        );
+  if (hasVirtual)
+    throw new Error(t("Update this environment's server before importing virtual models."));
+}
+
 function checkProviders(file: SettingsFile, target: ServerSettings, t: UiTranslator) {
+  assertVirtualModelsSupported(file, target, t);
   const settings = file.scope === "project" ? file.settings : file.server;
+  const optional = new Set(
+    file.scope === "application" ? bindingProviders(file.server.virtualModels ?? null) : [],
+  );
+  const required = providerReferences(settings, false);
+  const skipped = new Set<string>();
   const modelProviders =
     file.scope === "application"
       ? Object.keys(file.providerModels ?? {}).map((id) => ProviderInstanceId.make(id))
@@ -306,9 +401,13 @@ function checkProviders(file: SettingsFile, target: ServerSettings, t: UiTransla
     // Default instances use the driver ID and need no persisted configuration.
     const defaultDriver = getProviderClient(id);
     const destinationDriver =
-      target.providerInstances[id]?.driver ??
+      configuredTransferDriver(target, id) ??
       (defaultDriver?.hasDefaultInstance !== false ? defaultDriver?.driverKind : undefined);
     if (driver === undefined || destinationDriver !== driver) {
+      if (optional.has(id) && !required.has(id)) {
+        skipped.add(id);
+        continue;
+      }
       throw new Error(
         t(
           'Configure provider "{provider}" with the same driver on the destination before importing.',
@@ -319,6 +418,7 @@ function checkProviders(file: SettingsFile, target: ServerSettings, t: UiTransla
       );
     }
   }
+  return skipped;
 }
 
 export function createApplicationSettingsFile(input: {
@@ -342,7 +442,8 @@ export function createApplicationSettingsFile(input: {
     ),
   );
   const server = decodeApplicationServerSettings({
-    ...encodeApplicationServerSettings(input.server),
+    ...Struct.omit(encodeApplicationServerSettings(input.server), ["virtualModels"]),
+    ...(input.server.virtualModels ? { virtualModels: input.server.virtualModels } : {}),
     defaultThreadEnvMode: input.server.defaultThreadEnvMode,
     idleCompaction: globalIdleCompaction(input.server),
     favorites: input.server.favorites ?? input.clientSettings.favorites ?? [],
@@ -358,11 +459,10 @@ export function createApplicationSettingsFile(input: {
     ),
     server,
     keybindings: input.keybindings.filter((rule) => !rule.command.startsWith("script.")),
-    providers: providerDrivers(
-      server,
-      input.server,
-      Object.keys(providerModels).map((id) => ProviderInstanceId.make(id)),
-    ),
+    providers: providerDrivers(server, input.server, [
+      ...Object.keys(providerModels).map((id) => ProviderInstanceId.make(id)),
+      ...bindingProviders(input.server.virtualModels),
+    ]),
     ...(Object.keys(providerModels).length > 0 ? { providerModels } : {}),
     ...(input.theme ? { theme: input.theme } : {}),
   };
@@ -373,6 +473,7 @@ export function createProjectSettingsFile(
   server: ServerSettings,
 ): ProjectSettingsFile {
   const settings = resolveProjectSettings(server, project.id).overrides;
+  const virtualModels = projectVirtualModels(settings, server);
   return {
     format: "t3-code-settings",
     version: 1,
@@ -380,7 +481,8 @@ export function createProjectSettingsFile(
     name: project.title,
     identity: projectTransferIdentity(project),
     settings,
-    providers: providerDrivers(settings, server),
+    providers: providerDrivers(settings, server, bindingProviders(virtualModels)),
+    ...(Object.keys(virtualModels).length ? { virtualModels } : {}),
     repositories: Object.fromEntries(
       (project.workspaceConfig?.roots ?? []).map((root) => [root.id, root.alias]),
     ),
@@ -432,43 +534,71 @@ export function applicationSettingsImportPatch(
   file: ApplicationSettingsFile,
   target: ServerSettings,
   t: UiTranslator = translateUi.bind(null, "en"),
+  providers?: readonly ServerProvider[],
+  generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
 ): ServerSettingsPatch {
-  checkProviders(file, target, t);
+  const skipped = checkProviders(file, target, t);
   const providerInstances = Object.fromEntries(
-    Object.entries(file.providerModels ?? {}).map(([providerId, customModels]) => {
-      const id = ProviderInstanceId.make(providerId);
-      const instance = target.providerInstances[id];
-      const config = instance?.config;
-      if (
-        config !== undefined &&
-        config !== null &&
-        (typeof config !== "object" || Array.isArray(config))
-      ) {
-        throw new Error(
-          t(
-            'Repair provider "{provider}" settings on the destination before importing model edits.',
-            {
-              provider: id,
-            },
-          ),
-        );
-      }
-      return [
-        id,
-        {
-          ...instance,
-          driver: instance?.driver ?? file.providers[id]!,
-          config: { ...config, customModels },
-        },
-      ];
-    }),
+    Object.entries(file.providerModels ?? {})
+      .filter(([id]) => !skipped.has(id))
+      .map(([providerId, customModels]) => {
+        const id = ProviderInstanceId.make(providerId);
+        const instance = target.providerInstances[id];
+        const config = instance?.config;
+        if (
+          config !== undefined &&
+          config !== null &&
+          (typeof config !== "object" || Array.isArray(config))
+        ) {
+          throw new Error(
+            t(
+              'Repair provider "{provider}" settings on the destination before importing model edits.',
+              {
+                provider: id,
+              },
+            ),
+          );
+        }
+        return [
+          id,
+          {
+            ...instance,
+            driver: instance?.driver ?? file.providers[id]!,
+            config: { ...config, customModels },
+          },
+        ];
+      }),
   );
   const server =
     file.server.requireConnectDeviceApproval === target.requireConnectDeviceApproval
       ? Struct.omit(file.server, ["requireConnectDeviceApproval"])
       : file.server;
   return {
-    ...server,
+    ...Struct.omit(server, ["virtualModels"]),
+    ...(skipped.size && server.favorites
+      ? {
+          favorites: [
+            ...server.favorites.filter((favorite) => !skipped.has(favorite.provider)),
+            ...(target.favorites ?? []).filter((favorite) => skipped.has(favorite.provider)),
+          ],
+        }
+      : {}),
+    ...(skipped.size && server.providerModelPreferences
+      ? {
+          providerModelPreferences: Object.fromEntries([
+            ...Object.entries(server.providerModelPreferences).filter(([id]) => !skipped.has(id)),
+            ...Object.entries(target.providerModelPreferences ?? {}).filter(([id]) =>
+              skipped.has(id),
+            ),
+          ]),
+        }
+      : {}),
+    ...importedVirtualModels(
+      file,
+      { ...target, providerInstances: { ...target.providerInstances, ...providerInstances } },
+      providers,
+      generators,
+    ),
     ...(Object.keys(providerInstances).length > 0
       ? { providerInstances: { ...target.providerInstances, ...providerInstances } }
       : {}),
@@ -480,6 +610,8 @@ export function projectSettingsImportPatch(
   project: TransferProject,
   target: ServerSettings,
   t: UiTranslator = translateUi.bind(null, "en"),
+  providers?: readonly ServerProvider[],
+  generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
 ): ServerSettingsPatch {
   checkProviders(file, target, t);
   const scripts = file.settings.defaultProjectScripts?.map((script) => ({
@@ -503,6 +635,7 @@ export function projectSettingsImportPatch(
       : {}),
   }));
   return {
+    ...importedVirtualModels(file, target, providers, generators),
     ...(file.issueSources === undefined
       ? {}
       : {
@@ -536,6 +669,7 @@ export function projectConfigurationsForImport(
       name: file.name,
       settings: file.settings,
       providers: file.providers,
+      ...(file.virtualModels ? { virtualModels: file.virtualModels } : {}),
       workspace: file.workspace,
       ...(file.issueSources === undefined ? {} : { issueSources: file.issueSources }),
     },

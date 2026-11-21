@@ -99,6 +99,7 @@ import {
 } from "../../speech/useEnvironmentSpeechInput";
 import { ComposerSpeechRecordingPill } from "../chat/ComposerSpeechButton";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { VirtualModelPicker } from "./VirtualModelPicker";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProviderPackageIcon } from "../chat/ProviderPackageIcon";
 import { TraitsPicker } from "../chat/TraitsPicker";
@@ -618,6 +619,8 @@ function CleanupModelRow() {
           <span className="text-sm text-muted-foreground">
             {t("Connect an environment first.")}
           </span>
+        ) : settings.virtualModels ? (
+          <VirtualModelPicker role="speechPostProcessingModelSelection" />
         ) : (
           <div className="flex min-w-0 flex-wrap items-center gap-2 @min-[32rem]/settings-row:justify-end">
             {dedicated && (!hasProvider || !instanceEntry) ? (

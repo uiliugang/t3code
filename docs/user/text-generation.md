@@ -5,6 +5,16 @@ descriptions, branch names, and voice transcript cleanup. Pick the model for thi
 **Settings → Threads → Text generation model**. **Settings → Source control & issues** and
 **Settings → Voice** can each pick a different one.
 
+To reuse a model and its options across settings, bind a **virtual model** under
+**Settings → Providers → Virtual models**, below Text generators. Existing model settings keep
+their choices when upgraded. Each feature can follow a virtual model or select a real model
+directly. The chat picker lists only real models; a manual pick does not change the binding.
+
+Use the regular settings export and import to transfer these references. The destination keeps
+its own binding for the same virtual model. If it cannot match the imported provider and model,
+the reference stays unbound. Bind it once on that environment to restore all settings that use
+it. An unsent draft keeps its text while you fix the binding.
+
 By default, a coding agent such as Codex or Claude writes this text, starting a session for each
 request. A **text generator** — a model API that only writes text — is usually faster and cheaper.
 

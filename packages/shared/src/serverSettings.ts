@@ -13,21 +13,25 @@ import {
   resolveTextGenerationSelectionEnabled,
   textGeneratorForSelection,
   isProviderTextGenerationCapable,
-  type ModelSelection,
+  type SettingsModelSelection as ModelSelection,
   type ProjectId,
   type ProjectScopedServerSettingKey,
   ProjectSettingsOverrides,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
+  type VirtualModel,
+  type ListTextGeneratorModelsResult,
   ServerSettings,
   type ServerSettingsPatch,
   withIdleCompaction,
 } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { deepMerge } from "./Struct.ts";
+import { resolveVirtualModel, virtualModelReference } from "./virtualModels.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 import { createModelSelection, readCustomModelEntries } from "./model.ts";
 import {
@@ -44,6 +48,76 @@ const ServerObservabilitySettingsJson = fromLenientJson(
 const decodeServerObservabilitySettingsJson = Schema.decodeUnknownOption(
   ServerObservabilitySettingsJson,
 );
+
+export function configuredTransferDriver(settings: ServerSettings, id: ProviderInstanceId) {
+  const generator = settings.textGenerators[id];
+  return generator
+    ? ProviderDriverKind.make(`text-generator-${generator.kind}`)
+    : settings.providerInstances[id]?.driver;
+}
+
+export const loadVirtualGeneratorCatalog = Effect.fn(
+  "SettingsTransfer.loadVirtualGeneratorCatalog",
+)(function* <E>(
+  models: ServerSettings["virtualModels"] | undefined,
+  target: ServerSettings,
+  list: (id: ProviderInstanceId) => Effect.Effect<ListTextGeneratorModelsResult, E>,
+) {
+  const ids = new Set<ProviderInstanceId>();
+  for (const [id, { binding }] of Object.entries(models ?? {})) {
+    if (target.virtualModels?.[id]?.binding != null || !binding || typeof binding === "string")
+      continue;
+    const generator = target.textGenerators[binding.instanceId];
+    if (generator?.enabled && !generator.model) ids.add(binding.instanceId);
+  }
+  return new Map(
+    yield* Effect.forEach(
+      ids,
+      (id) =>
+        list(id).pipe(
+          Effect.map(({ models }) => models.map((m) => m.id)),
+          Effect.orElseSucceed(() => [] as string[]),
+          Effect.map((slugs) => [id, slugs] as const),
+        ),
+      { concurrency: 4 },
+    ),
+  );
+});
+
+export function importVirtualBindings(
+  models: ServerSettings["virtualModels"] | undefined,
+  target: ServerSettings,
+  matches: (id: ProviderInstanceId) => boolean,
+  providers?: readonly ServerProvider[],
+  generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
+) {
+  const additions: [string, VirtualModel][] = [];
+  for (const [id, entry] of Object.entries(models ?? {})) {
+    if (target.virtualModels?.[id]?.binding != null) continue;
+    const binding = entry.binding;
+    let available = true;
+    if (binding && typeof binding !== "string") {
+      const { instanceId, model } = binding;
+      const generator = target.textGenerators[instanceId];
+      const config = target.providerInstances[instanceId]?.config as
+        | { customModels?: unknown }
+        | undefined;
+      available =
+        !target.removedProviderInstances?.includes(instanceId) &&
+        matches(instanceId) &&
+        (generator
+          ? generator.enabled &&
+            (generator.model === model || !!generators?.get(instanceId)?.includes(model))
+          : !providers ||
+            !!providers
+              .find((p) => p.instanceId === instanceId)
+              ?.models.some((m) => m.slug === model) ||
+            readCustomModelEntries(config?.customModels).some((m) => m.slug === model));
+    }
+    additions.push([id, available ? entry : { ...entry, binding: null }]);
+  }
+  return additions.length ? { importVirtualModels: Object.fromEntries(additions) } : {};
+}
 
 export function isModelSelectionProviderEnabled(
   settings: ServerSettings,
@@ -141,12 +215,13 @@ export function resolveSourceControlWriterModelSelection(
   providers: ReadonlyArray<ServerProvider> | undefined,
   projectId: ProjectId | null,
 ): ModelSelection {
-  const selection = settings.sourceControlWriterModelSelection;
+  const selection = resolveVirtualModel(settings, settings.sourceControlWriterModelSelection);
+  if (selection?.virtualModelId) return selection;
   return selection &&
     resolveTextGenerationSelectionEnabled(settings, projectId, selection.instanceId) &&
     isTextGenerationTargetUsable(settings, providers, selection.instanceId)
     ? selection
-    : settings.textGenerationModelSelection;
+    : resolveVirtualModel(settings, settings.textGenerationModelSelection);
 }
 
 export function resolveReviewGuideModelSelection(
@@ -154,7 +229,8 @@ export function resolveReviewGuideModelSelection(
   providers: ReadonlyArray<ServerProvider> | undefined,
   projectId: ProjectId | null,
 ): ModelSelection {
-  const selection = settings.reviewGuideModelSelection;
+  const selection = resolveVirtualModel(settings, settings.reviewGuideModelSelection);
+  if (selection?.virtualModelId) return selection;
   // Text generators cannot investigate a checkout, so they never write review guides.
   return selection &&
     textGeneratorForSelection(settings, selection.instanceId) === undefined &&
@@ -169,12 +245,13 @@ export function resolveSpeechPostProcessingModelSelection(
   settings: ServerSettings,
   providers?: ReadonlyArray<ServerProvider>,
 ): ModelSelection {
-  const selection = settings.speechPostProcessingModelSelection;
+  const selection = resolveVirtualModel(settings, settings.speechPostProcessingModelSelection);
+  if (selection?.virtualModelId) return selection;
   return selection &&
     isModelSelectionProviderEnabled(settings, selection) &&
     isTextGenerationTargetUsable(settings, providers, selection.instanceId)
     ? selection
-    : settings.textGenerationModelSelection;
+    : resolveVirtualModel(settings, settings.textGenerationModelSelection);
 }
 
 export interface PersistedServerObservabilitySettings {
@@ -251,6 +328,21 @@ function mergeSettingsEntries<Value>(
     }
   }
   return Object.fromEntries(next);
+}
+
+function mergeVirtualModels(current: ServerSettings, patch: ServerSettingsPatch) {
+  const entries = new Map(Object.entries(current.virtualModels ?? {}));
+  for (const [id, imported] of Object.entries(patch.importVirtualModels ?? {})) {
+    if (entries.get(id)?.binding == null) entries.set(id, imported);
+  }
+  for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
+    if (change === null) entries.delete(id);
+    else if (change === "unbind") {
+      const saved = entries.get(id);
+      if (saved) entries.set(id, { ...saved, binding: null });
+    } else entries.set(id, "save" in change ? change.save : change);
+  }
+  return Object.fromEntries(entries);
 }
 
 // Secret persistence keys tokens by trimmed, lowercased host, so merge on the same key.
@@ -406,6 +498,8 @@ export function applyServerSettingsPatch(
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
     textGenerators: textGeneratorsPatch,
+    virtualModels,
+    importVirtualModels,
     secretProviders: secretProvidersPatch,
     sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
@@ -634,6 +728,9 @@ export function applyServerSettingsPatch(
     ...(textGeneratorsPatch !== undefined
       ? { textGenerators: mergeSettingsEntries(current.textGenerators, textGeneratorsPatch) }
       : {}),
+    ...(virtualModels === undefined && importVirtualModels === undefined
+      ? {}
+      : { virtualModels: mergeVirtualModels(current, patch) }),
     ...(secretProvidersPatch !== undefined
       ? { secretProviders: mergeSettingsEntries(current.secretProviders, secretProvidersPatch) }
       : {}),
@@ -678,6 +775,12 @@ export function applyServerSettingsPatch(
   };
   if (!selectionPatch) {
     return nextWithReplacements;
+  }
+  if (selectionPatch.virtualModelId) {
+    return {
+      ...nextWithReplacements,
+      textGenerationModelSelection: virtualModelReference(selectionPatch.virtualModelId),
+    };
   }
 
   const instanceId = selectionPatch.instanceId ?? current.textGenerationModelSelection.instanceId;

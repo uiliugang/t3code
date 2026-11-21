@@ -21,6 +21,7 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import { translateUi } from "@t3tools/shared/uiLocale";
 import {
   isAtomCommandInterrupted,
   runAtomCommand,
@@ -632,6 +633,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
         environments.find((environment) => environment.environmentId === request.environmentId)
           ?.label ?? request.environmentId;
       const error = squashAtomCommandFailure(result);
+      const message = thrownErrorMessage(error, m);
       toastManager.add({
         type: "error",
         title: m(msg("Setting not saved")),
@@ -639,8 +641,9 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
           msg("Could not save on {label}: {error}", {
             label,
             error:
-              (error instanceof Error ? thrownErrorMessage(error, m) : null) ??
-              m(msg("The save failed. Try reconnecting and saving again.")),
+              message == null
+                ? m(msg("The save failed. Try reconnecting and saving again."))
+                : translateUi(getClientSettings().uiLanguage, message),
           }),
         ),
       });

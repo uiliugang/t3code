@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { ProjectId, TrimmedNonEmptyString, WorkspaceRootId } from "./baseSchemas.ts";
 import { ProjectWorkspaceRoot } from "./project.ts";
-import { ProjectSettingsOverrides } from "./settings.ts";
+import { ProjectSettingsOverrides, VirtualModels } from "./settings.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { IssueSource } from "./issues.ts";
 
@@ -45,6 +45,7 @@ export const ProjectImportDefinition = Schema.Struct({
   name: TrimmedNonEmptyString,
   settings: Schema.toType(ProjectSettingsOverrides),
   providers: Schema.Record(ProviderInstanceId, ProviderDriverKind),
+  virtualModels: Schema.optionalKey(Schema.toType(VirtualModels)),
   issueSources: Schema.optionalKey(Schema.Array(IssueSource)),
   workspace: ProjectTransferWorkspace,
 }).check(
