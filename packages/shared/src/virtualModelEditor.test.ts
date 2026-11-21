@@ -8,11 +8,18 @@ import {
 import { translateUi } from "@t3tools/shared/uiLocale";
 import {
   migrateVirtualModels,
+  resolveVirtualModel,
   virtualModelReference,
   type VirtualModelRole,
 } from "@t3tools/shared/virtualModels";
 import { describe, expect, it } from "vite-plus/test";
-import { settingModelLabel } from "./VirtualModelPicker.logic";
+import { applyServerSettingsPatch } from "./serverSettings.ts";
+import {
+  bindingEditError,
+  settingModelLabel,
+  virtualModelEdit,
+  virtualModelUsage,
+} from "./virtualModelEditor.ts";
 
 const settings = migrateVirtualModels(DEFAULT_SERVER_SETTINGS);
 const physical = { instanceId: ProviderInstanceId.make("claudeAgent"), model: "sonnet" };
@@ -32,6 +39,52 @@ const providers: ServerProvider[] = [
   },
 ];
 const t = translateUi.bind(null, "en");
+
+it("unbinds only the saved entry and leaves the reference ready for rebinding", () => {
+  const original = {
+    ...settings,
+    virtualModels: { team: { name: "Team", binding: physical } },
+    defaultModelSelection: virtualModelReference("team"),
+  };
+  const unbound = virtualModelEdit(original, "team", { action: "unbind" }, t);
+  expect(unbound).toEqual({ name: "Team", binding: null });
+  const cleared = applyServerSettingsPatch(original, { virtualModels: { team: unbound! } });
+  expect(cleared.defaultModelSelection).toEqual(original.defaultModelSelection);
+  expect(resolveVirtualModel(cleared, cleared.defaultModelSelection)).toEqual(
+    virtualModelReference("team"),
+  );
+  const rebound = applyServerSettingsPatch(cleared, {
+    virtualModels: { team: { name: "Team", binding: physical } },
+  });
+  expect(resolveVirtualModel(rebound, rebound.defaultModelSelection)).toEqual(physical);
+  expect(virtualModelEdit(original, "missing", { action: "unbind" }, t)).toBeUndefined();
+  expect(
+    virtualModelEdit(original, "team", { action: "save", name: " Changed ", binding: physical }, t),
+  ).toEqual({ name: "Changed", binding: physical });
+});
+
+it("includes project review references and rejects inheritance cycles introduced only in a project", () => {
+  const id = "speechPostProcessingModelSelection";
+  const scoped = {
+    ...settings,
+    projectSettingsOverrides: {
+      project: {
+        textGenerationModelSelection: virtualModelReference(id),
+        reviewGuideModelSelection: virtualModelReference(id),
+      },
+    },
+  };
+  expect(virtualModelUsage(scoped, id)).toEqual({ agent: true, review: true });
+  expect(bindingEditError(scoped, id, "Voice cleanup", "textGenerationModelSelection", t)).toBe(
+    "This binding would create an inheritance cycle.",
+  );
+  expect(
+    bindingEditError(settings, id, "Voice cleanup", "textGenerationModelSelection", t),
+  ).toBeNull();
+  expect(bindingEditError(settings, id, " Default ", null, t)).toBe(
+    "This virtual model name is already in use.",
+  );
+});
 
 describe("settingModelLabel", () => {
   it.each([

@@ -32,7 +32,7 @@ import {
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-import { settingModelLabel } from "./VirtualModelPicker.logic";
+import { settingModelLabel } from "@t3tools/shared/virtualModelEditor";
 
 export function VirtualModelPicker({ role }: { role: VirtualModelRole }) {
   const t = useUiTranslation();

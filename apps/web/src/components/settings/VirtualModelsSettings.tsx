@@ -6,12 +6,10 @@ import type {
 } from "@t3tools/contracts";
 import {
   inheritedModelRole,
-  resolveVirtualModel,
   virtualModelName,
-  virtualModelReference,
   virtualModelRoles,
 } from "@t3tools/shared/virtualModels";
-import { Link2, MoreVertical, Plus } from "lucide-react";
+import { CornerDownRight, Cpu, Link2, MoreVertical, Plus, Unlink } from "lucide-react";
 import { useState } from "react";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -44,7 +42,14 @@ import {
   DialogFooter,
 } from "../ui/dialog";
 import { SettingsSection, SettingsRow, SETTINGS_PICKER_TRIGGER_CLASSNAME } from "./settingsLayout";
-import { settingModelLabel } from "./VirtualModelPicker.logic";
+import {
+  bindingEditError,
+  settingModelLabel,
+  virtualModelDescription,
+  virtualModelEdit,
+  virtualModelUsage,
+} from "@t3tools/shared/virtualModelEditor";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 
 type Props = {
   environmentId: EnvironmentId;
@@ -61,17 +66,7 @@ export function VirtualModelsSettings({ environmentId, providers, readOnly }: Pr
   if (!settings.virtualModels) return null;
   const rows = Object.entries(settings.virtualModels).map(([id, entry]) => {
     const name = entry.name ?? virtualModelName(id, t);
-    const value = resolveVirtualModel(settings, virtualModelReference(id));
-    const description = value.virtualModelId
-      ? t("Not bound")
-      : typeof entry.binding === "string"
-        ? settingModelLabel(settings, entry.binding, providers, t, true)
-        : [
-            providers.find((p) => p.instanceId === value.instanceId)?.displayName ??
-              value.instanceId,
-            value.model,
-            ...(value.options ?? []).map((o) => `${o.id}: ${o.value}`),
-          ].join(" · ");
+    const description = virtualModelDescription(settings, id, providers, t);
     return { id, name, description };
   });
   const removingRow = rows.find((row) => row.id === removing);
@@ -192,10 +187,15 @@ function BindingEditor({
   const existing = settings.virtualModels?.[id];
   const builtIn = virtualModelRoles.some((r) => r === id);
   const [name, setName] = useState(existing?.name ?? (builtIn ? virtualModelName(id, t) : ""));
-  const [binding, setBinding] = useState<VirtualModel["binding"]>(existing?.binding ?? null);
+  const [initial] = useState(existing);
+  const [selected, setBinding] = useState(
+    typeof existing?.binding === "object" ? existing.binding : null,
+  );
+  const [inherit, setInherit] = useState(typeof existing?.binding === "string");
+  const [confirm, setConfirm] = useState<"discard" | "unbind" | null>(null);
   const [saving, setSaving] = useState(false);
-  const selected = typeof binding === "object" ? binding : null;
   const parent = inheritedModelRole(id);
+  const binding = inherit && parent ? parent : selected;
   const targets = useTextGenerationTargets({
     environmentId,
     providers,
@@ -203,22 +203,7 @@ function BindingEditor({
     projectId: null,
     selections: [selected],
   });
-  const references = virtualModelRoles.filter(
-    (key) =>
-      key === id ||
-      settings[key]?.virtualModelId === id ||
-      ((key === "defaultModelSelection" || key === "reviewGuideModelSelection") &&
-        Object.values(settings.projectSettingsOverrides).some(
-          (override) => override[key]?.virtualModelId === id,
-        )),
-  );
-  const agent = references.some(
-    (key) =>
-      key === "defaultModelSelection" ||
-      key === "fallbackModelSelection" ||
-      key === "reviewGuideModelSelection",
-  );
-  const review = references.includes("reviewGuideModelSelection");
+  const { agent, review } = virtualModelUsage(settings, id);
   const entries = targets.entries.filter(
     (e) =>
       (!agent || !settings.textGenerators[e.instanceId]) &&
@@ -228,35 +213,29 @@ function BindingEditor({
     agent ? getCustomModelOptionsByInstance : getTextGenerationModelOptionsByInstance
   )(settings, agent ? providers : targets.providers, selected?.instanceId, selected?.model);
   const active = entries.find((e) => e.instanceId === selected?.instanceId);
-  const duplicate = Object.entries(settings.virtualModels ?? {}).some(
-    ([key, m]) => key !== id && (m.name ?? virtualModelName(key, t)) === name.trim(),
-  );
-  const cyclic =
-    typeof binding === "string" &&
-    [
-      settings,
-      ...Object.values(settings.projectSettingsOverrides).map((override) => ({
-        ...settings,
-        textGenerationModelSelection:
-          override.textGenerationModelSelection ?? settings.textGenerationModelSelection,
-        sourceControlWriterModelSelection:
-          override.sourceControlWriterModelSelection === undefined
-            ? settings.sourceControlWriterModelSelection
-            : override.sourceControlWriterModelSelection,
-      })),
-    ].some((scope) => {
-      const prospective = {
-        ...scope,
-        virtualModels: { ...settings.virtualModels, [id]: { binding } },
-      };
-      const unresolved = resolveVirtualModel(prospective, virtualModelReference(id)).virtualModelId;
-      return unresolved !== undefined && prospective.virtualModels[unresolved]?.binding != null;
-    });
+  const error = bindingEditError(settings, id, name, binding, t);
+  const close = () => {
+    if (saving) return;
+    if (
+      name !== (initial?.name ?? (builtIn ? virtualModelName(id, t) : "")) ||
+      binding !== (initial?.binding ?? null)
+    )
+      setConfirm("discard");
+    else onClose();
+  };
+  const persist = (entry: VirtualModel | undefined) => {
+    if (!entry || saving || (initial && !existing)) return;
+    setSaving(true);
+    update(
+      { virtualModels: { [id]: entry } },
+      { onSaved: onClose, onFailed: () => setSaving(false) },
+    );
+  };
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) close();
       }}
     >
       <DialogPopup>
@@ -269,85 +248,145 @@ function BindingEditor({
               {t("Virtual model name")}
               <Input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
             </label>
-            <div className="flex flex-wrap gap-2">
-              {entries.length ? (
-                <ProviderModelPicker
-                  environmentId={environmentId}
-                  activeInstanceId={selected?.instanceId ?? entries[0]!.instanceId}
-                  model={selected?.model ?? ""}
-                  lockedProvider={null}
-                  instanceEntries={entries}
-                  modelOptionsByInstance={options}
-                  {...(selected ? {} : { triggerLabel: t("Choose real model") })}
-                  onInstanceModelChange={(instanceId, model) => setBinding({ instanceId, model })}
-                />
-              ) : null}
-              {active && selected ? (
-                <TraitsPicker
-                  provider={active.driverKind}
-                  models={active.models}
-                  model={selected.model}
-                  modelOptions={selected.options ?? []}
-                  allowPromptInjectedEffort={false}
-                  triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                  onModelOptionsChange={(options) =>
-                    setBinding({
-                      instanceId: selected.instanceId,
-                      model: selected.model,
-                      ...(options ? { options } : {}),
-                    })
-                  }
-                />
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {parent ? (
-                <Button
-                  size="sm"
-                  variant={typeof binding === "string" ? "secondary" : "outline"}
-                  aria-pressed={binding === parent}
-                  onClick={() => setBinding(parent)}
+            {parent ? (
+              <div className="grid gap-1.5">
+                <span className="text-sm">{t("Binding mode")}</span>
+                <ToggleGroup
+                  aria-label={t("Binding mode")}
+                  value={[inherit ? "inherit" : "direct"]}
+                  onValueChange={(values) => {
+                    if (values.length) setInherit(values[0] === "inherit");
+                  }}
                 >
-                  {settingModelLabel(settings, parent, providers, t, true)}
-                </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant={binding === null ? "secondary" : "outline"}
-                aria-pressed={binding === null}
-                onClick={() => setBinding(null)}
-              >
-                {t("Not bound")}
-              </Button>
-            </div>
+                  <Toggle value="direct">
+                    <Cpu />
+                    {t("Specific model")}
+                  </Toggle>
+                  <Toggle value="inherit">
+                    <CornerDownRight />
+                    {t("Inherit")}
+                  </Toggle>
+                </ToggleGroup>
+              </div>
+            ) : null}
+            {existing?.binding === null ? (
+              <span className="text-sm text-muted-foreground">{t("Not bound")}</span>
+            ) : null}
+            {inherit && parent ? (
+              <p className="text-sm">{settingModelLabel(settings, parent, providers, t, true)}</p>
+            ) : (
+              <div className="grid justify-items-start gap-2">
+                {entries.length ? (
+                  <ProviderModelPicker
+                    environmentId={environmentId}
+                    activeInstanceId={selected?.instanceId ?? entries[0]!.instanceId}
+                    model={selected?.model ?? ""}
+                    lockedProvider={null}
+                    instanceEntries={entries}
+                    modelOptionsByInstance={options}
+                    {...(selected ? {} : { triggerLabel: t("Choose real model") })}
+                    onInstanceModelChange={(instanceId, model) => setBinding({ instanceId, model })}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t("No models found")}</p>
+                )}
+                {active && selected ? (
+                  <div className="hidden gap-1.5 has-[button]:grid">
+                    <span className="text-sm">{t("Model parameters")}</span>
+                    <TraitsPicker
+                      provider={active.driverKind}
+                      models={active.models}
+                      model={selected.model}
+                      modelOptions={selected.options ?? []}
+                      allowPromptInjectedEffort={false}
+                      triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                      onModelOptionsChange={(options) =>
+                        setBinding({
+                          instanceId: selected.instanceId,
+                          model: selected.model,
+                          ...(options ? { options } : {}),
+                        })
+                      }
+                    />
+                  </div>
+                ) : null}
+              </div>
+            )}
+            {error && name ? (
+              <p role="alert" className="text-sm text-destructive-foreground">
+                {error}
+              </p>
+            ) : null}
           </div>
         </DialogPanel>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
+        <DialogFooter className="flex-row items-center justify-end">
+          {existing?.binding != null ? (
+            <Button
+              className="mr-auto"
+              variant="ghost-destructive"
+              disabled={saving}
+              onClick={() => setConfirm("unbind")}
+            >
+              <Unlink />
+              {t("Unbind model")}
+            </Button>
+          ) : null}
+          <Button variant="ghost" disabled={saving} onClick={close}>
             {t("Cancel")}
           </Button>
           <Button
-            disabled={saving || !name.trim() || duplicate || cyclic}
-            onClick={() => {
-              setSaving(true);
-              update(
-                {
-                  virtualModels: {
-                    [id]: {
-                      ...(builtIn && name.trim() === virtualModelName(id, t)
-                        ? {}
-                        : { name: name.trim() }),
-                      binding,
-                    },
-                  },
-                },
-                { onSaved: onClose, onFailed: () => setSaving(false) },
-              );
-            }}
+            disabled={
+              saving ||
+              !!error ||
+              (initial != null && !existing) ||
+              (existing?.binding != null && !binding)
+            }
+            onClick={() =>
+              persist(virtualModelEdit(settings, id, { action: "save", name, binding }, t))
+            }
           >
-            {t("Save binding")}
+            {t(existing ? "Save binding" : "Add")}
           </Button>
         </DialogFooter>
+        <AlertDialog
+          open={confirm !== null}
+          onOpenChange={(open) => {
+            if (!open && !saving) setConfirm(null);
+          }}
+        >
+          <AlertDialogPopup>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirm === "unbind"
+                  ? t("Unbind {name}?", { name: existing?.name ?? virtualModelName(id, t) })
+                  : t("Discard unsaved changes?")}
+              </AlertDialogTitle>
+              {confirm === "unbind" ? (
+                <AlertDialogDescription>
+                  {t(
+                    "Existing references are kept. Conversations using them will fail until this model is bound again.",
+                  )}
+                </AlertDialogDescription>
+              ) : null}
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogClose render={<Button variant="outline" disabled={saving} />}>
+                {confirm === "unbind" ? t("Cancel") : t("Keep editing")}
+              </AlertDialogClose>
+              <Button
+                variant="destructive"
+                disabled={saving}
+                onClick={() =>
+                  confirm === "unbind"
+                    ? persist(virtualModelEdit(settings, id, { action: "unbind" }, t))
+                    : onClose()
+                }
+              >
+                {confirm === "unbind" ? t("Unbind model") : t("Discard changes")}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogPopup>
+        </AlertDialog>
       </DialogPopup>
     </Dialog>
   );
