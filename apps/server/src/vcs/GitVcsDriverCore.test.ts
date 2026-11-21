@@ -2549,10 +2549,17 @@ it.effect.each(["stalled", "cancel-connection", "cancel-backoff", "progress", "b
         }
       } else if (scenario === "stalled") {
         yield* Queue.offer(output, "remote: still alive\n");
-        yield* TestClock.adjust("100 seconds");
+        yield* TestClock.adjust("9 seconds");
+        assert.deepEqual(progressEvents, [1]);
+        yield* TestClock.adjust("1 second");
+        assert.deepEqual(progressEvents, [1, 2]);
+        assert.equal(stopped, 1);
+        yield* TestClock.adjust("20 seconds");
+        assert.deepEqual(progressEvents, [1, 2]);
+        yield* TestClock.adjust("70 seconds");
       } else {
         if (scenario === "cancel-backoff") {
-          yield* TestClock.adjust("30 seconds");
+          yield* TestClock.adjust("10 seconds");
           yield* Deferred.await(retrying);
         }
         yield* Fiber.interrupt(fetching);

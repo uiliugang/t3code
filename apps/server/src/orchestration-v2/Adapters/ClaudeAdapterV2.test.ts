@@ -3713,6 +3713,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     });
   const makeAssistantErrorFrame = (input: {
     readonly uuid: string;
+    readonly model?: string;
     readonly error:
       | "authentication_failed"
       | "invalid_request"
@@ -3726,7 +3727,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     claudeSdkFrame({
       type: "assistant",
       message: {
-        model: "claude-sonnet-4-6",
+        model: input.model ?? "claude-sonnet-4-6",
         id: `msg_${input.uuid}`,
         type: "message",
         role: "assistant",
@@ -3887,6 +3888,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly allocateSessionId?: Effect.Effect<string>;
     readonly offer?: (message: SDKUserMessage) => Effect.Effect<void>;
     readonly promptSuggestions?: boolean;
+    readonly canReplayPrompt?: Effect.Effect<boolean>;
     readonly routeModelCatalog?: ClaudeAdapterV2.ClaudeAdapterV2Options["routeModelCatalog"];
   }) =>
     Effect.gen(function* () {
@@ -4064,6 +4066,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 mcpSubmitOAuthCallbackUrl: () => Effect.die("unexpected MCP sign-in"),
                 reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
                 listPermissionRules: options?.mcp?.listPermissionRules ?? Effect.succeed([]),
+                canReplayPrompt: options?.canReplayPrompt ?? Effect.succeed(true),
                 stopTask: options?.stopTask ?? (() => Effect.void),
                 interrupt: options?.interrupt ?? Effect.void,
                 close: options?.close?.(sdkMessages) ?? Effect.void,
@@ -9188,6 +9191,248 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         terminal.failure.class,
         apiErrorStatus === 429 ? "usage_limit" : "provider_error",
       );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect.each([
+    { name: "exhausted", retries: 2, status: "failed" },
+    { name: "recovered", retries: 1, status: "completed" },
+    { name: "tool used", retries: 0, status: "failed" },
+    { name: "partial reply", retries: 0, status: "failed" },
+    { name: "hook ran", retries: 0, status: "failed" },
+    { name: "unobservable hook configured", retries: 0, status: "failed" },
+    { name: "authentication failed", retries: 0, status: "failed" },
+    { name: "retry goes silent", retries: 1, status: "failed" },
+    { name: "stopped", retries: 0, status: "interrupted" },
+    { name: "stopped after enqueue", retries: 1, status: "interrupted" },
+    { name: "ordinary reply", retries: 0, status: "completed" },
+  ] as const)("handles the gateway fallback when $name", (input) =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarnessWithOptions({
+        close: Queue.shutdown,
+        canReplayPrompt: Effect.succeed(input.name !== "unobservable hook configured"),
+      });
+      const now = yield* DateTime.now;
+      const fallback = "Sorry, I encountered an error processing your request.";
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-claude-gateway-fallback"),
+          text: "Continue.",
+          attachments: [],
+        }),
+      );
+      if (input.name === "tool used") {
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "assistant",
+            message: {
+              id: "msg_tool",
+              model: "claude-sonnet-4-6",
+              content: [
+                { type: "tool_use", id: "toolu_used", name: "Bash", input: { command: "pwd" } },
+              ],
+            },
+            parent_tool_use_id: null,
+            uuid: "gateway-tool-used",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      } else if (input.name === "hook ran") {
+        assert.isTrue(harness.getOpenedOptions()?.includeHookEvents);
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "hook_started",
+            hook_id: "prompt-hook",
+            hook_name: "UserPromptSubmit",
+            hook_event: "UserPromptSubmit",
+            uuid: "gateway-hook",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      } else if (input.name === "partial reply") {
+        yield* harness.offerAndWait(
+          makeAssistantTextFrame({ uuid: "gateway-partial", text: "Partial work." }),
+        );
+      }
+      for (let attempt = 0; attempt <= input.retries; attempt++) {
+        if (attempt > 0 && input.name === "stopped after enqueue") {
+          yield* harness.runtime.interruptTurn({
+            providerThread: harness.providerThread,
+            providerTurnId: lastProviderTurn(harness.events).id,
+          });
+          break;
+        }
+        if (attempt > 0 && input.name === "retry goes silent") {
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              type: "command_lifecycle",
+              command_uuid: harness.promptUuid(attempt),
+              state: "queued",
+              uuid: "gateway-retry-queued",
+              session_id: WAKE_NATIVE_SESSION,
+            }),
+          );
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              type: "system",
+              subtype: "post_turn_summary",
+              uuid: "gateway-previous-summary",
+              session_id: WAKE_NATIVE_SESSION,
+            }),
+          );
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              ...makeResultFrame({
+                uuid: "gateway-background-result",
+                result: "",
+                numTurns: 0,
+                origin: { kind: "task-notification" },
+              }),
+              user_message_uuid: harness.promptUuid(attempt),
+            }),
+          );
+          yield* TestClock.adjust("1 hour");
+          assert.lengthOf(harness.terminalEvents(), 1);
+          break;
+        }
+        const succeeded =
+          input.name === "ordinary reply" || (input.name === "recovered" && attempt > 0);
+        if (input.name === "recovered" && attempt > 0) {
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              ...harness.offeredMessages[attempt],
+              isReplay: true,
+              user_message_uuid: harness.promptUuid(attempt),
+              session_id: WAKE_NATIVE_SESSION,
+            }),
+          );
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              ...makeResultFrame({ uuid: "gateway-stale-result", result: fallback }),
+              user_message_uuid: harness.promptUuid(0),
+            }),
+          );
+          assert.lengthOf(harness.terminalEvents(), 0);
+        }
+        if (!succeeded) {
+          const stream = (event: unknown) =>
+            claudeSdkFrame({
+              type: "stream_event",
+              event,
+              parent_tool_use_id: null,
+              uuid: `gateway-stream-${attempt}`,
+              session_id: WAKE_NATIVE_SESSION,
+            });
+          yield* harness.offerAndWait(
+            stream({
+              type: "message_start",
+              message: { id: `gateway-${attempt}`, model: "error" },
+            }),
+          );
+          yield* harness.offerAndWait(
+            stream({
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "text", text: "" },
+            }),
+          );
+          yield* harness.offerAndWait(
+            stream({
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "text_delta", text: fallback },
+            }),
+          );
+          yield* harness.offerAndWait(stream({ type: "content_block_stop", index: 0 }));
+        }
+        yield* harness.offerAndWait(
+          input.name === "authentication failed"
+            ? makeAssistantErrorFrame({
+                uuid: `gateway-assistant-${attempt}`,
+                model: "error",
+                error: "authentication_failed",
+                text: fallback,
+              })
+            : makeAssistantTextFrame({
+                uuid: `gateway-assistant-${attempt}`,
+                model: succeeded ? "claude-sonnet-4-6" : "error",
+                text: fallback,
+              }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            ...makeResultFrame({
+              uuid: `gateway-result-${attempt}`,
+              result: fallback,
+              ...(input.name === "authentication failed" ? { terminalReason: "api_error" } : {}),
+            }),
+            user_message_uuid: harness.promptUuid(attempt),
+          }),
+        );
+        if (input.name === "unobservable hook configured") {
+          yield* TestClock.adjust("2 seconds");
+          assert.lengthOf(harness.offeredMessages, 1);
+        }
+        if (attempt < input.retries || input.name === "stopped") {
+          yield* TestClock.adjust("1 second");
+          assert.lengthOf(harness.offeredMessages, attempt + 1);
+          assert.lengthOf(harness.terminalEvents(), 0);
+          if (input.name === "stopped") {
+            yield* harness.runtime.interruptTurn({
+              providerThread: harness.providerThread,
+              providerTurnId: lastProviderTurn(harness.events).id,
+            });
+            yield* TestClock.adjust("2 seconds");
+          } else {
+            yield* TestClock.adjust("1 second");
+            assert.lengthOf(harness.offeredMessages, attempt + 2);
+          }
+        }
+      }
+
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, input.status);
+      if (terminal.status === "failed") {
+        if (input.name === "authentication failed") {
+          assert.include(terminal.failure.message, "claude auth login");
+        } else if (input.name === "retry goes silent") {
+          assert.equal(terminal.failure.code, "claude_request_unanswered");
+        } else {
+          assert.equal(terminal.failure.class, "provider_error");
+          assert.equal(terminal.failure.code, "gateway_model_error");
+        }
+      }
+      assert.lengthOf(harness.offeredMessages, input.retries + 1);
+      assert.equal(
+        new Set(harness.offeredMessages.map((message) => message.uuid)).size,
+        input.retries + 1,
+      );
+      for (const message of harness.offeredMessages) {
+        assert.deepEqual(message.message, harness.offeredMessages[0]?.message);
+      }
+      assert.notEqual(lastProviderTurn(harness.events).model, "error");
+      const replies = harness.events.flatMap((event) =>
+        event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
+          ? [event.turnItem.text]
+          : [],
+      );
+      if (input.name !== "authentication failed") {
+        assert.equal(replies.includes(fallback), input.status === "completed");
+      }
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

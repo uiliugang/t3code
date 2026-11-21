@@ -349,8 +349,8 @@ branches stay selected. If fetching or switching fails, the task stops before th
 For **New worktree**, fetching the remote base retries temporary connection failures up to three
 times within five minutes. The setup card shows the branch and retry attempt; you can cancel
 while it reconnects. If recovery fails, restore the connection and retry the preparation.
-A fetch with no changing Git progress for 30 seconds is restarted. A remote that stays silent
-while preparing its data can also reach this limit.
+If Git reports no progress in the first 10 seconds of the initial attempt, T3 restarts the fetch.
+Once Git reports progress, or on later attempts, T3 waits 30 seconds without progress.
 A missing remote branch stops preparation without using its cached commit. To intentionally
 start from a local branch, turn off **Start from remote** and select that local branch.
 

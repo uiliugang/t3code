@@ -6201,13 +6201,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               }),
             },
           }),
-          Queue.take(progress).pipe(
-            Effect.timeoutOrElse({
-              duration: "30 seconds",
-              orElse: () => Effect.fail(new FetchIdleTimeout()),
-            }),
-            Effect.forever,
-          ),
+          Effect.suspend(() =>
+            Queue.take(progress).pipe(
+              Effect.timeoutOrElse({
+                duration: attempt === 1 && lastProgress === "" ? "10 seconds" : "30 seconds",
+                orElse: () => Effect.fail(new FetchIdleTimeout()),
+              }),
+            ),
+          ).pipe(Effect.forever),
         ).pipe(
           Effect.map((result) => ({
             result,
