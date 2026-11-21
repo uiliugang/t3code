@@ -9,10 +9,13 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
+import { backgroundActivityOverrideSettings } from "./SettingsPanels.logic";
 import {
   applyPendingScopedWrites,
   createScopedSettingsWriter,
@@ -332,6 +335,58 @@ describe("scoped settings writes", () => {
         ),
       ).toEqual({ saved: [laptop.label, server.label], failed: [] });
     });
+
+    it.each([
+      { automaticGitFetchInterval: Duration.seconds(65) },
+      { automaticGitFetchInterval: Duration.seconds(30) },
+      { providerHealthRefreshInterval: Duration.minutes(4) },
+      { hostPowerMonitorActiveInterval: Duration.seconds(55) },
+      { hostPowerMonitorIdleInterval: Duration.minutes(10) },
+      { pauseWhenHostLocked: false },
+      { pauseWhenHostLowPower: false },
+      { pauseWhenClientLowPower: false },
+      { pauseWhenOnBattery: true },
+    ])(
+      "accepts normalized background settings but reports an ignored change: %o",
+      async (override) => {
+        const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+          backgroundActivity: {
+            schemaVersion: 1,
+            profile: "custom",
+            baseProfile: "balanced",
+            overrides: {
+              automaticGitFetchInterval: Duration.seconds(60),
+              providerHealthRefreshInterval: Duration.minutes(3),
+              hostPowerMonitorActiveInterval: Duration.seconds(50),
+            },
+          },
+        });
+        const targets = [
+          environment(laptop.label, { settings: current }),
+          environment(server.label, { settings: current }),
+        ];
+        const patch = backgroundActivityOverrideSettings(
+          current.backgroundActivity,
+          resolveServerBackgroundActivitySettings(current),
+          override,
+        );
+        const result = await persistScopedSettingsPatch(
+          planScopedSettingsPatch(all, targets, patch),
+          async ({ environmentId, input }) => ({
+            _tag: "Success",
+            value:
+              environmentId === laptop.environmentId
+                ? applyServerSettingsPatch(current, input.patch)
+                : current,
+          }),
+          vi.fn(),
+        );
+        expect(result.savedEnvironments.map(({ label }) => label)).toEqual([laptop.label]);
+        expect(result.failedEnvironments.map(({ label, message }) => ({ label, message }))).toEqual(
+          unsupported,
+        );
+      },
+    );
   });
 
   it("persists client keys locally at any scope alongside server keys", async () => {
