@@ -1,5 +1,5 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
-import { ProjectRepositoriesSettings } from "./ProjectRepositoriesSettings";
+import { WorkspaceRepositoriesSettings } from "./WorkspaceRepositoriesSettings";
 import { ProjectConfigurationSettings } from "./ConfigurationSettings";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useComposerMenuState } from "../chat/useComposerMenuState";
@@ -60,6 +60,7 @@ import {
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { ProjectRepositoriesSettings } from "./ProjectRepositoriesSettings";
 import {
   defaultProjectIcon,
   hasDefaultProjectIcon,
@@ -708,12 +709,17 @@ function ProjectDetail({
             </>
           ) : null}
         </SettingsSection>
-        {group.memberProjects.map((member) => (
-          <ProjectRepositoriesSettings
-            key={`${member.environmentId}:${member.id}`}
-            project={member}
-          />
-        ))}
+        {group.memberProjects
+          .filter(
+            (member) =>
+              member.workspaceConfig !== undefined || (member.trackedFolders?.length ?? 0) === 0,
+          )
+          .map((member) => (
+            <WorkspaceRepositoriesSettings
+              key={`${member.environmentId}:${member.id}`}
+              project={member}
+            />
+          ))}
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
         {group.memberProjects.map((member) => {
@@ -726,6 +732,12 @@ function ProjectDetail({
             />
           ) : null;
         })}
+        <ProjectRepositoriesSettings
+          members={group.memberProjects.filter(
+            (member) =>
+              member.workspaceConfig === undefined && (member.trackedFolders?.length ?? 0) > 0,
+          )}
+        />
         {checkoutChoices}
         <SettingsSection title={t("Danger")}>
           <SettingsRow

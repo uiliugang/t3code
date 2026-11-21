@@ -115,7 +115,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 
 import { ChatMarkdownAssetImage } from "../chat/ChatMarkdownMedia";
 import { DiffPanelLoadingState } from "../DiffPanelShell";
-import { useDiffWorkerPool } from "../DiffWorkerPoolProvider";
+import { useDiffWorkerPool, useDiffWorkerPoolReady } from "../DiffWorkerPoolProvider";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { DiffFileTree } from "../diffs/DiffFileTree";
 import { FileExplorerPane } from "../files/FileExplorerPane";
@@ -462,7 +462,7 @@ function PullRequestCodeTab({
   );
   const codeTheme = useCodeTheme();
   // Initialize the shared tokenizer and workers while the diff request is still pending.
-  useDiffWorkerPool();
+  const workerPoolReady = useDiffWorkerPoolReady(useDiffWorkerPool());
   const settings = useClientSettings((settings) => ({
     diffFilesCollapsed: settings.diffFilesCollapsed,
     diffIgnoreWhitespace: settings.diffIgnoreWhitespace,
@@ -1829,17 +1829,25 @@ function PullRequestCodeTab({
   const withToolbar = (body: ReactNode) => (
     <div className="flex h-full min-h-0 flex-col">
       {toolbar}
-      <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto">
+      {/* Keyed so the diff replaces this node: a reused one keeps focus without its tabIndex. */}
+      <div
+        key="status"
+        ref={scrollerRef}
+        tabIndex={-1}
+        data-workspace-focus-default
+        className="min-h-0 flex-1 overflow-auto outline-none"
+      >
         {body}
       </div>
     </div>
   );
 
   const term = sourceControlClients.get(detail.provider).changeRequest.singular;
+  const diffLoading = (
+    <DiffPanelLoadingState label={t("Loading {term} diff...", { term: t(term) })} />
+  );
   if (diffQuery.isPending && loadedSlices.length === 0) {
-    return withToolbar(
-      <DiffPanelLoadingState label={t("Loading {term} diff...", { term: t(term) })} />,
-    );
+    return withToolbar(diffLoading);
   }
 
   if (diffQuery.error && loadedSlices.length === 0) {
@@ -1867,6 +1875,11 @@ function PullRequestCodeTab({
             : t("This commit has no file changes.")}
       </p>,
     );
+  }
+
+  // Wait here rather than in the viewer's own placeholder, so panel focus stays on this scroller.
+  if (!workerPoolReady) {
+    return withToolbar(diffLoading);
   }
 
   const orphanThreads = detail.reviewThreads.filter((thread) => !placedThreadIds.has(thread.id));
@@ -1967,7 +1980,11 @@ function PullRequestCodeTab({
           <FileViewedToggleContext value={fileViewedToggle}>
             <StyledDiffCodeView<ReviewAnnotationGroup>
               className="@container h-full overflow-auto [scrollbar-gutter:stable]"
-              containerRef={scrollerRef}
+              containerRef={(node) => {
+                // Pierre sets tabIndex -1 on this root and forwards no data attributes.
+                node?.setAttribute("data-workspace-focus-default", "");
+                scrollerRef(node);
+              }}
               viewerRef={codeViewReveal.attach}
               items={previewItems}
               selectedLines={selectedLines}

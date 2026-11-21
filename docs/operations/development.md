@@ -28,6 +28,15 @@ are shared between worktrees; an existing global Vite+ keeps its configured cach
 while the private fallback uses `$XDG_DATA_HOME/t3code/vite-plus` (defaulting to
 `~/.local/share/t3code/vite-plus`) or `%LOCALAPPDATA%\t3code\vite-plus` on Windows.
 
+On Windows, clone with Git's long-path support enabled. The bundled reference repositories
+under `.repos/` can otherwise make checkout fail with `Filename too long`:
+
+```powershell
+git clone -c core.longpaths=true https://github.com/pingdotgg/t3code.git
+```
+
+This saves the setting in the new clone before checkout, without changing your global Git settings.
+
 Open the pairing URL printed by the dev runner. The bare origin does not authenticate
 a new browser.
 

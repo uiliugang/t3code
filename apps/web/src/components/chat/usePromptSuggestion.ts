@@ -48,6 +48,14 @@ export function offeredPromptSuggestion<Suggestion extends { readonly runId: Run
 }
 
 /**
+ * The suggestion to insert when Tab or the hint accepts it. The hint unmounts a render after
+ * typing starts, so a late accept must not prepend the suggestion to a draft that has text.
+ */
+export function promptSuggestionToAccept(suggestion: string | null, draft: string): string | null {
+  return draft.length === 0 ? suggestion : null;
+}
+
+/**
  * The provider's predicted next prompt, while the run that produced it is the thread's latest
  * completed run and Escape has not dismissed it.
  */

@@ -20,6 +20,7 @@ import { useClientSettings } from "../hooks/useSettings";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import {
   REQUIREMENTS_PANEL_REF,
+  PULL_REQUESTS_PANEL_REF,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   useRightPanelStore,
@@ -148,7 +149,7 @@ export function useOpenChangeRequestLink(
             to: "/requirements",
             search: (previous) => patchRequirementsSearch(previous, requirementSelection(selected)),
           });
-        } else if (!resolvedThreadRef && resolvedPanelRef.threadId === "pull-requests-panel") {
+        } else if (scopedThreadKey(resolvedPanelRef) === scopedThreadKey(PULL_REQUESTS_PANEL_REF)) {
           void navigate({
             to: "/pull-requests",
             search: (previous) => ({

@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
+import appCss from "~/index.css?inline";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { act, fakeTimers, render } from "../../../test/render";
 
@@ -16,9 +17,10 @@ vi.mock(import("~/hooks/useUiTranslation"), async () => {
   return { useUiTranslation: () => translateUi.bind(null, "en") };
 });
 
-const { permissions, reads } = vi.hoisted(() => ({
+const { permissions, reads, shown } = vi.hoisted(() => ({
   permissions: { checkout: true, operate: true },
   reads: { diff: [] as unknown[] },
+  shown: { detail: null as PullRequestDetailView | null },
 }));
 
 vi.mock(import("~/state/session"), async (original) => ({
@@ -43,9 +45,9 @@ vi.mock(import("./usePullRequestDetail"), async (original) => ({
     detailQuery: { isPending: false, refresh: vi.fn() },
     activityQuery: { isPending: false, refresh: vi.fn(), error: null },
     activity: null,
-    sharedSummary: detail,
-    coreDetail: detail,
-    detail,
+    sharedSummary: shown.detail,
+    coreDetail: shown.detail,
+    detail: shown.detail,
   })) as never,
 }));
 vi.mock(import("~/state/usePullRequestStack"), async (original) => ({
@@ -76,6 +78,7 @@ vi.mock(import("~/state/use-atom-command"), async (original) => ({
   useAtomCommand: (() => vi.fn()) as never,
 }));
 
+import { createWorkspaceFocusController, workspaceAreaProps } from "~/lib/workspaceFocus";
 import { PullRequestDetailPanel } from "./PullRequestDetailPanel";
 
 const detail: PullRequestDetailView = {
@@ -132,10 +135,10 @@ const detail: PullRequestDetailView = {
 
 const environmentId = EnvironmentId.make("environment");
 const draftId = DraftId.make("conflicts-draft");
-const panel = (attach = false) => (
+const panel = (attach = false, reference = detail) => (
   <PullRequestDetailPanel
     environmentId={environmentId}
-    reference={detail}
+    reference={reference}
     context="page"
     shortcutsEnabled={false}
     getShortcutContext={() => ({
@@ -154,6 +157,7 @@ function setup() {
   permissions.checkout = true;
   permissions.operate = true;
   reads.diff = [];
+  shown.detail = detail;
   useComposerDraftStore.setState({ draftsByThreadKey: {} });
 }
 
@@ -200,4 +204,42 @@ it("reads the first diff page once the pointer rests on the Code tab", async () 
     environmentId,
     input: { projectId: detail.projectId, repository: detail.repository, number: detail.number },
   });
+});
+
+it("keeps a screen reader's place when scrolling the description condenses the header", async () => {
+  setup();
+  shown.detail = {
+    ...detail,
+    body: Array.from({ length: 80 }, (_, line) => `Line ${line}`).join("\n\n"),
+  };
+  const style = document.createElement("style");
+  style.textContent = appCss;
+  document.head.append(style);
+  using _style = { [Symbol.dispose]: () => style.remove() };
+  const controller = createWorkspaceFocusController(document);
+  using _controller = { [Symbol.dispose]: () => controller.dispose() };
+  await using screen = await render(
+    <div {...workspaceAreaProps("pull-requests", 1)} className="flex h-[600px] flex-col">
+      {panel()}
+    </div>,
+  );
+  const openOnHost = screen.getByRole("button", { name: "Open pull request #1 on host" });
+  await expect.element(openOnHost).toBeVisible();
+  const expanded = openOnHost.element() as HTMLButtonElement;
+  expanded.focus();
+  await expect.element(screen.getByText("Line 79")).toBeInTheDocument();
+  let scroller = screen.getByText("Line 79").element().parentElement;
+  while (scroller && getComputedStyle(scroller).overflowY !== "auto") {
+    scroller = scroller.parentElement;
+  }
+  using _timers = fakeTimers();
+  using moves = vi.spyOn(HTMLElement.prototype, "focus");
+  // Browse mode scrolls a heading into view without moving DOM focus.
+  await act(() => {
+    scroller!.scrollTop = scroller!.scrollHeight;
+  });
+  await vi.waitFor(() => expect(expanded.closest("[inert]")).not.toBeNull());
+  await act(() => vi.advanceTimersToNextFrame());
+  // A programmatic focus() pulls the screen reader's browse cursor back to the header.
+  expect(moves).not.toHaveBeenCalled();
 });

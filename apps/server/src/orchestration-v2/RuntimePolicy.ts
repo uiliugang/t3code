@@ -20,6 +20,7 @@ import * as Schema from "effect/Schema";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
+import * as WorkspaceFolders from "../workspace/WorkspaceFolders.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { worktreeDependencyEnvironment } from "../workspace/worktreeDependencyEnvironment.ts";
 
@@ -178,6 +179,7 @@ export const layerFromProjectStore: Layer.Layer<
   | ProjectStore.ProjectStoreV2
   | ProviderInstanceRegistry.ProviderInstanceRegistry
   | ServerSettings.ServerSettingsService
+  | WorkspaceFolders.WorkspaceFolders
 > = Layer.effect(
   RuntimePolicyV2,
   Effect.gen(function* () {
@@ -187,6 +189,7 @@ export const layerFromProjectStore: Layer.Layer<
     const repositoryResolver = yield* Effect.serviceOption(
       WorkspaceRepositoryResolver.WorkspaceRepositoryResolver,
     );
+    const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     // The same ceiling the orchestrator enforces, fixed for the server's life.
     const serverSettings = yield* ServerSettings.ServerSettingsService;
@@ -422,6 +425,23 @@ export const layerFromProjectStore: Layer.Layer<
             ),
           );
         }
+        // The turn can still run in its own cwd, as a single-folder thread does.
+        const trackedWorkspace =
+          input.thread.workspace === undefined
+            ? yield* workspaceFolders
+                .forThread({
+                  projectId: input.thread.projectId,
+                  worktreePath: input.thread.worktreePath,
+                })
+                .pipe(
+                  Effect.catch((cause) =>
+                    Effect.logWarning(
+                      "Could not resolve the thread's tracked folders.",
+                      cause,
+                    ).pipe(Effect.as(undefined)),
+                  ),
+                )
+            : undefined;
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
@@ -447,6 +467,9 @@ export const layerFromProjectStore: Layer.Layer<
               }
             : {}),
           ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
+          ...(trackedWorkspace === undefined || trackedWorkspace.folders.length === 0
+            ? {}
+            : { workspaceFolders: trackedWorkspace }),
         });
       }),
     });

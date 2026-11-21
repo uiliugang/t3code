@@ -14,6 +14,8 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Resume now": "立即恢复",
+  "Reset {time}": "已重置：{time}",
   "App updates": "应用更新",
   "Browser artifacts": "浏览器产物",
   "Client ID": "客户端 ID",

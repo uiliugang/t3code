@@ -26,6 +26,10 @@ import {
   type TurnItemId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import { withTurnStartReservation } from "../workspace/workspaceLease.ts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -698,6 +702,8 @@ export const layer: Layer.Layer<
   RunExecutionServiceV2,
   never,
   | CheckpointService.CheckpointServiceV2
+  | FileSystem.FileSystem
+  | Path.Path
   | EventSink.EventSinkV2
   | IdAllocator.IdAllocatorV2
   | ProviderEventIngestor.ProviderEventIngestorV2
@@ -710,6 +716,8 @@ export const layer: Layer.Layer<
   RunExecutionServiceV2,
   Effect.gen(function* () {
     const scope = yield* Effect.scope;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const checkpointService = yield* CheckpointService.CheckpointServiceV2;
     const eventSink = yield* EventSink.EventSinkV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -1058,6 +1066,7 @@ export const layer: Layer.Layer<
         .captureBaseline({
           scope: input.checkpointScope,
           ordinalWithinScope: Math.max(0, input.run.ordinal - 1),
+          thread: input.appThread,
         })
         .pipe(
           Effect.catchCauseIf(
@@ -1976,7 +1985,7 @@ export const layer: Layer.Layer<
           yield* trackChildLifecycle(event, deliveredEvent !== null);
           yield* scheduleIdleFlush;
         });
-        const providerEventFiber = yield* eventSink
+        const providerEventConsumer = eventSink
           .consumeProviderEvents(
             eventSubscription.events.pipe(
               Stream.merge(Stream.fromQueue(idleFlushTicks), { haltStrategy: "left" }),
@@ -2194,9 +2203,28 @@ export const layer: Layer.Layer<
                   );
                 }),
             ),
-            Effect.ensuring(endPreviewActivity),
-            Effect.ensuring(eventSubscription.close),
-            Effect.forkDetach,
+          );
+        const extraRoots = input.runtimePolicy.workspaceFolders?.extraRoots ?? [];
+        const reservationAcquired = yield* Deferred.make<void>();
+        const providerEventFiber = yield* (
+          extraRoots.length === 0
+            ? providerEventConsumer
+            : withTurnStartReservation(
+                fileSystem,
+                path,
+                extraRoots,
+                Deferred.succeed(reservationAcquired, undefined).pipe(
+                  Effect.andThen(providerEventConsumer),
+                ),
+              )
+        ).pipe(
+          Effect.ensuring(endPreviewActivity),
+          Effect.ensuring(eventSubscription.close),
+          Effect.forkDetach,
+        );
+        if (extraRoots.length > 0)
+          yield* Deferred.await(reservationAcquired).pipe(
+            Effect.onInterrupt(() => Fiber.interrupt(providerEventFiber)),
           );
 
         // A provider turn is a sign that the session is still alive. Keep
@@ -2208,10 +2236,9 @@ export const layer: Layer.Layer<
             message: "Failed to refresh MCP credential liveness.",
           }),
         );
-        yield* touchMcpCredential;
-        const appContext = yield* McpAppModelContext.forProvider(
-          mcpAppModelContext,
-          input.run.threadId,
+        const appContext = yield* touchMcpCredential.pipe(
+          Effect.andThen(McpAppModelContext.forProvider(mcpAppModelContext, input.run.threadId)),
+          Effect.onError(() => Fiber.interrupt(providerEventFiber)),
         );
         const turnInput = {
           appThread: input.appThread,

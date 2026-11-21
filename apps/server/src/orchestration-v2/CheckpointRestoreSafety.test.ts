@@ -15,6 +15,9 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as WorkspaceFolders from "../workspace/WorkspaceFolders.ts";
+import * as TaskFolderStore from "../workspace/TaskFolderStore.ts";
+
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as CheckpointRollbackService from "./CheckpointRollbackService.ts";
 import { isCheckpointRestoreIsolated } from "./CheckpointRestoreSafety.ts";
@@ -26,6 +29,9 @@ import { ProjectionStoreV2, type ProjectionCheckpointRollbackContext } from "./P
 import * as ProjectStore from "./ProjectStore.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { RuntimePolicyV2 } from "./RuntimePolicy.ts";
+import { layerNoTaskFolders } from "./ProviderTurnStartService.testkit.ts";
+
+const noTrackedFolders = { forThread: () => Effect.succeed({ folders: [], extraRoots: [] }) };
 
 it.effect.each([
   "nested",
@@ -34,6 +40,8 @@ it.effect.each([
   "sibling",
   "shared-provider",
   "conversation",
+  "tracked",
+  "task-folder",
 ] as const)("preserves overlapping workspace files, owner=%s", (owner) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -66,11 +74,13 @@ it.effect.each([
       deletedAt: null,
       lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: otherId },
       worktreePath:
-        owner === "ancestor" || owner === "conversation"
-          ? parent
-          : owner === "nested"
-            ? nested
-            : sibling,
+        owner === "tracked"
+          ? null
+          : owner === "ancestor" || owner === "conversation"
+            ? parent
+            : owner === "nested"
+              ? nested
+              : sibling,
     };
     const projection = {
       thread: {
@@ -91,6 +101,43 @@ it.effect.each([
       scope: { id: scopeId, cwd },
       runsToRollback: [{ id: "later-run", ordinal: 1, status: "completed", rootNodeId: null }],
     } as unknown as ProjectionCheckpointRollbackContext;
+    const layerProject = Layer.mock(ProjectStore.ProjectStoreV2)({
+      get: () =>
+        Effect.succeedSome({
+          workspaceRoot: owner === "tracked" ? sibling : parent,
+          trackedFolders: owner === "tracked" ? [{ path: nested, name: "tracked" }] : [],
+        } as never),
+    });
+    const layerFolders = WorkspaceFolders.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          layerProject,
+          Layer.mock(TaskFolderStore.TaskFolderStore)({
+            findContaining: () =>
+              Effect.succeed(
+                owner === "task-folder"
+                  ? {
+                      root: parent,
+                      projectId,
+                      projectRoot: sibling,
+                      anchor: parent,
+                      projectPath: sibling,
+                      projectIsWorktree: true,
+                      repositories: [
+                        {
+                          repositoryPath: "/source/tracked",
+                          worktreePath: nested,
+                          name: "tracked",
+                        },
+                      ],
+                    }
+                  : null,
+              ),
+          }),
+        ),
+      ),
+    );
     const layerTest = CheckpointRollbackService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -99,10 +146,10 @@ it.effect.each([
           ServerSettings.layerTest(),
           ThreadCommandExecutor.layer,
           IdAllocator.layer,
+          layerNoTaskFolders,
           Layer.mock(GitWorkflowService.GitWorkflowService)({}),
-          Layer.mock(ProjectStore.ProjectStoreV2)({
-            get: () => Effect.succeedSome({ workspaceRoot: parent } as never),
-          }),
+          layerProject,
+          layerFolders,
           Layer.mock(ProjectionStoreV2)({
             getThread: () => Effect.succeed(projection.thread),
             getCheckpointRollbackContext: () => Effect.succeed(projection),
@@ -141,6 +188,7 @@ it.effect.each([
               }),
           }),
           Layer.mock(CheckpointServiceV2)({
+            discardRepositorySnapshots: () => Effect.void,
             restore: () =>
               Effect.gen(function* () {
                 calls.push("files");
@@ -168,11 +216,11 @@ it.effect.each([
     const restoreFiles = owner !== "conversation";
     const rejected = !["sibling", "shared-provider", "conversation"].includes(owner);
     if (rejected) {
-      const error = yield* service
+      const result = yield* service
         .execute({ threadId, providerThreadId, checkpointId, scopeId, restoreFiles })
-        .pipe(Effect.flip);
-      assert.equal(error.reason, "shared-workspace");
-      assert.deepEqual(calls, []);
+        .pipe(Effect.result);
+      assert.deepEqual({ status: result._tag, calls }, { status: "Failure", calls: [] });
+      if (result._tag === "Failure") assert.equal(result.failure.reason, "shared-workspace");
       assert.equal(yield* fs.readFileString(otherFile), "other thread's uncommitted work");
     } else {
       yield* service.execute({ threadId, providerThreadId, checkpointId, scopeId, restoreFiles });
@@ -191,16 +239,69 @@ it.effect("lets rollback recreate a worktree storage cleanup removed", () =>
     const isolated = yield* isCheckpointRestoreIsolated(
       { id: ThreadId.make("restore-removed"), worktreePath },
       { cwd: worktreePath },
+      null,
       {
         fileSystem,
         path,
         projections: {
           getShellSnapshot: () => Effect.succeed({ threads: [], archivedThreads: [] }),
         } as never,
+        workspaceFolders: noTrackedFolders,
         projects: {} as never,
       },
     );
     assert.isTrue(isolated);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("counts a task folder's repository worktrees as part of what a restore changes", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const parent = yield* fileSystem.realPath(
+      yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-v2-restore-task-folder-" }),
+    );
+    // The worktrees directory is reached through a symlink; the other thread holds the real path.
+    const real = path.join(parent, "real", "task");
+    const named = path.join(parent, "linked", "task");
+    yield* fileSystem.makeDirectory(path.join(real, "shop"), { recursive: true });
+    yield* fileSystem.makeDirectory(path.join(real, "web"));
+    yield* fileSystem.symlink(path.join(parent, "real"), path.join(parent, "linked"));
+    const worktreePath = path.join(named, "shop");
+    const other = {
+      id: ThreadId.make("restore-task-folder-other"),
+      projectId: ProjectId.make("restore-project"),
+      deletedAt: null,
+      worktreePath: path.join(real, "web"),
+      activeRunId: null,
+      lineage: {},
+    };
+    const isolated = (repositories: ReadonlyArray<string>) =>
+      isCheckpointRestoreIsolated(
+        { id: ThreadId.make("restore-task-folder"), worktreePath },
+        { cwd: path.join(real, "shop") },
+        {
+          repositories: repositories.map((folder) => ({
+            repositoryPath: "/tracked/web",
+            worktreePath: folder,
+            name: "web",
+          })),
+        },
+        {
+          fileSystem,
+          path,
+          projections: {
+            getShellSnapshot: () => Effect.succeed({ threads: [other], archivedThreads: [] }),
+            getCheckpointContext: () => Effect.succeed({ checkpointScopes: [] }),
+            getThreadProviderContext: () => Effect.succeed({ providerSessions: [] }),
+          } as never,
+          workspaceFolders: noTrackedFolders,
+          projects: {} as never,
+        },
+      );
+
+    assert.isTrue(yield* isolated([]));
+    assert.isFalse(yield* isolated([path.join(named, "web")]));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
@@ -234,6 +335,7 @@ it.effect.each([
       const result = yield* isCheckpointRestoreIsolated(
         { id: parentId, worktreePath },
         { cwd: worktreePath },
+        null,
         {
           fileSystem,
           path,
@@ -246,6 +348,7 @@ it.effect.each([
             getCheckpointContext: () => Effect.succeed({ checkpointScopes: [] }),
             getThreadProviderContext: () => Effect.succeed({ providerSessions: [] }),
           } as never,
+          workspaceFolders: noTrackedFolders,
           projects: {} as never,
         },
       );
@@ -392,7 +495,14 @@ it.effect.each([
     const result = yield* isCheckpointRestoreIsolated(
       { id: parentId, worktreePath },
       { cwd: worktreePath },
-      { fileSystem, path, projections: projections as never, projects: {} as never },
+      null,
+      {
+        fileSystem,
+        path,
+        projections: projections as never,
+        projects: {} as never,
+        workspaceFolders: noTrackedFolders,
+      },
     );
     assert.equal(result, isolated);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

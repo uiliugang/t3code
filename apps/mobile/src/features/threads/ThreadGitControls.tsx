@@ -96,6 +96,8 @@ export type ThreadGitMenuProps = {
   readonly threadId: ThreadId | string;
   readonly currentBranch: string | null;
   readonly hasThread?: boolean;
+  /** The project tracks repositories besides its folder, which then need not be one itself. */
+  readonly tracksRepositories?: boolean;
   readonly gitStatus: VcsStatusResult | null;
   readonly gitOperationLabel: string | null;
   readonly onOpenFilesInspector?: () => void;
@@ -355,38 +357,59 @@ export function useThreadTerminalMenu(props: ThreadGitControlsProps): AppBarMenu
 export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMenu | null {
   const t = useUiTranslation();
   const model = useThreadGitControlModel(props);
+  const gt = useGT();
+  // A plain folder that tracks repositories has no branch of its own; its turns still have diffs.
+  const repositoriesOnly = !model.isRepo && props.tracksRepositories === true;
   return {
     title: t("Git controls"),
     icon: "point.topleft.down.curvedto.point.bottomright.up",
     separateBackground: false,
     items: [
-      {
-        id: "git-status",
-        title: compactMenuBranchLabel(model.currentBranchLabel),
-        icon: "point.topleft.down.curvedto.point.bottomright.up",
-        disabled: true,
-        subtitle: compactMenuStatus(props.gitStatus, t),
-        onPress: () => {},
-      },
-      {
-        id: "git-quick-action",
-        title: model.quickAction.label,
-        icon: model.quickActionIcon,
-        disabled: model.quickAction.disabled,
-        subtitle: model.quickActionHint ?? undefined,
-        onPress: () => {
-          void model.runQuickAction();
-        },
-      },
+      ...(repositoriesOnly
+        ? // A worktree thread of such a folder still has a branch: its repositories are on it.
+          props.currentBranch === null
+          ? []
+          : [
+              {
+                id: "git-status",
+                title: compactMenuBranchLabel(props.currentBranch),
+                icon: "point.topleft.down.curvedto.point.bottomright.up",
+                disabled: true,
+                subtitle: gt("Repository worktrees"),
+                onPress: () => {},
+              },
+            ]
+        : [
+            {
+              id: "git-status",
+              title: compactMenuBranchLabel(model.currentBranchLabel),
+              icon: "point.topleft.down.curvedto.point.bottomright.up",
+              disabled: true,
+              subtitle: compactMenuStatus(props.gitStatus, t),
+              onPress: () => {},
+            },
+            {
+              id: "git-quick-action",
+              title: model.quickAction.label,
+              icon: model.quickActionIcon,
+              disabled: model.quickAction.disabled,
+              subtitle: model.quickActionHint ?? undefined,
+              onPress: () => {
+                void model.runQuickAction();
+              },
+            },
+          ]),
       {
         id: "git-review",
         title: t("Review changes"),
         icon: "text.bubble",
-        disabled: !model.isRepo || props.hasThread === false,
+        disabled: !(model.isRepo || repositoriesOnly) || props.hasThread === false,
         subtitle:
           props.hasThread === false
-            ? t("Available after the first message")
-            : t("Turn diffs and worktree changes"),
+            ? gt("Available after the first message")
+            : repositoriesOnly
+              ? gt("Turn diffs")
+              : gt("Turn diffs and worktree changes"),
         onPress: model.openReview,
       },
       ...(props.onMergeBack
@@ -407,8 +430,12 @@ export function useThreadGitMenuDefinition(props: ThreadGitMenuProps): AppBarMen
         disabled: props.hasThread === false,
         subtitle:
           props.hasThread === false
-            ? t("Available after the first message")
-            : t("Commit, files, branches"),
+            ? gt("Available after the first message")
+            : repositoriesOnly
+              ? gt("Repositories")
+              : props.tracksRepositories === true
+                ? gt("Commit, branches, repositories")
+                : gt("Commit, files, branches"),
         onPress: model.openGitInspector,
       },
     ],

@@ -15,7 +15,7 @@ import { CheckIcon, CopyIcon, UserIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useNowMinute } from "~/hooks/useNowMinute";
+import { useDeadlinePassed } from "~/hooks/useDeadline";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useQuietThreadProjection } from "~/state/entities";
@@ -217,9 +217,9 @@ export function GuestShareIndicator({ threadRef }: { readonly threadRef: ScopedT
 
 function GuestShareStatus({ share }: { readonly share: ThreadGuestShare }) {
   const t = useUiTranslation();
-  const nowMinute = useNowMinute();
+  const expired = useDeadlinePassed(Date.parse(share.expiresAt));
   // The share stays on the thread after it expires, until the owner clears it.
-  if (share.expiresAt.slice(0, 16) <= nowMinute) return <span>{t("Guest link expired")}</span>;
+  if (expired) return <span>{t("Guest link expired")}</span>;
   return (
     <span>
       {share.guestName !== null

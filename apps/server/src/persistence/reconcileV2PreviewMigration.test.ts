@@ -96,6 +96,9 @@ describe("V2 preview upgrade", () => {
         [114, "DelegatedTaskReadIndexes"],
         [115, "ThreadItemCounts"],
         [116, "UsageOutputThroughputIndex"],
+        [117, "IssueTrackerAdditionalScopes"],
+        [118, "ProjectionProjectsTrackedFolders"],
+        [119, "TaskFolders"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(
@@ -240,6 +243,9 @@ describe("V2 preview upgrade", () => {
         [114, "DelegatedTaskReadIndexes"],
         [115, "ThreadItemCounts"],
         [116, "UsageOutputThroughputIndex"],
+        [117, "IssueTrackerAdditionalScopes"],
+        [118, "ProjectionProjectsTrackedFolders"],
+        [119, "TaskFolders"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

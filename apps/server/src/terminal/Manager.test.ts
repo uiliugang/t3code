@@ -52,6 +52,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as TerminalManager from "./Manager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { makePrepareTerminalLaunch } from "../workspace/restoreMissingWorktree.ts";
+import { layerNoTaskFolders } from "../orchestration-v2/ProviderTurnStartService.testkit.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -496,6 +497,7 @@ it.layer(
   Layer.mergeAll(
     NodeServices.layer,
     NodeCrypto.layer,
+    layerNoTaskFolders,
     ProcessRunner.layer.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   ),
   { excludeTestServices: true },
@@ -600,6 +602,7 @@ it.layer(
                 getById: () => Effect.succeedSome({ workspaceRoot: baseDir } as never),
               }),
               Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+              layerNoTaskFolders,
               Layer.mock(GitWorkflowService.GitWorkflowService)({
                 pruneWorktrees: () => Effect.void,
                 listLocalBranchNames: () => Effect.succeed(["feature"]),
@@ -1090,6 +1093,25 @@ it.layer(
       yield* Fiber.join(opening);
       yield* Fiber.join(closing);
       expect(ptyAdapter.processes[1]?.killed).toBe(false);
+    }),
+  );
+
+  it.effect("reports whether any terminal session for a thread has an active subprocess", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager(5, {
+        processTable: Effect.succeed([
+          { pid: 9000, ppid: 1, name: "zsh" },
+          { pid: 100, ppid: 9000, name: "zsh" },
+          { pid: 9001, ppid: 1, name: "zsh" },
+          { pid: 200, ppid: 9001, name: "node" },
+        ]),
+      }).pipe(Effect.provide(layerWithHostPlatform("linux")));
+      yield* manager.open(openInput({ terminalId: "idle", threadId: "thread-idle" }));
+      yield* manager.open(openInput({ terminalId: "dev-server", threadId: "thread-active" }));
+
+      expect(yield* manager.hasActiveSubprocess({ threadId: "thread-none" })).toBe(false);
+      expect(yield* manager.hasActiveSubprocess({ threadId: "thread-idle" })).toBe(false);
+      expect(yield* manager.hasActiveSubprocess({ threadId: "thread-active" })).toBe(true);
     }),
   );
 

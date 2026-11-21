@@ -38,40 +38,73 @@ type RecoveryProps = {
   timestampFormat: TimestampFormat;
   uiLanguage?: UiLocale;
   t?: UiTranslator;
+  resetPassed?: boolean;
+  displayPassed?: boolean;
   onChange: (recovery: OrchestrationV2LimitRecoveryUpdate) => Promise<void>;
 };
+
+function parseEpochMs(isoDate: string | null): number | null {
+  if (isoDate === null) return null;
+  const parsed = Date.parse(isoDate);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function limitRecoveryScheduleState(
+  props: Pick<
+    RecoveryProps,
+    "runId" | "resetAt" | "stoppedAt" | "settled" | "requestPending" | "recovery" | "snoozedUntil"
+  >,
+) {
+  // The server refuses recovery changes while a request is pending.
+  const canSchedule =
+    !props.settled &&
+    !props.requestPending &&
+    props.resetAt !== null &&
+    Date.parse(props.resetAt) > Date.parse(props.stoppedAt);
+  const resumes =
+    canSchedule &&
+    props.recovery?.runId === props.runId &&
+    props.recovery.resetAt === props.resetAt &&
+    props.recovery.autoResume;
+  const displayAt =
+    resumes &&
+    props.resetAt &&
+    props.snoozedUntil &&
+    Date.parse(props.snoozedUntil) > Date.parse(props.resetAt)
+      ? props.snoozedUntil
+      : props.resetAt;
+  return { canSchedule, resumes, displayAt };
+}
+
+export function useUsageLimitRecoveryBannerItem(
+  props: RecoveryProps | null,
+): ComposerBannerStackItem | null {
+  const displayAt = props === null ? null : limitRecoveryScheduleState(props).displayAt;
+  const resetPassed = useDeadlinePassed(props === null ? null : parseEpochMs(props.resetAt));
+  const displayPassed = useDeadlinePassed(parseEpochMs(displayAt));
+  if (props === null) return null;
+  return usageLimitRecoveryBannerItem({ ...props, resetPassed, displayPassed });
+}
 
 export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBannerStackItem {
   const language = props.uiLanguage ?? getClientSettings().uiLanguage;
   const t = props.t ?? translateUi.bind(null, language);
-  const {
-    runId,
-    errorCode,
-    resetAt,
-    stoppedAt,
-    settled,
-    requestPending,
-    recovery,
-    snoozedUntil,
-    timestampFormat,
-  } = props;
-  // The server refuses recovery changes while a request is pending.
-  const canSchedule =
-    !settled && !requestPending && resetAt !== null && Date.parse(resetAt) > Date.parse(stoppedAt);
-  const resumes =
-    canSchedule && recovery?.runId === runId && recovery.resetAt === resetAt && recovery.autoResume;
+  const { runId, errorCode, resetAt, timestampFormat } = props;
+  const { canSchedule, resumes, displayAt } = limitRecoveryScheduleState(props);
+  const resetAtMs = parseEpochMs(resetAt);
+  const displayAtMs = parseEpochMs(displayAt);
+  const resetPassed = props.resetPassed ?? (resetAtMs !== null && resetAtMs <= Date.now());
+  const displayPassed = props.displayPassed ?? (displayAtMs !== null && displayAtMs <= Date.now());
   const workspaceLimit = errorCode === CHATGPT_WORKSPACE_USAGE_LIMIT_CODE;
   const chatGptLimit = workspaceLimit || errorCode === CHATGPT_USAGE_LIMIT_CODE;
   const recoveryActions = canSchedule ? (
     <RecoveryActions key={`${runId}:${resetAt}`} {...props} />
   ) : null;
-  const displayAt =
-    resumes && resetAt && snoozedUntil && Date.parse(snoozedUntil) > Date.parse(resetAt)
-      ? snoozedUntil
-      : resetAt;
-  const resetDescription = displayAt
-    ? t(resumes ? "Resumes {time}" : "Resets {time}", {
-        time: formatUpcomingTimestamp(displayAt, timestampFormat, undefined, undefined, language),
+  const resumesUpcoming = resumes && !displayPassed;
+  const shownAt = resumesUpcoming ? displayAt : resetAt;
+  const resetDescription = shownAt
+    ? t(resumesUpcoming ? "Resumes {time}" : resetPassed ? "Reset {time}" : "Resets {time}", {
+        time: formatUpcomingTimestamp(shownAt, timestampFormat, undefined, undefined, language),
       })
     : t("Reset time unavailable; retry manually");
   if (!chatGptLimit) {
@@ -153,7 +186,13 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
       <InlineButton touchTarget="padded" disabled={pending} onClick={() => void toggle("resume")}>
-        {pending ? t("Saving...") : scheduled ? t("Cancel auto-resume") : t("Resume at reset")}
+        {pending
+          ? t("Saving...")
+          : scheduled
+            ? t("Cancel auto-resume")
+            : resetPassed
+              ? t("Resume now")
+              : t("Resume at reset")}
       </InlineButton>
       <InlineButton
         touchTarget="padded"

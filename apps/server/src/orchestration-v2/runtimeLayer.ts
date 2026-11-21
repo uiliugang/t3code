@@ -18,6 +18,7 @@ import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as PreviewAgentActivity from "../preview/PreviewAgentActivity.ts";
 import * as McpAppRequests from "../mcpApps/McpAppRequests.ts";
+import * as McpSignIn from "../mcpApps/McpSignIn.ts";
 import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -69,10 +70,16 @@ import * as ThreadForkService from "./ThreadForkService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as WorkspaceFolders from "../workspace/WorkspaceFolders.ts";
+import * as TaskFolderStore from "../workspace/TaskFolderStore.ts";
 
 export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationEventStore.layer,
   OrchestrationCommandReceipts.layer,
+);
+
+const layerWorkspaceFoldersProvided = WorkspaceFolders.layer.pipe(
+  Layer.provide(Layer.merge(ProjectStore.layer, TaskFolderStore.layer)),
 );
 
 const layerWorkspaceRestore = WorkspaceRestore.layer.pipe(
@@ -82,6 +89,7 @@ const layerRuntimePolicyProvided = RuntimePolicy.layerFromProjectStore.pipe(
   Layer.provide(
     Layer.mergeAll(
       layerWorkspaceRestore,
+      layerWorkspaceFoldersProvided,
       ProjectionStore.layer,
       ProjectStore.layer,
       WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer)),
@@ -144,6 +152,7 @@ const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
 const layerCheckpointServiceProvided = CheckpointService.layer.pipe(
   Layer.provide(IdAllocator.layer),
   Layer.provide(WorkspaceRepositoryResolver.layer.pipe(Layer.provide(GitVcsDriver.layer))),
+  Layer.provide(layerWorkspaceFoldersProvided),
 );
 const layerContextHandoffServiceProvided = ContextHandoffService.layer.pipe(
   Layer.provide(IdAllocator.layer),
@@ -221,6 +230,7 @@ const layerRuntimeRequestServiceProvided = RuntimeRequestService.layer.pipe(
 );
 const layerCheckpointRollbackServiceProvided = CheckpointRollbackService.layer.pipe(
   Layer.provide(layerWorkspaceRestore),
+  Layer.provide(layerWorkspaceFoldersProvided),
   Layer.provide(
     Layer.mergeAll(
       ProjectStore.layer,
@@ -259,6 +269,7 @@ const layerOrchestratorProvided = Orchestrator.layer.pipe(
       layerContextHandoffServiceProvided,
       IdAllocator.layer,
       ProjectStore.layer,
+      TaskFolderStore.layer,
       ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
       // Reuse the continuation worker's layer reference so memoization shares one request queue.
       ProviderContinuationRequests.layer,
@@ -448,10 +459,15 @@ const layerMcpAppRequestsProvided = McpAppRequests.layer.pipe(
   ),
 );
 
+const layerMcpSignInProvided = McpSignIn.layer.pipe(
+  Layer.provide(Layer.merge(layerThreadManagementProvided, layerProviderSessionManagerProvided)),
+);
+
 export const layer = Layer.mergeAll(
   layerCommandOutputHubProvided,
   layerOrchestratorProvided,
   layerMcpAppRequestsProvided,
+  layerMcpSignInProvided,
   layerThreadManagementProvided,
   layerEffectWorkerProvided,
   layerProviderSessionManagerProvided,

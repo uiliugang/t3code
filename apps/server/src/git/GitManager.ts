@@ -189,6 +189,8 @@ export class GitManager extends Context.Service<
         readonly refresh?: boolean;
         readonly freshGitState?: boolean;
         readonly confirmTerminal?: boolean;
+        /** Also accept a pull request merged inside a fork when the host searched upstream. */
+        readonly includeHeadRepository?: boolean;
       },
     ) => Effect.Effect<GitBranchPullRequest | null, GitManagerServiceError>;
     /** Whether T3 checked this pull request out onto the branch, which ties it to later threads. */
@@ -214,7 +216,7 @@ export class GitManager extends Context.Service<
       input: GitRunStackedActionInput,
       options?: GitRunStackedActionOptions,
     ) => Effect.Effect<GitRunStackedActionResult, GitManagerServiceError>;
-    /** Opens a PR for the checkout's pushed branch, or returns the one already open. */
+    /** Pushes the checkout's branch when needed, then opens its PR or returns the one already open. */
     readonly createPullRequest: (input: {
       readonly cwd: string;
       readonly projectId: ProjectId;
@@ -871,6 +873,22 @@ export const make = Effect.gen(function* () {
       yield* shareBranchBase(cwd, result.branch);
     }
     return result;
+  });
+  const createPrNeedsPush = Effect.fn("GitManager.createPrNeedsPush")(function* (
+    cwd: string,
+    status: {
+      readonly branch: string | null;
+      readonly hasUpstream: boolean;
+      readonly aheadCount: number;
+    },
+  ) {
+    if (!status.branch) return false;
+    if (!status.hasUpstream || status.aheadCount > 0) return true;
+    // A current upstream says nothing about a separate push remote, which may lack HEAD.
+    const target = yield* gitCore
+      .resolvePushTarget(cwd, { branch: status.branch, hasUpstream: true })
+      .pipe(Effect.orElseSucceed(() => null));
+    return target?.viaPushRemote === true;
   });
   const readWorktreeCreationSettings = serverSettingsService.getSettings.pipe(
     Effect.map((settings) => ({
@@ -2144,6 +2162,31 @@ export const make = Effect.gen(function* () {
     return null;
   });
 
+  // A host that targets another repository (gh's upstream) misses a pull request merged
+  // inside the branch's own repository. Kept out of status so it cannot hide Create PR upstream.
+  const findMergedPrInHeadRepository = Effect.fn("findMergedPrInHeadRepository")(function* (
+    cwd: string,
+    headContext: BranchHeadContext,
+  ) {
+    if (!headContext.isCrossRepository || headContext.headRepositoryNameWithOwner === null) {
+      return null;
+    }
+    const provider = yield* sourceControlProvider(cwd);
+    if (provider.createsChangeRequestsIn === undefined) return null;
+    const sameRepository = { ...headContext, isCrossRepository: false };
+    const pullRequests = yield* provider.listChangeRequests({
+      cwd,
+      headSelector: headContext.headBranch,
+      state: "all",
+      limit: 20,
+      repository: headContext.headRepositoryNameWithOwner,
+    });
+    const merged = pullRequests
+      .map(toPullRequestInfo)
+      .filter((pr) => pr.state === "merged" && matchesBranchHeadContext(pr, sameRepository));
+    return Arr.sort(merged, pullRequestUpdatedAtDescOrder)[0] ?? null;
+  });
+
   const findLatestPrForHeadContext = Effect.fn("findLatestPrForHeadContext")(function* (
     cwd: string,
     headContext: BranchHeadContext,
@@ -2177,7 +2220,6 @@ export const make = Effect.gen(function* () {
         parsedByNumber.set(pr.number, pr);
       }
     }
-
     const parsed = Arr.sort(parsedByNumber.values(), pullRequestUpdatedAtDescOrder);
 
     const latestOpenPr = parsed.find((pr) => pr.state === "open");
@@ -2626,8 +2668,9 @@ export const make = Effect.gen(function* () {
       };
     }
 
-    // A PR opened from the remote branch would leave out commits not pushed yet.
-    if (details.aheadCount > 0) {
+    // A PR opened from the remote branch would leave out commits not pushed yet. The ahead
+    // count is against the upstream, which a push to a separate push remote leaves behind.
+    if (!pushRemoteRef && details.aheadCount > 0) {
       return yield* new GitManagerError({
         operation: "runPrStep",
         cwd,
@@ -2767,17 +2810,57 @@ export const make = Effect.gen(function* () {
   const createPullRequest: GitManager["Service"]["createPullRequest"] = Effect.fn(
     "GitManager.createPullRequest",
   )(function* (input) {
-    const { openedAsDraft, ...result } = yield* openPrFromBranch(
-      input.cwd,
-      null,
-      () => Effect.void,
-      undefined,
-      input.baseBranch,
-      input.draft === true,
-      () => Effect.succeed({ title: input.title, body: input.body }),
+    const status = yield* gitCore.statusDetails(input.cwd);
+    const needsPush = yield* createPrNeedsPush(input.cwd, status);
+    if (needsPush && status.branch) {
+      yield* ensurePrHeadIsNotBase(
+        input.cwd,
+        { ...status, branch: status.branch },
+        (yield* changeRequestTermsFor(input.cwd)).shortLabelWithArticle,
+      );
+    }
+    const push = needsPush
+      ? yield* pushCurrentBranch(input.cwd, status.branch).pipe(
+          Effect.mapError(
+            (cause) =>
+              new GitManagerError({
+                operation: "createPullRequest",
+                cwd: input.cwd,
+                detail: `Could not push ${status.branch}: ${cause.detail}${cause.reason === undefined ? "" : ` (${cause.reason})`}`,
+                cause,
+              }),
+          ),
+        )
+      : null;
+    const { openedAsDraft, ...result } = yield* Effect.gen(function* () {
+      // Publishing records the upstream, which the PR step needs to find the head branch.
+      if (!status.hasUpstream && push?.status === "pushed" && push.setUpstream === false) {
+        return yield* new GitManagerError({
+          operation: "createPullRequest",
+          cwd: input.cwd,
+          detail: `Pushed ${status.branch} to ${push.upstreamBranch}, but could not record it as the branch's upstream. Set the upstream, then try again.`,
+        });
+      }
+      return yield* openPrFromBranch(
+        input.cwd,
+        null,
+        () => Effect.void,
+        push && "pushRemote" in push && push.pushRemote && push.upstreamBranch
+          ? { remoteName: push.pushRemote, upstreamRef: push.upstreamBranch }
+          : undefined,
+        input.baseBranch,
+        input.draft === true,
+        () => Effect.succeed({ title: input.title, body: input.body }),
+      );
+    }).pipe(
+      // A push changes the ahead count, and a new PR changes the branch's PR lookup, so
+      // both leave cached status stale whatever the PR step does next.
+      Effect.onExit((exit) =>
+        push?.status === "pushed" || (Exit.isSuccess(exit) && exit.value.status === "created")
+          ? invalidateStatus(input.cwd)
+          : Effect.void,
+      ),
     );
-    // The thread's branch PR comes from status, which may hold the lookup from before.
-    if (result.status === "created") yield* invalidateStatus(input.cwd);
     if (input.draft === true && !openedAsDraft && !(yield* draftOpened(input, result))) {
       // A retry finds the open PR and drafts it then.
       return yield* new GitManagerError({
@@ -2799,7 +2882,7 @@ export const make = Effect.gen(function* () {
         Effect.map(Option.getOrUndefined),
         Effect.orElseSucceed(() => undefined),
       );
-      const key = createdPullRequestKey({ pr: result }, project);
+      const key = createdPullRequestKey({ pr: result }, project?.repositoryIdentity);
       if (key === null) return false;
       const ref = { projectId: input.projectId, ...key };
       const isDraft =
@@ -2980,7 +3063,11 @@ export const make = Effect.gen(function* () {
   const lookupBranchPullRequest = Effect.fn("lookupBranchPullRequest")(function* (
     cacheCwd: string,
     branch: string,
-    options: { readonly refresh: boolean; readonly freshGitState: boolean },
+    options: {
+      readonly refresh: boolean;
+      readonly freshGitState: boolean;
+      readonly includeHeadRepository?: boolean | undefined;
+    },
   ) {
     const remember = <E>(key: string, read: Effect.Effect<string | null, E>) =>
       rememberPrLookupGitState(cacheCwd, key, options.freshGitState, read);
@@ -3122,7 +3209,11 @@ export const make = Effect.gen(function* () {
         });
       }
     }
-    const { latest } = cached;
+    const latest =
+      cached.latest ??
+      (options.includeHeadRepository === true
+        ? yield* findMergedPrInHeadRepository(cacheCwd, cached.headContext)
+        : null);
     if (latest === null) return null;
     if (
       (branch === defaultBranch ||
@@ -3152,6 +3243,7 @@ export const make = Effect.gen(function* () {
     const pullRequest = yield* lookupBranchPullRequest(cacheCwd, branch, {
       refresh,
       freshGitState,
+      includeHeadRepository: options?.includeHeadRepository,
     });
     if (
       pullRequest === null ||
@@ -3179,6 +3271,7 @@ export const make = Effect.gen(function* () {
     const confirmed = yield* lookupBranchPullRequest(cacheCwd, branch, {
       refresh: false,
       freshGitState: true,
+      includeHeadRepository: options?.includeHeadRepository,
     });
     settledPrLookupByBranchKey.delete(settledKey);
     if (confirmed !== null && confirmed.state !== "open") {
@@ -3733,26 +3826,12 @@ export const make = Effect.gen(function* () {
       > {
         const initialStatus = yield* gitCore.statusDetails(input.cwd);
         const wantsCommit = isCommitAction(input.action);
-        const upToDateBranch =
-          input.action === "create_pr" &&
-          initialStatus.hasUpstream &&
-          initialStatus.aheadCount === 0
-            ? initialStatus.branch
-            : null;
-        // A current upstream says nothing about a separate push remote, which may lack HEAD.
-        const pushTarget = upToDateBranch
-          ? yield* gitCore
-              .resolvePushTarget(input.cwd, { branch: upToDateBranch, hasUpstream: true })
-              .pipe(Effect.orElseSucceed(() => null))
-          : null;
         const wantsPush =
           input.action === "push" ||
           input.action === "commit_push" ||
           input.action === "commit_push_pr" ||
           (input.action === "create_pr" &&
-            (!initialStatus.hasUpstream ||
-              initialStatus.aheadCount > 0 ||
-              pushTarget?.viaPushRemote === true));
+            (!initialStatus.hasUpstream || (yield* createPrNeedsPush(input.cwd, initialStatus))));
         const wantsPr = input.action === "create_pr" || input.action === "commit_push_pr";
 
         if (input.featureBranch && !wantsCommit) {

@@ -1080,6 +1080,13 @@ export class ServerSelfUpdateError extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("ServerSelfUpdateError", {
   reason: TrimmedNonEmptyString,
+  /** Set when the host's desktop app refused only because its build and saved tracks differ. */
+  trackMismatch: Schema.optionalKey(
+    Schema.Struct({
+      buildChannel: DesktopUpdateChannelSchema,
+      savedChannel: DesktopUpdateChannelSchema,
+    }),
+  ),
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {

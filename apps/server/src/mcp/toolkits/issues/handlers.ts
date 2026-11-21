@@ -99,9 +99,10 @@ const make = Effect.gen(function* () {
   });
   const requireProjectScope = Effect.fn("IssuesToolkit.requireProjectScope")(function* (
     requested: ProjectId | undefined,
+    key?: string,
   ) {
     const projectId = yield* requireProjectId(requested);
-    return yield* issues.projectScope(projectId).pipe(
+    return yield* issues.projectScope(projectId, key).pipe(
       Effect.catchTags({
         IssueUnavailableError: () => Effect.fail(new IssueProjectNotFoundError({ projectId })),
       }),
@@ -123,7 +124,7 @@ const make = Effect.gen(function* () {
       return { ...resolved, url: input.url } satisfies ResolvedTarget;
     }
     if (input.key === undefined) return yield* new IssueTargetIncompleteError();
-    const scope = yield* requireProjectScope(input.projectId);
+    const scope = yield* requireProjectScope(input.projectId, input.key);
     return {
       ...scope,
       key: input.key,

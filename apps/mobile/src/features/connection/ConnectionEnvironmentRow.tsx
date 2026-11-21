@@ -1,5 +1,5 @@
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
-import { useMessages } from "gt-react-native";
+import { useGT, useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -114,22 +114,24 @@ export function ConnectionEnvironmentRow(props: {
     );
   };
 
+  const gt = useGT();
+  const toggleLabel = props.opensDetails
+    ? gt("Manage {environment}", { environment: props.environment.environmentLabel })
+    : props.expanded
+      ? gt("Collapse details for {environment}", {
+          environment: props.environment.environmentLabel,
+        })
+      : gt("Expand details for {environment}", {
+          environment: props.environment.environmentLabel,
+        });
+
   return (
     <Animated.View layout={LinearTransition.duration(250)} className="bg-grouped-card">
       <View className="flex-row items-center gap-3 px-4 py-3.5">
         <Pressable
           className="min-w-0 flex-1 gap-0.5 active:opacity-70"
           accessibilityRole="button"
-          accessibilityLabel={
-            props.opensDetails
-              ? t("Manage {environment}", { environment: props.environment.environmentLabel })
-              : t(
-                  props.expanded
-                    ? "Collapse details for {environment}"
-                    : "Expand details for {environment}",
-                  { environment: props.environment.environmentLabel },
-                )
-          }
+          accessibilityLabel={toggleLabel}
           onPress={props.onToggle}
         >
           <View className="flex-row items-center gap-1.5">
@@ -203,17 +205,9 @@ export function ConnectionEnvironmentRow(props: {
           value={enabled}
         />
         <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            props.opensDetails
-              ? t("Manage {environment}", { environment: props.environment.environmentLabel })
-              : t(
-                  props.expanded
-                    ? "Collapse details for {environment}"
-                    : "Expand details for {environment}",
-                  { environment: props.environment.environmentLabel },
-                )
-          }
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
           onPress={props.onToggle}
           style={{
             minWidth: 44,

@@ -328,6 +328,9 @@ export function makeCursorAgentOptions(input: {
     ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
     local: {
       ...(input.runtimePolicy.cwd === null ? {} : { cwd: input.runtimePolicy.cwd }),
+      ...(input.runtimePolicy.workspaceFolders === undefined
+        ? {}
+        : { dirs: [...input.runtimePolicy.workspaceFolders.extraRoots] }),
       autoReview: policy.autoReview,
       settingSources:
         input.runtimePolicy.runtimeMode === "full-access" &&
@@ -2735,7 +2738,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           if (
             existing !== null &&
             openInput.operation === "resume" &&
-            existing.nativeThreadId === openInput.agentId
+            existing.nativeThreadId === openInput.agentId &&
+            existing.session.isAlive?.() !== false
           ) {
             return existing;
           }
@@ -2890,6 +2894,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           const runtimeInstructions = buildRuntimeInstructions({
             harness: "Cursor",
             model: turnInput.modelSelection.model,
+            runtimePolicy: turnInput.runtimePolicy,
           });
           // Resend only on a new/compacted/rewound conversation or when the model changes.
           const sendRuntimeInstructions = delivered.runtime !== runtimeInstructions;

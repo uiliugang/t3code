@@ -108,7 +108,7 @@ vi.mock(import("./ThreadDetailsCard"), () => ({
 vi.mock(import("../BranchToolbar"), () => ({ BranchToolbar: (() => <></>) as never }));
 vi.mock(import("../GitActionsControl"), async () => {
   const { memo } = await import("react");
-  return { default: memo(() => <></>) };
+  return { default: () => <></>, GitActionsControl: memo(() => <></>) };
 });
 vi.mock(import("../ProjectScriptsControl"), () => ({ default: () => <></> }));
 vi.mock(import("./RepositoryDetails"), () => ({ RepositoryDetails: () => <></> }));
@@ -297,7 +297,13 @@ it.each([null, "/work/project-worktree"])(
         onAddProjectScript={async () => AsyncResult.success(undefined)}
         onUpdateProjectScript={async () => AsyncResult.success(undefined)}
         onDeleteProjectScript={async () => AsyncResult.success(undefined)}
-        usage={{ providerInstanceId: null, providers: [], sources: [], contextWindow: null }}
+        usage={{
+          model: null,
+          providerInstanceId: null,
+          providers: [],
+          sources: [],
+          contextWindow: null,
+        }}
       />
     );
     await fixture.screen.rerender(panel(true));

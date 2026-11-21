@@ -122,6 +122,11 @@ Cleanup keeps branches, commits and thread history. Choose **Rebuild worktrees**
 thread, to recreate the directories. Reinstall dependencies and recreate any ignored files you
 need. When connected remotely, cleanup runs on the machine named in the list.
 
+## Projects with several repositories
+
+A project covers every repository inside its folder, and any folder you add under **Settings →
+Projects → Repositories**; see [Projects with several repositories](multi-repo-projects.md).
+
 ## Pin and archive projects
 
 Pinned projects come first in the project pickers: the project picker on a new thread, the

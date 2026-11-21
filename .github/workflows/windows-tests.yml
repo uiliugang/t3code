@@ -57,8 +57,11 @@ jobs:
       - name: Cache packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ steps.package_cache_path.outputs.path }}
-          key: windows-tests-packages-v1-${{ hashFiles('pnpm-lock.yaml') }}
+          # Global-store junctions bind to the runner that created them; rebuild them after restore.
+          path: |
+            ${{ steps.package_cache_path.outputs.path }}/files
+            ${{ steps.package_cache_path.outputs.path }}/index.db
+          key: windows-tests-packages-v2-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json') }}
 
       - name: Install
         run: vp install
