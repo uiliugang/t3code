@@ -338,7 +338,7 @@ function normalizeReceiverError(error: unknown): DesktopTelemetryReceiverError {
   return new DesktopTelemetryDecodeFailed({ cause: error });
 }
 
-export const writeAllToFileDescriptor = Effect.fn(
+const writeAllToFileDescriptor = Effect.fn(
   "resourceTelemetry.desktopTelemetryReceiver.writeAllToFileDescriptor",
 )(function* (fd: number, payload: Buffer) {
   let offset = 0;

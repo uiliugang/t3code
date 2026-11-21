@@ -849,6 +849,15 @@ function UsageOverview({
             label={t("Output")}
             value={formatTokens(merged.outputTokens)}
           />
+          {merged.outputTokensPerSecond === undefined ? null : (
+            <Metric
+              loading={loadingPartial}
+              label={t("Average output speed")}
+              value={t("{rate} tokens/s", {
+                rate: Math.round(merged.outputTokensPerSecond * 10) / 10,
+              })}
+            />
+          )}
           <Metric
             loading={loadingPartial}
             label={gt("Cache savings")}
@@ -921,12 +930,15 @@ function UsageOverview({
                 <th className="py-2 pl-6 font-normal">{t("Cost")}</th>
                 <th className="hidden py-2 pl-6 font-normal sm:table-cell">{t("Usage share")}</th>
                 <th className="py-2 pr-2 pl-6 font-normal">{t("Tokens")}</th>
+                <th className="hidden py-2 pr-2 pl-3 font-normal sm:table-cell">
+                  {t("Average output speed")}
+                </th>
               </tr>
             </thead>
             <tbody>
               {breakdownModels.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={6} className="py-6 text-center text-muted-foreground">
                     {t("No activity in this window.")}
                   </td>
                 </tr>
@@ -937,6 +949,12 @@ function UsageOverview({
                   const hasBar = value > 0 && breakdownPeak > 0;
                   const share = modelShare(model, metric === "tokens" ? "tokens" : "cost");
                   const rowFigures = figureClass(loadingProviders.has(model.provider));
+                  const outputSpeed =
+                    model.outputTokensPerSecond === undefined
+                      ? null
+                      : t("{rate} tokens/s", {
+                          rate: Math.round(model.outputTokensPerSecond * 10) / 10,
+                        });
                   return (
                     <tr
                       key={key}
@@ -979,6 +997,12 @@ function UsageOverview({
                       </td>
                       <td className={cn("py-2.5 pr-2 pl-6", rowFigures)}>
                         {formatTokens(model.totalTokens)}
+                        {outputSpeed === null ? null : (
+                          <div className="text-xs sm:hidden">{outputSpeed}</div>
+                        )}
+                      </td>
+                      <td className={cn("hidden py-2.5 pr-2 pl-3 sm:table-cell", rowFigures)}>
+                        {outputSpeed}
                       </td>
                     </tr>
                   );

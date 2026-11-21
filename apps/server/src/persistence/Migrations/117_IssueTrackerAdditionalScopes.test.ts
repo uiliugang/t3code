@@ -1,4 +1,4 @@
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import { IssueTrackerKind, ProjectId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
@@ -7,13 +7,13 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as IssueTrackerBindings from "../IssueTrackerBindings.ts";
 import { runMigrations } from "../Migrations.ts";
 
-it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
-  "116_IssueTrackerAdditionalScopes",
-  (it) => {
-    it.effect("keeps a one-team binding and saves and replaces extra teams", () =>
+describe("117_IssueTrackerAdditionalScopes", () => {
+  it.effect.each([115, 116])(
+    "keeps a one-team binding through migration %s and saves and replaces extra teams",
+    (fromMigration) =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        yield* runMigrations({ toMigrationInclusive: 115 });
+        yield* runMigrations({ toMigrationInclusive: fromMigration });
         yield* sql`INSERT INTO issue_tracker_bindings VALUES ('web', 'linear', 'ENG', '2026-11-21')`;
         yield* runMigrations();
         const bindings = yield* IssueTrackerBindings.IssueTrackerBindingsRepository.pipe(
@@ -28,7 +28,6 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
         assert.deepStrictEqual(yield* read(), multi);
         yield* bindings.set({ projectId, binding, updatedAt: "2026-11-21" });
         assert.deepStrictEqual(yield* read(), binding);
-      }),
-    );
-  },
-);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+});

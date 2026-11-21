@@ -520,7 +520,7 @@ function maxIsoTimestamp(a: string | null, b: string | null): string | null {
 
 export type TimelineLatestRun = Pick<
   ThreadRunSummary,
-  "runId" | "status" | "startedAt" | "completedAt" | "turnEnded"
+  "runId" | "status" | "startedAt" | "completedAt" | "turnEnded" | "latestCompletedOutputSpeed"
 >;
 
 const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
@@ -600,6 +600,8 @@ type MessagesTimelineRowContent =
       createdAt: string;
       runId: RunId;
       label: TurnFoldLabel;
+      outputTokensPerSecond?: number;
+      summaryOnly?: true;
       expanded: boolean;
     }
   | {
@@ -795,6 +797,8 @@ interface TurnFold {
   /** Every entry in the segment, including the cards a fold never hides. */
   entryIds: ReadonlySet<string>;
   label: TurnFoldLabel;
+  outputTokensPerSecond?: number;
+  summaryOnly?: true;
 }
 
 interface SupersededAttemptFold {
@@ -1236,12 +1240,12 @@ function deriveTurnFolds(input: {
       if (entry.kind === "work" && entry.entry.questionAnswer !== undefined) continue;
       hiddenEntryIds.add(entry.id);
     }
-    if (hiddenEntryIds.size === 0) {
-      continue;
-    }
     const hidesNonCompactionWork = (entries: ReadonlyArray<TimelineEntry>) =>
       entries.some((entry) => hiddenEntryIds.has(entry.id) && !timelineEntryIsCompaction(entry));
-    if (!hidesNonCompactionWork(group.entries)) {
+    const hasFoldableWork = hidesNonCompactionWork(group.entries);
+    const speed = input.latestRun?.latestCompletedOutputSpeed;
+    const outputTokensPerSecond = speed?.runId === runId ? speed.tokensPerSecond : undefined;
+    if (!hasFoldableWork && outputTokensPerSecond === undefined) {
       continue;
     }
 
@@ -1293,9 +1297,11 @@ function deriveTurnFolds(input: {
       runId,
       anchorEntryId: group.anchorEntryId,
       createdAt: group.startBoundary ?? firstEntry.createdAt,
-      hiddenEntryIds: segmentHiddenIds(firstSegment),
+      hiddenEntryIds: hasFoldableWork ? segmentHiddenIds(firstSegment) : new Set(),
       entryIds: new Set(firstSegment.map((entry) => entry.id)),
       label,
+      ...(outputTokensPerSecond === undefined ? {} : { outputTokensPerSecond }),
+      ...(hasFoldableWork ? {} : { summaryOnly: true }),
     });
     for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
@@ -1982,6 +1988,10 @@ export function deriveMessagesTimelineRows(
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
         label: turnFold.label,
+        ...(turnFold.outputTokensPerSecond === undefined
+          ? {}
+          : { outputTokensPerSecond: turnFold.outputTokensPerSecond }),
+        ...(turnFold.summaryOnly ? { summaryOnly: true } : {}),
         expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
       });
     }
@@ -2822,6 +2832,10 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
           : typeof bf.label !== "string" &&
             a.label.status === bf.label.status &&
             a.label.duration === bf.label.duration) &&
+        (a.kind !== "turn-fold" ||
+          (bf.kind === "turn-fold" &&
+            a.outputTokensPerSecond === bf.outputTokensPerSecond &&
+            a.summaryOnly === bf.summaryOnly)) &&
         a.expanded === bf.expanded &&
         anchors.length === nextAnchors.length &&
         anchors.every((id, index) => id === nextAnchors[index])

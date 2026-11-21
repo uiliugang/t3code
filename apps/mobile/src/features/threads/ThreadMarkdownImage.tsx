@@ -1,5 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -19,7 +19,7 @@ import { MediaActionsMenu } from "../../components/MediaActionsMenu";
 import { PresentationSource } from "../../components/ui/NativePresentation";
 import { useMediaActions } from "../../state/mediaActions";
 import type { MediaActionsSource } from "../../lib/mediaActionsSource";
-import { useAssetUrlState } from "../../state/assets";
+import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
 import { WorkspaceMutationIdContext } from "./workspaceMutationIdContext";
 import { ZoomableImagePressable } from "./ZoomableImagePressable";
 import { assetImageCacheKey } from "../../lib/assetImageSource";
@@ -104,6 +104,7 @@ export function ThreadMarkdownImageView(props: {
   readonly knownSize?: { readonly width: number; readonly height: number } | undefined;
   readonly format?: "svg";
   readonly actionsSource?: MediaActionsSource;
+  readonly refreshUri?: (() => Promise<string | null>) | undefined;
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
   const t = useUiTranslation();
@@ -119,18 +120,31 @@ export function ThreadMarkdownImageView(props: {
     measuredWidth > 0 && contextWidth > 0
       ? Math.min(contextWidth, measuredWidth)
       : contextWidth || measuredWidth;
-  const svg = useAtomValue(
-    props.format === "svg" && props.uri !== null ? svgDocumentAtom(props.uri) : noSvgDocumentAtom,
-  );
+  const [request, setRequest] = useState({
+    inputUri: props.uri,
+    uri: props.uri,
+    attempt: 0,
+    failed: false,
+    refreshing: false,
+  });
+  if (request.inputUri !== props.uri) {
+    setRequest({
+      inputUri: props.uri,
+      uri: props.uri,
+      attempt: 0,
+      failed: false,
+      refreshing: false,
+    });
+  }
+  const { uri } = request;
+  const svgAtom = props.format === "svg" && uri !== null ? svgDocumentAtom(uri) : noSvgDocumentAtom;
+  const svg = useAtomValue(svgAtom);
+  const refreshSvg = useAtomRefresh(svgAtom);
   const svgDocument = AsyncResult.isSuccess(svg) ? svg.value : null;
   // Keyed by source so a new source drops the previous image's decoded dimensions.
   const [decoded, setDecoded] = useState<{ sourceKey: string; size: ImageSize } | null>(null);
   const decodedSize =
     svgDocument?.size ?? (decoded?.sourceKey === props.sourceKey ? decoded.size : null);
-  // A failure belongs to one URI; any URI change, including through null, retries.
-  const [failure, setFailure] = useState({ uri: props.uri, failed: false });
-  if (failure.uri !== props.uri) setFailure({ uri: props.uri, failed: false });
-
   const sourceSize = decodedSize ?? props.knownSize ?? null;
   const displaySize: MarkdownImageDisplaySize | null =
     sourceSize === null || availableWidth <= 0
@@ -140,10 +154,21 @@ export function ThreadMarkdownImageView(props: {
           sourceHeight: sourceSize.height,
           availableWidth,
         });
-  const failed =
-    props.unavailable ||
-    (props.uri !== null && failure.uri === props.uri && failure.failed) ||
-    AsyncResult.isFailure(svg);
+  const svgFailed = AsyncResult.isFailure(svg) && !svg.waiting;
+  const failed = !request.refreshing && (props.unavailable || request.failed || svgFailed);
+  const canRetry =
+    failed && (props.refreshUri !== undefined || (!props.unavailable && uri !== null));
+  const retry = async () => {
+    const refreshing = { ...request, refreshing: true };
+    setRequest(refreshing);
+    const nextUri = props.refreshUri ? await props.refreshUri().catch(() => null) : uri;
+    if (props.format === "svg" && nextUri === uri) refreshSvg();
+    setRequest((current) =>
+      current === refreshing
+        ? { ...current, uri: nextUri ?? uri, attempt: 0, failed: !nextUri, refreshing: false }
+        : current,
+    );
+  };
   const placeholderWidth: ViewStyle["width"] =
     availableWidth > 0 ? Math.min(availableWidth, MARKDOWN_IMAGE_MAX_WIDTH) : "100%";
   const frameStyle: ViewStyle = displaySize ?? { width: placeholderWidth, aspectRatio: 16 / 9 };
@@ -153,14 +178,15 @@ export function ThreadMarkdownImageView(props: {
       onLayout={(event) => setMeasuredWidth(event.nativeEvent.layout.width)}
       style={{ alignSelf: "stretch", gap: 6 }}
     >
-      {props.uri === null || failed ? (
+      {uri === null || failed || request.refreshing ? (
         <MediaActionsMenu media={mediaActions}>
           <Pressable
-            accessibilityRole="imagebutton"
-            accessibilityLabel={props.alt ?? t("Markdown image")}
+            accessibilityRole={canRetry ? "button" : "imagebutton"}
+            accessibilityLabel={canRetry ? t("Retry") : (props.alt ?? t("Markdown image"))}
             accessibilityHint={
               mediaActions.actions.length > 0 ? t("Touch and hold for media actions") : undefined
             }
+            onPress={canRetry ? retry : undefined}
             className="items-center justify-center rounded-[10px] bg-md-code-bg"
             style={frameStyle}
           >
@@ -173,6 +199,7 @@ export function ThreadMarkdownImageView(props: {
             ) : (
               <AppActivityIndicator />
             )}
+            {canRetry ? <Text className="text-xs text-foreground">{t("Retry")}</Text> : null}
           </Pressable>
         </MediaActionsMenu>
       ) : (
@@ -189,7 +216,7 @@ export function ThreadMarkdownImageView(props: {
                 props.onPressPreview(
                   withGallery({
                     kind: "image",
-                    uri: props.uri!,
+                    uri,
                     name: props.actionsSource?.name ?? props.alt ?? gt("Image"),
                     sourceIdentifier,
                     actionsSource: props.actionsSource,
@@ -203,8 +230,9 @@ export function ThreadMarkdownImageView(props: {
                 <ThreadMarkdownSvg ast={svgDocument?.ast ?? null} />
               ) : (
                 <ThreadMarkdownImageRequest
-                  uri={props.uri}
-                  cacheKey={props.cacheKey}
+                  key={request.attempt}
+                  uri={uri}
+                  cacheKey={uri === props.uri ? props.cacheKey : undefined}
                   onLoad={(size) =>
                     // Only the first decode counts: later loads report the bitmap
                     // downsampled for the current frame (969 vs 970 wide), so keeping
@@ -215,7 +243,14 @@ export function ThreadMarkdownImageView(props: {
                         : { sourceKey: props.sourceKey, size },
                     )
                   }
-                  onError={() => setFailure({ uri: props.uri, failed: true })}
+                  onError={() =>
+                    setRequest((current) => {
+                      if (current !== request) return current;
+                      return request.attempt === 0 && /^https?:\/\//i.test(uri)
+                        ? { ...request, attempt: 1 }
+                        : { ...request, failed: true };
+                    })
+                  }
                 />
               )}
             </ZoomableImagePressable>
@@ -298,6 +333,7 @@ export function ThreadMarkdownImage(props: {
     props.resource,
     props.resource._tag === "media-file" ? workspaceMutationId : undefined,
   );
+  const refreshAssetUrl = useRefreshAssetUrl(props.environmentId, props.resource);
   const resourceKey =
     props.resource._tag === "attachment"
       ? `attachment:${props.resource.attachmentId}`
@@ -314,6 +350,14 @@ export function ThreadMarkdownImage(props: {
   return (
     <ThreadMarkdownImageView
       uri={assetUrl._tag === "Success" ? assetUrl.url + (props.srcFragment ?? "") : null}
+      refreshUri={
+        assetUrl._tag === "Success" || (assetUrl._tag === "Failure" && assetUrl.reason === "failed")
+          ? async () => {
+              const url = await refreshAssetUrl();
+              return url === null ? null : url + (props.srcFragment ?? "");
+            }
+          : undefined
+      }
       cacheKey={
         assetUrl._tag === "Success"
           ? assetImageCacheKey(props.environmentId, props.resource, assetUrl.fileRevision)

@@ -158,6 +158,16 @@ export const UsageSummary = Schema.Struct({
   sources: ForwardCompatibleArray(UsageSource),
   pricing: UsagePricing,
   scanDurationMs: NonNegativeInt,
+  outputThroughput: Schema.optionalKey(
+    ForwardCompatibleArray(
+      Schema.Struct({
+        provider: UsageProviderKind,
+        model: Schema.optionalKey(TrimmedNonEmptyString),
+        outputTokens: NonNegativeInt,
+        durationMs: NonNegativeInt,
+      }),
+    ),
+  ),
   /** The filter the server applied; absent means unfiltered, including servers that predate filters. */
   modelFilter: Schema.optional(UsageModelFilter),
 });

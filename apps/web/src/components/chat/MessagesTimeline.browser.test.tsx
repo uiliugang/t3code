@@ -304,6 +304,25 @@ describe("MessagesTimeline work rows", () => {
     });
   });
 
+  it("shows the measured speed when its run is outside the loaded history", async () => {
+    setup();
+    const runId = RunId.make("outside-history");
+    await using screen = await render(
+      <MessagesTimeline
+        {...baseProps()}
+        timelineEntries={[message("Newer history", {}, "newer-history")]}
+        latestRun={{
+          runId,
+          status: "completed",
+          startedAt: "2026-01-01T00:00:00Z",
+          completedAt: "2026-01-01T00:00:05Z",
+          latestCompletedOutputSpeed: { runId, tokensPerSecond: 50.1 },
+        }}
+      />,
+    );
+    await expect.element(screen.getByText("Turn average: 50.1 tokens/s")).toBeVisible();
+  });
+
   it("keeps the worked-for heading in place when expanded at the bottom", async () => {
     setup();
     const props = baseProps();
@@ -322,10 +341,17 @@ describe("MessagesTimeline work rows", () => {
           message("Progress details\n\n".repeat(50), { role: "assistant", runId }, "progress"),
           message("Done", { role: "assistant", runId }, "final"),
         ]}
+        latestRun={{
+          runId,
+          status: "completed",
+          startedAt: "2026-01-01T00:00:00Z",
+          completedAt: "2026-01-01T00:00:05Z",
+          latestCompletedOutputSpeed: { runId, tokensPerSecond: 50.1 },
+        }}
       />,
       { container },
     );
-    const heading = screen.getByRole("button", { name: /^Worked for/ });
+    const heading = screen.getByRole("button", { name: /^Worked for 5s · 50\.1 tokens\/s$/ });
     // LegendList keeps rows click-through until its initial scroll settles on animation
     // frames, which the fake clock below would freeze.
     await expect.element(heading).toHaveStyle({ pointerEvents: "auto" });

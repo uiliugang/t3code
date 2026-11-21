@@ -776,6 +776,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     revealedMessageId,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
+  const speed = latestRun?.latestCompletedOutputSpeed;
+  const showFallbackSpeed =
+    speed !== undefined &&
+    !rows.some((row) => row.kind === "turn-fold" && row.outputTokensPerSecond !== undefined);
   const matchedApprovalRequestIds = new Set<string>();
   for (const row of pendingApprovalRequestIds.size > 0 ? rows : []) {
     const entries =
@@ -805,6 +809,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     !isWorking &&
     parentThreadLink === null &&
     historyControls === undefined &&
+    !showFallbackSpeed &&
     footer === null;
   const [listOpening, setListOpening] = useState<TimelineListOpening>(() =>
     nextListOpening({ mounted: false }, !showsEmptyState, listIdentityKey),
@@ -1397,6 +1402,15 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onGrow={onFooterGrow}
     >
       {footer}
+      {showFallbackSpeed ? (
+        <div className="messages-timeline-row-frame">
+          <div className="chat-content-lane px-1 py-1 text-xs text-muted-foreground tabular-nums">
+            {t("Turn average: {rate} tokens/s", {
+              rate: Math.round(speed.tokensPerSecond * 10) / 10,
+            })}
+          </div>
+        </div>
+      ) : null}
       {unmatchedPendingApprovals.length > 0 ? (
         <TimelineRowCtx value={sharedState}>
           <div className="messages-timeline-row-frame">
@@ -1862,28 +1876,42 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const { loading, error, toggle } = useDeferredWorkLoading(row, () =>
     ctx.onToggleTurnFold(row.runId),
   );
+  const label = (
+    <span>
+      {formatTurnFoldLabel(row.label, t)}
+      {row.outputTokensPerSecond === undefined
+        ? null
+        : ` · ${t("{rate} tokens/s", {
+            rate: Math.round(row.outputTokensPerSecond * 10) / 10,
+          })}`}
+      {error ? ` · ${error}` : ""}
+    </span>
+  );
 
   return (
     <div className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1">
       <div className="relative flex items-center gap-1">
-        <button
-          type="button"
-          aria-expanded={row.expanded}
-          data-scroll-anchor-ignore
-          onClick={toggle}
-          aria-busy={loading}
-          className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        >
-          <span>
-            {formatTurnFoldLabel(row.label, t)}
-            {error ? ` · ${error}` : ""}
-          </span>
-          {row.expanded ? (
-            <ChevronDownIcon className="size-3.5" />
-          ) : (
-            <ChevronRightIcon className="size-3.5" />
-          )}
-        </button>
+        {row.summaryOnly ? (
+          <div className="px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
+            {label}
+          </div>
+        ) : (
+          <button
+            type="button"
+            aria-expanded={row.expanded}
+            data-scroll-anchor-ignore
+            onClick={toggle}
+            aria-busy={loading}
+            className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+          >
+            {label}
+            {row.expanded ? (
+              <ChevronDownIcon className="size-3.5" />
+            ) : (
+              <ChevronRightIcon className="size-3.5" />
+            )}
+          </button>
+        )}
         <TimelineRowTimestamp
           createdAt={row.createdAt}
           timestampFormat={ctx.timestampFormat}

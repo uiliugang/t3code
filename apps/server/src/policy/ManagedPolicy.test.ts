@@ -65,6 +65,14 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
     assert.notInclude(paths, "projectSettingsOverrides");
     assert.notInclude(paths, "compactIdleThreads");
     assert.notOk(paths.some((path) => path.startsWith("observability")));
+    for (const key of [
+      "defaultModelSelection",
+      "fallbackModelSelection",
+      "reviewGuideModelSelection",
+    ] as const) {
+      assert.deepEqual(listed.find(([path]) => path === key)?.[1], DEFAULT_SERVER_SETTINGS[key]);
+      assert.notOk(paths.some((path) => path.startsWith(`${key}.`)));
+    }
     for (const [path, value] of listed) {
       if (value === undefined) continue;
       const managed = ManagedSettings.makeManagedSettings({ [path]: { value, locked: false } });

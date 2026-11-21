@@ -223,6 +223,7 @@ it("selects multiple repositories in the new-thread command palette before start
       ),
     ).toBe(true);
   });
+  await expect.element(page.getByRole("button", { name: /alpha \+ beta/ })).toBeVisible();
   const trigger = document.querySelector<HTMLElement>("[data-draft-project-trigger]");
   if (!trigger) throw new Error("The draft project picker did not render.");
   await userEvent.click(page.elementLocator(trigger));

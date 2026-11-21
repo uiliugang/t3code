@@ -254,6 +254,9 @@ export function listManageableSettings() {
     value: unknown,
     ast: SchemaAST.AST | undefined,
   ): ReadonlyArray<readonly [string, unknown]> => {
+    if (ast !== undefined && SchemaAST.isUnion(ast) && ast.types.some(SchemaAST.isNull)) {
+      return [[path, value]];
+    }
     const fields = new Map(
       ast !== undefined && SchemaAST.isObjects(ast)
         ? ast.propertySignatures.map(({ name, type }) => [String(name), type])

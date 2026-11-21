@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Bridges Playwright's WebSocket transport to the desktop's fds.
 /** Playwright needs a CDP WebSocket; the secret loopback endpoint relays desktop debugger frames over bootstrap fds. */
-import * as NodeStream from "@effect/platform-node/NodeStream";
+import * as EffectNodeStream from "@effect/platform-node/NodeStream";
 import * as NodeSocketServer from "@effect/platform-node/NodeSocketServer";
 import {
   DesktopBrowserCommand,
@@ -11,6 +11,7 @@ import {
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -22,9 +23,9 @@ import * as Stream from "effect/Stream";
 import * as Ndjson from "effect/encoding/Ndjson";
 import * as NodeCrypto from "node:crypto";
 import * as NodeNet from "node:net";
+import * as NodeStream from "node:stream";
 
 import * as ServerConfig from "../config.ts";
-import { writeAllToFileDescriptor } from "../resourceTelemetry/DesktopTelemetryReceiver.ts";
 
 const decodeEvent = Schema.decodeUnknownEffect(DesktopBrowserEvent);
 const encodeCommand = Schema.encodeEffect(Schema.fromJsonString(DesktopBrowserCommand));
@@ -66,7 +67,7 @@ const make = Effect.gen(function* () {
   const inputFd = config.desktopBrowserFd;
   const controlFd = config.desktopBrowserControlFd;
   const changes = yield* PubSub.unbounded<{ key: DesktopTabKey; attached: boolean }>();
-  const attachedTabs = new Set<string>();
+  const attachedTabs = new Map<string, DesktopTabKey>();
   // Missing reports protect desktop tabs until the renderer explicitly marks them hidden.
   const shownTabs = new Map<string, boolean>();
   const shownReports = yield* PubSub.unbounded<string>();
@@ -74,7 +75,29 @@ const make = Effect.gen(function* () {
   const inbound = new Map<string, Queue.Queue<string>>();
   const writeLock = yield* Semaphore.make(1);
 
-  if (inputFd === undefined || controlFd === undefined) {
+  const openPipe = Effect.fn("DesktopBrowserChannel.openPipe")(function (
+    fd: number | undefined,
+    writable: boolean,
+  ) {
+    if (fd === undefined) return Effect.undefined;
+    return Effect.acquireRelease(
+      Effect.try({
+        try: () => new NodeNet.Socket({ fd, readable: true, writable }),
+        catch: (cause) => ({ _tag: "DesktopBrowserPipeOpenError" as const, fd, cause }),
+      }),
+      (stream) => Effect.sync(() => stream.destroy()),
+    ).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("desktop browser pipe unavailable", { cause }).pipe(Effect.as(undefined)),
+      ),
+    );
+  });
+  const readable = yield* openPipe(inputFd, false);
+  const writable = yield* openPipe(controlFd, true);
+
+  if (!writable || !readable) {
+    readable?.destroy();
+    writable?.destroy();
     return DesktopBrowserChannel.of({
       available: false,
       awaitAttached: Effect.fn("DesktopBrowserChannel.awaitAttached")(function () {
@@ -102,22 +125,37 @@ const make = Effect.gen(function* () {
     });
   }
 
+  NodeStream.finished(writable, { writable: false }, (error) =>
+    readable.destroy(error ?? undefined),
+  );
+  writable.resume();
+  const available = () => !readable.destroyed && !writable.destroyed;
+
   const command = (message: DesktopBrowserCommandType) =>
     writeLock.withPermits(1)(
       encodeCommand(message).pipe(
-        Effect.flatMap((line) => writeAllToFileDescriptor(controlFd, Buffer.from(`${line}\n`))),
-        Effect.catchCause((cause) =>
-          Effect.logWarning("desktop browser command failed", { cause }),
+        Effect.flatMap((line) =>
+          Effect.callback<void, Error>((resume) => {
+            writable.write(`${line}\n`, (error) =>
+              resume(error ? Effect.fail(error) : Effect.void),
+            );
+          }),
         ),
+        Effect.tapCause((cause) => Effect.logWarning("desktop browser command failed", { cause })),
       ),
     );
 
-  // Use cancellable socket reads; filesystem pipe reads keep Node alive after scope shutdown.
-  const readable = yield* Effect.acquireRelease(
-    Effect.sync(() => new NodeNet.Socket({ fd: inputFd, readable: true, writable: false })),
-    (stream) => Effect.sync(() => stream.destroy()),
-  );
-  yield* NodeStream.fromReadable<Uint8Array, Error>({
+  const detach = Effect.fn("DesktopBrowserChannel.detach")(function (key: DesktopTabKey) {
+    const id = keyOf(key);
+    attachedTabs.delete(id);
+    shownTabs.delete(id);
+    loadFailures.delete(id);
+    const queue = inbound.get(id);
+    return (queue ? Queue.shutdown(queue) : Effect.void).pipe(
+      Effect.andThen(PubSub.publish(changes, { key, attached: false })),
+    );
+  });
+  const events = yield* EffectNodeStream.fromReadable<Uint8Array, Error>({
     evaluate: () => readable,
     closeOnDone: true,
     onError: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
@@ -135,7 +173,7 @@ const make = Effect.gen(function* () {
           return queue ? Queue.offer(queue, event.message).pipe(Effect.asVoid) : Effect.void;
         }
         case "attached":
-          attachedTabs.add(id);
+          attachedTabs.set(id, key);
           return PubSub.publish(changes, { key, attached: true });
         case "loadFailed":
           loadFailures.set(id, {
@@ -144,15 +182,8 @@ const make = Effect.gen(function* () {
             description: event.description,
           });
           return Effect.void;
-        case "detached": {
-          attachedTabs.delete(id);
-          shownTabs.delete(id);
-          loadFailures.delete(id);
-          const queue = inbound.get(id);
-          return (queue ? Queue.shutdown(queue) : Effect.void).pipe(
-            Effect.andThen(PubSub.publish(changes, { key, attached: false })),
-          );
-        }
+        case "detached":
+          return detach(key);
         case "shown":
           shownTabs.set(id, event.shown);
           return event.shown ? PubSub.publish(shownReports, id) : Effect.void;
@@ -160,7 +191,9 @@ const make = Effect.gen(function* () {
     }),
     Effect.catchCause((cause) => Effect.logWarning("desktop browser channel stopped", { cause })),
     Effect.ensuring(
-      Effect.sync(() => {
+      Effect.gen(function* () {
+        writable.destroy();
+        yield* Effect.forEach(attachedTabs.values(), detach, { discard: true });
         shownTabs.clear();
         loadFailures.clear();
       }),
@@ -187,7 +220,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         if (inbound.get(id) === queue) inbound.delete(id);
         yield* Queue.shutdown(queue);
-        yield* command({ type: "release", ...key });
+        yield* command({ type: "release", ...key }).pipe(Effect.ignore);
       }),
     );
     // The relay serves one Playwright connection; a second would see the first's sessions.
@@ -233,14 +266,18 @@ const make = Effect.gen(function* () {
   const isShown = (key: DesktopTabKey) => shownTabs.get(keyOf(key)) ?? true;
 
   return DesktopBrowserChannel.of({
-    available: true,
+    get available() {
+      return available();
+    },
     awaitAttached: Effect.fn("DesktopBrowserChannel.awaitAttached")(function (key, timeout) {
       return Effect.scoped(
         Effect.gen(function* () {
           const subscription = yield* PubSub.subscribe(changes);
+          if (!available()) return false;
           if (attachedTabs.has(keyOf(key))) return true;
           return yield* Stream.fromSubscription(subscription).pipe(
             Stream.filter((change) => change.attached && keyOf(change.key) === keyOf(key)),
+            Stream.interruptWhen(Fiber.await(events)),
             Stream.runHead,
             Effect.map(Option.isSome),
             Effect.timeoutOption(timeout),
@@ -265,9 +302,11 @@ const make = Effect.gen(function* () {
       return Effect.scoped(
         Effect.gen(function* () {
           const subscription = yield* PubSub.subscribe(shownReports);
+          if (!available()) return false;
           if (isShown(key)) return true;
           return yield* Stream.fromSubscription(subscription).pipe(
             Stream.filter((id) => id === keyOf(key)),
+            Stream.interruptWhen(Fiber.await(events)),
             Stream.runHead,
             Effect.map(Option.isSome),
             Effect.timeoutOption(timeout),
@@ -279,10 +318,14 @@ const make = Effect.gen(function* () {
     loadFailure: (key) => loadFailures.get(keyOf(key)),
     endpoint,
     turn: Effect.fn("DesktopBrowserChannel.turn")(function (threadId, active) {
-      return command({ type: "turn", threadId, active });
+      return available()
+        ? command({ type: "turn", threadId, active }).pipe(Effect.ignore)
+        : Effect.void;
     }),
     pointer: Effect.fn("DesktopBrowserChannel.pointer")(function (key, pointer) {
-      return command({ type: "pointer", ...key, ...pointer });
+      return available()
+        ? command({ type: "pointer", ...key, ...pointer }).pipe(Effect.ignore)
+        : Effect.void;
     }),
   });
 });

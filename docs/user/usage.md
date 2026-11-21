@@ -15,6 +15,11 @@ cost, split by token type and by speed. These estimates are not your subscriptio
 split, such as a provider-reported cost for a model without public rates, shows as **Other**.
 Select a model under **Breakdown** to see its trend, cache hit rate, and cost per million tokens.
 
+**Average output speed** divides output tokens by the combined elapsed time of completed T3
+provider turns in the selected period and environments. It includes time spent on tools or
+waiting during those turns, so it is not a model's live generation rate. Turns without complete
+counts and timings, including usage only found in external history, do not contribute.
+
 Totals depend on the history available on each server. Grok turns without a saved completed-turn
 record are missing from the totals.
 Text generation (thread titles, commit messages, PR text, branch names and review guides) is not in

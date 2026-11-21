@@ -79,6 +79,92 @@ function run(id: string, ordinal: number, status: OrchestrationV2RunStatus) {
 }
 
 describe("thread execution presentation", () => {
+  it("reports output throughput only for completed provider turns with measured usage", () => {
+    const attemptId = RunAttemptId.make("throughput-attempt");
+    const completed = {
+      ...run("throughput", 1, "completed"),
+      activeAttemptId: attemptId,
+      completedAt: DateTime.makeUnsafe("2026-07-28T10:00:02.500Z"),
+    };
+    const turn = {
+      id: ProviderTurnId.make("throughput-turn"),
+      providerThreadId: ProviderThreadId.make("throughput-thread"),
+      nodeId: NodeId.make("throughput-node"),
+      runAttemptId: attemptId,
+      nativeTurnRef: null,
+      ordinal: 1,
+      status: "completed" as const,
+      startedAt: now,
+      completedAt: DateTime.makeUnsafe("2026-07-28T10:00:02.500Z"),
+      turnTokenUsage: {
+        usageScope: "main_agent" as const,
+        usageStatus: "complete" as const,
+        hasSubagents: true,
+        inputTokens: 1_000,
+        outputTokens: 125,
+        reasoningTokens: 25,
+        otherUsage: { inputTokens: 200, outputTokens: 50 },
+      },
+    };
+    const projection = { ...v2Projection, runs: [completed] };
+    const speed = (providerTurns: typeof v2Projection.providerTurns) =>
+      deriveThreadActivityRun({ ...projection, providerTurns })?.latestCompletedOutputSpeed
+        ?.tokensPerSecond;
+    expect(speed([turn])).toBe(50);
+    expect(speed([{ ...turn, completedAt: now }])).toBeUndefined();
+    expect(speed([{ ...turn, status: "failed" }])).toBeUndefined();
+    expect(speed([{ ...turn, runAttemptId: RunAttemptId.make("other") }])).toBeUndefined();
+    expect(
+      speed([{ ...turn, turnTokenUsage: { ...turn.turnTokenUsage, localCommand: true } }]),
+    ).toBeUndefined();
+    expect(
+      speed([{ ...turn, turnTokenUsage: { ...turn.turnTokenUsage, usageStatus: "partial" } }]),
+    ).toBeUndefined();
+    const earlierAttempt = RunAttemptId.make("earlier-completion");
+    const earlierTurn = {
+      ...turn,
+      id: ProviderTurnId.make("earlier-turn"),
+      runAttemptId: earlierAttempt,
+      completedAt: DateTime.makeUnsafe("2026-07-28T10:00:01.000Z"),
+    };
+    const outOfOrder = {
+      ...projection,
+      runs: [
+        completed,
+        {
+          ...run("started-first", 2, "completed"),
+          activeAttemptId: earlierAttempt,
+          completedAt: earlierTurn.completedAt,
+        },
+      ],
+      providerTurns: [turn, earlierTurn],
+    };
+    expect(deriveThreadActivityRun(outOfOrder)).toMatchObject({
+      runId: RunId.make("started-first"),
+      latestCompletedOutputSpeed: { runId: completed.id, tokensPerSecond: 50 },
+    });
+    expect(
+      deriveThreadActivityRun({ ...outOfOrder, providerTurns: [earlierTurn] })
+        ?.latestCompletedOutputSpeed,
+    ).toBeUndefined();
+    for (const status of ["failed", "interrupted", "rolled_back"] as const) {
+      const ended = {
+        ...run("ended", 3, status),
+        completedAt: DateTime.makeUnsafe("2026-07-28T10:00:03.500Z"),
+      };
+      expect(
+        deriveThreadActivityRun({ ...outOfOrder, runs: [...outOfOrder.runs, ended] })
+          ?.latestCompletedOutputSpeed,
+      ).toBeUndefined();
+    }
+    expect(
+      deriveThreadActivityRun({
+        ...outOfOrder,
+        runs: [...outOfOrder.runs, run("active", 3, "running")],
+      })?.latestCompletedOutputSpeed,
+    ).toBeUndefined();
+  });
+
   it("shows extension statuses only from the selected provider's current live session", () => {
     const instanceId = v2Projection.thread.modelSelection.instanceId;
     const providerThreadId = ProviderThreadId.make("native-status-thread");
