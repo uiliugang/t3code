@@ -23,7 +23,20 @@ it.effect("aggregates only measured root turns in the selected window and models
     const opening = "2026-11-01T07:00:00.000Z";
     const closing = "2026-11-02T08:00:00.000Z";
     for (const [index, [completedAt, startedAt, model, usage, node]] of [
-      [opening, "2026-11-01T06:59:59.500Z", "fast", complete, "root"],
+      [
+        opening,
+        "2026-11-01T06:59:59.500Z",
+        "fast-alias",
+        { ...complete, models: ["fast"] },
+        "root",
+      ],
+      [
+        opening,
+        "2026-11-01T06:59:59.000Z",
+        "slow",
+        { ...complete, models: ["fast", "slow"] },
+        "root",
+      ],
       ["2026-11-02T07:59:59.999Z", "2026-11-02T07:59:57.999Z", "slow", complete, "root"],
       [previous, "2026-11-01T06:59:00.000Z", "fast", complete, "root"],
       [closing, "2026-11-02T07:59:30.000Z", "fast", complete, "root"],
@@ -42,24 +55,47 @@ it.effect("aggregates only measured root turns in the selected window and models
     }
     const day = UsageDay.make("2026-11-01");
     const input = { sinceDay: day, untilDay: day, timeZone: "America/Los_Angeles" };
-    assert.deepStrictEqual(yield* readUsageOutputThroughput(input), [
-      { provider: "codex", outputTokens: 200, durationMs: 2500 },
+    const aliases = new Map([["slow", "slow-alias"]]);
+    assert.deepStrictEqual(yield* readUsageOutputThroughput(input, aliases), [
+      { provider: "codex", outputTokens: 100, durationMs: 1000 },
+      { provider: "codex", model: "fast", outputTokens: 100, durationMs: 500 },
+      { provider: "codex", model: "slow-alias", outputTokens: 100, durationMs: 2000 },
     ]);
     assert.deepStrictEqual(
-      yield* readUsageOutputThroughput({
-        ...input,
-        modelFilter: { include: [{ provider: "codex", model: "slow" }] },
-      }),
-      [{ provider: "codex", outputTokens: 100, durationMs: 2000 }],
+      yield* readUsageOutputThroughput(
+        { ...input, modelFilter: { exclude: [{ model: "unrelated" }] } },
+        aliases,
+      ),
+      [
+        { provider: "codex", outputTokens: 100, durationMs: 1000 },
+        { provider: "codex", model: "fast", outputTokens: 100, durationMs: 500 },
+        { provider: "codex", model: "slow-alias", outputTokens: 100, durationMs: 2000 },
+      ],
     );
     assert.deepStrictEqual(
-      yield* readUsageOutputThroughput({
-        ...input,
-        resolution: "hour",
-        sinceTime: opening,
-        untilTime: "2026-11-01T08:00:00.000Z",
-      }),
-      [{ provider: "codex", outputTokens: 100, durationMs: 500 }],
+      yield* readUsageOutputThroughput(
+        {
+          ...input,
+          modelFilter: { include: [{ provider: "codex", model: "slow" }] },
+        },
+        aliases,
+      ),
+      [{ provider: "codex", model: "slow-alias", outputTokens: 100, durationMs: 2000 }],
+    );
+    assert.deepStrictEqual(
+      yield* readUsageOutputThroughput(
+        {
+          ...input,
+          resolution: "hour",
+          sinceTime: opening,
+          untilTime: "2026-11-01T08:00:00.000Z",
+        },
+        aliases,
+      ),
+      [
+        { provider: "codex", outputTokens: 100, durationMs: 1000 },
+        { provider: "codex", model: "fast", outputTokens: 100, durationMs: 500 },
+      ],
     );
   }).pipe(Effect.provide(Sqlite.layerMemory)),
 );

@@ -212,8 +212,13 @@ function PoolWindowCard({
           {label !== null ? (
             <Text className="text-sm font-t3-medium text-foreground">{label ?? t(pool.label)}</Text>
           ) : null}
-          <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
-            {t("{percent}% left", { percent: pool.remainingPercent })}
+          <Text className="text-sm leading-10 text-foreground-muted">
+            <T>
+              <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+                <Var>{pool.remainingPercent}</Var>%
+              </Text>{" "}
+              left
+            </T>
           </Text>
         </View>
         {pool.pace ? (

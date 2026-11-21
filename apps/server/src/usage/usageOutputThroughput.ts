@@ -7,9 +7,13 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { keepsUsageRecord } from "./usageAggregation.ts";
 
 const isUsageProvider = Schema.is(UsageProviderKind);
+const decodeMixedModels = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Array(Schema.String)),
+);
 
 export const readUsageOutputThroughput = Effect.fn("UsageService.readOutputThroughput")(function* (
   input: UsageSummaryInput,
+  modelAliases: ReadonlyMap<string, string>,
 ) {
   const start = DateTime.make(`${input.sinceDay}T00:00:00Z`);
   const lastDay = DateTime.make(`${input.untilDay}T00:00:00Z`);
@@ -27,16 +31,23 @@ export const readUsageOutputThroughput = Effect.fn("UsageService.readOutputThrou
   const sql = yield* SqlClient.SqlClient;
   const rows = yield* sql<{
     readonly provider: string;
-    readonly model: string;
+    readonly model: string | null;
+    readonly mixedModels: string | null;
     readonly outputTokens: number;
     readonly durationMs: number;
   }>`
       SELECT CASE attempt.provider WHEN 'claudeAgent' THEN 'claude' ELSE attempt.provider END AS provider,
-        COALESCE(json_extract(turn.payload_json, '$.model'),
-          CASE WHEN json_array_length(turn.payload_json, '$.turnTokenUsage.models') = 1
-            THEN json_extract(turn.payload_json, '$.turnTokenUsage.models[0]') END,
-          json_extract(run.payload_json, '$.executedModel'),
-          json_extract(run.payload_json, '$.modelSelection.model'), '') AS model,
+        CASE
+          WHEN json_array_length(turn.payload_json, '$.turnTokenUsage.models') > 1 THEN NULL
+          WHEN json_array_length(turn.payload_json, '$.turnTokenUsage.models') = 1
+            THEN json_extract(turn.payload_json, '$.turnTokenUsage.models[0]')
+          ELSE COALESCE(json_extract(turn.payload_json, '$.model'),
+            json_extract(run.payload_json, '$.executedModel'),
+            json_extract(run.payload_json, '$.modelSelection.model'), '')
+        END AS model,
+        CASE WHEN ${input.modelFilter !== undefined ? 1 : 0}
+          AND json_array_length(turn.payload_json, '$.turnTokenUsage.models') > 1
+          THEN json_extract(turn.payload_json, '$.turnTokenUsage.models') END AS mixedModels,
         SUM(json_extract(turn.payload_json, '$.turnTokenUsage.outputTokens')) AS outputTokens,
         SUM(CAST(ROUND(1000 * (unixepoch(turn.completed_at, 'subsec') - unixepoch(turn.started_at, 'subsec'))) AS INTEGER)) AS durationMs
       FROM orchestration_v2_projection_provider_turns AS turn
@@ -50,23 +61,31 @@ export const readUsageOutputThroughput = Effect.fn("UsageService.readOutputThrou
         AND json_extract(turn.payload_json, '$.turnTokenUsage.usageStatus') = 'complete'
         AND COALESCE(json_extract(turn.payload_json, '$.turnTokenUsage.localCommand'), 0) = 0
         AND json_extract(turn.payload_json, '$.turnTokenUsage.outputTokens') > 0
-      GROUP BY 1, 2
+      GROUP BY 1, 2, 3
+      ORDER BY 1, 2, 3
     `;
-  const totals = new Map<UsageProviderKind, { outputTokens: number; durationMs: number }>();
+  const samples: NonNullable<UsageSummary["outputThroughput"]>[number][] = [];
   for (const row of rows) {
-    if (
-      row.durationMs <= 0 ||
-      !isUsageProvider(row.provider) ||
-      !keepsUsageRecord(input.modelFilter, row)
-    )
+    if (row.durationMs <= 0 || !isUsageProvider(row.provider)) continue;
+    const model = row.model?.trim() ?? "";
+    if (row.mixedModels !== null) {
+      const models = decodeMixedModels(row.mixedModels);
+      if (
+        Option.isNone(models) ||
+        !models.value.every((entry) =>
+          keepsUsageRecord(input.modelFilter, { provider: row.provider, model: entry }),
+        )
+      )
+        continue;
+    } else if (!keepsUsageRecord(input.modelFilter, { provider: row.provider, model })) {
       continue;
-    const current = totals.get(row.provider) ?? { outputTokens: 0, durationMs: 0 };
-    current.outputTokens += row.outputTokens;
-    current.durationMs += row.durationMs;
-    totals.set(row.provider, current);
+    }
+    samples.push({
+      provider: row.provider,
+      ...(model === "" ? {} : { model: modelAliases.get(model) ?? model }),
+      outputTokens: row.outputTokens,
+      durationMs: row.durationMs,
+    });
   }
-  if (totals.size === 0) return;
-  return [...totals].map(([provider, counts]) => ({ provider, ...counts })) satisfies NonNullable<
-    UsageSummary["outputThroughput"]
-  >;
+  return samples.length === 0 ? undefined : samples;
 });

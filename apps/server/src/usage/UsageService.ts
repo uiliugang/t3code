@@ -1200,7 +1200,10 @@ export const make = Effect.gen(function* () {
       fromMemory && !summary.sources.some((source) => source.refreshing === true)
         ? (yield* scanSummary(input, settings, false)).summary
         : summary;
-    const outputThroughput = yield* readUsageOutputThroughput(input).pipe(
+    const outputThroughput = yield* readUsageOutputThroughput(
+      input,
+      resolveModelAliases(settings.usageModelAliases),
+    ).pipe(
       Effect.provideService(SqlClient.SqlClient, sql),
       Effect.catch((error) =>
         Effect.logWarning("Could not read output throughput", error).pipe(Effect.as(undefined)),

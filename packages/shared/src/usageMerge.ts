@@ -28,6 +28,7 @@ export interface ProviderTotals {
 export interface ModelTotals {
   readonly model: string;
   readonly provider: UsageProviderKind;
+  readonly outputTokensPerSecond?: number;
   readonly costUsd: number;
   readonly totalTokens: number;
   readonly tokens: UsageTokenTotals;
@@ -357,11 +358,19 @@ export function mergeUsage(
   const sourceKey = sourceIdentity(current);
   let measuredOutputTokens = 0;
   let measuredDurationMs = 0;
+  const throughputByModel = new Map<string, { outputTokens: number; durationMs: number }>();
   for (const { summary } of current) {
     for (const sample of summary.outputThroughput ?? []) {
       if (sample.durationMs <= 0) continue;
       measuredOutputTokens += sample.outputTokens;
       measuredDurationMs += sample.durationMs;
+      if (sample.model !== undefined) {
+        const key = `${sample.provider} ${sample.model}`;
+        const measured = throughputByModel.get(key) ?? { outputTokens: 0, durationMs: 0 };
+        measured.outputTokens += sample.outputTokens;
+        measured.durationMs += sample.durationMs;
+        throughputByModel.set(key, measured);
+      }
     }
   }
   const {
@@ -562,18 +571,24 @@ export function mergeUsage(
     .sort((a, b) => b.costUsd - a.costUsd);
 
   const models: ModelTotals[] = [...modelAccumulator.entries()]
-    .map(([key, totals]) => ({
-      model: key.slice(key.indexOf(" ") + 1),
-      provider: totals.provider,
-      costUsd: totals.costUsd,
-      totalTokens: totals.totalTokens,
-      tokens: totals.tokens,
-      records: totals.records,
-      unpricedRecords: totals.unpricedRecords,
-      unpricedTokens: totals.unpricedTokens,
-      costShare: costUsd === 0 ? 0 : totals.costUsd / costUsd,
-      tokenShare: totalTokens === 0 ? 0 : totals.totalTokens / totalTokens,
-    }))
+    .map(([key, totals]) => {
+      const measured = throughputByModel.get(key);
+      return {
+        model: key.slice(key.indexOf(" ") + 1),
+        provider: totals.provider,
+        ...(measured === undefined
+          ? {}
+          : { outputTokensPerSecond: (measured.outputTokens * 1000) / measured.durationMs }),
+        costUsd: totals.costUsd,
+        totalTokens: totals.totalTokens,
+        tokens: totals.tokens,
+        records: totals.records,
+        unpricedRecords: totals.unpricedRecords,
+        unpricedTokens: totals.unpricedTokens,
+        costShare: costUsd === 0 ? 0 : totals.costUsd / costUsd,
+        tokenShare: totalTokens === 0 ? 0 : totals.totalTokens / totalTokens,
+      };
+    })
     .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens);
 
   const daily: DailyTotals[] = [...dailyAccumulator.entries()]

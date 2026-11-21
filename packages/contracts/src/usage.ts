@@ -162,6 +162,7 @@ export const UsageSummary = Schema.Struct({
     ForwardCompatibleArray(
       Schema.Struct({
         provider: UsageProviderKind,
+        model: Schema.optionalKey(TrimmedNonEmptyString),
         outputTokens: NonNegativeInt,
         durationMs: NonNegativeInt,
       }),

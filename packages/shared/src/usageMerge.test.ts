@@ -83,7 +83,17 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 
 describe("mergeUsage", () => {
   it("weights output speed by measured duration without including legacy usage totals", () => {
-    const legacy = summary([bucket()], []);
+    const legacy = summary(
+      [
+        bucket({ provider: "codex", model: "example" }),
+        bucket({ provider: "claude", model: "example" }),
+        bucket(),
+      ],
+      [
+        { provider: "codex", hostId: "legacy", homePath: "/codex" },
+        { provider: "claude", hostId: "legacy", homePath: "/claude" },
+      ],
+    );
     expect(
       mergeUsage([environment("legacy", legacy)], USAGE_CONTRACT_VERSION).outputTokensPerSecond,
     ).toBeUndefined();
@@ -92,16 +102,37 @@ describe("mergeUsage", () => {
         environment("legacy", legacy),
         environment("fast", {
           ...legacy,
-          outputThroughput: [{ provider: "codex", outputTokens: 100, durationMs: 1000 }],
+          buckets: [],
+          sources: [],
+          outputThroughput: [
+            { provider: "codex", model: "example", outputTokens: 100, durationMs: 1000 },
+          ],
         }),
         environment("slow", {
           ...legacy,
-          outputThroughput: [{ provider: "claude", outputTokens: 80, durationMs: 3000 }],
+          buckets: [],
+          sources: [],
+          outputThroughput: [
+            { provider: "codex", model: "example", outputTokens: 80, durationMs: 3000 },
+            { provider: "claude", model: "example", outputTokens: 60, durationMs: 1000 },
+            { provider: "claude", outputTokens: 20, durationMs: 1000 },
+          ],
         }),
       ],
       USAGE_CONTRACT_VERSION,
     );
-    expect(merged.outputTokensPerSecond).toBe(45);
+    expect(merged.outputTokensPerSecond).toBeCloseTo(260 / 6);
+    expect(
+      merged.models.map(({ provider, model, outputTokensPerSecond }) => [
+        provider,
+        model,
+        outputTokensPerSecond,
+      ]),
+    ).toEqual([
+      ["codex", "example", 45],
+      ["claude", "example", 60],
+      ["claude", "claude-fable-5", undefined],
+    ]);
   });
 
   it("counts a Cursor account once across servers while retaining each server's other providers", () => {

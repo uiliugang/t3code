@@ -874,6 +874,13 @@ function ModelsSection(props: {
                         tokens: formatTokens(model.totalTokens),
                       })}
               </Text>
+              {model.outputTokensPerSecond === undefined ? null : (
+                <Text className="text-sm tabular-nums text-foreground-muted">
+                  {t("{rate} tokens/s", {
+                    rate: Math.round(model.outputTokensPerSecond * 10) / 10,
+                  })}
+                </Text>
+              )}
             </View>
             <Text className="text-base tabular-nums text-foreground">
               {metric === "tokens"
