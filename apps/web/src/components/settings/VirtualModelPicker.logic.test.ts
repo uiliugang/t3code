@@ -37,7 +37,10 @@ describe("settingModelLabel", () => {
   it.each([
     ["defaultModelSelection", "Default virtual model"],
     ["fallbackModelSelection", "Fallback virtual model"],
+    ["textGenerationModelSelection", "Text generation virtual model"],
     ["sourceControlWriterModelSelection", "Source control writer virtual model"],
+    ["reviewGuideModelSelection", "Review guide virtual model"],
+    ["speechPostProcessingModelSelection", "Voice cleanup virtual model"],
   ] satisfies [VirtualModelRole, string][])(
     "labels a direct %s reference without inheriting its binding",
     (role, expected) => {
@@ -69,6 +72,7 @@ describe("settingModelLabel", () => {
         textGenerationModelSelection: virtualModelReference("team"),
         sourceControlWriterModelSelection: null,
         reviewGuideModelSelection: null,
+        speechPostProcessingModelSelection: null,
         virtualModels: { team: { name: "Team", binding: physical } },
       };
       expect(
@@ -77,6 +81,7 @@ describe("settingModelLabel", () => {
       for (const role of [
         "sourceControlWriterModelSelection",
         "reviewGuideModelSelection",
+        "speechPostProcessingModelSelection",
       ] as const)
         expect(settingModelLabel(selected, role, providers, translate)).toBe(
           translate("Inherit ({model})", { model: name }),
