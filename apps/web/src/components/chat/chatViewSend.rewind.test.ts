@@ -22,7 +22,10 @@ vi.mock("../ChatView.logic", () => ({
     _count: unknown,
     _commandId: unknown,
     revert: () => Promise<void>,
-  ) => revert(),
+  ) => {
+    await revert();
+    return [];
+  },
 }));
 
 function deferred() {

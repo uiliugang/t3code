@@ -3802,6 +3802,7 @@ it.live("launches into a task folder and leaves nothing behind when its setup is
       assert.deepEqual(
         stages.map((stage) => [stage.id, stage.status]),
         [
+          ["naming", "skipped"],
           ["fetch", "skipped"],
           ["checkout", "done"],
           ["submodules", "skipped"],
@@ -3809,7 +3810,7 @@ it.live("launches into a task folder and leaves nothing behind when its setup is
           ["agent", "pending"],
         ],
       );
-      assert.match(stages[1]?.detail ?? "", /\(2 of 2\)$/);
+      assert.match(stages[2]?.detail ?? "", /\(2 of 2\)$/);
 
       assert.isTrue(yield* tracker.cancel(launched.threadId));
 

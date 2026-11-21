@@ -35,11 +35,7 @@ import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 describe("SnoozePresetsRow", () => {
   it("keeps the option that fills the list at the bottom until focus leaves", async () => {
     // One short of the limit; the next option offered is "In 30 minutes", which sorts first.
-    state.presets = [
-      ...DEFAULT_SNOOZE_PRESETS,
-      { kind: "at", day: "saturday", time: "09:00" },
-      { kind: "after", minutes: 24 * 60 },
-    ];
+    state.presets = [...DEFAULT_SNOOZE_PRESETS, { kind: "at", day: "saturday", time: "09:00" }];
     expect(state.presets).toHaveLength(MAX_SNOOZE_PRESETS - 1);
     // The row reads no route state.
     await using screen = await render(<SnoozePresetsRow />, { router: false });

@@ -10,6 +10,7 @@ import {
   IssueTrackerKind,
   IssueUnavailableError,
   SourceControlProviderKind,
+  issueTrackerBindingScopes,
   type IssueCandidates,
   type IssueCommentInput,
   type IssueCommentsPage,
@@ -269,7 +270,12 @@ const make = Effect.gen(function* () {
                   });
                 return [
                   ...(binding && api && isStandaloneIssueTracker(api)
-                    ? [{ project, ...binding, host: api.standalone.host }]
+                    ? issueTrackerBindingScopes(binding).map((scope) => ({
+                        project,
+                        tracker: binding.tracker,
+                        host: api.standalone.host,
+                        scope,
+                      }))
                     : []),
                   ...gitBindings
                     .filter((git) => !sources.some((source) => source.provider === git.tracker))
@@ -701,6 +707,7 @@ const make = Effect.gen(function* () {
       return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
     }
     if (
+      !isStandaloneIssueTracker(own.api) &&
       supported.some(
         (other) =>
           other.tracker === own.tracker && (other.scope !== own.scope || other.host !== own.host),

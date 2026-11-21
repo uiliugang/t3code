@@ -2078,7 +2078,9 @@ server.listen(Number(flag("--port") ?? 0), "127.0.0.1", () => {
         `The previous remote T3 server (PID ${pid}) is still shutting down.`,
       );
       assert.isTrue(yield* isRunning(pid), "the launcher signalled the stopping server");
-    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    }).pipe(
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, FetchHttpClient.layer)),
+    ),
   );
 
   it.live("an update replaces the managed server after its connection is renamed", () =>
@@ -2320,7 +2322,7 @@ const canBind = (port) =>
         yield* fs.makeDirectory(runtimeDir, { recursive: true });
         yield* fs.writeFileString(
           `${runtimeDir}/t3`,
-          `#!/bin/sh\nexec node '${fakeT3}' '${version}' "$@"\n`,
+          `#!/bin/sh\nexec '${process.execPath}' '${fakeT3}' '${version}' "$@"\n`,
         );
         yield* fs.chmod(`${runtimeDir}/t3`, 0o755);
         yield* fs.writeFileString(`${runtimeDir}/.install-complete`, `${version}\n`);
