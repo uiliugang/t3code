@@ -13,6 +13,7 @@ import { Menu } from "../../components/ui/Menu";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { uuidv4 } from "../../lib/uuid";
 import { serverEnvironment } from "../../state/server";
+import { formatEnvironmentQueryError } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "./components/SettingsSection";
 import type { SettingsTarget } from "./settings-environment-filter";
@@ -34,7 +35,7 @@ export function VirtualModelSections({
     useAtomValue(serverEnvironment.settingsValueAtom(environmentId)) ?? serverConfig.settings;
   const allowed =
     useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId)) && canManage;
-  const update = useAtomCommand(serverEnvironment.updateSettings);
+  const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const [removing, setRemoving] = useState(false);
   if (!settings.virtualModels) return null;
   const edit = (id?: string) =>
@@ -111,11 +112,17 @@ export function VirtualModelSections({
                         destructive: true,
                         onConfirm: async () => {
                           setRemoving(true);
-                          await update({
+                          const result = await update({
                             environmentId,
                             input: { patch: { virtualModels: { [id]: null } } },
                           });
                           setRemoving(false);
+                          if (result._tag === "Failure") {
+                            Dialog.alert(
+                              t("Could not remove {name}", { name }),
+                              formatEnvironmentQueryError(result.cause),
+                            );
+                          }
                         },
                       });
                   }}

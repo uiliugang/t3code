@@ -330,6 +330,21 @@ function mergeSettingsEntries<Value>(
   return Object.fromEntries(next);
 }
 
+function mergeVirtualModels(current: ServerSettings, patch: ServerSettingsPatch) {
+  const entries = new Map(Object.entries(current.virtualModels ?? {}));
+  for (const [id, imported] of Object.entries(patch.importVirtualModels ?? {})) {
+    if (entries.get(id)?.binding == null) entries.set(id, imported);
+  }
+  for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
+    if (change === null) entries.delete(id);
+    else if (change === "unbind") {
+      const saved = entries.get(id);
+      if (saved) entries.set(id, { ...saved, binding: null });
+    } else entries.set(id, "save" in change ? change.save : change);
+  }
+  return Object.fromEntries(entries);
+}
+
 // Secret persistence keys tokens by trimmed, lowercased host, so merge on the same key.
 const byHost = (tokens: unknown) =>
   Object.fromEntries(
@@ -715,19 +730,7 @@ export function applyServerSettingsPatch(
       : {}),
     ...(virtualModels === undefined && importVirtualModels === undefined
       ? {}
-      : {
-          virtualModels: mergeSettingsEntries(
-            {
-              ...current.virtualModels,
-              ...Object.fromEntries(
-                Object.entries(importVirtualModels ?? {}).filter(
-                  ([id]) => current.virtualModels?.[id]?.binding == null,
-                ),
-              ),
-            },
-            virtualModels ?? {},
-          ),
-        }),
+      : { virtualModels: mergeVirtualModels(current, patch) }),
     ...(secretProvidersPatch !== undefined
       ? { secretProviders: mergeSettingsEntries(current.secretProviders, secretProvidersPatch) }
       : {}),

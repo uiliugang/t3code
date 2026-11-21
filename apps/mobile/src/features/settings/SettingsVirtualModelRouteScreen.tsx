@@ -12,9 +12,10 @@ import {
   bindingEditError,
   settingModelLabel,
   virtualModelEdit,
+  virtualModelEditorParent,
   virtualModelUsage,
 } from "@t3tools/shared/virtualModelEditor";
-import { inheritedModelRole, virtualModelName } from "@t3tools/shared/virtualModels";
+import { virtualModelName } from "@t3tools/shared/virtualModels";
 import { useMemo, useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { LegendList } from "@legendapp/list/react-native";
@@ -35,7 +36,6 @@ import {
 } from "../../lib/providerOptions";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { serverEnvironment } from "../../state/server";
-import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -99,7 +99,7 @@ function BindingEditor({
   const [selected, setSelected] = useState<Physical | null>(
     typeof initial?.binding === "object" ? initial.binding : null,
   );
-  const parent = inheritedModelRole(id);
+  const parent = virtualModelEditorParent(id, initial?.binding);
   const [inherit, setInherit] = useState(typeof initial?.binding === "string");
   const binding = inherit && parent ? parent : selected;
   const [picking, setPicking] = useState(false);
@@ -162,8 +162,8 @@ function BindingEditor({
       onConfirm: () => navigation.dispatch(data.action),
     });
   });
-  async function persist(entry: VirtualModel | undefined) {
-    if (!entry || busy.current) return;
+  async function persist(entry: ReturnType<typeof virtualModelEdit> | "unbind") {
+    if (busy.current) return;
     busy.current = true;
     setSaving(true);
     setSaveError("");
@@ -359,7 +359,7 @@ function BindingEditor({
           </SettingsSection>
         ) : null}
         {saveError || (invalid && name) ? (
-          <Text className="text-danger-foreground">{saveError || invalid}</Text>
+          <Text className="text-danger-foreground">{saveError ? t(saveError) : invalid}</Text>
         ) : null}
       </ScrollView>
       <View
@@ -379,12 +379,7 @@ function BindingEditor({
                 ),
                 confirmText: t("Unbind model"),
                 destructive: true,
-                onConfirm: () => {
-                  const current = appAtomRegistry.get(
-                    serverEnvironment.settingsValueAtom(environmentId),
-                  );
-                  if (current) void persist(virtualModelEdit(current, id, { action: "unbind" }, t));
-                },
+                onConfirm: () => void persist("unbind"),
               })
             }
           />
@@ -396,9 +391,7 @@ function BindingEditor({
           tone="primary"
           loading={saving}
           disabled={!!invalid || (existing?.binding != null && !binding)}
-          onPress={() =>
-            void persist(virtualModelEdit(settings, id, { action: "save", name, binding }, t))
-          }
+          onPress={() => void persist(virtualModelEdit(initial, id, name, binding, t))}
         />
       </View>
     </SettingsScreen>

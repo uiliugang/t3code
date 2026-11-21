@@ -1,14 +1,5 @@
-import type {
-  EnvironmentId,
-  ServerProvider,
-  UnifiedSettings,
-  VirtualModel,
-} from "@t3tools/contracts";
-import {
-  inheritedModelRole,
-  virtualModelName,
-  virtualModelRoles,
-} from "@t3tools/shared/virtualModels";
+import type { EnvironmentId, ServerProvider, UnifiedSettings } from "@t3tools/contracts";
+import { virtualModelName } from "@t3tools/shared/virtualModels";
 import { CornerDownRight, Cpu, Link2, MoreVertical, Plus, Unlink } from "lucide-react";
 import { useState } from "react";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
@@ -47,6 +38,7 @@ import {
   settingModelLabel,
   virtualModelDescription,
   virtualModelEdit,
+  virtualModelEditorParent,
   virtualModelUsage,
 } from "@t3tools/shared/virtualModelEditor";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -185,16 +177,16 @@ function BindingEditor({
   const t = useUiTranslation();
   const update = useUpdateEnvironmentSettings(environmentId);
   const existing = settings.virtualModels?.[id];
-  const builtIn = virtualModelRoles.some((r) => r === id);
-  const [name, setName] = useState(existing?.name ?? (builtIn ? virtualModelName(id, t) : ""));
   const [initial] = useState(existing);
+  const [initialName] = useState(existing?.name ?? (existing ? virtualModelName(id, t) : ""));
+  const [name, setName] = useState(initialName);
   const [selected, setBinding] = useState(
     typeof existing?.binding === "object" ? existing.binding : null,
   );
   const [inherit, setInherit] = useState(typeof existing?.binding === "string");
   const [confirm, setConfirm] = useState<"discard" | "unbind" | null>(null);
   const [saving, setSaving] = useState(false);
-  const parent = inheritedModelRole(id);
+  const parent = virtualModelEditorParent(id, initial?.binding);
   const binding = inherit && parent ? parent : selected;
   const targets = useTextGenerationTargets({
     environmentId,
@@ -216,15 +208,11 @@ function BindingEditor({
   const error = bindingEditError(settings, id, name, binding, t);
   const close = () => {
     if (saving) return;
-    if (
-      name !== (initial?.name ?? (builtIn ? virtualModelName(id, t) : "")) ||
-      binding !== (initial?.binding ?? null)
-    )
-      setConfirm("discard");
+    if (name !== initialName || binding !== (initial?.binding ?? null)) setConfirm("discard");
     else onClose();
   };
-  const persist = (entry: VirtualModel | undefined) => {
-    if (!entry || saving || (initial && !existing)) return;
+  const persist = (entry: ReturnType<typeof virtualModelEdit> | "unbind") => {
+    if (saving || (initial && !existing)) return;
     setSaving(true);
     update(
       { virtualModels: { [id]: entry } },
@@ -341,9 +329,7 @@ function BindingEditor({
               (initial != null && !existing) ||
               (existing?.binding != null && !binding)
             }
-            onClick={() =>
-              persist(virtualModelEdit(settings, id, { action: "save", name, binding }, t))
-            }
+            onClick={() => persist(virtualModelEdit(initial, id, name, binding, t))}
           >
             {t(existing ? "Save binding" : "Add")}
           </Button>
@@ -376,11 +362,7 @@ function BindingEditor({
               <Button
                 variant="destructive"
                 disabled={saving}
-                onClick={() =>
-                  confirm === "unbind"
-                    ? persist(virtualModelEdit(settings, id, { action: "unbind" }, t))
-                    : onClose()
-                }
+                onClick={() => (confirm === "unbind" ? persist("unbind") : onClose())}
               >
                 {confirm === "unbind" ? t("Unbind model") : t("Discard changes")}
               </Button>

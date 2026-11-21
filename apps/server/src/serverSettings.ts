@@ -86,6 +86,28 @@ const encodeServerSettings = Schema.encodeEffect(ServerSettings);
 const encodeServerSettingsJson = Schema.encodeUnknownEffect(fromJsonStringPretty(ServerSettings));
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 
+const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(function* (
+  current: ServerSettings,
+  patch: ServerSettingsPatch,
+  settingsPath: string,
+) {
+  for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
+    if (
+      change &&
+      typeof change === "object" &&
+      "expected" in change &&
+      !Equal.equals(current.virtualModels?.[id], change.expected)
+    ) {
+      return yield* new ServerSettingsError({
+        settingsPath,
+        operation: "write-file",
+        detail: "This virtual model has changed or was removed. Reopen the editor before saving.",
+      });
+    }
+  }
+  return applyServerSettingsPatch(current, patch);
+});
+
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
@@ -438,13 +460,13 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
     getSettings,
     updateSettings: (patch) =>
       updateTestSettings((currentSettings) =>
-        Effect.succeed(applyServerSettingsPatch(currentSettings, patch)),
+        applyCheckedSettingsPatch(currentSettings, patch, "test settings"),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
       updateTestSettings((currentSettings) =>
         Effect.gen(function* () {
           yield* ensureProviderInstanceMutationAllowed(currentSettings, mutation, "test settings");
-          const patched = applyServerSettingsPatch(currentSettings, patch);
+          const patched = yield* applyCheckedSettingsPatch(currentSettings, patch, "test settings");
           return applyProviderInstanceMutation(patched, mutation);
         }),
       ),
@@ -454,8 +476,10 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
           Effect.flatMap((current) =>
             ensureProviderInstanceMutationAllowed(current, mutation, "test settings").pipe(
               Effect.andThen(
-                normalizeServerSettings(
-                  applyProviderInstanceMutation(applyServerSettingsPatch(current, patch), mutation),
+                applyCheckedSettingsPatch(current, patch, "test settings").pipe(
+                  Effect.flatMap((patched) =>
+                    normalizeServerSettings(applyProviderInstanceMutation(patched, mutation)),
+                  ),
                 ),
               ),
             ),
@@ -1665,11 +1689,12 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
           yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
-          const patched = applyServerSettingsPatch(
+          const patched = yield* applyCheckedSettingsPatch(
             mutation.operation === "switch-connection"
               ? yield* materializeSettingsSecrets(current)
               : current,
             patch,
+            settingsPath,
           );
           return applyProviderInstanceMutation(patched, mutation);
         }),
@@ -1685,7 +1710,7 @@ const make = Effect.gen(function* () {
     updateSettings: (patch) =>
       updateAndPersistSettings(patch, (current) =>
         ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
-          Effect.as(applyServerSettingsPatch(current, patch)),
+          Effect.andThen(() => applyCheckedSettingsPatch(current, patch, settingsPath)),
         ),
       ),
     updateProviderInstance,

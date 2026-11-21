@@ -34,6 +34,8 @@ const zhCN: Readonly<Record<string, string>> = {
     "保留虚拟模型和现有引用。重新绑定前，引用它的对话会报错。",
   "Enter a virtual model name.": "请输入虚拟模型名称。",
   "This virtual model name is already in use.": "此虚拟模型名称已被使用。",
+  "This virtual model has changed or was removed. Reopen the editor before saving.":
+    "此虚拟模型已被修改或移除。请重新打开编辑页后再保存。",
   "This binding would create an inheritance cycle.": "此绑定会造成循环继承。",
   "Binding mode": "绑定方式",
   "Specific model": "指定模型",

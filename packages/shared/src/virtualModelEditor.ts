@@ -59,20 +59,23 @@ export function bindingEditError(
   return cycle ? t("This binding would create an inheritance cycle.") : null;
 }
 
+export function virtualModelEditorParent(id: string, binding: VirtualModel["binding"] | undefined) {
+  return typeof binding === "string" ? binding : inheritedModelRole(id);
+}
+
 export function virtualModelEdit(
-  settings: ServerSettings,
+  initial: VirtualModel | undefined,
   id: string,
-  edit: { action: "unbind" } | { action: "save"; name: string; binding: VirtualModel["binding"] },
+  name: string,
+  binding: VirtualModel["binding"],
   t: UiTranslator,
-): VirtualModel | undefined {
-  if (edit.action === "unbind") {
-    const saved = settings.virtualModels?.[id];
-    return saved?.binding != null ? { ...saved, binding: null } : undefined;
-  }
-  const name = edit.name.trim();
-  return virtualModelRoles.some((role) => role === id) && name === virtualModelName(id, t)
-    ? { binding: edit.binding }
-    : { name, binding: edit.binding };
+) {
+  const label = name.trim();
+  const save =
+    virtualModelRoles.some((role) => role === id) && label === virtualModelName(id, t)
+      ? { binding }
+      : { name: label, binding };
+  return initial ? { expected: initial, save } : save;
 }
 
 export function virtualModelDescription(

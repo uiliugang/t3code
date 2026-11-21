@@ -18,6 +18,7 @@ import {
   bindingEditError,
   settingModelLabel,
   virtualModelEdit,
+  virtualModelEditorParent,
   virtualModelUsage,
 } from "./virtualModelEditor.ts";
 
@@ -46,9 +47,14 @@ it("unbinds only the saved entry and leaves the reference ready for rebinding", 
     virtualModels: { team: { name: "Team", binding: physical } },
     defaultModelSelection: virtualModelReference("team"),
   };
-  const unbound = virtualModelEdit(original, "team", { action: "unbind" }, t);
-  expect(unbound).toEqual({ name: "Team", binding: null });
-  const cleared = applyServerSettingsPatch(original, { virtualModels: { team: unbound! } });
+  const renamed = applyServerSettingsPatch(original, {
+    virtualModels: { team: { name: "Renamed", binding: physical } },
+  });
+  const patch = { virtualModels: { team: "unbind" } } as const;
+  const cleared = applyServerSettingsPatch(renamed, patch);
+  expect(cleared.virtualModels?.team).toEqual({ name: "Renamed", binding: null });
+  const removed = applyServerSettingsPatch(original, { virtualModels: { team: null } });
+  expect(applyServerSettingsPatch(removed, patch).virtualModels).toEqual({});
   expect(cleared.defaultModelSelection).toEqual(original.defaultModelSelection);
   expect(resolveVirtualModel(cleared, cleared.defaultModelSelection)).toEqual(
     virtualModelReference("team"),
@@ -57,10 +63,19 @@ it("unbinds only the saved entry and leaves the reference ready for rebinding", 
     virtualModels: { team: { name: "Team", binding: physical } },
   });
   expect(resolveVirtualModel(rebound, rebound.defaultModelSelection)).toEqual(physical);
-  expect(virtualModelEdit(original, "missing", { action: "unbind" }, t)).toBeUndefined();
-  expect(
-    virtualModelEdit(original, "team", { action: "save", name: " Changed ", binding: physical }, t),
-  ).toEqual({ name: "Changed", binding: physical });
+  expect(virtualModelEdit(original.virtualModels.team, "team", " Changed ", physical, t)).toEqual({
+    expected: original.virtualModels.team,
+    save: { name: "Changed", binding: physical },
+  });
+});
+
+it.each([
+  ["team", "textGenerationModelSelection", "textGenerationModelSelection"],
+  ["reviewGuideModelSelection", "textGenerationModelSelection", "textGenerationModelSelection"],
+  ["reviewGuideModelSelection", physical, "sourceControlWriterModelSelection"],
+  ["team", null, null],
+] as const)("keeps the saved inheritance source for %s (%j)", (id, binding, expected) => {
+  expect(virtualModelEditorParent(id, binding)).toBe(expected);
 });
 
 it("includes project review references and rejects inheritance cycles introduced only in a project", () => {

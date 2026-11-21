@@ -1991,7 +1991,14 @@ const ModelSelectionPatch = Schema.Struct({
 
 export const ServerSettingsPatch = Schema.Struct({
   virtualModels: Schema.optionalKey(
-    Schema.Record(TrimmedNonEmptyString, Schema.NullOr(VirtualModel)),
+    Schema.Record(
+      TrimmedNonEmptyString,
+      Schema.Union([
+        Schema.NullOr(VirtualModel),
+        Schema.Literal("unbind"),
+        Schema.Struct({ expected: VirtualModel, save: VirtualModel }),
+      ]),
+    ),
   ),
   importVirtualModels: Schema.optionalKey(VirtualModels),
   setModelFavorites: Schema.optionalKey(
