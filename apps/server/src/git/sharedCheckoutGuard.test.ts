@@ -38,7 +38,7 @@ const thread = (
 describe("busyThreadsInCheckout", () => {
   it("finds running local threads in the project root checkout", () => {
     const busy = busyThreadsInCheckout({
-      checkoutPaths: ["/repo"],
+      includesCheckout: (candidate) => candidate === "/repo",
       projectIds: new Set([projectId]),
       threads: [
         thread("local running"),
@@ -53,7 +53,7 @@ describe("busyThreadsInCheckout", () => {
 
   it("finds running threads that share a worktree", () => {
     const busy = busyThreadsInCheckout({
-      checkoutPaths: ["/worktrees/a"],
+      includesCheckout: (candidate) => candidate === "/worktrees/a",
       projectIds: new Set(),
       threads: [
         thread("same worktree", { worktreePath: "/worktrees/a", activityRunStatus: "waiting" }),
@@ -212,6 +212,24 @@ describe("assertCheckoutIdle", () => {
             windows: true,
           }),
         ),
+      );
+      expect(failure._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("matches the Git root to a Windows workspace resource using another slash style", () =>
+    Effect.gen(function* () {
+      const workspace = workspaceFixture();
+      const busy = {
+        ...thread("side chat", { worktreePath: String.raw`D:\another-repo` }),
+        workspace: {
+          ...workspace,
+          resources: [{ ...workspace.resources[0]!, checkoutRoot: String.raw`C:\repo` }],
+        },
+      };
+      const failure = yield* assertCheckoutIdle("test", String.raw`C:\repo\packages\app`).pipe(
+        Effect.result,
+        Effect.provide(guardLayer({ repositoryRoot: "C:/repo", threads: [busy], windows: true })),
       );
       expect(failure._tag).toBe("Failure");
     }),

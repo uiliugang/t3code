@@ -580,6 +580,14 @@ export const make = Effect.gen(function* () {
                 value: companionUrl,
               });
             }
+            const invalidPrivateBranch = () =>
+              error(
+                operation,
+                input.cwd,
+                `Local branch ${localBranch} does not track this private pull request. Rename the local branch and try again.`,
+              );
+            let recoverUntrackedBranch = false;
+            let finishTracking = false;
             if (companion !== null && hasLocalBranch) {
               const [trackedRemote, trackedRef, pushRemote] = yield* Effect.all([
                 git.readConfigValue(input.cwd, `branch.${localBranch}.remote`),
@@ -589,22 +597,27 @@ export const make = Effect.gen(function* () {
               const tracksCompanion =
                 trackedRemote === remoteBranch.remoteName &&
                 trackedRef === `refs/heads/${localBranch}`;
-              const pendingTracking =
-                trackedRemote === null &&
+              finishTracking =
+                (trackedRemote === null || trackedRemote === remoteBranch.remoteName) &&
                 trackedRef === null &&
                 pushRemote === remoteBranch.remoteName;
-              if (!tracksCompanion && !pendingTracking) {
-                return yield* error(
-                  operation,
-                  input.cwd,
-                  `Local branch ${localBranch} does not track this private pull request. Rename the local branch and try again.`,
-                );
-              }
+              recoverUntrackedBranch =
+                trackedRemote === null && trackedRef === null && pushRemote === null;
+              if (!tracksCompanion && !finishTracking && !recoverUntrackedBranch)
+                return yield* invalidPrivateBranch();
             }
             if (companion === null && input.force !== true && !hasLocalBranch)
               yield* git.fetchRemoteBranch({ ...remoteBranch, localBranch });
             else yield* git.fetchRemoteTrackingBranch(remoteBranch);
             const trackingRef = `refs/remotes/${remoteBranch.remoteName}/${localBranch}`;
+            if (recoverUntrackedBranch) {
+              const [localHead, privateHead] = yield* Effect.all([
+                git.resolveCommit({ cwd: input.cwd, revision: `refs/heads/${localBranch}` }),
+                git.resolveCommit({ cwd: input.cwd, revision: trackingRef }),
+              ]);
+              if (localHead.commitSha !== privateHead.commitSha)
+                return yield* invalidPrivateBranch();
+            }
             const bindBranch = Effect.gen(function* () {
               if (companion !== null && !hasLocalBranch) {
                 yield* git.createBranch({
@@ -612,7 +625,7 @@ export const make = Effect.gen(function* () {
                   branch: localBranch,
                   startPoint: trackingRef,
                 });
-              } else if (input.force === true) {
+              } else if (input.force === true && !recoverUntrackedBranch && !finishTracking) {
                 yield* git.execute({
                   operation,
                   cwd: input.cwd,

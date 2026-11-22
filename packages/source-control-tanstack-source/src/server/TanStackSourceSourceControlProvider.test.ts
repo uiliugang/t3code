@@ -37,17 +37,22 @@ function checkout(options: {
   readonly isAncestor: boolean;
   readonly pull?: Partial<typeof PULL> & { readonly visibility?: "private" | "public" };
   readonly force?: boolean;
-  readonly existingBranchRemote?: string;
+  readonly existingBranchRemote?: string | null;
+  readonly pendingPushRemote?: string;
+  readonly samePrivateHead?: boolean;
   readonly branchAppearsWhileFetching?: boolean;
 }) {
   const git: Array<string> = [];
   const config = new Map<string, string>(
     options.recordedOwner === null ? [] : [[OWNER_KEY, options.recordedOwner]],
   );
-  if (options.existingBranchRemote !== undefined) {
+  if (options.existingBranchRemote != null) {
     config.set("branch.fix-thing.remote", options.existingBranchRemote);
-    config.set("branch.fix-thing.merge", "refs/heads/fix-thing");
+    if (options.pendingPushRemote === undefined)
+      config.set("branch.fix-thing.merge", "refs/heads/fix-thing");
   }
+  if (options.pendingPushRemote !== undefined)
+    config.set("branch.fix-thing.pushRemote", options.pendingPushRemote);
   const api = TanStackSourceApi.TanStackSourceApi.of({
     request: (input) =>
       input.path === "/repos/acme/web/pulls/42"
@@ -76,6 +81,13 @@ function checkout(options: {
         ),
       readConfigValue: (_cwd, key) =>
         Effect.succeed(key === "remote.origin.url" ? REMOTE : (config.get(key) ?? null)),
+      resolveCommit: ({ revision }) =>
+        Effect.succeed({
+          commitSha:
+            revision.startsWith("refs/heads/") && options.samePrivateHead === false
+              ? "b".repeat(40)
+              : "c".repeat(40),
+        }),
       writeConfigValue: (input) => Effect.sync(() => void config.set(input.key, input.value)),
       listLocalBranchNames: () =>
         Effect.succeed(
@@ -244,6 +256,42 @@ describe("TanStackSourceSourceControlProvider.checkoutChangeRequest", () => {
       assert.strictEqual(result._tag, "Failure");
       assert.isFalse(config.has("branch.fix-thing.pushRemote"));
       assert.isFalse(git.some((command) => /^(checkout|switch|upstream) /u.test(command)));
+    });
+  });
+
+  it.effect.each([true, false])(
+    "resumes a partial private checkout only if the untracked ref matches (%s)",
+    (samePrivateHead) => {
+      const { run, git, config } = checkout({
+        recordedOwner: null,
+        isAncestor: true,
+        existingBranchRemote: null,
+        samePrivateHead,
+        force: true,
+        pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "private" },
+      });
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(run);
+        assert.strictEqual(result._tag, samePrivateHead ? "Success" : "Failure");
+        assert.strictEqual(config.has("branch.fix-thing.pushRemote"), samePrivateHead);
+        assert.isFalse(git.some((command) => /^(checkout|create) /u.test(command)));
+      });
+    },
+  );
+
+  it.effect("finishes partially written companion tracking without moving the branch", () => {
+    const { run, git } = checkout({
+      recordedOwner: null,
+      isAncestor: true,
+      existingBranchRemote: "acme",
+      pendingPushRemote: "acme",
+      force: true,
+      pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "private" },
+    });
+    return Effect.gen(function* () {
+      yield* run;
+      assert.include(git, "upstream fix-thing acme/fix-thing");
+      assert.isFalse(git.some((command) => /^(checkout|create) /u.test(command)));
     });
   });
 });

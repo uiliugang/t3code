@@ -17,7 +17,7 @@ type CheckoutThread = Pick<
 
 /** Threads with an active run whose working directory is one of `checkoutPaths`. */
 export function busyThreadsInCheckout<T extends CheckoutThread>(input: {
-  readonly checkoutPaths: ReadonlyArray<string>;
+  readonly includesCheckout: (candidate: string) => boolean;
   readonly projectIds: ReadonlySet<ProjectId>;
   readonly threads: ReadonlyArray<T>;
 }): ReadonlyArray<T> {
@@ -26,11 +26,11 @@ export function busyThreadsInCheckout<T extends CheckoutThread>(input: {
       (thread.activityRunStatus ?? null) !== null &&
       (thread.workspace !== undefined
         ? thread.workspace.resources.some(({ checkoutRoot }) =>
-            input.checkoutPaths.includes(checkoutRoot),
+            input.includesCheckout(checkoutRoot),
           )
         : thread.worktreePath === null
           ? input.projectIds.has(thread.projectId)
-          : input.checkoutPaths.includes(thread.worktreePath)),
+          : input.includesCheckout(thread.worktreePath)),
   );
 }
 
@@ -55,6 +55,8 @@ export const assertCheckoutIdle = Effect.fn("sharedCheckoutGuard.assertCheckoutI
   // `git checkout` from a subdirectory moves the whole checkout; records may hold either spelling.
   const root = yield* gitWorkflow.repositoryRoot(cwd).pipe(Effect.orElseSucceed(() => null));
   const checkoutPaths = [...new Set([cwd, ...(root === null ? [] : [root])])];
+  const includesCheckout = (candidate: string) =>
+    checkoutPaths.some((checkout) => path.relative(checkout, candidate) === "");
   const projects = yield* projectService.snapshot.pipe(
     Effect.map((snapshot) => snapshot.projects),
     Effect.orElseSucceed(() => []),
@@ -63,25 +65,24 @@ export const assertCheckoutIdle = Effect.fn("sharedCheckoutGuard.assertCheckoutI
   // own repository nested there.
   const nested = yield* Effect.forEach(
     projects.filter(({ workspaceRoot }) => {
-      if (root === null || checkoutPaths.includes(workspaceRoot)) return false;
+      if (root === null || includesCheckout(workspaceRoot)) return false;
       const relative = path.relative(root, workspaceRoot);
       return (
-        relative !== "" &&
-        relative !== ".." &&
-        !relative.startsWith(`..${path.sep}`) &&
-        !path.isAbsolute(relative)
+        relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
       );
     }),
     (project) =>
       gitWorkflow.repositoryRoot(project.workspaceRoot).pipe(
-        Effect.map((projectRoot) => (projectRoot === root ? [project] : [])),
+        Effect.map((projectRoot) =>
+          projectRoot !== null && includesCheckout(projectRoot) ? [project] : [],
+        ),
         Effect.orElseSucceed(() => []),
       ),
     { concurrency: "unbounded" },
   );
   const projectIds = new Set(
     [
-      ...projects.filter(({ workspaceRoot }) => checkoutPaths.includes(workspaceRoot)),
+      ...projects.filter(({ workspaceRoot }) => includesCheckout(workspaceRoot)),
       ...nested.flat(),
     ].map(({ id }) => id),
   );
@@ -104,7 +105,7 @@ export const assertCheckoutIdle = Effect.fn("sharedCheckoutGuard.assertCheckoutI
     ),
   );
   const busy = busyThreadsInCheckout({
-    checkoutPaths,
+    includesCheckout,
     projectIds,
     threads: snapshots.flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads]),
   });
