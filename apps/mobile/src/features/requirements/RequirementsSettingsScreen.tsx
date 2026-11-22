@@ -25,7 +25,6 @@ import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { IconButton } from "../../components/ui/IconButton";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useProjects } from "../../state/entities";
@@ -45,12 +44,18 @@ import {
 } from "../settings/settings-environment-filter";
 import { settingsEditorTarget } from "../settings/settings-environment-filter.logic";
 import { IssuePicker } from "./IssuePicker";
+import {
+  ProjectSourceLine,
+  ProjectSourceSwipeChange,
+  useProjectSourceSwipes,
+} from "./ProjectSourceLine";
 
 export function RequirementsSettingsScreen({
   route,
 }: StaticScreenProps<{ environmentId?: EnvironmentId } | undefined>) {
   const t = useUiTranslation();
   const insets = useSafeAreaInsets();
+  const swipes = useProjectSourceSwipes();
   const { availableTargets, selectedTargets, selectedIds } = useSettingsEnvironmentFilter();
   const navigation =
     useNavigation<
@@ -64,6 +69,7 @@ export function RequirementsSettingsScreen({
         className="flex-1"
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={swipes.close}
         contentContainerClassName="gap-5 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
@@ -77,7 +83,9 @@ export function RequirementsSettingsScreen({
           onChange={(value) => navigation.setParams({ environmentId: EnvironmentId.make(value) })}
         />
         {environment ? (
-          <EnvironmentRequirements key={environment.environmentId} environment={environment} />
+          <ProjectSourceSwipeChange value={swipes.onChange}>
+            <EnvironmentRequirements key={environment.environmentId} environment={environment} />
+          </ProjectSourceSwipeChange>
         ) : (
           <Text>
             {t(
@@ -307,6 +315,9 @@ function ProjectSourcesRow({
           <Text textRole="footnote" className="font-t3-medium">
             {t(editing.provider === "meituan" ? "MEP space IDs" : "GitHub repository")}
             {editing.provider === "github" ? ` · ${editing.source?.host ?? "github.com"}` : ""}
+            {editing.provider === "meituan" && spaces.length
+              ? ` · ${t(manual ? "Manual override" : "Automatic")}`
+              : ""}
           </Text>
           <AppTextInput
             accessibilityLabel={t(
@@ -378,70 +389,37 @@ function ProjectSourcesRow({
                         : "Not configured",
                   )
                 }
-                detail={source?.host}
+                detail={source?.host === "github.com" ? undefined : source?.host}
                 actionLabel={
                   source
                     ? t("Edit {name}", { name: `${source.host}/${source.scope}` })
                     : t("GitHub repository")
                 }
-                add={!source}
+                action={t(source ? "Edit" : "Add")}
                 onEdit={allowed ? () => edit({ provider: "github", source }) : undefined}
               />
             ))}
           </View>
           {mep ? (
-            <View className="border-t border-border-subtle pt-2">
-              <Text textRole="label" className="font-t3-medium text-foreground-muted">
-                {t("MEP space IDs")}
-              </Text>
+            <View className="border-t border-border-subtle">
               <ProjectSourceLine
+                label={t("MEP space IDs")}
                 value={mepSpaceValue(spaces, discovery, t)}
-                detail={spaces.length ? t(manual ? "Manual override" : "Automatic") : undefined}
+                detail={
+                  !allowed && spaces.length
+                    ? t(manual ? "Manual override" : "Automatic")
+                    : undefined
+                }
                 actionLabel={t(
                   spaces.length || discovery !== "ready" ? "Edit spaces" : "Link spaces",
                 )}
-                add={!spaces.length && discovery === "ready"}
+                action={t(!spaces.length && discovery === "ready" ? "Add" : "Edit")}
                 onEdit={allowed ? () => edit({ provider: "meituan" }) : undefined}
               />
             </View>
           ) : null}
         </>
       )}
-    </View>
-  );
-}
-
-function ProjectSourceLine({
-  value,
-  detail,
-  actionLabel,
-  add,
-  onEdit,
-}: {
-  value: string;
-  detail: string | undefined;
-  actionLabel: string;
-  add: boolean;
-  onEdit: (() => void) | undefined;
-}) {
-  return (
-    <View className="min-h-12 flex-row items-center gap-2">
-      <View className="min-w-0 flex-1 py-1">
-        <Text textRole="body">{value}</Text>
-        {detail ? (
-          <Text textRole="label" className="text-foreground-muted">
-            {detail}
-          </Text>
-        ) : null}
-      </View>
-      {onEdit ? (
-        <IconButton
-          icon={add ? "plus" : "pencil"}
-          accessibilityLabel={actionLabel}
-          onPress={onEdit}
-          tintColorClassName="accent-primary-text"
-        />
-      ) : null}
     </View>
   );
 }
