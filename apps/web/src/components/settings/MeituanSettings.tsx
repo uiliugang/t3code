@@ -7,7 +7,6 @@ import {
   toolSubscriptionsFor,
 } from "@t3tools/client-runtime/meituanSettings";
 import {
-  ProjectId,
   isMeituanServiceEnabled,
   type EnvironmentId,
   type ExecutionEnvironmentCapabilities,
@@ -23,9 +22,6 @@ import {
   GitBranchIcon,
   MessagesSquareIcon,
   PauseIcon,
-  PlusIcon,
-  SaveIcon,
-  Trash2Icon,
 } from "lucide-react";
 import { useNavigate, useLocation } from "@tanstack/react-router";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
@@ -37,10 +33,8 @@ import { sourceControlEnvironment } from "~/state/sourceControl";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
-import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from "../ui/select";
 import { SettingsPageContainer } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { MeituanCodeSettings, MeituanCodeAuthorizationObserver } from "./MeituanCodeSettings";
@@ -137,190 +131,6 @@ function useMeituanProjectAssociations(
     .filter((entry) => entry.sources.length > 0);
   const error = query.error ?? query.data?.find((result) => result.error)?.error ?? null;
   return { projects, query, entries, error };
-}
-
-function MeituanProjectSources({
-  environmentId,
-  settings,
-  associations,
-}: {
-  environmentId: EnvironmentId;
-  settings: ServerSettings;
-  associations: ReturnType<typeof useMeituanProjectAssociations>;
-}) {
-  const t = useUiTranslation();
-  const { projects, query, entries, error } = associations;
-  const [editing, setEditing] = useState(false);
-  const [projectId, setProjectId] = useState<ProjectId | undefined>();
-  const [spaces, setSpaces] = useState("");
-  const [busy, setBusy] = useState(false);
-  const update = useAtomCommand(serverEnvironment.updateSettings);
-  const values = [
-    ...new Set(
-      spaces
-        .split(/[,，]/u)
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
-  ];
-  const save = async (remove = false) => {
-    if (
-      !projectId ||
-      busy ||
-      (!remove && (!values.length || !values.every((value) => /^[1-9]\d*$/u.test(value))))
-    )
-      return;
-    setBusy(true);
-    const result = await update({
-      environmentId,
-      input: {
-        patch: {
-          issueProjectSources: {
-            [projectId]: [
-              ...(settings.issueProjectSources[projectId] ?? []).filter(
-                (source) => source.provider !== "meituan",
-              ),
-              ...(remove
-                ? []
-                : values.map((scope) => ({
-                    provider: "meituan" as const,
-                    host: "mep.sankuai.com",
-                    scope,
-                  }))),
-            ],
-          },
-        },
-      },
-    });
-    setBusy(false);
-    if (result._tag === "Success") {
-      setEditing(false);
-      query.refresh();
-    }
-  };
-  return (
-    <div className="grid gap-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">{t("Project associations")}</h3>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t("Add project association")}
-          title={t("Add project association")}
-          onClick={() => {
-            setProjectId(undefined);
-            setSpaces("");
-            setEditing(true);
-          }}
-        >
-          <PlusIcon />
-        </Button>
-      </div>
-      {entries.map((entry) => (
-        <ServiceRow
-          key={entry.project.id}
-          icon={ClipboardListIcon}
-          title={entry.project.title}
-          subtitle={t("MEP · {spaces}", {
-            spaces: [...new Set(entry.sources.map((source) => source.scope))].join(", "),
-          })}
-          status={t(entry.manual ? "Edit" : "Automatic")}
-          onClick={() => {
-            setProjectId(entry.project.id);
-            setSpaces(
-              settings.issueProjectSources[entry.project.id]
-                ?.filter((source) => source.provider === "meituan")
-                .map((source) => source.scope)
-                .join(", ") ?? "",
-            );
-            setEditing(true);
-          }}
-        />
-      ))}
-      {query.isPending && !entries.length ? (
-        <p className="text-sm text-muted-foreground">{t("Loading...")}</p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t(error)}
-        </p>
-      ) : null}
-      {!query.isPending && !entries.length && !error ? (
-        <p className="text-sm text-muted-foreground">{t("No project associations")}</p>
-      ) : null}
-      {editing ? (
-        <form
-          className="grid gap-4 border-t pt-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
-          <div className="grid gap-2">
-            <Label htmlFor="meituan-project">{t("Project")}</Label>
-            <Select
-              value={projectId ?? ""}
-              onValueChange={(value) => setProjectId(value ? ProjectId.make(value) : undefined)}
-            >
-              <SelectTrigger id="meituan-project" aria-label={t("Project")}>
-                <SelectValue placeholder={t("Select project")}>
-                  {projects.find((project) => project.id === projectId)?.title}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.title}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="meituan-spaces">{t("MEP space IDs")}</Label>
-            <Input
-              id="meituan-spaces"
-              value={spaces}
-              onChange={(event) => setSpaces(event.target.value)}
-              placeholder="1031008, 1031009"
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="submit"
-              disabled={
-                busy ||
-                !projectId ||
-                !values.length ||
-                !values.every((value) => /^[1-9]\d*$/u.test(value))
-              }
-            >
-              <SaveIcon />
-              {t("Save")}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => setEditing(false)}>
-              {t("Cancel")}
-            </Button>
-            {projectId &&
-            settings.issueProjectSources[projectId]?.some(
-              (source) => source.provider === "meituan",
-            ) ? (
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label={t("Remove association")}
-                title={t("Remove association")}
-                disabled={busy}
-                onClick={() => void save(true)}
-              >
-                <Trash2Icon />
-              </Button>
-            ) : null}
-          </div>
-        </form>
-      ) : null}
-    </div>
-  );
 }
 
 function MeituanSkillSource({
@@ -457,12 +267,15 @@ function EnvironmentMeituanSettings({
     skillQuery.data?.sources.filter((source) => source.kind === "mtskills") ?? [];
   const skillSourceEnabled = skillSources.some((source) => source.enabled);
   const skillsEnabled = enabled && skillSourceEnabled;
-  const activeToolIds = meituanToolIdsForSection(active, {
-    code: codeEnabled,
-    issues: issuesEnabled,
-    skills: skillsEnabled,
-    daxiang: enabled && settings.daxiang.approvalMonitor.enabled,
-  });
+  const activeToolIds =
+    active === "issues"
+      ? []
+      : meituanToolIdsForSection(active, {
+          code: codeEnabled,
+          issues: issuesEnabled,
+          skills: skillsEnabled,
+          daxiang: enabled && settings.daxiang.approvalMonitor.enabled,
+        });
   const discovery = useEnvironmentQuery(
     codeEnabled ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
   );
@@ -717,11 +530,19 @@ function EnvironmentMeituanSettings({
               />
             </div>
           ) : active === "issues" ? (
-            <MeituanProjectSources
-              environmentId={environmentId}
-              settings={settings}
-              associations={associations}
-            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                void navigate({
+                  to: "/settings/requirements",
+                  search: { machine: environmentId },
+                  hash: "issue-trackers",
+                })
+              }
+            >
+              {t("Issue management")}
+            </Button>
           ) : active === "daxiang" ? (
             <DaxiangSettings
               environmentId={environmentId}

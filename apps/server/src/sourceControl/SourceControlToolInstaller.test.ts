@@ -28,13 +28,18 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+  const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: "t3 tools " }));
   const bin = path.join(root, "bin");
   yield* fs.makeDirectory(bin);
   for (const name of options.binaries) {
     const real =
-      name === "code-cli"
-        ? path.join(root, "lib/node_modules/@ee/code-cli/main.js")
+      name === "code-cli" || name === "ones2" || name === "mcm"
+        ? path.join(
+            root,
+            "lib/node_modules",
+            { "code-cli": "@ee/code-cli", ones2: "@ee/mep-ones-cli", mcm: "@dp/mcm-cli" }[name],
+            "main.js",
+          )
         : name === "npm"
           ? path.join(root, "lib/node_modules/npm/bin/npm-cli.js")
           : name === "git" && options.platform === "darwin"
@@ -54,6 +59,7 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
         return processOutput("", {
           exitCode: ChildProcessSpawner.ExitCode(options.installExit ?? 0),
         });
+      if (args.at(-1) === "config") return processOutput("MIS 账号：  demo.user\n其他信息：忽略");
       if (args.includes("--version")) return processOutput("tool 2.43.0");
       if (args.includes("view"))
         return processOutput(JSON.stringify(options.npmVersion ?? "2.44.0"));
@@ -141,6 +147,22 @@ it.effect.each(["ones2", "mcm", "mtskills"] as const)(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.live(
+  "reads the installed ONES account with the server runtime when node is absent from PATH",
+  () =>
+    Effect.gen(function* () {
+      const { installer, bin } = yield* fixture({ binaries: ["ones2"], realProcess: true });
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.writeFileString(
+        `${bin}/ones2`,
+        '#!/usr/bin/env node\nconsole.log(process.argv[2] === "config" ? "MIS 账号：demo.user" : "2.43.0");\n',
+      );
+      const tool = yield* installer.inspectMeituan("ones2");
+      assert.strictEqual(tool.version, "2.43.0");
+      assert.strictEqual(tool.account, "demo.user");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.live.each([[], ["mtskills"]])(
   "inspects the configured private installer with PATH binaries %j",
   (binaries) =>
@@ -201,7 +223,7 @@ it.effect(
 );
 
 it.effect.each(["ones2", "mcm"] as const)(
-  "does not probe %s while requirements are disabled",
+  "keeps %s hidden while requirements are disabled but verifies an installation already started",
   (id) =>
     Effect.gen(function* () {
       const { installer, calls } = yield* fixture({
@@ -211,6 +233,8 @@ it.effect.each(["ones2", "mcm"] as const)(
       const result = yield* Effect.flip(installer.inspectMeituan(id));
       assert.strictEqual(result.reason, "inspection");
       assert.isEmpty(calls);
+      const verified = yield* installer.verifyRequirementCli(id);
+      assert.strictEqual(verified.version, "2.43.0");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
@@ -256,14 +280,28 @@ it.effect("installs missing GitHub CLI and upgrades Homebrew-owned Git", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect("keeps Meituan Code in its existing npm prefix and pins the checked version", () =>
+it.effect.each([
+  ["meituan", "code-cli", "@ee/code-cli"],
+  ["ones2", "ones2", "@ee/mep-ones-cli"],
+  ["mcm", "mcm", "@dp/mcm-cli"],
+] as const)("pins the package and keeps the existing npm prefix for %s", ([id, binary, pkg]) =>
   Effect.gen(function* () {
-    const { installer, root, calls } = yield* fixture({ binaries: ["code-cli", "npm"] });
-    const result = yield* installer.inspect("meituan");
+    const { installer, root, calls } = yield* fixture({ binaries: [binary, "npm"] });
+    const result = yield* installer.inspect(id);
     assert.ok(result.args.includes(root));
+    if (id !== "meituan")
+      assert.strictEqual(
+        result.tool.manualCommand,
+        `npm install --global --prefix '${root}' ${pkg}@latest --registry=http://r.npm.sankuai.com --no-audit --no-fund`,
+      );
     assert.strictEqual(yield* installer.install(result), "installed");
     const install = calls.find((call) => call.operation.endsWith("install"));
-    assert.ok(install?.args.includes("@ee/code-cli@2.44.0"));
+    assert.ok(install?.args.includes(pkg + "@2.44.0"));
+    if (id === "ones2") {
+      const status = yield* installer.inspectMeituan(id);
+      assert.strictEqual(status.account, "demo.user");
+      assert.strictEqual(status.command, result.tool.command);
+    }
     assert.ok(install?.args.includes("--registry=http://r.npm.sankuai.com"));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

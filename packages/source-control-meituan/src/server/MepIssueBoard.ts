@@ -1,3 +1,4 @@
+import { mepAccountFromConfig } from "../shared/definition.ts";
 import {
   RequirementIssueError,
   type Issue,
@@ -251,7 +252,7 @@ export const make = Effect.gen(function* () {
     });
   const getViewer = Effect.fn("MepIssueBoard.getViewer")(function* (cwd: string) {
     const config = yield* run(cwd, ["config"]);
-    const viewer = /MIS 账号[：:]\s+([\w.-]+)/u.exec(config)?.[1];
+    const viewer = mepAccountFromConfig(config);
     if (!viewer)
       return yield* new RequirementIssueError({ operation: "viewer", reason: "unavailable" });
     return viewer;

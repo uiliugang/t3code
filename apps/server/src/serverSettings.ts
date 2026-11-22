@@ -17,6 +17,8 @@ import {
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
+  type IssueProvider,
+  issueSourcesMatch,
   type ManagedPolicySummary,
   globalIdleCompaction,
   isSecretReference,
@@ -90,6 +92,8 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
   current: ServerSettings,
   patch: ServerSettingsPatch,
   settingsPath: string,
+  issueSourceProvider?: IssueProvider,
+  expectedIssueProjectSources?: ServerSettings["issueProjectSources"],
 ) {
   for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
     if (
@@ -104,6 +108,30 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
         detail: "This virtual model has changed or was removed. Reopen the editor before saving.",
       });
     }
+  }
+  for (const [id, expected] of Object.entries(expectedIssueProjectSources ?? {})) {
+    const saved = current.issueProjectSources[ProjectId.make(id)] ?? [];
+    if (!issueSourcesMatch(saved, expected, issueSourceProvider)) {
+      return yield* new ServerSettingsError({
+        settingsPath,
+        operation: "write-file",
+        detail: "Project sources have changed. Reopen the editor and try again.",
+      });
+    }
+  }
+  if (issueSourceProvider && patch.issueProjectSources) {
+    const sources = Object.fromEntries(
+      Object.entries(patch.issueProjectSources).map(([id, next]) => [
+        id,
+        [
+          ...(current.issueProjectSources[ProjectId.make(id)] ?? []).filter(
+            (s) => s.provider !== issueSourceProvider,
+          ),
+          ...next.filter((s) => s.provider === issueSourceProvider),
+        ],
+      ]),
+    );
+    return applyServerSettingsPatch(current, { ...patch, issueProjectSources: sources });
   }
   return applyServerSettingsPatch(current, patch);
 });
@@ -393,6 +421,8 @@ export class ServerSettingsService extends Context.Service<
 
     readonly updateSettings: (
       patch: ServerSettingsPatch,
+      issueSourceProvider?: IssueProvider,
+      expectedIssueProjectSources?: ServerSettings["issueProjectSources"],
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
     readonly updateProviderInstance: (
@@ -458,9 +488,15 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
     start: Effect.void,
     ready: Effect.void,
     getSettings,
-    updateSettings: (patch) =>
+    updateSettings: (patch, issueSourceProvider, expectedIssueProjectSources) =>
       updateTestSettings((currentSettings) =>
-        applyCheckedSettingsPatch(currentSettings, patch, "test settings"),
+        applyCheckedSettingsPatch(
+          currentSettings,
+          patch,
+          "test settings",
+          issueSourceProvider,
+          expectedIssueProjectSources,
+        ),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
       updateTestSettings((currentSettings) =>
@@ -1707,10 +1743,18 @@ const make = Effect.gen(function* () {
     start,
     ready: Deferred.await(startedDeferred),
     getSettings: getMaterializedSettings,
-    updateSettings: (patch) =>
+    updateSettings: (patch, issueSourceProvider, expectedIssueProjectSources) =>
       updateAndPersistSettings(patch, (current) =>
         ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
-          Effect.andThen(() => applyCheckedSettingsPatch(current, patch, settingsPath)),
+          Effect.andThen(() =>
+            applyCheckedSettingsPatch(
+              current,
+              patch,
+              settingsPath,
+              issueSourceProvider,
+              expectedIssueProjectSources,
+            ),
+          ),
         ),
       ),
     updateProviderInstance,

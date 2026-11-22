@@ -18,6 +18,10 @@ const HOST = "git.sankuai.com";
 const WEB_HOST = "dev.sankuai.com";
 const REPOSITORY = /^[a-zA-Z0-9._~-]+\/[a-zA-Z0-9._-]+$/u;
 
+export function mepAccountFromConfig(output: string) {
+  return /MIS 账号[：:][ \t]*([\w.-]+)/u.exec(output)?.[1] ?? null;
+}
+
 function repositoryKey(key: string): string | null {
   const match = /^git\.sankuai\.com\/(?:scm\/)?([^/]+\/[^/]+)$/u.exec(key.toLowerCase());
   return match?.[1] && REPOSITORY.test(match[1]) ? `${HOST}/${match[1]}` : null;

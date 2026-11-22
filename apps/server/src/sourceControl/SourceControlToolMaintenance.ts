@@ -1,5 +1,6 @@
 import {
   SourceControlToolError,
+  isRequirementCli,
   type MeituanTool,
   type ServerSettings,
   type SourceControlTool,
@@ -37,7 +38,13 @@ class MeituanScanConfig extends Data.Class<{
   readonly requirements: boolean;
   readonly daxiangApproval: boolean;
   readonly source: SkillSource | undefined;
-}> {}
+}> {
+  includes(id: MeituanTool["id"]) {
+    if (id === "mtskills") return this.source !== undefined;
+    if (id === "dumbo-web") return this.daxiangApproval;
+    return this.requirements;
+  }
+}
 
 const make = Effect.gen(function* () {
   const installer = yield* SourceControlToolInstaller.SourceControlToolInstaller;
@@ -48,12 +55,20 @@ const make = Effect.gen(function* () {
   const meituanLock = yield* Semaphore.make(1);
   const state = yield* SubscriptionRef.make<ReadonlyArray<SourceControlTool>>([]);
   const meituanState = yield* SubscriptionRef.make<ReadonlyArray<MeituanTool>>([]);
-  const isActive = (tools: ReadonlyArray<SourceControlTool>) =>
-    tools.some((tool) => tool.phase === "running" || tool.phase === "verifying");
-  const update = (id: SourceControlToolId, patch: Partial<SourceControlTool>) =>
-    SubscriptionRef.update(state, (tools) =>
-      tools.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)),
-    );
+  const isActive = (tool: Pick<SourceControlTool, "phase">) =>
+    tool.phase === "running" || tool.phase === "verifying";
+  const update = (
+    id: SourceControlToolId,
+    patch: Partial<SourceControlTool>,
+    verified?: SourceControlTool | MeituanTool,
+  ) =>
+    isRequirementCli(id)
+      ? SubscriptionRef.update(meituanState, (tools) =>
+          tools.map((tool) => (tool.id === id ? { ...(verified ?? tool), ...patch, id } : tool)),
+        )
+      : SubscriptionRef.update(state, (tools) =>
+          tools.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)),
+        );
   let lastSettings = {
     meituanIntegrationEnabled: false,
     meituanRequirementsEnabled: false,
@@ -159,7 +174,7 @@ const make = Effect.gen(function* () {
       return lock.withPermits(1)(
         Effect.gen(function* () {
           const previous = yield* SubscriptionRef.get(state);
-          if (isActive(previous)) {
+          if (previous.some(isActive)) {
             sourceScanPending = true;
             return;
           }
@@ -172,8 +187,12 @@ const make = Effect.gen(function* () {
 
   const finish = Effect.fn("SourceControlToolMaintenance.finish")(function* (
     id: SourceControlToolId,
-    patch: Partial<SourceControlTool>,
+    result: Pick<SourceControlTool, "phase" | "message">,
+    verified?: SourceControlTool | MeituanTool,
   ) {
+    if (isRequirementCli(id))
+      return yield* meituanLock.withPermits(1)(update(id, result, verified));
+    const patch = { ...verified, ...result, id };
     if (!sourceScanPending) return yield* update(id, patch);
     const previous = (yield* SubscriptionRef.get(state)).map((tool) =>
       tool.id === id ? { ...tool, ...patch } : tool,
@@ -188,37 +207,45 @@ const make = Effect.gen(function* () {
   const meituanScans = yield* Cache.make({
     capacity: 16,
     timeToLive: 0,
-    lookup: ({ requirements, daxiangApproval, source }: MeituanScanConfig) =>
+    lookup: (config: MeituanScanConfig) =>
       meituanLock.withPermits(1)(
         Effect.gen(function* () {
+          const previous = yield* SubscriptionRef.get(meituanState);
           const meituanTools = yield* Effect.forEach(
             (["ones2", "mcm", "mtskills", "dumbo-web"] as const).filter((id) =>
-              id === "mtskills"
-                ? source !== undefined
-                : id === "dumbo-web"
-                  ? daxiangApproval
-                  : requirements,
+              config.includes(id),
             ),
-            (id) =>
-              installer.inspectMeituan(id, id === "mtskills" ? source?.executable : undefined).pipe(
-                Effect.catch((error) =>
-                  Effect.succeed({
-                    id,
-                    label: SourceControlToolInstaller.meituanToolLabel(id),
-                    status: "unknown" as const,
-                    version: null,
-                    executablePath: null,
-                    command: null,
-                    manualCommand: null,
-                    reason: error.message,
-                    phase: "idle" as const,
-                    message: null,
-                  }),
-                ),
-              ),
+            (id) => {
+              const active = previous.find((tool) => tool.id === id && isActive(tool));
+              if (active) return Effect.succeed(active);
+              return installer
+                .inspectMeituan(id, id === "mtskills" ? config.source?.executable : undefined)
+                .pipe(
+                  Effect.catch((error) =>
+                    Effect.succeed({
+                      id,
+                      label: SourceControlToolInstaller.meituanToolLabel(id),
+                      status: "unknown" as const,
+                      version: null,
+                      executablePath: null,
+                      command: null,
+                      manualCommand: null,
+                      reason: error.message,
+                      phase: "idle" as const,
+                      message: null,
+                    }),
+                  ),
+                );
+            },
             { concurrency: 3 },
           );
-          yield* SubscriptionRef.set(meituanState, meituanTools);
+          yield* SubscriptionRef.update(meituanState, (current) => [
+            ...current.filter((tool) => !config.includes(tool.id)),
+            ...meituanTools.map((tool) => {
+              const old = current.find((entry) => entry.id === tool.id);
+              return old ? { ...tool, phase: old.phase, message: old.message } : tool;
+            }),
+          ]);
         }),
       ),
   });
@@ -228,7 +255,10 @@ const make = Effect.gen(function* () {
   ) {
     yield* lock.withPermits(1)(
       Effect.gen(function* () {
-        if (isActive(yield* SubscriptionRef.get(state)))
+        if (
+          (yield* SubscriptionRef.get(meituanState)).some(isActive) ||
+          (yield* SubscriptionRef.get(state)).some(isActive)
+        )
           return yield* new SourceControlToolError({ id: input.id, reason: "busy" });
         const plan = yield* installer.inspect(input.id);
         if (plan.tool.command === null)
@@ -242,31 +272,37 @@ const make = Effect.gen(function* () {
         const run = Effect.gen(function* () {
           const outcome = yield* installer.install(plan);
           yield* update(input.id, { phase: "verifying" });
-          const verified = yield* installer.inspect(input.id);
+          // A confirmed installation still needs verification if its settings row is hidden.
+          const verified = isRequirementCli(input.id)
+            ? yield* installer.verifyRequirementCli(input.id)
+            : (yield* installer.inspect(input.id)).tool;
           if (
-            verified.tool.version === null ||
-            verified.tool.executablePath === null ||
+            verified.version === null ||
+            verified.executablePath === null ||
             (plan.tool.executablePath !== null &&
-              plan.tool.executablePath !== verified.tool.executablePath) ||
+              plan.tool.executablePath !== verified.executablePath) ||
             (plan.tool.version !== null &&
-              compareSemverVersions(verified.tool.version, plan.tool.version) < 0)
+              compareSemverVersions(verified.version, plan.tool.version) < 0)
           )
             return yield* new SourceControlToolError({ id: input.id, reason: "verification" });
-          const unchanged = plan.tool.version === verified.tool.version;
-          yield* finish(input.id, {
-            ...verified.tool,
-            phase: unchanged ? "unchanged" : "succeeded",
-            message:
-              outcome === "current"
-                ? "Already up to date."
-                : unchanged
-                  ? "The version is unchanged. Check the package manager's available version on the server."
-                  : "Installation verified.",
-          });
+          const unchanged = plan.tool.version === verified.version;
+          yield* finish(
+            input.id,
+            {
+              phase: unchanged ? "unchanged" : "succeeded",
+              message:
+                outcome === "current"
+                  ? "Already up to date."
+                  : unchanged
+                    ? "The version is unchanged. Check the package manager's available version on the server."
+                    : "Installation verified.",
+            },
+            verified,
+          );
         }).pipe(
           Effect.catch((error) => finish(input.id, { phase: "failed", message: error.message })),
           Effect.onInterrupt(() =>
-            update(input.id, {
+            finish(input.id, {
               phase: "failed",
               message:
                 "Installation was interrupted. Check the tool on the server before retrying.",
@@ -282,10 +318,21 @@ const make = Effect.gen(function* () {
         // A disconnected caller must not leave a running row without its installer fiber.
         yield* Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
-            yield* SubscriptionRef.update(state, (tools) => [
-              ...tools.filter((tool) => tool.id !== input.id),
-              { ...plan.tool, phase: "running" as const, message: null },
-            ]);
+            const id = input.id;
+            const running = { ...plan.tool, phase: "running" as const, message: null };
+            if (isRequirementCli(id)) {
+              yield* meituanLock.withPermits(1)(
+                SubscriptionRef.update(meituanState, (tools) => [
+                  ...tools.filter((tool) => tool.id !== id),
+                  { ...tools.find((tool) => tool.id === id), ...running, id },
+                ]),
+              );
+            } else {
+              yield* SubscriptionRef.update(state, (tools) => [
+                ...tools.filter((tool) => tool.id !== id),
+                running,
+              ]);
+            }
             yield* Effect.forkIn(restore(run), scope);
           }),
         );
@@ -305,7 +352,9 @@ const make = Effect.gen(function* () {
   );
   const meituanChanges = meituanConfig.pipe(
     Stream.switchMap((config) =>
-      Stream.unwrap(scanMeituan(config).pipe(Effect.as(SubscriptionRef.changes(meituanState)))),
+      Stream.unwrap(
+        scanMeituan(config).pipe(Effect.as(SubscriptionRef.changes(meituanState))),
+      ).pipe(Stream.map((tools) => tools.filter((tool) => config.includes(tool.id)))),
     ),
   );
   return SourceControlToolMaintenance.of({
@@ -314,7 +363,20 @@ const make = Effect.gen(function* () {
       discard: true,
     }),
     changes,
-    meituanChanges,
+    // Older clients can only copy commands for ONES and MCM.
+    meituanChanges: meituanChanges.pipe(
+      Stream.map((tools) =>
+        tools.map((tool) =>
+          isRequirementCli(tool.id) && tool.command
+            ? {
+                ...tool,
+                maintenanceCommand: tool.command,
+                command: null,
+              }
+            : tool,
+        ),
+      ),
+    ),
     start,
   });
 });

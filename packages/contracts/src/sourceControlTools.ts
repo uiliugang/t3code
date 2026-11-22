@@ -1,8 +1,12 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-export const SourceControlToolId = Schema.Literals(["git", "github", "meituan"]);
+export const SourceControlToolId = Schema.Literals(["git", "github", "meituan", "ones2", "mcm"]);
 export type SourceControlToolId = typeof SourceControlToolId.Type;
+
+export function isRequirementCli(id: string): id is "ones2" | "mcm" {
+  return id === "ones2" || id === "mcm";
+}
 
 export const SourceControlToolPhase = Schema.Literals([
   "idle",
@@ -32,6 +36,8 @@ export type MeituanToolId = typeof MeituanToolId.Type;
 export const MeituanTool = Schema.Struct({
   ...SourceControlTool.fields,
   id: MeituanToolId,
+  maintenanceCommand: Schema.optionalKey(Schema.String),
+  account: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
 });
 export type MeituanTool = typeof MeituanTool.Type;
 export type MaintainableTool = SourceControlTool | MeituanTool;

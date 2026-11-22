@@ -1,8 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { IssueProvider } from "@t3tools/contracts";
+import { isMeituanServiceEnabled, type IssueSourcesResult } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { RefreshCwIcon, Settings2Icon, Undo2Icon, SaveIcon } from "lucide-react";
 import { useState } from "react";
+import {
+  meituanAssociationCountLabel,
+  mepSpaceSummary,
+} from "@t3tools/client-runtime/meituanSettings";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useProjects } from "../../state/entities";
@@ -15,9 +19,15 @@ import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { IssueSelect } from "../requirements/IssueSelect";
-import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
+import {
+  mergeProjectIssueSources,
+  parseMepSpaceIds,
+  projectIssueSourceEdit,
+  withMepSpaceOverrides,
+} from "@t3tools/client-runtime/issueSources";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { IssueTrackerSettings } from "./IssueTrackerSettings";
+import { MepIssueTrackerSettings } from "./MepIssueTrackerSettings";
 import { SettingsPageContainer } from "./settingsLayout";
 
 type Project = ReturnType<typeof useProjects>[number];
@@ -36,92 +46,285 @@ function SourceValue({ value }: { value: string | null | undefined }) {
   );
 }
 
+type Environment = ReturnType<typeof useSettingsScope>["connectedEnvironments"][number];
+type Group = { environment: Environment; projects: Project[] };
+
+function useProjectSources({ environment, projects }: Group) {
+  return useEnvironmentQuery(
+    projects.length
+      ? sourceControlEnvironment.issueSources({
+          environmentId: environment.environmentId,
+          input: { projectIds: projects.map((p) => p.id) },
+        })
+      : null,
+  );
+}
+
+function EnvironmentTrackers({
+  group,
+  multiple,
+  anchor,
+}: {
+  group: Group;
+  multiple: boolean;
+  anchor: boolean;
+}) {
+  const t = useUiTranslation();
+  const { environment, projects } = group;
+  const { environmentId, label } = environment;
+  const settings = useEnvironmentSettings(environmentId, (value) => value);
+  const enabled = isMeituanServiceEnabled(settings, "requirements");
+  const caps = environment.serverConfig!.environment.capabilities;
+  const query = useProjectSources({ environment, projects: enabled ? projects : [] });
+  const associated = new Set(
+    query.data
+      ?.filter((row) => row.sources.some((source) => source.provider === "meituan"))
+      .map((row) => row.projectId),
+  );
+  for (const project of projects) {
+    if (settings.issueProjectSources[project.id]?.some((source) => source.provider === "meituan"))
+      associated.add(project.id);
+  }
+  return (
+    <IssueTrackerSettings
+      environmentId={environmentId}
+      anchor={anchor}
+      standalone={caps.issues === true}
+      title={
+        multiple ? t("Issue trackers · {environment}", { environment: label }) : t("Issue trackers")
+      }
+    >
+      {enabled ? (
+        <MepIssueTrackerSettings
+          environmentId={environmentId}
+          label={label}
+          supported={caps.meituanTools === true}
+          projects={meituanAssociationCountLabel(projects.length, query, associated.size, t)}
+        />
+      ) : null}
+    </IssueTrackerSettings>
+  );
+}
+
 function ProjectSourceRow({
   project,
   checked,
   disabled,
   toggle,
+  canEdit,
+  result,
+  error,
+  loading,
+  group,
 }: {
   project: Project;
   checked: boolean;
   disabled: boolean;
   toggle: () => void;
+  canEdit: boolean;
+  result: (typeof IssueSourcesResult.Type)[number] | undefined;
+  error: string | null;
+  loading: boolean;
+  group: Group;
 }) {
   const t = useUiTranslation();
-  const { environments } = useSettingsScope();
-  const saved =
-    useEnvironmentSettings(project.environmentId, (settings) => settings.issueProjectSources)[
-      project.id
-    ] ?? [];
-  const query = useEnvironmentQuery(
-    sourceControlEnvironment.issueSources({
-      environmentId: project.environmentId,
-      input: { projectIds: [project.id] },
-    }),
-  );
-  const result = query.data?.[0];
+  const settings = useEnvironmentSettings(project.environmentId, (value) => value);
+  const saved = settings.issueProjectSources[project.id] ?? [];
+  const enabled = isMeituanServiceEnabled(settings, "requirements");
   const sources = mergeProjectIssueSources(result?.sources ?? [], saved);
-  const github = sources.find((entry) => entry.provider === "github");
-  const mep = sources.filter((entry) => entry.provider === "meituan");
+  const githubSources = sources.filter((entry) => entry.provider === "github");
+  const manualGithub = saved.some((entry) => entry.provider === "github");
+  const discovery = error || result?.error ? "failed" : result ? "ready" : "pending";
+  const spaces = sources
+    .filter((entry) => entry.provider === "meituan")
+    .map((entry) => entry.scope);
+  const manual = saved.some((entry) => entry.provider === "meituan");
+  const [draft, setDraft] = useState<{ text: string; saved: typeof saved } | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
+  const inputId = `mep-spaces-${projectKey(project)}`;
+  const submit = async (ids: string[] | null) => {
+    if (!ids || !draft || saving || disabled || !enabled) return;
+    const input = projectIssueSourceEdit(project.id, "meituan", saved, draft.saved, (latest) =>
+      withMepSpaceOverrides(latest, ids),
+    );
+    if (!input) {
+      setFailure(t("Project sources have changed. Reopen the editor and try again."));
+      return;
+    }
+    setSaving(true);
+    setFailure(null);
+    const response = await update({ environmentId: project.environmentId, input });
+    setSaving(false);
+    if (response._tag === "Success") {
+      setDraft(null);
+    } else setFailure(t("Could not save project sources. Reopen the editor and try again."));
+  };
+  const invalid = draft !== null && !parseMepSpaceIds(draft.text);
   return (
-    <tr className="border-b border-border text-sm">
-      <td className="py-4 pr-3 align-top">
+    <tr className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-3 text-sm sm:table-row">
+      <td className="row-span-4 align-top sm:py-4 sm:pr-3">
         <Checkbox
           id={`issue-source-${projectKey(project)}`}
           checked={checked}
-          disabled={disabled}
+          disabled={disabled || saving}
           onCheckedChange={toggle}
           aria-label={t("Select {project}", { project: project.title })}
         />
       </td>
-      <td className="py-4 pr-4 align-top">
-        <label
-          htmlFor={`issue-source-${projectKey(project)}`}
-          className="flex min-w-0 items-center gap-2 font-medium"
-        >
+      <td className="min-w-0 align-top sm:py-4 sm:pr-4">
+        <label htmlFor={`issue-source-${projectKey(project)}`} className="block font-medium">
           <SourceValue value={project.title} />
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {t(saved.length ? "Manual override" : "Automatic")}
-          </span>
         </label>
       </td>
-      <td className="py-4 pr-4 align-top">
+      <td className="col-start-2 min-w-0 align-top text-xs text-muted-foreground sm:py-4 sm:pr-4">
         <SourceValue value={result?.repository} />
-        {query.isPending && !result ? (
-          <p className="text-xs text-muted-foreground">{t("Loading...")}</p>
-        ) : null}
-        {query.error || result?.error ? (
-          <p role="alert" className="text-xs text-destructive">
-            {t(query.error ?? result!.error!)}
+        {loading && !result ? <p>{t("Loading...")}</p> : null}
+        {error || result?.error ? (
+          <p role="alert" className="text-destructive">
+            {t(error ?? result!.error!)}
           </p>
         ) : null}
       </td>
-      <td className="py-4 pr-4 align-top">
-        <div className="flex items-center gap-3 overflow-hidden">
-          {github ? <span className="shrink-0">{t("GitHub Issues")}</span> : null}
-          {mep.length ? (
-            <SourceValue
-              value={`MEP ${[...new Set(mep.map((entry) => entry.scope))].join(", ")}`}
-            />
-          ) : null}
-          {!github && !mep.length ? <SourceValue value={undefined} /> : null}
-        </div>
+      <td className="col-start-2 min-w-0 space-y-1 align-top sm:py-4 sm:pr-3">
+        {githubSources.map((github) => (
+          <p key={JSON.stringify([github.host, github.scope])} className="text-xs wrap-anywhere">
+            {t("GitHub Issues")}
+            {manualGithub || githubSources.length > 1 ? ` · ${github.host}/${github.scope}` : ""}
+            {manualGithub ? ` · ${t("Manual override")}` : ""}
+          </p>
+        ))}
+        {enabled ? (
+          <>
+            <p className="text-xs wrap-anywhere">{mepSpaceSummary(spaces, manual, discovery, t)}</p>
+            {draft === null ? (
+              <Button
+                variant="ghost-muted"
+                size="xs"
+                disabled={disabled}
+                onClick={() => {
+                  setFailure(null);
+                  setDraft({ text: spaces.join(", "), saved });
+                }}
+              >
+                {t(spaces.length || discovery !== "ready" ? "Edit spaces" : "Link spaces")}
+              </Button>
+            ) : (
+              <form
+                className="grid gap-2 pt-1"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submit(parseMepSpaceIds(draft.text));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (!saving) setDraft(null);
+                }}
+              >
+                <Label htmlFor={inputId}>{t("MEP space IDs")}</Label>
+                <Input
+                  id={inputId}
+                  value={draft.text}
+                  disabled={saving || disabled}
+                  aria-invalid={Boolean(invalid)}
+                  aria-describedby={invalid ? inputId + "-error" : undefined}
+                  placeholder="10001, 10002"
+                  onChange={(event) => setDraft({ ...draft, text: event.target.value })}
+                />
+                {invalid ? (
+                  <p id={inputId + "-error"} className="text-xs text-destructive">
+                    {t("Enter positive space IDs separated by commas.")}
+                  </p>
+                ) : null}
+                {failure ? (
+                  <p role="alert" className="text-xs text-destructive">
+                    {failure}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-1">
+                  <Button type="submit" size="xs" disabled={Boolean(invalid) || disabled || saving}>
+                    {t("Save")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    disabled={saving}
+                    onClick={() => setDraft(null)}
+                  >
+                    {t("Cancel")}
+                  </Button>
+                  {manual ? (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost-muted"
+                      disabled={disabled || saving}
+                      onClick={() => void submit([])}
+                    >
+                      {t("Restore automatic")}
+                    </Button>
+                  ) : null}
+                </div>
+              </form>
+            )}
+          </>
+        ) : null}
       </td>
-      <td className="py-4 text-right align-top text-xs text-muted-foreground">
-        <SourceValue
-          value={environments.find((entry) => entry.environmentId === project.environmentId)?.label}
-        />
+      <td className="col-start-2 align-top text-xs text-muted-foreground sm:py-4 sm:text-right">
+        <SourceValue value={group.environment.label} />
+        {!canEdit ? <p>{t("Read-only")}</p> : null}
       </td>
     </tr>
   );
 }
 
-function ProjectIssueSources({ projects }: { projects: Project[] }) {
+function EnvironmentProjectRows({
+  group,
+  selected,
+  busy,
+  canWrite,
+  toggle,
+}: {
+  group: Group;
+  selected: readonly string[];
+  busy: boolean;
+  canWrite: boolean;
+  toggle: (key: string) => void;
+}) {
+  const enabled = useEnvironmentSettings(group.environment.environmentId, (settings) =>
+    isMeituanServiceEnabled(settings, "requirements"),
+  );
+  const query = useProjectSources(group);
+  const byId = new Map(query.data?.map((result) => [result.projectId, result]));
+  return (
+    <tbody className="block sm:table-row-group">
+      {group.projects.map((project) => (
+        <ProjectSourceRow
+          key={JSON.stringify([projectKey(project), enabled])}
+          project={project}
+          group={group}
+          result={byId.get(project.id)}
+          error={query.error}
+          loading={query.isPending}
+          checked={selected.includes(projectKey(project))}
+          canEdit={canWrite}
+          disabled={busy || !canWrite}
+          toggle={() => toggle(projectKey(project))}
+        />
+      ))}
+    </tbody>
+  );
+}
+
+function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups: Group[] }) {
   const t = useUiTranslation();
   const { connectedEnvironments } = useSettingsScope();
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
-  const [provider, setProvider] = useState<IssueProvider>("github");
   const [scope, setScope] = useState("");
   const [host, setHost] = useState("github.com");
   const [busy, setBusy] = useState(false);
@@ -141,18 +344,7 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
   const refresh = useAtomCommand(sourceControlEnvironment.refreshIssueSources);
   const writable = projects.filter((project) => permissions.get(project.environmentId));
   const chosen = writable.filter((project) => selected.includes(projectKey(project)));
-  const scopes = [
-    ...new Set(
-      scope
-        .split(/[,，]/u)
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
-  ];
-  const valid =
-    provider === "meituan"
-      ? scopes.length > 0 && scopes.every((value) => /^[1-9]\d*$/u.test(value))
-      : /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && /^[\w.-]+$/u.test(host.trim());
+  const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && /^[\w.-]+$/u.test(host.trim());
   const run = async (action: "refresh" | "save" | "reset") => {
     if (!chosen.length || busy || (action === "save" && !valid)) return;
     setBusy(true);
@@ -181,24 +373,21 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
             action === "reset"
               ? []
               : [
-                  ...(saved[project.id] ?? []).filter((source) => source.provider !== provider),
-                  ...(provider === "meituan" ? scopes : [scope.trim()]).map((value) => ({
-                    provider,
-                    scope: value,
-                    host: provider === "meituan" ? "mep.sankuai.com" : host.trim(),
-                  })),
+                  ...(saved[project.id] ?? []).filter((source) => source.provider !== "github"),
+                  { provider: "github" as const, scope: scope.trim(), host: host.trim() },
                 ],
           ]),
         );
         const result = await update({
           environmentId: environment.environmentId,
-          input: { patch: { issueProjectSources: entries } },
+          input: {
+            patch: { issueProjectSources: entries },
+            expectedIssueProjectSources: Object.fromEntries(
+              targets.map((project) => [project.id, saved[project.id] ?? []]),
+            ),
+            ...(action === "save" ? { issueSourceProvider: "github" as const } : {}),
+          },
         });
-        if (result._tag === "Success")
-          await refresh({
-            environmentId: environment.environmentId,
-            input: { projectIds: targets.map((project) => project.id) },
-          });
         return {
           success: result._tag === "Success" ? targets.length : 0,
           failed: result._tag === "Success" ? 0 : targets.length,
@@ -271,41 +460,24 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
           }}
         >
           <div className="space-y-1.5">
-            <Label>{t("Issue source")}</Label>
-            <IssueSelect
-              label={t("Issue source")}
-              value={provider}
-              options={[{ value: "github", label: t("GitHub Issues") }]}
-              onChange={(value) => {
-                setProvider(value === "github" ? "github" : "meituan");
-                setScope("");
-              }}
-              disabled={busy}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="issue-source-scope">
-              {t(provider === "meituan" ? "MEP space IDs" : "GitHub repository")}
-            </Label>
+            <Label htmlFor="issue-source-scope">{t("GitHub repository")}</Label>
             <Input
               id="issue-source-scope"
               value={scope}
               onChange={(event) => setScope(event.target.value)}
-              placeholder={provider === "meituan" ? "1031008, 1031009" : "owner/repository"}
+              placeholder="owner/repository"
               disabled={busy}
             />
           </div>
-          {provider === "github" ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="issue-source-host">{t("GitHub host")}</Label>
-              <Input
-                id="issue-source-host"
-                value={host}
-                onChange={(event) => setHost(event.target.value)}
-                disabled={busy}
-              />
-            </div>
-          ) : null}
+          <div className="space-y-1.5">
+            <Label htmlFor="issue-source-host">{t("GitHub host")}</Label>
+            <Input
+              id="issue-source-host"
+              value={host}
+              onChange={(event) => setHost(event.target.value)}
+              disabled={busy}
+            />
+          </div>
           <div className="flex justify-end sm:col-span-2">
             <Button size="sm" type="submit" disabled={busy || !valid}>
               <SaveIcon />
@@ -320,19 +492,19 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
         </p>
       ) : null}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-160 table-fixed">
-          <colgroup>
+        <table className="block w-full sm:table sm:table-fixed">
+          <colgroup className="hidden sm:table-column-group">
             <col className="w-7" />
             <col className="w-[28%]" />
             <col className="w-[30%]" />
             <col />
             <col className="w-20" />
           </colgroup>
-          <thead className="border-b border-border text-left text-xs text-muted-foreground">
+          <thead className="hidden sm:table-header-group border-b border-border text-left text-xs text-muted-foreground">
             <tr>
               <th aria-label={t("Select all results")} />
               <th scope="col" className="pb-3 pr-4 font-normal">
-                {t("Project")} / {t("Automatic")}
+                {t("Project")}
               </th>
               <th scope="col" className="pb-3 pr-4 font-normal">
                 {t("Repository")}
@@ -345,23 +517,22 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
               </th>
             </tr>
           </thead>
-          <tbody>
-            {projects.map((project) => (
-              <ProjectSourceRow
-                key={projectKey(project)}
-                project={project}
-                checked={selected.includes(projectKey(project))}
-                disabled={busy || !permissions.get(project.environmentId)}
-                toggle={() =>
-                  setSelected(
-                    selected.includes(projectKey(project))
-                      ? selected.filter((value) => value !== projectKey(project))
-                      : [...selected, projectKey(project)],
-                  )
-                }
-              />
-            ))}
-          </tbody>
+          {groups.map((group) => (
+            <EnvironmentProjectRows
+              key={group.environment.environmentId}
+              group={group}
+              selected={selected}
+              busy={busy}
+              canWrite={permissions.get(group.environment.environmentId) === true}
+              toggle={(key) =>
+                setSelected((current) =>
+                  current.includes(key)
+                    ? current.filter((value) => value !== key)
+                    : [...current, key],
+                )
+              }
+            />
+          ))}
         </table>
       </div>
       {!projects.length ? (
@@ -372,11 +543,11 @@ function ProjectIssueSources({ projects }: { projects: Project[] }) {
 }
 
 export function RequirementsSettings() {
-  const { scope, search, connectedEnvironments } = useSettingsScope();
+  const t = useUiTranslation();
+  const { scope, search, environments, connectedEnvironments } = useSettingsScope();
   const projects = useProjects().filter(
     (project) =>
       !project.isScratch &&
-      project.title !== "No project" &&
       connectedEnvironments.some((entry) => entry.environmentId === project.environmentId) &&
       (scope.kind === "project" || scope.kind === "checkout"
         ? scope.members.some(
@@ -384,11 +555,31 @@ export function RequirementsSettings() {
           )
         : true),
   );
+  const groups = connectedEnvironments.map((environment) => ({
+    environment,
+    projects: projects.filter((p) => p.environmentId === environment.environmentId),
+  }));
   return (
     <SettingsPageContainer>
+      {environments
+        .filter((entry) => entry.connection.phase !== "connected")
+        .map((entry) => (
+          <p key={entry.environmentId} role="status" className="text-sm text-muted-foreground">
+            {entry.label} · {t("Offline")}
+          </p>
+        ))}
+      {groups.map((group, index) => (
+        <EnvironmentTrackers
+          key={group.environment.environmentId}
+          group={group}
+          multiple={groups.length > 1}
+          anchor={index === 0}
+        />
+      ))}
       <ProjectIssueSources
         key={`${JSON.stringify(search)}/${projects.map(projectKey).join(",")}`}
         projects={projects}
+        groups={groups}
       />
     </SettingsPageContainer>
   );

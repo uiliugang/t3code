@@ -2,9 +2,7 @@ import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretReso
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
-import { resolveMCodeCommand } from "./MCodeRuntime.ts";
+import { makeResolveMCodeCommand } from "./MCodeRuntime.ts";
 import {
   VcsProcessSpawnError,
   VcsUnsupportedOperationError,
@@ -22,8 +20,7 @@ import { resolveSourceControlHostSecrets } from "./sourceControlHostSecrets.ts";
 export const layer = Layer.effect(
   SourceControlHost.SourceControlHost,
   Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
+    const resolveMCodeCommand = yield* makeResolveMCodeCommand;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
     const process = yield* VcsProcess.VcsProcess;
     const git = yield* GitVcsDriver.GitVcsDriver;
@@ -74,11 +71,7 @@ export const layer = Layer.effect(
                 detail: "Meituan integration is disabled on this environment.",
               });
           }
-          return yield* resolveMCodeCommand(input).pipe(
-            Effect.provideService(FileSystem.FileSystem, fs),
-            Effect.provideService(Path.Path, path),
-            Effect.flatMap(process.run),
-          );
+          return yield* resolveMCodeCommand(input).pipe(Effect.flatMap(process.run));
         }),
       },
       git: {

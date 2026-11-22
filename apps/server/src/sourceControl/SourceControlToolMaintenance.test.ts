@@ -5,6 +5,7 @@ import {
   ServerSettingsError,
   SourceControlToolError,
   type SourceControlTool,
+  type MeituanTool,
   type SkillSource,
   type SourceControlToolStartInput,
 } from "@t3tools/contracts";
@@ -46,8 +47,13 @@ const confirmation = (tool = plan().tool): SourceControlToolStartInput => ({
   expectedPath: tool.executablePath,
   expectedCommand: tool.command ?? "unsupported",
 });
-type InstallerMock = Omit<Installer.SourceControlToolInstaller["Service"], "inspectMeituan"> &
-  Partial<Pick<Installer.SourceControlToolInstaller["Service"], "inspectMeituan">>;
+type InstallerMock = Omit<
+  Installer.SourceControlToolInstaller["Service"],
+  "inspectMeituan" | "verifyRequirementCli"
+> &
+  Partial<
+    Pick<Installer.SourceControlToolInstaller["Service"], "inspectMeituan" | "verifyRequirementCli">
+  >;
 const defaultSkillSource = {
   id: "meituan",
   kind: "mtskills",
@@ -64,6 +70,8 @@ const testLayer = (
   Maintenance.layer.pipe(
     Layer.provide(
       Layer.succeed(Installer.SourceControlToolInstaller, {
+        verifyRequirementCli: (id) =>
+          Effect.fail(new MeituanToolError({ id, reason: "inspection" })),
         inspectMeituan: (id) => Effect.fail(new MeituanToolError({ id, reason: "inspection" })),
         ...installer,
       }),
@@ -156,6 +164,130 @@ it.effect("keeps an environment busy through verification and publishes the veri
       );
     }).pipe(Effect.provide(testLayer(installer)));
   }),
+);
+
+it.effect.each(["while verifying", "after completion"] as const)(
+  "keeps ONES installation exclusive and verifies it when the service is re-enabled %s",
+  (reenable) =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const first = plan({ id: "ones2", version: "2.0.0", executablePath: "/bin/ones2" });
+      const manualCommand = "npm install -g @ee/mep-ones-cli@latest";
+      const saved = yield* SubscriptionRef.make({
+        ...DEFAULT_SERVER_SETTINGS,
+        meituanIntegrationEnabled: true,
+        meituanRequirementsEnabled: true,
+      });
+      let installed = false;
+      const verification = yield* Deferred.make<void>();
+      const releaseVerification = yield* Deferred.make<void>();
+      const readTool = (id: "ones2" | "mcm" | "mtskills" | "dumbo-web") => ({
+        ...first.tool,
+        id,
+        manualCommand,
+        version: installed ? "2.1.0" : first.tool.version,
+        ...(id === "ones2" && (!installed || reenable === "after completion")
+          ? { account: installed ? "demo.user" : "prior.user" }
+          : {}),
+      });
+      const installer: InstallerMock = {
+        inspect: () => Effect.succeed(first),
+        inspectMeituan: (id) =>
+          Effect.gen(function* () {
+            if (id === "ones2" && !(yield* SubscriptionRef.get(saved)).meituanRequirementsEnabled)
+              return yield* new MeituanToolError({ id, reason: "unsupported" });
+            return readTool(id);
+          }),
+        verifyRequirementCli: (id) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(verification, undefined);
+            yield* Deferred.await(releaseVerification);
+            return readTool(id);
+          }),
+        install: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(entered, undefined);
+            yield* Deferred.await(release);
+            installed = true;
+            return "installed" as const;
+          }),
+      };
+      yield* Effect.gen(function* () {
+        const service = yield* Maintenance.SourceControlToolMaintenance;
+        const initial = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
+        assert.strictEqual(initial.find((tool) => tool.id === "ones2")?.account, "prior.user");
+        yield* service.start(confirmation(first.tool));
+        yield* Deferred.await(entered);
+        for (const enabled of [false, true]) {
+          yield* SubscriptionRef.update(saved, (current) => ({
+            ...current,
+            meituanRequirementsEnabled: enabled,
+          }));
+          const tools = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
+          assert.strictEqual(
+            tools.find((tool) => tool.id === "ones2")?.phase,
+            enabled ? "running" : undefined,
+          );
+        }
+        const busy = yield* service.start(confirmation()).pipe(Effect.flip);
+        assert.strictEqual(busy.reason, "busy");
+        yield* SubscriptionRef.update(saved, (current) => ({
+          ...current,
+          meituanRequirementsEnabled: false,
+        }));
+        yield* Deferred.succeed(release, undefined);
+        yield* Deferred.await(verification);
+        if (reenable === "while verifying") {
+          yield* SubscriptionRef.update(saved, (current) => ({
+            ...current,
+            meituanRequirementsEnabled: true,
+          }));
+          const tools = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
+          assert.strictEqual(tools.find((tool) => tool.id === "ones2")?.phase, "verifying");
+        }
+        const updates = yield* Queue.unbounded<ReadonlyArray<MeituanTool>>();
+        yield* service.meituanChanges.pipe(
+          Stream.runForEach((rows) => Queue.offer(updates, rows)),
+          Effect.forkChild,
+        );
+        yield* Queue.take(updates);
+        yield* Deferred.succeed(releaseVerification, undefined);
+        const published = yield* Queue.take(updates);
+        if (reenable === "while verifying") {
+          const settled = published.find((tool) => tool.id === "ones2");
+          assert.strictEqual(settled?.phase, "succeeded");
+          assert.strictEqual(settled?.account, undefined);
+        }
+        if (reenable === "after completion")
+          yield* SubscriptionRef.update(saved, (current) => ({
+            ...current,
+            meituanRequirementsEnabled: true,
+          }));
+        const rows = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
+        const ones = rows.find((tool) => tool.id === "ones2");
+        assert.strictEqual(ones?.phase, "succeeded");
+        assert.strictEqual(
+          ones?.account,
+          reenable === "after completion" ? "demo.user" : undefined,
+        );
+        assert.strictEqual(ones?.version, "2.1.0");
+        assert.strictEqual(ones?.maintenanceCommand, first.tool.command);
+        assert.strictEqual(ones?.command, null);
+        assert.strictEqual(ones?.manualCommand, manualCommand);
+      }).pipe(
+        Effect.provide(
+          testLayer(
+            installer,
+            Stream.succeed(defaultSkillSource),
+            Layer.mock(Settings.ServerSettingsService)({
+              getSettings: SubscriptionRef.get(saved),
+              subscribeChanges: Effect.succeed(SubscriptionRef.changes(saved)),
+            }),
+          ),
+        ),
+      );
+    }),
 );
 
 it.effect.each(["unchanged", "failed"] as const)(

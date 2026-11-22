@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as Equal from "effect/Equal";
 import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProjectId } from "./baseSchemas.ts";
 
@@ -11,6 +12,16 @@ export const IssueSource = Schema.Struct({
   host: TrimmedNonEmptyString.check(Schema.isMaxLength(253)),
 });
 export type IssueSource = typeof IssueSource.Type;
+
+export function issueSourcesMatch(
+  current: readonly IssueSource[],
+  expected: readonly IssueSource[],
+  provider?: IssueProvider,
+) {
+  const relevant = (source: IssueSource) => !provider || source.provider === provider;
+  return Equal.equals(current.filter(relevant), expected.filter(relevant));
+}
+
 export const IssueProjectSources = Schema.Record(ProjectId, Schema.Array(IssueSource));
 export const IssueTarget = Schema.Struct({
   projectId: ProjectId,

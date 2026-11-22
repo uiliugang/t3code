@@ -1,4 +1,8 @@
-import type { ExecutionEnvironmentCapabilities, MaintainableTool } from "@t3tools/contracts";
+import type {
+  ExecutionEnvironmentCapabilities,
+  MaintainableTool,
+  MeituanTool,
+} from "@t3tools/contracts";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 export type MeituanSettingsSection = "code" | "issues" | "daxiang" | "skills";
@@ -30,7 +34,7 @@ export function meituanAssociationCountLabel(
 }
 
 export function shouldDiscoverMeituanProjectSources(section?: MeituanSettingsSection) {
-  return section === undefined || section === "issues";
+  return section === undefined;
 }
 
 export function meituanToolIdsForSection(
@@ -47,4 +51,50 @@ export function meituanToolIdsForSection(
     ...(enabled.daxiang ? (["dumbo-web"] as const) : []),
     ...(enabled.skills ? (["mtskills"] as const) : []),
   ];
+}
+
+export function mepAccountLabel(tool: MeituanTool | undefined, t: UiTranslator) {
+  if (tool?.account) return `MIS ${tool.account}`;
+  return t(tool?.account === null ? "Account not detected" : "Account status unknown");
+}
+
+export function mepSpaceValue(
+  spaces: readonly string[],
+  discovery: "pending" | "failed" | "ready",
+  t: UiTranslator,
+) {
+  if (spaces.length) return spaces.join(", ");
+  if (discovery === "ready") return t("No MEP space linked");
+  return t(discovery === "failed" ? "Unknown" : "Loading...");
+}
+
+export function mepSpaceSummary(
+  spaces: readonly string[],
+  manual: boolean,
+  discovery: "pending" | "failed" | "ready",
+  t: UiTranslator,
+) {
+  const value = mepSpaceValue(spaces, discovery, t);
+  if (!spaces.length && discovery === "ready") return value;
+  return [
+    t("MEP space IDs"),
+    value,
+    ...(spaces.length ? [t(manual ? "Manual override" : "Automatic")] : []),
+  ].join(" · ");
+}
+
+export function mepTrackerSummary(
+  tool: MeituanTool | undefined,
+  projects: string,
+  t: UiTranslator,
+) {
+  const cli =
+    tool?.status === "missing"
+      ? t("Install ones2 first")
+      : tool?.version
+        ? `ones2 ${tool.version}`
+        : t("CLI version unknown");
+  return [tool?.status === "installed" ? mepAccountLabel(tool, t) : null, cli, projects]
+    .filter(Boolean)
+    .join(" · ");
 }

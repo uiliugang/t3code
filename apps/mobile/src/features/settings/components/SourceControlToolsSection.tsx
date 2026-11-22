@@ -18,8 +18,10 @@ import { SettingsSection } from "./SettingsSection";
 export function SourceControlToolsSection({
   environment,
   only,
+  inline = false,
 }: {
   readonly environment: SettingsTarget;
+  readonly inline?: boolean;
   readonly only?: MaintainableTool["id"] | readonly MaintainableTool["id"][];
 }) {
   const t = useUiTranslation();
@@ -39,6 +41,9 @@ export function SourceControlToolsSection({
   );
   const start = useAtomCommand(sourceControlEnvironment.startTool, { reportFailure: false });
   const refresh = useAtomCommand(sourceControlEnvironment.refreshTools);
+  const canRefresh = useAtomValue(
+    sourceControlEnvironment.refreshTools.permissionAtom(environmentId),
+  );
   const canMaintain = useAtomValue(
     sourceControlEnvironment.startTool.permissionAtom(environmentId),
   );
@@ -58,15 +63,7 @@ export function SourceControlToolsSection({
   }, [completedTools, refreshDiscovery]);
 
   const install = async (tool: MaintainableTool) => {
-    if (
-      !tool.command ||
-      pending ||
-      tool.id === "ones2" ||
-      tool.id === "mcm" ||
-      tool.id === "mtskills" ||
-      tool.id === "dumbo-web"
-    )
-      return;
+    if (!tool.command || pending || tool.id === "mtskills" || tool.id === "dumbo-web") return;
     setPending(true);
     const result = await start({
       environmentId,
@@ -87,7 +84,7 @@ export function SourceControlToolsSection({
     }
   };
   const confirm = (tool: MaintainableTool) => {
-    const command = tool.command ?? tool.manualCommand;
+    const command = tool.manualCommand ?? tool.command;
     Dialog.alert(
       t(
         tool.command
@@ -126,8 +123,8 @@ export function SourceControlToolsSection({
     );
   };
   if (!streams.sourceControl && !streams.meituan) return null;
-  return (
-    <SettingsSection title={`${t("Source control tools")} · ${environment.label}`}>
+  const rows = (
+    <>
       {availableTools
         .filter((tool) => onlyIds.includes(tool.id))
         .map((tool) => (
@@ -140,8 +137,14 @@ export function SourceControlToolsSection({
                   ? "arrow.up.circle"
                   : "arrow.down.circle"
             }
-            label={tool.label}
-            value={[tool.version, sourceControlToolStatus(tool, t)].filter(Boolean).join(" · ")}
+            label={tool.id === "mcm" ? t("Delivery CLI (optional)") + " · mcm" : tool.label}
+            value={[
+              tool.id === "ones2" ? "ones2" : null,
+              tool.version,
+              sourceControlToolStatus(tool, t),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
             valuePosition="below"
             disabled={busy || (tool.command !== null && !canMaintain)}
             onPress={() => confirm(tool)}
@@ -164,10 +167,21 @@ export function SourceControlToolsSection({
           (meituanTools.isPending && meituanTools.data === null)
         }
         onPress={() => {
-          void refresh({ environmentId, input: {} });
+          if (canRefresh) void refresh({ environmentId, input: {} });
+          else {
+            tools.refresh();
+            meituanTools.refresh();
+          }
           discovery.refresh();
         }}
       />
+    </>
+  );
+  return inline ? (
+    rows
+  ) : (
+    <SettingsSection title={`${t("Source control tools")} · ${environment.label}`}>
+      {rows}
     </SettingsSection>
   );
 }

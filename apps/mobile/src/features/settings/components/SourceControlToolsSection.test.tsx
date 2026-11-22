@@ -18,7 +18,7 @@ vi.mock("../../../state/sourceControl", () => ({
     meituanTools: () => "meituanTools",
     discovery: () => "discovery",
     startTool: { permissionAtom: () => null },
-    refreshTools: {},
+    refreshTools: { permissionAtom: () => null },
   },
 }));
 vi.mock("../../../state/use-atom-command", () => ({ useAtomCommand: () => mocks.command }));

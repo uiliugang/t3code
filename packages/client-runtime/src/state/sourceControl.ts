@@ -4,6 +4,7 @@ import {
   WS_METHODS,
   type EnvironmentId,
   type MaintainableTool,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { issueSourceProjectIdBatches } from "../issueSources.ts";
@@ -102,12 +103,31 @@ export function sourceControlToolStatus(tool: MaintainableTool, t: UiTranslator)
 
 export function createSourceControlEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Persistence.EnvironmentCacheStore | R, E>,
+  settingsValueAtom?: (id: EnvironmentId) => Atom.Atom<ServerSettings | null>,
 ) {
   const commandScheduler = createAtomCommandScheduler();
   const issueRefresh = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
+  const sourcesRefresh = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
+  const sourceConfiguration = Atom.family((id: EnvironmentId) =>
+    Atom.make((get) => {
+      const settings = settingsValueAtom ? get(settingsValueAtom(id)) : null;
+      return JSON.stringify([
+        settings?.issueProjectSources,
+        settings?.meituanIntegrationEnabled,
+        settings?.meituanRequirementsEnabled,
+      ]);
+    }),
+  );
+  const withSourceConfiguration = (refresh: typeof issueRefresh) =>
+    Atom.family((id: EnvironmentId) =>
+      Atom.make((get) => [get(sourceConfiguration(id)), get(refresh(id))]),
+    );
+  const sourceChanges = withSourceConfiguration(sourcesRefresh);
+  const issueChanges = withSourceConfiguration(issueRefresh);
   const issueSources = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:issues:sources",
     tag: WS_METHODS.issuesSources,
+    refreshTrigger: ({ environmentId }) => sourceChanges(environmentId),
     execute: (input) =>
       Effect.forEach(
         issueSourceProjectIdBatches(input.projectIds),
@@ -116,6 +136,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
       ).pipe(Effect.map(Array.flatten)),
   });
   return {
+    sourceChanges,
     issueSources,
     tools: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:source-control:tools",
@@ -142,11 +163,10 @@ export function createSourceControlEnvironmentAtoms<R, E>(
           (projectIds) => request(WS_METHODS.issuesSources, { ...input, projectIds }),
           { concurrency: 2 },
         ).pipe(Effect.map(Array.flatten)),
-      onSuccess: ({ environmentId, input }, registry) =>
+      onSuccess: ({ environmentId }, registry) =>
         Effect.sync(() => {
           registry.update(issueRefresh(environmentId), (value) => value + 1);
-          for (const projectId of input.projectIds)
-            registry.refresh(issueSources({ environmentId, input: { projectIds: [projectId] } }));
+          registry.update(sourcesRefresh(environmentId), (value) => value + 1);
         }),
     }),
     issues: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -157,17 +177,17 @@ export function createSourceControlEnvironmentAtoms<R, E>(
         request(WS_METHODS.requirementIssuesList, input).pipe(
           Effect.flatMap((result) => retainFailedIssueGroups(result, previous)),
         ),
-      refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
+      refreshTrigger: ({ environmentId }) => issueChanges(environmentId),
     }),
     issueBranches: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:branches",
       tag: WS_METHODS.issueBranches,
-      refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
+      refreshTrigger: ({ environmentId }) => issueChanges(environmentId),
     }),
     issueDetail: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:detail",
       tag: WS_METHODS.issuesRead,
-      refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
+      refreshTrigger: ({ environmentId }) => issueChanges(environmentId),
     }),
     issuePeople: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:people",
@@ -196,7 +216,7 @@ export function createSourceControlEnvironmentAtoms<R, E>(
     branchIssues: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:branch-issues",
       tag: WS_METHODS.branchIssuesList,
-      refreshTrigger: ({ environmentId }) => issueRefresh(environmentId),
+      refreshTrigger: ({ environmentId }) => issueChanges(environmentId),
     }),
     branchIssueDetail: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:source-control:branch-issue-detail",

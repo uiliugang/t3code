@@ -4,6 +4,7 @@ import * as NodeVM from "node:vm";
 import { vi } from "vite-plus/test";
 import {
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   RequirementIssueError,
   type RequirementIssueListInput,
@@ -1998,6 +1999,69 @@ describe("persisted environment queries", () => {
             failures: [],
           });
         }
+      }),
+  );
+
+  it.effect(
+    "refreshes mounted project sources and the board when another client restores automatic discovery",
+    () =>
+      Effect.gen(function* () {
+        const projectId = ProjectId.make("source-project");
+        const spaces = [{ host: "mep.sankuai.com", provider: "meituan" as const, scope: "17" }];
+        const settings = Atom.make({
+          ...DEFAULT_SERVER_SETTINGS,
+          issueProjectSources: { [projectId]: spaces },
+        }).pipe(Atom.keepAlive);
+        let effective = spaces;
+        const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
+          rpcSession: {
+            client: {
+              [WS_METHODS.issuesSources]: () =>
+                Effect.sync(() => [
+                  { projectId, repository: null, sources: effective, manual: effective.length > 0 },
+                ]),
+              [WS_METHODS.issuesList]: () =>
+                Effect.sync(() => ({
+                  viewers: {},
+                  entries: [],
+                  errors: [],
+                  nextCursors: {},
+                  trackers: effective.length
+                    ? [
+                        {
+                          tracker: "mep-ones",
+                          host: "mep.sankuai.com",
+                          projectCount: 1,
+                          capabilities: null,
+                          configured: true,
+                          detail: null,
+                        },
+                      ]
+                    : [],
+                })),
+            },
+          } as unknown as RpcSession.RpcSession,
+        });
+        const runtime = harness.runtime as unknown as Atom.AtomRuntime<
+          EnvironmentRegistry.EnvironmentRegistry | Persistence.EnvironmentCacheStore
+        >;
+        const sources = createSourceControlEnvironmentAtoms(runtime, () => settings);
+        const board = createIssueEnvironmentAtoms(runtime, sources.sourceChanges).list({
+          environmentId: QUERY_ENVIRONMENT.environmentId,
+          input: { state: "all" },
+        });
+        const atom = sources.issueSources({
+          environmentId: QUERY_ENVIRONMENT.environmentId,
+          input: { projectIds: [projectId] },
+        });
+        const registry = yield* mountEnvironmentQuery(atom);
+        expect((yield* readEnvironmentQuery(registry, atom))[0]?.sources).toEqual(spaces);
+        yield* AtomRegistry.mount(registry, board);
+        expect((yield* readEnvironmentQuery(registry, board)).trackers).toHaveLength(1);
+        effective = [];
+        registry.set(settings, { ...DEFAULT_SERVER_SETTINGS, issueProjectSources: {} });
+        expect((yield* readEnvironmentQuery(registry, atom))[0]?.sources).toEqual([]);
+        expect((yield* readEnvironmentQuery(registry, board)).trackers).toEqual([]);
       }),
   );
 

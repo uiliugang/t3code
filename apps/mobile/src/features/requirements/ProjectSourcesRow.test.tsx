@@ -1,0 +1,152 @@
+import { EnvironmentId, ProjectId, type IssueSource } from "@t3tools/contracts";
+import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
+import { act, type ReactNode } from "react";
+import { createRoot } from "react-dom/client";
+import { expect, it, vi } from "vite-plus/test";
+
+type Children = { children?: ReactNode };
+type Press = Children & { accessibilityLabel?: string; disabled?: boolean; onPress: () => void };
+const { update } = vi.hoisted(() => ({ update: vi.fn() }));
+vi.mock("react-native", () => ({
+  View: ({ children }: Children) => <div>{children}</div>,
+}));
+vi.mock("../../components/ui/AppText", () => ({
+  AppText: ({ children }: Children) => <span>{children}</span>,
+  AppTextInput: ({
+    value,
+    editable,
+    onChangeText,
+  }: {
+    value: string;
+    editable: boolean;
+    onChangeText: (text: string) => void;
+  }) => (
+    <input
+      disabled={!editable}
+      value={value}
+      onInput={(event) => onChangeText(event.currentTarget.value)}
+      readOnly
+    />
+  ),
+}));
+vi.mock("../../components/ui/IconButton", () => ({
+  IconButton: ({ accessibilityLabel, onPress }: Press) => (
+    <button aria-label={accessibilityLabel} onClick={onPress} />
+  ),
+}));
+vi.mock("../../components/ui/Button", () => ({
+  Button: ({ label, disabled, onPress }: Press & { label: string }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
+vi.mock("../../components/ui/ListRow", () => ({
+  ListRow: ({ label, description, onPress }: Press & { label: string; description?: string }) => (
+    <button onClick={onPress}>
+      {label} {description}
+    </button>
+  ),
+}));
+vi.mock("../../components/ui/ListRowLayout", () => ({
+  ListRowLayout: ({ label, description }: { label: string; description?: string }) => (
+    <div>
+      {label} {description}
+    </div>
+  ),
+}));
+vi.mock("../../components/ui/ListSection", () => ({
+  ListSection: ({ children }: Children) => children,
+}));
+vi.mock("../../components/ui/ScreenScrollView", () => ({
+  ScreenScrollView: ({ children }: Children) => children,
+}));
+vi.mock("../../components/ui/Sheet", () => ({
+  Sheet: ({ children }: Children) => <section>{children}</section>,
+}));
+vi.mock("../../lib/useUiTranslation", () => ({
+  useUiTranslation: (): UiTranslator => (message, values) => translateUi("en", message, values),
+}));
+vi.mock("../../state/server", () => ({ serverEnvironment: { updateSettings: {} } }));
+vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => update }));
+
+import { ProjectSourcesRow } from "./ProjectSourcesRow";
+
+const environmentId = EnvironmentId.make("local");
+const projectId = ProjectId.make("project");
+const first: IssueSource = { provider: "github", host: "github.com", scope: "acme/app" };
+const second: IssueSource = { provider: "github", host: "git.example.test", scope: "acme/app" };
+const space: IssueSource = { provider: "meituan", host: "mep.sankuai.com", scope: "19002" };
+const sources = [first, second, space];
+
+function setup() {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const render = (allowed: boolean, saved: IssueSource[] = sources) =>
+    act(() =>
+      root.render(
+        <ProjectSourcesRow
+          environmentId={environmentId}
+          projectId={projectId}
+          title="server"
+          repository="acme/app"
+          saved={saved}
+          sources={saved}
+          error={undefined}
+          discovery="ready"
+          mep
+          allowed={allowed}
+        />,
+      ),
+    );
+  const button = (text: string) =>
+    [...container.querySelectorAll("button")].find((node) =>
+      [node.getAttribute("aria-label"), node.textContent].some((value) => value?.includes(text)),
+    )!;
+  return { container, render, button, [Symbol.dispose]: () => act(() => root.unmount()) };
+}
+
+it("opens one project editor and saves only the chosen host when repositories share a name", async () => {
+  update.mockReset().mockResolvedValue({ _tag: "Success" });
+  using screen = setup();
+  screen.render(true);
+  expect(screen.container.querySelectorAll("button")).toHaveLength(1);
+  expect(screen.container.textContent).toContain("2 GitHub repositories");
+  expect(screen.container.textContent).toContain("19002");
+  act(() => screen.container.querySelector("span")!.click());
+  expect(screen.container.querySelector("section")).toBeNull();
+  act(() => screen.button("Edit server").click());
+  act(() => screen.button("git.example.test").click());
+  const input = screen.container.querySelector("input")!;
+  expect(input.value).toBe("acme/app");
+  act(() => {
+    input.value = "qa/reviewed";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => screen.button("Save").click());
+  expect(update).toHaveBeenCalledOnce();
+  expect(update).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      issueSourceProvider: "github",
+      expectedIssueProjectSources: { [projectId]: sources },
+      patch: {
+        issueProjectSources: { [projectId]: [first, { ...second, scope: "qa/reviewed" }, space] },
+      },
+    },
+  });
+  expect(screen.container.querySelector("section")).toBeNull();
+});
+
+it("keeps all hosts and space IDs readable without granting write access", () => {
+  using screen = setup();
+  screen.render(false);
+  expect(screen.button("Edit server")).toBeUndefined();
+  act(() => screen.button("server").click());
+  const details = screen.container.querySelector("section")!;
+  expect(details.textContent).toContain(first.host);
+  expect(details.textContent).toContain(second.host);
+  expect(details.textContent).toContain(space.scope);
+  expect(details.querySelector("button, input")).toBeNull();
+});

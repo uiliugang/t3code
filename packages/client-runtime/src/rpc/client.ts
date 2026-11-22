@@ -560,7 +560,17 @@ export const subscribeMeituanTools = (
   subscribeDynamicMapped(
     WS_METHODS.meituanToolsSubscribe,
     () => Effect.succeed(input),
-    toolStreamFor("meituanTools"),
+    (session, stream) =>
+      toolStreamFor("meituanTools")(
+        session,
+        stream.pipe(
+          Stream.map((tools) =>
+            tools.map((tool) =>
+              tool.maintenanceCommand ? { ...tool, command: tool.maintenanceCommand } : tool,
+            ),
+          ),
+        ),
+      ),
     retryingTools,
   );
 export const subscribeSourceControlTools = (

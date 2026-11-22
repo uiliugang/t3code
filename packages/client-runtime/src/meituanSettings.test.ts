@@ -2,13 +2,21 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   meituanToolIdsForSection,
+  mepSpaceSummary,
   shouldDiscoverMeituanProjectSources,
 } from "./meituanSettings.ts";
 
 describe("Meituan settings sections", () => {
-  it("discovers project sources only for the overview and requirements section", () => {
+  it("reports an empty MEP association only after discovery succeeds", () => {
+    const t = (message: string) => message;
+    expect(mepSpaceSummary([], false, "pending", t)).toContain("Loading");
+    expect(mepSpaceSummary([], false, "failed", t)).toContain("Unknown");
+    expect(mepSpaceSummary([], false, "ready", t)).toBe("No MEP space linked");
+    expect(mepSpaceSummary(["42"], true, "failed", t)).toContain("42");
+  });
+  it("discovers project sources only for the integration overview", () => {
     expect(shouldDiscoverMeituanProjectSources()).toBe(true);
-    expect(shouldDiscoverMeituanProjectSources("issues")).toBe(true);
+    expect(shouldDiscoverMeituanProjectSources("issues")).toBe(false);
     expect(shouldDiscoverMeituanProjectSources("code")).toBe(false);
     expect(shouldDiscoverMeituanProjectSources("daxiang")).toBe(false);
     expect(shouldDiscoverMeituanProjectSources("skills")).toBe(false);

@@ -1,5 +1,7 @@
 export const issueUiMessages: Readonly<Record<string, string>> = {
+  "{count} GitHub repositories": "{count} 个 GitHub 仓库",
   "{count} labels": "{count} 个标签",
+  "{count} MEP spaces": "{count} 个 MEP 空间",
   "{label}: {value}": "{label}：{value}",
   "{scope} · Offline": "{scope} · 离线",
   "{status} pull request {number}, {title}": "{status} 合并请求 {number}，{title}",
@@ -66,6 +68,7 @@ export const issueUiMessages: Readonly<Record<string, string>> = {
   "Local storage is unavailable or full. Try again after freeing space or allowing storage.":
     "本地存储不可用或已满。请释放空间或允许存储后重试。",
   "Mentioning me": "提及我",
+  "MEP {space}": "MEP {space}",
   "Modified view": "已修改的视图",
   "More labels exist than are listed here.": "还有更多标签未列出。",
   "More people exist than are listed here.": "还有更多人员未列出。",
@@ -113,6 +116,7 @@ export const issueUiMessages: Readonly<Record<string, string>> = {
   "Showing the issues that loaded.": "正在显示已加载的需求。",
   Someone: "某人",
   "Sort issues": "排序需求",
+  "Source discovery failed": "来源读取失败",
   "The comment could not be posted": "无法发表评论",
   "The device could not save your filters. Try again.": "设备无法保存筛选条件，请重试。",
   "The device could not save your views. Try again.": "设备无法保存视图，请重试。",
@@ -147,4 +151,5 @@ export const issueUiMessages: Readonly<Record<string, string>> = {
   "You cannot comment here.": "你无法在此发表评论。",
   "Your name has been kept. Save it as a new view or cancel.":
     "名称已保留。请将其保存为新视图或取消。",
+  "View sources for {name}": "查看 {name} 的需求来源",
 };

@@ -1,7 +1,10 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { toggleSettingsEnvironment } from "./settings-environment-filter.logic";
+import {
+  settingsEditorTarget,
+  toggleSettingsEnvironment,
+} from "./settings-environment-filter.logic";
 
 describe("settings selection across disconnected environments", () => {
   const a = EnvironmentId.make("a");
@@ -10,6 +13,13 @@ describe("settings selection across disconnected environments", () => {
   const d = EnvironmentId.make("d");
   const all = [a, b, c, d].map((environmentId) => ({ environmentId }));
   const connected = all.filter((entry) => entry.environmentId !== b);
+
+  it("does not redirect a settings editor to another machine when its selection is offline", () => {
+    expect(settingsEditorTarget(undefined, connected, [])).toBeUndefined();
+    expect(settingsEditorTarget(b, connected, [all[0]!])).toBeUndefined();
+    expect(settingsEditorTarget(c, connected, [])?.environmentId).toBe(c);
+    expect(settingsEditorTarget(undefined, connected, [all[2]!])?.environmentId).toBe(c);
+  });
 
   it.each([
     {

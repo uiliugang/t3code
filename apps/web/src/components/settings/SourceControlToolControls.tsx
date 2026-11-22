@@ -54,11 +54,13 @@ export function SourceControlToolControls({
   environmentId,
   environmentLabel,
   busy,
+  showLabel = false,
 }: {
   readonly tool: MaintainableTool;
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
   readonly busy: boolean;
+  readonly showLabel?: boolean;
 }) {
   const t = useUiTranslation();
   const canMaintain = useAtomValue(
@@ -91,16 +93,9 @@ export function SourceControlToolControls({
         : tool.version
           ? ArrowUpToLineIcon
           : DownloadIcon;
-  const command = selected?.command ?? selected?.manualCommand;
+  const command = selected?.manualCommand ?? selected?.command;
   const confirm = async () => {
-    if (
-      !selected?.command ||
-      pending ||
-      selected.id === "ones2" ||
-      selected.id === "mcm" ||
-      selected.id === "mtskills" ||
-      selected.id === "dumbo-web"
-    )
+    if (!selected?.command || pending || selected.id === "mtskills" || selected.id === "dumbo-web")
       return;
     setPending(true);
     setError(null);
@@ -123,7 +118,7 @@ export function SourceControlToolControls({
         <TooltipTrigger render={<span className="inline-flex" />}>
           <Button
             variant="ghost-muted"
-            size="icon-sm"
+            size={showLabel ? "sm" : "icon-sm"}
             aria-label={label}
             disabled={pending || running || (!manual && (busy || !canMaintain))}
             onClick={() => {
@@ -132,6 +127,9 @@ export function SourceControlToolControls({
             }}
           >
             <Icon className="size-4" />
+            {showLabel
+              ? t(manual ? "Manual maintenance" : tool.status === "missing" ? "Install" : "Update")
+              : null}
           </Button>
         </TooltipTrigger>
         <TooltipPopup>

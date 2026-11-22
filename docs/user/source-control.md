@@ -43,7 +43,7 @@ the same preferences under **Settings → Appearance → Linked issues**.
 ## Manage requirements
 
 Open **Requirements board** to browse MEP ONES work items, GitHub Issues, and local tasks
-together. Filter by source or project, filter external issues by assignee, and open details. **Settings → Code → Issue management** automatically uses the
+together. Filter by source or project, filter external issues by assignee, and open details. **Settings → Issue management** automatically uses the
 project's GitHub repository and discovers MEP spaces from the ten most recent Meituan Code pull
 requests and their linked branches. Filter projects and environments, then select projects to
 detect again, set a manual override, or restore automatic associations. Enter multiple MEP space
@@ -51,8 +51,7 @@ IDs separated by commas; choose the destination space when creating a work item.
 including an empty result, are saved on the owning environment and reused after restarting.
 Select projects and choose **Detect again** to update them; reopening settings or refreshing the
 board's issues does not repeat discovery. Manual overrides take precedence over discovery;
-**Restore automatic** returns to the cached associations. Accounts are shared with source control;
-MEP requires an authenticated `ones2` installation on the server.
+**Restore automatic** returns to the cached associations. MEP uses the account configured for `ones2` on the selected server.
 
 Create issues from the board and change their status in details. MEP creation fields depend on
 the selected subtype. GitHub supports closing as completed or not planned and reopening. Branch
@@ -451,12 +450,12 @@ The **Views** menu saves and restores a search, filter, and sort setup, as it do
 requests.
 
 To list Linear issues beside a project's, connect Linear with an API key under
-Settings → Source control & issues, then pick one or more teams for that project there. Pick
+Settings → Issue management → Issue trackers, then pick one or more teams for that project there. Pick
 another team at any time to add it; uncheck every team to unbind the project. Each team's
 issues appear in the Linear group of the issue list, sorted with the rest by last update, and
 each can be loaded further on its own. Agents file new issues in the first team picked unless you name another bound team.
 
-MEP ONES uses the environment's `ones2` sign-in, not a Linear API key. Use the ONES form to create a work item with its space's required fields. When two spaces share an issue number, use its full URL to identify the work item.
+With Meituan requirements enabled, expand MEP ONES in Issue management to see the environment’s ONES account and maintain its `ones2` and optional `mcm` tools. Under Project issue sources, edit a project’s MEP space IDs or restore automatic discovery. Use the ONES form to create a work item with its space's required fields. When two spaces share an issue number, use its full URL to identify the work item.
 
 Select an issue to open it beside the list: description, comments, state changes, linked pull
 requests, labels, assignees, and reactions. Linked pull requests open in the same panel. You can

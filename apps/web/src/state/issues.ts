@@ -11,6 +11,7 @@ import { selectEnvironmentQueryData } from "@t3tools/client-runtime/state/runtim
 import type { EnvironmentId, IssueState, ThreadIssueLink } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
+import { sourceControlEnvironment } from "./sourceControl";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useServerConfigs } from "./entities";
@@ -18,7 +19,10 @@ import { formatEnvironmentQueryError, useEnvironmentQuery } from "./query";
 
 export type { IssueListTarget };
 
-export const issueEnvironment = createIssueEnvironmentAtoms(connectionAtomRuntime);
+export const issueEnvironment = createIssueEnvironmentAtoms(
+  connectionAtomRuntime,
+  sourceControlEnvironment.sourceChanges,
+);
 
 const linkedIssueRef = ({ projectId, tracker, host, scope, key }: ThreadIssueLink) => ({
   projectId,

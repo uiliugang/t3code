@@ -112,6 +112,8 @@ import {
 import * as Rpc from "effect/rpc/Rpc";
 import {
   RequirementIssueListInput,
+  IssueProvider,
+  IssueProjectSources,
   IssueSourcesInput,
   IssueSourcesResult,
   RequirementIssueListResult,
@@ -1186,6 +1188,8 @@ const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
 const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
   payload: Schema.Struct({
     patch: ClientServerSettingsPatch,
+    issueSourceProvider: Schema.optionalKey(IssueProvider),
+    expectedIssueProjectSources: Schema.optionalKey(IssueProjectSources),
     providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
   }),
   success: ServerSettings,
