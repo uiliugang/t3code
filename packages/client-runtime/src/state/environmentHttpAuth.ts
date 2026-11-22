@@ -215,7 +215,7 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
               ...(input.prepared.target._tag !== "RelayConnectionTarget"
                 ? { directEndpoint: { httpBaseUrl } }
                 : rejectedAccessToken === undefined
-                  ? { preparedEndpoint: { httpBaseUrl, accessToken: authorization.accessToken } }
+                  ? { preparedEndpoint: { httpBaseUrl, httpAuthorization: authorization } }
                   : {}),
               ...(rejectedAccessToken === undefined ? {} : { rejectedAccessToken }),
             })

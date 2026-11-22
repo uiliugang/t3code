@@ -1439,84 +1439,230 @@ describe("RemoteEnvironmentAuthorization", () => {
     "stalled descriptor",
     "second gateway response",
     "successful ticket with a pending descriptor",
-  ] as const)("opens the new public endpoint within the socket deadline after a %s", (retry) =>
-    Effect.gen(function* () {
-      const retryStarted = Promise.withResolvers<void>();
-      const pending = Promise.withResolvers<Response>();
-      const newEndpoint = {
-        ...ENDPOINT,
-        httpBaseUrl: "https://new.example.test",
-        wsBaseUrl: "wss://new.example.test",
-      };
-      const oldDescriptor = Promise.withResolvers<Response>();
-      const stalled = () => {
-        retryStarted.resolve();
-        return pending.promise;
-      };
-      let reads = 0;
-      const harness = yield* makeHarness({
-        initialToken: persistedToken(),
-        bootstrap: { ...BOOTSTRAP, endpoint: newEndpoint },
-        beforeBootstrap: Effect.sleep("6 seconds"),
-        descriptor: () => {
-          if (retry === "successful ticket with a pending descriptor" && ++reads === 1)
-            return oldDescriptor.promise;
-          if (retry === "stalled descriptor") {
-            if (++reads === 1) return new Response(null, { status: 502 });
-            if (reads === 2) return stalled();
+    "stalled ticket with a slow exchange at the same address",
+  ] as const)(
+    "opens the discovered public endpoint within the socket deadline after a %s",
+    (retry) =>
+      Effect.gen(function* () {
+        const retryStarted = Promise.withResolvers<void>();
+        const pending = Promise.withResolvers<Response>();
+        const mintStarted = Promise.withResolvers<void>();
+        const minted = Promise.withResolvers<Response>();
+        const sameAddress = retry === "stalled ticket with a slow exchange at the same address";
+        const newEndpoint = sameAddress
+          ? ENDPOINT
+          : {
+              ...ENDPOINT,
+              httpBaseUrl: "https://new.example.test",
+              wsBaseUrl: "wss://new.example.test",
+            };
+        const oldDescriptor = Promise.withResolvers<Response>();
+        const stalled = () => {
+          retryStarted.resolve();
+          return pending.promise;
+        };
+        let reads = 0;
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          bootstrap: { ...BOOTSTRAP, endpoint: newEndpoint },
+          beforeBootstrap: sameAddress ? Effect.void : Effect.sleep("6 seconds"),
+          descriptor: () => {
+            if (retry === "successful ticket with a pending descriptor" && ++reads === 1)
+              return oldDescriptor.promise;
+            if (retry === "stalled descriptor") {
+              if (++reads === 1) return new Response(null, { status: 502 });
+              if (reads === 2) return stalled();
+            }
+            return Response.json(DESCRIPTOR);
+          },
+          responses: [
+            ...(retry !== "stalled descriptor"
+              ? [new Response(null, { status: 502 }), stalled]
+              : [websocketTicket("old")]),
+            sameAddress
+              ? () => {
+                  mintStarted.resolve();
+                  return minted.promise;
+                }
+              : accessToken("new"),
+            websocketTicket("restored"),
+          ],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          if (sameAddress) {
+            yield* Effect.promise(() => mintStarted.promise).pipe(
+              Effect.andThen(Effect.sleep("6 seconds")),
+              Effect.tap(() => Effect.sync(() => minted.resolve(accessToken("new")))),
+              Effect.forkChild,
+            );
           }
-          return Response.json(DESCRIPTOR);
-        },
-        responses: [
-          ...(retry !== "stalled descriptor"
-            ? [new Response(null, { status: 502 }), stalled]
-            : [websocketTicket("old")]),
-          accessToken("new"),
-          websocketTicket("restored"),
-        ],
-      });
-      yield* Effect.gen(function* () {
-        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
-        const attempt = yield* remote
-          .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
-          .pipe(Effect.timeoutOption("15 seconds"), Effect.forkChild);
-        yield* Effect.promise(() => retryStarted.promise);
-        yield* TestClock.adjust("3 seconds");
-        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
-        if (retry === "second gateway response")
-          pending.resolve(new Response(null, { status: 503 }));
-        yield* TestClock.adjust("2 seconds");
-        if (retry === "successful ticket with a pending descriptor")
-          pending.resolve(websocketTicket("old"));
-        yield* TestClock.adjust("10 seconds");
-        const restored = Option.getOrThrow(yield* Fiber.join(attempt));
-        expect(new URL(restored.socketUrl).origin).toBe(newEndpoint.wsBaseUrl);
-        expect(restored.httpAuthorization).toMatchObject({ accessToken: "new" });
-        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
-      }).pipe(Effect.provide(harness.layer));
-    }),
+          const attempt = yield* remote
+            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+            .pipe(Effect.timeoutOption("15 seconds"), Effect.forkChild);
+          yield* Effect.promise(() => retryStarted.promise);
+          yield* TestClock.adjust("3 seconds");
+          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+          if (sameAddress) expect(requestsTo(harness, "/oauth/token")).toBe(1);
+          if (retry === "second gateway response")
+            pending.resolve(new Response(null, { status: 503 }));
+          yield* TestClock.adjust("2 seconds");
+          if (retry === "successful ticket with a pending descriptor")
+            pending.resolve(websocketTicket("old"));
+          yield* TestClock.adjust("10 seconds");
+          const restored = Option.getOrThrow(yield* Fiber.join(attempt));
+          expect(new URL(restored.socketUrl).origin).toBe(newEndpoint.wsBaseUrl);
+          expect(restored.httpAuthorization).toMatchObject({ accessToken: "new" });
+          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+        }).pipe(Effect.provide(harness.layer));
+      }),
   );
 
-  it.effect(
-    "keeps an active session's media available when another tab marks its endpoint stale",
-    () =>
+  it.effect.each(["pending", "temporarily unavailable"] as const)(
+    "keeps the original ticket usable while same-address renewal is %s",
+    (renewal) =>
       Effect.gen(function* () {
-        const cached = persistedToken();
+        const retryStarted = Promise.withResolvers<void>();
+        const oldTicket = Promise.withResolvers<Response>();
+        const exchange = Promise.withResolvers<Response>();
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          descriptor: DESCRIPTOR,
+          responses: [
+            new Response(null, { status: 502 }),
+            () => {
+              retryStarted.resolve();
+              return oldTicket.promise;
+            },
+            () => (renewal === "pending" ? exchange.promise : accessToken("fresh")),
+            new Response(null, { status: 410 }),
+          ],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const attempt = yield* remote
+            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+            .pipe(Effect.forkChild);
+          yield* Effect.promise(() => retryStarted.promise);
+          yield* TestClock.adjust("7 seconds");
+          expect(requestsTo(harness, "/oauth/token")).toBe(1);
+          oldTicket.resolve(websocketTicket("original"));
+          expect((yield* Fiber.join(attempt)).socketUrl).toContain("wsTicket=original");
+          exchange.resolve(accessToken("fresh"));
+          if (renewal === "pending") {
+            yield* TestClock.adjust(1);
+            expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
+              "cached-access-token",
+            );
+          }
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
+  it.effect.each(["deleted", "replaced", "rejected by the host"] as const)(
+    "handles a credential %s during same-address renewal",
+    (change) =>
+      Effect.gen(function* () {
+        const retryStarted = Promise.withResolvers<void>();
+        const oldTicket = Promise.withResolvers<Response>();
+        const exchange = Promise.withResolvers<Response>();
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          descriptor: DESCRIPTOR,
+          responses: [
+            new Response(null, { status: 502 }),
+            () => {
+              retryStarted.resolve();
+              return oldTicket.promise;
+            },
+            () => exchange.promise,
+            websocketTicket("other-tab"),
+          ],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const attempt = yield* remote
+            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+            .pipe(Effect.result, Effect.forkChild);
+          yield* Effect.promise(() => retryStarted.promise);
+          yield* TestClock.adjust("7 seconds");
+          expect(requestsTo(harness, "/oauth/token")).toBe(1);
+          const tokens = new Map<EnvironmentId, TokenStore.RemoteDpopAccessToken>();
+          if (change === "replaced")
+            tokens.set(ENVIRONMENT_ID, persistedToken({ accessToken: "other-tab" }));
+          if (change === "rejected by the host") {
+            oldTicket.resolve(authInvalid());
+            yield* TestClock.adjust(1);
+          } else yield* Ref.set(harness.tokens, tokens);
+          exchange.resolve(accessToken("late"));
+          const result = yield* Fiber.join(attempt);
+          if (change === "rejected by the host") {
+            expect(result).toMatchObject({
+              success: { httpAuthorization: { accessToken: "late" } },
+            });
+            expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe("late");
+            return;
+          }
+          expect(yield* Ref.get(harness.tokens)).toEqual(tokens);
+          if (change === "deleted") {
+            expect(result).toMatchObject({ failure: { reason: "authentication" } });
+            expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(2);
+          } else {
+            expect(result).toMatchObject({
+              success: { httpAuthorization: { accessToken: "other-tab" } },
+            });
+          }
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
+  it.effect.each(["original", "renewed", "renewed in another tab"] as const)(
+    "keeps an active session's media using its %s credential when another tab marks its endpoint stale",
+    (credential) =>
+      Effect.gen(function* () {
+        const cached = persistedToken({ expiresAtEpochMs: 120_000 });
+        const relayOnline = yield* Ref.make(true);
+        const puts = yield* Queue.unbounded<void>();
         const harness = yield* makeHarness({
           initialToken: cached,
           descriptor: DESCRIPTOR,
-          responses: [websocketTicket("public"), websocketTicket("media")],
-          beforeBootstrap: Effect.never,
+          responses: [
+            websocketTicket("public"),
+            ...(credential !== "original" ? [accessToken("renewed")] : []),
+            websocketTicket("media"),
+          ],
+          beforePut: Queue.offer(puts, undefined).pipe(Effect.asVoid),
+          beforeBootstrap: Ref.get(relayOnline).pipe(
+            Effect.flatMap((online) => (online ? Effect.void : Effect.never)),
+          ),
         });
         yield* Effect.gen(function* () {
           const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
           const socket = yield* remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID });
+          if (credential !== "original") {
+            const renew = RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+              (service) =>
+                service.renewDpopBeforeExpiry({
+                  expectedEnvironmentId: ENVIRONMENT_ID,
+                  expiresAtEpochMs: cached.expiresAtEpochMs,
+                }),
+            );
+            yield* (
+              credential === "renewed"
+                ? renew
+                : renew.pipe(Effect.provide(Layer.fresh(harness.layer)))
+            ).pipe(Effect.forkScoped);
+            yield* TestClock.adjust("60 seconds");
+            yield* Queue.take(puts);
+          }
+          yield* Ref.set(relayOnline, false);
+          const stored = (yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)!;
           yield* Ref.set(
             harness.tokens,
             new Map([
               [
                 ENVIRONMENT_ID,
-                new TokenStore.RemoteDpopAccessToken({ ...cached, endpointNeedsDiscovery: true }),
+                new TokenStore.RemoteDpopAccessToken({ ...stored, endpointNeedsDiscovery: true }),
               ],
             ]),
           );
@@ -1530,13 +1676,16 @@ describe("RemoteEnvironmentAuthorization", () => {
           const media = yield* request.pipe(Effect.forkChild);
           yield* TestClock.adjust("8 seconds");
           yield* Fiber.join(media);
-          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(credential === "original" ? 0 : 1);
+          expect((yield* Ref.get(harness.proofInputs)).at(-1)?.accessToken).toBe(
+            stored.accessToken,
+          );
           yield* Ref.set(harness.tokens, new Map());
           const afterRemoval = yield* request.pipe(Effect.flip, Effect.forkChild);
           yield* TestClock.adjust("8 seconds");
           expect((yield* Fiber.join(afterRemoval))._tag).toBe("RemoteEnvironmentAuthTimeoutError");
           expect(requestsTo(harness, "/api/auth/websocket-ticket/media")).toBe(1);
-        }).pipe(Effect.provide(harness.layer));
+        }).pipe(Effect.scoped, Effect.provide(harness.layer));
       }),
   );
 
@@ -1630,7 +1779,8 @@ describe("RemoteEnvironmentAuthorization", () => {
       const response = Promise.withResolvers<Response>();
       const ticketRetry =
         phase === "ticket retry" || phase === "ticket retry with the same discovered endpoint";
-      const online = yield* Ref.make(phase === "ticket retry with the same discovered endpoint");
+      const confirmsSameAddress = phase === "ticket retry with the same discovered endpoint";
+      const online = yield* Ref.make(confirmsSameAddress);
       let reads = 0;
       const harness = yield* makeHarness({
         initialToken: new TokenStore.RemoteDpopAccessToken({
@@ -1654,6 +1804,7 @@ describe("RemoteEnvironmentAuthorization", () => {
                 started.resolve();
                 return response.promise;
               },
+              ...(confirmsSameAddress ? [() => new Promise<Response>(() => {})] : []),
             ]
           : [websocketTicket("slow-host")],
       });
@@ -1668,7 +1819,7 @@ describe("RemoteEnvironmentAuthorization", () => {
         return yield* Fiber.join(attempt);
       }).pipe(Effect.provide(harness.layer));
       expect(socket.socketUrl).toContain("wsTicket=slow-host");
-      expect(requestsTo(harness, "/oauth/token")).toBe(0);
+      expect(requestsTo(harness, "/oauth/token")).toBe(confirmsSameAddress ? 1 : 0);
     }),
   );
 

@@ -108,7 +108,10 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       readonly expectedEnvironmentId: EnvironmentId;
       readonly rejectedAccessToken?: string;
       readonly directEndpoint?: { readonly httpBaseUrl: string };
-      readonly preparedEndpoint?: { readonly httpBaseUrl: string; readonly accessToken: string };
+      readonly preparedEndpoint?: Pick<
+        AuthorizedRemoteHttpEnvironment,
+        "httpBaseUrl" | "httpAuthorization"
+      >;
     }) => Effect.Effect<AuthorizedRemoteHttpEnvironment, ConnectionAttemptError>;
     /**
      * Lets the next direct authorization of this address skip its own descriptor
@@ -156,14 +159,30 @@ function isGatewayError(error: RemoteEnvironmentAuthError | ConnectionAttemptErr
   );
 }
 
+function isUnavailableEndpointStatus(status: number | undefined) {
+  return (
+    status !== undefined &&
+    ([404, 408, 410, 421, 429].includes(status) || (status >= 500 && status < 600))
+  );
+}
+
 function isEndpointUnavailable(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
-  if (error._tag === "RemoteEnvironmentAuthUndeclaredStatusError") {
-    const { status } = error;
-    return [404, 408, 410, 421, 429].includes(status) || (status >= 500 && status < 600);
-  }
+  if (error._tag === "RemoteEnvironmentAuthUndeclaredStatusError")
+    return isUnavailableEndpointStatus(error.status);
   return (
     error._tag === "RemoteEnvironmentAuthFetchError" ||
     error._tag === "RemoteEnvironmentAuthTimeoutError"
+  );
+}
+
+function sameTokenOwner(
+  current: TokenStore.RemoteDpopAccessToken,
+  expected: TokenStore.RemoteDpopAccessToken,
+) {
+  return (
+    current.environmentId === expected.environmentId &&
+    current.accountId === expected.accountId &&
+    current.dpopThumbprint === expected.dpopThumbprint
   );
 }
 
@@ -173,10 +192,9 @@ function matchesUsableToken(
   now: number,
 ) {
   return (
-    current.accessToken === expected.accessToken &&
-    current.accountId === expected.accountId &&
-    current.dpopThumbprint === expected.dpopThumbprint &&
+    sameTokenOwner(current, expected) &&
     current.endpoint.httpBaseUrl === expected.endpoint.httpBaseUrl &&
+    current.accessToken === expected.accessToken &&
     current.expiresAtEpochMs > now + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS
   );
 }
@@ -201,6 +219,16 @@ function mapDpopSocketError(
   return error._tag === "ConnectionTransientError" || error._tag === "ConnectionBlockedError"
     ? error
     : mapRemoteDpopEnvironmentError(error, via);
+}
+
+function canWaitForPendingTicket(error: ConnectionAttemptError) {
+  return (
+    isDiscoveryUnavailable(error) ||
+    (error._tag === "ConnectionTransientError" &&
+      error.reason === "remote-unavailable" &&
+      error.failureCause !== "invalid_response" &&
+      isUnavailableEndpointStatus(error.httpStatus))
+  );
 }
 
 function approvalPendingError(hostLabel: string, thumbprint: string, traceId: string) {
@@ -244,6 +272,13 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const tokenLock = yield* Semaphore.make(1);
   const directTokenLocks = yield* KeyedLock.make<string>();
+  const connectedSessions = new WeakMap<
+    PreparedHttpAuthorization,
+    {
+      readonly identity: ClientCapabilities.CloudSessionIdentity;
+      readonly token: TokenStore.RemoteDpopAccessToken;
+    }
+  >();
   const tokenOwners = new Map<
     EnvironmentId,
     { readonly accessToken: string; readonly identity: ClientCapabilities.CloudSessionIdentity }
@@ -546,6 +581,7 @@ export const make = Effect.gen(function* () {
     input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpopHttp"]>[0],
     expectedIdentity?: ClientCapabilities.CloudSessionIdentity,
     discovery?: ReturnType<typeof obtainBootstrap>,
+    refreshToken?: TokenStore.RemoteDpopAccessToken,
   ) {
     const session = yield* cloudSession.identity;
     if (Option.isNone(session)) {
@@ -573,6 +609,8 @@ export const make = Effect.gen(function* () {
           .get(input.expectedEnvironmentId)
           .pipe(Effect.withSpan("environment.authorization.accessToken.cache"));
         const owner = tokenOwners.get(input.expectedEnvironmentId);
+        if (refreshToken && (Option.isNone(cached) || refreshToken.dpopThumbprint !== thumbprint))
+          return yield* credentialMissingError(input.expectedEnvironmentId);
         if (
           Option.isSome(cached) &&
           cached.value.environmentId === input.expectedEnvironmentId &&
@@ -580,8 +618,15 @@ export const make = Effect.gen(function* () {
           cached.value.dpopThumbprint === thumbprint &&
           cached.value.expiresAtEpochMs > now + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS &&
           cached.value.accessToken !== input.rejectedAccessToken &&
+          cached.value.accessToken !== refreshToken?.accessToken &&
           (owner?.accessToken !== cached.value.accessToken || owner.identity === identity)
         ) {
+          const prepared = input.preparedEndpoint;
+          const connected = prepared && connectedSessions.get(prepared.httpAuthorization);
+          const sameSession =
+            connected?.identity === identity &&
+            sameTokenOwner(cached.value, connected.token) &&
+            connected.token.endpoint.httpBaseUrl === cached.value.endpoint.httpBaseUrl;
           tokenOwners.set(input.expectedEnvironmentId, {
             accessToken: cached.value.accessToken,
             identity,
@@ -589,24 +634,32 @@ export const make = Effect.gen(function* () {
           if (
             input.directEndpoint !== undefined ||
             !cached.value.endpointNeedsDiscovery ||
-            (input.preparedEndpoint?.accessToken === cached.value.accessToken &&
-              input.preparedEndpoint.httpBaseUrl === cached.value.endpoint.httpBaseUrl)
+            (prepared?.httpBaseUrl === cached.value.endpoint.httpBaseUrl &&
+              (prepared.httpAuthorization.accessToken === cached.value.accessToken || sameSession))
           ) {
             return Effect.succeed<ResolvedDpopToken>({ source: "cache", token: cached.value });
           }
           // A socket that just confirmed the outage has already probed this endpoint.
           if (expectedIdentity === undefined) staleEndpoint = cached.value;
         }
-        if (input.rejectedAccessToken !== undefined) {
-          yield* removeRejectedToken(input.expectedEnvironmentId, input.rejectedAccessToken);
-        }
+        const rejected = input.rejectedAccessToken;
         const pending = pendingTokens.get(input.expectedEnvironmentId);
         if (pending?.identity === identity && pending.thumbprint === thumbprint) {
-          return pending.issued;
+          return rejected === undefined
+            ? pending.issued
+            : pending.issued.pipe(
+                Effect.tapError(() =>
+                  tokenLock.withPermits(1)(
+                    removeRejectedToken(input.expectedEnvironmentId, rejected),
+                  ),
+                ),
+              );
         }
+        if (rejected !== undefined)
+          yield* removeRejectedToken(input.expectedEnvironmentId, rejected);
 
         const id = {};
-        const fiber = yield* exchangeDpopToken(
+        const renewing = exchangeDpopToken(
           input.expectedEnvironmentId,
           thumbprint,
           identity,
@@ -618,8 +671,23 @@ export const make = Effect.gen(function* () {
                 const { token } = issued;
                 yield* assertSession(identity);
                 yield* tokenStore
-                  .put(token)
+                  .put(token, refreshToken?.accessToken)
                   .pipe(Effect.withSpan("environment.authorization.accessToken.persist"));
+                if (refreshToken) {
+                  const stored = yield* tokenStore.get(token.environmentId);
+                  if (Option.isNone(stored))
+                    return yield* credentialMissingError(token.environmentId);
+                  if (stored.value.accessToken !== token.accessToken) {
+                    if (
+                      sameTokenOwner(stored.value, token) &&
+                      !stored.value.endpointNeedsDiscovery &&
+                      stored.value.expiresAtEpochMs >
+                        (yield* Clock.currentTimeMillis) + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS
+                    )
+                      return { source: "cache", token: stored.value } satisfies ResolvedDpopToken;
+                    return yield* credentialMissingError(token.environmentId);
+                  }
+                }
                 const current = yield* cloudSession.identity;
                 if (Option.isNone(current) || current.value !== identity) {
                   yield* removeRejectedToken(input.expectedEnvironmentId, token.accessToken);
@@ -655,10 +723,11 @@ export const make = Effect.gen(function* () {
               }),
             ),
           ),
-          // One caller's timeout must not cancel renewal for other HTTP requests.
-          Effect.forkIn(serviceScope),
         );
-        const issued = Fiber.join(fiber);
+        // A speculative refresh is needed only while a handshake or another caller awaits it.
+        const issued = refreshToken
+          ? yield* Effect.cached(renewing)
+          : Fiber.join(yield* Effect.forkIn(renewing, serviceScope));
         pendingTokens.set(input.expectedEnvironmentId, { id, identity, thumbprint, issued });
         return issued;
       }),
@@ -819,16 +888,16 @@ export const make = Effect.gen(function* () {
       socketUrl: string,
       descriptor: ExecutionEnvironmentDescriptor,
     ) => ({ ...httpAuthorization(token, endpoint?.httpBaseUrl), socketUrl, descriptor });
-    let selected = yield* getDpopToken(input);
+    const first = yield* getDpopToken(input);
     const attemptScope = yield* Scope.Scope;
     const discovery = yield* Effect.cached(
-      obtainBootstrap(input.expectedEnvironmentId, selected.identity),
+      obtainBootstrap(input.expectedEnvironmentId, first.identity),
     );
-    const openSocket = Effect.fnUntraced(function* (issued: typeof selected, initial: boolean) {
+    const firstGateway = yield* Deferred.make<
+      RemoteEnvironmentAuthError | ConnectionAttemptError
+    >();
+    const openSocket = Effect.fnUntraced(function* (issued: typeof first, initial: boolean) {
       const cachedPublic = issued.source !== "exchange" && endpoint === undefined;
-      const firstGateway = yield* Deferred.make<
-        RemoteEnvironmentAuthError | ConnectionAttemptError
-      >();
       const retryOnGateway = <A>(
         first: Effect.Effect<A, RemoteEnvironmentAuthError | ConnectionAttemptError>,
         retry = first,
@@ -893,7 +962,7 @@ export const make = Effect.gen(function* () {
           (error) => Effect.succeed(Result.fail(error)),
         ),
       );
-      const ready = Effect.all([ticket, checked], { concurrency: "unbounded" }).pipe(
+      return yield* Effect.all([ticket, checked], { concurrency: "unbounded" }).pipe(
         Effect.flatMap(([socketUrl, reading]) =>
           Result.isSuccess(reading)
             ? Effect.succeed(authorized(issued.token, socketUrl, reading.success))
@@ -901,34 +970,56 @@ export const make = Effect.gen(function* () {
         ),
         Effect.result,
       );
-      if (!initial || !cachedPublic) return yield* ready;
-
-      const endpointChanged = Effect.gen(function* () {
-        const gateway = yield* Deferred.await(firstGateway);
-        yield* Effect.sleep(CACHED_ENDPOINT_SOCKET_TIMEOUT_MS);
-        // Renewal can join this lookup when the old handshake fails before discovery finishes.
-        const lookup = yield* discovery.pipe(Effect.result, Effect.forkIn(attemptScope));
-        const result = yield* Fiber.join(lookup);
-        if (Result.isFailure(result)) {
-          if (!isDiscoveryUnavailable(result.failure)) return yield* result.failure;
-        } else if (
-          result.success.endpoint.httpBaseUrl !== issued.token.endpoint.httpBaseUrl ||
-          result.success.endpoint.wsBaseUrl !== issued.token.endpoint.wsBaseUrl
-        )
-          return Result.fail(gateway);
-        return yield* Effect.never;
-      });
-      return yield* Effect.raceFirst(ready, endpointChanged).pipe(
-        Effect.tapError(() =>
-          assertSession(issued.identity).pipe(
-            Effect.andThen(markEndpointStale(issued.token)),
-            Effect.ignore,
-          ),
-        ),
-      );
     });
 
-    let socket = yield* openSocket(selected, true);
+    const refreshed = yield* Effect.cached(
+      Effect.gen(function* () {
+        const selected = yield* getDpopToken(input, first.identity, discovery, first.token);
+        return { selected, socket: yield* openSocket(selected, false) };
+      }),
+    );
+    const initial = openSocket(first, true).pipe(
+      Effect.map((socket) => ({ selected: first, socket })),
+    );
+    let renewingSameAddress = false;
+    const recoverStalled = Effect.gen(function* () {
+      const gateway = yield* Deferred.await(firstGateway);
+      yield* Effect.sleep(CACHED_ENDPOINT_SOCKET_TIMEOUT_MS);
+      // A failed handshake can join discovery and renewal already in progress.
+      const lookup = yield* discovery.pipe(Effect.result, Effect.forkIn(attemptScope));
+      const result = yield* Fiber.join(lookup);
+      if (Result.isFailure(result)) {
+        if (!isDiscoveryUnavailable(result.failure)) return yield* result.failure;
+        return yield* Effect.never;
+      }
+      if (
+        result.success.endpoint.httpBaseUrl !== first.token.endpoint.httpBaseUrl ||
+        result.success.endpoint.wsBaseUrl !== first.token.endpoint.wsBaseUrl
+      )
+        return { selected: first, socket: Result.fail(gateway) };
+
+      renewingSameAddress = true;
+      const renewing = yield* refreshed.pipe(Effect.forkIn(attemptScope));
+      const next = yield* Fiber.join(renewing).pipe(
+        Effect.catchIf(canWaitForPendingTicket, () => Effect.never),
+      );
+      if (
+        Result.isFailure(next.socket) &&
+        canWaitForPendingTicket(mapDpopSocketError(next.socket.failure, via))
+      )
+        return yield* Effect.never;
+      return next;
+    });
+    let { selected, socket } = yield* first.source === "exchange" || endpoint !== undefined
+      ? initial
+      : Effect.raceFirst(initial, recoverStalled).pipe(
+          Effect.tapError(() =>
+            assertSession(first.identity).pipe(
+              Effect.andThen(markEndpointStale(first.token)),
+              Effect.ignore,
+            ),
+          ),
+        );
     if (selected.source !== "exchange" && Result.isFailure(socket)) {
       const failure = socket.failure;
       if (
@@ -946,7 +1037,19 @@ export const make = Effect.gen(function* () {
       // A gateway failure can make the endpoint stale while the credential still works over LAN.
       if (isEndpointUnavailable(failure)) {
         yield* markEndpointStale(selected.token);
-        selected = yield* getDpopToken(input, selected.identity, discovery);
+        ({ selected, socket } = yield* refreshed);
+      } else if (
+        renewingSameAddress &&
+        selected === first &&
+        failure._tag === "EnvironmentAuthInvalidError"
+      ) {
+        ({ selected, socket } = yield* refreshed.pipe(
+          Effect.tapError(() =>
+            tokenLock.withPermits(1)(
+              removeRejectedToken(input.expectedEnvironmentId, first.token.accessToken),
+            ),
+          ),
+        ));
       } else {
         selected = yield* getDpopToken(
           {
@@ -956,8 +1059,8 @@ export const make = Effect.gen(function* () {
           selected.identity,
           discovery,
         );
+        socket = yield* openSocket(selected, false);
       }
-      socket = yield* openSocket(selected, false);
     }
     if (Result.isFailure(socket)) {
       if (endpoint === undefined && isEndpointUnavailable(socket.failure)) {
@@ -978,6 +1081,7 @@ export const make = Effect.gen(function* () {
         .pipe(Effect.ignore);
       yield* assertSession(selected.identity);
     }
+    if (endpoint === undefined) connectedSessions.set(socket.success.httpAuthorization, selected);
     return socket.success;
   }, Effect.scoped);
 

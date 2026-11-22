@@ -61,7 +61,10 @@ const PREPARED: PreparedConnection = {
 };
 const preparedAuthorizationRequest = {
   expectedEnvironmentId: TARGET.environmentId,
-  preparedEndpoint: { httpBaseUrl: PREPARED.httpBaseUrl, accessToken: "expired-token" },
+  preparedEndpoint: {
+    httpBaseUrl: PREPARED.httpBaseUrl,
+    httpAuthorization: PREPARED.httpAuthorization,
+  },
 };
 const CURRENT_ORIGIN = "https://current.example.test";
 const RENEWED_ORIGIN = "https://renewed.example.test";
