@@ -1,6 +1,6 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { msg, useGT } from "gt-react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   parseBranchIssueUrl,
@@ -26,6 +26,7 @@ import {
   prepareWorkItemCommandRetry,
 } from "@t3tools/client-runtime/work-item";
 import {
+  SettingsIcon,
   ClipboardListIcon,
   AlertTriangleIcon,
   ServerIcon,
@@ -832,6 +833,21 @@ export function RequirementBoard({
                   />
                 </>
               ) : null}
+              <Button
+                variant="ghost-muted"
+                size="icon-sm"
+                aria-label={t("Requirement settings")}
+                title={t("Requirement settings")}
+                render={
+                  <Link
+                    to="/settings/requirements"
+                    search={filterEnvironmentId ? { machine: filterEnvironmentId } : {}}
+                    hash="issue-trackers"
+                  />
+                }
+              >
+                <SettingsIcon />
+              </Button>
               {!panelOpen && panelControls}
             </div>
           </WorkspacePageHeader>

@@ -21,7 +21,6 @@ import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { IssuePicker } from "../requirements/IssuePicker";
-import { ProjectSources } from "../requirements/RequirementsSettingsScreen";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsRow } from "./components/SettingsRow";
@@ -408,14 +407,12 @@ function EnvironmentIntegration({
           />
         </>
       ) : section === "issues" ? (
-        <SettingsSection title={t("Project associations")}>
-          <View className="p-4">
-            <ProjectSources
-              environmentId={environmentId}
-              providerOnly="meituan"
-              disabled={disabled}
-            />
-          </View>
+        <SettingsSection>
+          <SettingsRow
+            icon="ticket"
+            label={t("Issue management")}
+            onPress={() => navigation.navigate("SettingsRequirements", { environmentId })}
+          />
         </SettingsSection>
       ) : section === "daxiang" ? (
         <DaxiangSettingsSection
@@ -428,7 +425,7 @@ function EnvironmentIntegration({
       ) : (
         <MeituanSkillSource environmentId={environmentId} disabled={disabled} />
       )}
-      {activeEnabled && activeToolIds.length ? (
+      {activeEnabled && section !== "issues" && activeToolIds.length ? (
         <SourceControlToolsSection environment={current} only={activeToolIds} />
       ) : null}
     </>

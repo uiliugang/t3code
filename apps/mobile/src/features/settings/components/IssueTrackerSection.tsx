@@ -13,8 +13,9 @@ import type {
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useNavigation } from "@react-navigation/native";
+import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useGT, useMessages } from "gt-react-native";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Platform, View } from "react-native";
 import { tryOpenExternalUrl } from "../../../lib/openExternalUrl";
 import Svg, { Path } from "react-native-svg";
@@ -44,54 +45,35 @@ const TRACKER_MARKS: Partial<Record<string, string>> = {
     "M1.225 61.523c-.222-.949.908-1.546 1.597-.857l36.512 36.512c.69.69.092 1.82-.857 1.597C20.15 94.612 5.388 79.85 1.225 61.523ZM.002 46.889a.99.99 0 0 0 .29.76l52.062 52.061a.99.99 0 0 0 .76.29c2.765-.169 5.47-.559 8.1-1.152.75-.169 1.014-1.084.47-1.63L2.784 38.32c-.545-.545-1.46-.28-1.63.47A50.229 50.229 0 0 0 .002 46.89ZM4.472 29.34a.99.99 0 0 0 .208 1.104l64.878 64.877a.99.99 0 0 0 1.104.208 50.293 50.293 0 0 0 5.807-3.132.99.99 0 0 0 .154-1.53L9.135 23.38a.99.99 0 0 0-1.53.154 50.29 50.29 0 0 0-3.132 5.807ZM12.293 18.229c-.309-.309-.334-.803-.045-1.13C21.376 6.626 34.637 0 49.45 0 76.869 0 99.1 22.231 99.1 49.65c0 14.813-6.626 28.074-17.099 37.202-.327.29-.821.264-1.13-.045L12.293 18.23Z",
 };
 
-/**
- * Standalone issue trackers, such as Linear, for each selected environment: connect one with a
- * credential, then pick which of its scopes each project lists beside its repository's issues.
- */
-export function IssueTrackerSection(props: { readonly environments: readonly SettingsTarget[] }) {
-  const gt = useGT();
-  return (
-    <>
-      {props.environments.map((environment) =>
-        environment.serverConfig.environment.capabilities.issues === true ? (
-          <EnvironmentTrackers
-            key={environment.environmentId}
-            environment={environment}
-            title={
-              props.environments.length > 1
-                ? gt("Issue trackers · {environment}", { environment: environment.label })
-                : gt("Issue trackers")
-            }
-          />
-        ) : null,
-      )}
-    </>
-  );
-}
-
-function EnvironmentTrackers(props: {
+export function IssueTrackerSection({
+  environment,
+  children,
+}: {
   readonly environment: SettingsTarget;
-  readonly title: string;
+  readonly children?: ReactNode;
 }) {
   const gt = useGT();
   const messages = useMessages();
   const navigation = useNavigation();
-  const { environmentId } = props.environment;
+  const { environmentId } = environment;
   const query = useEnvironmentQuery(
-    issueTrackerEnvironment.connections({ environmentId, input: {} }),
+    environment.serverConfig.environment.capabilities.issues
+      ? issueTrackerEnvironment.connections({ environmentId, input: {} })
+      : null,
   );
   const trackers = query.data?.trackers ?? [];
-  if (trackers.length === 0) {
-    return query.error ? (
-      <SettingsSection title={props.title} footer={query.error}>
-        <View className="p-4">
+  if (!children && !query.error && !trackers.length && !query.isPending) return null;
+  return (
+    <SettingsSection title={gt("Issue trackers")}>
+      {children}
+      {query.error ? (
+        <View className="gap-1 p-4">
+          <Text>{query.error}</Text>
           <Button label={gt("Try again")} tone="secondary" onPress={query.refresh} />
         </View>
-      </SettingsSection>
-    ) : null;
-  }
-  return (
-    <SettingsSection title={props.title}>
+      ) : query.isPending && !query.data ? (
+        <Text className="p-4">{gt("Loading...")}</Text>
+      ) : null}
       {trackers.map((tracker, index) => (
         <SettingsProviderRow
           key={tracker.tracker}
@@ -99,7 +81,7 @@ function EnvironmentTrackers(props: {
           label={tracker.displayName}
           description={issueTrackerSummary(tracker, query.data?.bindings ?? {}, messages)}
           ready={tracker.connected && tracker.account !== null}
-          separated={index > 0}
+          separated={Boolean(children) || index > 0}
           onPress={() =>
             navigation.navigate("SettingsIssueTracker", {
               environmentId,
@@ -152,16 +134,17 @@ export function IssueTrackerCredentialForm(props: {
     const error = squashAtomCommandFailure(result);
     setFailure(error instanceof Error ? error.message : gt("The request failed."));
   };
+  const t = useUiTranslation();
   const helpUrl = tracker.credential.helpUrl;
   const locked = props.disabled || busy;
   return (
     <View className="gap-3 p-4">
       <SecretTextInput
-        accessibilityLabel={tracker.credential.label}
+        accessibilityLabel={t(tracker.credential.label)}
         placeholder={
           tracker.connected
             ? gt("Saved. Enter a new value to replace it")
-            : tracker.credential.label
+            : t(tracker.credential.label)
         }
         value={draft}
         onChangeText={setDraft}

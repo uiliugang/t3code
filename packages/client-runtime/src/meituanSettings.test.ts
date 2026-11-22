@@ -6,9 +6,9 @@ import {
 } from "./meituanSettings.ts";
 
 describe("Meituan settings sections", () => {
-  it("discovers project sources only for the overview and requirements section", () => {
+  it("discovers project sources only for the integration overview", () => {
     expect(shouldDiscoverMeituanProjectSources()).toBe(true);
-    expect(shouldDiscoverMeituanProjectSources("issues")).toBe(true);
+    expect(shouldDiscoverMeituanProjectSources("issues")).toBe(false);
     expect(shouldDiscoverMeituanProjectSources("code")).toBe(false);
     expect(shouldDiscoverMeituanProjectSources("daxiang")).toBe(false);
     expect(shouldDiscoverMeituanProjectSources("skills")).toBe(false);

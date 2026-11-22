@@ -9,7 +9,7 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { T, useGT, useMessages } from "gt-react";
 import { ChevronDownIcon, ExternalLinkIcon, XIcon } from "lucide-react";
-import { useState, type ElementType } from "react";
+import { useState, type ElementType, type ReactNode } from "react";
 import type {
   EnvironmentId,
   IssueTrackerConnection,
@@ -30,6 +30,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Collapsible, CollapsibleContent } from "../ui/collapsible";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
+import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { SecretInput } from "./SecretInput";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
@@ -46,27 +47,37 @@ const TRACKER_ICONS: Partial<Record<string, TrackerIcon>> = {
  * environment's projects to the tracker's scopes so their issues list beside the git
  * host's. Generic over the trackers the server reports; nothing here names Linear but its icon.
  */
-export function IssueTrackerSettings({ environmentId }: { readonly environmentId: EnvironmentId }) {
+export function IssueTrackerSettings({
+  environmentId,
+  title,
+  standalone,
+  anchor,
+  children,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly title: string;
+  readonly standalone: boolean;
+  readonly anchor: boolean;
+  readonly children?: ReactNode;
+}) {
   const gt = useGT();
   const searchableSetting = useSearchableSetting();
-  const title = gt("Issue trackers");
   const query = useEnvironmentQuery(
-    issueTrackerEnvironment.connections({ environmentId, input: {} }),
+    standalone ? issueTrackerEnvironment.connections({ environmentId, input: {} }) : null,
   );
   const trackers = query.data?.trackers ?? [];
-  if (query.data === null && query.isPending) {
-    return (
-      <SettingsSection id={searchableSetting("issue-trackers").id} title={title}>
+  const loading = standalone && query.data === null && query.isPending;
+  if (!children && !loading && !query.error && trackers.length === 0) return null;
+  return (
+    <SettingsSection id={anchor ? searchableSetting("issue-trackers").id : undefined} title={title}>
+      {children}
+      {loading ? (
         <div className="grid gap-3 px-4 py-3">
           <Skeleton className="h-4 w-40" />
           <Skeleton className="h-8 w-full" />
         </div>
-      </SettingsSection>
-    );
-  }
-  if (query.data === null && query.error !== null) {
-    return (
-      <SettingsSection id={searchableSetting("issue-trackers").id} title={title}>
+      ) : null}
+      {query.error ? (
         <SettingsRow
           title={gt("Could not load issue trackers")}
           description={query.error}
@@ -76,16 +87,10 @@ export function IssueTrackerSettings({ environmentId }: { readonly environmentId
             </Button>
           }
         />
-      </SettingsSection>
-    );
-  }
-  if (trackers.length === 0) return null;
-  return (
-    <SettingsSection id={searchableSetting("issue-trackers").id} title={title}>
+      ) : null}
       {trackers.map((tracker) => (
         <TrackerRow
-          // Drafts belong to one environment; switching must not carry them over.
-          key={`${tracker.tracker}-${environmentId}`}
+          key={tracker.tracker}
           environmentId={environmentId}
           tracker={tracker}
           bindings={query.data?.bindings ?? {}}
@@ -111,6 +116,7 @@ function TrackerRow({
   readonly refreshFailed: boolean;
 }) {
   const gt = useGT();
+  const t = useUiTranslation();
   const messages = useMessages();
   const Icon = TRACKER_ICONS[tracker.tracker];
   const canEdit = useAtomValue(issueTrackerEnvironment.connect.permissionAtom(environmentId));
@@ -183,7 +189,7 @@ function TrackerRow({
           <fieldset disabled={!canEdit || busy} className="contents">
             <div className="px-3 pb-4 pt-1 sm:px-4">
               <SettingsRow
-                title={<label htmlFor={inputId}>{tracker.credential.label}</label>}
+                title={<label htmlFor={inputId}>{t(tracker.credential.label)}</label>}
                 description={
                   <>
                     <T>Stored on the server.</T>

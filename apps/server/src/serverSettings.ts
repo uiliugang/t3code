@@ -17,6 +17,7 @@ import {
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
+  type IssueProvider,
   type ManagedPolicySummary,
   globalIdleCompaction,
   isSecretReference,
@@ -90,6 +91,7 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
   current: ServerSettings,
   patch: ServerSettingsPatch,
   settingsPath: string,
+  issueSourceProvider?: IssueProvider,
 ) {
   for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
     if (
@@ -104,6 +106,20 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
         detail: "This virtual model has changed or was removed. Reopen the editor before saving.",
       });
     }
+  }
+  if (issueSourceProvider && patch.issueProjectSources) {
+    const sources = Object.fromEntries(
+      Object.entries(patch.issueProjectSources).map(([id, next]) => [
+        id,
+        [
+          ...(current.issueProjectSources[ProjectId.make(id)] ?? []).filter(
+            (s) => s.provider !== issueSourceProvider,
+          ),
+          ...next.filter((s) => s.provider === issueSourceProvider),
+        ],
+      ]),
+    );
+    return applyServerSettingsPatch(current, { ...patch, issueProjectSources: sources });
   }
   return applyServerSettingsPatch(current, patch);
 });
@@ -393,6 +409,7 @@ export class ServerSettingsService extends Context.Service<
 
     readonly updateSettings: (
       patch: ServerSettingsPatch,
+      issueSourceProvider?: IssueProvider,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
     readonly updateProviderInstance: (
@@ -458,9 +475,9 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
     start: Effect.void,
     ready: Effect.void,
     getSettings,
-    updateSettings: (patch) =>
+    updateSettings: (patch, issueSourceProvider) =>
       updateTestSettings((currentSettings) =>
-        applyCheckedSettingsPatch(currentSettings, patch, "test settings"),
+        applyCheckedSettingsPatch(currentSettings, patch, "test settings", issueSourceProvider),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
       updateTestSettings((currentSettings) =>
@@ -1707,10 +1724,12 @@ const make = Effect.gen(function* () {
     start,
     ready: Deferred.await(startedDeferred),
     getSettings: getMaterializedSettings,
-    updateSettings: (patch) =>
+    updateSettings: (patch, issueSourceProvider) =>
       updateAndPersistSettings(patch, (current) =>
         ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
-          Effect.andThen(() => applyCheckedSettingsPatch(current, patch, settingsPath)),
+          Effect.andThen(() =>
+            applyCheckedSettingsPatch(current, patch, settingsPath, issueSourceProvider),
+          ),
         ),
       ),
     updateProviderInstance,

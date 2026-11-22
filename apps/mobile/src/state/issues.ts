@@ -8,11 +8,15 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
+import { sourceControlEnvironment } from "./sourceControl";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "./atom-registry";
 import { formatEnvironmentQueryError } from "./query";
 
-export const issueEnvironment = createIssueEnvironmentAtoms(connectionAtomRuntime);
+export const issueEnvironment = createIssueEnvironmentAtoms(
+  connectionAtomRuntime,
+  sourceControlEnvironment.sourceChanges,
+);
 
 const mergedIssueLists = createMergedIssueListAtoms(issueEnvironment, formatEnvironmentQueryError);
 

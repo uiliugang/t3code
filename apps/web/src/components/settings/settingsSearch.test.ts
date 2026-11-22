@@ -392,6 +392,9 @@ describe("source control host search items", () => {
 
 describe("movedSettingsPath", () => {
   it("sends old links to the page their row moved to", () => {
+    expect(movedSettingsPath("/settings/source-control", "issue-trackers")).toBe(
+      "/settings/requirements",
+    );
     expect(movedSettingsPath("/settings/general", "text-generation-model")).toBe(
       "/settings/threads",
     );

@@ -1,4 +1,8 @@
-import type { ExecutionEnvironmentCapabilities, MaintainableTool } from "@t3tools/contracts";
+import type {
+  ExecutionEnvironmentCapabilities,
+  MaintainableTool,
+  MeituanTool,
+} from "@t3tools/contracts";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 export type MeituanSettingsSection = "code" | "issues" | "daxiang" | "skills";
@@ -30,7 +34,7 @@ export function meituanAssociationCountLabel(
 }
 
 export function shouldDiscoverMeituanProjectSources(section?: MeituanSettingsSection) {
-  return section === undefined || section === "issues";
+  return section === undefined;
 }
 
 export function meituanToolIdsForSection(
@@ -47,4 +51,25 @@ export function meituanToolIdsForSection(
     ...(enabled.daxiang ? (["dumbo-web"] as const) : []),
     ...(enabled.skills ? (["mtskills"] as const) : []),
   ];
+}
+
+export function mepAccountLabel(tool: MeituanTool | undefined, t: UiTranslator) {
+  if (tool?.account) return `MIS ${tool.account}`;
+  return t(tool?.account === null ? "Account not detected" : "Account status unknown");
+}
+
+export function mepTrackerSummary(
+  tool: MeituanTool | undefined,
+  projects: string,
+  t: UiTranslator,
+) {
+  const cli =
+    tool?.status === "missing"
+      ? t("Install ones2 first")
+      : tool?.version
+        ? `ones2 ${tool.version}`
+        : t("CLI version unknown");
+  return [tool?.status === "installed" ? mepAccountLabel(tool, t) : null, cli, projects]
+    .filter(Boolean)
+    .join(" · ");
 }

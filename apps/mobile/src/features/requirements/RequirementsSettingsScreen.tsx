@@ -1,6 +1,23 @@
 import { useAtomValue } from "@effect/atom-react";
-import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
-import { EnvironmentId, ProjectId, type IssueProvider } from "@t3tools/contracts";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { type StaticScreenProps, useNavigation } from "@react-navigation/native";
+import {
+  mergeProjectIssueSources,
+  parseMepSpaceIds,
+  withMepSpaceOverrides,
+} from "@t3tools/client-runtime/issueSources";
+import {
+  meituanAssociationCountLabel,
+  mepAccountLabel,
+  mepTrackerSummary,
+} from "@t3tools/client-runtime/meituanSettings";
+import {
+  EnvironmentId,
+  isMeituanServiceEnabled,
+  type IssueProvider,
+  type IssueSource,
+  type ProjectId,
+} from "@t3tools/contracts";
 import { useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,22 +30,32 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { IssueTrackerSection } from "../settings/components/IssueTrackerSection";
+import { SettingsRow } from "../settings/components/SettingsRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
+import { SettingsSection } from "../settings/components/SettingsSection";
 import { SourceControlSignInSection } from "../settings/components/SourceControlSignInSection";
-import { useSettingsEnvironmentFilter } from "../settings/settings-environment-filter";
+import { SourceControlToolsSection } from "../settings/components/SourceControlToolsSection";
+import {
+  useSettingsEnvironmentFilter,
+  type SettingsTarget,
+} from "../settings/settings-environment-filter";
 import { IssuePicker } from "./IssuePicker";
 
-export function RequirementsSettingsScreen() {
+export function RequirementsSettingsScreen({
+  route,
+}: StaticScreenProps<{ environmentId?: EnvironmentId } | undefined>) {
   const t = useUiTranslation();
   const insets = useSafeAreaInsets();
-  const { availableTargets } = useSettingsEnvironmentFilter();
-  const [selectedEnvironment, setEnvironment] = useState<EnvironmentId | null>(null);
-  const environment =
-    availableTargets.find((entry) => entry.environmentId === selectedEnvironment) ??
-    availableTargets[0];
-  const allowed = useAtomValue(
-    serverEnvironment.updateSettings.permissionAtom(environment?.environmentId ?? null),
-  );
+  const { availableTargets, selectedTargets } = useSettingsEnvironmentFilter();
+  const navigation =
+    useNavigation<
+      NativeStackNavigationProp<ReactNavigation.RootParamList, "SettingsRequirements">
+    >();
+  const selected = route.params?.environmentId;
+  const environment = selected
+    ? availableTargets.find((entry) => entry.environmentId === selected)
+    : (selectedTargets[0] ?? availableTargets[0]);
   return (
     <SettingsScreen title={t("Issue management")}>
       <ScreenScrollView
@@ -45,186 +72,304 @@ export function RequirementsSettingsScreen() {
             value: entry.environmentId,
             label: entry.label,
           }))}
-          onChange={(value) => setEnvironment(EnvironmentId.make(value))}
+          onChange={(value) => navigation.setParams({ environmentId: EnvironmentId.make(value) })}
         />
         {environment ? (
-          <>
-            <ProjectSources
-              key={environment.environmentId}
-              environmentId={environment.environmentId}
-            />
-            <SourceControlSignInSection environments={[environment]} canWrite={() => allowed} />
-          </>
+          <EnvironmentRequirements key={environment.environmentId} environment={environment} />
         ) : (
-          <Text>{t("Choose an environment to configure issue sources.")}</Text>
+          <Text>
+            {t(
+              selected
+                ? "The selected environment is offline."
+                : "Choose an environment to configure issue sources.",
+            )}
+          </Text>
         )}
       </ScreenScrollView>
     </SettingsScreen>
   );
 }
 
-export function ProjectSources({
-  environmentId,
-  providerOnly = "github",
-  disabled = false,
-}: {
-  environmentId: EnvironmentId;
-  providerOnly?: IssueProvider;
-  disabled?: boolean;
-}) {
+function EnvironmentRequirements({ environment }: { environment: SettingsTarget }) {
   const t = useUiTranslation();
-  const projects = useProjects().filter(
-    (project) => project.environmentId === environmentId && !project.isScratch,
-  );
-  const automaticQuery = useEnvironmentQuery(
-    providerOnly === "meituan" && projects.length
+  const { environmentId, serverConfig } = environment;
+  const settings =
+    useAtomValue(serverEnvironment.settingsValueAtom(environmentId)) ?? serverConfig.settings;
+  const enabled = isMeituanServiceEnabled(settings, "requirements");
+  const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
+  const projects = useProjects().filter((p) => p.environmentId === environmentId && !p.isScratch);
+  const query = useEnvironmentQuery(
+    projects.length
       ? sourceControlEnvironment.issueSources({
           environmentId,
-          input: { projectIds: projects.map((project) => project.id) },
+          input: { projectIds: projects.map((p) => p.id) },
         })
       : null,
   );
-  const settings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
-  const saved = settings?.issueProjectSources ?? {};
-  const allowed =
-    useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId)) && !disabled;
-  const command = useAtomCommand(serverEnvironment.updateSettings);
-  const refresh = useAtomCommand(sourceControlEnvironment.refreshIssueSources);
-  const [projectId, setProjectId] = useState<ProjectId | null>(null);
-  const [provider, setProvider] = useState<IssueProvider>(providerOnly);
-  const [scope, setScope] = useState("");
-  const [busy, setBusy] = useState(false);
-  const selected = projectId ?? projects[0]?.id;
-  const save = async () => {
-    if (!selected) return;
-    setBusy(true);
-    const result = await command({
-      environmentId,
-      input: {
-        patch: {
-          issueProjectSources: {
-            [selected]: [
-              ...(saved[selected] ?? []).filter((entry) => entry.provider !== provider),
-              ...(provider === "meituan"
-                ? scope.split(/[,，]/u).map((value) => value.trim())
-                : [scope.trim()]
-              )
-                .filter((value, index, values) => value && values.indexOf(value) === index)
-                .map((value) => ({
-                  provider,
-                  scope: value,
-                  host: provider === "meituan" ? "mep.sankuai.com" : "github.com",
-                })),
-            ],
-          },
-        },
-      },
-    });
-    setBusy(false);
-    if (result._tag === "Success") {
-      setScope("");
-      await refresh({ environmentId, input: { projectIds: [selected] } });
-      automaticQuery.refresh();
-    }
-  };
-  const remove = async (id: ProjectId, kind: IssueProvider) => {
-    setBusy(true);
-    await command({
-      environmentId,
-      input: {
-        patch: {
-          issueProjectSources: {
-            [id]: (saved[id] ?? []).filter((entry) => entry.provider !== kind),
-          },
-        },
-      },
-    });
-    await refresh({ environmentId, input: { projectIds: [id] } });
-    automaticQuery.refresh();
-    setBusy(false);
-  };
-  const valid =
-    provider === "meituan"
-      ? scope.split(/[,，]/u).every((value) => /^[1-9]\d*$/u.test(value.trim()))
-      : /^[\w.-]+\/[\w.-]+$/u.test(scope);
-  const automaticError =
-    automaticQuery.error ?? automaticQuery.data?.find((result) => result.error)?.error ?? null;
+  const byId = new Map(query.data?.map((row) => [row.projectId, row]));
+  const rows = projects.map((project) => {
+    const result = byId.get(project.id);
+    const saved = settings.issueProjectSources[project.id] ?? [];
+    return {
+      project,
+      result,
+      saved,
+      sources: mergeProjectIssueSources(result?.sources ?? [], saved),
+    };
+  });
   return (
-    <View className="gap-4">
-      {automaticError ? (
-        <Text accessibilityRole="alert" className="text-sm text-destructive">
-          {t(automaticError)}
+    <>
+      <IssueTrackerSection environment={environment}>
+        {enabled ? (
+          <MepTracker
+            environment={environment}
+            projects={meituanAssociationCountLabel(
+              projects.length,
+              query,
+              rows.filter((row) => row.sources.some((s) => s.provider === "meituan")).length,
+              t,
+            )}
+          />
+        ) : null}
+      </IssueTrackerSection>
+      <SettingsSection
+        title={t("Project issue sources")}
+        footer={!allowed ? t("Read-only") : undefined}
+      >
+        {query.error ? (
+          <Text accessibilityRole="alert" className="p-3 text-danger">
+            {query.error}
+          </Text>
+        ) : null}
+        {!rows.length ? (
+          <Text className="p-3 text-foreground-muted">{t("No matching projects.")}</Text>
+        ) : null}
+        {rows.map(({ project, result, saved, sources }) => (
+          <ProjectSourcesRow
+            key={JSON.stringify([project.id, enabled])}
+            environmentId={environmentId}
+            projectId={project.id}
+            title={project.title}
+            repository={result?.repository ?? null}
+            saved={saved}
+            sources={sources}
+            error={result?.error}
+            mep={enabled}
+            allowed={allowed}
+          />
+        ))}
+      </SettingsSection>
+      <SourceControlSignInSection environments={[environment]} canWrite={() => allowed} />
+    </>
+  );
+}
+
+function MepTracker({ environment, projects }: { environment: SettingsTarget; projects: string }) {
+  const t = useUiTranslation();
+  const [open, setOpen] = useState(false);
+  const { environmentId, serverConfig } = environment;
+  const supported = serverConfig.environment.capabilities.meituanTools === true;
+  const tools = useEnvironmentQuery(
+    supported ? sourceControlEnvironment.meituanTools({ environmentId, input: {} }) : null,
+  );
+  const ones = tools.data?.tools.find((tool) => tool.id === "ones2");
+  return (
+    <>
+      <SettingsRow
+        icon="ticket"
+        label={t("MEP ONES")}
+        value={[t("Enabled"), mepTrackerSummary(ones, projects, t)].join(" · ")}
+        valuePosition="below"
+        onPress={() => setOpen(!open)}
+      />
+      {open ? (
+        <>
+          <SettingsRow
+            icon="person.2"
+            label={t("ONES account")}
+            value={`${mepAccountLabel(ones, t)} · mep.sankuai.com`}
+            valuePosition="below"
+          />
+          {ones?.status === "installed" && ones.account === null ? (
+            <Text className="px-4 text-sm text-foreground-muted">
+              {t("Configure ONES in this environment's terminal, then detect again.")}
+            </Text>
+          ) : null}
+          {supported ? (
+            <SourceControlToolsSection environment={environment} only={["ones2", "mcm"]} inline />
+          ) : (
+            <Text className="p-3">{t("Server update required")}</Text>
+          )}
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function ProjectSourcesRow({
+  environmentId,
+  projectId,
+  title,
+  repository,
+  saved,
+  sources,
+  error,
+  mep,
+  allowed,
+}: {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+  title: string;
+  repository: string | null;
+  saved: readonly IssueSource[];
+  sources: readonly IssueSource[];
+  error: string | undefined;
+  mep: boolean;
+  allowed: boolean;
+}) {
+  const t = useUiTranslation();
+  const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
+  const [editing, setEditing] = useState<IssueProvider | null>(null);
+  const [draft, setDraft] = useState("");
+  const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const github = sources.find((s) => s.provider === "github");
+  const spaces = sources.filter((s) => s.provider === "meituan").map((s) => s.scope);
+  const manual = saved.some((s) => s.provider === "meituan");
+  const valid =
+    editing === "meituan"
+      ? parseMepSpaceIds(draft) !== null
+      : /^[\w.-]+\/[\w.-]+$/u.test(draft.trim());
+  const edit = (provider: IssueProvider) => {
+    setEditing(provider);
+    setDraft(provider === "meituan" ? spaces.join(", ") : (github?.scope ?? ""));
+    setFailure(null);
+  };
+  const save = async (restore: boolean) => {
+    if (!editing || busy || !allowed || (!restore && !valid) || (editing === "meituan" && !mep))
+      return;
+    setBusy(true);
+    setFailure(null);
+    const overrides =
+      editing === "meituan"
+        ? withMepSpaceOverrides(saved, restore ? [] : (parseMepSpaceIds(draft) ?? []))
+        : [
+            ...saved.filter((s) => s.provider !== "github"),
+            ...(restore
+              ? []
+              : [
+                  {
+                    provider: "github" as const,
+                    scope: draft.trim(),
+                    host: github?.host ?? "github.com",
+                  },
+                ]),
+          ];
+    const result = await update({
+      environmentId,
+      input: {
+        issueSourceProvider: editing,
+        patch: { issueProjectSources: { [projectId]: overrides } },
+      },
+    });
+    if (result._tag === "Success") {
+      setEditing(null);
+    } else setFailure(t("Could not save project sources. Try again."));
+    setBusy(false);
+  };
+  return (
+    <View className="gap-1 border-b border-border-subtle p-4">
+      <Text className="font-t3-medium">{title}</Text>
+      {repository || github ? (
+        <Text className="text-sm text-foreground-muted">{repository ?? github?.scope}</Text>
+      ) : null}
+      {github && repository && github.scope !== repository ? (
+        <Text>
+          {t("GitHub Issues")} · {github.scope}
         </Text>
       ) : null}
-      {projects.flatMap((project) => {
-        const savedSources = (saved[project.id] ?? []).filter(
-          (source) => source.provider === providerOnly,
-        );
-        const automaticSources =
-          automaticQuery.data
-            ?.find((result) => result.projectId === project.id)
-            ?.sources.filter((source) => source.provider === providerOnly) ?? [];
-        return mergeProjectIssueSources(automaticSources, savedSources).map((source) => {
-          const manual = savedSources.length > 0;
-          return (
-            <View
-              key={`${project.id}/${source.provider}/${source.scope}`}
-              className="gap-2 border-b border-border-subtle py-3"
-            >
-              <Text>
-                {project.title} ·{" "}
-                {source.provider === "meituan" ? t("MEP ONES") : t("GitHub Issues")}
-              </Text>
-              <Text className="text-foreground-muted">
-                {source.scope} · {t(manual ? "Manual override" : "Automatic")}
-              </Text>
-              {manual ? (
-                <Button
-                  label={t("Remove issue source")}
-                  tone="text"
-                  disabled={!allowed || busy}
-                  onPress={() => void remove(project.id, source.provider)}
-                />
-              ) : null}
-            </View>
-          );
-        });
-      })}
-      <IssuePicker
-        label={t("Project")}
-        value={selected ?? ""}
-        options={projects.map((project) => ({ value: project.id, label: project.title }))}
-        onChange={(value) => setProjectId(ProjectId.make(value))}
-        disabled={!allowed || busy}
-      />
-      <IssuePicker
-        label={t("Issue source")}
-        value={provider}
-        options={
-          providerOnly === "meituan"
-            ? [{ value: "meituan", label: t("MEP ONES") }]
-            : [{ value: "github", label: t("GitHub Issues") }]
-        }
-        onChange={(value) => {
-          setProvider(value === "github" ? "github" : "meituan");
-          setScope("");
-        }}
-        disabled={!allowed || busy}
-      />
-      <AppTextInput
-        accessibilityLabel={t(provider === "meituan" ? "MEP space ID" : "GitHub repository")}
-        placeholder={provider === "meituan" ? "1031008, 1031009" : "owner/repository"}
-        value={scope}
-        onChangeText={setScope}
-        editable={allowed && !busy}
-        autoCapitalize="none"
-      />
-      <Button
-        label={t("Save issue source")}
-        icon="plus"
-        disabled={!allowed || busy || !selected || !valid}
-        onPress={() => void save()}
-      />
+      {error ? (
+        <Text accessibilityRole="alert" className="text-danger">
+          {error}
+        </Text>
+      ) : null}
+      {mep ? (
+        <Text className="text-sm">
+          {spaces.length
+            ? `${t("MEP space IDs")} · ${spaces.join(", ")} · ${t(manual ? "Manual override" : "Automatic")}`
+            : t("No MEP space linked")}
+        </Text>
+      ) : null}
+      {editing && (editing !== "meituan" || mep) ? (
+        <>
+          <Text className="text-sm">
+            {t(editing === "meituan" ? "MEP space IDs" : "GitHub repository")}
+          </Text>
+          <AppTextInput
+            accessibilityLabel={t(editing === "meituan" ? "MEP space IDs" : "GitHub repository")}
+            value={draft}
+            onChangeText={setDraft}
+            editable={allowed && !busy}
+            placeholder={editing === "meituan" ? "10001, 10002" : "owner/repository"}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {!valid && editing === "meituan" ? (
+            <Text className="text-sm text-danger">
+              {t("Enter positive space IDs separated by commas.")}
+            </Text>
+          ) : null}
+          {failure ? (
+            <Text accessibilityRole="alert" className="text-danger">
+              {failure}
+            </Text>
+          ) : null}
+          <View className="flex-row flex-wrap gap-2">
+            <Button
+              size="compact"
+              label={t("Save")}
+              tone="primary"
+              disabled={!valid || busy || !allowed}
+              onPress={() => void save(false)}
+            />
+            <Button
+              size="compact"
+              label={t("Cancel")}
+              tone="text"
+              disabled={busy}
+              onPress={() => setEditing(null)}
+            />
+            {saved.some((s) => s.provider === editing) ? (
+              <Button
+                size="compact"
+                label={t("Restore automatic")}
+                tone="text"
+                disabled={!allowed || busy}
+                onPress={() => void save(true)}
+              />
+            ) : null}
+          </View>
+        </>
+      ) : (
+        <View className="flex-row flex-wrap gap-2">
+          {mep ? (
+            <Button
+              size="compact"
+              label={t(spaces.length ? "Edit spaces" : "Link spaces")}
+              disabled={!allowed || busy}
+              tone="text"
+              onPress={() => edit("meituan")}
+            />
+          ) : null}
+          <Button
+            size="compact"
+            label={t("GitHub repository")}
+            disabled={!allowed || busy}
+            tone="text"
+            onPress={() => edit("github")}
+          />
+        </View>
+      )}
     </View>
   );
 }

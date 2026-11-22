@@ -5193,7 +5193,6 @@
       "i": 1
     }
   ],
-  "92da88ddc3c21020": "Issue trackers",
   "58e0e226493150e7": "Could not load issue trackers",
   "77cfcbde543df32d": "Toggle {tracker} details",
   "0083f65885c60156": "Disconnect {tracker}",
@@ -6926,6 +6925,7 @@
   "efb65f53a2382026": "Remove agent credits when merging",
   "a22700a2aa679898": "Default merge method",
   "c4548ce84893201b": "pull request merge squash rebase last selected",
+  "92da88ddc3c21020": "Issue trackers",
   "f6c5ffe0b40ce8e2": "linear jira issues tracker team api key connect bind project",
   "2f251b69a6c324f3": "Git fetch interval",
   "deed4a583dfa2c44": "automatic remote branch refresh background credentials security keys seconds off",

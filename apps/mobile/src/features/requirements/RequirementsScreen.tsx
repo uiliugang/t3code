@@ -674,7 +674,11 @@ function UnifiedRequirementBoard({
         id: "settings",
         title: t("Requirement settings"),
         icon: "gearshape",
-        onPress: () => navigation.navigate("SettingsRequirements"),
+        onPress: () =>
+          navigation.navigate(
+            "SettingsRequirements",
+            queryEnvironmentId ? { environmentId: queryEnvironmentId } : undefined,
+          ),
       },
       {
         id: "reset",

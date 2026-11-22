@@ -158,6 +158,59 @@ it.effect("keeps an environment busy through verification and publishes the veri
   }),
 );
 
+it.effect(
+  "keeps ONES installation exclusive and publishes its verified account, version and manual command",
+  () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const first = plan({ id: "ones2", version: null, executablePath: null });
+      const manualCommand = "npm install -g @ee/mep-ones-cli@latest";
+      let installed = false;
+      const installer: InstallerMock = {
+        inspect: () => Effect.succeed(first),
+        inspectMeituan: (id) =>
+          Effect.succeed({
+            ...first.tool,
+            id,
+            manualCommand,
+            version: installed ? "2.1.0" : null,
+            executablePath: installed ? "/bin/ones2" : null,
+            ...(installed && id === "ones2" ? { account: "demo.user" } : {}),
+          }),
+        install: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(entered, undefined);
+            yield* Deferred.await(release);
+            installed = true;
+            return "installed" as const;
+          }),
+      };
+      yield* Effect.gen(function* () {
+        const service = yield* Maintenance.SourceControlToolMaintenance;
+        yield* service.start(confirmation(first.tool));
+        yield* Deferred.await(entered);
+        const busy = yield* service.start(confirmation()).pipe(Effect.flip);
+        assert.strictEqual(busy.reason, "busy");
+        yield* Deferred.succeed(release, undefined);
+        const rows = Option.getOrThrow(
+          yield* service.meituanChanges.pipe(
+            Stream.filter((tools) =>
+              tools.some((tool) => tool.id === "ones2" && tool.phase === "succeeded"),
+            ),
+            Stream.runHead,
+          ),
+        );
+        const ones = rows.find((tool) => tool.id === "ones2");
+        assert.strictEqual(ones?.account, "demo.user");
+        assert.strictEqual(ones?.version, "2.1.0");
+        assert.strictEqual(ones?.maintenanceCommand, first.tool.command);
+        assert.strictEqual(ones?.command, null);
+        assert.strictEqual(ones?.manualCommand, manualCommand);
+      }).pipe(Effect.provide(testLayer(installer)));
+    }),
+);
+
 it.effect.each(["unchanged", "failed"] as const)(
   "applies the latest settings once when an active installation ends as %s",
   (phase) =>

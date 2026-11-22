@@ -434,6 +434,30 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         assert.isUndefined((yield* service.getSettings).virtualModels?.team);
       }).pipe(Effect.provide(layerServerSettings())),
   );
+  it.effect(
+    "preserves concurrent overrides of other issue providers when saving and restoring spaces",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const id = ProjectId.make("project");
+        const github = { provider: "github", host: "github.com", scope: "acme/repo" } as const;
+        const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
+        yield* Effect.all(
+          [
+            service.updateSettings({ issueProjectSources: { [id]: [github] } }, "github"),
+            service.updateSettings({ issueProjectSources: { [id]: [mep] } }, "meituan"),
+          ],
+          { concurrency: 2 },
+        );
+        const saved = yield* service.getSettings;
+        assert.sameDeepMembers([...(saved.issueProjectSources[id] ?? [])], [github, mep]);
+        const restored = yield* service.updateSettings(
+          { issueProjectSources: { [id]: [] } },
+          "meituan",
+        );
+        assert.deepStrictEqual(restored.issueProjectSources[id], [github]);
+      }).pipe(Effect.provide(ServerSettingsModule.ServerSettingsService.layerTest())),
+  );
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

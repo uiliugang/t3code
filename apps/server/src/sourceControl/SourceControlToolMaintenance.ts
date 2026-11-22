@@ -1,5 +1,6 @@
 import {
   SourceControlToolError,
+  isRequirementCli,
   type MeituanTool,
   type ServerSettings,
   type SourceControlTool,
@@ -50,10 +51,15 @@ const make = Effect.gen(function* () {
   const meituanState = yield* SubscriptionRef.make<ReadonlyArray<MeituanTool>>([]);
   const isActive = (tools: ReadonlyArray<SourceControlTool>) =>
     tools.some((tool) => tool.phase === "running" || tool.phase === "verifying");
+  let activeRequirement: SourceControlToolId | undefined;
   const update = (id: SourceControlToolId, patch: Partial<SourceControlTool>) =>
-    SubscriptionRef.update(state, (tools) =>
-      tools.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)),
-    );
+    isRequirementCli(id)
+      ? SubscriptionRef.update(meituanState, (tools) =>
+          tools.map((tool) => (tool.id === id ? { ...tool, ...patch, id } : tool)),
+        )
+      : SubscriptionRef.update(state, (tools) =>
+          tools.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)),
+        );
   let lastSettings = {
     meituanIntegrationEnabled: false,
     meituanRequirementsEnabled: false,
@@ -174,6 +180,11 @@ const make = Effect.gen(function* () {
     id: SourceControlToolId,
     patch: Partial<SourceControlTool>,
   ) {
+    if (isRequirementCli(id)) {
+      yield* meituanLock.withPermits(1)(update(id, patch));
+      activeRequirement = undefined;
+      return;
+    }
     if (!sourceScanPending) return yield* update(id, patch);
     const previous = (yield* SubscriptionRef.get(state)).map((tool) =>
       tool.id === id ? { ...tool, ...patch } : tool,
@@ -218,7 +229,12 @@ const make = Effect.gen(function* () {
               ),
             { concurrency: 3 },
           );
-          yield* SubscriptionRef.set(meituanState, meituanTools);
+          yield* SubscriptionRef.update(meituanState, (previous) =>
+            meituanTools.map((tool) => {
+              const old = previous.find((entry) => entry.id === tool.id);
+              return old ? { ...tool, phase: old.phase, message: old.message } : tool;
+            }),
+          );
         }),
       ),
   });
@@ -228,7 +244,7 @@ const make = Effect.gen(function* () {
   ) {
     yield* lock.withPermits(1)(
       Effect.gen(function* () {
-        if (isActive(yield* SubscriptionRef.get(state)))
+        if (activeRequirement || isActive(yield* SubscriptionRef.get(state)))
           return yield* new SourceControlToolError({ id: input.id, reason: "busy" });
         const plan = yield* installer.inspect(input.id);
         if (plan.tool.command === null)
@@ -242,19 +258,22 @@ const make = Effect.gen(function* () {
         const run = Effect.gen(function* () {
           const outcome = yield* installer.install(plan);
           yield* update(input.id, { phase: "verifying" });
-          const verified = yield* installer.inspect(input.id);
+          const verified = isRequirementCli(input.id)
+            ? yield* installer.inspectMeituan(input.id)
+            : (yield* installer.inspect(input.id)).tool;
           if (
-            verified.tool.version === null ||
-            verified.tool.executablePath === null ||
+            verified.version === null ||
+            verified.executablePath === null ||
             (plan.tool.executablePath !== null &&
-              plan.tool.executablePath !== verified.tool.executablePath) ||
+              plan.tool.executablePath !== verified.executablePath) ||
             (plan.tool.version !== null &&
-              compareSemverVersions(verified.tool.version, plan.tool.version) < 0)
+              compareSemverVersions(verified.version, plan.tool.version) < 0)
           )
             return yield* new SourceControlToolError({ id: input.id, reason: "verification" });
-          const unchanged = plan.tool.version === verified.tool.version;
+          const unchanged = plan.tool.version === verified.version;
           yield* finish(input.id, {
-            ...verified.tool,
+            ...verified,
+            id: input.id,
             phase: unchanged ? "unchanged" : "succeeded",
             message:
               outcome === "current"
@@ -266,7 +285,7 @@ const make = Effect.gen(function* () {
         }).pipe(
           Effect.catch((error) => finish(input.id, { phase: "failed", message: error.message })),
           Effect.onInterrupt(() =>
-            update(input.id, {
+            finish(input.id, {
               phase: "failed",
               message:
                 "Installation was interrupted. Check the tool on the server before retrying.",
@@ -282,10 +301,22 @@ const make = Effect.gen(function* () {
         // A disconnected caller must not leave a running row without its installer fiber.
         yield* Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
-            yield* SubscriptionRef.update(state, (tools) => [
-              ...tools.filter((tool) => tool.id !== input.id),
-              { ...plan.tool, phase: "running" as const, message: null },
-            ]);
+            const id = input.id;
+            const running = { ...plan.tool, phase: "running" as const, message: null };
+            if (isRequirementCli(id)) {
+              activeRequirement = id;
+              yield* meituanLock.withPermits(1)(
+                SubscriptionRef.update(meituanState, (tools) => [
+                  ...tools.filter((tool) => tool.id !== id),
+                  { ...tools.find((tool) => tool.id === id), ...running, id },
+                ]),
+              );
+            } else {
+              yield* SubscriptionRef.update(state, (tools) => [
+                ...tools.filter((tool) => tool.id !== id),
+                running,
+              ]);
+            }
             yield* Effect.forkIn(restore(run), scope);
           }),
         );
@@ -314,7 +345,20 @@ const make = Effect.gen(function* () {
       discard: true,
     }),
     changes,
-    meituanChanges,
+    // Older clients can only copy commands for ONES and MCM.
+    meituanChanges: meituanChanges.pipe(
+      Stream.map((tools) =>
+        tools.map((tool) =>
+          isRequirementCli(tool.id) && tool.command
+            ? {
+                ...tool,
+                maintenanceCommand: tool.command,
+                command: null,
+              }
+            : tool,
+        ),
+      ),
+    ),
     start,
   });
 });
