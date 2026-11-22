@@ -7586,7 +7586,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
-  it.effect("pushes a private PR worktree only to its companion branch", () =>
+  it.effect.each([
+    "pushes",
+    "concurrent branch",
+    "another private PR",
+    "public lookalike",
+  ] as const)("keeps private PR worktree pushes bound to their companion (%s)", (scenario) =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
@@ -7600,28 +7605,100 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["config", "remote.pushDefault", "origin"]);
 
       const companion = "pingdotgg/codething-mvp.private-2";
-      const { manager } = yield* makeManager({
-        providerScenario: {
-          kind: "tanstack-source",
-          pullRequest: {
-            number: 92,
-            title: "Private fix",
-            url: "https://source.tanstack.com/@pingdotgg/codething-mvp/pull/92",
-            baseRefName: "main",
-            headRefName: "sec/fix",
-            isCrossRepository: true,
-            headRepositoryNameWithOwner: companion,
-            privateHeadRepository: companion,
-          },
-          repositoryCloneUrls: {
-            [`source.tanstack.com/${companion}`]: { url: companionDir, sshUrl: companionDir },
-          },
+      const branch = "t3code/pr-92/sec/fix";
+      const gitSpawnGate = {
+        matches: (args: ReadonlyArray<string>) =>
+          args.includes("fetch") && args.some((arg) => arg.includes("refs/heads/sec/fix:")),
+        reached: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
+      const privateProvider = {
+        kind: "tanstack-source",
+        pullRequest: {
+          number: 92,
+          title: "Private fix",
+          url: "https://source.tanstack.com/@pingdotgg/codething-mvp/pull/92",
+          baseRefName: "main",
+          headRefName: "sec/fix",
+          isCrossRepository: true,
+          headRepositoryNameWithOwner: companion,
+          privateHeadRepository: companion,
         },
+        repositoryCloneUrls: {
+          [`source.tanstack.com/${companion}`]: { url: companionDir, sshUrl: companionDir },
+        },
+      };
+      const { manager } = yield* makeManager({
+        providerScenario: privateProvider,
+        ...(scenario === "concurrent branch" ? { gitSpawnGate } : {}),
       });
       const input = { cwd: repoDir, reference: "92", mode: "worktree" } as const;
+      if (scenario === "concurrent branch") {
+        const preparing = yield* preparePullRequestThread(manager, input).pipe(
+          Effect.flip,
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(gitSpawnGate.reached);
+        yield* runGit(repoDir, ["branch", "--track", branch, "origin/main"]);
+        yield* Deferred.succeed(gitSpawnGate.release, undefined);
+        expect((yield* Fiber.join(preparing)).message).toContain("branch_already_exists");
+        expect(
+          (yield* runGit(repoDir, ["config", "--get", `branch.${branch}.pushRemote`], true))
+            .exitCode,
+        ).toBe(1);
+        expect(
+          (yield* runGit(repoDir, [
+            "rev-parse",
+            "--abbrev-ref",
+            `${branch}@{upstream}`,
+          ])).stdout.trim(),
+        ).toBe("origin/main");
+        return;
+      }
       const worktree = yield* preparePullRequestThread(manager, input);
-      expect(worktree.branch).toBe("t3code/pr-92/sec/fix");
+      expect(worktree.branch).toBe(branch);
       const cwd = worktree.worktreePath as string;
+      if (scenario === "another private PR" || scenario === "public lookalike") {
+        const anotherCompanionDir = yield* createBareRemote();
+        yield* runGit(cwd, ["push", anotherCompanionDir, "HEAD:refs/heads/sec/fix"]);
+        const anotherCompanion = "pingdotgg/another.private";
+        const otherUrl = "https://source.tanstack.com/@pingdotgg/another/pull/92";
+        const { privateHeadRepository: _privateHeadRepository, ...pullRequest } =
+          privateProvider.pullRequest;
+        const other = yield* makeManager({
+          providerScenario: {
+            ...privateProvider,
+            pullRequest: {
+              ...pullRequest,
+              url: otherUrl,
+              headRepositoryNameWithOwner: anotherCompanion,
+              ...(scenario === "another private PR"
+                ? { privateHeadRepository: anotherCompanion }
+                : {}),
+            },
+            repositoryCloneUrls: {
+              [`source.tanstack.com/${anotherCompanion}`]: {
+                url: anotherCompanionDir,
+                sshUrl: anotherCompanionDir,
+              },
+            },
+          },
+        });
+        const result = yield* preparePullRequestThread(other.manager, {
+          ...input,
+          reference: otherUrl,
+        }).pipe(Effect.result);
+        expect(Result.isFailure(result)).toBe(true);
+        const remote = (yield* runGit(cwd, [
+          "config",
+          "--get",
+          `branch.${branch}.pushRemote`,
+        ])).stdout.trim();
+        expect((yield* runGit(cwd, ["remote", "get-url", "--push", remote])).stdout.trim()).toBe(
+          companionDir,
+        );
+        return;
+      }
       yield* runGit(cwd, ["commit", "--allow-empty", "-m", "Update private fix"]);
       yield* runStackedAction(manager, { cwd, action: "push" });
 

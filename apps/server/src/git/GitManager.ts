@@ -1180,6 +1180,14 @@ export const make = Effect.gen(function* () {
     const host = URL.parse(url)?.host;
     return host ? { host } : {};
   };
+  const checkedOutPullRequestKey = (branch: string) => `branch.${branch}.t3-pull-request`;
+
+  const conflictingPullRequestBranch = (cwd: string, branch: string) =>
+    new GitManagerError({
+      operation: "preparePullRequestThread",
+      cwd,
+      detail: `Local branch ${branch} already belongs to different work. Rename it before opening this pull request.`,
+    });
 
   const configurePrivatePullRequestHead = Effect.fn("GitManager.configurePrivatePullRequestHead")(
     function* (
@@ -1189,6 +1197,17 @@ export const make = Effect.gen(function* () {
       localBranch: string,
       createLocalBranch = false,
     ) {
+      const ownerKey = checkedOutPullRequestKey(localBranch);
+      const owner = createLocalBranch ? null : yield* gitCore.readConfigValue(cwd, ownerKey);
+      if (owner !== null && owner !== pullRequest.url) {
+        const recorded = sourceControlDefinitions.parseChangeRequestUrl(owner)?.link;
+        if (
+          recorded?.number !== pullRequest.number ||
+          pullRequestRepositoryKey(owner) !== pullRequestRepositoryKey(pullRequest.url)
+        ) {
+          return yield* conflictingPullRequestBranch(cwd, localBranch);
+        }
+      }
       const { url } = yield* (yield* sourceControlProvider(cwd)).getRepositoryCloneUrls({
         cwd,
         repository: companion,
@@ -1202,29 +1221,48 @@ export const make = Effect.gen(function* () {
       });
       const remoteBranch = pullRequest.headBranch;
       yield* gitCore.fetchRemoteTrackingBranch({ cwd, remoteName, remoteBranch });
+      const trackingRef = `refs/remotes/${remoteName}/${remoteBranch}`;
+      if (!createLocalBranch && owner === null) {
+        const [remote, mergeRef, pushRemote, localHead, privateHead] = yield* Effect.all([
+          gitCore.readConfigValue(cwd, `branch.${localBranch}.remote`),
+          gitCore.readConfigValue(cwd, `branch.${localBranch}.merge`),
+          gitCore.readConfigValue(cwd, `branch.${localBranch}.pushRemote`),
+          gitCore.resolveCommit({ cwd, revision: `refs/heads/${localBranch}` }),
+          gitCore.resolveCommit({ cwd, revision: trackingRef }),
+        ]);
+        if (
+          remote !== null ||
+          mergeRef !== null ||
+          pushRemote !== null ||
+          localHead.commitSha !== privateHead.commitSha
+        ) {
+          return yield* conflictingPullRequestBranch(cwd, localBranch);
+        }
+      }
       yield* gitCore.writeConfigValue({
         cwd,
         key: SourceControlProvider.privateCompanionConfigKey(remoteName),
         value: url,
       });
-      yield* gitCore.writeConfigValue({
-        cwd,
-        key: SourceControlProvider.privatePullRequestPushConfigKey(localBranch),
-        value: url,
-      });
-      yield* gitCore.writeConfigValue({
-        cwd,
-        key: `branch.${localBranch}.pushRemote`,
-        value: remoteName,
-      });
-      if (createLocalBranch) {
-        yield* gitCore.createBranch({
-          cwd,
-          branch: localBranch,
-          startPoint: `refs/remotes/${remoteName}/${remoteBranch}`,
-        });
-      }
-      yield* gitCore.setBranchUpstream({ cwd, branch: localBranch, remoteName, remoteBranch });
+      yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          if (createLocalBranch) {
+            yield* gitCore.createBranch({ cwd, branch: localBranch, startPoint: trackingRef });
+          }
+          yield* gitCore.writeConfigValue({ cwd, key: ownerKey, value: pullRequest.url });
+          yield* gitCore.writeConfigValue({
+            cwd,
+            key: SourceControlProvider.privatePullRequestPushConfigKey(localBranch),
+            value: url,
+          });
+          yield* gitCore.writeConfigValue({
+            cwd,
+            key: `branch.${localBranch}.pushRemote`,
+            value: remoteName,
+          });
+          yield* gitCore.setBranchUpstream({ cwd, branch: localBranch, remoteName, remoteBranch });
+        }),
+      );
     },
   );
 
@@ -3647,8 +3685,6 @@ export const make = Effect.gen(function* () {
     };
   }, withBranchPullRequestGitReads);
 
-  const checkedOutPullRequestKey = (branch: string) => `branch.${branch}.t3-pull-request`;
-
   const branchPullRequest: GitManager["Service"]["branchPullRequest"] = Effect.fn(
     "branchPullRequest",
   )(function* ({ cwd, branch }, options) {
@@ -3860,6 +3896,15 @@ export const make = Effect.gen(function* () {
         pullRequestWithRemoteInfo,
         localBranches,
       );
+      if (
+        privateCompanion === undefined &&
+        (yield* gitCore.readConfigValue(
+          input.cwd,
+          SourceControlProvider.privatePullRequestPushConfigKey(localPullRequestBranch),
+        )) !== null
+      ) {
+        return yield* conflictingPullRequestBranch(input.cwd, localPullRequestBranch);
+      }
 
       const ensureExistingWorktreeUpstream = Effect.fn("ensureExistingWorktreeUpstream")(function* (
         worktreePath: string,
@@ -4009,13 +4054,19 @@ export const make = Effect.gen(function* () {
       });
 
       // Claim the branch before refreshing, but initialize submodules only after selecting its head.
-      const refreshNewWorktree = Effect.fn("refreshNewWorktree")(function* (cwd: string) {
-        const upstreamCommitBeforeFetch = yield* gitCore
-          .resolveCommit({ cwd, revision: "@{upstream}" })
-          .pipe(
-            Effect.map((resolved) => resolved.commitSha),
-            Effect.orElseSucceed(() => null),
-          );
+      const readUpstreamCommit = (cwd: string, revision: string) =>
+        gitCore.resolveCommit({ cwd, revision }).pipe(
+          Effect.map((resolved) => resolved.commitSha),
+          Effect.orElseSucceed(() => null),
+        );
+      const refreshNewWorktree = Effect.fn("refreshNewWorktree")(function* (
+        cwd: string,
+        previousPrivateUpstream: string | null,
+      ) {
+        const upstreamCommitBeforeFetch =
+          privateCompanion === undefined
+            ? yield* readUpstreamCommit(cwd, "@{upstream}")
+            : previousPrivateUpstream;
         if (privateCompanion === undefined) {
           yield* configurePullRequestHeadUpstream(
             cwd,
@@ -4130,10 +4181,14 @@ export const make = Effect.gen(function* () {
       }
       // Materializing would force this branch onto the head.
       if (existingBranchBeforeFetch !== null) {
+        const previousPrivateUpstream =
+          privateCompanion === undefined
+            ? null
+            : yield* readUpstreamCommit(input.cwd, `${localPullRequestBranch}@{upstream}`);
         if (privateCompanion !== undefined) yield* ensureExistingWorktreeUpstream(input.cwd);
         let isOnPullRequestHead = false;
         const worktree = yield* createPullRequestWorktree((cwd) =>
-          refreshNewWorktree(cwd).pipe(
+          refreshNewWorktree(cwd, previousPrivateUpstream).pipe(
             Effect.catch((error) =>
               Effect.logWarning(
                 "GitManager.preparePullRequestThread existing branch refresh failed",
