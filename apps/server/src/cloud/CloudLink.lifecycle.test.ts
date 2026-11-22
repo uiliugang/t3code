@@ -1251,6 +1251,7 @@ describe("releaseManagedTunnelOnShutdown", () => {
         managedTunnelConfigured: false,
         connector: null,
         endpoint: null,
+        originAcceptsTcp: null,
         edgeReachable: null,
         exitNode: null,
       },

@@ -24,6 +24,7 @@ import { ChildProcessSpawner } from "effect/process";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { CLOUD_ENDPOINT_RUNTIME_CONFIG } from "./config.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
+import { isLoopbackEndpointOrigin, parseManagedEndpointLocalOrigin } from "./linkChecks.ts";
 
 // cloudflared finds the edge through the SRV record `_v2-origintunneld._tcp.argotunnel.com`,
 // which names these two hosts on port 7844. QUIC and HTTP/2 both use that port.
@@ -60,6 +61,7 @@ export interface ReachabilityFacts {
   readonly managedTunnelConfigured: boolean;
   readonly connector: ManagedEndpointRuntime.ConnectorFacts | null;
   readonly endpoint: EndpointProbe | null;
+  readonly originAcceptsTcp: boolean | null;
   readonly edgeReachable: boolean | null;
   readonly exitNode: TailscaleExitNode | null;
 }
@@ -110,11 +112,24 @@ export function classifyReachability(
       protocol: connector.protocol,
     };
   }
-  // The edge test is TCP only. With QUIC connections up, a 502 from a working tunnel, or
+  if (status === 502) {
+    if (facts.originAcceptsTcp === false) {
+      return fail(
+        "origin_unreachable",
+        "The tunnel returned HTTP 502 and its configured local port did not accept a connection.",
+        "Check that T3 Code is listening on the address and port configured for the tunnel.",
+      );
+    }
+    return fail(
+      "unexpected_response",
+      "The T3 Connect address returned HTTP 502 (Bad Gateway).",
+      "Try again shortly. If it keeps failing, check the host's tunnel log.",
+    );
+  }
+  // The edge test is TCP only. With QUIC connections up or
   // DNS already failing, a failed TCP test would hide the real cause.
   if (
     facts.edgeReachable === false &&
-    status !== 502 &&
     !(connector.readyConnections && connector.readyConnections > 0) &&
     endpoint?.kind !== "dns_failed"
   ) {
@@ -125,13 +140,6 @@ export function classifyReachability(
         ? `tailscale set --exit-node=   (or allow outbound ${TUNNEL_EDGE_PORT} on that network)`
         : `Allow outbound TCP and UDP port ${TUNNEL_EDGE_PORT}, or turn off the VPN or firewall that blocks it.`,
       exitNodeHint(exitNode) ?? "A VPN, proxy, or firewall may block it.",
-    );
-  }
-  if (status === 502) {
-    return fail(
-      "origin_unreachable",
-      "The tunnel is up, but it cannot reach the T3 server on this machine.",
-      "Restart T3 Code so the tunnel uses the port the server listens on.",
     );
   }
   if (endpoint === null || connector.readyConnections === 0) {
@@ -243,6 +251,19 @@ const canOpenTcp = (host: string, port: number) =>
     return Effect.sync(() => socket.destroy());
   });
 
+function checkOriginPort(service: string | null) {
+  if (service === null) return Effect.succeed(null);
+  try {
+    const { origin } = parseManagedEndpointLocalOrigin(service);
+    if (isLoopbackEndpointOrigin(origin)) {
+      return canOpenTcp(origin.localHttpHost.replace(/^\[|\]$/g, ""), origin.localHttpPort);
+    }
+  } catch {
+    // cloudflared ingress rules can name services other than an HTTP origin.
+  }
+  return Effect.succeed(null);
+}
+
 export class ConnectReachability extends Context.Service<
   ConnectReachability,
   {
@@ -353,11 +374,15 @@ const make = Effect.gen(function* () {
       managedTunnelConfigured,
       connector,
       endpoint,
+      originAcceptsTcp: null,
       edgeReachable: null,
       exitNode: null,
     };
     if (connector === null || (endpoint?.kind === "status" && endpoint.status === 200)) {
       return facts;
+    }
+    if (endpoint?.kind === "status" && endpoint.status === 502) {
+      return { ...facts, originAcceptsTcp: yield* checkOriginPort(connector.origin) };
     }
     const [edgeResults, exitNode] = yield* Effect.all(
       [

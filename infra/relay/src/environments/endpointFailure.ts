@@ -24,10 +24,10 @@ export function classifyEndpointResponse(
   switch (status) {
     case 530:
       return cloudflareCode === undefined ? "tunnel_down" : "unknown";
-    // cloudflared answers 502 when nothing listens on the local origin port.
+    // A gateway error can come from a lost edge connection even after the origin answered.
     case 502:
     case 503:
-      return "origin_unreachable";
+      return "unknown";
     case 521:
       return "refused";
     case 504:

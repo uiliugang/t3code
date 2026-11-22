@@ -697,10 +697,28 @@ export const make = Effect.gen(function* () {
       socketUrl: string,
       descriptor: ExecutionEnvironmentDescriptor,
     ) => ({ ...httpAuthorization(token, endpoint?.httpBaseUrl), socketUrl, descriptor });
+    let selected = yield* getDpopToken(input);
     // A cached token comes without a descriptor. That read needs no ticket, so
     // it runs beside the ticket request, and a failed ticket abandons it.
-    const openSocket = Effect.fnUntraced(function* (issued: IssuedDpopToken, timeoutMs?: number) {
-      const socket = createDpopSocketUrl(issued.token, timeoutMs, endpoint).pipe(Effect.result);
+    const openSocket = Effect.fnUntraced(function* (issued: typeof selected) {
+      const ticket = createDpopSocketUrl(
+        issued.token,
+        issued.fromCache ? CACHED_ENDPOINT_SOCKET_TIMEOUT_MS : undefined,
+        endpoint,
+      );
+      // A brief gateway failure can lose the ticket response for a still-valid session.
+      const socket = (
+        endpoint === undefined && issued.fromCache
+          ? ticket.pipe(
+              Effect.catchIf(
+                (error) =>
+                  error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" &&
+                  [502, 503, 504].includes(error.status),
+                () => assertSession(issued.identity).pipe(Effect.andThen(ticket)),
+              ),
+            )
+          : ticket
+      ).pipe(Effect.result);
       const known = directDescriptor ?? issued.descriptor;
       if (known !== undefined) {
         return Result.map(yield* socket, (socketUrl) => authorized(issued.token, socketUrl, known));
@@ -716,9 +734,8 @@ export const make = Effect.gen(function* () {
       }
       return Result.succeed(authorized(issued.token, opened.success, yield* Fiber.join(reading)));
     });
-    let selected = yield* getDpopToken(input);
     if (selected.fromCache) {
-      const cachedSocket = yield* openSocket(selected, CACHED_ENDPOINT_SOCKET_TIMEOUT_MS);
+      const cachedSocket = yield* openSocket(selected);
       if (Result.isSuccess(cachedSocket)) {
         yield* assertSession(selected.identity);
         return cachedSocket.success;
