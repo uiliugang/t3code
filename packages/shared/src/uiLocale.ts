@@ -348,6 +348,9 @@ const zhCN: Readonly<Record<string, string>> = {
   "Run on your computer:": "在你的计算机上运行：",
   "Or download the desktop app": "或下载桌面应用",
   "Retry T3 Connect": "重试 T3 Connect",
+  "The T3 Connect address answered with HTTP 200 but did not identify this environment.":
+    "T3 Connect 地址返回了 HTTP 200，但响应未能确认是当前环境。",
+  "Check that the tunnel points to this T3 Code server.": "请检查隧道是否指向当前 T3 Code 服务器。",
   "The tunnel returned HTTP 502 and its configured local port did not accept a connection.":
     "隧道返回了 HTTP 502，且配置的本机端口未接受连接。",
   "Check that T3 Code is listening on the address and port configured for the tunnel.":

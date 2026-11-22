@@ -196,6 +196,15 @@ const mockEdgeConnect = () =>
 
 describe("ConnectReachability stale connector recovery", () => {
   it.effect.each([
+    {
+      name: "an interrupted response",
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(new Error("connection reset"));
+        },
+      }),
+      cause: "timeout",
+    },
     { name: "an empty response", body: null },
     { name: "a proxy login page", body: "<html>Sign in</html>" },
     {
@@ -210,7 +219,7 @@ describe("ConnectReachability stale connector recovery", () => {
       name: "an oversized descriptor",
       body: JSON.stringify({ ...descriptor, label: "x".repeat(256 * 1024) }),
     },
-  ])("rejects HTTP 200 from $name", ({ body }) =>
+  ])("rejects HTTP 200 from $name", ({ body, cause }) =>
     Effect.gen(function* () {
       using _connect = mockEdgeConnect();
       const result = yield* ConnectReachability.ConnectReachability.use(
@@ -220,7 +229,10 @@ describe("ConnectReachability stale connector recovery", () => {
           reachabilityLayer(Effect.succeed({ status: 200, body }), () => Effect.succeed(false)),
         ),
       );
-      expect(result).toMatchObject({ status: "unreachable", cause: "unexpected_response" });
+      expect(result).toMatchObject({
+        status: "unreachable",
+        cause: cause ?? "unexpected_response",
+      });
     }),
   );
 
