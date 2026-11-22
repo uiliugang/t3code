@@ -59,6 +59,10 @@ const PREPARED: PreparedConnection = {
   httpAuthorization: { _tag: "Dpop", accessToken: "expired-token", expiresAtEpochMs: 0 },
   target: TARGET,
 };
+const preparedAuthorizationRequest = {
+  expectedEnvironmentId: TARGET.environmentId,
+  preparedEndpoint: { httpBaseUrl: PREPARED.httpBaseUrl, accessToken: "expired-token" },
+};
 const CURRENT_ORIGIN = "https://current.example.test";
 const RENEWED_ORIGIN = "https://renewed.example.test";
 const DIFF = {
@@ -313,7 +317,7 @@ describe("authenticated environment HTTP requests", () => {
           ORCHESTRATION_PROTOCOL_VERSION_TEXT,
         );
       }
-      expect(harness.authorizations).toEqual([{ expectedEnvironmentId: TARGET.environmentId }]);
+      expect(harness.authorizations).toEqual([preparedAuthorizationRequest]);
       // The proof signs exactly the URL sent; signers drop the query for `htu`.
       expect(harness.proofs).toEqual([
         { method: loader.method, url: call.url, accessToken: "current-token" },
@@ -380,7 +384,7 @@ describe("authenticated environment HTTP requests", () => {
 
       expect(result).toEqual(DIFF_RESULT);
       expect(harness.authorizations).toEqual([
-        { expectedEnvironmentId: TARGET.environmentId },
+        preparedAuthorizationRequest,
         { expectedEnvironmentId: TARGET.environmentId, rejectedAccessToken: "current-token" },
       ]);
       expect(harness.calls.map((call) => call.url)).toEqual([
@@ -502,7 +506,7 @@ describe("authenticated environment HTTP requests", () => {
 
       expect(error._tag).toBe(errorTag);
       expect(harness.calls).toHaveLength(1);
-      expect(harness.authorizations).toEqual([{ expectedEnvironmentId: TARGET.environmentId }]);
+      expect(harness.authorizations).toEqual([preparedAuthorizationRequest]);
     }),
   );
 

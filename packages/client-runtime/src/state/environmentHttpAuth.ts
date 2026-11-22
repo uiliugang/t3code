@@ -212,9 +212,11 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
           const current = yield* remote.value
             .authorizeDpopHttp({
               expectedEnvironmentId: input.prepared.environmentId,
-              ...(input.prepared.target._tag === "RelayConnectionTarget"
-                ? {}
-                : { directEndpoint: { httpBaseUrl } }),
+              ...(input.prepared.target._tag !== "RelayConnectionTarget"
+                ? { directEndpoint: { httpBaseUrl } }
+                : rejectedAccessToken === undefined
+                  ? { preparedEndpoint: { httpBaseUrl, accessToken: authorization.accessToken } }
+                  : {}),
               ...(rejectedAccessToken === undefined ? {} : { rejectedAccessToken }),
             })
             .pipe(Effect.mapError(authFetchError));

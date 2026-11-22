@@ -4,7 +4,11 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION,
   type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
-import { type RelayEnvironmentConnectResponse } from "@t3tools/contracts/relay";
+import {
+  type RelayEnvironmentConnectResponse,
+  RelayEnvironmentEndpointTimedOutError,
+  RelayEnvironmentEndpointUnavailableError,
+} from "@t3tools/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -1177,10 +1181,27 @@ describe("RemoteEnvironmentAuthorization", () => {
     "different environment",
     "denied by relay",
     "offline at sign-in",
+    "unreachable from the relay",
+    "timed out from the relay",
   ] as const)("handles a stale public endpoint that is %s", (host) =>
     Effect.gen(function* () {
       const relayOnline = yield* Ref.make(false);
-      const recovered = host === "recovered" || host === "offline at sign-in";
+      const recovered = host !== "different environment" && host !== "denied by relay";
+      const relayError =
+        host === "unreachable from the relay"
+          ? new RelayEnvironmentEndpointUnavailableError({
+              code: "environment_endpoint_unavailable",
+              reason: "endpoint_request_failed",
+              endpointFailure: "unknown",
+              endpointStatus: 502,
+              traceId: "trace",
+            })
+          : host === "timed out from the relay"
+            ? new RelayEnvironmentEndpointTimedOutError({
+                code: "environment_endpoint_timed_out",
+                traceId: "trace",
+              })
+            : undefined;
       const harness = yield* makeHarness({
         initialToken: new TokenStore.RemoteDpopAccessToken({
           ...persistedToken(),
@@ -1199,12 +1220,12 @@ describe("RemoteEnvironmentAuthorization", () => {
             }
           : {}),
         beforeBootstrap:
-          host === "denied by relay"
+          host === "denied by relay" || relayError !== undefined
             ? Effect.fail(
                 new ManagedRelay.ManagedRelayRequestFailedError({
                   action: "connect relay environment",
-                  cause: "not allowed",
-                  status: 403,
+                  cause: relayError ?? "not allowed",
+                  ...(relayError ? { relayError } : { status: 403 }),
                 }),
               )
             : requireOnlineRelay(relayOnline),
@@ -1233,7 +1254,11 @@ describe("RemoteEnvironmentAuthorization", () => {
           expect(yield* remote.authorizeDpopHttp(input).pipe(Effect.flip)).toMatchObject({
             httpStatus: 403,
           });
-          expect(harness.fetch.calls).toHaveLength(0);
+          for (const [url, init] of harness.fetch.calls) {
+            expect(String(url)).toBe(ENDPOINT.httpBaseUrl + "/.well-known/t3/environment");
+            expect(new Headers(init.headers).has("authorization")).toBe(false);
+            expect(new Headers(init.headers).has("dpop")).toBe(false);
+          }
         } else {
           expect(yield* remote.authorizeDpop(input).pipe(Effect.flip)).toMatchObject({
             reason: "configuration",
@@ -1241,6 +1266,128 @@ describe("RemoteEnvironmentAuthorization", () => {
           expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(0);
         }
       }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect(
+    "keeps an active session's media available when another tab marks its endpoint stale",
+    () =>
+      Effect.gen(function* () {
+        const cached = persistedToken();
+        const harness = yield* makeHarness({
+          initialToken: cached,
+          descriptor: DESCRIPTOR,
+          responses: [websocketTicket("public"), websocketTicket("media")],
+          beforeBootstrap: Effect.never,
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const socket = yield* remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID });
+          yield* Ref.set(
+            harness.tokens,
+            new Map([
+              [
+                ENVIRONMENT_ID,
+                new TokenStore.RemoteDpopAccessToken({ ...cached, endpointNeedsDiscovery: true }),
+              ],
+            ]),
+          );
+          const request = mintMediaTicket({
+            ...socket,
+            target: new RelayConnectionTarget({
+              environmentId: ENVIRONMENT_ID,
+              label: socket.label,
+            }),
+          });
+          const media = yield* request.pipe(Effect.forkChild);
+          yield* TestClock.adjust("8 seconds");
+          yield* Fiber.join(media);
+          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+          yield* Ref.set(harness.tokens, new Map());
+          const afterRemoval = yield* request.pipe(Effect.flip, Effect.forkChild);
+          yield* TestClock.adjust("8 seconds");
+          expect((yield* Fiber.join(afterRemoval))._tag).toBe("RemoteEnvironmentAuthTimeoutError");
+          expect(requestsTo(harness, "/api/auth/websocket-ticket/media")).toBe(1);
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
+  it.effect.each(["offline", "denied"] as const)(
+    "overlaps public verification with a slow relay that is %s inside the socket deadline",
+    (outcome) =>
+      Effect.gen(function* () {
+        const relayStarted = yield* Deferred.make<void>();
+        const relayOnline = yield* Ref.make(false);
+        const response = Promise.withResolvers<Response>();
+        const harness = yield* makeHarness({
+          initialToken: new TokenStore.RemoteDpopAccessToken({
+            ...persistedToken(),
+            endpointNeedsDiscovery: true,
+          }),
+          beforeBootstrap: Deferred.succeed(relayStarted, undefined).pipe(
+            Effect.andThen(Effect.sleep("10 seconds")),
+            Effect.andThen(
+              outcome === "offline"
+                ? requireOnlineRelay(relayOnline)
+                : Effect.fail(
+                    new ManagedRelay.ManagedRelayRequestFailedError({
+                      action: "connect relay environment",
+                      cause: "not allowed",
+                      status: 403,
+                    }),
+                  ),
+            ),
+          ),
+          descriptor: () => response.promise,
+          responses: [websocketTicket("within-deadline")],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const attempt = yield* remote
+            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+            .pipe(Effect.result, Effect.timeoutOption("15 seconds"), Effect.forkChild);
+          yield* Deferred.await(relayStarted);
+          yield* TestClock.adjust("6 seconds");
+          expect(requestsTo(harness, "/.well-known/t3/environment")).toBe(1);
+          response.resolve(Response.json(DESCRIPTOR));
+          expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(0);
+          yield* TestClock.adjust("4 seconds");
+          const result = Option.getOrThrow(yield* Fiber.join(attempt));
+          if (outcome === "denied") {
+            expect(result).toMatchObject({ failure: { httpStatus: 403 } });
+            expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(0);
+          } else {
+            expect(result).toMatchObject({
+              success: { socketUrl: expect.stringContaining("wsTicket=within-deadline") },
+            });
+          }
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
+  it.effect("honors the newly discovered endpoint even when its token exchange fails", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        initialToken: new TokenStore.RemoteDpopAccessToken({
+          ...persistedToken(),
+          endpointNeedsDiscovery: true,
+        }),
+        bootstrap: {
+          ...BOOTSTRAP,
+          endpoint: {
+            ...ENDPOINT,
+            httpBaseUrl: "https://new.example.test",
+            wsBaseUrl: "wss://new.example.test",
+          },
+        },
+        descriptor: DESCRIPTOR,
+        responses: [new Response(null, { status: 503 })],
+      });
+      const error = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+        (remote) => remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID }),
+      ).pipe(Effect.provide(harness.layer), Effect.flip);
+      expect(error).toMatchObject({ httpStatus: 503 });
+      expect(String(harness.fetch.calls.at(-1)?.[0])).toBe("https://new.example.test/oauth/token");
     }),
   );
 
