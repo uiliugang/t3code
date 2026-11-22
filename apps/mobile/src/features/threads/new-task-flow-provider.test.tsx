@@ -111,6 +111,9 @@ vi.mock("../../state/workspace", () => ({
 }));
 vi.mock("../../state/shell", () => ({ useEnvironmentShellReadiness: () => ({}) }));
 vi.mock("../../lib/clock", () => ({ useNowMinuteMs: () => 0 }));
+vi.mock("../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (message: string) => message,
+}));
 
 import { NewTaskFlowProvider, useNewTaskFlow } from "./new-task-flow-provider";
 

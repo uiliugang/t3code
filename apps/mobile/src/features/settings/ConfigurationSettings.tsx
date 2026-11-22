@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   applicationSettingsImportPatch,
+  importGeneratorCatalog,
+  assertVirtualModelsSupported,
   createApplicationSettingsFile,
   createProjectSettingsFile,
   projectSettingsImportPatch,
@@ -153,6 +155,9 @@ function ConfigurationTransfer({
         setBusy(true);
         void settlePromise(async () => {
           if (materialize) {
+            const current = appAtomRegistry.get(serverEnvironment.settingsValueAtom(environmentId));
+            if (!current) throw new Error(t("Reconnect this environment before importing."));
+            assertVirtualModelsSupported(file, current, t);
             const result = await startImport({
               environmentId,
               input: {
@@ -318,7 +323,8 @@ export function ProjectConfigurationSettings({
           const definition = exported.value[0]?.configuration;
           if (!definition) throw new Error(t("This project is no longer available."));
           return {
-            ...Struct.omit(file, ["issueSources"]),
+            ...Struct.omit(file, ["issueSources", "virtualModels"]),
+            ...(definition.virtualModels ? { virtualModels: definition.virtualModels } : {}),
             settings: definition.settings,
             providers: definition.providers,
             workspace: definition.workspace,
@@ -335,7 +341,22 @@ export function ProjectConfigurationSettings({
           if (!current) throw new Error(t("Reconnect this environment before importing."));
           const result = await update({
             environmentId: project.environmentId,
-            input: { patch: projectSettingsImportPatch(file, project, current, t) },
+            input: {
+              patch: projectSettingsImportPatch(
+                file,
+                project,
+                current,
+                t,
+                config?.providers,
+                await importGeneratorCatalog(
+                  file,
+                  current,
+                  project.environmentId,
+                  appAtomRegistry,
+                  serverEnvironment.listTextGeneratorModels,
+                ),
+              ),
+            },
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         }}
@@ -401,7 +422,19 @@ export function ApplicationConfigurationSettings({ environment }: { environment:
             throw new Error(t("Choose an application settings file."));
           const current = appAtomRegistry.get(serverEnvironment.settingsValueAtom(environmentId));
           if (!current) throw new Error(t("Reconnect this environment before importing."));
-          const patch = applicationSettingsImportPatch(file, current, t);
+          const patch = applicationSettingsImportPatch(
+            file,
+            current,
+            t,
+            appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId))?.providers,
+            await importGeneratorCatalog(
+              file,
+              current,
+              environmentId,
+              appAtomRegistry,
+              serverEnvironment.listTextGeneratorModels,
+            ),
+          );
           const bindings = settingsKeybindingsToImport(
             file.keybindings,
             appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId))?.keybindings ??

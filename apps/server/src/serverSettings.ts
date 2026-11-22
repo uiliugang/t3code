@@ -1,3 +1,4 @@
+import { migrateVirtualModels, resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import {
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
@@ -84,6 +85,28 @@ export {
 const encodeServerSettings = Schema.encodeEffect(ServerSettings);
 const encodeServerSettingsJson = Schema.encodeUnknownEffect(fromJsonStringPretty(ServerSettings));
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
+
+const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(function* (
+  current: ServerSettings,
+  patch: ServerSettingsPatch,
+  settingsPath: string,
+) {
+  for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
+    if (
+      change &&
+      typeof change === "object" &&
+      "expected" in change &&
+      !Equal.equals(current.virtualModels?.[id], change.expected)
+    ) {
+      return yield* new ServerSettingsError({
+        settingsPath,
+        operation: "write-file",
+        detail: "This virtual model has changed or was removed. Reopen the editor before saving.",
+      });
+    }
+  }
+  return applyServerSettingsPatch(current, patch);
+});
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -437,13 +460,13 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
     getSettings,
     updateSettings: (patch) =>
       updateTestSettings((currentSettings) =>
-        Effect.succeed(applyServerSettingsPatch(currentSettings, patch)),
+        applyCheckedSettingsPatch(currentSettings, patch, "test settings"),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
       updateTestSettings((currentSettings) =>
         Effect.gen(function* () {
           yield* ensureProviderInstanceMutationAllowed(currentSettings, mutation, "test settings");
-          const patched = applyServerSettingsPatch(currentSettings, patch);
+          const patched = yield* applyCheckedSettingsPatch(currentSettings, patch, "test settings");
           return applyProviderInstanceMutation(patched, mutation);
         }),
       ),
@@ -453,8 +476,10 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
           Effect.flatMap((current) =>
             ensureProviderInstanceMutationAllowed(current, mutation, "test settings").pipe(
               Effect.andThen(
-                normalizeServerSettings(
-                  applyProviderInstanceMutation(applyServerSettingsPatch(current, patch), mutation),
+                applyCheckedSettingsPatch(current, patch, "test settings").pipe(
+                  Effect.flatMap((patched) =>
+                    normalizeServerSettings(applyProviderInstanceMutation(patched, mutation)),
+                  ),
                 ),
               ),
             ),
@@ -637,7 +662,8 @@ function resolveTextGenerationProvider(
   settings: ServerSettings,
   isDriverAllowed: DriverAllowed = anyDriver,
 ): ServerSettings {
-  const selection = settings.textGenerationModelSelection;
+  const selection = resolveVirtualModel(settings, settings.textGenerationModelSelection);
+  if (selection.virtualModelId) return settings;
   return isModelSelectionProviderEnabled(settings, selection) &&
     selectionSupportsTextGeneration(settings, selection) &&
     isDriverAllowed(
@@ -660,7 +686,7 @@ function fallbackTextGenerationProvider(
       resolveProviderInstanceEnabled(
         settings.providerInstances[instanceId] ?? { driver, config: {} },
       ),
-    { defaultModelSelection: settings.defaultModelSelection },
+    { defaultModelSelection: resolveVirtualModel(settings, settings.defaultModelSelection) },
   );
   return fallback === null ? settings : { ...settings, textGenerationModelSelection: fallback };
 }
@@ -804,6 +830,7 @@ const make = Effect.gen(function* () {
     settings: managed,
     providers: managedProviders,
     summary: managedPolicy,
+    document: policyDocument,
   } = yield* ManagedPolicy.ManagedPolicy;
   // Locks are laid over every settings value that leaves this service, never persisted.
   const toEffective = (settings: ServerSettings) =>
@@ -1125,7 +1152,13 @@ const make = Effect.gen(function* () {
         yield* secretStore.remove(move.from).pipe(Effect.ignore);
       }
     }
-    return { settings: migrated, parseFailure };
+    // Delay writing the new representation until an actual edit, including for symlinked settings.
+    return {
+      settings: settingsFileTrusted
+        ? migrateVirtualModels(migrated, Object.keys(policyDocument?.settings ?? {}))
+        : migrated,
+      parseFailure,
+    };
   });
 
   const settingsCache = yield* Cache.makeWith((_key: typeof cacheKey) => loadSettingsFromDisk, {
@@ -1656,11 +1689,12 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
           yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
-          const patched = applyServerSettingsPatch(
+          const patched = yield* applyCheckedSettingsPatch(
             mutation.operation === "switch-connection"
               ? yield* materializeSettingsSecrets(current)
               : current,
             patch,
+            settingsPath,
           );
           return applyProviderInstanceMutation(patched, mutation);
         }),
@@ -1676,7 +1710,7 @@ const make = Effect.gen(function* () {
     updateSettings: (patch) =>
       updateAndPersistSettings(patch, (current) =>
         ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
-          Effect.as(applyServerSettingsPatch(current, patch)),
+          Effect.andThen(() => applyCheckedSettingsPatch(current, patch, settingsPath)),
         ),
       ),
     updateProviderInstance,

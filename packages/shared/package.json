@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./virtualModels": "./src/virtualModels.ts",
+    "./virtualModelEditor": "./src/virtualModelEditor.ts",
     "./codexByok": {
       "types": "./src/codexByok.ts",
       "import": "./src/codexByok.ts"

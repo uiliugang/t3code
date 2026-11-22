@@ -17,6 +17,7 @@ import {
   resolveWorktreeCleanup,
 } from "./projectSettings.ts";
 import { applyServerSettingsPatch } from "./serverSettings.ts";
+import { virtualModelReference } from "./virtualModels.ts";
 
 const projectId = ProjectId.make("project-a");
 const otherProjectId = ProjectId.make("project-b");
@@ -149,6 +150,19 @@ describe("resolveProjectSettings", () => {
       expect(resolved.settings.defaultModelSelection?.model).toBe(expectedModel);
       expect(resolved.sources.defaultModelSelection).toBe(expectedSource);
       expect(resolved.overrides.defaultModelSelection?.model).toBe("gpt-5.6-sol");
+      const ref = virtualModelReference("team");
+      const aliased = resolveProjectSettings(
+        {
+          ...settings,
+          virtualModels: { team: { binding: createModelSelection(codex, "gpt-5.6-sol") } },
+          projectSettingsOverrides: { [projectId]: { defaultModelSelection: ref } },
+        },
+        projectId,
+      );
+      expect(aliased.sources.defaultModelSelection).toBe(expectedSource);
+      expect(aliased.settings.defaultModelSelection).toEqual(
+        expectedSource === "project" ? ref : settings.defaultModelSelection,
+      );
     },
   );
 
@@ -167,6 +181,18 @@ describe("resolveProjectSettings", () => {
     expect(
       resolveProjectSettings(settings, otherProjectId).settings.textGenerationModelSelection,
     ).toEqual(settings.textGenerationModelSelection);
+    const ref = virtualModelReference("team");
+    const aliased = { ...settings, textGenerationModelSelection: ref };
+    expect(
+      resolveProjectSettings(
+        { ...aliased, virtualModels: { team: { binding: settings.textGenerationModelSelection } } },
+        projectId,
+      ).settings.textGenerationModelSelection.instanceId,
+    ).toBe("claudeAgent");
+    expect(
+      resolveProjectSettings({ ...aliased, virtualModels: { team: { binding: null } } }, projectId)
+        .settings.textGenerationModelSelection,
+    ).toEqual(ref);
   });
 
   it("falls back to a configured instance when every built-in one is off for the project", () => {

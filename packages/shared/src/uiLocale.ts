@@ -14,6 +14,43 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Virtual models": "虚拟模型",
+  "Update this environment's server before importing virtual models.":
+    "请升级此环境的服务器后再导入虚拟模型。",
+  "Real models": "真实模型",
+  "Virtual model": "虚拟模型",
+  "Default option": "默认选项",
+  "Not bound": "暂未绑定",
+  "Inherit ({model})": "继承（{model}）",
+  "{name} virtual model": "{name}虚拟模型",
+  "Edit binding: {name}": "编辑绑定：{name}",
+  "Edit binding": "编辑绑定",
+  "Virtual model name": "虚拟模型名称",
+  "Choose real model": "选择真实模型",
+  "Save binding": "保存绑定",
+  "Unbind model": "解除绑定",
+  "Unbind {name}?": "解除“{name}”的绑定？",
+  "Existing references are kept. Conversations using them will fail until this model is bound again.":
+    "保留虚拟模型和现有引用。重新绑定前，引用它的对话会报错。",
+  "Enter a virtual model name.": "请输入虚拟模型名称。",
+  "This virtual model name is already in use.": "此虚拟模型名称已被使用。",
+  "This virtual model has changed or was removed. Reopen the editor before saving.":
+    "此虚拟模型已被修改或移除。请重新打开编辑页后再保存。",
+  "This binding would create an inheritance cycle.": "此绑定会造成循环继承。",
+  "Binding mode": "绑定方式",
+  "Specific model": "指定模型",
+  "Model parameters": "模型参数",
+  "Discard unsaved changes?": "放弃未保存的更改？",
+  "Discard changes": "放弃更改",
+  "Keep editing": "继续编辑",
+  "Add virtual model": "添加虚拟模型",
+  "This removes the virtual model without changing existing references. Requests using those references will fail.":
+    "移除虚拟模型后，现有引用将保留，但使用这些引用的请求会报错。",
+  Fallback: "备用",
+  "Source control writer": "源码写作",
+  "Voice cleanup": "语音后处理",
+  'Virtual model "{model}" is not bound. Configure it in Settings → Providers.':
+    "虚拟模型“{model}”暂未绑定。请在设置 → 模型提供商中绑定模型。",
   "Resume now": "立即恢复",
   "Reset {time}": "已重置：{time}",
   "App updates": "应用更新",

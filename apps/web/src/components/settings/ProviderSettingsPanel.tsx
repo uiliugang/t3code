@@ -106,6 +106,7 @@ import { IntervalSecondsField } from "./IntervalSecondsField";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
 import { TextGeneratorsSettings } from "./TextGeneratorsSettings";
+import { VirtualModelsSettings } from "./VirtualModelsSettings";
 import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
@@ -1169,6 +1170,12 @@ export function EnvironmentProviderSettings({
         />
       ) : null}
 
+      <VirtualModelsSettings
+        key={environmentId}
+        environmentId={environmentId}
+        providers={serverProviders}
+        readOnly={readOnly}
+      />
       <SettingsSection title={t("Advanced")}>
         <SettingsRow
           id={searchableSetting("provider-health-check-interval").id}

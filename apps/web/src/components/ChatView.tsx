@@ -241,6 +241,7 @@ import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl"
 import { isPreviewFocused } from "../lib/previewFocus";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
 import { draftModelSelectionApplies, threadHasStarted } from "../lib/chatThreadActions";
+import { virtualModelName } from "@t3tools/shared/virtualModels";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
@@ -824,13 +825,11 @@ export default function ChatView(props: ChatViewProps) {
     }
   }
   const nowMinute = useNowMinute();
-  const draftDefaultModelSelection = draftThread
-    ? resolveProjectSettings(
-        settings,
-        fallbackDraftProject?.id ?? null,
-        fallbackDraftProject ?? undefined,
-      ).settings.defaultModelSelection
-    : null;
+  const draftSettings = draftThread
+    ? resolveProjectSettings(settings, draftThread.projectId, fallbackDraftProject ?? undefined)
+        .settings
+    : settings;
+  const draftDefaultModelSelection = draftThread ? draftSettings.defaultModelSelection : null;
   const draftModelResolution = draftThread
     ? resolveNewThreadModelSelection({
         defaultSelection:
@@ -842,7 +841,7 @@ export default function ChatView(props: ChatViewProps) {
           ),
         fallbackSelection: settings.fallbackModelSelection,
         providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
-        settings,
+        settings: draftSettings,
         projectId: draftThread.projectId,
         now: Date.parse(`${nowMinute}:00Z`),
       })
@@ -852,12 +851,16 @@ export default function ChatView(props: ChatViewProps) {
     ? buildLocalDraftThread(
         threadId,
         draftThread,
-        (draftFallback ? draftFallback.selection : draftDefaultModelSelection) ??
+        (draftFallback || draftDefaultModelSelection ? draftModelResolution?.selection : null) ??
           NO_PROVIDER_MODEL_SELECTION,
         messages,
       )
     : undefined;
   const isServerThread = serverThread !== null;
+  const followsVirtualModel =
+    !isServerThread &&
+    !!(draftFallback ? draftSettings.fallbackModelSelection : draftDefaultModelSelection)
+      ?.virtualModelId;
   const activeThread = isServerThread ? serverThread : localDraftThread;
   const serverLatestRun =
     serverProjection === null ? null : deriveLatestThreadRun(serverProjection);
@@ -1191,8 +1194,8 @@ export default function ChatView(props: ChatViewProps) {
   const { projectCloneBannerItem, projectCloneSendBlockReason } =
     useProjectCloneBanner(activeProjectRef);
   const activeProjectDefaultModelSelection =
-    !isServerThread && draftFallback
-      ? draftFallback.selection
+    !isServerThread && (draftFallback || draftDefaultModelSelection)
+      ? (draftModelResolution?.selection ?? null)
       : activeProjectSettings.settings.defaultModelSelection;
   const handleNewThreadInActiveProject = () => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
@@ -1322,9 +1325,20 @@ export default function ChatView(props: ChatViewProps) {
   );
   const composerModelSelectionApplies = draftModelSelectionApplies(
     { modelSelectionExplicit: composerModelSelectionExplicit },
-    threadHasStarted(activeThread),
+    threadHasStarted(activeThread) || followsVirtualModel,
   );
   const selectedProviderByThreadId = composerModelSelectionApplies ? composerActiveProvider : null;
+  const unboundDraftModel =
+    !isServerThread && !composerModelSelectionExplicit
+      ? draftModelResolution?.selection?.virtualModelId
+      : null;
+  const unboundModelMessage = unboundDraftModel
+    ? t('Virtual model "{model}" is not bound. Configure it in Settings → Providers.', {
+        model:
+          settings.virtualModels?.[unboundDraftModel]?.name ??
+          virtualModelName(unboundDraftModel, t),
+      })
+    : null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
     activeProjectDefaultModelSelection?.instanceId ??
@@ -3803,6 +3817,11 @@ export default function ChatView(props: ChatViewProps) {
                                 }
                               />
                             ) : null}
+                            {composerMounted && unboundModelMessage ? (
+                              <p role="alert" className="px-3 py-2 text-sm text-destructive">
+                                {unboundModelMessage}
+                              </p>
+                            ) : null}
                             {!composerMounted ? null : (
                               <ChatComposer
                                 canOperateThread={canOperateThread}
@@ -3862,7 +3881,7 @@ export default function ChatView(props: ChatViewProps) {
                                             ? gt("Messages loading")
                                             : worktreeSetupBlocksSend
                                               ? gt("Preparing worktree")
-                                              : projectCloneSendBlockReason
+                                              : (unboundModelMessage ?? projectCloneSendBlockReason)
                                 }
                                 isPreparingWorktree={isPreparingWorktree && !sendQueuesBehindSetup}
                                 bannerItems={
@@ -3902,6 +3921,7 @@ export default function ChatView(props: ChatViewProps) {
                                   activeProjectDefaultModelSelection
                                 }
                                 activeThreadModelSelection={activeThread?.modelSelection}
+                                followsVirtualModel={followsVirtualModel}
                                 activeProjectId={activeProject?.id ?? null}
                                 projectName={activeProject?.title}
                                 contextWindowEntries={serverVisibleTurnItems}

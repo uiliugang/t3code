@@ -16,6 +16,7 @@ import {
   type ServerSettings,
 } from "@t3tools/contracts";
 import { acpRegistryClient } from "@t3tools/provider-acp-registry/client";
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import { cursorClient } from "@t3tools/provider-cursor/client";
 import { fxClient } from "@t3tools/provider-fx/client";
 import { grokClient } from "@t3tools/provider-grok/client";
@@ -413,11 +414,14 @@ export function makeManagedProviders(
       ...(allowed === undefined ? {} : { textGenerators: {} }),
       sourceControlWriterModelSelection: allowedSelection(
         settings,
-        settings.sourceControlWriterModelSelection,
+        resolveVirtualModel(settings, settings.sourceControlWriterModelSelection),
       )
         ? settings.sourceControlWriterModelSelection
         : null,
-      reviewGuideModelSelection: allowedSelection(settings, settings.reviewGuideModelSelection)
+      reviewGuideModelSelection: allowedSelection(
+        settings,
+        resolveVirtualModel(settings, settings.reviewGuideModelSelection),
+      )
         ? settings.reviewGuideModelSelection
         : null,
     };

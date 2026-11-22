@@ -15,6 +15,7 @@ import {
 } from "./nativeCliLaunch.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath } from "@t3tools/shared/shell";
+import { resolveVirtualModel } from "@t3tools/shared/virtualModels";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
@@ -79,9 +80,11 @@ const make = Effect.gen(function* () {
         selection = run.modelSelection;
       }
     } else {
-      selection = (yield* settings.getSettings.pipe(
+      const config = yield* settings.getSettings.pipe(
         Effect.mapError((cause) => new NativeCliError({ reason: "selection", cause })),
-      )).defaultModelSelection;
+      );
+      const resolved = resolveVirtualModel(config, config.defaultModelSelection);
+      selection = resolved?.virtualModelId ? null : resolved;
     }
     const instanceId = input.instanceId
       ? ProviderInstanceId.make(input.instanceId)

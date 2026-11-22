@@ -16,6 +16,7 @@ import {
   type SourceControlCloneRepositoryInput,
 } from "@t3tools/contracts";
 import { canonicalRepositoryCloneKey } from "@t3tools/shared/git";
+import { virtualModelReference } from "@t3tools/shared/virtualModels";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -28,6 +29,8 @@ import * as Struct from "effect/Struct";
 import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
+import { TextGenerators } from "../textGeneration/TextGenerators.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectConfigurationService from "./ProjectConfigurationService.ts";
@@ -179,6 +182,8 @@ const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* 
       }).pipe(Effect.orDie),
   });
   const layer = ProjectConfigurationService.layer.pipe(
+    Layer.provide(Layer.mock(TextGenerators)({})),
+    Layer.provide(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
     Layer.provide(projectLayer),
     Layer.provide(repositoriesLayer),
     Layer.provide(identityLayer),
@@ -598,6 +603,7 @@ describe("ProjectConfigurationService", () => {
         const project: ProjectImportDefinition = {
           ...source,
           issueSources: [{ provider: "meituan", host: "mep.example.test", scope: "team-space" }],
+          virtualModels: { team: { binding: { instanceId, model: "absent-from-catalog" } } },
           providers: {
             [instanceId]: ProviderDriverKind.make("codex"),
             [ProviderInstanceId.make("codex")]: ProviderDriverKind.make("codex"),
@@ -605,6 +611,7 @@ describe("ProjectConfigurationService", () => {
           },
           settings: {
             defaultModelSelection: { instanceId, model: "example-model" },
+            reviewGuideModelSelection: virtualModelReference("team"),
             textGenerationModelSelection: {
               instanceId: ProviderInstanceId.make("codex"),
               model: "example-model",
@@ -675,6 +682,11 @@ describe("ProjectConfigurationService", () => {
           expect(test.attempts).toHaveLength(1);
           expect(test.registered.size).toBe(1);
           const imported = [...test.registered.values()][0]!;
+          const restored = yield* settings.getSettings;
+          expect(restored.virtualModels?.team?.binding).toBeNull();
+          expect(restored.projectSettingsOverrides[imported.id]?.reviewGuideModelSelection).toEqual(
+            virtualModelReference("team"),
+          );
           expect(
             (yield* settings.getSettings).projectSettingsOverrides[imported.id]
               ?.defaultProjectScripts?.[0]?.repositoryRootIds,

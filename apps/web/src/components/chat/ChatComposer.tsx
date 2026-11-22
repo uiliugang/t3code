@@ -435,6 +435,7 @@ export interface ChatComposerProps {
   providerCatalogKnown: boolean;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
+  followsVirtualModel?: boolean;
   reportedModelSelection?: ModelSelection | null;
   activeProjectId: ProjectId | null;
   projectName?: string | undefined;
@@ -935,7 +936,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     threadModelSelection: activeThreadModelSelection,
     projectModelSelection: activeProjectDefaultModelSelection,
     promptInjectionState: getComposerPromptInjectionState(prompt),
-    threadStarted: threadHasStarted(activeThread),
+    threadStarted: threadHasStarted(activeThread) || props.followsVirtualModel === true,
     candidateInstanceIds: [
       activeThread?.runtime?.providerInstanceId,
       activeThreadModelSelection?.instanceId,
