@@ -339,8 +339,7 @@ const SetIssueStateTool = Tool.make("set_issue_state", {
   .annotate(Tool.OpenWorld, true);
 
 const LinkIssueTool = Tool.make("link_issue", {
-  description:
-    "Link an issue to a thread so T3 Code shows it beside the thread. Link every issue you work on or file.",
+  description: "Link every issue you work on or file so it appears beside the thread.",
   parameters: Schema.Struct({ ...IssueTargetInput.fields, ...ThreadTargetInput.fields }),
   success: LinkIssueResult,
   failure: IssueToolError,
