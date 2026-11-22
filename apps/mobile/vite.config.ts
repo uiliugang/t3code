@@ -35,7 +35,7 @@ const reactTests = [
   "src/features/settings/ClaudeByokProviderSettings.test.tsx",
   "src/features/settings/ClaudeInstallationControls.test.tsx",
   "src/features/settings/ProviderSwipeRow.test.tsx",
-  "src/features/requirements/ProjectSourceLine.test.tsx",
+  "src/features/requirements/ProjectSourcesRow.test.tsx",
   "src/features/settings/WechatSettingsSection.test.tsx",
   "src/features/settings/SettingsScheduledTasksRouteScreen.test.tsx",
   "src/features/settings/components/BranchNamingSettings.test.tsx",

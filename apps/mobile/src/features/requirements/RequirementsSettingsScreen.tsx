@@ -1,37 +1,22 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { type StaticScreenProps, useNavigation } from "@react-navigation/native";
-import {
-  mergeProjectIssueSources,
-  parseMepSpaceIds,
-  projectIssueSourceEdit,
-  withGithubRepositoryOverride,
-  withMepSpaceOverrides,
-} from "@t3tools/client-runtime/issueSources";
+import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import {
   meituanAssociationCountLabel,
   mepAccountLabel,
-  mepSpaceValue,
   mepTrackerSummary,
 } from "@t3tools/client-runtime/meituanSettings";
-import {
-  EnvironmentId,
-  isMeituanServiceEnabled,
-  type IssueSource,
-  type ProjectId,
-} from "@t3tools/contracts";
+import { EnvironmentId, isMeituanServiceEnabled } from "@t3tools/contracts";
 import { useState } from "react";
-import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
-import { Button } from "../../components/ui/Button";
+import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useProjects } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { IssueTrackerSection } from "../settings/components/IssueTrackerSection";
 import { SettingsRow } from "../settings/components/SettingsRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
@@ -44,18 +29,13 @@ import {
 } from "../settings/settings-environment-filter";
 import { settingsEditorTarget } from "../settings/settings-environment-filter.logic";
 import { IssuePicker } from "./IssuePicker";
-import {
-  ProjectSourceLine,
-  ProjectSourceSwipeChange,
-  useProjectSourceSwipes,
-} from "./ProjectSourceLine";
+import { ProjectSourcesRow } from "./ProjectSourcesRow";
 
 export function RequirementsSettingsScreen({
   route,
 }: StaticScreenProps<{ environmentId?: EnvironmentId } | undefined>) {
   const t = useUiTranslation();
   const insets = useSafeAreaInsets();
-  const swipes = useProjectSourceSwipes();
   const { availableTargets, selectedTargets, selectedIds } = useSettingsEnvironmentFilter();
   const navigation =
     useNavigation<
@@ -69,7 +49,6 @@ export function RequirementsSettingsScreen({
         className="flex-1"
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
-        onScrollBeginDrag={swipes.close}
         contentContainerClassName="gap-5 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
@@ -83,9 +62,7 @@ export function RequirementsSettingsScreen({
           onChange={(value) => navigation.setParams({ environmentId: EnvironmentId.make(value) })}
         />
         {environment ? (
-          <ProjectSourceSwipeChange value={swipes.onChange}>
-            <EnvironmentRequirements key={environment.environmentId} environment={environment} />
-          </ProjectSourceSwipeChange>
+          <EnvironmentRequirements key={environment.environmentId} environment={environment} />
         ) : (
           <Text>
             {t(
@@ -163,7 +140,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
             repository={result?.repository ?? null}
             saved={saved}
             sources={sources}
-            error={result?.error}
+            error={result?.error ?? query.error ?? undefined}
             discovery={query.error || result?.error ? "failed" : result ? "ready" : "pending"}
             mep={enabled}
             allowed={allowed}
@@ -214,212 +191,5 @@ function MepTracker({ environment, projects }: { environment: SettingsTarget; pr
         </>
       ) : null}
     </>
-  );
-}
-
-type SourceEdit = { provider: "meituan" } | { provider: "github"; source: IssueSource | undefined };
-
-function ProjectSourcesRow({
-  environmentId,
-  projectId,
-  title,
-  repository,
-  saved,
-  sources,
-  error,
-  discovery,
-  mep,
-  allowed,
-}: {
-  environmentId: EnvironmentId;
-  projectId: ProjectId;
-  title: string;
-  repository: string | null;
-  saved: readonly IssueSource[];
-  sources: readonly IssueSource[];
-  error: string | undefined;
-  discovery: "pending" | "failed" | "ready";
-  mep: boolean;
-  allowed: boolean;
-}) {
-  const t = useUiTranslation();
-  const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
-  const [editing, setEditing] = useState<(SourceEdit & { saved: readonly IssueSource[] }) | null>(
-    null,
-  );
-  const [draft, setDraft] = useState("");
-  const [failure, setFailure] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const githubSources = sources.filter((s) => s.provider === "github");
-  const spaces = sources.filter((s) => s.provider === "meituan").map((s) => s.scope);
-  const manual = saved.some((s) => s.provider === "meituan");
-  const valid =
-    editing?.provider === "meituan"
-      ? parseMepSpaceIds(draft) !== null
-      : draft.trim().length <= 200 && /^[\w.-]+\/[\w.-]+$/u.test(draft.trim());
-  const edit = (target: SourceEdit) => {
-    setEditing({ ...target, saved });
-    setDraft(target.provider === "meituan" ? spaces.join(", ") : (target.source?.scope ?? ""));
-    setFailure(null);
-  };
-  const save = async (restore: boolean) => {
-    if (
-      !editing ||
-      busy ||
-      !allowed ||
-      (!restore && !valid) ||
-      (editing.provider === "meituan" && !mep)
-    )
-      return;
-    const input = projectIssueSourceEdit(
-      projectId,
-      editing.provider,
-      saved,
-      editing.saved,
-      (latest) =>
-        editing.provider === "meituan"
-          ? withMepSpaceOverrides(latest, restore ? [] : (parseMepSpaceIds(draft) ?? []))
-          : withGithubRepositoryOverride(latest, editing.source, restore ? null : draft.trim()),
-    );
-    if (!input) {
-      setFailure(t("Project sources have changed. Reopen the editor and try again."));
-      return;
-    }
-    setBusy(true);
-    setFailure(null);
-    const result = await update({ environmentId, input });
-    if (result._tag === "Success") {
-      setEditing(null);
-    } else setFailure(t("Could not save project sources. Reopen the editor and try again."));
-    setBusy(false);
-  };
-  return (
-    <View className="gap-2 border-b border-border-subtle px-4 py-3">
-      <View>
-        <Text textRole="body" className="font-t3-semibold">
-          {title}
-        </Text>
-        {repository && !githubSources.some((source) => source.scope === repository) ? (
-          <Text textRole="footnote" className="text-foreground-muted">
-            {repository}
-          </Text>
-        ) : null}
-      </View>
-      {error ? (
-        <Text accessibilityRole="alert" className="text-danger">
-          {error}
-        </Text>
-      ) : null}
-      {editing && (editing.provider !== "meituan" || mep) ? (
-        <View className="gap-2 border-t border-border-subtle pt-3">
-          <Text textRole="footnote" className="font-t3-medium">
-            {t(editing.provider === "meituan" ? "MEP space IDs" : "GitHub repository")}
-            {editing.provider === "github" ? ` · ${editing.source?.host ?? "github.com"}` : ""}
-            {editing.provider === "meituan" && spaces.length
-              ? ` · ${t(manual ? "Manual override" : "Automatic")}`
-              : ""}
-          </Text>
-          <AppTextInput
-            accessibilityLabel={t(
-              editing.provider === "meituan" ? "MEP space IDs" : "GitHub repository",
-            )}
-            value={draft}
-            onChangeText={setDraft}
-            editable={allowed && !busy}
-            placeholder={editing.provider === "meituan" ? "10001, 10002" : "owner/repository"}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {!valid && editing.provider === "meituan" ? (
-            <Text className="text-sm text-danger">
-              {t("Enter positive space IDs separated by commas.")}
-            </Text>
-          ) : null}
-          {failure ? (
-            <Text accessibilityRole="alert" className="text-danger">
-              {failure}
-            </Text>
-          ) : null}
-          <View className="flex-row flex-wrap gap-2">
-            <Button
-              size="compact"
-              label={t("Save")}
-              tone="primary"
-              disabled={!valid || busy || !allowed}
-              onPress={() => void save(false)}
-            />
-            <Button
-              size="compact"
-              label={t("Cancel")}
-              tone="text"
-              disabled={busy}
-              onPress={() => setEditing(null)}
-            />
-            {saved.some((s) => s.provider === editing.provider) ? (
-              <Button
-                size="compact"
-                label={t(
-                  editing.provider === "github" && githubSources.length > 1
-                    ? "Remove"
-                    : "Restore automatic",
-                )}
-                tone="text"
-                disabled={!allowed || busy}
-                onPress={() => void save(true)}
-              />
-            ) : null}
-          </View>
-        </View>
-      ) : (
-        <>
-          <View>
-            <Text textRole="label" className="font-t3-medium text-foreground-muted">
-              {t("GitHub Issues")}
-            </Text>
-            {(githubSources.length ? githubSources : [undefined]).map((source) => (
-              <ProjectSourceLine
-                key={source ? JSON.stringify([source.host, source.scope]) : "github"}
-                value={
-                  source?.scope ??
-                  t(
-                    discovery === "pending"
-                      ? "Loading..."
-                      : discovery === "failed"
-                        ? "Unknown"
-                        : "Not configured",
-                  )
-                }
-                detail={source?.host === "github.com" ? undefined : source?.host}
-                actionLabel={
-                  source
-                    ? t("Edit {name}", { name: `${source.host}/${source.scope}` })
-                    : t("GitHub repository")
-                }
-                action={t(source ? "Edit" : "Add")}
-                onEdit={allowed ? () => edit({ provider: "github", source }) : undefined}
-              />
-            ))}
-          </View>
-          {mep ? (
-            <View className="border-t border-border-subtle">
-              <ProjectSourceLine
-                label={t("MEP space IDs")}
-                value={mepSpaceValue(spaces, discovery, t)}
-                detail={
-                  !allowed && spaces.length
-                    ? t(manual ? "Manual override" : "Automatic")
-                    : undefined
-                }
-                actionLabel={t(
-                  spaces.length || discovery !== "ready" ? "Edit spaces" : "Link spaces",
-                )}
-                action={t(!spaces.length && discovery === "ready" ? "Add" : "Edit")}
-                onEdit={allowed ? () => edit({ provider: "meituan" }) : undefined}
-              />
-            </View>
-          ) : null}
-        </>
-      )}
-    </View>
   );
 }
