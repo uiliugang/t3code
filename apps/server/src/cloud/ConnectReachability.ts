@@ -2,10 +2,12 @@ import * as NodeNet from "node:net";
 
 import {
   connectReachabilityHelpUrl,
+  ExecutionEnvironmentDescriptor,
   type EnvironmentConnectReachability,
   formatConnectReachable,
 } from "@t3tools/contracts";
 import { readTailscaleExitNode, type TailscaleExitNode } from "@t3tools/tailscale";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -18,10 +20,11 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { HttpClient, type HttpClientError, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { CLOUD_ENDPOINT_RUNTIME_CONFIG } from "./config.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import { isLoopbackEndpointOrigin, parseManagedEndpointLocalOrigin } from "./linkChecks.ts";
@@ -54,7 +57,7 @@ export type EndpointProbe =
       /** Whether public DNS has the name; absent when it could not be asked. */
       readonly existsPublicly?: boolean;
     }
-  | { readonly kind: "timeout" | "network_error" };
+  | { readonly kind: "timeout" | "network_error" | "invalid_descriptor" };
 
 /** Everything one check learned. `null` means that step did not run. */
 export interface ReachabilityFacts {
@@ -104,6 +107,13 @@ export function classifyReachability(
     );
   }
   const status = endpoint?.kind === "status" ? endpoint.status : null;
+  if (endpoint?.kind === "invalid_descriptor") {
+    return fail(
+      "unexpected_response",
+      "The T3 Connect address answered with HTTP 200 but did not identify this environment.",
+      "Check that the tunnel points to this T3 Code server.",
+    );
+  }
   if (status === 200) {
     return {
       status: "reachable",
@@ -152,7 +162,7 @@ export function classifyReachability(
   const cloudflareError = endpoint.kind === "status" ? endpoint.cloudflareError : undefined;
   // Cloudflare answers 530 with error 1033 when the tunnel has no live connector. Other
   // codes, such as 1016 for a broken DNS record, are not fixed by restarting cloudflared.
-  if (status === 530 && (cloudflareError === undefined || cloudflareError === "1033")) {
+  if (status === 530 && cloudflareError === "1033") {
     return fail(
       "no_connector",
       "Cloudflare has no live connection from this machine for the tunnel.",
@@ -171,7 +181,9 @@ export function classifyReachability(
     return fail(
       "unexpected_response",
       `The T3 Connect address answered with HTTP ${status}${code}.`,
-      restart,
+      status === 530
+        ? "Try again shortly. If it keeps failing, check the host's tunnel log."
+        : restart,
     );
   }
   if (endpoint.kind === "dns_failed") {
@@ -238,6 +250,24 @@ const NOT_FOUND_CODES = new Set(["ENOTFOUND", "EAI_NONAME", "EBUSY"]);
 
 const DnsJsonAnswer = Schema.Struct({ Status: Schema.Number });
 
+const decodeDescriptor = Schema.decodeUnknownOption(
+  Schema.fromJsonString(ExecutionEnvironmentDescriptor),
+);
+const decodeCloudflareError = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ error_code: Schema.Int })),
+);
+
+function cloudflareErrorCode(body: string) {
+  const json = decodeCloudflareError(body);
+  if (Option.isSome(json)) return String(json.value.error_code);
+  return (
+    /^\s*error code:\s*(\d{4})\s*$/i.exec(body)?.[1] ??
+    /<span(?:\s[^>]*)?>\s*Error\s*<\/span>\s*<span(?:\s[^>]*)?>\s*(\d{4})\s*<\/span>/i.exec(
+      body,
+    )?.[1]
+  );
+}
+
 function isConnectionRefused(error: unknown): boolean {
   if (error instanceof AggregateError) {
     return error.errors.length > 0 && error.errors.every(isConnectionRefused);
@@ -282,6 +312,7 @@ export class ConnectReachability extends Context.Service<
 
 const make = Effect.gen(function* () {
   const runtime = yield* ManagedEndpointRuntime.CloudManagedEndpointRuntime;
+  const environmentId = yield* (yield* ServerEnvironment.ServerEnvironment).getEnvironmentId;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const httpClient = yield* HttpClient.HttpClient;
   // `order` ranks checks by start, so a slow older one cannot replace a newer result.
@@ -335,14 +366,40 @@ const make = Effect.gen(function* () {
         .pipe(Effect.timeoutOption(ENDPOINT_REQUEST_TIMEOUT));
       if (Option.isNone(response)) return { kind: "timeout" } satisfies EndpointProbe;
       const { status } = response.value;
-      if (status !== 530) return { kind: "status", status } satisfies EndpointProbe;
-      // Cloudflare's error page is HTML unless the client accepts JSON, which carries
-      // `"error_code":1033`. Clients that send no User-Agent get `error code: 1033`.
-      const body = yield* response.value.text.pipe(
-        Effect.timeoutOption(ERROR_BODY_READ_TIMEOUT),
-        Effect.orElseSucceed(() => Option.none<string>()),
+      if (status !== 200 && status !== 530)
+        return { kind: "status", status } satisfies EndpointProbe;
+      const readBody = response.value.stream.pipe(
+        Stream.limitBytes<HttpClientError.HttpClientError | "oversized", never>("256 KiB", () =>
+          Stream.fail("oversized" as const),
+        ),
+        Stream.decodeText(),
+        Stream.mkString,
       );
-      const code = /error[_ ]code"?:\s*(\d{4})/i.exec(Option.getOrElse(body, () => ""))?.[1];
+      if (status === 200) {
+        return yield* readBody.pipe(
+          Effect.timeout(ENDPOINT_REQUEST_TIMEOUT),
+          Effect.match({
+            onSuccess: (body): EndpointProbe =>
+              Option.exists(
+                decodeDescriptor(body),
+                (value) => value.environmentId === environmentId,
+              )
+                ? { kind: "status", status }
+                : { kind: "invalid_descriptor" },
+            onFailure: (error): EndpointProbe => {
+              if (Cause.isTimeoutError(error)) return { kind: "timeout" };
+              if (error === "oversized" || error.reason._tag === "EmptyBodyError")
+                return { kind: "invalid_descriptor" };
+              return { kind: "network_error" };
+            },
+          }),
+        );
+      }
+      const code = yield* readBody.pipe(
+        Effect.map(cloudflareErrorCode),
+        Effect.timeout(ERROR_BODY_READ_TIMEOUT),
+        Effect.orElseSucceed(() => undefined),
+      );
       return (
         code === undefined
           ? { kind: "status", status }
@@ -385,7 +442,11 @@ const make = Effect.gen(function* () {
       edgeReachable: null,
       exitNode: null,
     };
-    if (connector === null || (endpoint?.kind === "status" && endpoint.status === 200)) {
+    if (
+      connector === null ||
+      endpoint?.kind === "invalid_descriptor" ||
+      (endpoint?.kind === "status" && endpoint.status === 200)
+    ) {
       return facts;
     }
     if (endpoint?.kind === "status" && endpoint.status === 502) {
