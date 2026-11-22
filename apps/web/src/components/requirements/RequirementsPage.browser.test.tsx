@@ -229,6 +229,13 @@ function setup({ unifiedOnes = false } = {}) {
   };
 }
 
+async function openFilterSubmenu(name: string) {
+  const trigger = page.getByRole("menuitem", { name, exact: true });
+  await expect.element(trigger).toBeVisible();
+  await act(() => trigger.element().focus());
+  await userEvent.keyboard("{ArrowRight}");
+}
+
 it("keeps filter checkmarks in sync with selection and distinguishes projects across environments", async () => {
   using fixture = setup();
   const updateSearch = vi.fn();
@@ -241,7 +248,7 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
   await expect.element(screen.getByText("Remote conversation")).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "Filters" }).click();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "Show archived" })).toBeChecked();
-  await page.getByRole("menuitem", { name: "Project", exact: true }).hover();
+  await openFilterSubmenu("Project");
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: "local · local project" }))
     .toBeChecked();
@@ -259,7 +266,10 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
   await expect.element(screen.getByText("Remote conversation")).toBeVisible();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "All projects" })).toBeChecked();
   await userEvent.keyboard("{Escape}");
-  await page.getByRole("menuitem", { name: "Assignee", exact: true }).hover();
+  await expect
+    .element(page.getByRole("menuitem", { name: "Project", exact: true }))
+    .toHaveAttribute("aria-expanded", "false");
+  await openFilterSubmenu("Assignee");
   await expect.element(page.getByRole("menuitemcheckbox", { name: "selected-user" })).toBeChecked();
   await page.getByRole("menuitemcheckbox", { name: "All assignees" }).click();
   expect(updateSearch).toHaveBeenLastCalledWith({ assignee: "all", workflowInvolvement: "all" });
@@ -269,13 +279,16 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
     .element(page.getByRole("menuitemcheckbox", { name: "Assigned to me" }))
     .not.toBeChecked();
   await userEvent.keyboard("{Escape}");
+  await expect
+    .element(page.getByRole("menuitem", { name: "Assignee", exact: true }))
+    .toHaveAttribute("aria-expanded", "false");
   await page.getByRole("menuitemcheckbox", { name: "Show archived" }).click();
   expect(updateSearch).toHaveBeenLastCalledWith({ archived: false });
   await screen.rerender(fixture.board({ assignee: "all" }, updateSearch));
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: "Show archived" }))
     .not.toBeChecked();
-  await page.getByRole("menuitem", { name: "Issue source", exact: true }).hover();
+  await openFilterSubmenu("Issue source");
   await page.getByRole("menuitemcheckbox", { name: "Local work items" }).click();
   expect(updateSearch).toHaveBeenLastCalledWith(
     expect.objectContaining({ source: "local", workflowInvolvement: undefined }),
@@ -709,7 +722,7 @@ it("falls back to assigned issues instead of applying unsupported legacy involve
     fixture.board({ workflowInvolvement: "authored", assignee: "all" }, vi.fn()),
   );
   await screen.getByRole("button", { name: "Filters" }).click();
-  await page.getByRole("menuitem", { name: "Involvement", exact: true }).hover();
+  await openFilterSubmenu("Involvement");
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: "Assigned to me" }))
     .toBeChecked();
@@ -732,7 +745,7 @@ it("keeps unsupported advanced filters out of an ONES workflow query", async () 
     }),
   );
   await screen.getByRole("button", { name: "Filters" }).click();
-  await page.getByRole("menuitem", { name: "Involvement", exact: true }).hover();
+  await openFilterSubmenu("Involvement");
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: "Assigned to me" }))
     .toBeChecked();
@@ -740,7 +753,10 @@ it("keeps unsupported advanced filters out of an ONES workflow query", async () 
     .element(page.getByRole("menuitemcheckbox", { name: "Mentioning me" }))
     .not.toBeInTheDocument();
   await userEvent.keyboard("{Escape}");
-  await page.getByRole("menuitem", { name: "Sort", exact: true }).hover();
+  await expect
+    .element(page.getByRole("menuitem", { name: "Involvement", exact: true }))
+    .toHaveAttribute("aria-expanded", "false");
+  await openFilterSubmenu("Sort");
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: "Recently updated" }))
     .toBeChecked();
