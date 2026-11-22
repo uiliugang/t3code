@@ -167,6 +167,44 @@ describe("thread execution presentation", () => {
     ).toBeUndefined();
   });
 
+  it("derives live output speed from the active turn's cumulative usage sample", () => {
+    const attemptId = RunAttemptId.make("live-speed-attempt");
+    const active = { ...run("live-speed", 1, "running"), activeAttemptId: attemptId };
+    const turn = {
+      id: ProviderTurnId.make("live-speed-turn"),
+      providerThreadId: ProviderThreadId.make("live-speed-thread"),
+      nodeId: NodeId.make("live-speed-node"),
+      runAttemptId: attemptId,
+      nativeTurnRef: null,
+      ordinal: 1,
+      status: "running" as const,
+      startedAt: now,
+      completedAt: null,
+    };
+    const usage = {
+      usedTokens: 1_000,
+      outputTokens: 50,
+      updatedAt: "2026-07-28T10:00:02.500Z",
+    };
+    const speed = (providerTurn: (typeof v2Projection.providerTurns)[number]) =>
+      deriveThreadActivityRun({
+        ...v2Projection,
+        runs: [active],
+        providerTurns: [providerTurn],
+      })?.runningOutputTokensPerSecond;
+    expect(speed({ ...turn, tokenUsage: usage })).toBeUndefined();
+    expect(speed({ ...turn, tokenUsage: { ...usage, turnOutputTokens: 0 } })).toBeUndefined();
+    expect(speed({ ...turn, tokenUsage: { ...usage, turnOutputTokens: 125 } })).toBe(50);
+    expect(
+      speed({
+        ...turn,
+        status: "completed",
+        completedAt: DateTime.makeUnsafe(usage.updatedAt),
+        tokenUsage: { ...usage, turnOutputTokens: 125 },
+      }),
+    ).toBeUndefined();
+  });
+
   it("shows extension statuses only from the selected provider's current live session", () => {
     const instanceId = v2Projection.thread.modelSelection.instanceId;
     const providerThreadId = ProviderThreadId.make("native-status-thread");
@@ -713,15 +751,51 @@ describe("deriveRunlessWorkStartedAt", () => {
   };
 
   it("times a provider-native subagent from its runless root turn while it works", () => {
+    const providerThreadId = ProviderThreadId.make("native-child");
+    const providerTurnId = ProviderTurnId.make("native-child-turn");
+    const node = { ...rootTurn("running", later), providerThreadId, providerTurnId };
+    const providerTurn = {
+      id: providerTurnId,
+      providerThreadId,
+      nodeId: node.id,
+      runAttemptId: null,
+      nativeTurnRef: null,
+      ordinal: 1,
+      status: "running" as const,
+      startedAt: later,
+      completedAt: null,
+      tokenUsage: {
+        usedTokens: 1_000,
+        turnOutputTokens: 125,
+        updatedAt: "2026-07-28T10:05:02.500Z",
+      },
+    };
     const projection = {
       ...nativeChild,
       thread: {
         ...nativeChild.thread,
-        activeProviderThreadId: ProviderThreadId.make("native-child"),
+        activeProviderThreadId: providerThreadId,
       },
-      nodes: [rootTurn("running", later)],
+      nodes: [node],
+      providerTurns: [providerTurn],
     };
     expect(deriveRunlessWorkStartedAt(projection)).toBe("2026-07-28T10:05:00.000Z");
+    expect(deriveProviderSubagentStatus(projection)?.runningOutputTokensPerSecond).toBe(50);
+    const nextNodeId = NodeId.make("child-next-root");
+    expect(
+      deriveProviderSubagentStatus({
+        ...projection,
+        nodes: [
+          node,
+          {
+            ...node,
+            id: nextNodeId,
+            rootNodeId: nextNodeId,
+            providerTurnId: ProviderTurnId.make("next"),
+          },
+        ],
+      })?.runningOutputTokensPerSecond,
+    ).toBeUndefined();
     expect(deriveThreadRuntime(projection)).toBeNull();
   });
 

@@ -3265,6 +3265,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         outputTokens: 5,
         reasoningOutputTokens: 1,
       };
+      const incompleteUsage = {
+        ...usage,
+        totalTokens: 9,
+        outputTokens: -1,
+        reasoningOutputTokens: 0,
+      };
       const transcript = makeCodexReplayTranscript({
         scenario: "async-question-and-billed-usage",
         entries: [
@@ -3287,6 +3293,22 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                   text: "Which branch?",
                   delivery: "async",
                   questions: [{ title: "Which branch?", options: ["main", "dev"] }],
+                },
+              },
+            },
+          },
+          {
+            type: "emit_inbound",
+            label: "incomplete usage",
+            frame: {
+              method: "thread/tokenUsage/updated",
+              params: {
+                threadId: nativeThreadId,
+                turnId: nativeTurnId,
+                tokenUsage: {
+                  total: incompleteUsage,
+                  last: incompleteUsage,
+                  modelContextWindow: 200_000,
                 },
               },
             },
@@ -3352,20 +3374,22 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         (event) => event.type === "node.updated" && event.node.id === requests[0]?.nodeId,
       );
       assert.equal(questionNode?.type === "node.updated" && questionNode.node.countsForRun, false);
-      const contextReport = harness.events.find(
-        (event) =>
-          event.type === "provider_turn.updated" && event.providerTurn.tokenUsage !== undefined,
+      const contextReports = harness.events.flatMap((event) =>
+        event.type === "provider_turn.updated" && event.providerTurn.tokenUsage !== undefined
+          ? [event.providerTurn]
+          : [],
       );
-      assert.equal(contextReport?.type, "provider_turn.updated");
-      if (contextReport?.type === "provider_turn.updated") {
-        assert.equal(
-          contextReport.providerTurn.runAttemptId,
-          RunAttemptId.make("async-question-attempt"),
-        );
-        assert.equal(contextReport.providerTurn.providerThreadId, harness.providerThread.id);
-        assert.equal(contextReport.providerTurn.tokenUsage?.usedTokens, 15);
-        assert.equal(contextReport.providerTurn.tokenUsage?.maxTokens, 200_000);
-      }
+      const [initialSample, contextReport] = contextReports;
+      assert.lengthOf(contextReports, 2);
+      assert.equal(initialSample?.tokenUsage?.outputTokens, 0);
+      assert.isUndefined(initialSample?.tokenUsage?.turnOutputTokens);
+      assert.equal(contextReport?.runAttemptId, RunAttemptId.make("async-question-attempt"));
+      assert.equal(contextReport?.providerThreadId, harness.providerThread.id);
+      assert.include(contextReport?.tokenUsage, {
+        usedTokens: 15,
+        maxTokens: 200_000,
+        turnOutputTokens: 5,
+      });
       const completed = harness.events.find(
         (event) =>
           event.type === "provider_turn.updated" && event.providerTurn.status === "completed",

@@ -240,6 +240,7 @@ interface MessagesTimelineProps {
   /** The thread is catching up from a cached copy, whose working state may be stale. */
   syncing?: boolean;
   runlessWorkActive?: boolean;
+  runlessOutputTokensPerSecond?: number | undefined;
   activeTurnStartedAt?: string | null;
   /** Replaces "Thinking" while the active run's provider has not started a turn. */
   providerStartingLabel?: string | null;
@@ -370,6 +371,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   isWorking,
   syncing = false,
   runlessWorkActive = false,
+  runlessOutputTokensPerSecond,
   activeTurnStartedAt = null,
   providerStartingLabel = null,
   worktreeSetup = null,
@@ -1199,6 +1201,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
       : null;
   const activityState: TimelineRowActivityState = {
     isWorking,
+    runningOutputTokensPerSecond: isWorking
+      ? (latestRun?.runningOutputTokensPerSecond ?? runlessOutputTokensPerSecond)
+      : undefined,
     isCompacting: compactionAwaitingRow,
     isRevertingCheckpoint,
     backgroundWorktreeSetup,

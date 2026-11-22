@@ -303,6 +303,81 @@ describe("MessagesTimeline work rows", () => {
     });
   });
 
+  it("updates the working timer with the latest output speed", async () => {
+    setup();
+    const props = baseProps();
+    const runId = RunId.make("running-speed");
+    const entries = [message("Keep working", { runId })];
+    using _now = vi.spyOn(Date, "now").mockReturnValue(Date.parse(CREATED_AT) + 15_000);
+    const container = document.createElement("div");
+    container.style.cssText = "width: 280px; height: 500px; display: flex; flex-direction: column;";
+    const timeline = (runningOutputTokensPerSecond?: number) => (
+      <MessagesTimeline
+        {...props}
+        timelineEntries={entries}
+        isWorking
+        runningRunId={runId}
+        activeTurnStartedAt={CREATED_AT}
+        worktreeSetup={{
+          threadId: ThreadId.make("token-speed-setup"),
+          phase: "running",
+          startedAt: CREATED_AT,
+          endedAt: null,
+          branch: "feature",
+          baseRef: "main",
+          worktreePath: null,
+          setupScript: null,
+          stages: [
+            {
+              id: "agent",
+              status: "done",
+              startedAt: CREATED_AT,
+              endedAt: CREATED_AT,
+              percent: null,
+              detail: null,
+              tail: [],
+            },
+          ],
+          error: null,
+          sequence: 1,
+        }}
+        latestRun={{
+          runId,
+          status: "running",
+          startedAt: CREATED_AT,
+          completedAt: null,
+          ...(runningOutputTokensPerSecond === undefined ? {} : { runningOutputTokensPerSecond }),
+        }}
+      />
+    );
+    await using screen = await render(timeline(), { container });
+    const setupButton = screen.getByRole("button", { name: /^Background setup is still running/ });
+    await expect.element(setupButton).toBeVisible();
+    expect(setupButton.element().getBoundingClientRect().right).toBeLessThanOrEqual(
+      container.getBoundingClientRect().right,
+    );
+    await expect.element(screen.getByText(/^Working for /)).toBeVisible();
+    await expect.element(screen.getByText(/tokens\/s/)).not.toBeInTheDocument();
+    await screen.rerender(timeline(50.12));
+    await expect.element(screen.getByText(/^Working for .+ · 50\.1 tokens\/s$/)).toBeVisible();
+    await screen.rerender(timeline(60.23));
+    await expect.element(screen.getByText(/^Working for .+ · 60\.2 tokens\/s$/)).toBeVisible();
+    expect(setupButton.element().getBoundingClientRect().right).toBeLessThanOrEqual(
+      container.getBoundingClientRect().right,
+    );
+    await screen.rerender(
+      <MessagesTimeline
+        {...props}
+        timelineEntries={[message("Child agent is still working")]}
+        isWorking
+        runlessWorkActive
+        activeTurnStartedAt={CREATED_AT}
+        runlessOutputTokensPerSecond={42}
+      />,
+    );
+    await expect.element(screen.getByText(/^Working for .+ · 42 tokens\/s$/)).toBeVisible();
+  });
+
   it("shows the measured speed when its run is outside the loaded history", async () => {
     setup();
     const runId = RunId.make("outside-history");

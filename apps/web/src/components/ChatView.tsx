@@ -3676,6 +3676,9 @@ export default function ChatView(props: ChatViewProps) {
                     : {})}
                   isWorking={isWorking}
                   runlessWorkActive={runlessWorkStartedAt !== null}
+                  runlessOutputTokensPerSecond={
+                    providerSubagentStatus?.runningOutputTokensPerSecond
+                  }
                   isCompacting={isCompacting}
                   awaitingUser={
                     activePendingApproval !== null

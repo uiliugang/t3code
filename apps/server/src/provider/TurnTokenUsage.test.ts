@@ -29,13 +29,15 @@ describe("billable native turn usage", () => {
     const state = makeCodexTurnTokenUsageState();
     state.activeTurnId = "turn";
     const first = update(breakdown(1010, 505, 102), breakdown(10, 5, 2));
-    accumulateCodexTurnTokenUsage(state, "turn", first);
-    accumulateCodexTurnTokenUsage(state, "turn", first);
-    accumulateCodexTurnTokenUsage(
-      state,
-      "turn",
-      update(breakdown(1030, 515, 108), breakdown(20, 10, 6)),
-    );
+    expect(accumulateCodexTurnTokenUsage(state, "turn", first)).toBe(2);
+    expect(accumulateCodexTurnTokenUsage(state, "turn", first)).toBe(2);
+    expect(
+      accumulateCodexTurnTokenUsage(
+        state,
+        "turn",
+        update(breakdown(1030, 515, 108), breakdown(20, 10, 6)),
+      ),
+    ).toBe(8);
     expect(completeCodexTurnTokenUsage(state, "turn", true)).toEqual({
       usageStatus: "complete",
       usageScope: "main_agent",
@@ -65,7 +67,9 @@ describe("billable native turn usage", () => {
   it("does not bill late Codex updates against the next active turn", () => {
     const state = makeCodexTurnTokenUsageState();
     state.activeTurnId = "next";
-    accumulateCodexTurnTokenUsage(state, "previous", update(breakdown(100, 10, 20)));
+    expect(
+      accumulateCodexTurnTokenUsage(state, "previous", update(breakdown(100, 10, 20))),
+    ).toBeUndefined();
     accumulateCodexTurnTokenUsage(
       state,
       "next",
