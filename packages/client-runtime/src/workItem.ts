@@ -222,7 +222,7 @@ export function mergeRequirementEntries(
         options.source !== "all" &&
         options.source !== (item.issue?.provider ?? "local")) ||
       item.archived !== Boolean(options.archived) ||
-      !matchesIssueStateFilter(group === "done", options.issueState) ||
+      !matchesIssueStateFilter(item.status === "done", options.issueState) ||
       !`${item.title}\n${item.description}`.toLowerCase().includes(query)
     )
       continue;

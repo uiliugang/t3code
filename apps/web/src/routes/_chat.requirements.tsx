@@ -17,6 +17,7 @@ import { RequirementsPage } from "../components/requirements/RequirementsPage";
 const Search = Schema.Struct({
   mode: Schema.optionalKey(Schema.Literals(["board", "issues"])),
   labels: Schema.optionalKey(RequirementFilters.fields.labels),
+  trackerLabels: Schema.optionalKey(RequirementFilters.fields.labels),
   provider: Schema.optionalKey(IssueProvider),
   source: Schema.optionalKey(
     Schema.Literals(["all", "meituan", "github", "gitlab", "linear", "local"]),
@@ -38,9 +39,10 @@ const Search = Schema.Struct({
   detailEnvironmentId: Schema.optionalKey(EnvironmentId),
   projectId: Schema.optionalKey(ProjectId),
   assignee: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
-  involvement: Schema.optionalKey(IssueInvolvement),
+  trackerAssignee: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  workflowInvolvement: Schema.optionalKey(IssueInvolvement),
   issueState: Schema.optionalKey(IssueListState),
-  sort: Schema.optionalKey(IssueListSort),
+  workflowSort: Schema.optionalKey(IssueListSort),
   who: Schema.optionalKey(IssueInvolvement),
   status: Schema.optionalKey(IssueListState),
   order: Schema.optionalKey(Schema.Literal("created")),
@@ -51,8 +53,9 @@ const Search = Schema.Struct({
     ),
   ),
   q: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  trackerQuery: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   view: Schema.optionalKey(Schema.Literals(["board", "list"])),
-  issueId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
+  issueId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   issueProjectId: Schema.optionalKey(ProjectId),
   issueScope: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   local: Schema.optionalKey(Schema.Boolean),
@@ -68,7 +71,9 @@ const STRING_KEYS = [
   "issueTracker",
   "host",
   "q",
+  "trackerQuery",
   "assignee",
+  "trackerAssignee",
 ] as const;
 
 export const Route = createFileRoute("/_chat/requirements")({
@@ -77,6 +82,9 @@ export const Route = createFileRoute("/_chat/requirements")({
     for (const key of STRING_KEYS) {
       if (typeof normalized[key] === "number") normalized[key] = String(normalized[key]);
     }
+    if (typeof normalized.q === "string") normalized.q = normalized.q.slice(0, 200);
+    if (typeof normalized.trackerQuery === "string")
+      normalized.trackerQuery = normalized.trackerQuery.slice(0, 200);
     return decodeSearch(normalized);
   },
   component: RequirementsPage,

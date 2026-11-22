@@ -68,6 +68,7 @@ function trackerPage(result: IssueListResult, key: TrackerFilters): RequirementB
     string,
     Omit<Group, "issues"> & { issues: Array<Group["issues"][number]> }
   >();
+  const query = key.query.trim().toLowerCase();
   for (const entry of result.entries) {
     const provider = String(entry.tracker);
     if (
@@ -80,6 +81,16 @@ function trackerPage(result: IssueListResult, key: TrackerFilters): RequirementB
     if (
       (key.source !== "all" && key.source !== provider) ||
       (key.assignee === "unassigned" && entry.assignees.length)
+    )
+      continue;
+    const tracker = result.trackers.find(
+      (candidate) => candidate.tracker === entry.tracker && candidate.host === entry.host,
+    );
+    if (
+      query &&
+      tracker?.capabilities?.search !== true &&
+      !entry.title.toLowerCase().includes(query) &&
+      !entry.displayKey.toLowerCase().includes(query)
     )
       continue;
     const id = JSON.stringify([entry.projectId, entry.host, entry.scope]);
@@ -241,7 +252,12 @@ export function createRequirementBoardAtoms(queries: {
           if (!Object.keys(cursors).length) break;
           moreIssues = page === key.page;
         }
-      } else if (!key.archived && key.source !== "local" && !key.labels?.length) {
+      } else if (
+        !key.archived &&
+        key.source !== "local" &&
+        !key.labels?.length &&
+        (!key.involvement || key.involvement === "all" || key.involvement === "assigned")
+      ) {
         for (const provider of ["meituan", "github"] as const) {
           if (provider === "meituan" && key.meituanEnabled === false) continue;
           if (key.source !== "all" && key.source !== provider) continue;

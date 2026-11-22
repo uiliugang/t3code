@@ -73,6 +73,7 @@ import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import {
+  isRequirementTracker,
   patchRequirementsSearch,
   requirementSelection,
   type RequirementSearchPatch,
@@ -258,8 +259,15 @@ export function RequirementBoard({
     isMeituanServiceEnabled(environment.serverConfig?.settings, "requirements"),
   );
   const [creatingEnvironmentId, setCreatingEnvironmentId] = useState<EnvironmentId | null>(null);
+  const issueFallbackEnvironmentId =
+    environments.find(
+      (environment) => environment.serverConfig?.environment.capabilities.issues === true,
+    )?.environmentId ?? fallbackEnvironmentId;
   const detailEnvironmentId =
-    search.detailEnvironmentId ?? filterEnvironmentId ?? fallbackEnvironmentId;
+    search.detailEnvironmentId ??
+    (search.issueTracker
+      ? issueFallbackEnvironmentId
+      : (filterEnvironmentId ?? fallbackEnvironmentId));
   const environmentId = creatingEnvironmentId ?? detailEnvironmentId;
   const allProjects = useProjects().filter(
     (project) => !project.isScratch && project.archivedAt === null,
@@ -273,17 +281,25 @@ export function RequirementBoard({
   const requestedSource: RequirementSource =
     search.source ?? (search.local ? "local" : (search.provider ?? "all"));
   const source = requestedSource === "meituan" && !meituanEnabled ? "all" : requestedSource;
-  const assignee = search.assignee ?? "me";
   const view = search.view ?? "list";
   const archived = search.archived ?? false;
   const unified = queryEnvironments.some((env) => env.serverConfig?.requirementIssueTrackers);
+  const includesOnes = source === "meituan" || (source === "all" && meituanEnabled);
+  const supportsAdvancedInvolvement = unified && !includesOnes && source !== "local";
+  const requestedInvolvement = search.workflowInvolvement;
+  const involvementUnsupported =
+    !supportsAdvancedInvolvement &&
+    (requestedInvolvement === "authored" || requestedInvolvement === "mentioned");
+  const assignee = involvementUnsupported ? "me" : (search.assignee ?? "me");
   const labels =
     !archived && source !== "local" && source !== "meituan" && unified ? (search.labels ?? []) : [];
   const queryText = search.q ?? "";
   const debouncedQuery = useDebouncedValue(queryText, 300);
-  const involvement = search.involvement ?? (assignee === "me" ? "assigned" : "all");
+  const involvement = involvementUnsupported
+    ? "assigned"
+    : (requestedInvolvement ?? (assignee === "me" ? "assigned" : "all"));
   const issueState = search.issueState ?? "all";
-  const sort = search.sort ?? "updated";
+  const sort = includesOnes ? "updated" : (search.workflowSort ?? "updated");
   const [pagination, setPagination] = useState<{ key: string; pages: RequirementPagination }>({
     key: "",
     pages: {},
@@ -323,7 +339,12 @@ export function RequirementBoard({
   );
   const entries = data.entries;
   const entryForSurface = (surface: RightPanelSurface | null) => {
-    if (!surface || (surface.kind !== "work-item" && surface.kind !== "requirement-issue"))
+    if (
+      !surface ||
+      (surface.kind !== "work-item" &&
+        surface.kind !== "requirement-issue" &&
+        surface.kind !== "issue")
+    )
       return undefined;
     const environment = surface.environmentId ?? fallbackEnvironmentId;
     let match: EnvironmentRequirementEntry | undefined;
@@ -334,8 +355,8 @@ export function RequirementBoard({
       } else if (
         entry.kind === "issue" &&
         entry.projectId === surface.projectId &&
-        entry.provider === surface.provider &&
-        entry.issue.id === surface.issueId &&
+        entry.provider === (surface.kind === "issue" ? surface.tracker : surface.provider) &&
+        entry.issue.id === (surface.kind === "issue" ? surface.key : surface.issueId) &&
         (surface.host === undefined || entry.host === surface.host) &&
         (surface.scope === undefined || entry.scope === surface.scope)
       ) {
@@ -415,7 +436,17 @@ export function RequirementBoard({
         workItemId: entry.item.id,
         title: entry.title,
       });
-    else
+    else if (usesStandalonePanel && entry.scope && entry.issue.stateInfo) {
+      panels.openIssue(rightPanelRef, {
+        environmentId: entry.environmentId,
+        projectId: entry.projectId,
+        tracker: entry.provider,
+        host: entry.host,
+        scope: entry.scope,
+        key: entry.issue.id,
+        url: entry.issue.url,
+      });
+    } else
       panels.openRequirementIssue(rightPanelRef, {
         environmentId: entry.environmentId,
         projectId: entry.projectId,
@@ -586,14 +617,25 @@ export function RequirementBoard({
   ) : null;
   const panelEnvironmentId =
     (renderedSurface?.environmentId as EnvironmentId | undefined) ?? detailEnvironmentId;
-  const renderedIssueProject =
+  const renderedRequirementIssue =
     renderedSurface?.kind === "requirement-issue"
-      ? allProjects.find(
-          (project) =>
-            project.environmentId === panelEnvironmentId &&
-            project.id === renderedSurface.projectId,
-        )
-      : undefined;
+      ? renderedSurface
+      : renderedSurface?.kind === "issue" &&
+          isRequirementTracker(renderedSurface.tracker) &&
+          environments.some(
+            (environment) =>
+              environment.environmentId === panelEnvironmentId &&
+              environment.serverConfig?.requirementIssueTrackers === true,
+          )
+        ? { ...renderedSurface, provider: renderedSurface.tracker, issueId: renderedSurface.key }
+        : null;
+  const renderedIssueProject = renderedRequirementIssue
+    ? allProjects.find(
+        (project) =>
+          project.environmentId === panelEnvironmentId &&
+          project.id === renderedRequirementIssue.projectId,
+      )
+    : undefined;
   const assigneeOptions = [
     ...new Map(
       data.issuePages
@@ -649,7 +691,7 @@ export function RequirementBoard({
               : assignee === "all"
                 ? t("All assignees")
                 : t("Everyone"),
-      clear: { involvement: undefined, assignee: undefined },
+      clear: { workflowInvolvement: undefined, assignee: undefined },
     });
   if (issueState !== "all")
     activeFilters.push({
@@ -658,7 +700,7 @@ export function RequirementBoard({
       clear: { issueState: undefined },
     });
   if (sort === "created")
-    activeFilters.push({ key: "sort", label: t("Newest"), clear: { sort: undefined } });
+    activeFilters.push({ key: "sort", label: t("Newest"), clear: { workflowSort: undefined } });
   if (archived)
     activeFilters.push({
       key: "archived",
@@ -679,9 +721,9 @@ export function RequirementBoard({
       local: undefined,
       projectId: undefined,
       assignee: undefined,
-      involvement: undefined,
+      workflowInvolvement: undefined,
       issueState: undefined,
-      sort: undefined,
+      workflowSort: undefined,
       labels: undefined,
       archived: undefined,
       q: undefined,
@@ -867,9 +909,9 @@ export function RequirementBoard({
                       assignee: saved.assignee,
                       archived: saved.archived,
                       labels: saved.labels,
-                      involvement: saved.involvement,
+                      workflowInvolvement: saved.involvement,
                       issueState: saved.issueState,
-                      sort: saved.sort,
+                      workflowSort: saved.sort,
                       environmentId: saved.environmentId ?? undefined,
                       projectId: saved.projectId ?? undefined,
                       q: saved.query || undefined,
@@ -915,6 +957,8 @@ export function RequirementBoard({
                                   provider: undefined,
                                   local: undefined,
                                   assignee: undefined,
+                                  workflowInvolvement: undefined,
+                                  workflowSort: undefined,
                                   labels: undefined,
                                   ...requirementSelection(null),
                                 })
@@ -986,25 +1030,26 @@ export function RequirementBoard({
                               { value: "authored", label: t("Opened by me") },
                               { value: "mentioned", label: t("Mentioning me") },
                             ] as const
-                          ).map((option) => (
-                            <MenuCheckboxItem
-                              key={option.value}
-                              checked={involvement === option.value}
-                              onCheckedChange={() =>
-                                updateSearch({
-                                  involvement: option.value,
-                                  assignee:
-                                    option.value === "assigned"
-                                      ? "me"
-                                      : option.value === "all"
-                                        ? "all"
-                                        : "all",
-                                })
-                              }
-                            >
-                              {option.label}
-                            </MenuCheckboxItem>
-                          ))}
+                          )
+                            .filter(
+                              (option) =>
+                                supportsAdvancedInvolvement ||
+                                (option.value !== "authored" && option.value !== "mentioned"),
+                            )
+                            .map((option) => (
+                              <MenuCheckboxItem
+                                key={option.value}
+                                checked={involvement === option.value}
+                                onCheckedChange={() =>
+                                  updateSearch({
+                                    workflowInvolvement: option.value,
+                                    assignee: option.value === "assigned" ? "me" : "all",
+                                  })
+                                }
+                              >
+                                {option.label}
+                              </MenuCheckboxItem>
+                            ))}
                         </MenuSubPopup>
                       </MenuSub>
                     ) : null}
@@ -1033,13 +1078,14 @@ export function RequirementBoard({
                       <MenuSubPopup>
                         <MenuCheckboxItem
                           checked={sort === "updated"}
-                          onCheckedChange={() => updateSearch({ sort: "updated" })}
+                          onCheckedChange={() => updateSearch({ workflowSort: "updated" })}
                         >
                           {t("Recently updated")}
                         </MenuCheckboxItem>
                         <MenuCheckboxItem
                           checked={sort === "created"}
-                          onCheckedChange={() => updateSearch({ sort: "created" })}
+                          disabled={includesOnes}
+                          onCheckedChange={() => updateSearch({ workflowSort: "created" })}
                         >
                           {t("Newest")}
                         </MenuCheckboxItem>
@@ -1063,9 +1109,7 @@ export function RequirementBoard({
                               onCheckedChange={() =>
                                 updateSearch({
                                   assignee: person.value,
-                                  ...(involvement === "assigned" || involvement === "all"
-                                    ? {}
-                                    : { involvement: person.value === "me" ? "assigned" : "all" }),
+                                  workflowInvolvement: person.value === "me" ? "assigned" : "all",
                                 })
                               }
                             >
@@ -1342,7 +1386,7 @@ export function RequirementBoard({
               updateSearch={updateSearch}
               panelRef={rightPanelRef}
               renderedSurface={renderedSurface}
-              fallbackEnvironmentId={fallbackEnvironmentId}
+              fallbackEnvironmentId={issueFallbackEnvironmentId}
             />
           )}
         </div>
@@ -1413,22 +1457,27 @@ export function RequirementBoard({
                   environmentId={panelEnvironmentId}
                   id={renderedSurface.workItemId as WorkItemId}
                 />
-              ) : renderedSurface.kind === "requirement-issue" ? (
+              ) : renderedRequirementIssue ? (
                 <IssueDetailPanel
                   key={renderedSurface.id}
                   embedded
                   panelRef={rightPanelRef}
                   environmentId={panelEnvironmentId}
                   target={{
-                    projectId: renderedSurface.projectId as ProjectId,
-                    provider: renderedSurface.provider,
-                    ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
-                    ...(renderedSurface.scope ? { scope: renderedSurface.scope } : {}),
+                    projectId: renderedRequirementIssue.projectId as ProjectId,
+                    provider: renderedRequirementIssue.provider,
+                    ...(renderedRequirementIssue.host
+                      ? { host: renderedRequirementIssue.host }
+                      : {}),
+                    ...(renderedRequirementIssue.scope
+                      ? { scope: renderedRequirementIssue.scope }
+                      : {}),
                   }}
-                  id={renderedSurface.issueId}
+                  id={renderedRequirementIssue.issueId}
                   cwd={renderedIssueProject?.workspaceRoot ?? ""}
-                  projectTitle={renderedIssueProject?.title ?? renderedSurface.projectId}
+                  projectTitle={renderedIssueProject?.title ?? renderedRequirementIssue.projectId}
                   changed={refresh}
+                  onPullRequestOpened={() => selectOpened()}
                 />
               ) : renderedSurface.kind === "issue" ? (
                 <TrackerIssueDetailPanel
@@ -1452,7 +1501,7 @@ export function RequirementBoard({
                     selectOpened();
                   }}
                 />
-              ) : (
+              ) : renderedSurface.kind === "pull-request" ? (
                 <PullRequestDetailPanel
                   key={renderedSurface.id}
                   getShortcutContext={getShortcutContext}
@@ -1465,7 +1514,7 @@ export function RequirementBoard({
                     ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
                   }}
                 />
-              )}
+              ) : null}
             </PullRequestMarkdownPanelContext>
           </RightPanelTabs>
         ) : null}
@@ -1477,15 +1526,14 @@ export function RequirementBoard({
               setCreatingTracker(null);
               setCreatingEnvironmentId(null);
             }}
-            created={(issueId, title) => {
-              useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
+            created={(issueId) => {
+              useRightPanelStore.getState().openIssue(rightPanelRef, {
                 environmentId,
                 projectId: creatingTracker.projectId,
-                provider: creatingTracker.provider,
+                tracker: creatingTracker.provider,
                 scope: creatingTracker.scope,
                 ...(creatingTracker.host ? { host: creatingTracker.host } : {}),
-                issueId,
-                title,
+                key: issueId,
               });
               setCreatingTracker(null);
               setCreatingEnvironmentId(null);

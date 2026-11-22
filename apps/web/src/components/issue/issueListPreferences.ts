@@ -75,7 +75,7 @@ export function issueListPreferences(search: {
       ? { hideProjects: search.hideProjects.slice(0, ISSUE_LIST_MAX_EXCLUDED_PROJECTS) }
       : {}),
     ...(search.host ? { host: search.host } : {}),
-    ...(search.q ? { q: search.q } : {}),
+    ...(search.q ? { q: search.q.slice(0, 200) } : {}),
     ...(search.label?.length ? { label: search.label } : {}),
     ...(search.assignee ? { assignee: search.assignee } : {}),
     ...(search.order ? { order: search.order } : {}),

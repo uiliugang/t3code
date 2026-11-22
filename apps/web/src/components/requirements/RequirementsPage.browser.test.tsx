@@ -13,7 +13,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-const mocks = vi.hoisted(() => ({ command: vi.fn() }));
+const mocks = vi.hoisted(() => ({ command: vi.fn(), unifiedOnes: false }));
 vi.mock(import("~/browser/useOpenLink"), () => ({ useOpenLink: () => vi.fn() }));
 vi.mock(import("~/hooks/useUiTranslation"), async () => {
   const { translateUi } = await import("@t3tools/shared/uiLocale");
@@ -32,6 +32,15 @@ vi.mock(import("~/state/environments"), async (original) => ({
         environmentId,
         label: environmentId,
         connection: { phase: "connected" },
+        ...(mocks.unifiedOnes
+          ? {
+              serverConfig: {
+                requirementIssueTrackers: true,
+                settings: { meituanIntegrationEnabled: true },
+                environment: { capabilities: { issues: true } },
+              },
+            }
+          : {}),
       })),
     }) as never,
 }));
@@ -156,6 +165,11 @@ vi.mock(import("./IssueDetailPanel"), () => ({
 vi.mock(import("../issue/IssuesPage"), () => ({
   TrackerIssuesView: () => <div data-testid="tracker-issues-view">Tracker issues</div>,
 }));
+vi.mock(import("../issue/IssueDetailPanel"), () => ({
+  IssueDetailPanel: ({ reference }: { reference: { key: string } }) => (
+    <div data-testid={`tracker-detail:${reference.key}`}>Tracker issue {reference.key}</div>
+  ),
+}));
 vi.mock(
   import("../pullRequest/PullRequestDetailPanel"),
   () =>
@@ -183,7 +197,11 @@ vi.mock(import("../ui/toast"), async (original) => {
 });
 
 import { act, render } from "../../../test/render";
-import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "~/rightPanelStore";
+import {
+  REQUIREMENTS_PANEL_REF,
+  selectActiveRightPanelSurface,
+  useRightPanelStore,
+} from "~/rightPanelStore";
 import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { RequirementBoard, RequirementsPage } from "./RequirementsPage";
@@ -191,8 +209,9 @@ import { Route as requirementsRoute, type RequirementsSearch } from "~/routes/_c
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { getWorkspaceFocusRequestVersion, startWorkspaceFocus } from "~/lib/workspaceFocus";
 
-function setup() {
+function setup({ unifiedOnes = false } = {}) {
   useRightPanelStore.getState().closeAllSurfaces(REQUIREMENTS_PANEL_REF);
+  mocks.unifiedOnes = unifiedOnes;
   mocks.command.mockReset().mockResolvedValue({ _tag: "Success", value: [] });
   const registry = AtomRegistry.make();
   return {
@@ -231,14 +250,19 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
     .not.toBeChecked();
   await page.getByRole("menuitemcheckbox", { name: "All projects" }).click();
   expect(updateSearch).toHaveBeenLastCalledWith({ projectId: undefined });
-  await screen.rerender(fixture.board({ archived: true, assignee: "selected-user" }, updateSearch));
+  await screen.rerender(
+    fixture.board(
+      { archived: true, assignee: "selected-user", workflowInvolvement: "assigned" },
+      updateSearch,
+    ),
+  );
   await expect.element(screen.getByText("Remote conversation")).toBeVisible();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "All projects" })).toBeChecked();
   await userEvent.keyboard("{Escape}");
   await page.getByRole("menuitem", { name: "Assignee", exact: true }).hover();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "selected-user" })).toBeChecked();
   await page.getByRole("menuitemcheckbox", { name: "All assignees" }).click();
-  expect(updateSearch).toHaveBeenLastCalledWith({ assignee: "all" });
+  expect(updateSearch).toHaveBeenLastCalledWith({ assignee: "all", workflowInvolvement: "all" });
   await screen.rerender(fixture.board({ assignee: "all", archived: true }, updateSearch));
   await expect.element(page.getByRole("menuitemcheckbox", { name: "All assignees" })).toBeChecked();
   await expect
@@ -251,6 +275,11 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: "Show archived" }))
     .not.toBeChecked();
+  await page.getByRole("menuitem", { name: "Issue source", exact: true }).hover();
+  await page.getByRole("menuitemcheckbox", { name: "Local work items" }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith(
+    expect.objectContaining({ source: "local", workflowInvolvement: undefined }),
+  );
 });
 
 it("updates remote candidate actions when that environment's grants or capabilities change", async () => {
@@ -345,6 +374,61 @@ it("keeps compact panel horizontal padding when the main sidebar is collapsed", 
   } finally {
     document.documentElement.removeAttribute("data-sidebar-state");
   }
+});
+
+it("opens a compact workflow issue with its requirement details", async () => {
+  using fixture = setup();
+  const issuesAtom = sourceControlEnvironment.issues({
+    environmentId: "local",
+    input: { provider: "github", assignee: "me", query: "", page: 1 },
+  } as never) as Atom.Writable<unknown>;
+  fixture.registry.set(
+    issuesAtom,
+    AsyncResult.success({
+      groups: [
+        {
+          source: { provider: "github", host: "github.com", scope: "acme/app" },
+          projectIds: ["project"],
+          issues: [
+            {
+              id: "42",
+              title: "Issue with delivery details",
+              url: "https://github.com/acme/app/issues/42",
+              state: "Open",
+              stateInfo: { category: "open", name: "Open" },
+              stateCategory: "todo",
+              type: "issue",
+              assignees: [],
+              priority: "",
+              updatedAt: "2026-11-16T00:00:00Z",
+            },
+          ],
+          hasMore: false,
+        },
+      ],
+      failures: [],
+    }),
+  );
+  await using screen = await render(
+    <RegistryContext.Provider value={fixture.registry}>
+      <RequirementBoard
+        compact
+        environmentId={EnvironmentId.make("local")}
+        search={{}}
+        updateSearch={vi.fn()}
+      />
+    </RegistryContext.Provider>,
+  );
+  await screen.getByRole("button", { name: /Issue with delivery details/ }).click();
+  expect(
+    selectActiveRightPanelSurface(
+      useRightPanelStore.getState().byThreadKey,
+      REQUIREMENTS_PANEL_REF,
+    ),
+  ).toMatchObject({
+    kind: "requirement-issue",
+    issueId: "42",
+  });
 });
 
 it("keeps the updating indicator inside the topbar on narrow viewports without vertical wrapping", async () => {
@@ -583,6 +667,26 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
   await page.getByRole("menuitemcheckbox", { name: "remote", exact: true }).click();
   await expect.element(screen.getByTestId("work-item-detail:item-beta")).not.toBeInTheDocument();
   expect(router.state.location.search).toMatchObject({ environmentId: "remote", view: "list" });
+  const query = "q".repeat(200);
+  await act(() => router.navigate({ to: "/requirements", search: { q: `${query}overflow` } }));
+  await expect
+    .element(screen.getByRole("searchbox", { name: "Search title or number" }))
+    .toHaveValue(query);
+  await act(() =>
+    router.navigate({
+      to: "/requirements",
+      search: {
+        mode: "issues",
+        issueTracker: "github",
+        issueProjectId: ProjectId.make("project"),
+        issueScope: "acme/app",
+        issueId: "99",
+      },
+    }),
+  );
+  await expect.element(screen.getByTestId("tracker-detail:99")).toBeVisible();
+  await screen.getByRole("button", { name: "Workflow", exact: true }).click();
+  await expect.element(screen.getByTestId("tracker-detail:99")).toBeVisible();
 });
 it("switches between workflow and tracker issue modes from the shared requirements page", async () => {
   using fixture = setup();
@@ -597,4 +701,48 @@ it("switches between workflow and tracker issue modes from the shared requiremen
   await expect.element(screen.getByTestId("tracker-issues-view")).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "Issues", exact: true }).click();
   expect(updateSearch).toHaveBeenLastCalledWith({ mode: "issues" });
+});
+
+it("falls back to assigned issues instead of applying unsupported legacy involvement filters", async () => {
+  using fixture = setup();
+  await using screen = await render(
+    fixture.board({ workflowInvolvement: "authored", assignee: "all" }, vi.fn()),
+  );
+  await screen.getByRole("button", { name: "Filters" }).click();
+  await page.getByRole("menuitem", { name: "Involvement", exact: true }).hover();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Assigned to me" }))
+    .toBeChecked();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Opened by me" }))
+    .not.toBeInTheDocument();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Mentioning me" }))
+    .not.toBeInTheDocument();
+});
+
+it("keeps unsupported advanced filters out of an ONES workflow query", async () => {
+  using fixture = setup({ unifiedOnes: true });
+  await using screen = await render(
+    fixture.board({
+      source: "meituan",
+      assignee: "all",
+      workflowInvolvement: "mentioned",
+      workflowSort: "created",
+    }),
+  );
+  await screen.getByRole("button", { name: "Filters" }).click();
+  await page.getByRole("menuitem", { name: "Involvement", exact: true }).hover();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Assigned to me" }))
+    .toBeChecked();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Mentioning me" }))
+    .not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await page.getByRole("menuitem", { name: "Sort", exact: true }).hover();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Recently updated" }))
+    .toBeChecked();
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "Newest" })).toBeDisabled();
 });

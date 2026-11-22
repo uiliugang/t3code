@@ -395,25 +395,72 @@ it("preserves tracker issue metadata and applies involvement, state, and sort fi
       expect(issueEntry.issue.stateInfo?.name).toBe("In Progress");
     }
 
-    const openOnly = registry.get(
-      overview(
-        new RequirementOverviewKey({
-          environmentIds: [environmentId],
+    const openOnlyKey = new RequirementOverviewKey({
+      environmentIds: [environmentId],
+      projectId: null,
+      source: "all",
+      assignee: "all",
+      involvement: "authored",
+      issueState: "open",
+      sort: "updated",
+      query: "",
+      archived: false,
+      pagination: {},
+    });
+    const openOnly = registry.get(overview(openOnlyKey));
+    expect(requests.at(-1)).toMatchObject({ state: "open", involvement: "authored" });
+    // Authored involvement and open state both exclude the done local item.
+    expect(openOnly.entries.map((entry) => entry.title)).toEqual(["Older issue updated recently"]);
+
+    const byNumber = registry.get(
+      overview(new RequirementOverviewKey({ ...openOnlyKey, query: "#42" })),
+    );
+    expect(byNumber.entries.map((entry) => entry.title)).toEqual(["Older issue updated recently"]);
+    const noMatch = registry.get(
+      overview(new RequirementOverviewKey({ ...openOnlyKey, query: "no matching issue" })),
+    );
+    expect(noMatch.entries).toEqual([]);
+  } finally {
+    registry.dispose();
+  }
+});
+
+it("does not return unfiltered legacy issues for unsupported involvement filters", () => {
+  const registry = AtomRegistry.make();
+  let legacyRequests = 0;
+  const board = createRequirementBoardAtoms({
+    issues: () => {
+      legacyRequests += 1;
+      return Atom.make(
+        AsyncResult.success<typeof RequirementIssueListResult.Type>({ groups: [], failures: [] }),
+      );
+    },
+    workItemsLive: () => {
+      throw new Error("local work items are not involved in this filter check");
+    },
+  });
+
+  try {
+    const result = registry.get(
+      board(
+        new RequirementBoardKey({
+          environmentId: EnvironmentId.make("legacy"),
           projectId: null,
           source: "all",
           assignee: "all",
           involvement: "authored",
-          issueState: "open",
-          sort: "updated",
           query: "",
+          page: 1,
+          cursors: [undefined],
+          localSupported: false,
           archived: false,
-          pagination: {},
+          trackerSupported: false,
         }),
       ),
     );
-    expect(requests.at(-1)).toMatchObject({ state: "open", involvement: "authored" });
-    // Authored involvement and open state both exclude the done local item.
-    expect(openOnly.entries.map((entry) => entry.title)).toEqual(["Older issue updated recently"]);
+    expect(legacyRequests).toBe(0);
+    expect(result.issuePages).toEqual([]);
+    expect(result.isPending).toBe(false);
   } finally {
     registry.dispose();
   }

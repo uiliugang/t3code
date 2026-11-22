@@ -83,7 +83,6 @@ import { useEnvironments, useIssuesSupported } from "~/state/environments";
 import { issueEnvironment, useIssueList } from "~/state/issues";
 import { useDebouncedValue } from "~/state/queries";
 import {
-  isRequirementTracker,
   requirementSelection,
   type RequirementSearchPatch,
 } from "../requirements/requirementPanelSearch";
@@ -226,10 +225,10 @@ export function TrackerIssuesView({
   const status = search.status ?? savedDefaults.status;
   const hideProjects = search.hideProjects ?? savedDefaults.hideProjects;
   const host = search.host ?? savedDefaults.host;
-  const labels = search.labels ?? savedDefaults.label;
-  const assignee = search.assignee ?? savedDefaults.assignee;
+  const labels = search.trackerLabels ?? savedDefaults.label;
+  const assignee = search.trackerAssignee ?? savedDefaults.assignee;
   const order = search.order ?? savedDefaults.order;
-  const queryText = search.q ?? "";
+  const queryText = search.trackerQuery ?? savedDefaults.q ?? "";
 
   const currentPreferences = issueListPreferences({
     who,
@@ -294,9 +293,9 @@ export function TrackerIssuesView({
     const page = held.get(environmentId);
     const cursors = page ? issueCursorsForHost(page.nextCursors, trackerHost) : {};
     if (!page || Object.keys(cursors).length === 0 || loadingMore !== null) return;
-    setLoadingMore(`${environmentId} ${trackerHost}`);
     const input = targets.find((target) => target.environmentId === environmentId)?.input;
     if (!input) return;
+    setLoadingMore(`${environmentId} ${trackerHost}`);
     const result = await loadPage({ environmentId, input: { ...input, cursors } });
     setLoadingMore(null);
     const failure = result._tag === "Failure" ? squashAtomCommandFailure(result) : null;
@@ -387,30 +386,21 @@ export function TrackerIssuesView({
       status: next.status,
       hideProjects: next.hideProjects,
       host: next.host,
-      q: next.q,
-      labels: next.label,
-      assignee: next.assignee,
+      trackerQuery: next.q,
+      trackerLabels: next.label,
+      trackerAssignee: next.assignee,
       order: next.order,
     });
   };
 
   const selectEntry = (entry: IssueRowTarget) => {
     const panels = useRightPanelStore.getState();
-    if (isRequirementTracker(entry.tracker)) {
-      panels.openRequirementIssue(panelRef, {
-        environmentId: entry.environmentId,
-        projectId: entry.projectId,
-        provider: entry.tracker,
-        host: entry.host,
-        scope: entry.scope,
-        issueId: entry.key,
-      });
-    } else {
-      panels.openIssue(panelRef, entry);
-    }
+    panels.openIssue(panelRef, entry);
     updateSearch({
       mode: "issues",
-      ...requirementSelection(selectActiveRightPanelSurface(panels.byThreadKey, panelRef)),
+      ...requirementSelection(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, panelRef),
+      ),
     });
   };
 

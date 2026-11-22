@@ -9,7 +9,6 @@ import type { MouseEvent } from "react";
 
 import { readIssueListPreferences } from "../components/issue/issueListPreferences";
 import {
-  isRequirementTracker,
   patchRequirementsSearch,
   requirementSelection,
   requirementsSearchFromIssuesSearch,
@@ -71,20 +70,13 @@ export function useOpenIssueLink(
     // List panels share the unified requirements panel, so an issue link becomes a peer tab
     // without leaving the workflow or tracker list the reader is currently using.
     if (resolvedPanelRef === REQUIREMENTS_PANEL_REF) {
-      const panels = useRightPanelStore.getState();
-      if (isRequirementTracker(target.ref.tracker)) {
-        panels.openRequirementIssue(REQUIREMENTS_PANEL_REF, {
-          environmentId,
-          projectId: target.ref.projectId,
-          provider: target.ref.tracker,
-          ...(target.ref.host === undefined ? {} : { host: target.ref.host }),
-          scope: target.ref.scope,
-          issueId: target.ref.key,
-        });
-      } else {
-        panels.openIssue(REQUIREMENTS_PANEL_REF, { ...surface, environmentId });
-      }
-      const selected = selectActiveRightPanelSurface(panels.byThreadKey, REQUIREMENTS_PANEL_REF);
+      useRightPanelStore
+        .getState()
+        .openIssue(REQUIREMENTS_PANEL_REF, { ...surface, environmentId });
+      const selected = selectActiveRightPanelSurface(
+        useRightPanelStore.getState().byThreadKey,
+        REQUIREMENTS_PANEL_REF,
+      );
       void navigate({
         to: "/requirements",
         search: (previous) =>
@@ -96,19 +88,9 @@ export function useOpenIssueLink(
       return true;
     }
     if (resolvedPanelRef === PULL_REQUESTS_PANEL_REF || resolvedPanelRef === ISSUES_PANEL_REF) {
-      const panels = useRightPanelStore.getState();
-      if (isRequirementTracker(target.ref.tracker)) {
-        panels.openRequirementIssue(REQUIREMENTS_PANEL_REF, {
-          environmentId,
-          projectId: target.ref.projectId,
-          provider: target.ref.tracker,
-          ...(target.ref.host === undefined ? {} : { host: target.ref.host }),
-          scope: target.ref.scope,
-          issueId: target.ref.key,
-        });
-      } else {
-        panels.openIssue(REQUIREMENTS_PANEL_REF, { ...surface, environmentId });
-      }
+      useRightPanelStore
+        .getState()
+        .openIssue(REQUIREMENTS_PANEL_REF, { ...surface, environmentId });
       void navigate({
         to: "/requirements",
         search: requirementsSearchFromIssuesSearch({

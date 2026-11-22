@@ -1,7 +1,11 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
 
-import { requirementSelection, requirementsSearchFromIssuesSearch } from "./requirementPanelSearch";
+import {
+  patchRequirementsSearch,
+  requirementSelection,
+  requirementsSearchFromIssuesSearch,
+} from "./requirementPanelSearch";
 
 it("maps legacy issue list filters and the selected issue onto the unified requirements route", () => {
   const environmentId = EnvironmentId.make("env");
@@ -29,16 +33,40 @@ it("maps legacy issue list filters and the selected issue onto the unified requi
     status: "closed",
     hideProjects: [[environmentId, projectId]],
     host: "github.example.com",
-    q: "crash",
-    labels: ["bug"],
-    assignee: "alice",
+    trackerQuery: "crash",
+    trackerLabels: ["bug"],
+    trackerAssignee: "alice",
     order: "created",
     detailEnvironmentId: environmentId,
     issueProjectId: projectId,
     issueHost: "github.example.com",
-    issueProvider: "github",
+    issueTracker: "github",
     issueScope: "acme/app",
     issueId: "42",
+  });
+});
+
+it("preserves workflow filters when applying distinct tracker filters", () => {
+  const trackerSearch = requirementsSearchFromIssuesSearch({
+    who: "all",
+    status: "open",
+    assignee: "alice",
+    q: "crash",
+    label: ["bug"],
+  });
+  expect(
+    patchRequirementsSearch(
+      { assignee: "unassigned", q: "feature", labels: ["ui"] },
+      trackerSearch,
+    ),
+  ).toMatchObject({
+    mode: "issues",
+    assignee: "unassigned",
+    q: "feature",
+    labels: ["ui"],
+    trackerAssignee: "alice",
+    trackerQuery: "crash",
+    trackerLabels: ["bug"],
   });
 });
 
