@@ -15,6 +15,7 @@ import {
   githubIncompleteOwnerRepositoryMessage,
   normalizePastedCloneUrl,
   selectProjectFolders,
+  resolveOfferedSourceControlProviders,
   sortAddProjectProviderSources,
 } from "./projects.ts";
 import type { EnvironmentProject } from "../state/models.ts";
@@ -106,6 +107,21 @@ describe("add project shared logic", () => {
     expect(sortAddProjectProviderSources(ready, { meituan: true }, false)).toEqual(["github"]);
     expect(sortAddProjectProviderSources(ready, { meituan: false }, true)).toContain("meituan");
   });
+  it("honors the destination's TanStack Source flag without losing its saved preference", () => {
+    const settings = { offeredSourceControlProviders: { "tanstack-source": true, gitlab: true } };
+    const ready = () => ({ ready: true, hint: null });
+    for (const config of [{ settings }, { settings, featureFlags: { tanstackSource: false } }]) {
+      const offered = resolveOfferedSourceControlProviders(config);
+      expect(sortAddProjectProviderSources(ready, offered)).toEqual(["github", "gitlab"]);
+    }
+    const offered = resolveOfferedSourceControlProviders({
+      settings,
+      featureFlags: { tanstackSource: true },
+    });
+    expect(sortAddProjectProviderSources(ready, offered)).toContain("tanstack-source");
+    expect(settings.offeredSourceControlProviders["tanstack-source"]).toBe(true);
+  });
+
   it("asks for a repository name when GitHub input is only an owner path", () => {
     const github = SourceControlProviderKind.make("github");
     expect(githubIncompleteOwnerRepositoryMessage(github, "pingdotgg/")).toBe(

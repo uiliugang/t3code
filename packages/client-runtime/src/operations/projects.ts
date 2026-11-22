@@ -223,6 +223,20 @@ export function getDefaultCloneUrl(
 
 export type OfferedSourceControlProviders = ServerSettings["offeredSourceControlProviders"];
 
+export function resolveOfferedSourceControlProviders(
+  config:
+    | (Pick<ServerConfig, "featureFlags"> & {
+        readonly settings: Pick<ServerSettings, "offeredSourceControlProviders">;
+      })
+    | null
+    | undefined,
+): OfferedSourceControlProviders | undefined {
+  const offered = config?.settings.offeredSourceControlProviders;
+  return offered?.["tanstack-source"] === true && config?.featureFlags?.tanstackSource !== true
+    ? { ...offered, "tanstack-source": false }
+    : offered;
+}
+
 /** Whether the project pickers offer a host. Only the default host is on until the user turns others on. */
 export function isSourceControlProviderOffered(
   offered: OfferedSourceControlProviders | undefined,

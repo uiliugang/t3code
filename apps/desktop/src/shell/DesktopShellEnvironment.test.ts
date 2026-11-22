@@ -687,6 +687,32 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
+  it.effect("preserves explicitly empty feature flags during login-shell discovery", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = {
+        SHELL: "/bin/zsh",
+        PATH: "/usr/bin",
+        T3CODE_FEATURE_FLAGS: "",
+        T3CODE_FEATURE_SECRETS: "",
+        T3CODE_GITHUB_APP_CLIENT_ID: "",
+      };
+      yield* runShellEnvironment({
+        env,
+        platform: "darwin",
+        handler: () =>
+          envOutput({
+            PATH: "/opt/homebrew/bin:/usr/bin",
+            T3CODE_FEATURE_FLAGS: "tanstack_source",
+            T3CODE_FEATURE_SECRETS: "true",
+            T3CODE_GITHUB_APP_CLIENT_ID: "test-client",
+          }),
+      });
+      assert.equal(env.T3CODE_FEATURE_FLAGS, "");
+      assert.equal(env.T3CODE_FEATURE_SECRETS, "");
+      assert.equal(env.T3CODE_GITHUB_APP_CLIENT_ID, "");
+    }),
+  );
+
   it.effect("hydrates missing CA trust variables from the login shell", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = {

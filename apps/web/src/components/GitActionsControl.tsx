@@ -134,6 +134,7 @@ import { getSourceControlPresentation, sourceControlIcon } from "~/sourceControl
 import {
   isSourceControlProviderOffered,
   type OfferedSourceControlProviders,
+  resolveOfferedSourceControlProviders,
 } from "@t3tools/client-runtime/operations/projects";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -2011,7 +2012,7 @@ function CheckoutGitActionsControl({
           threadRef={activeThreadRef}
           gitCwd={gitCwd}
           offeredProviders={{
-            ...serverConfig?.settings.offeredSourceControlProviders,
+            ...resolveOfferedSourceControlProviders(serverConfig),
             meituan: isMeituanServiceEnabled(serverConfig?.settings, "sourceControl"),
           }}
         />

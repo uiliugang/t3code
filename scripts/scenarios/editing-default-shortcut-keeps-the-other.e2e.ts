@@ -36,7 +36,7 @@ test(
         exact: true,
       });
       await unchanged.waitFor();
-      await screen.getByRole("button", "Edit shortcut for Chat: New: Ctrl+Shift+O").tap();
+      await screen.getByRole("button", "Edit shortcut for Chat: New: Ctrl+T").tap();
       await screen.getByRole("textbox", "Keybinding for Chat: New", { exact: true }).press("F8");
       await screen.getByRole("button", "Save", { exact: true }).tap();
       await screen
