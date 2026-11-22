@@ -168,7 +168,8 @@ function isDiscoveryUnavailable(error: ConnectionAttemptError) {
     error._tag !== "ConnectionTransientError" ||
     error.reason === "session-pending" ||
     error.reason === "approval-pending" ||
-    error.failureCause === "tunnel_pending"
+    error.failureCause === "tunnel_pending" ||
+    error.failureCause === "invalid_response"
   )
     return false;
   const status = error.httpStatus;
@@ -419,8 +420,9 @@ export const make = Effect.gen(function* () {
       environmentId: EnvironmentId,
       thumbprint: string,
       identity: ClientCapabilities.CloudSessionIdentity,
+      discovery: ReturnType<typeof obtainBootstrap>,
     ) {
-      const bootstrap = yield* obtainBootstrap(environmentId, identity).pipe(
+      const bootstrap = yield* discovery.pipe(
         Effect.mapError((cause): TokenExchangeError =>
           isDiscoveryUnavailable(cause) ? { _tag: "DiscoveryUnavailable", cause } : cause,
         ),
@@ -526,6 +528,7 @@ export const make = Effect.gen(function* () {
   const getDpopToken = Effect.fn("clientRuntime.connection.remote.getDpopToken")(function* (
     input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpopHttp"]>[0],
     expectedIdentity?: ClientCapabilities.CloudSessionIdentity,
+    discovery?: ReturnType<typeof obtainBootstrap>,
   ) {
     const session = yield* cloudSession.identity;
     if (Option.isNone(session)) {
@@ -593,6 +596,7 @@ export const make = Effect.gen(function* () {
           input.expectedEnvironmentId,
           thumbprint,
           identity,
+          discovery ?? obtainBootstrap(input.expectedEnvironmentId, identity),
         ).pipe(
           Effect.flatMap((issued) =>
             tokenLock.withPermits(1)(
@@ -804,6 +808,25 @@ export const make = Effect.gen(function* () {
       descriptor: ExecutionEnvironmentDescriptor,
     ) => ({ ...httpAuthorization(token, endpoint?.httpBaseUrl), socketUrl, descriptor });
     let selected = yield* getDpopToken(input);
+    const attemptScope = yield* Scope.Scope;
+    const discovery = yield* Effect.cached(
+      obtainBootstrap(input.expectedEnvironmentId, selected.identity),
+    );
+    const cachedEndpoint = selected.token.endpoint;
+    const waitForEndpointChangeOrDenial = Effect.gen(function* () {
+      yield* Effect.sleep(CACHED_ENDPOINT_SOCKET_TIMEOUT_MS);
+      // Keep discovery available to the token exchange if the old request times out first.
+      const lookup = yield* discovery.pipe(Effect.result, Effect.forkIn(attemptScope));
+      const result = yield* Fiber.join(lookup);
+      if (Result.isFailure(result)) {
+        if (!isDiscoveryUnavailable(result.failure)) return;
+      } else if (
+        result.success.endpoint.httpBaseUrl !== cachedEndpoint.httpBaseUrl ||
+        result.success.endpoint.wsBaseUrl !== cachedEndpoint.wsBaseUrl
+      )
+        return;
+      return yield* Effect.never;
+    });
     // A cached token comes without a descriptor. That read needs no ticket, so
     // it runs beside the ticket request, and a failed ticket abandons it.
     const openSocket = Effect.fnUntraced(function* (issued: typeof selected, timeoutMs?: number) {
@@ -813,9 +836,14 @@ export const make = Effect.gen(function* () {
       const socket = (
         retryCachedEndpoint
           ? ticket.pipe(
-              Effect.catchIf(isGatewayError, () =>
+              Effect.catchIf(isGatewayError, (gateway) =>
                 assertSession(issued.identity).pipe(
-                  Effect.andThen(createDpopSocketUrl(issued.token)),
+                  Effect.andThen(
+                    Effect.raceFirst(
+                      createDpopSocketUrl(issued.token),
+                      waitForEndpointChangeOrDenial.pipe(Effect.andThen(Effect.fail(gateway))),
+                    ),
+                  ),
                 ),
               ),
             )
@@ -843,7 +871,10 @@ export const make = Effect.gen(function* () {
         isGatewayError(descriptor.failure)
       ) {
         yield* assertSession(issued.identity);
-        descriptor = yield* readDescriptor;
+        descriptor = yield* Effect.raceFirst(
+          readDescriptor,
+          waitForEndpointChangeOrDenial.pipe(Effect.as(descriptor)),
+        );
         if (Result.isFailure(descriptor) && isGatewayError(descriptor.failure)) {
           return Result.fail(descriptor.failure);
         }
@@ -877,7 +908,7 @@ export const make = Effect.gen(function* () {
       // A gateway failure can make the endpoint stale while the credential still works over LAN.
       if (isEndpointUnavailable(cachedSocket.failure)) {
         yield* markEndpointStale(selected.token);
-        selected = yield* getDpopToken(input, selected.identity);
+        selected = yield* getDpopToken(input, selected.identity, discovery);
       } else {
         selected = yield* getDpopToken(
           {
@@ -885,6 +916,7 @@ export const make = Effect.gen(function* () {
             rejectedAccessToken: selected.token.accessToken,
           },
           selected.identity,
+          discovery,
         );
       }
     }
@@ -909,7 +941,7 @@ export const make = Effect.gen(function* () {
       yield* assertSession(selected.identity);
     }
     return socket.success;
-  });
+  }, Effect.scoped);
 
   return RemoteEnvironmentAuthorization.of({
     authorizeBearer,

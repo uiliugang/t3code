@@ -1269,6 +1269,95 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
+  it.effect.each(["endpoint_response_invalid", "endpoint_request_failed"] as const)(
+    "stops cached authorization after a host verification failure (%s)",
+    (reason) =>
+      Effect.gen(function* () {
+        const relayError = new RelayEnvironmentEndpointUnavailableError({
+          code: "environment_endpoint_unavailable",
+          reason,
+          ...(reason === "endpoint_request_failed"
+            ? { endpointFailure: "invalid_response" as const }
+            : {}),
+          traceId: "trace",
+        });
+        const harness = yield* makeHarness({
+          initialToken: new TokenStore.RemoteDpopAccessToken({
+            ...persistedToken(),
+            endpointNeedsDiscovery: true,
+          }),
+          descriptor: DESCRIPTOR,
+          responses: [websocketTicket("old")],
+          beforeBootstrap: Effect.fail(
+            new ManagedRelay.ManagedRelayRequestFailedError({
+              action: "connect relay environment",
+              cause: relayError,
+              relayError,
+            }),
+          ),
+        });
+        const error = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+          (remote) => remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }),
+        ).pipe(Effect.flip, Effect.provide(harness.layer));
+        expect(error).toMatchObject({ failureCause: "invalid_response" });
+        expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(0);
+      }),
+  );
+
+  it.effect.each(["stalled ticket", "stalled descriptor", "second gateway response"] as const)(
+    "opens the new public endpoint within the socket deadline after a %s",
+    (retry) =>
+      Effect.gen(function* () {
+        const retryStarted = Promise.withResolvers<void>();
+        const pending = Promise.withResolvers<Response>();
+        const newEndpoint = {
+          ...ENDPOINT,
+          httpBaseUrl: "https://new.example.test",
+          wsBaseUrl: "wss://new.example.test",
+        };
+        const stalled = () => {
+          retryStarted.resolve();
+          return pending.promise;
+        };
+        let reads = 0;
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          bootstrap: { ...BOOTSTRAP, endpoint: newEndpoint },
+          beforeBootstrap: Effect.sleep("6 seconds"),
+          descriptor: () => {
+            if (retry === "stalled descriptor") {
+              if (++reads === 1) return new Response(null, { status: 502 });
+              if (reads === 2) return stalled();
+            }
+            return Response.json(DESCRIPTOR);
+          },
+          responses: [
+            ...(retry !== "stalled descriptor"
+              ? [new Response(null, { status: 502 }), stalled]
+              : [websocketTicket("old")]),
+            accessToken("new"),
+            websocketTicket("restored"),
+          ],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const attempt = yield* remote
+            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+            .pipe(Effect.timeoutOption("15 seconds"), Effect.forkChild);
+          yield* Effect.promise(() => retryStarted.promise);
+          yield* TestClock.adjust("3 seconds");
+          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+          if (retry === "second gateway response")
+            pending.resolve(new Response(null, { status: 503 }));
+          yield* TestClock.adjust("6 seconds");
+          const restored = Option.getOrThrow(yield* Fiber.join(attempt));
+          expect(new URL(restored.socketUrl).origin).toBe(newEndpoint.wsBaseUrl);
+          expect(restored.httpAuthorization).toMatchObject({ accessToken: "new" });
+          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
   it.effect(
     "keeps an active session's media available when another tab marks its endpoint stale",
     () =>
@@ -1391,54 +1480,57 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
-  it.effect.each(["descriptor after rediscovery", "descriptor retry", "ticket retry"] as const)(
-    "gives the public %s its normal request deadline",
-    (phase) =>
-      Effect.gen(function* () {
-        const started = Promise.withResolvers<void>();
-        const response = Promise.withResolvers<Response>();
-        const online = yield* Ref.make(false);
-        let reads = 0;
-        const harness = yield* makeHarness({
-          initialToken: new TokenStore.RemoteDpopAccessToken({
-            ...persistedToken(),
-            ...(phase === "descriptor after rediscovery"
-              ? { endpointNeedsDiscovery: true as const }
-              : {}),
-          }),
-          beforeBootstrap: requireOnlineRelay(online),
-          descriptor: () => {
-            if (phase === "ticket retry") return Response.json(DESCRIPTOR);
-            if (++reads === 1 && phase === "descriptor retry")
-              return new Response(null, { status: 502 });
-            started.resolve();
-            return response.promise;
-          },
-          responses:
-            phase === "ticket retry"
-              ? [
-                  new Response(null, { status: 502 }),
-                  () => {
-                    started.resolve();
-                    return response.promise;
-                  },
-                ]
-              : [websocketTicket("slow-host")],
-        });
-        const socket = yield* Effect.gen(function* () {
-          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
-          const attempt = yield* remote
-            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
-            .pipe(Effect.forkChild);
-          yield* Effect.promise(() => started.promise);
-          yield* TestClock.adjust("3500 millis");
-          response.resolve(
-            phase === "ticket retry" ? websocketTicket("slow-host") : Response.json(DESCRIPTOR),
-          );
-          return yield* Fiber.join(attempt);
-        }).pipe(Effect.provide(harness.layer));
-        expect(socket.socketUrl).toContain("wsTicket=slow-host");
-      }),
+  it.effect.each([
+    "descriptor after rediscovery",
+    "descriptor retry",
+    "ticket retry",
+    "ticket retry with the same discovered endpoint",
+  ] as const)("gives the public %s its normal request deadline", (phase) =>
+    Effect.gen(function* () {
+      const started = Promise.withResolvers<void>();
+      const response = Promise.withResolvers<Response>();
+      const ticketRetry =
+        phase === "ticket retry" || phase === "ticket retry with the same discovered endpoint";
+      const online = yield* Ref.make(phase === "ticket retry with the same discovered endpoint");
+      let reads = 0;
+      const harness = yield* makeHarness({
+        initialToken: new TokenStore.RemoteDpopAccessToken({
+          ...persistedToken(),
+          ...(phase === "descriptor after rediscovery"
+            ? { endpointNeedsDiscovery: true as const }
+            : {}),
+        }),
+        beforeBootstrap: requireOnlineRelay(online),
+        descriptor: () => {
+          if (ticketRetry) return Response.json(DESCRIPTOR);
+          if (++reads === 1 && phase === "descriptor retry")
+            return new Response(null, { status: 502 });
+          started.resolve();
+          return response.promise;
+        },
+        responses: ticketRetry
+          ? [
+              new Response(null, { status: 502 }),
+              () => {
+                started.resolve();
+                return response.promise;
+              },
+            ]
+          : [websocketTicket("slow-host")],
+      });
+      const socket = yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        const attempt = yield* remote
+          .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        yield* TestClock.adjust("3500 millis");
+        response.resolve(ticketRetry ? websocketTicket("slow-host") : Response.json(DESCRIPTOR));
+        return yield* Fiber.join(attempt);
+      }).pipe(Effect.provide(harness.layer));
+      expect(socket.socketUrl).toContain("wsTicket=slow-host");
+      expect(requestsTo(harness, "/oauth/token")).toBe(0);
+    }),
   );
 
   it.effect(
