@@ -104,6 +104,7 @@ function makeRegistry(input: {
   }>;
   readonly discovery?: ReadonlyArray<SourceControlProviderDiscoverySpec>;
   readonly run?: SourceControlHost.SourceControlHost["Service"]["process"]["run"];
+  readonly readConfigValue?: SourceControlHost.SourceControlHost["Service"]["git"]["readConfigValue"];
   readonly settings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
 }) {
   const driver = {
@@ -161,6 +162,9 @@ function makeRegistry(input: {
             }),
         }),
         TestSourceControlHost.layer({
+          ...(input.readConfigValue === undefined
+            ? {}
+            : { git: { readConfigValue: input.readConfigValue } }),
           process: {
             run: input.run ?? (() => Effect.succeed(TestSourceControlHost.processOutput(""))),
           },
@@ -240,6 +244,21 @@ it.effect.each(["meituanIntegrationEnabled", "meituanSourceControlEnabled"] as c
       yield* registry.discover;
       assert.strictEqual(probes, 3);
     }),
+);
+
+it.effect("selects the public source even when the private companion sorts first", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [
+        { name: "acme", url: "https://source.tanstack.com/@acme/project.private.git" },
+        { name: "source", url: "https://source.tanstack.com/@acme/project.git" },
+      ],
+      readConfigValue: (_cwd, key) =>
+        Effect.succeed(key === "remote.acme.t3-private-pr-companion" ? "true" : null),
+    });
+    const handle = yield* registry.resolveHandle({ cwd: "/repo" });
+    assert.strictEqual(handle.context?.remoteName, "source");
+  }),
 );
 
 it.effect("routes an unknown remote to the integration that claims its server", () =>

@@ -1,8 +1,8 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { EnvironmentId, ProjectId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
 
-import { composerTargetKey, useComposerDraftStore } from "../../composerDraftStore";
+import { composerTargetKey, DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import {
   addPreparingComposerImages,
   cancelHeldComposerSend,
@@ -55,4 +55,30 @@ it("holds a message send until its images join the draft, and cancels on edit, c
     await expect(cancelled).resolves.toEqual({ status: "cancelled" });
     cancelPreparingComposerImages(target);
   }
+});
+
+it("cancels an image-held send when its draft's worktree base changes", async () => {
+  const id = DraftId.make("held-image-worktree");
+  const environmentId = EnvironmentId.make("environment-held");
+  const targetKey = composerTargetKey(id);
+  const drafts = useComposerDraftStore.getState();
+  drafts.setProjectDraftThreadId(
+    scopeProjectRef(environmentId, ProjectId.make("project-held")),
+    id,
+    {
+      envMode: "worktree",
+      branch: "main",
+    },
+  );
+  using _store = {
+    [Symbol.dispose]: () => {
+      cancelPreparingComposerImages(targetKey);
+      drafts.clearDraftThread(id);
+    },
+  };
+  addPreparingComposerImages(targetKey, [preparingImage("held-worktree")]);
+  const held = holdComposerSend(id);
+  drafts.setDraftThreadContext(id, { branch: "release" });
+  removePreparingComposerImages(targetKey, new Set(["held-worktree"]));
+  await expect(held).resolves.toEqual({ status: "cancelled" });
 });

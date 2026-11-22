@@ -11,7 +11,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 
 type CheckoutThread = Pick<
   OrchestrationV2ThreadShell,
-  "id" | "title" | "projectId" | "worktreePath" | "activityRunStatus"
+  "id" | "title" | "projectId" | "worktreePath" | "workspace" | "activityRunStatus"
 >;
 
 /** Threads with an active run whose working directory is one of `checkoutPaths`. */
@@ -23,9 +23,13 @@ export function busyThreadsInCheckout<T extends CheckoutThread>(input: {
   return input.threads.filter(
     (thread) =>
       (thread.activityRunStatus ?? null) !== null &&
-      (thread.worktreePath === null
-        ? input.projectIds.has(thread.projectId)
-        : input.checkoutPaths.includes(thread.worktreePath)),
+      (thread.workspace !== undefined
+        ? thread.workspace.resources.some(({ checkoutRoot }) =>
+            input.checkoutPaths.includes(checkoutRoot),
+          )
+        : thread.worktreePath === null
+          ? input.projectIds.has(thread.projectId)
+          : input.checkoutPaths.includes(thread.worktreePath)),
   );
 }
 
@@ -77,13 +81,21 @@ export const assertCheckoutIdle = Effect.fn("sharedCheckoutGuard.assertCheckoutI
   );
   // Archiving does not stop a run, so archived threads can still be working. Each lookup fails
   // open on its own, so one failure keeps what the others found.
-  const snapshots = yield* Effect.forEach(
-    [
-      ...checkoutPaths.map((worktreePath) => threadManagement.getShellSnapshot({ worktreePath })),
-      ...[...projectIds].map((projectId) => threadManagement.getShellSnapshot({ projectId })),
-    ],
-    (snapshot) => snapshot.pipe(Effect.orElseSucceed(() => ({ threads: [], archivedThreads: [] }))),
-    { concurrency: "unbounded" },
+  const snapshots = yield* threadManagement.getShellSnapshot().pipe(
+    Effect.map((snapshot) => [snapshot]),
+    Effect.catch(() =>
+      Effect.forEach(
+        [
+          ...checkoutPaths.map((worktreePath) =>
+            threadManagement.getShellSnapshot({ worktreePath }),
+          ),
+          ...[...projectIds].map((projectId) => threadManagement.getShellSnapshot({ projectId })),
+        ],
+        (snapshot) =>
+          snapshot.pipe(Effect.orElseSucceed(() => ({ threads: [], archivedThreads: [] }))),
+        { concurrency: "unbounded" },
+      ),
+    ),
   );
   const busy = busyThreadsInCheckout({
     checkoutPaths,

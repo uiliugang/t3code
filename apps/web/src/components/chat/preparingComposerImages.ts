@@ -171,7 +171,9 @@ export function holdComposerSend(
   if (countPreparingComposerImages(targetKey) === 0) return null;
   if (heldSends.has(targetKey)) return Promise.resolve({ status: "cancelled" });
   return new Promise((resolve) => {
-    let draft = useComposerDraftStore.getState().getComposerDraft(draftTarget);
+    const drafts = useComposerDraftStore.getState();
+    const draftThread = drafts.getDraftThread(draftTarget);
+    let draft = drafts.getComposerDraft(draftTarget);
     const settle = (result: HeldComposerSendResult) => {
       if (heldSends.get(targetKey) !== settle) return;
       heldSends.delete(targetKey);
@@ -193,12 +195,13 @@ export function holdComposerSend(
     const stopWatchingDraft = useComposerDraftStore.subscribe((state) => {
       const next = state.getComposerDraft(draftTarget);
       if (
-        !preparedImagesJoiningDraft &&
-        (composerDraftContentChanged(draft, next) ||
-          draft?.modelSelectionByProvider !== next?.modelSelectionByProvider ||
-          draft?.activeProvider !== next?.activeProvider ||
-          draft?.runtimeMode !== next?.runtimeMode ||
-          draft?.interactionMode !== next?.interactionMode)
+        draftThread !== state.getDraftThread(draftTarget) ||
+        (!preparedImagesJoiningDraft &&
+          (composerDraftContentChanged(draft, next) ||
+            draft?.modelSelectionByProvider !== next?.modelSelectionByProvider ||
+            draft?.activeProvider !== next?.activeProvider ||
+            draft?.runtimeMode !== next?.runtimeMode ||
+            draft?.interactionMode !== next?.interactionMode))
       ) {
         settle({ status: "cancelled" });
       }

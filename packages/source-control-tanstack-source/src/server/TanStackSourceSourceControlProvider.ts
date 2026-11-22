@@ -302,7 +302,10 @@ export const make = Effect.gen(function* () {
     return yield* error(operation, input.cwd, "No TanStack Source repository remote was found.");
   });
 
-  const toChangeRequest = (target: Target, pull: Json.SourcePullDetail): ChangeRequest => {
+  const toChangeRequest = (
+    target: Target,
+    pull: Json.SourcePullDetail,
+  ): ChangeRequest & { readonly isPrivate: boolean } => {
     const headRepository = pull.headRepo ?? target.repository;
     const headBranch = Json.headBranchName(pull.head);
     // A pull request synced from a GitHub fork names its head only by its pull ref.
@@ -323,6 +326,7 @@ export const make = Effect.gen(function* () {
       mergedAt: pull.mergedAt === null ? null : Json.iso(pull.mergedAt),
       updatedAt: Option.some(DateTime.makeUnsafe(updatedAt)),
       isCrossRepository: crossRepository,
+      isPrivate: pull.visibility === "private",
       headRepositoryNameWithOwner: headRepository,
       headRepositoryOwnerLogin: headRepository.split("/")[0] ?? null,
     };
@@ -533,12 +537,22 @@ export const make = Effect.gen(function* () {
                 });
           const operation = "TanStackSourceSourceControlProvider.checkoutChangeRequest";
           const branches = yield* git.listLocalBranchNames(input.cwd);
+          const headRepository = pull.headRepositoryNameWithOwner ?? null;
           const companion =
             pullRepository !== null &&
-            pull.headRepositoryNameWithOwner?.toLowerCase() ===
-              `${pullRepository}.private`.toLowerCase()
-              ? pull.headRepositoryNameWithOwner
+            headRepository !== null &&
+            (pull.isPrivate
+              ? headRepository.toLowerCase() !== pullRepository.toLowerCase()
+              : headRepository.toLowerCase() === `${pullRepository}.private`.toLowerCase())
+              ? headRepository
               : null;
+          if (pull.isPrivate && companion === null) {
+            return yield* error(
+              operation,
+              input.cwd,
+              "The private pull request has no companion repository.",
+            );
+          }
           if (!pull.isCrossRepository || companion !== null) {
             const localBranch = pull.headRefName;
             const remoteBranch = {
@@ -553,6 +567,29 @@ export const make = Effect.gen(function* () {
                     }),
               remoteBranch: localBranch,
             };
+            if (companion !== null) {
+              yield* git.writeConfigValue({
+                cwd: input.cwd,
+                key: SourceControlProvider.privateCompanionConfigKey(remoteBranch.remoteName),
+                value: "true",
+              });
+            }
+            if (companion !== null && branches.includes(localBranch)) {
+              const [trackedRemote, trackedRef] = yield* Effect.all([
+                git.readConfigValue(input.cwd, `branch.${localBranch}.remote`),
+                git.readConfigValue(input.cwd, `branch.${localBranch}.merge`),
+              ]);
+              if (
+                trackedRemote !== remoteBranch.remoteName ||
+                trackedRef !== `refs/heads/${localBranch}`
+              ) {
+                return yield* error(
+                  operation,
+                  input.cwd,
+                  `Local branch ${localBranch} does not track this private pull request. Rename the local branch and try again.`,
+                );
+              }
+            }
             if (input.force !== true && !branches.includes(localBranch))
               yield* git.fetchRemoteBranch({ ...remoteBranch, localBranch });
             else yield* git.fetchRemoteTrackingBranch(remoteBranch);

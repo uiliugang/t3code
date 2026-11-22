@@ -266,7 +266,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
     const config = yield* ServerConfig.ServerConfig;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
-    const { process } = yield* SourceControlHost.SourceControlHost;
+    const { git, process } = yield* SourceControlHost.SourceControlHost;
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     const providers = new Map<
       SourceControlProviderKind,
@@ -360,7 +360,23 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               }),
           ),
         );
-        return yield* refineContext(cwd, selectProviderContext(remotes.remotes));
+        const targets = yield* Effect.filter(
+          remotes.remotes,
+          (remote) =>
+            sourceControlDefinitions.recognizeRemote(remote.url)?.kind === "tanstack-source"
+              ? git
+                  .readConfigValue(
+                    cwd,
+                    SourceControlProvider.privateCompanionConfigKey(remote.name),
+                  )
+                  .pipe(
+                    Effect.map((value) => value !== "true"),
+                    Effect.orElseSucceed(() => true),
+                  )
+              : Effect.succeed(true),
+          { concurrency: "unbounded" },
+        );
+        return yield* refineContext(cwd, selectProviderContext(targets));
       },
     );
 

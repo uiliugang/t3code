@@ -8,6 +8,8 @@ import {
   SourceControlRepositoryError,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
+import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -373,6 +375,56 @@ describe("ProjectCloneTracker", () => {
       expect((yield* tracker.get(projectId))?.phase).toBe("running");
     }).pipe(Effect.provide(harness.layer));
   });
+
+  it.effect("a disconnect while replacing a completed clone leaves a cancellable retry", () =>
+    Effect.gen(function* () {
+      const clock = yield* Clock.Clock;
+      const retentionStarted = Deferred.makeUnsafe<void>();
+      const clearingRetention = Deferred.makeUnsafe<void>();
+      const releaseRetention = Deferred.makeUnsafe<void>();
+      let started = false;
+      const harness = makeHarness({
+        clone: (input) => {
+          if (started) return Effect.never;
+          started = true;
+          return Effect.succeed({
+            cwd: input.destinationPath,
+            remoteUrl: input.remoteUrl ?? "",
+            repository: null,
+          });
+        },
+      });
+      yield* Effect.gen(function* () {
+        const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+        yield* tracker.start(startInput, harness.hooks);
+        yield* Deferred.await(retentionStarted);
+
+        const restart = yield* tracker.start(startInput, harness.hooks).pipe(Effect.forkChild);
+        yield* Deferred.await(clearingRetention);
+        restart.interruptUnsafe();
+        yield* Deferred.succeed(releaseRetention, undefined);
+        yield* Fiber.await(restart);
+
+        expect(yield* tracker.cancel(projectId)).toBe(true);
+      }).pipe(
+        Effect.provide(harness.layer),
+        Effect.provideService(Clock.Clock, {
+          ...clock,
+          sleep: (duration) =>
+            Duration.toMillis(duration) === 30_000
+              ? Deferred.succeed(retentionStarted, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.onInterrupt(() =>
+                    Deferred.succeed(clearingRetention, undefined).pipe(
+                      Effect.andThen(Deferred.await(releaseRetention)),
+                    ),
+                  ),
+                )
+              : clock.sleep(duration),
+        }),
+      );
+    }),
+  );
 
   it.effect("does not create a project when the clone cannot be prepared", () => {
     const harness = makeHarness();

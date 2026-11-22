@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import { workspaceFixture } from "../orchestration-v2/testkit/workspaceFixtures.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 import { assertCheckoutIdle, busyThreadsInCheckout } from "./sharedCheckoutGuard.ts";
 
@@ -85,7 +86,7 @@ describe("assertCheckoutIdle", () => {
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({
         getShellSnapshot: (options) =>
-          options?.worktreePath !== undefined && input.failWorktreeLookup
+          input.failWorktreeLookup && (options === undefined || options.worktreePath !== undefined)
             ? Effect.fail("worktree lookup failed" as never)
             : Effect.succeed(
                 (() => {
@@ -163,5 +164,19 @@ describe("assertCheckoutIdle", () => {
         }),
       ),
     ),
+  );
+
+  it.effect("refuses a switch in a running thread's secondary workspace checkout", () =>
+    Effect.gen(function* () {
+      const busy = {
+        ...thread("side chat", { worktreePath: "/tasks/frontend" }),
+        workspace: workspaceFixture(),
+      };
+      const failure = yield* assertCheckoutIdle("test", "/tasks/backend").pipe(
+        Effect.result,
+        Effect.provide(guardLayer({ repositoryRoot: "/tasks/backend", threads: [busy] })),
+      );
+      expect(failure._tag).toBe("Failure");
+    }),
   );
 });

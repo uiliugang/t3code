@@ -3045,6 +3045,11 @@ export const make = Effect.gen(function* () {
       preferredName: companion.repository.split("/")[0] || "private",
       url: companion.url,
     });
+    yield* gitCore.writeConfigValue({
+      cwd,
+      key: SourceControlProvider.privateCompanionConfigKey(remoteName),
+      value: "true",
+    });
     // Recorded before the push, so a later push of this branch, by T3 or by plain `git push`,
     // goes to the companion too and never publishes the branch.
     yield* gitCore.writeConfigValue({

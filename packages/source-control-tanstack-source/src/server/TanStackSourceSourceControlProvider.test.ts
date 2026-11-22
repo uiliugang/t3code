@@ -35,13 +35,18 @@ const PULL = {
 function checkout(options: {
   readonly recordedOwner: string | null;
   readonly isAncestor: boolean;
-  readonly pull?: Partial<typeof PULL>;
+  readonly pull?: Partial<typeof PULL> & { readonly visibility?: "private" };
   readonly force?: boolean;
+  readonly existingBranchRemote?: string;
 }) {
   const git: Array<string> = [];
   const config = new Map<string, string>(
     options.recordedOwner === null ? [] : [[OWNER_KEY, options.recordedOwner]],
   );
+  if (options.existingBranchRemote !== undefined) {
+    config.set("branch.fix-thing.remote", options.existingBranchRemote);
+    config.set("branch.fix-thing.merge", "refs/heads/fix-thing");
+  }
   const api = TanStackSourceApi.TanStackSourceApi.of({
     request: (input) =>
       input.path === "/repos/acme/web/pulls/42"
@@ -70,7 +75,12 @@ function checkout(options: {
       readConfigValue: (_cwd, key) =>
         Effect.succeed(key === "remote.origin.url" ? REMOTE : (config.get(key) ?? null)),
       writeConfigValue: (input) => Effect.sync(() => void config.set(input.key, input.value)),
-      listLocalBranchNames: () => Effect.succeed(["main", "pr-42"]),
+      listLocalBranchNames: () =>
+        Effect.succeed(
+          options.existingBranchRemote === undefined
+            ? ["main", "pr-42"]
+            : ["main", "pr-42", "fix-thing"],
+        ),
       createBranch: (input) => Effect.sync(() => void git.push(`create ${input.branch}`)),
       switchRef: (input) =>
         Effect.sync(() => {
@@ -153,22 +163,48 @@ describe("TanStackSourceSourceControlProvider.checkoutChangeRequest", () => {
   });
 
   // Source publishes no `refs/pull/<n>/head` for a private pull request, on either repository.
-  it.effect("takes a private pull request's branch from the companion repository", () => {
-    const pull = { head: "acme:fix-thing", headRepo: "acme/web.private" };
-    const { run, git, config } = checkout({ recordedOwner: null, isAncestor: true, pull });
-    const forced = checkout({ recordedOwner: null, isAncestor: true, pull, force: true });
+  it.effect.each(["web.private", "web.private-2"])(
+    "takes a private pull request's branch from companion %s",
+    (companion) => {
+      const pull = {
+        head: "acme:fix-thing",
+        headRepo: `acme/${companion}`,
+        visibility: "private" as const,
+      };
+      const { run, git, config } = checkout({ recordedOwner: null, isAncestor: true, pull });
+      const forced = checkout({ recordedOwner: null, isAncestor: true, pull, force: true });
+      return Effect.gen(function* () {
+        yield* forced.run;
+        assert.include(
+          forced.git,
+          "checkout --no-track -B fix-thing refs/remotes/acme/fix-thing --",
+        );
+        yield* run;
+        assert.strictEqual(config.get("branch.fix-thing.pushRemote"), "acme");
+        assert.deepStrictEqual(git, [
+          `remote source ${REMOTE}`,
+          `remote acme https://source.tanstack.com/@acme/${companion}.git`,
+          "fetch acme fix-thing:fix-thing",
+          "upstream fix-thing acme/fix-thing",
+          "switch fix-thing",
+        ]);
+      });
+    },
+  );
+
+  it.effect("leaves a same-named public branch and its push destination alone", () => {
+    const { run, git, config } = checkout({
+      recordedOwner: null,
+      isAncestor: true,
+      existingBranchRemote: "origin",
+      pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "private" },
+    });
     return Effect.gen(function* () {
-      yield* forced.run;
-      assert.include(forced.git, "checkout --no-track -B fix-thing refs/remotes/acme/fix-thing --");
-      yield* run;
-      assert.strictEqual(config.get("branch.fix-thing.pushRemote"), "acme");
-      assert.deepStrictEqual(git, [
-        `remote source ${REMOTE}`,
-        "remote acme https://source.tanstack.com/@acme/web.private.git",
-        "fetch acme fix-thing:fix-thing",
-        "upstream fix-thing acme/fix-thing",
-        "switch fix-thing",
-      ]);
+      const failure = yield* Effect.flip(run);
+      assert.include(failure.detail, "fix-thing");
+      assert.strictEqual(config.get("branch.fix-thing.remote"), "origin");
+      assert.isFalse(config.has("branch.fix-thing.pushRemote"));
+      assert.isFalse(git.some((command) => /^(checkout|switch|upstream) /u.test(command)));
     });
   });
 });

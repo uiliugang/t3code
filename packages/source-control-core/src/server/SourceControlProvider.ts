@@ -41,6 +41,9 @@ export interface SourceControlProviderContext {
   readonly requestedHost?: string;
 }
 
+export const privateCompanionConfigKey = (remoteName: string) =>
+  `remote.${remoteName}.t3-private-pr-companion`;
+
 type IssueContext = { readonly cwd: string; readonly source: IssueSource };
 
 export interface SourceControlRefSelector {
