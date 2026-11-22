@@ -11,7 +11,7 @@ import {
 import {
   meituanAssociationCountLabel,
   mepAccountLabel,
-  mepSpaceSummary,
+  mepSpaceValue,
   mepTrackerSummary,
 } from "@t3tools/client-runtime/meituanSettings";
 import {
@@ -25,6 +25,7 @@ import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { IconButton } from "../../components/ui/IconButton";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useProjects } from "../../state/entities";
@@ -285,30 +286,27 @@ function ProjectSourcesRow({
     setBusy(false);
   };
   return (
-    <View className="gap-1 border-b border-border-subtle p-4">
-      <Text className="font-t3-medium">{title}</Text>
-      {repository ? <Text className="text-sm text-foreground-muted">{repository}</Text> : null}
-      {githubSources
-        .filter(
-          (source) => source.scope !== repository || saved.some((s) => s.provider === "github"),
-        )
-        .map((source) => (
-          <Text key={JSON.stringify([source.host, source.scope])} className="text-sm">
-            {t("GitHub Issues")} · {source.host}/{source.scope}
+    <View className="gap-2 border-b border-border-subtle px-4 py-3">
+      <View>
+        <Text textRole="body" className="font-t3-semibold">
+          {title}
+        </Text>
+        {repository && !githubSources.some((source) => source.scope === repository) ? (
+          <Text textRole="footnote" className="text-foreground-muted">
+            {repository}
           </Text>
-        ))}
+        ) : null}
+      </View>
       {error ? (
         <Text accessibilityRole="alert" className="text-danger">
           {error}
         </Text>
       ) : null}
-      {mep ? (
-        <Text className="text-sm">{mepSpaceSummary(spaces, manual, discovery, t)}</Text>
-      ) : null}
       {editing && (editing.provider !== "meituan" || mep) ? (
-        <>
-          <Text className="text-sm">
+        <View className="gap-2 border-t border-border-subtle pt-3">
+          <Text textRole="footnote" className="font-t3-medium">
             {t(editing.provider === "meituan" ? "MEP space IDs" : "GitHub repository")}
+            {editing.provider === "github" ? ` · ${editing.source?.host ?? "github.com"}` : ""}
           </Text>
           <AppTextInput
             accessibilityLabel={t(
@@ -360,34 +358,90 @@ function ProjectSourcesRow({
               />
             ) : null}
           </View>
-        </>
-      ) : (
-        <View className="flex-row flex-wrap gap-2">
-          {mep ? (
-            <Button
-              size="compact"
-              label={t(spaces.length || discovery !== "ready" ? "Edit spaces" : "Link spaces")}
-              disabled={!allowed || busy}
-              tone="text"
-              onPress={() => edit({ provider: "meituan" })}
-            />
-          ) : null}
-          {(githubSources.length ? githubSources : [undefined]).map((source) => (
-            <Button
-              key={source ? JSON.stringify([source.host, source.scope]) : "github"}
-              size="compact"
-              label={
-                source && githubSources.length > 1
-                  ? `${t("Edit")} ${source.host}/${source.scope}`
-                  : t("GitHub repository")
-              }
-              disabled={!allowed || busy}
-              tone="text"
-              onPress={() => edit({ provider: "github", source })}
-            />
-          ))}
         </View>
+      ) : (
+        <>
+          <View>
+            <Text textRole="label" className="font-t3-medium text-foreground-muted">
+              {t("GitHub Issues")}
+            </Text>
+            {(githubSources.length ? githubSources : [undefined]).map((source) => (
+              <ProjectSourceLine
+                key={source ? JSON.stringify([source.host, source.scope]) : "github"}
+                value={
+                  source?.scope ??
+                  t(
+                    discovery === "pending"
+                      ? "Loading..."
+                      : discovery === "failed"
+                        ? "Unknown"
+                        : "Not configured",
+                  )
+                }
+                detail={source?.host}
+                actionLabel={
+                  source
+                    ? t("Edit {name}", { name: `${source.host}/${source.scope}` })
+                    : t("GitHub repository")
+                }
+                add={!source}
+                onEdit={allowed ? () => edit({ provider: "github", source }) : undefined}
+              />
+            ))}
+          </View>
+          {mep ? (
+            <View className="border-t border-border-subtle pt-2">
+              <Text textRole="label" className="font-t3-medium text-foreground-muted">
+                {t("MEP space IDs")}
+              </Text>
+              <ProjectSourceLine
+                value={mepSpaceValue(spaces, discovery, t)}
+                detail={spaces.length ? t(manual ? "Manual override" : "Automatic") : undefined}
+                actionLabel={t(
+                  spaces.length || discovery !== "ready" ? "Edit spaces" : "Link spaces",
+                )}
+                add={!spaces.length && discovery === "ready"}
+                onEdit={allowed ? () => edit({ provider: "meituan" }) : undefined}
+              />
+            </View>
+          ) : null}
+        </>
       )}
+    </View>
+  );
+}
+
+function ProjectSourceLine({
+  value,
+  detail,
+  actionLabel,
+  add,
+  onEdit,
+}: {
+  value: string;
+  detail: string | undefined;
+  actionLabel: string;
+  add: boolean;
+  onEdit: (() => void) | undefined;
+}) {
+  return (
+    <View className="min-h-12 flex-row items-center gap-2">
+      <View className="min-w-0 flex-1 py-1">
+        <Text textRole="body">{value}</Text>
+        {detail ? (
+          <Text textRole="label" className="text-foreground-muted">
+            {detail}
+          </Text>
+        ) : null}
+      </View>
+      {onEdit ? (
+        <IconButton
+          icon={add ? "plus" : "pencil"}
+          accessibilityLabel={actionLabel}
+          onPress={onEdit}
+          tintColorClassName="accent-primary-text"
+        />
+      ) : null}
     </View>
   );
 }

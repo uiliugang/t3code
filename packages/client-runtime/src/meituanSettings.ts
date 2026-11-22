@@ -58,16 +58,29 @@ export function mepAccountLabel(tool: MeituanTool | undefined, t: UiTranslator) 
   return t(tool?.account === null ? "Account not detected" : "Account status unknown");
 }
 
+export function mepSpaceValue(
+  spaces: readonly string[],
+  discovery: "pending" | "failed" | "ready",
+  t: UiTranslator,
+) {
+  if (spaces.length) return spaces.join(", ");
+  if (discovery === "ready") return t("No MEP space linked");
+  return t(discovery === "failed" ? "Unknown" : "Loading...");
+}
+
 export function mepSpaceSummary(
   spaces: readonly string[],
   manual: boolean,
   discovery: "pending" | "failed" | "ready",
   t: UiTranslator,
 ) {
-  if (spaces.length)
-    return `${t("MEP space IDs")} · ${spaces.join(", ")} · ${t(manual ? "Manual override" : "Automatic")}`;
-  if (discovery === "ready") return t("No MEP space linked");
-  return `${t("MEP space IDs")} · ${t(discovery === "failed" ? "Unknown" : "Loading...")}`;
+  const value = mepSpaceValue(spaces, discovery, t);
+  if (!spaces.length && discovery === "ready") return value;
+  return [
+    t("MEP space IDs"),
+    value,
+    ...(spaces.length ? [t(manual ? "Manual override" : "Automatic")] : []),
+  ].join(" · ");
 }
 
 export function mepTrackerSummary(
