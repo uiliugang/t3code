@@ -238,16 +238,23 @@ const NOT_FOUND_CODES = new Set(["ENOTFOUND", "EAI_NONAME", "EBUSY"]);
 
 const DnsJsonAnswer = Schema.Struct({ Status: Schema.Number });
 
+function isConnectionRefused(error: unknown): boolean {
+  if (error instanceof AggregateError) {
+    return error.errors.length > 0 && error.errors.every(isConnectionRefused);
+  }
+  return error instanceof Error && "code" in error && error.code === "ECONNREFUSED";
+}
+
 const canOpenTcp = (host: string, port: number) =>
-  Effect.callback<boolean>((resume) => {
+  Effect.callback<boolean | null>((resume) => {
     const socket = NodeNet.connect({ host, port });
-    const finish = (connected: boolean) => {
+    const finish = (connected: boolean | null) => {
       socket.destroy();
       resume(Effect.succeed(connected));
     };
-    socket.setTimeout(Duration.toMillis(EDGE_CONNECT_TIMEOUT), () => finish(false));
+    socket.setTimeout(Duration.toMillis(EDGE_CONNECT_TIMEOUT), () => finish(null));
     socket.once("connect", () => finish(true));
-    socket.once("error", () => finish(false));
+    socket.once("error", (error) => finish(isConnectionRefused(error) ? false : null));
     return Effect.sync(() => socket.destroy());
   });
 

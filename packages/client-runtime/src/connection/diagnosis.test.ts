@@ -38,7 +38,7 @@ const fromRelay = (relayError: RelayProtectedError) =>
     }),
   );
 
-const unavailable = (endpointFailure: "tunnel_down" | "origin_unreachable") =>
+const unavailable = (endpointFailure: "tunnel_down" | "origin_unreachable" | "unknown") =>
   fromRelay(
     new RelayEnvironmentEndpointUnavailableError({
       code: "environment_endpoint_unavailable",
@@ -66,6 +66,30 @@ describe("presentConnectionDiagnosis", () => {
       "tunnel:ok",
       "server:failed",
     ]);
+  });
+
+  it("shows a gateway response from the tunnel in both relay health and connection diagnostics", () => {
+    for (const diagnosis of [
+      diagnose(backoff(unavailable("unknown"))),
+      presentConnectionDiagnosis({
+        hostLabel: "Mac mini",
+        state: AVAILABLE_CONNECTION_STATE,
+        via: "relay",
+        relayStatus: { status: "offline", endpointFailure: "unknown", endpointStatus: 503 },
+      }),
+    ]) {
+      expect(diagnosis?.headline).toBe("T3 Connect returned an error");
+      expect(diagnosis?.hops.map((hop) => hop.result)).toEqual([
+        "ok",
+        "ok",
+        "unchecked",
+        "unchecked",
+      ]);
+      expect(diagnosis?.steps.join(" ")).toMatch(/retry|try again/i);
+      expect(diagnosis?.moreInfoUrl).toBe(
+        "https://github.com/uiliugang/t3code/blob/main/docs/user/t3-connect-troubleshooting.md#t3-connect-returned-an-error",
+      );
+    }
   });
 
   it("blames this device when it cannot reach a tunnel the relay already reached", () => {

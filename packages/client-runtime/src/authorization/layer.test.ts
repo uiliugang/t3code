@@ -58,13 +58,17 @@ const BOOTSTRAP: RelayEnvironmentConnectResponse = {
 
 type RecordedResponse = Response | ((init: RequestInit) => Response | Promise<Response>);
 
-function recordedFetch(responses: ReadonlyArray<RecordedResponse>, descriptor?: object) {
+type DescriptorFixture = typeof DESCRIPTOR | (() => Response);
+
+function recordedFetch(responses: ReadonlyArray<RecordedResponse>, descriptor?: DescriptorFixture) {
   const calls: Array<readonly [RequestInfo | URL, RequestInit]> = [];
   let responseIndex = 0;
   const fetchFn = ((input, init) => {
     calls.push([input, init ?? {}]);
     if (descriptor !== undefined && String(input).endsWith("/.well-known/t3/environment")) {
-      return Promise.resolve(Response.json(descriptor));
+      return Promise.resolve(
+        typeof descriptor === "function" ? descriptor() : Response.json(descriptor),
+      );
     }
     const response = responses[responseIndex++];
     return response === undefined
@@ -122,7 +126,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   readonly initialToken?: TokenStore.RemoteDpopAccessToken;
   readonly responses: ReadonlyArray<RecordedResponse>;
   /** Answers every descriptor read, so one that runs beside a ticket does not shift `responses`. */
-  readonly descriptor?: object;
+  readonly descriptor?: DescriptorFixture;
   readonly bootstrap?: RelayEnvironmentConnectResponse;
   readonly beforeBootstrap?: Effect.Effect<void, ManagedRelay.ManagedRelayClientError>;
   readonly beforePut?: Effect.Effect<void>;
@@ -968,68 +972,115 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
-  it.effect("reconnects through a brief gateway failure without replacing a valid credential", () =>
+  it.effect.each([
+    { name: "ticket", ticketFails: true, descriptorFails: false },
+    { name: "descriptor", ticketFails: false, descriptorFails: true },
+    { name: "both requests", ticketFails: true, descriptorFails: true },
+  ])(
+    "retries only the failed $name with the cached credential",
+    ({ ticketFails, descriptorFails }) =>
+      Effect.gen(function* () {
+        let descriptorReads = 0;
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          descriptor: () =>
+            ++descriptorReads === 1 && descriptorFails
+              ? new Response("Bad Gateway", { status: 502 })
+              : Response.json(DESCRIPTOR),
+          responses: [
+            ...(ticketFails ? [new Response("Bad Gateway", { status: 502 })] : []),
+            websocketTicket("reconnected"),
+          ],
+        });
+        const authorized = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+          (remote) => remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }),
+        ).pipe(Effect.provide(harness.layer));
+        expect(authorized.socketUrl).toContain("wsTicket=reconnected");
+        expect(authorized.descriptor?.environmentId).toBe(ENVIRONMENT_ID);
+        expect(descriptorReads).toBe(descriptorFails ? 2 : 1);
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+        expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(ticketFails ? 2 : 1);
+        const proofs = (yield* Ref.get(harness.proofInputs)).filter(
+          (proof) => proof.method === "POST",
+        );
+        expect(proofs.map((proof) => proof.accessToken)).toEqual(
+          ticketFails ? ["cached-access-token", "cached-access-token"] : ["cached-access-token"],
+        );
+        expect(requestsTo(harness, "/oauth/token")).toBe(0);
+      }),
+  );
+
+  it.effect.each(["ticket", "descriptor"] as const)(
+    "refreshes a cached endpoint after repeated %s gateway failures",
+    (failedRequest) =>
+      Effect.gen(function* () {
+        let descriptorReads = 0;
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          descriptor: () =>
+            ++descriptorReads <= 2 && failedRequest === "descriptor"
+              ? new Response("endpoint unavailable", { status: 503 })
+              : Response.json(DESCRIPTOR),
+          responses: [
+            ...(failedRequest === "ticket"
+              ? [
+                  new Response("endpoint unavailable", { status: 503 }),
+                  new Response("endpoint unavailable", { status: 504 }),
+                ]
+              : [websocketTicket("unused")]),
+            accessToken("replacement-access-token"),
+            websocketTicket("replacement-ticket"),
+          ],
+        });
+
+        const authorized = yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          return yield* remote.authorizeDpop({
+            expectedEnvironmentId: ENVIRONMENT_ID,
+          });
+        }).pipe(Effect.provide(harness.layer));
+
+        expect(authorized.socketUrl).toContain("wsTicket=replacement-ticket");
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+        expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)).toEqual(
+          expect.objectContaining({
+            accessToken: "replacement-access-token",
+          }),
+        );
+        expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(
+          failedRequest === "ticket" ? 3 : 2,
+        );
+        expect(requestsTo(harness, "/oauth/token")).toBe(1);
+      }),
+  );
+
+  it.effect("stops a cached ticket retry when the cloud session changes", () =>
     Effect.gen(function* () {
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<Response>();
       const harness = yield* makeHarness({
         initialToken: persistedToken(),
         descriptor: DESCRIPTOR,
-        responses: [new Response("Bad Gateway", { status: 502 }), websocketTicket("reconnected")],
-      });
-      const authorized = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
-        (remote) => remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }),
-      ).pipe(Effect.provide(harness.layer));
-      expect(authorized.socketUrl).toContain("wsTicket=reconnected");
-      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
-      expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(2);
-      const proofs = (yield* Ref.get(harness.proofInputs)).filter(
-        (proof) => proof.method === "POST",
-      );
-      expect(proofs.map((proof) => proof.accessToken)).toEqual([
-        "cached-access-token",
-        "cached-access-token",
-      ]);
-      expect(requestsTo(harness, "/oauth/token")).toBe(0);
-    }),
-  );
-
-  it.effect("refreshes a cached endpoint after repeated gateway failures", () =>
-    Effect.gen(function* () {
-      const cached = new TokenStore.RemoteDpopAccessToken({
-        environmentId: ENVIRONMENT_ID,
-        accountId: "account-1",
-        label: DESCRIPTOR.label,
-        endpoint: ENDPOINT,
-        accessToken: "cached-access-token",
-        expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
-        dpopThumbprint: "thumbprint-1",
-      });
-      const harness = yield* makeHarness({
-        initialToken: cached,
-        descriptor: DESCRIPTOR,
         responses: [
-          new Response("endpoint unavailable", { status: 503 }),
-          new Response("endpoint unavailable", { status: 504 }),
-          accessToken("replacement-access-token"),
-          websocketTicket("replacement-ticket"),
+          () => {
+            started.resolve();
+            return release.promise;
+          },
         ],
       });
-
-      const authorized = yield* Effect.gen(function* () {
+      const error = yield* Effect.gen(function* () {
         const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
-        return yield* remote.authorizeDpop({
-          expectedEnvironmentId: ENVIRONMENT_ID,
-        });
+        const attempting = yield* remote
+          .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        yield* Ref.set(harness.session, Option.some({ accountId: "other-account" }));
+        release.resolve(new Response("Bad Gateway", { status: 502 }));
+        return yield* Fiber.join(attempting);
       }).pipe(Effect.provide(harness.layer));
-
-      expect(authorized.socketUrl).toContain("wsTicket=replacement-ticket");
-      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
-      expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)).toEqual(
-        expect.objectContaining({
-          accessToken: "replacement-access-token",
-        }),
-      );
-      expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(3);
-      expect(requestsTo(harness, "/oauth/token")).toBe(1);
+      expect(error).toMatchObject({ _tag: "ConnectionBlockedError", reason: "authentication" });
+      expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(1);
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
     }),
   );
 
@@ -1080,6 +1131,47 @@ describe("RemoteEnvironmentAuthorization", () => {
       expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
         "replacement-token",
       );
+    }),
+  );
+
+  it.effect("gives a concurrently renewed credential the normal ticket deadline", () =>
+    Effect.gen(function* () {
+      const oldStarted = Promise.withResolvers<void>();
+      const oldResponse = Promise.withResolvers<Response>();
+      const renewedStarted = Promise.withResolvers<void>();
+      const renewedResponse = Promise.withResolvers<Response>();
+      const harness = yield* makeHarness({
+        initialToken: persistedToken(),
+        descriptor: DESCRIPTOR,
+        responses: [
+          () => {
+            oldStarted.resolve();
+            return oldResponse.promise;
+          },
+          accessToken("replacement-token"),
+          () => {
+            renewedStarted.resolve();
+            return renewedResponse.promise;
+          },
+        ],
+      });
+      const connected = yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        const input = { expectedEnvironmentId: ENVIRONMENT_ID };
+        const socket = yield* remote.authorizeDpop(input).pipe(Effect.forkChild);
+        yield* Effect.promise(() => oldStarted.promise);
+        yield* remote.authorizeDpopHttp({ ...input, rejectedAccessToken: "cached-access-token" });
+        oldResponse.resolve(authInvalid());
+        yield* Effect.promise(() => renewedStarted.promise);
+        yield* TestClock.adjust("3500 millis");
+        renewedResponse.resolve(websocketTicket("renewed-ticket"));
+        return yield* Fiber.join(socket);
+      }).pipe(Effect.provide(harness.layer));
+      expect(connected.socketUrl).toContain("wsTicket=renewed-ticket");
+      expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
+        "replacement-token",
+      );
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
     }),
   );
 

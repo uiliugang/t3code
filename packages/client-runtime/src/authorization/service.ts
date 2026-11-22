@@ -139,6 +139,13 @@ interface IssuedDpopToken {
   readonly descriptor?: ExecutionEnvironmentDescriptor;
 }
 
+function isGatewayError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
+  return (
+    error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" &&
+    [502, 503, 504].includes(error.status)
+  );
+}
+
 function mapDpopSocketError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
   return error._tag === "ConnectionTransientError" || error._tag === "ConnectionBlockedError"
     ? error
@@ -700,21 +707,15 @@ export const make = Effect.gen(function* () {
     let selected = yield* getDpopToken(input);
     // A cached token comes without a descriptor. That read needs no ticket, so
     // it runs beside the ticket request, and a failed ticket abandons it.
-    const openSocket = Effect.fnUntraced(function* (issued: typeof selected) {
-      const ticket = createDpopSocketUrl(
-        issued.token,
-        issued.fromCache ? CACHED_ENDPOINT_SOCKET_TIMEOUT_MS : undefined,
-        endpoint,
-      );
+    const openSocket = Effect.fnUntraced(function* (issued: typeof selected, timeoutMs?: number) {
+      const retryCachedEndpoint = timeoutMs !== undefined && endpoint === undefined;
+      const ticket = createDpopSocketUrl(issued.token, timeoutMs, endpoint);
       // A brief gateway failure can lose the ticket response for a still-valid session.
       const socket = (
-        endpoint === undefined && issued.fromCache
+        retryCachedEndpoint
           ? ticket.pipe(
-              Effect.catchIf(
-                (error) =>
-                  error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" &&
-                  [502, 503, 504].includes(error.status),
-                () => assertSession(issued.identity).pipe(Effect.andThen(ticket)),
+              Effect.catchIf(isGatewayError, () =>
+                assertSession(issued.identity).pipe(Effect.andThen(ticket)),
               ),
             )
           : ticket
@@ -723,19 +724,37 @@ export const make = Effect.gen(function* () {
       if (known !== undefined) {
         return Result.map(yield* socket, (socketUrl) => authorized(issued.token, socketUrl, known));
       }
-      const reading = yield* fetchDescriptor(issued.token.endpoint.httpBaseUrl, "relay").pipe(
-        Effect.provideService(HttpClient.HttpClient, httpClient),
-        Effect.forkChild,
-      );
+      const httpBaseUrl = issued.token.endpoint.httpBaseUrl;
+      const readDescriptor = (timeoutMs?: number) =>
+        fetchRemoteEnvironmentDescriptor({
+          httpBaseUrl,
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient), Effect.result);
+      const reading = yield* readDescriptor().pipe(Effect.forkChild);
       const opened = yield* socket;
       if (Result.isFailure(opened)) {
         yield* Fiber.interrupt(reading);
         return Result.fail(opened.failure);
       }
-      return Result.succeed(authorized(issued.token, opened.success, yield* Fiber.join(reading)));
+      let descriptor = yield* Fiber.join(reading);
+      if (
+        retryCachedEndpoint &&
+        Result.isFailure(descriptor) &&
+        isGatewayError(descriptor.failure)
+      ) {
+        yield* assertSession(issued.identity);
+        descriptor = yield* readDescriptor(timeoutMs);
+        if (Result.isFailure(descriptor) && isGatewayError(descriptor.failure)) {
+          return Result.fail(descriptor.failure);
+        }
+      }
+      if (Result.isFailure(descriptor)) {
+        return yield* mapRemoteEnvironmentError(descriptor.failure, "relay");
+      }
+      return Result.succeed(authorized(issued.token, opened.success, descriptor.success));
     });
     if (selected.fromCache) {
-      const cachedSocket = yield* openSocket(selected);
+      const cachedSocket = yield* openSocket(selected, CACHED_ENDPOINT_SOCKET_TIMEOUT_MS);
       if (Result.isSuccess(cachedSocket)) {
         yield* assertSession(selected.identity);
         return cachedSocket.success;
