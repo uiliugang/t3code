@@ -18,6 +18,7 @@ import {
 } from "./remote.ts";
 import {
   credentialMissingError,
+  isGatewayStatus,
   environmentMismatchError,
   mapManagedRelayError,
   mapRemoteDpopEnvironmentError,
@@ -141,15 +142,17 @@ interface IssuedDpopToken {
 
 function isGatewayError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
   return (
-    error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" &&
-    [502, 503, 504].includes(error.status)
+    error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" && isGatewayStatus(error.status)
   );
 }
 
-function mapDpopSocketError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
+function mapDpopSocketError(
+  error: RemoteEnvironmentAuthError | ConnectionAttemptError,
+  via: "relay" | "direct",
+) {
   return error._tag === "ConnectionTransientError" || error._tag === "ConnectionBlockedError"
     ? error
-    : mapRemoteDpopEnvironmentError(error);
+    : mapRemoteDpopEnvironmentError(error, via);
 }
 
 function approvalPendingError(hostLabel: string, thumbprint: string, traceId: string) {
@@ -444,6 +447,7 @@ export const make = Effect.gen(function* () {
 
   const getDpopToken = Effect.fn("clientRuntime.connection.remote.getDpopToken")(function* (
     input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpopHttp"]>[0],
+    bypassAccessToken = input.rejectedAccessToken,
   ) {
     const session = yield* cloudSession.identity;
     if (Option.isNone(session)) {
@@ -474,7 +478,7 @@ export const make = Effect.gen(function* () {
           cached.value.accountId === identity.accountId &&
           cached.value.dpopThumbprint === thumbprint &&
           cached.value.expiresAtEpochMs > now + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS &&
-          cached.value.accessToken !== input.rejectedAccessToken &&
+          cached.value.accessToken !== bypassAccessToken &&
           (owner?.accessToken !== cached.value.accessToken || owner.identity === identity)
         ) {
           tokenOwners.set(input.expectedEnvironmentId, {
@@ -691,6 +695,7 @@ export const make = Effect.gen(function* () {
     input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpop"]>[0],
   ) {
     const endpoint = input.directEndpoint;
+    const via = endpoint === undefined ? "relay" : "direct";
     const directDescriptor =
       endpoint === undefined
         ? undefined
@@ -760,18 +765,22 @@ export const make = Effect.gen(function* () {
         return cachedSocket.success;
       }
       if (cachedSocket.failure._tag === "ConnectionBlockedError") {
-        return yield* mapDpopSocketError(cachedSocket.failure);
+        return yield* mapDpopSocketError(cachedSocket.failure, via);
       }
       // An unreachable direct address says nothing about the token, so keep
       // it for the T3 Connect route rather than forcing a relay round trip.
       if (endpoint !== undefined && cachedSocket.failure._tag !== "EnvironmentAuthInvalidError") {
-        return yield* mapDpopSocketError(cachedSocket.failure);
+        return yield* mapDpopSocketError(cachedSocket.failure, via);
       }
       yield* assertSession(selected.identity);
-      selected = yield* getDpopToken({
-        ...input,
-        rejectedAccessToken: selected.token.accessToken,
-      });
+      // A gateway failure can make the endpoint stale while the credential still works over LAN.
+      const accessToken = selected.token.accessToken;
+      selected = yield* getDpopToken(
+        isGatewayError(cachedSocket.failure)
+          ? input
+          : { ...input, rejectedAccessToken: accessToken },
+        accessToken,
+      );
     }
     const socket = yield* openSocket(selected);
     if (Result.isFailure(socket)) {
@@ -780,7 +789,7 @@ export const make = Effect.gen(function* () {
           removeRejectedToken(input.expectedEnvironmentId, selected.token.accessToken),
         );
       }
-      return yield* mapDpopSocketError(socket.failure);
+      return yield* mapDpopSocketError(socket.failure, via);
     }
     yield* assertSession(selected.identity);
     return socket.success;

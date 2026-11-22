@@ -1054,6 +1054,74 @@ describe("RemoteEnvironmentAuthorization", () => {
       }),
   );
 
+  it.effect.each(["ticket", "descriptor"] as const)(
+    "keeps the credential for LAN access if %s rediscovery is offline",
+    (failedRequest) =>
+      Effect.gen(function* () {
+        let reads = 0;
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          descriptor: () =>
+            ++reads <= 2 && failedRequest === "descriptor"
+              ? new Response(null, { status: 502 })
+              : Response.json(DESCRIPTOR),
+          responses: [
+            ...(failedRequest === "ticket"
+              ? [new Response(null, { status: 502 }), new Response(null, { status: 503 })]
+              : [websocketTicket("public")]),
+            websocketTicket("lan"),
+          ],
+          beforeBootstrap: Effect.fail(
+            new ManagedRelay.ManagedRelayRequestFailedError({
+              action: "connect relay environment",
+              cause: "offline",
+              transportFailed: true,
+            }),
+          ),
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          yield* remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }).pipe(Effect.flip);
+          const lan = yield* remote.authorizeDpop({
+            expectedEnvironmentId: ENVIRONMENT_ID,
+            directEndpoint: {
+              httpBaseUrl: "http://192.168.1.10:3773",
+              wsBaseUrl: "ws://192.168.1.10:3773",
+            },
+          });
+          expect(lan.socketUrl).toContain("wsTicket=lan");
+        }).pipe(Effect.provide(harness.layer));
+        expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
+          "cached-access-token",
+        );
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+      }),
+  );
+
+  it.effect(
+    "preserves the route and gateway status of a failed LAN ticket using a Connect credential",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          descriptor: DESCRIPTOR,
+          responses: [new Response(null, { status: 502 })],
+        });
+        const error = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+          (remote) =>
+            remote.authorizeDpop({
+              expectedEnvironmentId: ENVIRONMENT_ID,
+              directEndpoint: {
+                httpBaseUrl: "http://192.168.1.10:3773",
+                wsBaseUrl: "ws://192.168.1.10:3773",
+              },
+            }),
+        ).pipe(Effect.provide(harness.layer), Effect.flip);
+        expect(error).toMatchObject({ via: "direct", httpStatus: 502 });
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+      }),
+  );
+
   it.effect("stops a cached ticket retry when the cloud session changes", () =>
     Effect.gen(function* () {
       const started = Promise.withResolvers<void>();

@@ -9,6 +9,7 @@ import type { MFunctionType } from "gt-i18n/types";
 import { resolveMarkedText } from "../errors/translatable.ts";
 import * as DateTime from "effect/DateTime";
 
+import { relayEndpointFailureLocation } from "./errors.ts";
 import type {
   ConnectionAttemptError,
   ConnectionFailureCause,
@@ -52,7 +53,6 @@ interface Located {
   readonly hop: ConnectionHop;
   readonly cause:
     | ConnectionFailureCause
-    | "gateway_error"
     | "offline"
     | "outdated"
     | "released"
@@ -60,15 +60,6 @@ interface Located {
     | null;
   /** The failure named no hop, so the hops before this one were never probed. */
   readonly guessed?: true;
-}
-
-const NOT_ANSWERING: ReadonlySet<ConnectionFailureCause> = new Set([
-  "origin_unreachable",
-  "invalid_response",
-]);
-
-function endpointCause(cause: ConnectionFailureCause | null, status: number | undefined) {
-  return cause === "unknown" && (status === 502 || status === 503) ? "gateway_error" : cause;
 }
 
 function locate(input: ConnectionDiagnosisInput): Located | null {
@@ -83,10 +74,7 @@ function locate(input: ConnectionDiagnosisInput): Located | null {
     return { hop: "device", cause: "session_pending" };
   }
   if (failure?.hop !== undefined) {
-    return {
-      hop: failure.hop,
-      cause: endpointCause(failure.failureCause ?? null, failure.httpStatus),
-    };
+    return { hop: failure.hop, cause: failure.failureCause ?? null };
   }
   if (failure !== null) {
     const unreachable =
@@ -103,11 +91,11 @@ function locate(input: ConnectionDiagnosisInput): Located | null {
   const status = input.relayStatus;
   if (status?.status !== "offline") return null;
   if (status.offlineReason === "tunnel_released") return { hop: "tunnel", cause: "released" };
-  const cause = status.endpointFailure ?? null;
-  return {
-    hop: cause !== null && NOT_ANSWERING.has(cause) ? "server" : "tunnel",
-    cause: endpointCause(cause, status.endpointStatus),
-  };
+  const { hop, failureCause } = relayEndpointFailureLocation(
+    status.endpointFailure,
+    status.endpointStatus,
+  );
+  return { hop, cause: failureCause ?? null };
 }
 
 function headline(

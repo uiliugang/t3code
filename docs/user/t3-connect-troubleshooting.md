@@ -8,8 +8,9 @@ A T3 Connect connection goes through four parts, in this order:
 4. **T3 Code on the host** answers.
 
 When a connection fails, open **Settings > Environments**, find the environment,
-and select **Details**. The first part marked as failed is the cause. Find its
-section below.
+and select **Details**. A failed part points to the relevant section below.
+When a gateway error leaves the tunnel and host unchecked, follow the
+retry advice and **More info** link in Details.
 
 To see the host's side, run `t3 connect status` on the host, or open
 **Settings > Sharing & access** on the host. Both check the host's T3 Connect
