@@ -409,6 +409,52 @@ it.effect.each(["failure", "interrupt"] as const)(
     }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 
+it.effect.each(["chmod", "link"] as const)(
+  "checkpoint publication survives Git pruning an empty object directory before %s",
+  (pruneBefore) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const driver = yield* GitVcsDriver.makeVcsDriverShape();
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-checkpoint-pruned-directory-" });
+      const git = (args: ReadonlyArray<string>) =>
+        driver.execute({ operation: "checkpoint-test", cwd, args });
+      yield* git(["init"]);
+      const contents = "checkpoint object during Git maintenance\n";
+      yield* fs.writeFileString(path.join(cwd, "new.txt"), contents);
+      const objectDirectoryName = (yield* git(["hash-object", "new.txt"])).stdout.slice(0, 2);
+
+      let pruned = false;
+      const pruneDirectory = Effect.fn("test.pruneCheckpointObjectDirectory")(function* (
+        directory: string,
+      ) {
+        if (pruned || path.basename(directory) !== objectDirectoryName) return;
+        assert.isTrue(yield* fs.exists(directory));
+        yield* git(["prune-packed"]).pipe(Effect.orDie);
+        assert.isFalse(yield* fs.exists(directory));
+        pruned = true;
+      });
+      const captureDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          chmod: (directory, mode) =>
+            (pruneBefore === "chmod" ? pruneDirectory(directory) : Effect.void).pipe(
+              Effect.andThen(fs.chmod(directory, mode)),
+            ),
+          link: (source, destination) =>
+            (pruneBefore === "link" ? pruneDirectory(path.dirname(destination)) : Effect.void).pipe(
+              Effect.andThen(fs.link(source, destination)),
+            ),
+        }),
+      );
+      const checkpointRef = CheckpointRef.make("refs/t3/workspace-baselines/test/0");
+      yield* captureDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+      assert.isTrue(pruned);
+      assert.strictEqual((yield* git(["show", `${checkpointRef}:new.txt`])).stdout, contents);
+      yield* git(["fsck", "--full"]);
+    }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+);
+
 it.effect.each([
   { stop: "before git restore spawns", gate: "restore", index: "staged", file: "later\n" },
   { stop: "after git restore ran", gate: "clean", index: "head", file: "unstaged\n" },

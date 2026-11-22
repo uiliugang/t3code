@@ -1891,30 +1891,34 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                 Effect.gen(function* () {
                   const source = path.join(privateObjects, directory);
                   const destination = path.join(sharedObjects, directory);
-                  // Most fanouts already exist; avoid constructing an EEXIST error
-                  // for each of them on every capture. mkdir still handles the race.
-                  if (!(yield* fileSystem.exists(destination)))
-                    yield* fileSystem.makeDirectory(destination).pipe(
-                      Effect.andThen(
-                        Effect.gen(function* () {
-                          // Git has already applied core.sharedRepository to the source.
-                          // chmod bypasses umask, but never changes a pre-existing bucket.
-                          const { mode } = yield* fileSystem.stat(source);
-                          yield* fileSystem.chmod(destination, mode & 0o7777);
-                        }),
-                      ),
-                      Effect.catchIf(
-                        (cause) => cause.reason._tag === "AlreadyExists",
-                        () => Effect.void,
-                      ),
-                      Effect.uninterruptible,
-                    );
+                  const createDestination = fileSystem.makeDirectory(destination).pipe(
+                    Effect.andThen(
+                      Effect.gen(function* () {
+                        // Git has already applied core.sharedRepository to the source.
+                        // chmod bypasses umask, but never changes a pre-existing bucket.
+                        const { mode } = yield* fileSystem.stat(source);
+                        yield* fileSystem.chmod(destination, mode & 0o7777).pipe(
+                          Effect.catchIf(
+                            (cause) => cause.reason._tag === "NotFound",
+                            () => Effect.void,
+                          ),
+                        );
+                      }),
+                    ),
+                    Effect.catchIf(
+                      (cause) => cause.reason._tag === "AlreadyExists",
+                      () => Effect.void,
+                    ),
+                    Effect.uninterruptible,
+                  );
+                  // Most fanouts already exist, so avoid an EEXIST error on each capture.
+                  if (!(yield* fileSystem.exists(destination))) yield* createDestination;
                   const names = yield* fileSystem.readDirectory(source);
                   // Per-object spans would swamp the capture span for large workspaces.
                   const linkObject = Effect.fnUntraced(function* (name: string) {
                     const from = path.join(source, name);
                     const to = path.join(destination, name);
-                    yield* fileSystem.link(from, to).pipe(
+                    const publish = fileSystem.link(from, to).pipe(
                       Effect.catchIf(
                         (cause) =>
                           cause.reason._tag === "PermissionDenied" ||
@@ -1929,6 +1933,13 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                       Effect.catchIf(
                         (cause) => cause.reason._tag === "AlreadyExists",
                         () => Effect.void,
+                      ),
+                    );
+                    // Git maintenance can remove the empty directory before the first link.
+                    yield* publish.pipe(
+                      Effect.catchIf(
+                        (cause) => cause.reason._tag === "NotFound",
+                        () => createDestination.pipe(Effect.andThen(publish)),
                       ),
                     );
                   });
