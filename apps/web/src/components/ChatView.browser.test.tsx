@@ -420,6 +420,9 @@ it("a failed image-only first send of a new thread keeps the new draft", async (
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const draftId = DraftId.make("draft-image-only-interrupted");
+  using _draft = {
+    [Symbol.dispose]: () => useComposerDraftStore.getState().clearDraftThread(draftId),
+  };
   useComposerDraftStore
     .getState()
     .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
@@ -651,6 +654,7 @@ it("a stashed prompt ending in a file chip restores with the chip", async () => 
   });
   const draftId = DraftId.make("draft-28338");
   const drafts = useComposerDraftStore.getState();
+  using _draft = { [Symbol.dispose]: () => drafts.clearDraftThread(draftId) };
   drafts.setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
     threadId: ThreadId.make("thread-28338"),
   });
