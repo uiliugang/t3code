@@ -6499,20 +6499,32 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     "GitVcsDriver.fetchRefIntoBranch",
   )(function* (input) {
     const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
-    yield* executeGit(
-      "GitVcsDriver.fetchRefIntoBranch",
-      input.cwd,
-      [
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        "--",
-        remoteName,
-        `+${input.ref}:refs/heads/${input.branch}`,
-      ],
-      {
-        fallbackErrorDetail: "git fetch ref into branch failed",
-      },
+    const fetchedRef = `refs/t3code/pr-head-fetch/${yield* random.uuidV4()}`;
+    // Keep concurrent fetches off both the destination branch and the shared FETCH_HEAD.
+    yield* Effect.gen(function* () {
+      yield* executeGit(
+        "GitVcsDriver.fetchRefIntoBranch",
+        input.cwd,
+        [
+          "fetch",
+          "--quiet",
+          "--no-tags",
+          "--no-write-fetch-head",
+          "--",
+          remoteName,
+          `+${input.ref}:${fetchedRef}`,
+        ],
+        { fallbackErrorDetail: "git fetch ref into branch failed" },
+      );
+      yield* createBranch({ cwd: input.cwd, branch: input.branch, startPoint: fetchedRef });
+    }).pipe(
+      Effect.ensuring(
+        executeGit("GitVcsDriver.fetchRefIntoBranch.cleanup", input.cwd, [
+          "update-ref",
+          "-d",
+          fetchedRef,
+        ]).pipe(Effect.ignoreCause({ log: true })),
+      ),
     );
   });
 

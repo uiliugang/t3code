@@ -1247,7 +1247,8 @@ export const make = Effect.gen(function* () {
       yield* Effect.uninterruptible(
         Effect.gen(function* () {
           if (createLocalBranch) {
-            yield* gitCore.createBranch({ cwd, branch: localBranch, startPoint: trackingRef });
+            const { commitSha } = yield* gitCore.resolveCommit({ cwd, revision: trackingRef });
+            yield* gitCore.createBranch({ cwd, branch: localBranch, startPoint: commitSha });
           }
           yield* gitCore.writeConfigValue({ cwd, key: ownerKey, value: pullRequest.url });
           yield* gitCore.writeConfigValue({
@@ -1365,6 +1366,20 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const fetchNewPullRequestBranch = Effect.fn("GitManager.fetchNewPullRequestBranch")(function* (
+    cwd: string,
+    remoteName: string,
+    remoteBranch: string,
+    localBranch: string,
+  ) {
+    yield* gitCore.fetchRemoteTrackingBranch({ cwd, remoteName, remoteBranch });
+    yield* gitCore.createBranch({
+      cwd,
+      branch: localBranch,
+      startPoint: `refs/remotes/${remoteName}/${remoteBranch}`,
+    });
+  });
+
   const materializePullRequestHeadBranchBase = Effect.fn("materializePullRequestHeadBranch")(
     function* (
       cwd: string,
@@ -1395,12 +1410,12 @@ export const make = Effect.gen(function* () {
                   ) {
                     return yield* cause;
                   }
-                  yield* gitCore.fetchRemoteBranch({
+                  yield* fetchNewPullRequestBranch(
                     cwd,
                     remoteName,
-                    remoteBranch: pullRequest.headBranch,
+                    pullRequest.headBranch,
                     localBranch,
-                  });
+                  );
                 }),
           ),
         );
@@ -1424,12 +1439,7 @@ export const make = Effect.gen(function* () {
         url: remoteUrl,
       });
 
-      yield* gitCore.fetchRemoteBranch({
-        cwd,
-        remoteName,
-        remoteBranch: pullRequest.headBranch,
-        localBranch,
-      });
+      yield* fetchNewPullRequestBranch(cwd, remoteName, pullRequest.headBranch, localBranch);
       yield* gitCore.setBranchUpstream({
         cwd,
         branch: localBranch,
@@ -1445,24 +1455,26 @@ export const make = Effect.gen(function* () {
     localBranch = pullRequest.headBranch,
   ) =>
     materializePullRequestHeadBranchBase(cwd, pullRequest, localBranch).pipe(
-      Effect.catch((primaryCause) =>
-        fetchChangeRequestHeadIntoBranch(cwd, pullRequest.number, localBranch).pipe(
-          Effect.mapError(
-            (fallbackCause) =>
-              new GitPullRequestMaterializationError({
-                cwd,
-                pullRequestNumber: pullRequest.number,
-                headRepository: resolveHeadRepositoryNameWithOwner(pullRequest),
-                headBranch: pullRequest.headBranch,
-                localBranch,
-                cause: new AggregateError(
-                  [primaryCause, fallbackCause],
-                  `Repository-head and pull-request-ref fetches both failed for pull request #${pullRequest.number}.`,
-                  { cause: primaryCause },
-                ),
-              }),
+      Effect.catchIf(
+        (cause) => cause._tag !== "GitCommandError" || cause.reason !== "branch_already_exists",
+        (primaryCause) =>
+          fetchChangeRequestHeadIntoBranch(cwd, pullRequest.number, localBranch).pipe(
+            Effect.mapError(
+              (fallbackCause) =>
+                new GitPullRequestMaterializationError({
+                  cwd,
+                  pullRequestNumber: pullRequest.number,
+                  headRepository: resolveHeadRepositoryNameWithOwner(pullRequest),
+                  headBranch: pullRequest.headBranch,
+                  localBranch,
+                  cause: new AggregateError(
+                    [primaryCause, fallbackCause],
+                    `Repository-head and pull-request-ref fetches both failed for pull request #${pullRequest.number}.`,
+                    { cause: primaryCause },
+                  ),
+                }),
+            ),
           ),
-        ),
       ),
     );
   const tempDir = yield* Config.String("TMPDIR").pipe(

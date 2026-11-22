@@ -668,6 +668,7 @@ function makeManager(input?: {
     readonly matches: (args: ReadonlyArray<string>) => boolean;
     readonly reached: Deferred.Deferred<void>;
     readonly release: Deferred.Deferred<void>;
+    readonly beforeSpawn?: boolean;
   };
   seed?: Effect.Effect<
     void,
@@ -704,16 +705,13 @@ function makeManager(input?: {
             if (args === null || gitSpawnGate === undefined || !gitSpawnGate.matches(args)) {
               return spawner.spawn(command);
             }
+            const pause = Deferred.succeed(gitSpawnGate.reached, undefined).pipe(
+              Effect.andThen(Deferred.await(gitSpawnGate.release)),
+            );
+            if (gitSpawnGate.beforeSpawn) return pause.pipe(Effect.andThen(spawner.spawn(command)));
             return spawner
               .spawn(command)
-              .pipe(
-                Effect.tap((handle) =>
-                  handle.exitCode.pipe(
-                    Effect.andThen(Deferred.succeed(gitSpawnGate.reached, undefined)),
-                    Effect.andThen(Deferred.await(gitSpawnGate.release)),
-                  ),
-                ),
-              );
+              .pipe(Effect.tap((handle) => handle.exitCode.pipe(Effect.andThen(pause))));
           });
         }),
       ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)))
@@ -7591,6 +7589,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "concurrent branch",
     "another private PR",
     "public lookalike",
+    "before writing ownership",
+    "public branch fetch race",
+    "public ref fetch race",
   ] as const)("keeps private PR worktree pushes bound to their companion (%s)", (scenario) =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
@@ -7606,9 +7607,22 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const companion = "pingdotgg/codething-mvp.private-2";
       const branch = "t3code/pr-92/sec/fix";
+      const ownerKey = `branch.${branch}.t3-pull-request`;
       const gitSpawnGate = {
-        matches: (args: ReadonlyArray<string>) =>
-          args.includes("fetch") && args.some((arg) => arg.includes("refs/heads/sec/fix:")),
+        beforeSpawn:
+          scenario === "before writing ownership" || scenario === "public ref fetch race",
+        matches: (args: ReadonlyArray<string>) => {
+          if (scenario === "before writing ownership")
+            return args[0] === "config" && args[1] === ownerKey;
+          if (scenario === "public ref fetch race")
+            return (
+              args.includes("fetch") &&
+              args.some(
+                (arg) => arg.startsWith("+refs/pull/92/head:") || arg === "refs/pull/92/head",
+              )
+            );
+          return args.includes("fetch") && args.some((arg) => arg.includes("refs/heads/sec/fix:"));
+        },
         reached: yield* Deferred.make<void>(),
         release: yield* Deferred.make<void>(),
       };
@@ -7630,9 +7644,72 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       };
       const { manager } = yield* makeManager({
         providerScenario: privateProvider,
-        ...(scenario === "concurrent branch" ? { gitSpawnGate } : {}),
+        ...(scenario === "concurrent branch" || scenario === "before writing ownership"
+          ? { gitSpawnGate }
+          : {}),
       });
       const input = { cwd: repoDir, reference: "92", mode: "worktree" } as const;
+      if (scenario === "before writing ownership") {
+        const preparing = yield* preparePullRequestThread(manager, input).pipe(Effect.forkScoped);
+        yield* Deferred.await(gitSpawnGate.reached);
+        const tracked = yield* runGit(
+          repoDir,
+          ["config", "--get", `branch.${branch}.remote`],
+          true,
+        );
+        yield* Deferred.succeed(gitSpawnGate.release, undefined);
+        yield* Fiber.join(preparing);
+        expect(tracked.exitCode).toBe(1);
+        return;
+      }
+      if (scenario === "public branch fetch race" || scenario === "public ref fetch race") {
+        const publicRepository = "pingdotgg/another";
+        const baseUrl = "https://github.com/pingdotgg/another/pull/92";
+        yield* runGit(repoDir, [
+          "push",
+          "origin",
+          "HEAD:refs/heads/sec/fix",
+          "HEAD:refs/pull/92/head",
+        ]);
+        yield* runGit(repoDir, ["remote", "add", "private-companion", companionDir]);
+        yield* runGit(repoDir, ["fetch", "private-companion", "sec/fix"]);
+        const publicProvider = yield* makeManager({
+          gitSpawnGate,
+          providerScenario: {
+            pullRequest: {
+              number: 92,
+              title: "Public fix",
+              url: baseUrl,
+              baseRefName: "main",
+              headRefName: "sec/fix",
+              isCrossRepository: true,
+              ...(scenario === "public branch fetch race"
+                ? { headRepositoryNameWithOwner: publicRepository }
+                : {}),
+            },
+            repositoryCloneUrls: { [publicRepository]: { url: originDir, sshUrl: originDir } },
+          },
+        });
+        const preparing = yield* preparePullRequestThread(publicProvider.manager, {
+          ...input,
+          reference: baseUrl,
+        }).pipe(Effect.result, Effect.forkScoped);
+        yield* Deferred.await(gitSpawnGate.reached);
+        yield* runGit(repoDir, ["branch", "--track", branch, "private-companion/sec/fix"]);
+        yield* runGit(repoDir, ["config", ownerKey, privateProvider.pullRequest.url]);
+        yield* runGit(repoDir, [
+          "config",
+          `branch.${branch}.t3-private-pr-companion`,
+          companionDir,
+        ]);
+        yield* runGit(repoDir, ["config", `branch.${branch}.pushRemote`, "private-companion"]);
+        yield* Deferred.succeed(gitSpawnGate.release, undefined);
+        expect(Result.isFailure(yield* Fiber.join(preparing))).toBe(true);
+        expect((yield* runGit(repoDir, ["config", "--get", ownerKey])).stdout.trim()).toBe(
+          privateProvider.pullRequest.url,
+        );
+        return;
+      }
       if (scenario === "concurrent branch") {
         const preparing = yield* preparePullRequestThread(manager, input).pipe(
           Effect.flip,
