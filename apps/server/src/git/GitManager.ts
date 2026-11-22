@@ -1,14 +1,15 @@
-import { createHash } from "node:crypto";
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ByteSize from "effect/ByteSize";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -383,7 +384,7 @@ function isPullRequestWorktreeLocalBranchName(branch: string): boolean {
 function resolvePullRequestWorktreeLocalBranchName(
   pullRequest: ResolvedPullRequest,
   localBranches: ReadonlySet<string>,
-  privateRequest: boolean,
+  stem: string,
 ): string {
   const sanitizedHeadBranch = sanitizeBranchFragment(pullRequest.headBranch).trim();
   const suffix = sanitizedHeadBranch.length > 0 ? sanitizedHeadBranch : "head";
@@ -394,12 +395,6 @@ function resolvePullRequestWorktreeLocalBranchName(
       .slice(0, -1)
       .some((_, index, segments) => localBranches.has(segments.slice(0, index + 1).join("/"))) &&
     ![...localBranches].some((branch) => branch.startsWith(`${name}/`));
-  const stem = privateRequest
-    ? `private-pr-${pullRequest.number}-${createHash("sha256")
-        .update(pullRequestRepositoryKey(pullRequest.url) ?? pullRequest.url)
-        .digest("hex")
-        .slice(0, 16)}`
-    : `pr-${pullRequest.number}`;
   const preferred = `t3code/${stem}/${suffix}`;
   if (isCreatable(preferred)) {
     return preferred;
@@ -820,6 +815,7 @@ export const make = Effect.gen(function* () {
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const random = yield* SecureRandom.SecureRandom;
+  const digest = yield* Digest.Digest;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
@@ -3928,7 +3924,16 @@ export const make = Effect.gen(function* () {
         ? resolvePullRequestWorktreeLocalBranchName(
             pullRequest,
             localBranches,
-            privateCompanion !== undefined,
+            privateCompanion === undefined
+              ? `pr-${pullRequest.number}`
+              : `private-pr-${pullRequest.number}-${Hex.encode(
+                  yield* digest.digest(
+                    Digest.sha256,
+                    new TextEncoder().encode(
+                      pullRequestRepositoryKey(pullRequest.url) ?? pullRequest.url,
+                    ),
+                  ),
+                ).slice(0, 16)}`,
           )
         : pullRequest.headBranch;
       if (
@@ -3941,18 +3946,27 @@ export const make = Effect.gen(function* () {
         return yield* conflictingPullRequestBranch(input.cwd, localPullRequestBranch);
       }
 
-      const configurePublicWorktreeUpstream = (cwd: string, branch: string) =>
-        configurePullRequestHeadUpstream(cwd, pullRequestWithRemoteInfo, branch).pipe(
-          Effect.andThen(
-            usesReservedHeadName && pullRequestWithRemoteInfo.isCrossRepository !== true
-              ? gitCore.writeConfigValue({
-                  cwd,
-                  key: directPullRequestUpstreamConfigKey(branch),
-                  value: pullRequest.headBranch,
-                })
-              : Effect.void,
-          ),
-        );
+      const configurePublicWorktreeUpstream = Effect.fn("configurePublicWorktreeUpstream")(
+        function* (cwd: string, branch: string) {
+          const key = directPullRequestUpstreamConfigKey(branch);
+          if ((yield* gitCore.readConfigValue(cwd, key)) !== null) {
+            yield* gitCore.writeConfigValue({ cwd, key, value: "" });
+          }
+          yield* configurePullRequestHeadUpstream(cwd, pullRequestWithRemoteInfo, branch);
+          if (!usesReservedHeadName || pullRequestWithRemoteInfo.isCrossRepository === true) return;
+          const [remote, merge] = yield* Effect.all([
+            gitCore.readConfigValue(cwd, `branch.${branch}.remote`),
+            gitCore.readConfigValue(cwd, `branch.${branch}.merge`),
+          ]);
+          if (remote && remote !== "." && merge === `refs/heads/${pullRequest.headBranch}`) {
+            yield* gitCore.writeConfigValue({
+              cwd,
+              key,
+              value: `${remote}/${pullRequest.headBranch}`,
+            });
+          }
+        },
+      );
 
       const ensureExistingWorktreeUpstream = Effect.fn("ensureExistingWorktreeUpstream")(function* (
         worktreePath: string,

@@ -3823,16 +3823,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     branch: string,
     upstreamBranch: string,
     upstreamRef: string,
-  ) =>
-    isPrivatePullRequestWorktreeBranchName(upstreamBranch)
-      ? readConfigValue(cwd, directPullRequestUpstreamConfigKey(branch)).pipe(
-          Effect.map(
-            (expected) =>
-              expected === upstreamBranch ||
-              isAliasOfUpstreamHead(branch, upstreamBranch, upstreamRef),
-          ),
-        )
-      : Effect.succeed(isAliasOfUpstreamHead(branch, upstreamBranch, upstreamRef));
+  ) => {
+    if (isAliasOfUpstreamHead(branch, upstreamBranch, upstreamRef)) return Effect.succeed(true);
+    if (!isPrivatePullRequestWorktreeBranchName(upstreamBranch)) return Effect.succeed(false);
+    return readConfigValue(cwd, directPullRequestUpstreamConfigKey(branch)).pipe(
+      Effect.map((expected) => expected === upstreamRef),
+    );
+  };
 
   // `publishes` is false only when HEAD goes to the head of its current `upstream`.
   const resolvePushDestination = Effect.fn("resolvePushDestination")(function* (

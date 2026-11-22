@@ -7818,6 +7818,31 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             expect(
               (yield* runGit(publicCwd, ["ls-remote", "--heads", anotherCompanionDir])).stdout,
             ).toBe(`${head}\trefs/heads/${headRefName}\n`);
+            const forkDir = yield* createBareRemote();
+            const forkRepo = "contributor/head";
+            yield* runGit(publicCwd, ["push", forkDir, `HEAD:refs/heads/${headRefName}`]);
+            const forkProvider = yield* makeManager({
+              providerScenario: {
+                kind: "tanstack-source",
+                pullRequest: {
+                  ...pullRequest,
+                  url: "https://source.tanstack.com/@contributor/base/pull/92",
+                  headRefName,
+                  isCrossRepository: true,
+                  headRepositoryNameWithOwner: forkRepo,
+                },
+                repositoryCloneUrls: {
+                  [`source.tanstack.com/${forkRepo}`]: { url: forkDir, sshUrl: forkDir },
+                },
+              },
+            });
+            const forkWorktree = yield* preparePullRequestThread(forkProvider.manager, input);
+            expect(forkWorktree.branch).toBe(result.success.branch);
+            yield* runGit(publicCwd, ["commit", "--allow-empty", "-m", "Review fork"]);
+            yield* runStackedAction(forkProvider.manager, { cwd: publicCwd, action: "push" });
+            expect((yield* runGit(publicCwd, ["ls-remote", "--heads", forkDir])).stdout).toBe(
+              `${head}\trefs/heads/${headRefName}\n`,
+            );
           }
           const upperCaseProvider = yield* makeManager({
             providerScenario: {
