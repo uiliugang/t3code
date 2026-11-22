@@ -7808,6 +7808,32 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         expect((yield* runGit(cwd, ["remote", "get-url", "--push", remote])).stdout.trim()).toBe(
           companionDir,
         );
+        if (scenario === "public lookalike") {
+          if (Result.isSuccess(result)) {
+            const publicCwd = result.success.worktreePath as string;
+            yield* runGit(publicCwd, ["config", "--unset", "remote.pushDefault"]);
+            yield* runGit(publicCwd, ["commit", "--allow-empty", "-m", "Update public PR"]);
+            yield* runStackedAction(other.manager, { cwd: publicCwd, action: "push" });
+            const head = (yield* runGit(publicCwd, ["rev-parse", "HEAD"])).stdout.trim();
+            expect(
+              (yield* runGit(publicCwd, ["ls-remote", "--heads", anotherCompanionDir])).stdout,
+            ).toBe(`${head}\trefs/heads/${headRefName}\n`);
+          }
+          const upperCaseProvider = yield* makeManager({
+            providerScenario: {
+              ...privateProvider,
+              pullRequest: { ...pullRequest, url: otherUrl, headRefName: branch.toUpperCase() },
+            },
+          });
+          const local = yield* preparePullRequestThread(upperCaseProvider.manager, {
+            ...input,
+            reference: otherUrl,
+            mode: "local",
+          }).pipe(Effect.result);
+          expect(Result.isFailure(local)).toBe(true);
+          if (Result.isFailure(local))
+            expect(local.failure.message).toContain("reserved for private pull request worktrees");
+        }
         return;
       }
       yield* runGit(cwd, ["commit", "--allow-empty", "-m", "Update private fix"]);

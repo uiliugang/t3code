@@ -103,7 +103,11 @@ import {
   worktreeMainBranchError,
   worktreeMainBranchOnly,
 } from "./worktreeBranchPolicy.ts";
-import { isNonRepositoryGitStderr } from "../vcs/GitVcsDriverCore.ts";
+import {
+  directPullRequestUpstreamConfigKey,
+  isNonRepositoryGitStderr,
+  isPrivatePullRequestWorktreeBranchName,
+} from "../vcs/GitVcsDriverCore.ts";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -371,9 +375,6 @@ export function pullRequestRepositoryKey(value: string): string | null {
 function resolveHeadRepositoryNameWithOwner(pullRequest: PullRequestHeadRemoteInfo): string | null {
   return normalizeOptionalString(pullRequest.headRepositoryNameWithOwner);
 }
-
-const isPrivatePullRequestWorktreeBranchName = (branch: string) =>
-  /^t3code[/-]private-pr-/u.test(branch);
 
 function isPullRequestWorktreeLocalBranchName(branch: string): boolean {
   return /^t3code[/-]pr-\d+[/-]/u.test(branch) || isPrivatePullRequestWorktreeBranchName(branch);
@@ -3940,6 +3941,19 @@ export const make = Effect.gen(function* () {
         return yield* conflictingPullRequestBranch(input.cwd, localPullRequestBranch);
       }
 
+      const configurePublicWorktreeUpstream = (cwd: string, branch: string) =>
+        configurePullRequestHeadUpstream(cwd, pullRequestWithRemoteInfo, branch).pipe(
+          Effect.andThen(
+            usesReservedHeadName && pullRequestWithRemoteInfo.isCrossRepository !== true
+              ? gitCore.writeConfigValue({
+                  cwd,
+                  key: directPullRequestUpstreamConfigKey(branch),
+                  value: pullRequest.headBranch,
+                })
+              : Effect.void,
+          ),
+        );
+
       const ensureExistingWorktreeUpstream = Effect.fn("ensureExistingWorktreeUpstream")(function* (
         worktreePath: string,
       ) {
@@ -3952,9 +3966,8 @@ export const make = Effect.gen(function* () {
           );
         }
         const details = yield* gitCore.statusDetails(worktreePath);
-        yield* configurePullRequestHeadUpstream(
+        yield* configurePublicWorktreeUpstream(
           worktreePath,
-          pullRequestWithRemoteInfo,
           details.branch ?? pullRequest.headBranch,
         );
       });
@@ -4103,11 +4116,7 @@ export const make = Effect.gen(function* () {
             ? yield* readUpstreamCommit(cwd, "@{upstream}")
             : previousPrivateUpstream;
         if (privateCompanion === undefined) {
-          yield* configurePullRequestHeadUpstream(
-            cwd,
-            pullRequestWithRemoteInfo,
-            localPullRequestBranch,
-          );
+          yield* configurePublicWorktreeUpstream(cwd, localPullRequestBranch);
         }
         const upstream = gitCore.resolveCommit({ cwd, revision: "@{upstream}" });
         const pullRequestHead =
