@@ -146,12 +146,14 @@ interface ResolvedDpopToken {
   readonly descriptor?: ExecutionEnvironmentDescriptor;
 }
 
-interface DiscoveryUnavailable {
-  readonly _tag: "DiscoveryUnavailable";
+interface AuthorizationUnavailable {
+  readonly _tag: "AuthorizationUnavailable";
   readonly cause: ConnectionAttemptError;
+  readonly endpoint?: TokenStore.RemoteDpopAccessToken["endpoint"];
+  readonly descriptor?: ExecutionEnvironmentDescriptor;
 }
 
-type TokenExchangeError = ConnectionAttemptError | DiscoveryUnavailable;
+type TokenExchangeError = ConnectionAttemptError | AuthorizationUnavailable;
 
 function isGatewayError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
   return (
@@ -186,6 +188,13 @@ function sameTokenOwner(
   );
 }
 
+function samePublicEndpoint(
+  a: TokenStore.RemoteDpopAccessToken["endpoint"],
+  b: TokenStore.RemoteDpopAccessToken["endpoint"],
+) {
+  return a.httpBaseUrl === b.httpBaseUrl && a.wsBaseUrl === b.wsBaseUrl;
+}
+
 function matchesUsableToken(
   current: TokenStore.RemoteDpopAccessToken,
   expected: TokenStore.RemoteDpopAccessToken,
@@ -193,7 +202,7 @@ function matchesUsableToken(
 ) {
   return (
     sameTokenOwner(current, expected) &&
-    current.endpoint.httpBaseUrl === expected.endpoint.httpBaseUrl &&
+    samePublicEndpoint(current.endpoint, expected.endpoint) &&
     current.accessToken === expected.accessToken &&
     current.expiresAtEpochMs > now + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS
   );
@@ -431,11 +440,9 @@ export const make = Effect.gen(function* () {
     environmentId: EnvironmentId,
     accessToken: string,
   ) {
-    const cached = yield* tokenStore.get(environmentId);
-    if (Option.isSome(cached) && cached.value.accessToken === accessToken) {
-      yield* tokenStore.remove(environmentId);
+    yield* tokenStore.remove(environmentId, accessToken);
+    if (tokenOwners.get(environmentId)?.accessToken === accessToken)
       tokenOwners.delete(environmentId);
-    }
   });
 
   const obtainBootstrap = Effect.fn("relay.connection.bootstrap.obtain")(function* (
@@ -477,10 +484,27 @@ export const make = Effect.gen(function* () {
     ) {
       const bootstrap = yield* discovery.pipe(
         Effect.mapError((cause): TokenExchangeError =>
-          isDiscoveryUnavailable(cause) ? { _tag: "DiscoveryUnavailable", cause } : cause,
+          isDiscoveryUnavailable(cause) ? { _tag: "AuthorizationUnavailable", cause } : cause,
         ),
       );
+      const unavailableAtEndpoint = (
+        cause: ConnectionAttemptError,
+        descriptor?: ExecutionEnvironmentDescriptor,
+      ): AuthorizationUnavailable => ({
+        _tag: "AuthorizationUnavailable",
+        cause,
+        endpoint: bootstrap.endpoint,
+        ...(descriptor ? { descriptor } : {}),
+      });
       const descriptor = yield* fetchDescriptor(bootstrap.endpoint.httpBaseUrl, "relay").pipe(
+        Effect.mapError((cause) =>
+          cause._tag === "ConnectionTransientError" &&
+          (cause.reason === "network" ||
+            cause.reason === "timeout" ||
+            isUnavailableEndpointStatus(cause.httpStatus))
+            ? unavailableAtEndpoint(cause)
+            : cause,
+        ),
         Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.withSpan("environment.authorization.descriptor"),
       );
@@ -511,11 +535,16 @@ export const make = Effect.gen(function* () {
         dpopProof: bootstrapProof,
         clientMetadata: presentation.metadata,
       }).pipe(
-        Effect.mapError((error) =>
-          error._tag === "EnvironmentConnectApprovalPendingError"
-            ? approvalPendingError(descriptor.label, thumbprint, error.traceId)
-            : mapRemoteDpopEnvironmentError(error),
-        ),
+        Effect.mapError((error) => {
+          if (error._tag === "EnvironmentConnectApprovalPendingError")
+            return approvalPendingError(descriptor.label, thumbprint, error.traceId);
+          const cause = mapRemoteDpopEnvironmentError(error);
+          return isEndpointUnavailable(error) ||
+            (error._tag === "EnvironmentInternalError" &&
+              error.reason === "access_token_issuance_failed")
+            ? unavailableAtEndpoint(cause, descriptor)
+            : cause;
+        }),
         Effect.provideService(HttpClient.HttpClient, httpClient),
         Effect.withSpan("environment.authorization.accessToken.exchange"),
       );
@@ -528,6 +557,7 @@ export const make = Effect.gen(function* () {
         accessToken: access.access_token,
         expiresAtEpochMs: issuedAt + access.expires_in * 1_000,
         dpopThumbprint: thumbprint,
+        endpointVerified: true,
       });
       return { source: "exchange", token, descriptor } satisfies ResolvedDpopToken;
     },
@@ -554,25 +584,43 @@ export const make = Effect.gen(function* () {
     const discovered = yield* Effect.result(discovery);
     if (Result.isSuccess(discovered)) return discovered.success;
     const error = discovered.failure;
-    if (error._tag !== "DiscoveryUnavailable") return yield* error;
-    const descriptor = yield* Fiber.join(reading);
-    yield* assertSession(identity);
+    if (error._tag !== "AuthorizationUnavailable") return yield* error;
+    const currentToken = Effect.gen(function* () {
+      const stored = yield* tokenStore.get(token.environmentId);
+      const key = yield* signer.thumbprint.pipe(Effect.mapError(() => error.cause));
+      yield* assertSession(identity);
+      if (Option.isNone(stored)) return yield* error.cause;
+      const current = stored.value;
+      const now = yield* Clock.currentTimeMillis;
+      if (
+        key !== current.dpopThumbprint ||
+        !sameTokenOwner(current, token) ||
+        current.expiresAtEpochMs <= now + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS ||
+        (error.endpoint && !samePublicEndpoint(error.endpoint, current.endpoint)) ||
+        ((current.accessToken !== token.accessToken ||
+          !samePublicEndpoint(current.endpoint, token.endpoint)) &&
+          (!current.endpointVerified || current.endpointNeedsDiscovery))
+      )
+        return yield* error.cause;
+      return current;
+    });
+    const candidate = yield* currentToken;
+    if (!samePublicEndpoint(candidate.endpoint, token.endpoint)) {
+      return { source: "cache", token: candidate } satisfies ResolvedDpopToken;
+    }
+    const descriptor = error.descriptor ?? (yield* Fiber.join(reading));
     if (descriptor.environmentId !== token.environmentId) {
       return yield* environmentMismatchError({
         expected: token.environmentId,
         actual: descriptor.environmentId,
       });
     }
-    const current = yield* tokenStore.get(token.environmentId);
-    if (
-      Option.isNone(current) ||
-      !matchesUsableToken(current.value, token, yield* Clock.currentTimeMillis)
-    ) {
-      return yield* error.cause;
-    }
+    const current = yield* currentToken;
+    if (!samePublicEndpoint(current.endpoint, token.endpoint))
+      return { source: "cache", token: current } satisfies ResolvedDpopToken;
     return {
       source: "verified-cache",
-      token: current.value,
+      token: current,
       descriptor,
     } satisfies ResolvedDpopToken;
   }, Effect.scoped);
@@ -658,6 +706,9 @@ export const make = Effect.gen(function* () {
         if (rejected !== undefined)
           yield* removeRejectedToken(input.expectedEnvironmentId, rejected);
 
+        const observed = Option.getOrNull(cached)?.accessToken ?? null;
+        const expectedToken =
+          refreshToken?.accessToken ?? (observed === rejected ? null : observed);
         const id = {};
         const renewing = exchangeDpopToken(
           input.expectedEnvironmentId,
@@ -671,22 +722,21 @@ export const make = Effect.gen(function* () {
                 const { token } = issued;
                 yield* assertSession(identity);
                 yield* tokenStore
-                  .put(token, refreshToken?.accessToken)
+                  .put(token, expectedToken)
                   .pipe(Effect.withSpan("environment.authorization.accessToken.persist"));
-                if (refreshToken) {
-                  const stored = yield* tokenStore.get(token.environmentId);
-                  if (Option.isNone(stored))
-                    return yield* credentialMissingError(token.environmentId);
-                  if (stored.value.accessToken !== token.accessToken) {
-                    if (
-                      sameTokenOwner(stored.value, token) &&
-                      !stored.value.endpointNeedsDiscovery &&
-                      stored.value.expiresAtEpochMs >
-                        (yield* Clock.currentTimeMillis) + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS
-                    )
-                      return { source: "cache", token: stored.value } satisfies ResolvedDpopToken;
-                    return yield* credentialMissingError(token.environmentId);
-                  }
+                const stored = yield* tokenStore.get(token.environmentId);
+                // First-time MCP approvals can authorize an environment outside the saved catalog.
+                if (expectedToken !== null && Option.isNone(stored))
+                  return yield* credentialMissingError(token.environmentId);
+                if (Option.isSome(stored) && stored.value.accessToken !== token.accessToken) {
+                  if (
+                    sameTokenOwner(stored.value, token) &&
+                    !stored.value.endpointNeedsDiscovery &&
+                    stored.value.expiresAtEpochMs >
+                      (yield* Clock.currentTimeMillis) + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS
+                  )
+                    return { source: "cache", token: stored.value } satisfies ResolvedDpopToken;
+                  return yield* credentialMissingError(token.environmentId);
                 }
                 const current = yield* cloudSession.identity;
                 if (Option.isNone(current) || current.value !== identity) {
@@ -733,7 +783,9 @@ export const make = Effect.gen(function* () {
       }),
     );
     const issued = yield* staleEndpoint === undefined
-      ? selected.pipe(Effect.catchTags({ DiscoveryUnavailable: ({ cause }) => Effect.fail(cause) }))
+      ? selected.pipe(
+          Effect.catchTags({ AuthorizationUnavailable: ({ cause }) => Effect.fail(cause) }),
+        )
       : rediscoverOrVerifyCachedEndpoint(staleEndpoint, identity, selected);
     yield* Effect.annotateCurrentSpan({
       "connection.remote_token_cache": issued.source === "exchange" ? "miss" : "hit",
@@ -992,10 +1044,7 @@ export const make = Effect.gen(function* () {
         if (!isDiscoveryUnavailable(result.failure)) return yield* result.failure;
         return yield* Effect.never;
       }
-      if (
-        result.success.endpoint.httpBaseUrl !== first.token.endpoint.httpBaseUrl ||
-        result.success.endpoint.wsBaseUrl !== first.token.endpoint.wsBaseUrl
-      )
+      if (!samePublicEndpoint(result.success.endpoint, first.token.endpoint))
         return { selected: first, socket: Result.fail(gateway) };
 
       renewingSameAddress = true;
@@ -1077,7 +1126,10 @@ export const make = Effect.gen(function* () {
       const { endpointNeedsDiscovery: _stale, ...verified } = selected.token;
       // A confirmed ticket is usable even if persisting this cache hint fails.
       yield* tokenStore
-        .put(new TokenStore.RemoteDpopAccessToken(verified), verified.accessToken)
+        .put(
+          new TokenStore.RemoteDpopAccessToken({ ...verified, endpointVerified: true }),
+          verified.accessToken,
+        )
         .pipe(Effect.ignore);
       yield* assertSession(selected.identity);
     }

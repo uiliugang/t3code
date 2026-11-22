@@ -7,6 +7,7 @@ import {
   StoredOrchestrationThreadSnapshot,
   decodeOrDiscardOrchestrationCache,
   putRemoteDpopTokenInCatalog,
+  removeRemoteDpopTokenFromCatalog,
   registerConnectionInCatalog,
   removeCatalogValue,
   removeConnectionFromCatalog,
@@ -891,15 +892,10 @@ export const layer = Layer.effectContext(
         catalog.update((document) =>
           putRemoteDpopTokenInCatalog(document, token, ifCurrentAccessToken),
         ),
-      remove: (environmentId) =>
-        catalog.update((document) => ({
-          ...document,
-          remoteDpopTokens: removeCatalogValue(
-            document.remoteDpopTokens,
-            (value) => value.environmentId,
-            environmentId,
-          ),
-        })),
+      remove: (environmentId, ifCurrentAccessToken) =>
+        catalog.update((document) =>
+          removeRemoteDpopTokenFromCatalog(document, environmentId, ifCurrentAccessToken),
+        ),
     });
     const cacheStore = Persistence.EnvironmentCacheStore.of({
       loadShell: Effect.fn("Persistence.EnvironmentCacheStore.loadShell")(function (environmentId) {

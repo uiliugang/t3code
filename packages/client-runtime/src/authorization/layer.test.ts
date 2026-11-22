@@ -154,6 +154,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   readonly bootstrap?: RelayEnvironmentConnectResponse;
   readonly beforeBootstrap?: Effect.Effect<void, ManagedRelay.ManagedRelayClientError>;
   readonly beforePut?: Effect.Effect<void>;
+  readonly targetRegistered?: boolean;
   readonly clerkToken?: ClientCapabilities.CloudSession["Service"]["clerkToken"];
   readonly credentials?: ReadonlyArray<readonly [string, ConnectionCredential]>;
 }) {
@@ -192,9 +193,10 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
       (input.beforePut ?? Effect.void).pipe(
         Effect.andThen(
           Ref.update(tokens, (current) => {
+            if (input.targetRegistered === false) return current;
             if (
               ifCurrentAccessToken !== undefined &&
-              current.get(token.environmentId)?.accessToken !== ifCurrentAccessToken
+              (current.get(token.environmentId)?.accessToken ?? null) !== ifCurrentAccessToken
             )
               return current;
             const next = new Map(current);
@@ -203,8 +205,13 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
           }),
         ),
       ),
-    remove: (environmentId) =>
+    remove: (environmentId, ifCurrentAccessToken) =>
       Ref.update(tokens, (current) => {
+        if (
+          ifCurrentAccessToken !== undefined &&
+          current.get(environmentId)?.accessToken !== ifCurrentAccessToken
+        )
+          return current;
         const next = new Map(current);
         next.delete(environmentId);
         return next;
@@ -1742,7 +1749,12 @@ describe("RemoteEnvironmentAuthorization", () => {
       }),
   );
 
-  it.effect("honors the newly discovered endpoint even when its token exchange fails", () =>
+  it.effect.each([
+    "same endpoint",
+    "token issuance failed",
+    "new endpoint",
+    "authorization rejected",
+  ] as const)("handles a failed exchange after stale rediscovery: %s", (mode) =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
         initialToken: new TokenStore.RemoteDpopAccessToken({
@@ -1751,20 +1763,132 @@ describe("RemoteEnvironmentAuthorization", () => {
         }),
         bootstrap: {
           ...BOOTSTRAP,
-          endpoint: {
+          endpoint:
+            mode === "new endpoint"
+              ? {
+                  ...ENDPOINT,
+                  httpBaseUrl: "https://new.example.test",
+                  wsBaseUrl: "wss://new.example.test",
+                }
+              : ENDPOINT,
+        },
+        descriptor: DESCRIPTOR,
+        responses: [
+          mode === "token issuance failed"
+            ? Response.json(
+                {
+                  _tag: "EnvironmentInternalError",
+                  code: "internal_error",
+                  reason: "access_token_issuance_failed",
+                  traceId: "trace",
+                },
+                { status: 500 },
+              )
+            : mode === "authorization rejected"
+              ? authInvalid()
+              : new Response(null, { status: 503 }),
+          websocketTicket("cached"),
+        ],
+      });
+      const result = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+        (remote) => remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }),
+      ).pipe(Effect.provide(harness.layer), Effect.result);
+      if (mode === "same endpoint" || mode === "token issuance failed") {
+        expect(result).toMatchObject({
+          success: {
+            socketUrl: expect.stringContaining("wsTicket=cached"),
+            httpAuthorization: { accessToken: "cached-access-token" },
+          },
+        });
+      } else {
+        expect(result).toMatchObject({
+          failure: mode === "new endpoint" ? { httpStatus: 503 } : { reason: "authentication" },
+        });
+        expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(0);
+      }
+    }),
+  );
+
+  it.effect.each([
+    "same address while the relay is offline",
+    "new address during exchange",
+  ] as const)("uses the other tab's confirmed credential at the %s", (scenario) =>
+    Effect.gen(function* () {
+      const offline = scenario === "same address while the relay is offline";
+      const started = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const publicEndpoint = offline
+        ? ENDPOINT
+        : {
             ...ENDPOINT,
             httpBaseUrl: "https://new.example.test",
             wsBaseUrl: "wss://new.example.test",
+          };
+      let otherTab = false;
+      const harness = yield* makeHarness({
+        initialToken: new TokenStore.RemoteDpopAccessToken({
+          ...persistedToken(),
+          endpointNeedsDiscovery: true,
+        }),
+        bootstrap: {
+          ...BOOTSTRAP,
+          get endpoint() {
+            return otherTab ? publicEndpoint : ENDPOINT;
           },
         },
         descriptor: DESCRIPTOR,
-        responses: [new Response(null, { status: 503 })],
+        beforeBootstrap: Effect.suspend(() => {
+          if (!offline || otherTab) return Effect.void;
+          started.resolve();
+          return Effect.promise(() => resume.promise).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ManagedRelay.ManagedRelayRequestFailedError({
+                  action: "connect relay environment",
+                  cause: "offline",
+                  transportFailed: true,
+                }),
+              ),
+            ),
+          );
+        }),
+        responses: [
+          ...(offline
+            ? []
+            : [
+                () => {
+                  started.resolve();
+                  return resume.promise.then(() => accessToken("late"));
+                },
+              ]),
+          accessToken("other-tab"),
+          websocketTicket("other"),
+          websocketTicket("waiting"),
+          websocketTicket("media"),
+        ],
       });
-      const error = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
-        (remote) => remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID }),
-      ).pipe(Effect.provide(harness.layer), Effect.flip);
-      expect(error).toMatchObject({ httpStatus: 503 });
-      expect(String(harness.fetch.calls.at(-1)?.[0])).toBe("https://new.example.test/oauth/token");
+      yield* Effect.gen(function* () {
+        const open = RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use((remote) =>
+          remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }),
+        );
+        const waiting = yield* open.pipe(Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        otherTab = true;
+        const active = yield* open.pipe(Effect.provide(Layer.fresh(harness.layer)));
+        resume.resolve();
+        expect(yield* Fiber.join(waiting)).toMatchObject({
+          httpBaseUrl: publicEndpoint.httpBaseUrl,
+          httpAuthorization: { accessToken: "other-tab" },
+        });
+        yield* mintMediaTicket({
+          ...active,
+          target: new RelayConnectionTarget({ environmentId: ENVIRONMENT_ID, label: active.label }),
+        });
+        expect(String(harness.fetch.calls.at(-1)?.[0])).toBe(
+          publicEndpoint.httpBaseUrl + "/api/auth/websocket-ticket/media",
+        );
+        expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe("other-tab");
+      }).pipe(Effect.provide(harness.layer));
     }),
   );
 
@@ -2063,6 +2187,21 @@ describe("RemoteEnvironmentAuthorization", () => {
         "replacement-token",
       );
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+    }),
+  );
+
+  it.effect("authorizes HTTP for an environment outside the saved catalog", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        targetRegistered: false,
+        descriptor: DESCRIPTOR,
+        responses: [accessToken("first-approval")],
+      });
+      const access = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+        (remote) => remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID }),
+      ).pipe(Effect.provide(harness.layer));
+      expect(access.httpAuthorization.accessToken).toBe("first-approval");
+      expect((yield* Ref.get(harness.tokens)).size).toBe(0);
     }),
   );
 

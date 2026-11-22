@@ -30,6 +30,7 @@ import {
   catalogRoutes,
   setRoutesInCatalog,
   putRemoteDpopTokenInCatalog,
+  removeRemoteDpopTokenFromCatalog,
   registerConnectionInCatalog,
   removeConnectionFromCatalog,
   setConnectionEnabledInCatalog,
@@ -246,7 +247,7 @@ describe("ConnectionCatalogDocument", () => {
       new RelayConnectionRegistration({ target: RELAY_TARGET }),
     );
 
-    const stored = putRemoteDpopTokenInCatalog(registered, REMOTE_TOKEN);
+    const stored = putRemoteDpopTokenInCatalog(registered, REMOTE_TOKEN, null);
     expect(stored).toEqual({
       ...registered,
       remoteDpopTokens: [REMOTE_TOKEN],
@@ -259,6 +260,13 @@ describe("ConnectionCatalogDocument", () => {
       registered,
     );
     expect(putRemoteDpopTokenInCatalog(stored, stale, "superseded-token")).toBe(stored);
+    expect(putRemoteDpopTokenInCatalog(stored, stale, null)).toBe(stored);
+    expect(removeRemoteDpopTokenFromCatalog(stored, ENVIRONMENT_ID, "superseded-token")).toBe(
+      stored,
+    );
+    expect(
+      removeRemoteDpopTokenFromCatalog(stored, ENVIRONMENT_ID, REMOTE_TOKEN.accessToken),
+    ).toEqual(registered);
     expect(
       putRemoteDpopTokenInCatalog(stored, stale, REMOTE_TOKEN.accessToken).remoteDpopTokens,
     ).toEqual([stale]);

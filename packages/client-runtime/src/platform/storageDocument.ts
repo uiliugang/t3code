@@ -198,7 +198,7 @@ export function setConnectionEnabledInCatalog(
 export function putRemoteDpopTokenInCatalog(
   document: ConnectionCatalogDocument,
   token: TokenStore.RemoteDpopAccessToken,
-  ifCurrentAccessToken?: string,
+  ifCurrentAccessToken?: string | null,
 ): ConnectionCatalogDocument {
   const registered = document.targets.some(
     (target) =>
@@ -207,11 +207,8 @@ export function putRemoteDpopTokenInCatalog(
   if (
     !registered ||
     (ifCurrentAccessToken !== undefined &&
-      !document.remoteDpopTokens.some(
-        (current) =>
-          current.environmentId === token.environmentId &&
-          current.accessToken === ifCurrentAccessToken,
-      ))
+      (document.remoteDpopTokens.find((current) => current.environmentId === token.environmentId)
+        ?.accessToken ?? null) !== ifCurrentAccessToken)
   ) {
     return document;
   }
@@ -221,6 +218,25 @@ export function putRemoteDpopTokenInCatalog(
       document.remoteDpopTokens,
       (value) => value.environmentId,
       token,
+    ),
+  };
+}
+
+export function removeRemoteDpopTokenFromCatalog(
+  document: ConnectionCatalogDocument,
+  environmentId: EnvironmentId,
+  ifCurrentAccessToken?: string,
+): ConnectionCatalogDocument {
+  const current = document.remoteDpopTokens.find((token) => token.environmentId === environmentId);
+  if (
+    !current ||
+    (ifCurrentAccessToken !== undefined && current.accessToken !== ifCurrentAccessToken)
+  )
+    return document;
+  return {
+    ...document,
+    remoteDpopTokens: document.remoteDpopTokens.filter(
+      (token) => token.environmentId !== environmentId,
     ),
   };
 }
