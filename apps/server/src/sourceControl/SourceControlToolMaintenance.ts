@@ -57,10 +57,14 @@ const make = Effect.gen(function* () {
   const meituanState = yield* SubscriptionRef.make<ReadonlyArray<MeituanTool>>([]);
   const isActive = (tool: Pick<SourceControlTool, "phase">) =>
     tool.phase === "running" || tool.phase === "verifying";
-  const update = (id: SourceControlToolId, patch: Partial<SourceControlTool>) =>
+  const update = (
+    id: SourceControlToolId,
+    patch: Partial<SourceControlTool>,
+    verified?: SourceControlTool | MeituanTool,
+  ) =>
     isRequirementCli(id)
       ? SubscriptionRef.update(meituanState, (tools) =>
-          tools.map((tool) => (tool.id === id ? { ...tool, ...patch, id } : tool)),
+          tools.map((tool) => (tool.id === id ? { ...(verified ?? tool), ...patch, id } : tool)),
         )
       : SubscriptionRef.update(state, (tools) =>
           tools.map((tool) => (tool.id === id ? { ...tool, ...patch } : tool)),
@@ -183,9 +187,12 @@ const make = Effect.gen(function* () {
 
   const finish = Effect.fn("SourceControlToolMaintenance.finish")(function* (
     id: SourceControlToolId,
-    patch: Partial<SourceControlTool>,
+    result: Pick<SourceControlTool, "phase" | "message">,
+    verified?: SourceControlTool | MeituanTool,
   ) {
-    if (isRequirementCli(id)) return yield* meituanLock.withPermits(1)(update(id, patch));
+    if (isRequirementCli(id))
+      return yield* meituanLock.withPermits(1)(update(id, result, verified));
+    const patch = { ...verified, ...result, id };
     if (!sourceScanPending) return yield* update(id, patch);
     const previous = (yield* SubscriptionRef.get(state)).map((tool) =>
       tool.id === id ? { ...tool, ...patch } : tool,
@@ -279,17 +286,19 @@ const make = Effect.gen(function* () {
           )
             return yield* new SourceControlToolError({ id: input.id, reason: "verification" });
           const unchanged = plan.tool.version === verified.version;
-          yield* finish(input.id, {
-            ...verified,
-            id: input.id,
-            phase: unchanged ? "unchanged" : "succeeded",
-            message:
-              outcome === "current"
-                ? "Already up to date."
-                : unchanged
-                  ? "The version is unchanged. Check the package manager's available version on the server."
-                  : "Installation verified.",
-          });
+          yield* finish(
+            input.id,
+            {
+              phase: unchanged ? "unchanged" : "succeeded",
+              message:
+                outcome === "current"
+                  ? "Already up to date."
+                  : unchanged
+                    ? "The version is unchanged. Check the package manager's available version on the server."
+                    : "Installation verified.",
+            },
+            verified,
+          );
         }).pipe(
           Effect.catch((error) => finish(input.id, { phase: "failed", message: error.message })),
           Effect.onInterrupt(() =>

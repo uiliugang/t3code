@@ -5,6 +5,7 @@ import {
   ServerSettingsError,
   SourceControlToolError,
   type SourceControlTool,
+  type MeituanTool,
   type SkillSource,
   type SourceControlToolStartInput,
 } from "@t3tools/contracts";
@@ -171,7 +172,7 @@ it.effect.each(["while verifying", "after completion"] as const)(
     Effect.gen(function* () {
       const entered = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
-      const first = plan({ id: "ones2", version: null, executablePath: null });
+      const first = plan({ id: "ones2", version: "2.0.0", executablePath: "/bin/ones2" });
       const manualCommand = "npm install -g @ee/mep-ones-cli@latest";
       const saved = yield* SubscriptionRef.make({
         ...DEFAULT_SERVER_SETTINGS,
@@ -185,9 +186,10 @@ it.effect.each(["while verifying", "after completion"] as const)(
         ...first.tool,
         id,
         manualCommand,
-        version: installed ? "2.1.0" : null,
-        executablePath: installed ? "/bin/ones2" : null,
-        ...(installed && id === "ones2" ? { account: "demo.user" } : {}),
+        version: installed ? "2.1.0" : first.tool.version,
+        ...(id === "ones2" && (!installed || reenable === "after completion")
+          ? { account: installed ? "demo.user" : "prior.user" }
+          : {}),
       });
       const installer: InstallerMock = {
         inspect: () => Effect.succeed(first),
@@ -213,6 +215,8 @@ it.effect.each(["while verifying", "after completion"] as const)(
       };
       yield* Effect.gen(function* () {
         const service = yield* Maintenance.SourceControlToolMaintenance;
+        const initial = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
+        assert.strictEqual(initial.find((tool) => tool.id === "ones2")?.account, "prior.user");
         yield* service.start(confirmation(first.tool));
         yield* Deferred.await(entered);
         for (const enabled of [false, true]) {
@@ -242,14 +246,19 @@ it.effect.each(["while verifying", "after completion"] as const)(
           const tools = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
           assert.strictEqual(tools.find((tool) => tool.id === "ones2")?.phase, "verifying");
         }
-        const updates = yield* Queue.unbounded<void>();
+        const updates = yield* Queue.unbounded<ReadonlyArray<MeituanTool>>();
         yield* service.meituanChanges.pipe(
-          Stream.runForEach(() => Queue.offer(updates, undefined)),
+          Stream.runForEach((rows) => Queue.offer(updates, rows)),
           Effect.forkChild,
         );
         yield* Queue.take(updates);
         yield* Deferred.succeed(releaseVerification, undefined);
-        yield* Queue.take(updates);
+        const published = yield* Queue.take(updates);
+        if (reenable === "while verifying") {
+          const settled = published.find((tool) => tool.id === "ones2");
+          assert.strictEqual(settled?.phase, "succeeded");
+          assert.strictEqual(settled?.account, undefined);
+        }
         if (reenable === "after completion")
           yield* SubscriptionRef.update(saved, (current) => ({
             ...current,
@@ -258,7 +267,10 @@ it.effect.each(["while verifying", "after completion"] as const)(
         const rows = Option.getOrThrow(yield* Stream.runHead(service.meituanChanges));
         const ones = rows.find((tool) => tool.id === "ones2");
         assert.strictEqual(ones?.phase, "succeeded");
-        assert.strictEqual(ones?.account, "demo.user");
+        assert.strictEqual(
+          ones?.account,
+          reenable === "after completion" ? "demo.user" : undefined,
+        );
         assert.strictEqual(ones?.version, "2.1.0");
         assert.strictEqual(ones?.maintenanceCommand, first.tool.command);
         assert.strictEqual(ones?.command, null);
