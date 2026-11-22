@@ -1290,11 +1290,11 @@ export const make = Effect.gen(function* () {
           remoteName,
           remoteBranch: pullRequest.headBranch,
         });
-        return;
+        return `${remoteName}/${pullRequest.headBranch}`;
       }
 
       if (repositoryNameWithOwner.length === 0) {
-        return;
+        return null;
       }
 
       const cloneUrls = yield* (yield* sourceControlProvider(cwd)).getRepositoryCloneUrls({
@@ -1325,6 +1325,7 @@ export const make = Effect.gen(function* () {
         remoteName,
         remoteBranch: pullRequest.headBranch,
       });
+      return `${remoteName}/${pullRequest.headBranch}`;
     },
   );
 
@@ -1340,7 +1341,7 @@ export const make = Effect.gen(function* () {
           localBranch,
           headBranch: pullRequest.headBranch,
           cause: error,
-        }).pipe(Effect.asVoid),
+        }).pipe(Effect.as(null)),
       ),
     );
 
@@ -3952,18 +3953,17 @@ export const make = Effect.gen(function* () {
           if ((yield* gitCore.readConfigValue(cwd, key)) !== null) {
             yield* gitCore.writeConfigValue({ cwd, key, value: "" });
           }
-          yield* configurePullRequestHeadUpstream(cwd, pullRequestWithRemoteInfo, branch);
-          if (!usesReservedHeadName || pullRequestWithRemoteInfo.isCrossRepository === true) return;
-          const [remote, merge] = yield* Effect.all([
-            gitCore.readConfigValue(cwd, `branch.${branch}.remote`),
-            gitCore.readConfigValue(cwd, `branch.${branch}.merge`),
-          ]);
-          if (remote && remote !== "." && merge === `refs/heads/${pullRequest.headBranch}`) {
-            yield* gitCore.writeConfigValue({
-              cwd,
-              key,
-              value: `${remote}/${pullRequest.headBranch}`,
-            });
+          const upstream = yield* configurePullRequestHeadUpstream(
+            cwd,
+            pullRequestWithRemoteInfo,
+            branch,
+          );
+          if (
+            upstream !== null &&
+            usesReservedHeadName &&
+            pullRequestWithRemoteInfo.isCrossRepository !== true
+          ) {
+            yield* gitCore.writeConfigValue({ cwd, key, value: upstream });
           }
         },
       );

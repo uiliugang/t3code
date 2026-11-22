@@ -7843,6 +7843,15 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             expect((yield* runGit(publicCwd, ["ls-remote", "--heads", forkDir])).stdout).toBe(
               `${head}\trefs/heads/${headRefName}\n`,
             );
+            yield* preparePullRequestThread(forkProvider.manager, input);
+            yield* runGit(publicCwd, ["push", anotherCompanionDir, `:refs/heads/${headRefName}`]);
+            yield* preparePullRequestThread(other.manager, { ...input, reference: otherUrl });
+            const pushTarget = yield* runGit(
+              publicCwd,
+              ["config", "--get", `branch.${result.success.branch}.t3-pr-push-upstream`],
+              true,
+            );
+            expect(pushTarget.stdout.trim()).toBe("");
           }
           const upperCaseProvider = yield* makeManager({
             providerScenario: {
