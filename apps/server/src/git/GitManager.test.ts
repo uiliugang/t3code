@@ -7606,7 +7606,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["config", "remote.pushDefault", "origin"]);
 
       const companion = "pingdotgg/codething-mvp.private-2";
-      const branch = "t3code/pr-92/sec/fix";
+      const publicBranch = "t3code/pr-92/sec/fix";
+      const branch = "t3code/private-pr-92-baf54840d21f6821/sec/fix";
       const ownerKey = `branch.${branch}.t3-pull-request`;
       const gitSpawnGate = {
         beforeSpawn:
@@ -7657,14 +7658,36 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           ["config", "--get", `branch.${branch}.remote`],
           true,
         );
+        yield* runGit(repoDir, ["push", "origin", "HEAD:refs/pull/92/head"]);
+        const publicProvider = yield* makeManager({
+          providerScenario: {
+            pullRequest: {
+              number: 92,
+              title: "Public fix",
+              url: "https://github.com/pingdotgg/another/pull/92",
+              baseRefName: "main",
+              headRefName: "sec/fix",
+              isCrossRepository: true,
+            },
+          },
+        });
+        const publicWorktree = yield* preparePullRequestThread(publicProvider.manager, input).pipe(
+          Effect.result,
+        );
         yield* Deferred.succeed(gitSpawnGate.release, undefined);
-        yield* Fiber.join(preparing);
+        const privateWorktree = yield* Fiber.join(preparing);
         expect(tracked.exitCode).toBe(1);
+        expect(publicWorktree).toMatchObject({
+          _tag: "Success",
+          success: { branch: publicBranch },
+        });
+        expect(privateWorktree.branch).toBe(branch);
         return;
       }
       if (scenario === "public branch fetch race" || scenario === "public ref fetch race") {
         const publicRepository = "pingdotgg/another";
         const baseUrl = "https://github.com/pingdotgg/another/pull/92";
+        const racedOwnerKey = `branch.${publicBranch}.t3-pull-request`;
         yield* runGit(repoDir, [
           "push",
           "origin",
@@ -7695,17 +7718,21 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           reference: baseUrl,
         }).pipe(Effect.result, Effect.forkScoped);
         yield* Deferred.await(gitSpawnGate.reached);
-        yield* runGit(repoDir, ["branch", "--track", branch, "private-companion/sec/fix"]);
-        yield* runGit(repoDir, ["config", ownerKey, privateProvider.pullRequest.url]);
+        yield* runGit(repoDir, ["branch", "--track", publicBranch, "private-companion/sec/fix"]);
+        yield* runGit(repoDir, ["config", racedOwnerKey, privateProvider.pullRequest.url]);
         yield* runGit(repoDir, [
           "config",
-          `branch.${branch}.t3-private-pr-companion`,
+          `branch.${publicBranch}.t3-private-pr-companion`,
           companionDir,
         ]);
-        yield* runGit(repoDir, ["config", `branch.${branch}.pushRemote`, "private-companion"]);
+        yield* runGit(repoDir, [
+          "config",
+          `branch.${publicBranch}.pushRemote`,
+          "private-companion",
+        ]);
         yield* Deferred.succeed(gitSpawnGate.release, undefined);
         expect(Result.isFailure(yield* Fiber.join(preparing))).toBe(true);
-        expect((yield* runGit(repoDir, ["config", "--get", ownerKey])).stdout.trim()).toBe(
+        expect((yield* runGit(repoDir, ["config", "--get", racedOwnerKey])).stdout.trim()).toBe(
           privateProvider.pullRequest.url,
         );
         return;
@@ -7737,7 +7764,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const cwd = worktree.worktreePath as string;
       if (scenario === "another private PR" || scenario === "public lookalike") {
         const anotherCompanionDir = yield* createBareRemote();
-        yield* runGit(cwd, ["push", anotherCompanionDir, "HEAD:refs/heads/sec/fix"]);
+        const headRefName = scenario === "public lookalike" ? branch : "sec/fix";
+        yield* runGit(cwd, ["push", anotherCompanionDir, `HEAD:refs/heads/${headRefName}`]);
         const anotherCompanion = "pingdotgg/another.private";
         const otherUrl = "https://source.tanstack.com/@pingdotgg/another/pull/92";
         const { privateHeadRepository: _privateHeadRepository, ...pullRequest } =
@@ -7748,6 +7776,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             pullRequest: {
               ...pullRequest,
               url: otherUrl,
+              headRefName,
+              isCrossRepository: scenario === "another private PR",
               headRepositoryNameWithOwner: anotherCompanion,
               ...(scenario === "another private PR"
                 ? { privateHeadRepository: anotherCompanion }
@@ -7765,7 +7795,11 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           ...input,
           reference: otherUrl,
         }).pipe(Effect.result);
-        expect(Result.isFailure(result)).toBe(true);
+        expect(Result.isSuccess(result)).toBe(true);
+        if (Result.isSuccess(result)) {
+          expect(result.success.branch).not.toBe(branch);
+          expect(result.success.worktreePath).not.toBe(worktree.worktreePath);
+        }
         const remote = (yield* runGit(cwd, [
           "config",
           "--get",

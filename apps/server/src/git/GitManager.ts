@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as Arr from "effect/Array";
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
@@ -371,19 +372,18 @@ function resolveHeadRepositoryNameWithOwner(pullRequest: PullRequestHeadRemoteIn
   return normalizeOptionalString(pullRequest.headRepositoryNameWithOwner);
 }
 
-// Both names `resolvePullRequestWorktreeLocalBranchName` gives a fork pull request's branch.
+const isPrivatePullRequestWorktreeBranchName = (branch: string) =>
+  /^t3code[/-]private-pr-/u.test(branch);
+
 function isPullRequestWorktreeLocalBranchName(branch: string): boolean {
-  return /^t3code[/-]pr-\d+[/-]/u.test(branch);
+  return /^t3code[/-]pr-\d+[/-]/u.test(branch) || isPrivatePullRequestWorktreeBranchName(branch);
 }
 
 function resolvePullRequestWorktreeLocalBranchName(
-  pullRequest: ResolvedPullRequest & PullRequestHeadRemoteInfo,
+  pullRequest: ResolvedPullRequest,
   localBranches: ReadonlySet<string>,
+  privateRequest: boolean,
 ): string {
-  if (!pullRequest.isCrossRepository) {
-    return pullRequest.headBranch;
-  }
-
   const sanitizedHeadBranch = sanitizeBranchFragment(pullRequest.headBranch).trim();
   const suffix = sanitizedHeadBranch.length > 0 ? sanitizedHeadBranch : "head";
   // Git cannot create a ref whose path is a parent or child of an existing one (`t3code` blocks `t3code/...`).
@@ -393,11 +393,17 @@ function resolvePullRequestWorktreeLocalBranchName(
       .slice(0, -1)
       .some((_, index, segments) => localBranches.has(segments.slice(0, index + 1).join("/"))) &&
     ![...localBranches].some((branch) => branch.startsWith(`${name}/`));
-  const preferred = `t3code/pr-${pullRequest.number}/${suffix}`;
+  const stem = privateRequest
+    ? `private-pr-${pullRequest.number}-${createHash("sha256")
+        .update(pullRequestRepositoryKey(pullRequest.url) ?? pullRequest.url)
+        .digest("hex")
+        .slice(0, 16)}`
+    : `pr-${pullRequest.number}`;
+  const preferred = `t3code/${stem}/${suffix}`;
   if (isCreatable(preferred)) {
     return preferred;
   }
-  const flat = `t3code-pr-${pullRequest.number}-${suffix.replaceAll("/", "-")}`;
+  const flat = `t3code-${stem}-${suffix.replaceAll("/", "-")}`;
   for (let attempt = 1; ; attempt++) {
     const candidate = attempt === 1 ? flat : `${flat}-${attempt}`;
     if (isCreatable(candidate)) {
@@ -3857,6 +3863,7 @@ export const make = Effect.gen(function* () {
       });
       const pullRequest = toResolvedPullRequest(pullRequestSummary);
       const privateCompanion = pullRequestSummary.privateHeadRepository;
+      const usesReservedHeadName = isPrivatePullRequestWorktreeBranchName(pullRequest.headBranch);
       if (privateCompanion === null) {
         return yield* new GitManagerError({
           operation: "preparePullRequestThread",
@@ -3866,6 +3873,14 @@ export const make = Effect.gen(function* () {
       }
 
       if (input.mode === "local") {
+        if (usesReservedHeadName) {
+          return yield* new GitManagerError({
+            operation: "preparePullRequestThread",
+            cwd: input.cwd,
+            detail:
+              "This head branch name is reserved for private pull request worktrees. Open the pull request in a worktree.",
+          });
+        }
         yield* ensureNoTrackedChanges(input.cwd, pullRequest.number);
         yield* (yield* sourceControlProvider(input.cwd)).checkoutChangeRequest({
           cwd: input.cwd,
@@ -3892,7 +3907,11 @@ export const make = Effect.gen(function* () {
         ...pullRequest,
         ...toPullRequestHeadRemoteInfo(pullRequestSummary),
       } as const;
-      const localBranches = pullRequestWithRemoteInfo.isCrossRepository
+      const needsWorktreeAlias =
+        privateCompanion !== undefined ||
+        pullRequestWithRemoteInfo.isCrossRepository ||
+        usesReservedHeadName;
+      const localBranches = needsWorktreeAlias
         ? new Set(
             (yield* gitCore.execute({
               operation: "GitManager.preparePullRequestThread.localBranches",
@@ -3904,10 +3923,13 @@ export const make = Effect.gen(function* () {
               .filter((name) => name.length > 0),
           )
         : new Set<string>();
-      const localPullRequestBranch = resolvePullRequestWorktreeLocalBranchName(
-        pullRequestWithRemoteInfo,
-        localBranches,
-      );
+      const localPullRequestBranch = needsWorktreeAlias
+        ? resolvePullRequestWorktreeLocalBranchName(
+            pullRequest,
+            localBranches,
+            privateCompanion !== undefined,
+          )
+        : pullRequest.headBranch;
       if (
         privateCompanion === undefined &&
         (yield* gitCore.readConfigValue(
@@ -4033,7 +4055,8 @@ export const make = Effect.gen(function* () {
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
         const names = new Set([localPullRequestBranch]);
-        if (privateCompanion === undefined) names.add(pullRequest.headBranch);
+        if (privateCompanion === undefined && !usesReservedHeadName)
+          names.add(pullRequest.headBranch);
         for (const [index, name] of [...names].entries()) {
           let cursor: number | undefined;
           do {
