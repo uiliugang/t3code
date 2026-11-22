@@ -23,7 +23,10 @@ const decodeWorkflow = Schema.decodeUnknownSync(
         android: Schema.Struct({
           needs: Schema.Union([Schema.String, Schema.Array(Schema.String)]),
         }),
-        macos: Schema.Struct({ if: Schema.String }),
+        macos: Schema.Struct({
+          if: Schema.String,
+          env: Schema.Record(Schema.String, Schema.String),
+        }),
         linux: Schema.Struct({ if: Schema.String }),
         publish: Schema.Struct({ if: Schema.String }),
       }),
@@ -89,6 +92,10 @@ it("waits before checkout only for automatic main warmups and preserves release 
   const dependencies = workflow.jobs.android.needs;
   assert.include(typeof dependencies === "string" ? [dependencies] : dependencies, "prepare");
   assert.notProperty(workflow.on, "pull_request");
+});
+
+it("selects a macOS SDK that provides the native Apple Speech APIs", () => {
+  assert.match(readWorkflow().jobs.macos.env.DEVELOPER_DIR ?? "", /Xcode_26\./u);
 });
 
 it("replaces earlier main warmups without cancelling tag releases or manual cache checks", () => {
