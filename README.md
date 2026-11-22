@@ -39,7 +39,7 @@
 
 ### 使用本分支构建包
 
-查看 [本分支 Releases](https://github.com/uiliugang/t3code/releases) 中的 macOS Apple Silicon（arm64）DMG、Linux x64/arm64 AppImage 与 DEB、macOS arm64 和 Linux x64/arm64 CLI，以及 Android arm64 APK。没有对应安装包的平台可从源码运行。
+正式安装包包括 macOS Apple Silicon（arm64）DMG、Linux x64/arm64 AppImage 与 DEB、macOS arm64 和 Linux x64/arm64 CLI，以及 Android arm64 APK。没有对应安装包的平台可从源码运行。 [下载最新正式版](https://github.com/uiliugang/t3code/releases/latest)
 
 - macOS 包采用 ad hoc 签名，未经过 Apple 公证，首次打开可能需要在系统安全设置中明确允许。通过「设置 → 关于」可查找新版安装包，不会自动安装。
 - Linux AppImage 和 DEB 支持应用内更新。仍关闭更新功能的旧版需要先手动安装一次新版。
@@ -47,7 +47,7 @@
 
 每个正式 Release 附带 `SHA256SUMS`。手动下载时，可将安装包或 CLI 压缩包与该文件放在同一目录，使用 `shasum -a 256 <文件名>`（macOS）或 `sha256sum <文件名>`（Linux）计算摘要，并与清单中对应文件的值核对。Android 升级应使用本仓库同一签名的 APK，不要卸载旧版来规避升级失败，以免丢失本地设置。
 
-本分支使用独立的 `0.0.x` 版本序列。上一版误标为 `0.1.9`，正确版本为 `0.0.18`，本轮目标版本为 `0.0.19`；是否已发布以 Releases 页面为准。已安装误发 `0.1.9` 的桌面或 CLI 用户，需要在修正版发布后手动安装一次 `0.0.19`，不能依赖自动更新识别较低版本号。Android `0.0.19` 使用更高的安装序号，可从误发版保留数据升级。
+本分支独立发版，已发布的版本以 [Releases](https://github.com/uiliugang/t3code/releases) 为准。如果桌面或 CLI 已安装历史预发行版 `v0.1.9`，请手动安装最新正式版，版本比较可能将它判为较早的版本。Android 正式版从 `v0.0.19` 起使用更高的安装序号，使用同一签名的 APK 可保留数据升级。
 
 上游的 `npx t3@latest`、应用商店和包管理器入口分发的是上游版本，不包含本分支的增强。要安装本分支的 CLI，请使用[本仓库的安装脚本](docs/user/install.md#command-line)。
 
@@ -120,7 +120,7 @@ vp run dev:desktop
 
 ### 管理需求并关联开发分支
 
-打开 **Requirements board**，选择环境及 MEP 或 GitHub 数据源，按项目、负责人搜索工作项，切换看板或列表，查看详情、新建需求或修改状态。
+在 Web 或桌面侧边栏打开 **需求看板（Requirements board）**。**工作流**视图按环境、来源、项目和负责人筛选本地工作项和外部需求，可切换看板或列表。**需求（Issues）**视图按平台筛选外部 Issue。切换视图时，右侧已打开的详情仍然保留。移动端在需求看板查看工作项、切换看板或列表，并下拉刷新。
 
 **Settings → Code → Issue management** 展示自动识别的仓库和 MEP 空间，可重新检测或手动覆盖；多个 MEP 空间 ID 使用逗号分隔。MEP 依赖服务端已安装并登录的 `ones2`，GitHub 使用源码管理中的认证。
 
