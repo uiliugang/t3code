@@ -2324,7 +2324,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   // A fetch reads only the remote's first url, while a push writes every push URL (pushurl, else
   // each url). A fetched ref is evidence of the push destination only when those are the same one.
   const pushesOnlyToFetchUrl = Effect.fn("GitVcsDriver.pushesOnlyToFetchUrl")(
-    function* (cwd: string, remoteName: string) {
+    function* (cwd: string, remoteName: string, expectedRepository?: string) {
       const [fetchUrl, pushUrls] = yield* Effect.all([
         runGitStdout("GitVcsDriver.pushesOnlyToFetchUrl.fetchUrl", cwd, [
           "remote",
@@ -2343,7 +2343,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ]);
       // Preserve whitespace in URLs and reject ambiguous multiline fetch URLs.
       return (
-        fetchUrl.endsWith("\n") && !fetchUrl.slice(0, -1).includes("\n") && pushUrls === fetchUrl
+        fetchUrl.endsWith("\n") &&
+        !fetchUrl.slice(0, -1).includes("\n") &&
+        pushUrls === fetchUrl &&
+        (expectedRepository === undefined ||
+          sourceControlDefinitions.repositoryKeyFromRemote(fetchUrl.slice(0, -1)) ===
+            expectedRepository)
       );
     },
     Effect.orElseSucceed(() => false),
@@ -2359,14 +2364,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.cwd,
       ["remote", "-v"],
     ).pipe(Effect.map((stdout) => parseRemoteFetchUrls(stdout)));
-    const findMatchingRemote = (remoteFetchUrls: Map<string, string>) =>
-      Array.from(remoteFetchUrls.entries()).find(
-        ([, remoteUrl]) =>
-          sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl) === normalizedTargetUrl,
-      )?.[0];
+    const findMatchingRemote = Effect.fn("GitVcsDriver.ensureRemote.findMatching")(function* (
+      remoteFetchUrls: Map<string, string>,
+    ) {
+      for (const [remoteName, remoteUrl] of remoteFetchUrls) {
+        if (sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl) !== normalizedTargetUrl)
+          continue;
+        if (
+          !input.requireMatchingPushUrl ||
+          (yield* pushesOnlyToFetchUrl(input.cwd, remoteName, normalizedTargetUrl))
+        ) {
+          return remoteName;
+        }
+      }
+      return undefined;
+    });
 
     const remoteFetchUrls = yield* listRemoteFetchUrls;
-    const existing = findMatchingRemote(remoteFetchUrls);
+    const existing = yield* findMatchingRemote(remoteFetchUrls);
     if (existing !== undefined) return existing;
 
     let remoteName = preferredName;
@@ -2376,7 +2391,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       suffix += 1;
     }
 
-    return yield* executeGitWithStableDiagnostics(
+    const addedRemote = yield* executeGitWithStableDiagnostics(
       "GitVcsDriver.ensureRemote.add",
       input.cwd,
       ["remote", "add", "--", remoteName, input.url],
@@ -2387,13 +2402,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       // A parallel launch for the same fork may have added it since the listing above.
       Effect.catch((error) =>
         listRemoteFetchUrls.pipe(
-          Effect.flatMap((current) => {
-            const added = findMatchingRemote(current);
-            return added === undefined ? Effect.fail(error) : Effect.succeed(added);
-          }),
+          Effect.flatMap(findMatchingRemote),
+          Effect.filterOrFail(
+            (added): added is string => added !== undefined,
+            () => error,
+          ),
         ),
       ),
     );
+    if (
+      input.requireMatchingPushUrl &&
+      !(yield* pushesOnlyToFetchUrl(input.cwd, addedRemote, normalizedTargetUrl))
+    ) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.ensureRemote",
+        command: "git remote get-url",
+        cwd: input.cwd,
+        detail: "The private remote must push only to its expected fetch repository.",
+      });
+    }
+    return addedRemote;
   });
 
   const resolveComparisonBaseRef = Effect.fn("resolveComparisonBaseRef")(function* (

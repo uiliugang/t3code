@@ -5392,6 +5392,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         expect(created(unsupported.providerCalls)).toEqual([]);
 
         const privateRemote = { url: companionDir, repository: "pingdotgg/codething-mvp.private" };
+        yield* runGit(repoDir, ["remote", "add", "read-private", companionDir]);
+        yield* runGit(repoDir, ["remote", "set-url", "--push", "read-private", originDir]);
         const open = {
           number: 9,
           title: "Fix",
@@ -5409,6 +5411,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         });
         expect(yield* heads(companionDir)).toEqual(["refs/heads/sec/fix"]);
         expect(yield* heads("origin")).toEqual(["refs/heads/main"]);
+        expect(
+          (yield* runGit(repoDir, ["remote", "get-url", "--push", "read-private"])).stdout.trim(),
+        ).toBe(originDir);
         // The branch tracks the companion, which is how status finds its pull request.
         expect(
           (yield* runGit(repoDir, [

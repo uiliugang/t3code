@@ -305,7 +305,7 @@ export const make = Effect.gen(function* () {
   const toChangeRequest = (
     target: Target,
     pull: Json.SourcePullDetail,
-  ): ChangeRequest & { readonly isPrivate: boolean } => {
+  ): ChangeRequest & { readonly visibility: string | undefined } => {
     const headRepository = pull.headRepo ?? target.repository;
     const headBranch = Json.headBranchName(pull.head);
     // A pull request synced from a GitHub fork names its head only by its pull ref.
@@ -326,7 +326,7 @@ export const make = Effect.gen(function* () {
       mergedAt: pull.mergedAt === null ? null : Json.iso(pull.mergedAt),
       updatedAt: Option.some(DateTime.makeUnsafe(updatedAt)),
       isCrossRepository: crossRepository,
-      isPrivate: pull.visibility === "private",
+      visibility: pull.visibility,
       headRepositoryNameWithOwner: headRepository,
       headRepositoryOwnerLogin: headRepository.split("/")[0] ?? null,
     };
@@ -538,15 +538,17 @@ export const make = Effect.gen(function* () {
           const operation = "TanStackSourceSourceControlProvider.checkoutChangeRequest";
           const branches = yield* git.listLocalBranchNames(input.cwd);
           const headRepository = pull.headRepositoryNameWithOwner ?? null;
+          const isPrivate = pull.visibility === "private";
           const companion =
             pullRepository !== null &&
             headRepository !== null &&
-            (pull.isPrivate
+            (isPrivate
               ? headRepository.toLowerCase() !== pullRepository.toLowerCase()
-              : headRepository.toLowerCase() === `${pullRepository}.private`.toLowerCase())
+              : pull.visibility === undefined &&
+                headRepository.toLowerCase() === `${pullRepository}.private`.toLowerCase())
               ? headRepository
               : null;
-          if (pull.isPrivate && companion === null) {
+          if (isPrivate && companion === null) {
             return yield* error(
               operation,
               input.cwd,
@@ -555,34 +557,43 @@ export const make = Effect.gen(function* () {
           }
           if (!pull.isCrossRepository || companion !== null) {
             const localBranch = pull.headRefName;
+            const companionUrl =
+              companion === null ? null : `${Hosts.webRepositoryUrl(HOST, companion)}.git`;
             const remoteBranch = {
               cwd: input.cwd,
               remoteName:
-                companion === null
+                companion === null || companionUrl === null
                   ? remoteName
                   : yield* git.ensureRemote({
                       cwd: input.cwd,
                       preferredName: companion.split("/")[0] ?? "private",
-                      url: `${Hosts.webRepositoryUrl(HOST, companion)}.git`,
+                      url: companionUrl,
+                      requireMatchingPushUrl: true,
                     }),
               remoteBranch: localBranch,
             };
-            if (companion !== null) {
+            const hasLocalBranch = branches.includes(localBranch);
+            if (companionUrl !== null) {
               yield* git.writeConfigValue({
                 cwd: input.cwd,
                 key: SourceControlProvider.privateCompanionConfigKey(remoteBranch.remoteName),
-                value: "true",
+                value: companionUrl,
               });
             }
-            if (companion !== null && branches.includes(localBranch)) {
-              const [trackedRemote, trackedRef] = yield* Effect.all([
+            if (companion !== null && hasLocalBranch) {
+              const [trackedRemote, trackedRef, pushRemote] = yield* Effect.all([
                 git.readConfigValue(input.cwd, `branch.${localBranch}.remote`),
                 git.readConfigValue(input.cwd, `branch.${localBranch}.merge`),
+                git.readConfigValue(input.cwd, `branch.${localBranch}.pushRemote`),
               ]);
-              if (
-                trackedRemote !== remoteBranch.remoteName ||
-                trackedRef !== `refs/heads/${localBranch}`
-              ) {
+              const tracksCompanion =
+                trackedRemote === remoteBranch.remoteName &&
+                trackedRef === `refs/heads/${localBranch}`;
+              const pendingTracking =
+                trackedRemote === null &&
+                trackedRef === null &&
+                pushRemote === remoteBranch.remoteName;
+              if (!tracksCompanion && !pendingTracking) {
                 return yield* error(
                   operation,
                   input.cwd,
@@ -590,31 +601,34 @@ export const make = Effect.gen(function* () {
                 );
               }
             }
-            if (input.force !== true && !branches.includes(localBranch))
+            if (companion === null && input.force !== true && !hasLocalBranch)
               yield* git.fetchRemoteBranch({ ...remoteBranch, localBranch });
             else yield* git.fetchRemoteTrackingBranch(remoteBranch);
-            if (input.force === true)
-              yield* git.execute({
-                operation,
-                cwd: input.cwd,
-                // The upstream is recorded next, through the host's serialized config write.
-                args: [
-                  "checkout",
-                  "--no-track",
-                  "-B",
-                  localBranch,
-                  `refs/remotes/${remoteBranch.remoteName}/${localBranch}`,
-                  "--",
-                ],
-              });
-            yield* git.setBranchUpstream({ ...remoteBranch, branch: localBranch });
-            // Whatever push defaults say, this branch must not be published to the public remote.
-            if (companion !== null)
-              yield* git.writeConfigValue({
-                cwd: input.cwd,
-                key: `branch.${localBranch}.pushRemote`,
-                value: remoteBranch.remoteName,
-              });
+            const trackingRef = `refs/remotes/${remoteBranch.remoteName}/${localBranch}`;
+            const bindBranch = Effect.gen(function* () {
+              if (companion !== null && !hasLocalBranch) {
+                yield* git.createBranch({
+                  cwd: input.cwd,
+                  branch: localBranch,
+                  startPoint: trackingRef,
+                });
+              } else if (input.force === true) {
+                yield* git.execute({
+                  operation,
+                  cwd: input.cwd,
+                  args: ["checkout", "--no-track", "-B", localBranch, trackingRef, "--"],
+                });
+              }
+              if (companion !== null) {
+                yield* git.writeConfigValue({
+                  cwd: input.cwd,
+                  key: `branch.${localBranch}.pushRemote`,
+                  value: remoteBranch.remoteName,
+                });
+              }
+              yield* git.setBranchUpstream({ ...remoteBranch, branch: localBranch });
+            });
+            yield* companion === null ? bindBranch : Effect.uninterruptible(bindBranch);
             yield* Effect.scoped(git.switchRef({ cwd: input.cwd, refName: localBranch }));
             return;
           }

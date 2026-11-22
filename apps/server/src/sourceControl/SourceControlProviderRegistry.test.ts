@@ -246,19 +246,28 @@ it.effect.each(["meituanIntegrationEnabled", "meituanSourceControlEnabled"] as c
     }),
 );
 
-it.effect("selects the public source even when the private companion sorts first", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [
-        { name: "acme", url: "https://source.tanstack.com/@acme/project.private.git" },
-        { name: "source", url: "https://source.tanstack.com/@acme/project.git" },
-      ],
-      readConfigValue: (_cwd, key) =>
-        Effect.succeed(key === "remote.acme.t3-private-pr-companion" ? "true" : null),
-    });
-    const handle = yield* registry.resolveHandle({ cwd: "/repo" });
-    assert.strictEqual(handle.context?.remoteName, "source");
-  }),
+it.effect.each([
+  { repository: "project.private", expected: "source" },
+  { repository: "project.replacement", expected: "acme" },
+])(
+  "selects the right public remote when acme now points to $repository",
+  ({ repository, expected }) =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        remotes: [
+          { name: "acme", url: `https://source.tanstack.com/@acme/${repository}.git` },
+          { name: "source", url: "https://source.tanstack.com/@acme/project.git" },
+        ],
+        readConfigValue: (_cwd, key) =>
+          Effect.succeed(
+            key === "remote.acme.t3-private-pr-companion"
+              ? "https://source.tanstack.com/@acme/project.private.git"
+              : null,
+          ),
+      });
+      const handle = yield* registry.resolveHandle({ cwd: "/repo" });
+      assert.strictEqual(handle.context?.remoteName, expected);
+    }),
 );
 
 it.effect("routes an unknown remote to the integration that claims its server", () =>

@@ -370,7 +370,12 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
                     SourceControlProvider.privateCompanionConfigKey(remote.name),
                   )
                   .pipe(
-                    Effect.map((value) => value !== "true"),
+                    Effect.map(
+                      (value) =>
+                        value === null ||
+                        sourceControlDefinitions.repositoryKeyFromRemote(value) !==
+                          sourceControlDefinitions.repositoryKeyFromRemote(remote.url),
+                    ),
                     Effect.orElseSucceed(() => true),
                   )
               : Effect.succeed(true),

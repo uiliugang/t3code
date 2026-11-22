@@ -1,7 +1,10 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Exercise Windows path semantics on any host.
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as NodePath from "node:path";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -68,8 +71,20 @@ describe("assertCheckoutIdle", () => {
     readonly repositoryRoot: string;
     readonly threads: ReadonlyArray<ReturnType<typeof thread>>;
     readonly failWorktreeLookup?: boolean;
+    readonly windows?: boolean;
   }) =>
     Layer.mergeAll(
+      input.windows
+        ? Layer.effect(
+            Path.Path,
+            Effect.map(Path.Path, (path) => ({
+              ...path,
+              sep: NodePath.win32.sep,
+              relative: NodePath.win32.relative,
+              isAbsolute: NodePath.win32.isAbsolute,
+            })),
+          ).pipe(Layer.provide(Path.layer))
+        : Path.layer,
       Layer.mock(GitWorkflowService.GitWorkflowService)({
         repositoryRoot: (cwd) =>
           Effect.succeed(cwd.startsWith("/repo/child") ? "/repo/child" : input.repositoryRoot),
@@ -78,7 +93,12 @@ describe("assertCheckoutIdle", () => {
         snapshot: Effect.succeed({
           projects: [
             { id: projectId, workspaceRoot: "/repo" },
-            { id: nestedProjectId, workspaceRoot: "/repo/packages/app" },
+            {
+              id: nestedProjectId,
+              workspaceRoot: input.windows
+                ? String.raw`C:\repo\packages\app`
+                : "/repo/packages/app",
+            },
             { id: childRepositoryProjectId, workspaceRoot: "/repo/child" },
             { id: otherProjectId, workspaceRoot: "/other" },
           ],
@@ -175,6 +195,23 @@ describe("assertCheckoutIdle", () => {
       const failure = yield* assertCheckoutIdle("test", "/tasks/backend").pipe(
         Effect.result,
         Effect.provide(guardLayer({ repositoryRoot: "/tasks/backend", threads: [busy] })),
+      );
+      expect(failure._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("refuses to switch a Windows checkout shared by a busy nested project", () =>
+    Effect.gen(function* () {
+      const repositoryRoot = String.raw`C:\repo`;
+      const failure = yield* assertCheckoutIdle("test", repositoryRoot).pipe(
+        Effect.result,
+        Effect.provide(
+          guardLayer({
+            repositoryRoot,
+            threads: [thread("nested running", { projectId: nestedProjectId })],
+            windows: true,
+          }),
+        ),
       );
       expect(failure._tag).toBe("Failure");
     }),

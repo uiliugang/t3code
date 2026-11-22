@@ -4,6 +4,7 @@ import {
   type ProjectId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Path from "effect/Path";
 
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -50,6 +51,7 @@ export const assertCheckoutIdle = Effect.fn("sharedCheckoutGuard.assertCheckoutI
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
   const projectService = yield* ProjectService.ProjectService;
   const threadManagement = yield* ThreadManagementService.ThreadManagementService;
+  const path = yield* Path.Path;
   // `git checkout` from a subdirectory moves the whole checkout; records may hold either spelling.
   const root = yield* gitWorkflow.repositoryRoot(cwd).pipe(Effect.orElseSucceed(() => null));
   const checkoutPaths = [...new Set([cwd, ...(root === null ? [] : [root])])];
@@ -60,12 +62,16 @@ export const assertCheckoutIdle = Effect.fn("sharedCheckoutGuard.assertCheckoutI
   // A project rooted inside the checkout shares it, as in a monorepo package, unless it is its
   // own repository nested there.
   const nested = yield* Effect.forEach(
-    projects.filter(
-      ({ workspaceRoot }) =>
-        root !== null &&
-        !checkoutPaths.includes(workspaceRoot) &&
-        workspaceRoot.startsWith(`${root}/`),
-    ),
+    projects.filter(({ workspaceRoot }) => {
+      if (root === null || checkoutPaths.includes(workspaceRoot)) return false;
+      const relative = path.relative(root, workspaceRoot);
+      return (
+        relative !== "" &&
+        relative !== ".." &&
+        !relative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relative)
+      );
+    }),
     (project) =>
       gitWorkflow.repositoryRoot(project.workspaceRoot).pipe(
         Effect.map((projectRoot) => (projectRoot === root ? [project] : [])),

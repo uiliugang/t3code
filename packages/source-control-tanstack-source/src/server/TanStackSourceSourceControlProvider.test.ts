@@ -35,9 +35,10 @@ const PULL = {
 function checkout(options: {
   readonly recordedOwner: string | null;
   readonly isAncestor: boolean;
-  readonly pull?: Partial<typeof PULL> & { readonly visibility?: "private" };
+  readonly pull?: Partial<typeof PULL> & { readonly visibility?: "private" | "public" };
   readonly force?: boolean;
   readonly existingBranchRemote?: string;
+  readonly branchAppearsWhileFetching?: boolean;
 }) {
   const git: Array<string> = [];
   const config = new Map<string, string>(
@@ -67,7 +68,8 @@ function checkout(options: {
           () =>
             void git.push(`fetch ${input.remoteName} ${input.remoteBranch}:${input.localBranch}`),
         ),
-      fetchRemoteTrackingBranch: () => Effect.void,
+      fetchRemoteTrackingBranch: ({ remoteName, remoteBranch }) =>
+        Effect.sync(() => void git.push(`fetch tracking ${remoteName} ${remoteBranch}`)),
       setBranchUpstream: (input) =>
         Effect.sync(
           () => void git.push(`upstream ${input.branch} ${input.remoteName}/${input.remoteBranch}`),
@@ -81,7 +83,17 @@ function checkout(options: {
             ? ["main", "pr-42"]
             : ["main", "pr-42", "fix-thing"],
         ),
-      createBranch: (input) => Effect.sync(() => void git.push(`create ${input.branch}`)),
+      createBranch: (input) =>
+        options.branchAppearsWhileFetching
+          ? Effect.fail(
+              new GitCommandError({
+                operation: "createBranch",
+                command: "git",
+                cwd: input.cwd,
+                detail: "branch already exists",
+              }),
+            )
+          : Effect.sync(() => void git.push(`create ${input.branch}`)),
       switchRef: (input) =>
         Effect.sync(() => {
           git.push(`switch ${input.refName}`);
@@ -175,16 +187,14 @@ describe("TanStackSourceSourceControlProvider.checkoutChangeRequest", () => {
       const forced = checkout({ recordedOwner: null, isAncestor: true, pull, force: true });
       return Effect.gen(function* () {
         yield* forced.run;
-        assert.include(
-          forced.git,
-          "checkout --no-track -B fix-thing refs/remotes/acme/fix-thing --",
-        );
+        assert.include(forced.git, "create fix-thing");
         yield* run;
         assert.strictEqual(config.get("branch.fix-thing.pushRemote"), "acme");
         assert.deepStrictEqual(git, [
           `remote source ${REMOTE}`,
           `remote acme https://source.tanstack.com/@acme/${companion}.git`,
-          "fetch acme fix-thing:fix-thing",
+          "fetch tracking acme fix-thing",
+          "create fix-thing",
           "upstream fix-thing acme/fix-thing",
           "switch fix-thing",
         ]);
@@ -203,6 +213,35 @@ describe("TanStackSourceSourceControlProvider.checkoutChangeRequest", () => {
       const failure = yield* Effect.flip(run);
       assert.include(failure.detail, "fix-thing");
       assert.strictEqual(config.get("branch.fix-thing.remote"), "origin");
+      assert.isFalse(config.has("branch.fix-thing.pushRemote"));
+      assert.isFalse(git.some((command) => /^(checkout|switch|upstream) /u.test(command)));
+    });
+  });
+
+  it.effect("treats an explicitly public PR from a repository named .private as a fork", () => {
+    const { run, git, config } = checkout({
+      recordedOwner: "acme/web#42",
+      isAncestor: true,
+      pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "public" },
+    });
+    return Effect.gen(function* () {
+      yield* run;
+      assert.include(git, "fetch --no-tags origin +refs/pull/42/head:refs/remotes/origin/pull/42");
+      assert.isFalse(config.has("remote.acme.t3-private-pr-companion"));
+      assert.isFalse(config.has("branch.fix-thing.pushRemote"));
+    });
+  });
+
+  it.effect("does not overwrite a branch created during the companion fetch", () => {
+    const { run, git, config } = checkout({
+      recordedOwner: null,
+      isAncestor: true,
+      branchAppearsWhileFetching: true,
+      pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "private" },
+    });
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(run);
+      assert.strictEqual(result._tag, "Failure");
       assert.isFalse(config.has("branch.fix-thing.pushRemote"));
       assert.isFalse(git.some((command) => /^(checkout|switch|upstream) /u.test(command)));
     });
