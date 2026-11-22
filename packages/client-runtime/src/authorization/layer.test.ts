@@ -1167,6 +1167,55 @@ describe("RemoteEnvironmentAuthorization", () => {
       }),
   );
 
+  it.effect.each(["recovered", "different environment", "denied by relay"] as const)(
+    "handles a stale public endpoint that is %s",
+    (host) =>
+      Effect.gen(function* () {
+        const relayOnline = yield* Ref.make(false);
+        const recovered = host === "recovered";
+        const harness = yield* makeHarness({
+          initialToken: new TokenStore.RemoteDpopAccessToken({
+            ...persistedToken(),
+            endpointNeedsDiscovery: true,
+          }),
+          descriptor: () =>
+            Response.json(recovered ? DESCRIPTOR : { ...DESCRIPTOR, environmentId: "other-host" }),
+          beforeBootstrap:
+            host === "denied by relay"
+              ? Effect.fail(
+                  new ManagedRelay.ManagedRelayRequestFailedError({
+                    action: "connect relay environment",
+                    cause: "not allowed",
+                    status: 403,
+                  }),
+                )
+              : requireOnlineRelay(relayOnline),
+          responses: [websocketTicket("recovered")],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const input = { expectedEnvironmentId: ENVIRONMENT_ID };
+          if (recovered) {
+            const http = yield* remote.authorizeDpopHttp(input);
+            expect(http.httpBaseUrl).toBe(ENDPOINT.httpBaseUrl);
+            expect(http.httpAuthorization.accessToken).toBe("cached-access-token");
+            const socket = yield* remote.authorizeDpop(input);
+            expect(socket.socketUrl).toContain("wsTicket=recovered");
+          } else if (host === "denied by relay") {
+            expect(yield* remote.authorizeDpopHttp(input).pipe(Effect.flip)).toMatchObject({
+              httpStatus: 403,
+            });
+            expect(harness.fetch.calls).toHaveLength(0);
+          } else {
+            expect(yield* remote.authorizeDpop(input).pipe(Effect.flip)).toMatchObject({
+              reason: "configuration",
+            });
+            expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(0);
+          }
+        }).pipe(Effect.provide(harness.layer));
+      }),
+  );
+
   it.effect(
     "preserves the route and gateway status of a failed LAN ticket using a Connect credential",
     () =>

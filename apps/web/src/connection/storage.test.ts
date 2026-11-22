@@ -1,9 +1,16 @@
 import {
   ConnectionTransientError,
   PrimaryConnectionTarget,
+  RelayConnectionTarget,
 } from "@t3tools/client-runtime/connection";
+import { TokenStore } from "@t3tools/client-runtime/authorization";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { ConnectionCatalogDocument, Persistence } from "@t3tools/client-runtime/platform";
+import {
+  ConnectionCatalogDocument,
+  Persistence,
+  removeConnectionFromCatalog,
+  putRemoteDpopTokenInCatalog,
+} from "@t3tools/client-runtime/platform";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
@@ -46,6 +53,60 @@ describe("ConnectionStorage.makeCatalogStore", () => {
       expect(writes).toHaveLength(1);
       expect(decodeCatalog(writes[0]!)).toEqual(emptyCatalog);
     }),
+  );
+
+  it.effect.each(["before reading", "before committing"] as const)(
+    "keeps a deletion %s a stale endpoint update from another tab",
+    (when) =>
+      Effect.gen(function* () {
+        const environmentId = EnvironmentId.make("test-host");
+        const token = new TokenStore.RemoteDpopAccessToken({
+          environmentId,
+          label: "Remote",
+          accountId: "test-account",
+          dpopThumbprint: "test-device",
+          accessToken: "test-token",
+          expiresAtEpochMs: 10_000,
+          endpoint: {
+            providerKind: "cloudflare_tunnel",
+            httpBaseUrl: "https://test.example",
+            wsBaseUrl: "wss://test.example",
+          },
+        });
+        let raw = encodeCatalog({
+          ...emptyCatalog,
+          targets: [new RelayConnectionTarget({ environmentId, label: "Remote" })],
+          remoteDpopTokens: [token],
+        });
+        const backend = {
+          read: Effect.sync(() => raw),
+          write: (next: string) =>
+            Effect.sync(() => {
+              raw = next;
+            }),
+        };
+        const second = yield* ConnectionStorage.makeCatalogStore(backend);
+        const remove = second.update((doc) => removeConnectionFromCatalog(doc, environmentId));
+        const first = yield* ConnectionStorage.makeCatalogStore({
+          ...backend,
+          writeIfCurrent: (expected, next) =>
+            Effect.gen(function* () {
+              if (when === "before committing") yield* remove;
+              if (raw !== expected) return false;
+              yield* backend.write(next);
+              return true;
+            }),
+        });
+        yield* first.read;
+        if (when === "before reading") yield* remove;
+        const stale = new TokenStore.RemoteDpopAccessToken({
+          ...token,
+          endpointNeedsDiscovery: true,
+        });
+        yield* first.update((doc) => putRemoteDpopTokenInCatalog(doc, stale, token.accessToken));
+        expect(decodeCatalog(raw)).toEqual(emptyCatalog);
+        expect(yield* first.read).toEqual(emptyCatalog);
+      }),
   );
 
   it.effect("does not hide catalog read failures", () =>

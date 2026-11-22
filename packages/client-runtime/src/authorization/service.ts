@@ -460,6 +460,38 @@ export const make = Effect.gen(function* () {
       token.accessToken,
     );
 
+  const verifyCachedPublicEndpoint = Effect.fn(
+    "clientRuntime.connection.remote.verifyCachedPublicEndpoint",
+  )(function* (
+    token: TokenStore.RemoteDpopAccessToken,
+    identity: ClientCapabilities.CloudSessionIdentity,
+    unavailable: ConnectionAttemptError,
+  ) {
+    yield* assertSession(identity);
+    const descriptor = yield* fetchDescriptor(
+      token.endpoint.httpBaseUrl,
+      "relay",
+      CACHED_ENDPOINT_SOCKET_TIMEOUT_MS,
+    ).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
+    if (descriptor.environmentId !== token.environmentId) {
+      return yield* environmentMismatchError({
+        expected: token.environmentId,
+        actual: descriptor.environmentId,
+      });
+    }
+    const current = yield* tokenStore.get(token.environmentId);
+    if (
+      Option.isNone(current) ||
+      current.value.accessToken !== token.accessToken ||
+      current.value.endpoint.httpBaseUrl !== token.endpoint.httpBaseUrl ||
+      current.value.expiresAtEpochMs <=
+        (yield* Clock.currentTimeMillis) + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS
+    ) {
+      return yield* unavailable;
+    }
+    return { token: current.value, descriptor };
+  });
+
   const getDpopToken = Effect.fn("clientRuntime.connection.remote.getDpopToken")(function* (
     input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpopHttp"]>[0],
     expectedIdentity?: ClientCapabilities.CloudSessionIdentity,
@@ -481,6 +513,7 @@ export const make = Effect.gen(function* () {
       ),
       Effect.withSpan("environment.authorization.dpopKey.resolve"),
     );
+    let staleEndpoint: TokenStore.RemoteDpopAccessToken | undefined;
     const selected = yield* tokenLock.withPermits(1)(
       Effect.gen(function* () {
         yield* assertSession(identity);
@@ -496,17 +529,20 @@ export const make = Effect.gen(function* () {
           cached.value.dpopThumbprint === thumbprint &&
           cached.value.expiresAtEpochMs > now + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS &&
           cached.value.accessToken !== input.rejectedAccessToken &&
-          (input.directEndpoint !== undefined || !cached.value.endpointNeedsDiscovery) &&
           (owner?.accessToken !== cached.value.accessToken || owner.identity === identity)
         ) {
           tokenOwners.set(input.expectedEnvironmentId, {
             accessToken: cached.value.accessToken,
             identity,
           });
-          return {
-            issued: Effect.succeed<IssuedDpopToken>({ token: cached.value }),
-            fromCache: true,
-          };
+          if (input.directEndpoint !== undefined || !cached.value.endpointNeedsDiscovery) {
+            return {
+              issued: Effect.succeed<IssuedDpopToken>({ token: cached.value }),
+              fromCache: true,
+            };
+          }
+          // A socket that just confirmed the outage has already probed this endpoint.
+          if (expectedIdentity === undefined) staleEndpoint = cached.value;
         }
         if (input.rejectedAccessToken !== undefined) {
           yield* removeRejectedToken(input.expectedEnvironmentId, input.rejectedAccessToken);
@@ -576,7 +612,20 @@ export const make = Effect.gen(function* () {
     yield* Effect.annotateCurrentSpan({
       "connection.remote_token_cache": selected.fromCache ? "hit" : "miss",
     });
-    const issued = yield* selected.issued;
+    const fallback = staleEndpoint;
+    const issued = yield* fallback === undefined
+      ? selected.issued
+      : selected.issued.pipe(
+          Effect.catchIf(
+            (error) =>
+              error._tag === "ConnectionTransientError" &&
+              error.hop === "relay" &&
+              (error.reason === "timeout" ||
+                (error.reason === "relay-unavailable" &&
+                  (error.httpStatus === undefined || error.httpStatus >= 500))),
+            (error) => verifyCachedPublicEndpoint(fallback, identity, error),
+          ),
+        );
     yield* assertSession(identity);
     return { ...issued, fromCache: selected.fromCache, identity };
   });
