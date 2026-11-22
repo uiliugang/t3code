@@ -155,6 +155,21 @@ function isEndpointUnavailable(error: RemoteEnvironmentAuthError | ConnectionAtt
   );
 }
 
+function isDiscoveryUnavailable(error: ConnectionAttemptError) {
+  if (error._tag !== "ConnectionTransientError") return false;
+  const status = error.httpStatus;
+  if (error.reason === "network" && (error.hop === undefined || error.hop === "relay")) {
+    return (
+      status === undefined || status === 0 || status === 408 || status === 429 || status >= 500
+    );
+  }
+  return (
+    error.hop === "relay" &&
+    (error.reason === "timeout" ||
+      (error.reason === "relay-unavailable" && (status === undefined || status >= 500)))
+  );
+}
+
 function mapDpopSocketError(
   error: RemoteEnvironmentAuthError | ConnectionAttemptError,
   via: "relay" | "direct",
@@ -468,11 +483,9 @@ export const make = Effect.gen(function* () {
     unavailable: ConnectionAttemptError,
   ) {
     yield* assertSession(identity);
-    const descriptor = yield* fetchDescriptor(
-      token.endpoint.httpBaseUrl,
-      "relay",
-      CACHED_ENDPOINT_SOCKET_TIMEOUT_MS,
-    ).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
+    const descriptor = yield* fetchDescriptor(token.endpoint.httpBaseUrl, "relay").pipe(
+      Effect.provideService(HttpClient.HttpClient, httpClient),
+    );
     if (descriptor.environmentId !== token.environmentId) {
       return yield* environmentMismatchError({
         expected: token.environmentId,
@@ -616,14 +629,8 @@ export const make = Effect.gen(function* () {
     const issued = yield* fallback === undefined
       ? selected.issued
       : selected.issued.pipe(
-          Effect.catchIf(
-            (error) =>
-              error._tag === "ConnectionTransientError" &&
-              error.hop === "relay" &&
-              (error.reason === "timeout" ||
-                (error.reason === "relay-unavailable" &&
-                  (error.httpStatus === undefined || error.httpStatus >= 500))),
-            (error) => verifyCachedPublicEndpoint(fallback, identity, error),
+          Effect.catchIf(isDiscoveryUnavailable, (error) =>
+            verifyCachedPublicEndpoint(fallback, identity, error),
           ),
         );
     yield* assertSession(identity);
@@ -787,7 +794,9 @@ export const make = Effect.gen(function* () {
         retryCachedEndpoint
           ? ticket.pipe(
               Effect.catchIf(isGatewayError, () =>
-                assertSession(issued.identity).pipe(Effect.andThen(ticket)),
+                assertSession(issued.identity).pipe(
+                  Effect.andThen(createDpopSocketUrl(issued.token)),
+                ),
               ),
             )
           : ticket
@@ -797,12 +806,11 @@ export const make = Effect.gen(function* () {
         return Result.map(yield* socket, (socketUrl) => authorized(issued.token, socketUrl, known));
       }
       const httpBaseUrl = issued.token.endpoint.httpBaseUrl;
-      const readDescriptor = (timeoutMs?: number) =>
-        fetchRemoteEnvironmentDescriptor({
-          httpBaseUrl,
-          ...(timeoutMs === undefined ? {} : { timeoutMs }),
-        }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient), Effect.result);
-      const reading = yield* readDescriptor().pipe(Effect.forkChild);
+      const readDescriptor = fetchRemoteEnvironmentDescriptor({ httpBaseUrl }).pipe(
+        Effect.provideService(HttpClient.HttpClient, httpClient),
+        Effect.result,
+      );
+      const reading = yield* readDescriptor.pipe(Effect.forkChild);
       const opened = yield* socket;
       if (Result.isFailure(opened)) {
         yield* Fiber.interrupt(reading);
@@ -815,7 +823,7 @@ export const make = Effect.gen(function* () {
         isGatewayError(descriptor.failure)
       ) {
         yield* assertSession(issued.identity);
-        descriptor = yield* readDescriptor(timeoutMs);
+        descriptor = yield* readDescriptor;
         if (Result.isFailure(descriptor) && isGatewayError(descriptor.failure)) {
           return Result.fail(descriptor.failure);
         }
@@ -872,6 +880,14 @@ export const make = Effect.gen(function* () {
       return yield* mapDpopSocketError(socket.failure, via);
     }
     yield* assertSession(selected.identity);
+    if (endpoint === undefined && selected.token.endpointNeedsDiscovery) {
+      const { endpointNeedsDiscovery: _stale, ...verified } = selected.token;
+      // A confirmed ticket is usable even if persisting this cache hint fails.
+      yield* tokenStore
+        .put(new TokenStore.RemoteDpopAccessToken(verified), verified.accessToken)
+        .pipe(Effect.ignore);
+      yield* assertSession(selected.identity);
+    }
     return socket.success;
   });
 

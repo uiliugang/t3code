@@ -191,6 +191,34 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
   }
 }
 
+export function mapCloudSessionTokenError(error: {
+  readonly message: string;
+  readonly cause?: unknown;
+}): ConnectionAttemptError {
+  const cause = error.cause;
+  const status =
+    typeof cause === "object" &&
+    cause !== null &&
+    "status" in cause &&
+    typeof cause.status === "number"
+      ? cause.status
+      : undefined;
+  if (status === 401 || status === 403) {
+    return new ConnectionBlockedError({
+      reason: "authentication",
+      hop: "relay",
+      ...detailFromError(error),
+      httpStatus: status,
+    });
+  }
+  return new ConnectionTransientError({
+    reason: "network",
+    hop: "relay",
+    ...detailFromError(error),
+    ...(status === undefined ? {} : { httpStatus: status }),
+  });
+}
+
 export function mapManagedRelayError(error: ManagedRelayClientError): ConnectionAttemptError {
   switch (error._tag) {
     case "ManagedRelayRequestFailedError":

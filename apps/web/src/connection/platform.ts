@@ -10,6 +10,7 @@ import {
   BearerConnectionRegistration,
   BearerConnectionTarget,
   ConnectionBlockedError,
+  mapCloudSessionTokenError,
   type ConnectionAttemptError,
   ConnectionTransientError,
   Connectivity,
@@ -380,15 +381,9 @@ const layerCapabilities = Layer.effectContext(
             detail: m(msg("Sign in to T3 Connect to connect this environment.")),
           });
         }
-        const token = yield* session.readClerkToken().pipe(
-          Effect.mapError(
-            (error) =>
-              new ConnectionTransientError({
-                reason: "network",
-                detail: error.message,
-              }),
-          ),
-        );
+        const token = yield* session
+          .readClerkToken()
+          .pipe(Effect.mapError(mapCloudSessionTokenError));
         if (token === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",

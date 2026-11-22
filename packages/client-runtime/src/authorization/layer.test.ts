@@ -16,6 +16,7 @@ import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ManagedRelay from "../relay/managedRelay.ts";
+import { mintMediaTicket } from "../state/deviceHubAccess.ts";
 import { fetchEnvironmentSessionState } from "../state/session.ts";
 import * as RpcHttp from "../rpc/http.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
@@ -28,7 +29,11 @@ import {
   DpopConnectionCredential,
 } from "../connection/catalog.ts";
 import * as ConnectionCredentialStore from "../connection/credentialStore.ts";
-import { BearerConnectionTarget } from "../connection/model.ts";
+import {
+  BearerConnectionTarget,
+  RelayConnectionTarget,
+  ConnectionTransientError,
+} from "../connection/model.ts";
 import * as ConnectionProfileStore from "../connection/profileStore.ts";
 import * as ConnectionResolver from "../connection/resolver.ts";
 
@@ -59,7 +64,7 @@ const BOOTSTRAP: RelayEnvironmentConnectResponse = {
 
 type RecordedResponse = Response | ((init: RequestInit) => Response | Promise<Response>);
 
-type DescriptorFixture = typeof DESCRIPTOR | (() => Response);
+type DescriptorFixture = typeof DESCRIPTOR | (() => Response | Promise<Response>);
 
 function recordedFetch(responses: ReadonlyArray<RecordedResponse>, descriptor?: DescriptorFixture) {
   const calls: Array<readonly [RequestInfo | URL, RequestInit]> = [];
@@ -1167,52 +1172,125 @@ describe("RemoteEnvironmentAuthorization", () => {
       }),
   );
 
-  it.effect.each(["recovered", "different environment", "denied by relay"] as const)(
-    "handles a stale public endpoint that is %s",
-    (host) =>
+  it.effect.each([
+    "recovered",
+    "different environment",
+    "denied by relay",
+    "offline at sign-in",
+  ] as const)("handles a stale public endpoint that is %s", (host) =>
+    Effect.gen(function* () {
+      const relayOnline = yield* Ref.make(false);
+      const recovered = host === "recovered" || host === "offline at sign-in";
+      const harness = yield* makeHarness({
+        initialToken: new TokenStore.RemoteDpopAccessToken({
+          ...persistedToken(),
+          endpointNeedsDiscovery: true,
+        }),
+        descriptor: () =>
+          Response.json(recovered ? DESCRIPTOR : { ...DESCRIPTOR, environmentId: "other-host" }),
+        ...(host === "offline at sign-in"
+          ? {
+              clerkToken: Effect.fail(
+                new ConnectionTransientError({
+                  reason: "network",
+                  detail: "Sign-in service unavailable",
+                }),
+              ),
+            }
+          : {}),
+        beforeBootstrap:
+          host === "denied by relay"
+            ? Effect.fail(
+                new ManagedRelay.ManagedRelayRequestFailedError({
+                  action: "connect relay environment",
+                  cause: "not allowed",
+                  status: 403,
+                }),
+              )
+            : requireOnlineRelay(relayOnline),
+        responses: [websocketTicket("recovered"), websocketTicket("media")],
+      });
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        const input = { expectedEnvironmentId: ENVIRONMENT_ID };
+        if (recovered) {
+          const http = yield* remote.authorizeDpopHttp(input);
+          expect(http.httpBaseUrl).toBe(ENDPOINT.httpBaseUrl);
+          expect(http.httpAuthorization.accessToken).toBe("cached-access-token");
+          const socket = yield* remote.authorizeDpop(input);
+          expect(socket.socketUrl).toContain("wsTicket=recovered");
+          const discoveries = yield* Ref.get(harness.bootstrapCalls);
+          yield* mintMediaTicket({
+            ...socket,
+            target: new RelayConnectionTarget({
+              environmentId: ENVIRONMENT_ID,
+              label: socket.label,
+            }),
+          });
+          expect(requestsTo(harness, "/api/auth/websocket-ticket/media")).toBe(1);
+          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(discoveries);
+        } else if (host === "denied by relay") {
+          expect(yield* remote.authorizeDpopHttp(input).pipe(Effect.flip)).toMatchObject({
+            httpStatus: 403,
+          });
+          expect(harness.fetch.calls).toHaveLength(0);
+        } else {
+          expect(yield* remote.authorizeDpop(input).pipe(Effect.flip)).toMatchObject({
+            reason: "configuration",
+          });
+          expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(0);
+        }
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect.each(["descriptor after rediscovery", "descriptor retry", "ticket retry"] as const)(
+    "gives the public %s its normal request deadline",
+    (phase) =>
       Effect.gen(function* () {
-        const relayOnline = yield* Ref.make(false);
-        const recovered = host === "recovered";
+        const started = Promise.withResolvers<void>();
+        const response = Promise.withResolvers<Response>();
+        const online = yield* Ref.make(false);
+        let reads = 0;
         const harness = yield* makeHarness({
           initialToken: new TokenStore.RemoteDpopAccessToken({
             ...persistedToken(),
-            endpointNeedsDiscovery: true,
+            ...(phase === "descriptor after rediscovery"
+              ? { endpointNeedsDiscovery: true as const }
+              : {}),
           }),
-          descriptor: () =>
-            Response.json(recovered ? DESCRIPTOR : { ...DESCRIPTOR, environmentId: "other-host" }),
-          beforeBootstrap:
-            host === "denied by relay"
-              ? Effect.fail(
-                  new ManagedRelay.ManagedRelayRequestFailedError({
-                    action: "connect relay environment",
-                    cause: "not allowed",
-                    status: 403,
-                  }),
-                )
-              : requireOnlineRelay(relayOnline),
-          responses: [websocketTicket("recovered")],
+          beforeBootstrap: requireOnlineRelay(online),
+          descriptor: () => {
+            if (phase === "ticket retry") return Response.json(DESCRIPTOR);
+            if (++reads === 1 && phase === "descriptor retry")
+              return new Response(null, { status: 502 });
+            started.resolve();
+            return response.promise;
+          },
+          responses:
+            phase === "ticket retry"
+              ? [
+                  new Response(null, { status: 502 }),
+                  () => {
+                    started.resolve();
+                    return response.promise;
+                  },
+                ]
+              : [websocketTicket("slow-host")],
         });
-        yield* Effect.gen(function* () {
+        const socket = yield* Effect.gen(function* () {
           const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
-          const input = { expectedEnvironmentId: ENVIRONMENT_ID };
-          if (recovered) {
-            const http = yield* remote.authorizeDpopHttp(input);
-            expect(http.httpBaseUrl).toBe(ENDPOINT.httpBaseUrl);
-            expect(http.httpAuthorization.accessToken).toBe("cached-access-token");
-            const socket = yield* remote.authorizeDpop(input);
-            expect(socket.socketUrl).toContain("wsTicket=recovered");
-          } else if (host === "denied by relay") {
-            expect(yield* remote.authorizeDpopHttp(input).pipe(Effect.flip)).toMatchObject({
-              httpStatus: 403,
-            });
-            expect(harness.fetch.calls).toHaveLength(0);
-          } else {
-            expect(yield* remote.authorizeDpop(input).pipe(Effect.flip)).toMatchObject({
-              reason: "configuration",
-            });
-            expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(0);
-          }
+          const attempt = yield* remote
+            .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+            .pipe(Effect.forkChild);
+          yield* Effect.promise(() => started.promise);
+          yield* TestClock.adjust("3500 millis");
+          response.resolve(
+            phase === "ticket retry" ? websocketTicket("slow-host") : Response.json(DESCRIPTOR),
+          );
+          return yield* Fiber.join(attempt);
         }).pipe(Effect.provide(harness.layer));
+        expect(socket.socketUrl).toContain("wsTicket=slow-host");
       }),
   );
 

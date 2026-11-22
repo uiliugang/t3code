@@ -1,6 +1,7 @@
 import { ClientCapabilities, PlatformConnectionSource } from "@t3tools/client-runtime/platform";
 import {
   ConnectionBlockedError,
+  mapCloudSessionTokenError,
   ConnectionTransientError,
   Connectivity,
   Wakeups,
@@ -165,15 +166,9 @@ const layerCapabilities = Layer.effectContext(
               ),
             });
           }
-          const token = yield* session.readClerkToken().pipe(
-            Effect.mapError(
-              (error) =>
-                new ConnectionTransientError({
-                  reason: "network",
-                  detail: error.message,
-                }),
-            ),
-          );
+          const token = yield* session
+            .readClerkToken()
+            .pipe(Effect.mapError(mapCloudSessionTokenError));
           if (token === null) {
             return yield* new ConnectionBlockedError({
               reason: "authentication",
