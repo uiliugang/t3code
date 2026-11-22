@@ -2,7 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeNet from "node:net";
 
-import { T3_CONNECT_TROUBLESHOOTING_SECTIONS } from "@t3tools/contracts";
+import { EnvironmentId, T3_CONNECT_TROUBLESHOOTING_SECTIONS } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -18,6 +18,7 @@ import { ChildProcessSpawner } from "effect/process";
 import { vi } from "vite-plus/test";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ConnectReachability from "./ConnectReachability.ts";
 import { classifyReachability, type ReachabilityFacts } from "./ConnectReachability.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
@@ -31,6 +32,13 @@ const connected = {
   hostname: "env.example.test",
   origin: null,
   protocol: "quic",
+};
+const descriptor = {
+  environmentId: EnvironmentId.make("local-environment"),
+  label: "Local",
+  platform: { os: "linux", arch: "x64" },
+  serverVersion: "0.0.0-test",
+  capabilities: { repositoryIdentity: true },
 };
 const notConnected = { pid: 1, readyConnections: 0, hostname: null, origin: null, protocol: null };
 const facts = (overrides: Partial<ReachabilityFacts>): ReachabilityFacts => ({
@@ -46,7 +54,7 @@ const facts = (overrides: Partial<ReachabilityFacts>): ReachabilityFacts => ({
 describe("classifyReachability", () => {
   it.each([
     [{ kind: "status", status: 502 }, "unexpected_response"],
-    [{ kind: "status", status: 530 }, "no_connector"],
+    [{ kind: "status", status: 530 }, "unexpected_response"],
     [{ kind: "status", status: 530, cloudflareError: "1033" }, "no_connector"],
     [{ kind: "status", status: 530, cloudflareError: "1016" }, "dns_failed"],
     [{ kind: "status", status: 530, cloudflareError: "1001" }, "unexpected_response"],
@@ -116,14 +124,21 @@ describe("classifyReachability", () => {
 
 interface ServedResponse {
   readonly status: number;
-  readonly body: string | ReadableStream<Uint8Array> | { readonly cloudflareError: number };
+  readonly body: string | null | ReadableStream<Uint8Array> | { readonly cloudflareError: number };
 }
 
+const connectorResponse = (status: number): ServedResponse => ({
+  status,
+  body: status === 200 ? JSON.stringify(descriptor) : { cloudflareError: 1033 },
+});
+
 // What Cloudflare serves for its 530 page: HTML unless the client accepts JSON.
+const cloudflareHtmlError = (code: number) =>
+  `<h1><span data-translate="error">Error</span>\n<span>${code}</span></h1>`;
 const cloudflareErrorPage = (request: HttpClientRequest.HttpClientRequest, code: number) =>
   request.headers.accept === "application/json"
     ? JSON.stringify({ status: 530, error_code: code, error_name: "tunnel_error" })
-    : `<!doctype html><h1><span>Error</span> <span>${code}</span></h1>`;
+    : cloudflareHtmlError(code);
 
 type Served = Effect.Effect<ServedResponse, HttpClientError.HttpClientError>;
 
@@ -140,6 +155,9 @@ const reachabilityLayer = (
           readinessChanged: Stream.never,
           restartConnector,
         }),
+        Layer.mock(ServerEnvironment.ServerEnvironment)({
+          getEnvironmentId: Effect.succeed(descriptor.environmentId),
+        }),
         Layer.mock(ServerSecretStore.ServerSecretStore)({
           get: () => Effect.succeedSome(new Uint8Array()),
         }),
@@ -151,7 +169,7 @@ const reachabilityLayer = (
                 HttpClientResponse.fromWeb(
                   request,
                   new Response(
-                    typeof body === "object" && "cloudflareError" in body
+                    body !== null && typeof body === "object" && "cloudflareError" in body
                       ? cloudflareErrorPage(request, body.cloudflareError)
                       : body,
                     { status },
@@ -177,6 +195,47 @@ const mockEdgeConnect = () =>
   });
 
 describe("ConnectReachability stale connector recovery", () => {
+  it.effect.each([
+    {
+      name: "an interrupted response",
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(new Error("connection reset"));
+        },
+      }),
+      cause: "timeout",
+    },
+    { name: "an empty response", body: null },
+    { name: "a proxy login page", body: "<html>Sign in</html>" },
+    {
+      name: "an incomplete descriptor",
+      body: JSON.stringify({ environmentId: descriptor.environmentId }),
+    },
+    {
+      name: "another environment",
+      body: JSON.stringify({ ...descriptor, environmentId: "other-environment" }),
+    },
+    {
+      name: "an oversized descriptor",
+      body: JSON.stringify({ ...descriptor, label: "x".repeat(256 * 1024) }),
+    },
+  ])("rejects HTTP 200 from $name", ({ body, cause }) =>
+    Effect.gen(function* () {
+      using _connect = mockEdgeConnect();
+      const result = yield* ConnectReachability.ConnectReachability.use(
+        (service) => service.check,
+      ).pipe(
+        Effect.provide(
+          reachabilityLayer(Effect.succeed({ status: 200, body }), () => Effect.succeed(false)),
+        ),
+      );
+      expect(result).toMatchObject({
+        status: "unreachable",
+        cause: cause ?? "unexpected_response",
+      });
+    }),
+  );
+
   it.effect("checks the configured loopback port before blaming the origin for a 502", () =>
     Effect.gen(function* () {
       const refused = Object.assign(new Error("connection refused"), { code: "ECONNREFUSED" });
@@ -241,7 +300,7 @@ describe("ConnectReachability stale connector recovery", () => {
       const restarts = yield* Queue.unbounded<number>();
       // Cloudflare answers 530 while cloudflared still reports four ready connections.
       let status = 530;
-      let body = { cloudflareError: 1033 };
+      let body: ServedResponse["body"] = { cloudflareError: 1033 };
       const layer = reachabilityLayer(
         Effect.sync(() => ({ status, body })),
         (pid, stillDead) =>
@@ -259,7 +318,8 @@ describe("ConnectReachability stale connector recovery", () => {
         expect(yield* Queue.take(restarts)).toBe(connected.pid);
 
         // A restart that did not help doubles the wait.
-        yield* reachability.check;
+        body = cloudflareHtmlError(1033);
+        expect(yield* reachability.check).toMatchObject({ cause: "no_connector" });
         yield* TestClock.adjust(Duration.minutes(2));
         expect(yield* Queue.size(restarts)).toBe(0);
         yield* TestClock.adjust(Duration.minutes(2));
@@ -267,14 +327,20 @@ describe("ConnectReachability stale connector recovery", () => {
 
         // Reaching the endpoint resets the wait, and a 530 for a broken DNS record is left alone.
         status = 200;
+        body = JSON.stringify(descriptor);
         expect(yield* reachability.check).toMatchObject({ status: "reachable" });
         status = 530;
-        body = { cloudflareError: 1016 };
+        body = cloudflareHtmlError(1016);
         expect(yield* reachability.check).toMatchObject({ cause: "dns_failed" });
         yield* TestClock.adjust(Duration.minutes(2));
         expect(yield* Queue.size(restarts)).toBe(0);
 
-        body = { cloudflareError: 1033 };
+        body = "Unclassified gateway error";
+        expect(yield* reachability.check).toMatchObject({ cause: "unexpected_response" });
+        yield* TestClock.adjust(Duration.minutes(2));
+        expect(yield* Queue.size(restarts)).toBe(0);
+
+        body = "error code: 1033";
         yield* reachability.check;
         yield* TestClock.adjust(Duration.minutes(2));
         expect(yield* Queue.take(restarts)).toBe(connected.pid);
@@ -296,7 +362,7 @@ describe("ConnectReachability stale connector recovery", () => {
             yield* Deferred.succeed(healthyRequested, undefined);
             yield* Deferred.await(healthyAnswer);
           }
-          return { status: served, body: { cloudflareError: 1033 } };
+          return connectorResponse(served);
         }),
         (_pid, stillDead) =>
           stillDead.pipe(
@@ -350,7 +416,7 @@ describe("ConnectReachability stale connector recovery", () => {
             yield* Deferred.succeed(healthyRequested, undefined);
             yield* Deferred.await(healthyAnswer);
           }
-          return { status: served, body: { cloudflareError: 1033 } };
+          return connectorResponse(served);
         }),
         (_pid, stillDead) =>
           Effect.gen(function* () {
@@ -396,7 +462,7 @@ describe("ConnectReachability stale connector recovery", () => {
       const layer = reachabilityLayer(
         Effect.sync(() => {
           requests += 1;
-          return { status, body: { cloudflareError: 1033 } };
+          return connectorResponse(status);
         }),
         (pid, stillDead) =>
           stillDead.pipe(Effect.tap((dead) => (dead ? Queue.offer(restarts, pid) : Effect.void))),
@@ -419,7 +485,10 @@ describe("ConnectReachability stale connector recovery", () => {
     }),
   );
 
-  it.effect("keeps a 530 whose error body never finishes", () =>
+  it.effect.each([
+    { status: 200, seconds: 10, cause: "timeout" },
+    { status: 530, seconds: 2, cause: "unexpected_response" },
+  ])("bounds a stalled HTTP $status body", ({ status, seconds, cause }) =>
     Effect.gen(function* () {
       using _connect = mockEdgeConnect();
       let markBodyRead = () => {};
@@ -428,7 +497,7 @@ describe("ConnectReachability stale connector recovery", () => {
       });
       const layer = reachabilityLayer(
         Effect.sync(() => ({
-          status: 530,
+          status,
           body: new ReadableStream({
             pull: () => {
               markBodyRead();
@@ -442,8 +511,8 @@ describe("ConnectReachability stale connector recovery", () => {
         const reachability = yield* ConnectReachability.ConnectReachability;
         const check = yield* Effect.forkChild(reachability.check);
         yield* Effect.promise(() => bodyRead);
-        yield* TestClock.adjust(Duration.seconds(2));
-        expect(yield* Fiber.join(check)).toMatchObject({ cause: "no_connector" });
+        yield* TestClock.adjust(Duration.seconds(seconds));
+        expect(yield* Fiber.join(check)).toMatchObject({ cause });
       }).pipe(Effect.provide(layer));
     }),
   );
