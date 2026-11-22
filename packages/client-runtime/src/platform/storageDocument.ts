@@ -198,12 +198,21 @@ export function setConnectionEnabledInCatalog(
 export function putRemoteDpopTokenInCatalog(
   document: ConnectionCatalogDocument,
   token: TokenStore.RemoteDpopAccessToken,
+  ifCurrentAccessToken?: string,
 ): ConnectionCatalogDocument {
   const registered = document.targets.some(
     (target) =>
       target._tag === "RelayConnectionTarget" && target.environmentId === token.environmentId,
   );
-  if (!registered) {
+  if (
+    !registered ||
+    (ifCurrentAccessToken !== undefined &&
+      !document.remoteDpopTokens.some(
+        (current) =>
+          current.environmentId === token.environmentId &&
+          current.accessToken === ifCurrentAccessToken,
+      ))
+  ) {
     return document;
   }
   return {

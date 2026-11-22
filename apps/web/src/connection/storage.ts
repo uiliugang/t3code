@@ -857,7 +857,10 @@ export const layer = Layer.effectContext(
             ),
           ),
         ),
-      put: (token) => catalog.update((document) => putRemoteDpopTokenInCatalog(document, token)),
+      put: (token, ifCurrentAccessToken) =>
+        catalog.update((document) =>
+          putRemoteDpopTokenInCatalog(document, token, ifCurrentAccessToken),
+        ),
       remove: (environmentId) =>
         catalog.update((document) => ({
           ...document,

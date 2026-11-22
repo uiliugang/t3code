@@ -106,6 +106,7 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
     readonly authorizeDpopHttp: (input: {
       readonly expectedEnvironmentId: EnvironmentId;
       readonly rejectedAccessToken?: string;
+      readonly directEndpoint?: { readonly httpBaseUrl: string };
     }) => Effect.Effect<AuthorizedRemoteHttpEnvironment, ConnectionAttemptError>;
     /**
      * Lets the next direct authorization of this address skip its own descriptor
@@ -143,6 +144,14 @@ interface IssuedDpopToken {
 function isGatewayError(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
   return (
     error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" && isGatewayStatus(error.status)
+  );
+}
+
+function isEndpointUnavailable(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
+  return (
+    isGatewayError(error) ||
+    error._tag === "RemoteEnvironmentAuthFetchError" ||
+    error._tag === "RemoteEnvironmentAuthTimeoutError"
   );
 }
 
@@ -445,15 +454,23 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const markEndpointStale = (token: TokenStore.RemoteDpopAccessToken) =>
+    tokenStore.put(
+      new TokenStore.RemoteDpopAccessToken({ ...token, endpointNeedsDiscovery: true }),
+      token.accessToken,
+    );
+
   const getDpopToken = Effect.fn("clientRuntime.connection.remote.getDpopToken")(function* (
     input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeDpopHttp"]>[0],
-    bypassAccessToken = input.rejectedAccessToken,
+    expectedIdentity?: ClientCapabilities.CloudSessionIdentity,
   ) {
     const session = yield* cloudSession.identity;
     if (Option.isNone(session)) {
       return yield* sessionPending();
     }
     const identity = session.value;
+    if (expectedIdentity !== undefined && identity !== expectedIdentity)
+      return yield* sessionChanged();
     const thumbprint = yield* signer.thumbprint.pipe(
       Effect.mapError(
         () =>
@@ -478,7 +495,8 @@ export const make = Effect.gen(function* () {
           cached.value.accountId === identity.accountId &&
           cached.value.dpopThumbprint === thumbprint &&
           cached.value.expiresAtEpochMs > now + DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS &&
-          cached.value.accessToken !== bypassAccessToken &&
+          cached.value.accessToken !== input.rejectedAccessToken &&
+          (input.directEndpoint !== undefined || !cached.value.endpointNeedsDiscovery) &&
           (owner?.accessToken !== cached.value.accessToken || owner.identity === identity)
         ) {
           tokenOwners.set(input.expectedEnvironmentId, {
@@ -756,6 +774,12 @@ export const make = Effect.gen(function* () {
       if (Result.isFailure(descriptor)) {
         return yield* mapRemoteEnvironmentError(descriptor.failure, "relay");
       }
+      if (descriptor.success.environmentId !== input.expectedEnvironmentId) {
+        return yield* environmentMismatchError({
+          expected: input.expectedEnvironmentId,
+          actual: descriptor.success.environmentId,
+        });
+      }
       return Result.succeed(authorized(issued.token, opened.success, descriptor.success));
     });
     if (selected.fromCache) {
@@ -774,17 +798,24 @@ export const make = Effect.gen(function* () {
       }
       yield* assertSession(selected.identity);
       // A gateway failure can make the endpoint stale while the credential still works over LAN.
-      const accessToken = selected.token.accessToken;
-      selected = yield* getDpopToken(
-        isGatewayError(cachedSocket.failure)
-          ? input
-          : { ...input, rejectedAccessToken: accessToken },
-        accessToken,
-      );
+      if (isEndpointUnavailable(cachedSocket.failure)) {
+        yield* markEndpointStale(selected.token);
+        selected = yield* getDpopToken(input, selected.identity);
+      } else {
+        selected = yield* getDpopToken(
+          {
+            ...input,
+            rejectedAccessToken: selected.token.accessToken,
+          },
+          selected.identity,
+        );
+      }
     }
     const socket = yield* openSocket(selected);
     if (Result.isFailure(socket)) {
-      if (endpoint === undefined || socket.failure._tag === "ConnectionBlockedError") {
+      if (endpoint === undefined && isEndpointUnavailable(socket.failure)) {
+        yield* markEndpointStale(selected.token);
+      } else if (endpoint === undefined || socket.failure._tag === "ConnectionBlockedError") {
         yield* tokenLock.withPermits(1)(
           removeRejectedToken(input.expectedEnvironmentId, selected.token.accessToken),
         );
@@ -821,7 +852,7 @@ export const make = Effect.gen(function* () {
     // The relay tracer must wrap span creation, not just the token request.
     authorizeDpopHttp: Effect.fnUntraced(function* (input) {
       return yield* getDpopToken(input).pipe(
-        Effect.map(({ token }) => httpAuthorization(token)),
+        Effect.map(({ token }) => httpAuthorization(token, input.directEndpoint?.httpBaseUrl)),
         Effect.withSpan("environment.authorization.http"),
         withRelayClientTracing,
       );

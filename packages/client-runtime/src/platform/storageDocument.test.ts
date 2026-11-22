@@ -246,10 +246,22 @@ describe("ConnectionCatalogDocument", () => {
       new RelayConnectionRegistration({ target: RELAY_TARGET }),
     );
 
-    expect(putRemoteDpopTokenInCatalog(registered, REMOTE_TOKEN)).toEqual({
+    const stored = putRemoteDpopTokenInCatalog(registered, REMOTE_TOKEN);
+    expect(stored).toEqual({
       ...registered,
       remoteDpopTokens: [REMOTE_TOKEN],
     });
+    const stale = new TokenStore.RemoteDpopAccessToken({
+      ...REMOTE_TOKEN,
+      endpointNeedsDiscovery: true,
+    });
+    expect(putRemoteDpopTokenInCatalog(registered, stale, REMOTE_TOKEN.accessToken)).toBe(
+      registered,
+    );
+    expect(putRemoteDpopTokenInCatalog(stored, stale, "superseded-token")).toBe(stored);
+    expect(
+      putRemoteDpopTokenInCatalog(stored, stale, REMOTE_TOKEN.accessToken).remoteDpopTokens,
+    ).toEqual([stale]);
   });
 
   it("ignores a late DPoP token after the environment is removed", () => {

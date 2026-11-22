@@ -15,6 +15,7 @@ export class RemoteDpopAccessToken extends Schema.Class<
   accountId: Schema.optionalKey(Schema.String),
   label: Schema.String,
   endpoint: RelayManagedEndpoint,
+  endpointNeedsDiscovery: Schema.optionalKey(Schema.Literal(true)),
   accessToken: Schema.String,
   expiresAtEpochMs: Schema.Number,
   dpopThumbprint: Schema.String,
@@ -26,7 +27,10 @@ export class RemoteDpopAccessTokenStore extends Context.Service<
     readonly get: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<Option.Option<RemoteDpopAccessToken>, ConnectionAttemptError>;
-    readonly put: (token: RemoteDpopAccessToken) => Effect.Effect<void, ConnectionAttemptError>;
+    readonly put: (
+      token: RemoteDpopAccessToken,
+      ifCurrentAccessToken?: string,
+    ) => Effect.Effect<void, ConnectionAttemptError>;
     readonly remove: (environmentId: EnvironmentId) => Effect.Effect<void, ConnectionAttemptError>;
   }
 >()("@t3tools/client-runtime/authorization/tokenStore/RemoteDpopAccessTokenStore") {}

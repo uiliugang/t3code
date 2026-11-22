@@ -16,6 +16,7 @@ import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ManagedRelay from "../relay/managedRelay.ts";
+import { fetchEnvironmentSessionState } from "../state/session.ts";
 import * as RpcHttp from "../rpc/http.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "./service.ts";
@@ -122,6 +123,20 @@ const persistedToken = (
     dpopThumbprint: input.dpopThumbprint ?? "thumbprint-1",
   });
 
+const requireOnlineRelay = (online: Ref.Ref<boolean>) =>
+  Ref.get(online).pipe(
+    Effect.filterOrFail(
+      (available) => available,
+      () =>
+        new ManagedRelay.ManagedRelayRequestFailedError({
+          action: "connect relay environment",
+          cause: "offline",
+          transportFailed: true,
+        }),
+    ),
+    Effect.asVoid,
+  );
+
 const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (input: {
   readonly initialToken?: TokenStore.RemoteDpopAccessToken;
   readonly responses: ReadonlyArray<RecordedResponse>;
@@ -164,10 +179,15 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
         Effect.map((current) => Option.fromUndefinedOr(current.get(environmentId))),
         Effect.tap(() => Queue.offer(tokenReads, environmentId)),
       ),
-    put: (token) =>
+    put: (token, ifCurrentAccessToken) =>
       (input.beforePut ?? Effect.void).pipe(
         Effect.andThen(
           Ref.update(tokens, (current) => {
+            if (
+              ifCurrentAccessToken !== undefined &&
+              current.get(token.environmentId)?.accessToken !== ifCurrentAccessToken
+            )
+              return current;
             const next = new Map(current);
             next.set(token.environmentId, token);
             return next;
@@ -1010,6 +1030,24 @@ describe("RemoteEnvironmentAuthorization", () => {
       }),
   );
 
+  it.effect("rejects a different environment returned by a retried public descriptor", () =>
+    Effect.gen(function* () {
+      let reads = 0;
+      const harness = yield* makeHarness({
+        initialToken: persistedToken(),
+        descriptor: () =>
+          ++reads === 1
+            ? new Response(null, { status: 502 })
+            : Response.json({ ...DESCRIPTOR, environmentId: "another-host" }),
+        responses: [websocketTicket("public")],
+      });
+      const error = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+        (remote) => remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }),
+      ).pipe(Effect.provide(harness.layer), Effect.flip);
+      expect(error).toMatchObject({ _tag: "ConnectionBlockedError", reason: "configuration" });
+    }),
+  );
+
   it.effect.each(["ticket", "descriptor"] as const)(
     "refreshes a cached endpoint after repeated %s gateway failures",
     (failedRequest) =>
@@ -1055,10 +1093,16 @@ describe("RemoteEnvironmentAuthorization", () => {
   );
 
   it.effect.each(["ticket", "descriptor"] as const)(
-    "keeps the credential for LAN access if %s rediscovery is offline",
+    "keeps LAN access and rediscovers the public endpoint after offline %s rediscovery",
     (failedRequest) =>
       Effect.gen(function* () {
         let reads = 0;
+        const relayOnline = yield* Ref.make(false);
+        const newEndpoint = {
+          ...ENDPOINT,
+          httpBaseUrl: "https://new.example.test",
+          wsBaseUrl: "wss://new.example.test",
+        };
         const harness = yield* makeHarness({
           initialToken: persistedToken(),
           descriptor: () =>
@@ -1070,14 +1114,21 @@ describe("RemoteEnvironmentAuthorization", () => {
               ? [new Response(null, { status: 502 }), new Response(null, { status: 503 })]
               : [websocketTicket("public")]),
             websocketTicket("lan"),
-          ],
-          beforeBootstrap: Effect.fail(
-            new ManagedRelay.ManagedRelayRequestFailedError({
-              action: "connect relay environment",
-              cause: "offline",
-              transportFailed: true,
+            Response.json({
+              authenticated: true,
+              auth: {
+                policy: "remote-reachable",
+                bootstrapMethods: ["one-time-token"],
+                sessionMethods: ["dpop-access-token"],
+                sessionCookieName: "t3_session",
+              },
+              scopes: AuthStandardClientScopes,
+              sessionMethod: "dpop-access-token",
             }),
-          ),
+            accessToken("rediscovered-token"),
+          ],
+          bootstrap: { ...BOOTSTRAP, endpoint: newEndpoint },
+          beforeBootstrap: requireOnlineRelay(relayOnline),
         });
         yield* Effect.gen(function* () {
           const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
@@ -1090,11 +1141,29 @@ describe("RemoteEnvironmentAuthorization", () => {
             },
           });
           expect(lan.socketUrl).toContain("wsTicket=lan");
+          expect(lan.httpAuthorization).toMatchObject({ accessToken: "cached-access-token" });
+          const session = yield* fetchEnvironmentSessionState({
+            prepared: {
+              ...lan,
+              target: new BearerConnectionTarget({
+                environmentId: ENVIRONMENT_ID,
+                label: lan.label,
+                connectionId: "lan",
+              }),
+            },
+            signer: Option.some(yield* ManagedRelay.ManagedRelayDpopSigner),
+            remoteAuthorization: Option.some(remote),
+          });
+          expect(session.authenticated).toBe(true);
+          expect(String(harness.fetch.calls.at(-1)?.[0])).toBe(
+            lan.httpBaseUrl + "/api/auth/session",
+          );
+          yield* Ref.set(relayOnline, true);
+          const http = yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+          expect(http.httpBaseUrl).toBe(newEndpoint.httpBaseUrl);
+          expect(http.httpAuthorization.accessToken).toBe("rediscovered-token");
         }).pipe(Effect.provide(harness.layer));
-        expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)?.accessToken).toBe(
-          "cached-access-token",
-        );
-        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+        expect(yield* Ref.get(harness.bootstrapCalls)).toBe(2);
       }),
   );
 
@@ -1152,14 +1221,37 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
-  it.effect("removes a newly refreshed token when websocket ticket authorization fails", () =>
+  it.effect("stops rediscovery when sign-in changes while marking the cached endpoint stale", () =>
+    Effect.gen(function* () {
+      const writing = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = yield* makeHarness({
+        initialToken: persistedToken(),
+        descriptor: DESCRIPTOR,
+        beforePut: Deferred.succeed(writing, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        ),
+        responses: [new Response(null, { status: 502 }), new Response(null, { status: 502 })],
+      });
+      const result = yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        const socket = yield* remote
+          .authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* Deferred.await(writing);
+        yield* Ref.set(harness.session, Option.some({ accountId: "other-account" }));
+        yield* Deferred.succeed(release, undefined);
+        return yield* Fiber.join(socket);
+      }).pipe(Effect.provide(harness.layer));
+      expect(result).toMatchObject({ _tag: "ConnectionBlockedError", reason: "authentication" });
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+    }),
+  );
+
+  it.effect("removes a newly refreshed token when the host rejects it", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
-        responses: [
-          Response.json(DESCRIPTOR),
-          accessToken("unusable-access-token"),
-          new Response("endpoint unavailable", { status: 503 }),
-        ],
+        responses: [Response.json(DESCRIPTOR), accessToken("unusable-access-token"), authInvalid()],
       });
 
       yield* Effect.gen(function* () {
@@ -1173,6 +1265,51 @@ describe("RemoteEnvironmentAuthorization", () => {
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
       expect(harness.fetch.calls).toHaveLength(3);
     }),
+  );
+
+  it.effect.each(["gateway", "network"] as const)(
+    "keeps a rediscovered credential for LAN after a public ticket %s error",
+    (failure) =>
+      Effect.gen(function* () {
+        let descriptorReads = 0;
+        const relayOnline = yield* Ref.make(true);
+        const harness = yield* makeHarness({
+          initialToken: persistedToken(),
+          descriptor: () =>
+            ++descriptorReads <= 2
+              ? new Response(null, { status: 502 })
+              : Response.json(DESCRIPTOR),
+          beforeBootstrap: requireOnlineRelay(relayOnline),
+          responses: [
+            websocketTicket("old-endpoint"),
+            accessToken("new-token"),
+            failure === "gateway"
+              ? new Response(null, { status: 502 })
+              : () => Promise.reject(new TypeError("network offline")),
+            websocketTicket("lan"),
+          ],
+        });
+        yield* Effect.gen(function* () {
+          const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+          const input = { expectedEnvironmentId: ENVIRONMENT_ID };
+          const error = yield* remote.authorizeDpop(input).pipe(Effect.flip);
+          expect(error).toMatchObject({
+            via: "relay",
+            reason: failure === "gateway" ? "remote-unavailable" : "network",
+          });
+          yield* Ref.set(relayOnline, false);
+          const lan = yield* remote.authorizeDpop({
+            ...input,
+            directEndpoint: {
+              httpBaseUrl: "http://192.168.1.10:3773",
+              wsBaseUrl: "ws://192.168.1.10:3773",
+            },
+          });
+          expect(lan.socketUrl).toContain("wsTicket=lan");
+          expect(lan.httpAuthorization).toMatchObject({ accessToken: "new-token" });
+          expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
+        }).pipe(Effect.provide(harness.layer));
+      }),
   );
 
   it.effect("does not evict a replacement token when a late request rejects the old one", () =>
