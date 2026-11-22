@@ -291,3 +291,177 @@ it("keeps environment identities, failures and pagination separate in the combin
     registry.dispose();
   }
 });
+
+it("preserves tracker issue metadata and applies involvement, state, and sort filters", () => {
+  const registry = AtomRegistry.make();
+  const environmentId = EnvironmentId.make("env");
+  const projectId = ProjectId.make("project");
+  const requests: import("@t3tools/contracts").IssueListInput[] = [];
+  const overview = createRequirementOverviewAtoms({
+    trackers: ({ input }) => {
+      requests.push(input);
+      return Atom.make(
+        AsyncResult.success<import("@t3tools/contracts").IssueListResult>({
+          viewers: {},
+          entries: [
+            {
+              tracker: "github" as import("@t3tools/contracts").IssueTrackerKind,
+              host: "github.com",
+              scope: "acme/app",
+              key: "42",
+              displayKey: "#42",
+              title: "Older issue updated recently",
+              url: "https://github.com/acme/app/issues/42",
+              author: { login: "alice", name: "Alice", avatarUrl: "https://example.com/a.png" },
+              state: { category: "open", boardCategory: "doing", name: "In Progress" },
+              createdAt: "2026-11-10T00:00:00Z",
+              updatedAt: "2026-11-20T00:00:00Z",
+              closedAt: null,
+              assignees: [{ login: "bob", name: "Bob", avatarUrl: "https://example.com/b.png" }],
+              labels: [{ name: "bug", color: "d73a4a" }],
+              commentCount: 5,
+              priority: "P1",
+              projectId,
+              projectTitle: "App",
+            },
+          ],
+          errors: [],
+          trackers: [],
+          nextCursors: {},
+        }),
+      );
+    },
+    issues: () => {
+      throw new Error("unexpected legacy issues query");
+    },
+    workItemsLive: () =>
+      Atom.make(
+        AsyncResult.success<WorkItemListResult>({
+          items: [
+            {
+              id: WorkItemId.make("local-1"),
+              projectId,
+              title: "Newer created local item",
+              description: "",
+              specRevision: 1,
+              version: 1,
+              status: "done",
+              priority: "P2",
+              archived: false,
+              createdAt: "2026-11-18T00:00:00Z",
+              updatedAt: "2026-11-18T00:00:00Z",
+              executionCount: 0,
+              activeExecutionCount: 0,
+            },
+          ],
+          candidates: [],
+          nextCursor: null,
+        }),
+      ),
+    config: () => Atom.make({ workItems: true, requirementIssueTrackers: true }),
+    tracked: () => Atom.make(new Map()),
+  });
+
+  try {
+    const byCreated = registry.get(
+      overview(
+        new RequirementOverviewKey({
+          environmentIds: [environmentId],
+          projectId: null,
+          source: "all",
+          assignee: "all",
+          involvement: "all",
+          issueState: "all",
+          sort: "created",
+          query: "",
+          archived: false,
+          pagination: {},
+        }),
+      ),
+    );
+    expect(requests.at(-1)).toMatchObject({ state: "all", sort: "created" });
+    expect(byCreated.entries.map((entry) => entry.title)).toEqual([
+      "Newer created local item",
+      "Older issue updated recently",
+    ]);
+    const issueEntry = byCreated.entries[1];
+    expect(issueEntry?.kind).toBe("issue");
+    if (issueEntry?.kind === "issue") {
+      expect(issueEntry.issue.displayKey).toBe("#42");
+      expect(issueEntry.issue.commentCount).toBe(5);
+      expect(issueEntry.issue.labels).toEqual([{ name: "bug", color: "d73a4a" }]);
+      expect(issueEntry.issue.assigneeActors?.[0]?.login).toBe("bob");
+      expect(issueEntry.issue.author?.login).toBe("alice");
+      expect(issueEntry.issue.stateInfo?.name).toBe("In Progress");
+    }
+
+    const openOnlyKey = new RequirementOverviewKey({
+      environmentIds: [environmentId],
+      projectId: null,
+      source: "all",
+      assignee: "all",
+      involvement: "authored",
+      issueState: "open",
+      sort: "updated",
+      query: "",
+      archived: false,
+      pagination: {},
+    });
+    const openOnly = registry.get(overview(openOnlyKey));
+    expect(requests.at(-1)).toMatchObject({ state: "open", involvement: "authored" });
+    // Authored involvement and open state both exclude the done local item.
+    expect(openOnly.entries.map((entry) => entry.title)).toEqual(["Older issue updated recently"]);
+
+    const byNumber = registry.get(
+      overview(new RequirementOverviewKey({ ...openOnlyKey, query: "#42" })),
+    );
+    expect(byNumber.entries.map((entry) => entry.title)).toEqual(["Older issue updated recently"]);
+    const noMatch = registry.get(
+      overview(new RequirementOverviewKey({ ...openOnlyKey, query: "no matching issue" })),
+    );
+    expect(noMatch.entries).toEqual([]);
+  } finally {
+    registry.dispose();
+  }
+});
+
+it("does not return unfiltered legacy issues for unsupported involvement filters", () => {
+  const registry = AtomRegistry.make();
+  let legacyRequests = 0;
+  const board = createRequirementBoardAtoms({
+    issues: () => {
+      legacyRequests += 1;
+      return Atom.make(
+        AsyncResult.success<typeof RequirementIssueListResult.Type>({ groups: [], failures: [] }),
+      );
+    },
+    workItemsLive: () => {
+      throw new Error("local work items are not involved in this filter check");
+    },
+  });
+
+  try {
+    const result = registry.get(
+      board(
+        new RequirementBoardKey({
+          environmentId: EnvironmentId.make("legacy"),
+          projectId: null,
+          source: "all",
+          assignee: "all",
+          involvement: "authored",
+          query: "",
+          page: 1,
+          cursors: [undefined],
+          localSupported: false,
+          archived: false,
+          trackerSupported: false,
+        }),
+      ),
+    );
+    expect(legacyRequests).toBe(0);
+    expect(result.issuePages).toEqual([]);
+    expect(result.isPending).toBe(false);
+  } finally {
+    registry.dispose();
+  }
+});

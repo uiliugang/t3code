@@ -103,7 +103,7 @@ export function WorkspaceToolbar(props: {
   return (
     <KeyboardStickyView
       pointerEvents="box-none"
-      className="absolute inset-x-0 bottom-0"
+      style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
       offset={{ closed: 0, opened: bottom - 8 }}
     >
       <View

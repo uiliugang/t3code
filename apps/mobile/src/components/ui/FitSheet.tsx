@@ -51,18 +51,20 @@ function SheetContainer(props: {
   readonly avoidsKeyboard?: boolean;
   readonly children: ReactNode;
 }) {
-  return props.avoidsKeyboard ? (
-    <KeyboardAvoidingView
-      automaticOffset
-      behavior="padding"
-      collapsable={false}
-      className="flex-1 bg-sheet"
-    >
-      {props.children}
-    </KeyboardAvoidingView>
-  ) : (
+  return (
     <View collapsable={false} className="flex-1 bg-sheet">
-      {props.children}
+      {props.avoidsKeyboard ? (
+        <KeyboardAvoidingView
+          automaticOffset
+          behavior="padding"
+          collapsable={false}
+          style={{ flex: 1 }}
+        >
+          {props.children}
+        </KeyboardAvoidingView>
+      ) : (
+        props.children
+      )}
     </View>
   );
 }

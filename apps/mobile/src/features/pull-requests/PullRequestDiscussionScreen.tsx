@@ -171,9 +171,7 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
     : gt("Resolve", { $context: "review thread" });
   return (
     <PullRequestMarkdownRepository params={params} changeRequest={detail.data}>
-      <KeyboardAvoidingView
-        automaticOffset
-        behavior="height"
+      <View
         className="flex-1 bg-screen"
         // Any touch, such as replying or loading replies, ends the wait to reposition the link.
         onTouchStart={() => {
@@ -197,141 +195,147 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
               : []
           }
         />
-        <ScrollViewMarker style={{ flex: 1 }}>
-          <ScrollView
-            ref={scrollRef}
-            onContentSizeChange={() => {
-              if (pendingTop.current === null) return;
-              scrollRef.current?.scrollTo({ y: pendingTop.current, animated: false });
-              pendingTop.current = null;
-            }}
-            className="flex-1"
-            contentInsetAdjustmentBehavior="automatic"
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{
-              padding: 20,
-              paddingBottom: canReply ? composerHeight + bottomInset + 24 : 24,
-            }}
-          >
-            {activity.isPending && !thread ? <AppActivityIndicator /> : null}
-            {thread ? (
-              <View className="gap-2 pb-4">
-                {thread.path === null ? null : (
-                  <Text selectable className="font-mono text-xs text-foreground-muted">
-                    {thread.path}
-                    {thread.line ? `:${thread.line}` : ""}
-                  </Text>
-                )}
-                <Text className="text-xs text-foreground-muted">
-                  {thread.isResolved ? t("Resolved") : t("Unresolved")}
-                  {thread.isOutdated ? ` · ${t("Outdated")}` : ""}
-                </Text>
-                {filePath === null ? null : (
-                  <Button
-                    label={gt("View file diff")}
-                    onPress={() =>
-                      navigation.navigate("PullRequestFile", { ...params, path: filePath })
-                    }
-                  />
-                )}
-              </View>
-            ) : !activity.isPending ? (
-              <Text>{t("This discussion is no longer available.")}</Text>
-            ) : null}
-            {comments.map((comment) => (
-              <View
-                key={comment.id}
-                onLayout={(event) => {
-                  if (
-                    anchor === null ||
-                    !pullRequestAnchorMatchesUrl(anchor, comment.url) ||
-                    positionedComment.current === comment.id
-                  )
-                    return;
-                  positionedComment.current = comment.id;
-                  pendingTop.current = event.nativeEvent.layout.y;
+        <KeyboardAvoidingView automaticOffset behavior="padding" style={{ flex: 1 }}>
+          <View className="relative flex-1">
+            <ScrollViewMarker style={{ flex: 1 }}>
+              <ScrollView
+                ref={scrollRef}
+                onContentSizeChange={() => {
+                  if (pendingTop.current === null) return;
                   scrollRef.current?.scrollTo({ y: pendingTop.current, animated: false });
+                  pendingTop.current = null;
                 }}
-                className={
-                  anchor !== null && pullRequestAnchorMatchesUrl(anchor, comment.url)
-                    ? "-mx-3 gap-3 rounded-2xl border border-primary bg-primary/10 px-3 py-4"
-                    : "gap-3 border-b border-border-subtle py-4"
-                }
+                className="flex-1"
+                contentInsetAdjustmentBehavior="automatic"
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{
+                  padding: 20,
+                  paddingBottom: canReply ? composerHeight + bottomInset + 24 : 24,
+                }}
               >
-                <View className="flex-row items-center gap-2">
-                  <PullRequestAvatar actor={comment.author} size={28} />
-                  <Text className="min-w-0 flex-1 text-sm font-t3-medium">
-                    {comment.author?.login ?? t("Unknown author")}
+                {activity.isPending && !thread ? <AppActivityIndicator /> : null}
+                {thread ? (
+                  <View className="gap-2 pb-4">
+                    {thread.path === null ? null : (
+                      <Text selectable className="font-mono text-xs text-foreground-muted">
+                        {thread.path}
+                        {thread.line ? `:${thread.line}` : ""}
+                      </Text>
+                    )}
+                    <Text className="text-xs text-foreground-muted">
+                      {thread.isResolved ? t("Resolved") : t("Unresolved")}
+                      {thread.isOutdated ? ` · ${t("Outdated")}` : ""}
+                    </Text>
+                    {filePath === null ? null : (
+                      <Button
+                        label={gt("View file diff")}
+                        onPress={() =>
+                          navigation.navigate("PullRequestFile", { ...params, path: filePath })
+                        }
+                      />
+                    )}
+                  </View>
+                ) : !activity.isPending ? (
+                  <Text>{t("This discussion is no longer available.")}</Text>
+                ) : null}
+                {comments.map((comment) => (
+                  <View
+                    key={comment.id}
+                    onLayout={(event) => {
+                      if (
+                        anchor === null ||
+                        !pullRequestAnchorMatchesUrl(anchor, comment.url) ||
+                        positionedComment.current === comment.id
+                      )
+                        return;
+                      positionedComment.current = comment.id;
+                      pendingTop.current = event.nativeEvent.layout.y;
+                      scrollRef.current?.scrollTo({ y: pendingTop.current, animated: false });
+                    }}
+                    className={
+                      anchor !== null && pullRequestAnchorMatchesUrl(anchor, comment.url)
+                        ? "-mx-3 gap-3 rounded-2xl border border-primary bg-primary/10 px-3 py-4"
+                        : "gap-3 border-b border-border-subtle py-4"
+                    }
+                  >
+                    <View className="flex-row items-center gap-2">
+                      <PullRequestAvatar actor={comment.author} size={28} />
+                      <Text className="min-w-0 flex-1 text-sm font-t3-medium">
+                        {comment.author?.login ?? t("Unknown author")}
+                      </Text>
+                      <Text className="text-2xs text-foreground-muted">
+                        <RelativeTime timestamp={comment.createdAt} />
+                      </Text>
+                    </View>
+                    <PullRequestMarkdown markdown={comment.body} />
+                    <PullRequestCommentFooter
+                      params={params}
+                      comment={{ ...comment, kind: "review-comment" }}
+                      permissions={permissions}
+                      onChanged={refresh}
+                      onEdit={() => {
+                        if (extra.some((loaded) => loaded.id === comment.id))
+                          extraEdited.current = true;
+                      }}
+                    />
+                  </View>
+                ))}
+                {nextCursor ? (
+                  <Button
+                    label={busy ? t("Loading…") : t("Load more replies")}
+                    disabled={busy}
+                    onPress={() => void more()}
+                  />
+                ) : null}
+                {error || activity.error ? (
+                  <Text selectable className="py-4 text-sm text-danger-foreground">
+                    {error ?? activity.error}
                   </Text>
-                  <Text className="text-2xs text-foreground-muted">
-                    <RelativeTime timestamp={comment.createdAt} />
-                  </Text>
-                </View>
-                <PullRequestMarkdown markdown={comment.body} />
-                <PullRequestCommentFooter
-                  params={params}
-                  comment={{ ...comment, kind: "review-comment" }}
-                  permissions={permissions}
-                  onChanged={refresh}
-                  onEdit={() => {
-                    if (extra.some((loaded) => loaded.id === comment.id))
-                      extraEdited.current = true;
-                  }}
-                />
+                ) : null}
+                {notice ? (
+                  <Text className="py-4 text-sm text-foreground-muted">{notice}</Text>
+                ) : null}
+              </ScrollView>
+            </ScrollViewMarker>
+            {canReply ? (
+              <View
+                className="absolute inset-x-4 bottom-0 gap-2"
+                style={{ paddingBottom: bottomInset }}
+              >
+                <PullRequestCompletionSuggestions completions={completions} />
+                <GlassSurface
+                  chrome="none"
+                  onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
+                  className="flex-row items-end gap-1 p-1"
+                >
+                  <TextInput
+                    accessibilityLabel={t("Discussion reply")}
+                    selection={completions.selection}
+                    onSelectionChange={completions.onSelectionChange}
+                    onBlur={completions.onBlur}
+                    multiline
+                    maxLength={65536}
+                    placeholder={t("Reply…")}
+                    placeholderTextColorClassName="accent-foreground-muted"
+                    value={body}
+                    onChangeText={setBody}
+                    editable={!busy}
+                    className="max-h-36 min-h-12 min-w-0 flex-1 rounded-[24px] border-0 bg-transparent px-4 py-3 text-base text-foreground"
+                  />
+                  <View>
+                    <Button
+                      label={busy ? t("Posting…") : t("Reply")}
+                      tone="contrast"
+                      disabled={busy || !body.trim()}
+                      onPress={() => void post()}
+                    />
+                  </View>
+                </GlassSurface>
               </View>
-            ))}
-            {nextCursor ? (
-              <Button
-                label={busy ? t("Loading…") : t("Load more replies")}
-                disabled={busy}
-                onPress={() => void more()}
-              />
             ) : null}
-            {error || activity.error ? (
-              <Text selectable className="py-4 text-sm text-danger-foreground">
-                {error ?? activity.error}
-              </Text>
-            ) : null}
-            {notice ? <Text className="py-4 text-sm text-foreground-muted">{notice}</Text> : null}
-          </ScrollView>
-        </ScrollViewMarker>
-        {canReply ? (
-          <View
-            className="absolute inset-x-4 bottom-0 gap-2"
-            style={{ paddingBottom: bottomInset }}
-          >
-            <PullRequestCompletionSuggestions completions={completions} />
-            <GlassSurface
-              chrome="none"
-              onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
-              className="flex-row items-end gap-1 p-1"
-            >
-              <TextInput
-                accessibilityLabel={t("Discussion reply")}
-                selection={completions.selection}
-                onSelectionChange={completions.onSelectionChange}
-                onBlur={completions.onBlur}
-                multiline
-                maxLength={65536}
-                placeholder={t("Reply…")}
-                placeholderTextColorClassName="accent-foreground-muted"
-                value={body}
-                onChangeText={setBody}
-                editable={!busy}
-                className="max-h-36 min-h-12 min-w-0 flex-1 rounded-[24px] border-0 bg-transparent px-4 py-3 text-base text-foreground"
-              />
-              <View>
-                <Button
-                  label={busy ? t("Posting…") : t("Reply")}
-                  tone="contrast"
-                  disabled={busy || !body.trim()}
-                  onPress={() => void post()}
-                />
-              </View>
-            </GlassSurface>
           </View>
-        ) : null}
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </PullRequestMarkdownRepository>
   );
 }

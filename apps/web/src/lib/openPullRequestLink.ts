@@ -28,6 +28,7 @@ import {
 import {
   patchRequirementsSearch,
   requirementSelection,
+  type RequirementSearchPatch,
 } from "../components/requirements/requirementPanelSearch";
 import { m } from "../i18n/messages";
 import {
@@ -146,11 +147,17 @@ export function useOpenChangeRequestLink(
             resolvedPanelRef,
           );
           void navigate({
+            from: "/requirements",
             to: "/requirements",
-            search: (previous) => patchRequirementsSearch(previous, requirementSelection(selected)),
+            search: (previous) =>
+              patchRequirementsSearch(
+                previous as RequirementSearchPatch,
+                requirementSelection(selected),
+              ),
           });
         } else if (scopedThreadKey(resolvedPanelRef) === scopedThreadKey(PULL_REQUESTS_PANEL_REF)) {
           void navigate({
+            from: "/pull-requests",
             to: "/pull-requests",
             search: (previous) => ({
               ...previous,

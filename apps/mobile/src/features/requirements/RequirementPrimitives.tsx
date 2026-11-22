@@ -46,17 +46,19 @@ export function Disclosure({
   count,
   open: controlledOpen,
   onToggle,
+  borderless = false,
 }: {
   title: string;
   children: ReactNode;
   count?: number;
   open?: boolean;
   onToggle?: () => void;
+  borderless?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const open = controlledOpen ?? expanded;
   return (
-    <View className="border-t border-border-subtle">
+    <View className={borderless ? undefined : "border-t border-border-subtle"}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={title}

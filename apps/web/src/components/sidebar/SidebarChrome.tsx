@@ -7,17 +7,12 @@ import {
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useGT } from "gt-react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import {
-  useConnectedEnvironmentIds,
-  useIssuesSupported,
-  usePullRequestsSupported,
-} from "../../state/environments";
+import { useConnectedEnvironmentIds, usePullRequestsSupported } from "../../state/environments";
 import { prefetchRequirementIssues } from "@t3tools/client-runtime/state/requirement-board";
 import { serverEnvironment } from "../../state/server";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
@@ -41,8 +36,6 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { readIssueListPreferences } from "../issue/issueListPreferences";
-import { IssueGlyph } from "../issue/issuePresentation";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
@@ -197,12 +190,10 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const t = useUiTranslation();
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
-  const gt = useGT();
   const { isMobile, setOpenMobile } = useSidebar();
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
-  const issuesSupported = useIssuesSupported();
   const pullRequestsSupported = usePullRequestsSupported();
   const environmentIds = useConnectedEnvironmentIds();
   const closeMobileSidebar = () => {
@@ -216,10 +207,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       to: "/pull-requests",
       search: readPullRequestListPreferences(),
     });
-  };
-  const handleIssuesClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/issues", search: readIssueListPreferences() });
   };
   const handleSettingsClick = () => {
     closeMobileSidebar();
@@ -287,13 +274,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               void navigate({ to: "/requirements" });
             }}
           />
-          {issuesSupported ? (
-            <SidebarUtilityItem
-              icon={<IssueGlyph.issue />}
-              label={gt("Issues", { $context: "sidebar link to the list of issues" })}
-              onClick={handleIssuesClick}
-            />
-          ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label={t("Usage")}

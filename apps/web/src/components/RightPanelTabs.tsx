@@ -731,9 +731,8 @@ function SurfaceIcon({
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "issue":
-      return <IssueSurfaceIcon surface={surface} environmentId={environmentId} />;
     case "requirement-issue":
-      return <CircleDotIcon className="size-3 shrink-0" />;
+      return <IssueSurfaceIcon surface={surface} environmentId={environmentId} />;
     case "work-item":
       return <ClipboardList className="size-3 shrink-0" />;
     case "thread":
@@ -821,22 +820,32 @@ function IssueSurfaceIcon({
   surface,
   environmentId,
 }: {
-  surface: Extract<RightPanelSurface, { kind: "issue" }>;
+  surface: Extract<RightPanelSurface, { kind: "issue" | "requirement-issue" }>;
   environmentId: EnvironmentId | null;
 }) {
   const resolvedEnvironmentId =
     (surface.environmentId as EnvironmentId | undefined) ?? environmentId;
+  const configs = useServerConfigs();
+  const scope = surface.scope;
+  const key = surface.kind === "issue" ? surface.key : surface.issueId;
+  const tracker = surface.kind === "issue" ? surface.tracker : surface.provider;
+  const trackerSupported =
+    surface.kind === "issue" ||
+    surface.provider === "gitlab" ||
+    surface.provider === "linear" ||
+    (resolvedEnvironmentId !== null &&
+      configs.get(resolvedEnvironmentId)?.requirementIssueTrackers === true);
   const detail = useEnvironmentQuery(
-    resolvedEnvironmentId === null
+    resolvedEnvironmentId === null || scope === undefined || !trackerSupported
       ? null
       : issueEnvironment.detail({
           environmentId: resolvedEnvironmentId,
           input: {
             projectId: surface.projectId as ProjectId,
-            tracker: surface.tracker as IssueTrackerKind,
+            tracker: tracker as IssueTrackerKind,
             ...(surface.host ? { host: surface.host } : {}),
-            scope: surface.scope,
-            key: surface.key,
+            scope,
+            key,
           },
         }),
   ).data;

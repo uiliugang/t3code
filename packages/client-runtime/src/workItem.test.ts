@@ -256,4 +256,29 @@ it("merges issue sources and local tasks without duplicating tracked issues", ()
   expect(
     mergeRequirementEntries([], [{ ...local, status: "in_review" }], new Map())[0]?.group,
   ).toBe("active");
+  const awaitingRelease = {
+    ...task(),
+    executionCount: 0,
+    activeExecutionCount: 0,
+    status: "done" as const,
+    deliverySummary: {
+      revision: 1,
+      progress: "awaiting_release" as const,
+      mergedPullRequests: 1,
+      requiredPullRequests: 1,
+      releasedServices: 0,
+      changedServices: 1,
+      synced: false,
+      error: null,
+    },
+  };
+  expect(requirementGroup(awaitingRelease.status, awaitingRelease.deliverySummary)).toBe("release");
+  expect(
+    mergeRequirementEntries([], [awaitingRelease], new Map(), { issueState: "closed" }).map(
+      (entry) => entry.key,
+    ),
+  ).toEqual(["local:task"]);
+  expect(mergeRequirementEntries([], [awaitingRelease], new Map(), { issueState: "open" })).toEqual(
+    [],
+  );
 });

@@ -8,7 +8,19 @@ import { useNavigate } from "@tanstack/react-router";
 import type { MouseEvent } from "react";
 
 import { readIssueListPreferences } from "../components/issue/issueListPreferences";
-import { ISSUES_PANEL_REF, PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
+import {
+  patchRequirementsSearch,
+  requirementSelection,
+  requirementsSearchFromIssuesSearch,
+  type RequirementSearchPatch,
+} from "../components/requirements/requirementPanelSearch";
+import {
+  ISSUES_PANEL_REF,
+  PULL_REQUESTS_PANEL_REF,
+  REQUIREMENTS_PANEL_REF,
+  selectActiveRightPanelSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
 import { useProjects, useServerConfigs } from "../state/entities";
 
 /**
@@ -55,29 +67,42 @@ export function useOpenIssueLink(
       key: target.ref.key,
       url: targetUrl,
     };
-    // A list page's panel is the Issues page's: the pull request list's own panel shows pull
-    // requests only. Opening the tab here, not only through the URL, also brings back one that
-    // is already open.
+    // List panels share the unified requirements panel, so an issue link becomes a peer tab
+    // without leaving the workflow or tracker list the reader is currently using.
+    if (resolvedPanelRef === REQUIREMENTS_PANEL_REF) {
+      useRightPanelStore
+        .getState()
+        .openIssue(REQUIREMENTS_PANEL_REF, { ...surface, environmentId });
+      const selected = selectActiveRightPanelSurface(
+        useRightPanelStore.getState().byThreadKey,
+        REQUIREMENTS_PANEL_REF,
+      );
+      void navigate({
+        to: "/requirements",
+        search: (previous) =>
+          patchRequirementsSearch(
+            previous as RequirementSearchPatch,
+            requirementSelection(selected),
+          ),
+      });
+      return true;
+    }
     if (resolvedPanelRef === PULL_REQUESTS_PANEL_REF || resolvedPanelRef === ISSUES_PANEL_REF) {
-      useRightPanelStore.getState().openIssue(ISSUES_PANEL_REF, { ...surface, environmentId });
-      const selection = {
-        selectedEnvironmentId: environmentId,
-        selectedProjectId: target.ref.projectId,
-        ...(target.ref.host === undefined ? {} : { selectedHost: target.ref.host }),
-        tracker: target.ref.tracker,
-        scope: target.ref.scope,
-        key: target.ref.key,
-      };
-      // Already on the Issues page, the list keeps the filters it is showing.
-      if (window.location.pathname === "/issues") {
-        void navigate({
-          from: "/issues",
-          to: "/issues",
-          search: (previous) => ({ ...previous, ...selection }),
-        });
-      } else {
-        void navigate({ to: "/issues", search: { ...readIssueListPreferences(), ...selection } });
-      }
+      useRightPanelStore
+        .getState()
+        .openIssue(REQUIREMENTS_PANEL_REF, { ...surface, environmentId });
+      void navigate({
+        to: "/requirements",
+        search: requirementsSearchFromIssuesSearch({
+          ...readIssueListPreferences(),
+          selectedEnvironmentId: environmentId,
+          selectedProjectId: target.ref.projectId,
+          ...(target.ref.host === undefined ? {} : { selectedHost: target.ref.host }),
+          tracker: target.ref.tracker,
+          scope: target.ref.scope,
+          key: target.ref.key,
+        }),
+      });
       return true;
     }
     useRightPanelStore.getState().openIssue(resolvedPanelRef, {

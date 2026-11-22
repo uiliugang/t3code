@@ -12,7 +12,7 @@ export function KeyboardSheetBody(props: KeyboardSheetBodyProps) {
   // The sheet's glass bar floats over its content, and only scroll views inset for it on their own.
   const barOverlap = useBarOverlap();
   return (
-    <KeyboardAvoidingView automaticOffset behavior="padding" className="flex-1">
+    <KeyboardAvoidingView automaticOffset behavior="padding" style={{ flex: 1 }}>
       <View
         className="flex-1 px-5"
         style={{

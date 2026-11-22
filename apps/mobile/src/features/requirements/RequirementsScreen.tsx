@@ -30,19 +30,31 @@ import {
   type WorkItemSource,
   type ThreadId,
 } from "@t3tools/contracts";
-import { useContext, useRef, useState } from "react";
+import { use, useContext, useRef, useState } from "react";
 import * as Schema from "effect/Schema";
-import { Keyboard, Linking, View, Pressable, ScrollView } from "react-native";
+import {
+  Keyboard,
+  Linking,
+  Platform,
+  View,
+  Pressable,
+  ScrollView,
+  type ScrollViewInstance,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { RefreshControl } from "../../components/ui/RefreshControl";
 import { Sheet } from "../../components/ui/Sheet";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { appBarMenuItemsFromActions } from "../../components/ui/menuActionItems";
 import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
+import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
+import { NativeWorkspaceTabActivityContext } from "../../native/v5-workspace-context";
 import { useDebouncedValue } from "../../state/queries";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useHardwareBack } from "../../lib/backHandler";
@@ -173,6 +185,9 @@ function UnifiedRequirementBoard({
   initial: WorkItemsRouteParams | undefined;
 }) {
   const t = useUiTranslation();
+  const insets = useSafeAreaInsets();
+  const workspaceTabs = useWorkspaceTabs();
+  const headerOnly = use(NativeWorkspaceTabActivityContext)?.headerOnly === true;
   const navigation = useNavigation();
   const registry = useContext(RegistryContext);
   const selectTab = useSelectWorkspaceTab();
@@ -300,16 +315,16 @@ function UnifiedRequirementBoard({
       ? serverEnvironment.workItemsLive({ environmentId, input: { id: selectedId } })
       : null,
   );
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const listOffset = useRef(0);
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const pendingRestoreOffset = useRef<number | null>(null);
   const showItem = (id: WorkItemId) => {
-    setScrollOffset(0);
     setSelectedId(id);
   };
   const back = () => {
+    pendingRestoreOffset.current = listOffset.current;
     setCreating(null);
     setSelectedId(null);
-    setScrollOffset(listOffset.current);
   };
   useHardwareBack(workspace, () => {
     if (Keyboard.isVisible()) Keyboard.dismiss();
@@ -380,7 +395,6 @@ function UnifiedRequirementBoard({
     description = "",
   ) => {
     setActionEnvironmentId(target.environmentId);
-    setScrollOffset(0);
     setCreating({ projectId: target.projectId, ...(source ? { source } : {}), description });
   };
   const open = (entry: EnvironmentRequirementEntry) => {
@@ -424,7 +438,7 @@ function UnifiedRequirementBoard({
       onPress={() => open(entry)}
       className={
         view === "board"
-          ? "gap-2 rounded-lg border border-border-subtle p-3"
+          ? "gap-2 rounded-xl border border-border-subtle bg-card p-3"
           : "gap-2 border-b border-border-subtle py-3"
       }
     >
@@ -495,12 +509,17 @@ function UnifiedRequirementBoard({
     const rows = entries.filter((entry) => entry.group === group.key);
     if (!rows.length) return null;
     return (
-      <View key={group.key} style={view === "board" ? { width: 280 } : undefined}>
+      <View
+        key={group.key}
+        className={view === "board" ? "rounded-2xl bg-grouped-card px-3 pb-1" : undefined}
+        style={view === "board" ? { width: 288 } : undefined}
+      >
         <Disclosure
           title={group.label}
           count={rows.length}
           open={!collapsed.includes(group.key)}
           onToggle={() => toggle(group.key)}
+          borderless={view === "board"}
         >
           {rows.map(renderRow)}
         </Disclosure>
@@ -666,6 +685,14 @@ function UnifiedRequirementBoard({
     ],
   };
 
+  const bottomPadding =
+    Platform.OS === "ios"
+      ? Math.max(insets.bottom, 18) + 18
+      : Math.max(
+          Math.max(insets.bottom, 18) + 18,
+          workspace ? (workspaceTabs?.bottomClearance ?? 0) + 16 : 0,
+        );
+
   return (
     <SettingsScreen
       workspaceRoot={workspace}
@@ -691,254 +718,286 @@ function UnifiedRequirementBoard({
           : undefined
       }
     >
-      <ScreenScrollView
-        key={creating ? "create" : (selectedId ?? "list")}
-        className="flex-1"
-        contentContainerClassName="gap-4 px-5 pb-12"
-        contentOffset={{ x: 0, y: scrollOffset }}
-        scrollEventThrottle={100}
-        onScroll={(event) => {
-          if (!creating && !selectedId) listOffset.current = event.nativeEvent.contentOffset.y;
-        }}
-      >
-        {creating ? (
-          <TaskEditor
-            environmentId={environmentId}
-            projectId={creating.projectId}
-            source={creating.source}
-            initialDescription={creating.description}
-            item={null}
-            disabled={!canOperate || busy}
-            run={run}
-            onCancel={back}
-            onSaved={(item) => {
-              setCreating(null);
-              showItem(item.id);
-            }}
-          />
-        ) : selectedId ? (
-          detail.data?.item ? (
-            <TaskDetail
-              key={`${environmentId}/${selectedId}`}
-              item={detail.data.item}
+      {headerOnly ? null : (
+        <ScreenScrollView
+          ref={scrollRef}
+          key={creating ? "create" : (selectedId ?? "list")}
+          className="flex-1"
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          contentContainerClassName={showingList ? "gap-4 px-5" : "gap-4 px-5 pt-4"}
+          contentContainerStyle={{ paddingBottom: bottomPadding }}
+          scrollEventThrottle={100}
+          onContentSizeChange={() => {
+            if (showingList && pendingRestoreOffset.current !== null) {
+              const targetOffset = pendingRestoreOffset.current;
+              pendingRestoreOffset.current = null;
+              scrollRef.current?.scrollTo({ y: targetOffset, animated: false });
+            }
+          }}
+          onScroll={(event) => {
+            if (!creating && !selectedId) listOffset.current = event.nativeEvent.contentOffset.y;
+          }}
+          refreshControl={
+            showingList ? (
+              <RefreshControl
+                refreshing={data.isPending && entries.length > 0}
+                onRefresh={refresh}
+              />
+            ) : undefined
+          }
+        >
+          {creating ? (
+            <TaskEditor
               environmentId={environmentId}
-              disabled={!canOperate || busy || Boolean(detail.error)}
-              busy={busy}
+              projectId={creating.projectId}
+              source={creating.source}
+              initialDescription={creating.description}
+              item={null}
+              disabled={!canOperate || busy}
               run={run}
-              onBack={back}
-            />
-          ) : (
-            <View className="gap-3">
-              <Button label={t("Back")} onPress={back} />
-              <Text className={detail.error ? "text-danger" : "text-foreground-muted"}>
-                {detail.error ?? t(detail.isPending ? "Loading..." : "Task not found.")}
-              </Text>
-            </View>
-          )
-        ) : (
-          <>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginHorizontal: -20, overflow: "visible" }}
-              contentContainerStyle={{
-                paddingHorizontal: 16,
-                paddingTop: 12,
-                paddingBottom: 4,
-                gap: 8,
+              onCancel={back}
+              onSaved={(item) => {
+                setCreating(null);
+                showItem(item.id);
               }}
-            >
-              <ListFilterMenu
-                label={
-                  filterEnvironmentId
-                    ? environmentLabel(filterEnvironmentId)
-                    : t("All environments")
-                }
-                accessibilityLabel={t("Environment")}
-                active={filterEnvironmentId !== null}
-                actions={environmentActions}
-                onSelect={applyFilterSelection}
+            />
+          ) : selectedId ? (
+            detail.data?.item ? (
+              <TaskDetail
+                key={`${environmentId}/${selectedId}`}
+                item={detail.data.item}
+                environmentId={environmentId}
+                disabled={!canOperate || busy || Boolean(detail.error)}
+                busy={busy}
+                run={run}
+                onBack={back}
               />
-              <SavedViewsMenu<RequirementFilters>
-                read={(prefs) => prefs.requirementSavedViews}
-                write={(requirementSavedViews) => ({ requirementSavedViews })}
-                list="requirement"
-                suggestedName=""
-                scope={{
-                  environmentId: queryEnvironmentId,
-                  projectId,
-                  source,
-                  assignee,
-                  labels,
-                  archived,
-                  query: queryText,
+            ) : (
+              <View className="gap-3">
+                <Button label={t("Back")} onPress={back} />
+                <Text className={detail.error ? "text-danger" : "text-foreground-muted"}>
+                  {detail.error ?? t(detail.isPending ? "Loading..." : "Task not found.")}
+                </Text>
+              </View>
+            )
+          ) : (
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginHorizontal: -20, overflow: "visible" }}
+                contentContainerStyle={{
+                  paddingHorizontal: 16,
+                  paddingTop: 12,
+                  paddingBottom: 4,
+                  gap: 8,
                 }}
-                matches={requirementViewsMatch}
-                onApply={(saved) => {
-                  setPicked({ labels: saved.labels, assignee: null });
-                  applyFilterState({
-                    environmentId: saved.environmentId,
-                    project:
-                      saved.environmentId && saved.projectId
-                        ? { environmentId: saved.environmentId, projectId: saved.projectId }
-                        : null,
-                    source: saved.source,
-                    archived: saved.archived,
-                    assignee: saved.assignee,
-                    queryText: saved.query,
-                  });
-                }}
-              />
-              {labels.length || data.scopes.some((scope) => scope.labels) ? (
-                <Chip
-                  label={labels.length ? labels.join(", ") : t("Labels")}
-                  accessibilityLabel={t("Labels")}
-                  selected={labels.length > 0}
-                  onPress={() =>
-                    navigation.navigate("IssueFilterSearch", {
-                      kind: "labels",
-                      requirements: true,
-                      scopes: data.scopes.filter((scope) => scope.labels),
-                    })
-                  }
-                />
-              ) : null}
-              <ListFilterMenu
-                label={
-                  sourceChoices.find((option) => option.value === source)?.label ?? t("All sources")
-                }
-                accessibilityLabel={t("Issue source")}
-                active={source !== "all"}
-                actions={sourceActions}
-                onSelect={applyFilterSelection}
-              />
-              <ListFilterMenu
-                label={selectedProject?.title ?? t("All projects")}
-                accessibilityLabel={t("Project")}
-                active={projectFilter !== null}
-                actions={projectActions}
-                onSelect={applyFilterSelection}
-              />
-              {source !== "local" ? (
+              >
                 <ListFilterMenu
                   label={
-                    assigneeChoices.find((option) => option.value === assignee)?.label ?? assignee
+                    filterEnvironmentId
+                      ? environmentLabel(filterEnvironmentId)
+                      : t("All environments")
                   }
-                  accessibilityLabel={t("Assignee")}
-                  active={assignee !== "me"}
-                  actions={assigneeActions}
+                  accessibilityLabel={t("Environment")}
+                  active={filterEnvironmentId !== null}
+                  actions={environmentActions}
                   onSelect={applyFilterSelection}
                 />
-              ) : null}
-              {isFiltered ? (
+                <SavedViewsMenu<RequirementFilters>
+                  read={(prefs) => prefs.requirementSavedViews}
+                  write={(requirementSavedViews) => ({ requirementSavedViews })}
+                  list="requirement"
+                  suggestedName=""
+                  scope={{
+                    environmentId: queryEnvironmentId,
+                    projectId,
+                    source,
+                    assignee,
+                    labels,
+                    archived,
+                    query: queryText,
+                  }}
+                  matches={requirementViewsMatch}
+                  onApply={(saved) => {
+                    setPicked({ labels: saved.labels, assignee: null });
+                    applyFilterState({
+                      environmentId: saved.environmentId,
+                      project:
+                        saved.environmentId && saved.projectId
+                          ? { environmentId: saved.environmentId, projectId: saved.projectId }
+                          : null,
+                      source: saved.source,
+                      archived: saved.archived,
+                      assignee: saved.assignee,
+                      queryText: saved.query,
+                    });
+                  }}
+                />
+                {labels.length || data.scopes.some((scope) => scope.labels) ? (
+                  <Chip
+                    label={labels.length ? labels.join(", ") : t("Labels")}
+                    accessibilityLabel={t("Labels")}
+                    selected={labels.length > 0}
+                    onPress={() =>
+                      navigation.navigate("IssueFilterSearch", {
+                        kind: "labels",
+                        requirements: true,
+                        scopes: data.scopes.filter((scope) => scope.labels),
+                      })
+                    }
+                  />
+                ) : null}
+                <ListFilterMenu
+                  label={
+                    sourceChoices.find((option) => option.value === source)?.label ??
+                    t("All sources")
+                  }
+                  accessibilityLabel={t("Issue source")}
+                  active={source !== "all"}
+                  actions={sourceActions}
+                  onSelect={applyFilterSelection}
+                />
+                <ListFilterMenu
+                  label={selectedProject?.title ?? t("All projects")}
+                  accessibilityLabel={t("Project")}
+                  active={projectFilter !== null}
+                  actions={projectActions}
+                  onSelect={applyFilterSelection}
+                />
+                {source !== "local" ? (
+                  <ListFilterMenu
+                    label={
+                      assigneeChoices.find((option) => option.value === assignee)?.label ?? assignee
+                    }
+                    accessibilityLabel={t("Assignee")}
+                    active={assignee !== "me"}
+                    actions={assigneeActions}
+                    onSelect={applyFilterSelection}
+                  />
+                ) : null}
+                {isFiltered ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("Reset filters")}
+                    className="h-8 w-8 items-center justify-center"
+                    onPress={resetFilters}
+                  >
+                    <SymbolView
+                      name="xmark.circle.fill"
+                      size={18}
+                      tintColorClassName="accent-icon-muted"
+                    />
+                  </Pressable>
+                ) : null}
+              </ScrollView>
+              {errors.length ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={t("Reset filters")}
-                  className="h-8 w-8 items-center justify-center"
-                  onPress={resetFilters}
+                  accessibilityLabel={t("View loading errors")}
+                  onPress={() =>
+                    Dialog.alert(t("Some requirements could not be loaded"), errors.join("\n\n"))
+                  }
+                  className="flex-row items-center gap-2.5 rounded-2xl bg-subtle/80 px-3.5 py-2.5 active:opacity-70"
                 >
                   <SymbolView
-                    name="xmark.circle.fill"
-                    size={18}
+                    name="exclamationmark.triangle"
+                    size={15}
+                    tintColorClassName="accent-icon-muted"
+                  />
+                  <Text numberOfLines={1} className="min-w-0 flex-1 text-xs text-foreground-muted">
+                    {errors.length === 1
+                      ? errors[0]
+                      : `${t("Some requirements could not be loaded")} (${errors.length})`}
+                  </Text>
+                  <SymbolView
+                    name="chevron.right"
+                    size={11}
                     tintColorClassName="accent-icon-muted"
                   />
                 </Pressable>
               ) : null}
-            </ScrollView>
-            {errors.length ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("View loading errors")}
-                onPress={() =>
-                  Dialog.alert(t("Some requirements could not be loaded"), errors.join("\n\n"))
-                }
-                className="flex-row items-center gap-2.5 rounded-2xl bg-subtle/80 px-3.5 py-2.5 active:opacity-70"
-              >
-                <SymbolView
-                  name="exclamationmark.triangle"
-                  size={15}
-                  tintColorClassName="accent-icon-muted"
+              {data.isPending && !entries.length ? (
+                <View className="items-center py-12">
+                  <AppActivityIndicator colorClassName="accent-icon" />
+                </View>
+              ) : !entries.length && errors.length ? (
+                <EmptyState
+                  variant="plain"
+                  title={t("Some requirements could not be loaded")}
+                  detail={errors[0] ?? ""}
+                  actionLabel={t("Retry")}
+                  onAction={refresh}
                 />
-                <Text numberOfLines={1} className="min-w-0 flex-1 text-xs text-foreground-muted">
-                  {errors.length === 1
-                    ? errors[0]
-                    : `${t("Some requirements could not be loaded")} (${errors.length})`}
+              ) : !entries.length ? (
+                <EmptyState
+                  variant="plain"
+                  title={t("No matching work items.")}
+                  detail={t("Create or scan items, or adjust your filters.")}
+                />
+              ) : null}
+              {data.isPending && entries.length ? (
+                <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+                  {t("Updating")}
                 </Text>
-                <SymbolView name="chevron.right" size={11} tintColorClassName="accent-icon-muted" />
-              </Pressable>
-            ) : null}
-            {data.isPending && !entries.length ? (
-              <View className="items-center py-12">
-                <AppActivityIndicator colorClassName="accent-icon" />
-              </View>
-            ) : !entries.length && errors.length ? (
-              <EmptyState
-                variant="plain"
-                title={t("Some requirements could not be loaded")}
-                detail={errors[0] ?? ""}
-                actionLabel={t("Retry")}
-                onAction={refresh}
-              />
-            ) : !entries.length ? (
-              <EmptyState
-                variant="plain"
-                title={t("No matching work items.")}
-                detail={t("Create or scan items, or adjust your filters.")}
-              />
-            ) : null}
-            {data.isPending && entries.length ? (
-              <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
-                {t("Updating")}
-              </Text>
-            ) : null}
-            {view === "list" ? (
-              requirementGroups(t).map(renderGroup)
-            ) : (
-              <ScrollView
-                horizontal
-                contentContainerStyle={{ gap: 20 }}
-                showsHorizontalScrollIndicator
-              >
-                {requirementGroups(t).map(renderGroup)}
-              </ScrollView>
-            )}
-            {data.hasMore ? (
-              <Button
-                label={t("Load more")}
-                disabled={data.isPending}
-                onPress={() => setPagination({ key: filterKey, pages: data.nextPagination })}
-              />
-            ) : null}
-            {data.candidates.length && (source === "all" || source === "local") ? (
-              <View className="gap-3">
-                <Text className="text-sm font-t3-semibold">{t("Discovered tasks")}</Text>
-                {data.candidates.map((candidate) => (
-                  <View key={`${candidate.environmentId}:${candidate.id}`} className="gap-2">
-                    <Text className="text-xs text-foreground-muted">
-                      {environmentLabel(candidate.environmentId)}
-                    </Text>
-                    <CandidateCard
-                      candidate={candidate}
-                      disabled={!permissions.get(candidate.environmentId)?.mutateWorkItem || busy}
-                      onCreate={() =>
-                        createLocal(
-                          {
-                            environmentId: candidate.environmentId,
-                            projectId: candidate.projectId,
-                          },
-                          { threadId: candidate.id, title: candidate.title },
-                          candidate.description,
-                        )
-                      }
-                      onIgnore={() => void scan(candidate, candidate.id)}
-                    />
-                  </View>
-                ))}
-              </View>
-            ) : null}
-          </>
-        )}
-      </ScreenScrollView>
+              ) : null}
+              {view === "list" ? (
+                requirementGroups(t).map(renderGroup)
+              ) : (
+                <ScrollView
+                  horizontal
+                  nestedScrollEnabled
+                  directionalLockEnabled
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginHorizontal: -20 }}
+                  contentContainerStyle={{
+                    paddingHorizontal: 16,
+                    gap: 14,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  {requirementGroups(t).map(renderGroup)}
+                </ScrollView>
+              )}
+              {data.hasMore ? (
+                <Button
+                  label={t("Load more")}
+                  disabled={data.isPending}
+                  onPress={() => setPagination({ key: filterKey, pages: data.nextPagination })}
+                />
+              ) : null}
+              {data.candidates.length && (source === "all" || source === "local") ? (
+                <View className="gap-3">
+                  <Text className="text-sm font-t3-semibold">{t("Discovered tasks")}</Text>
+                  {data.candidates.map((candidate) => (
+                    <View key={`${candidate.environmentId}:${candidate.id}`} className="gap-2">
+                      <Text className="text-xs text-foreground-muted">
+                        {environmentLabel(candidate.environmentId)}
+                      </Text>
+                      <CandidateCard
+                        candidate={candidate}
+                        disabled={!permissions.get(candidate.environmentId)?.mutateWorkItem || busy}
+                        onCreate={() =>
+                          createLocal(
+                            {
+                              environmentId: candidate.environmentId,
+                              projectId: candidate.projectId,
+                            },
+                            { threadId: candidate.id, title: candidate.title },
+                            candidate.description,
+                          )
+                        }
+                        onIgnore={() => void scan(candidate, candidate.id)}
+                      />
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </>
+          )}
+        </ScreenScrollView>
+      )}
       {createSheetOpen ? (
         <RequirementCreateSheet
           projects={projects}
@@ -1226,6 +1285,7 @@ export function IssueDetailScreen({ route }: StaticScreenProps<Target & { id: st
 
 function LegacyIssueDetail({ target }: { target: Target & { id: string } }) {
   const t = useUiTranslation();
+  const insets = useSafeAreaInsets();
   const { environmentId } = target;
   const config = useEnvironmentServerConfig(environmentId);
   const enabled =
@@ -1252,7 +1312,13 @@ function LegacyIssueDetail({ target }: { target: Target & { id: string } }) {
   };
   return (
     <SettingsScreen title={t("Issue details")}>
-      <ScreenScrollView className="flex-1" contentContainerClassName="gap-5 px-5 pb-12">
+      <ScreenScrollView
+        className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        contentContainerClassName="gap-5 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+      >
         {result.error ? <Text className="text-danger">{result.error}</Text> : null}
         {result.data ? (
           <>
@@ -1417,10 +1483,17 @@ function RequirementIssueExtras({
 
 export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
   const t = useUiTranslation();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   return (
     <SettingsScreen title={t("New issue")}>
-      <ScreenScrollView className="flex-1" contentContainerClassName="gap-4 px-5 pb-12">
+      <ScreenScrollView
+        className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        contentContainerClassName="gap-4 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+      >
         <IssueCreateFormBody
           environmentId={route.params.environmentId}
           projectId={route.params.projectId}

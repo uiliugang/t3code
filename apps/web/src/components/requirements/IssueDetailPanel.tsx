@@ -21,6 +21,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ChatMarkdown from "../ChatMarkdown";
 import { IssueSelect } from "./IssueSelect";
 import { serverEnvironment } from "../../state/server";
+import { refreshIssueLists } from "../../state/issues";
 import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 import { ProjectTag } from "./ProjectTag";
 
@@ -41,6 +42,7 @@ type PanelProps = {
   changed?: () => void;
   embedded?: boolean;
   panelRef?: ScopedThreadRef | undefined;
+  onPullRequestOpened?: () => void;
 };
 export function IssueDetailPanel(
   props: Omit<PanelProps, "target"> & {
@@ -64,15 +66,16 @@ export function IssueDetailPanel(
             : (props.panelRef ?? null)
         }
         onIssueChanged={props.changed}
-        onSelectPullRequest={(reference) =>
+        onSelectPullRequest={(reference) => {
           useRightPanelStore.getState().openPullRequest(props.panelRef ?? REQUIREMENTS_PANEL_REF, {
             projectId: reference.projectId,
             repository: reference.repository,
             number: reference.number,
             ...(reference.host ? { host: reference.host } : {}),
             environmentId: props.environmentId,
-          })
-        }
+          });
+          props.onPullRequestOpened?.();
+        }}
         renderSupplement={
           legacy
             ? (detail) => (
@@ -126,6 +129,7 @@ function LegacyIssueDetailPanel({
     query.refresh();
     if (result._tag === "Success") {
       setNextState("");
+      refreshIssueLists(environmentId);
       changed?.();
     }
   };
