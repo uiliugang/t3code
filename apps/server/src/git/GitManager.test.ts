@@ -57,6 +57,7 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "../vcs/VcsProjectConfig.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 import type {
+  ChangeRequestForCheckout,
   SourceControlProvider,
   SourceControlRefSelector,
 } from "@t3tools/source-control-core/server/SourceControlProvider";
@@ -79,7 +80,7 @@ import {
 } from "../orchestration-v2/testkit/workspaceFixtures.ts";
 
 /** A change request the fake host reports. Omitted fields read as an open, undated request. */
-type FakeChangeRequest = Omit<ChangeRequest, "provider" | "state" | "updatedAt"> & {
+type FakeChangeRequest = Omit<ChangeRequestForCheckout, "provider" | "state" | "updatedAt"> & {
   readonly state?: ChangeRequest["state"];
   readonly updatedAt?: string;
 };
@@ -426,7 +427,7 @@ function createFakeSourceControlProvider(scenario: FakeProviderScenario = {}): {
         : Effect.void;
     });
 
-  const toChangeRequest = (summary: FakeChangeRequest): ChangeRequest => ({
+  const toChangeRequest = (summary: FakeChangeRequest): ChangeRequestForCheckout => ({
     ...summary,
     provider: kind,
     state: summary.state ?? "open",
@@ -7582,6 +7583,76 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       );
       expect(result.isOnPullRequestHead).toBe(true);
       expect((yield* runGit(worktreePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(updatedHead);
+    }),
+  );
+
+  it.effect("pushes a private PR worktree only to its companion branch", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      const companionDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", originDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["push", companionDir, "HEAD:refs/heads/sec/fix"]);
+      yield* runGit(repoDir, ["remote", "add", "read-private", companionDir]);
+      yield* runGit(repoDir, ["remote", "set-url", "--push", "read-private", originDir]);
+      yield* runGit(repoDir, ["config", "remote.pushDefault", "origin"]);
+
+      const companion = "pingdotgg/codething-mvp.private-2";
+      const { manager } = yield* makeManager({
+        providerScenario: {
+          kind: "tanstack-source",
+          pullRequest: {
+            number: 92,
+            title: "Private fix",
+            url: "https://source.tanstack.com/@pingdotgg/codething-mvp/pull/92",
+            baseRefName: "main",
+            headRefName: "sec/fix",
+            isCrossRepository: true,
+            headRepositoryNameWithOwner: companion,
+            privateHeadRepository: companion,
+          },
+          repositoryCloneUrls: {
+            [`source.tanstack.com/${companion}`]: { url: companionDir, sshUrl: companionDir },
+          },
+        },
+      });
+      const input = { cwd: repoDir, reference: "92", mode: "worktree" } as const;
+      const worktree = yield* preparePullRequestThread(manager, input);
+      expect(worktree.branch).toBe("t3code/pr-92/sec/fix");
+      const cwd = worktree.worktreePath as string;
+      yield* runGit(cwd, ["commit", "--allow-empty", "-m", "Update private fix"]);
+      yield* runStackedAction(manager, { cwd, action: "push" });
+
+      const expectPushStayedPrivate = Effect.gen(function* () {
+        const publicHeads = (yield* runGit(cwd, ["ls-remote", "--heads", "origin"])).stdout;
+        expect(
+          publicHeads
+            .trim()
+            .split("\n")
+            .map((line) => line.split("\t")[1]),
+        ).toEqual(["refs/heads/main"]);
+        const head = (yield* runGit(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+        expect((yield* runGit(cwd, ["ls-remote", companionDir, "refs/heads/sec/fix"])).stdout).toBe(
+          `${head}\trefs/heads/sec/fix\n`,
+        );
+      });
+      yield* expectPushStayedPrivate;
+
+      const pushRemote = (yield* runGit(cwd, [
+        "config",
+        "--get",
+        `branch.${worktree.branch}.pushRemote`,
+      ])).stdout.trim();
+      yield* runGit(cwd, ["remote", "set-url", "--push", pushRemote, originDir]);
+      yield* runGit(cwd, ["commit", "--allow-empty", "-m", "Follow-up private fix"]);
+      const refused = yield* Effect.flip(runStackedAction(manager, { cwd, action: "push" }));
+      expect(refused.message).toContain("private pull request's push remote has changed");
+      const reused = yield* preparePullRequestThread(manager, input);
+      expect(reused.worktreePath).toBe(worktree.worktreePath);
+      yield* runStackedAction(manager, { cwd, action: "push" });
+      yield* expectPushStayedPrivate;
     }),
   );
 

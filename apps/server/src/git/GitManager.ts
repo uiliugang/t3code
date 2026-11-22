@@ -1181,6 +1181,53 @@ export const make = Effect.gen(function* () {
     return host ? { host } : {};
   };
 
+  const configurePrivatePullRequestHead = Effect.fn("GitManager.configurePrivatePullRequestHead")(
+    function* (
+      cwd: string,
+      pullRequest: ResolvedPullRequest,
+      companion: string,
+      localBranch: string,
+      createLocalBranch = false,
+    ) {
+      const { url } = yield* (yield* sourceControlProvider(cwd)).getRepositoryCloneUrls({
+        cwd,
+        repository: companion,
+        ...pullRequestHostOptions(pullRequest.url),
+      });
+      const remoteName = yield* gitCore.ensureRemote({
+        cwd,
+        preferredName: companion.split("/")[0] || "private",
+        url,
+        requireMatchingPushUrl: true,
+      });
+      const remoteBranch = pullRequest.headBranch;
+      yield* gitCore.fetchRemoteTrackingBranch({ cwd, remoteName, remoteBranch });
+      yield* gitCore.writeConfigValue({
+        cwd,
+        key: SourceControlProvider.privateCompanionConfigKey(remoteName),
+        value: url,
+      });
+      yield* gitCore.writeConfigValue({
+        cwd,
+        key: SourceControlProvider.privatePullRequestPushConfigKey(localBranch),
+        value: url,
+      });
+      yield* gitCore.writeConfigValue({
+        cwd,
+        key: `branch.${localBranch}.pushRemote`,
+        value: remoteName,
+      });
+      if (createLocalBranch) {
+        yield* gitCore.createBranch({
+          cwd,
+          branch: localBranch,
+          startPoint: `refs/remotes/${remoteName}/${remoteBranch}`,
+        });
+      }
+      yield* gitCore.setBranchUpstream({ cwd, branch: localBranch, remoteName, remoteBranch });
+    },
+  );
+
   const configurePullRequestHeadUpstreamBase = Effect.fn("configurePullRequestHeadUpstream")(
     function* (
       cwd: string,
@@ -3051,6 +3098,11 @@ export const make = Effect.gen(function* () {
       key: SourceControlProvider.privateCompanionConfigKey(remoteName),
       value: companion.url,
     });
+    yield* gitCore.writeConfigValue({
+      cwd,
+      key: SourceControlProvider.privatePullRequestPushConfigKey(branch),
+      value: companion.url,
+    });
     // Recorded before the push, so a later push of this branch, by T3 or by plain `git push`,
     // goes to the companion too and never publishes the branch.
     yield* gitCore.writeConfigValue({
@@ -3756,6 +3808,14 @@ export const make = Effect.gen(function* () {
         reference: normalizedReference,
       });
       const pullRequest = toResolvedPullRequest(pullRequestSummary);
+      const privateCompanion = pullRequestSummary.privateHeadRepository;
+      if (privateCompanion === null) {
+        return yield* new GitManagerError({
+          operation: "preparePullRequestThread",
+          cwd: input.cwd,
+          detail: "The private pull request has no companion repository.",
+        });
+      }
 
       if (input.mode === "local") {
         yield* ensureNoTrackedChanges(input.cwd, pullRequest.number);
@@ -3765,14 +3825,13 @@ export const make = Effect.gen(function* () {
         });
         const details = yield* gitCore.statusDetails(input.cwd);
         const branch = details.branch ?? pullRequest.headBranch;
-        yield* configurePullRequestHeadUpstream(
-          input.cwd,
-          {
-            ...pullRequest,
-            ...toPullRequestHeadRemoteInfo(pullRequestSummary),
-          },
-          branch,
-        );
+        if (privateCompanion === undefined) {
+          yield* configurePullRequestHeadUpstream(
+            input.cwd,
+            { ...pullRequest, ...toPullRequestHeadRemoteInfo(pullRequestSummary) },
+            branch,
+          );
+        }
         return {
           pullRequest,
           branch,
@@ -3780,20 +3839,6 @@ export const make = Effect.gen(function* () {
           isOnPullRequestHead: yield* moveToPullRequestHead(input.cwd, pullRequestSummary.headSha),
         };
       }
-
-      const ensureExistingWorktreeUpstream = Effect.fn("ensureExistingWorktreeUpstream")(function* (
-        worktreePath: string,
-      ) {
-        const details = yield* gitCore.statusDetails(worktreePath);
-        yield* configurePullRequestHeadUpstream(
-          worktreePath,
-          {
-            ...pullRequest,
-            ...toPullRequestHeadRemoteInfo(pullRequestSummary),
-          },
-          details.branch ?? pullRequest.headBranch,
-        );
-      });
 
       const pullRequestWithRemoteInfo = {
         ...pullRequest,
@@ -3815,6 +3860,25 @@ export const make = Effect.gen(function* () {
         pullRequestWithRemoteInfo,
         localBranches,
       );
+
+      const ensureExistingWorktreeUpstream = Effect.fn("ensureExistingWorktreeUpstream")(function* (
+        worktreePath: string,
+      ) {
+        if (privateCompanion !== undefined) {
+          return yield* configurePrivatePullRequestHead(
+            worktreePath,
+            pullRequest,
+            privateCompanion,
+            localPullRequestBranch,
+          );
+        }
+        const details = yield* gitCore.statusDetails(worktreePath);
+        yield* configurePullRequestHeadUpstream(
+          worktreePath,
+          pullRequestWithRemoteInfo,
+          details.branch ?? pullRequest.headBranch,
+        );
+      });
 
       // Git refuses to move checked-out branches; advance reused checkouts from inside their worktree.
       const reuseExistingWorktree = Effect.fn("reuseExistingWorktree")(function* (
@@ -3849,30 +3913,35 @@ export const make = Effect.gen(function* () {
         // head. The branch's upstream does not: configuring it is best-effort, so a branch cut
         // from `origin/main` whose head branch has since been deleted still resolves — and
         // following it would move the checkout onto main and call that the pull request.
-        const refreshed = yield* changeRequestHeadRef(worktreePath, pullRequest.number).pipe(
-          Effect.flatMap((ref) => gitCore.fetchRefCommit({ cwd: worktreePath, ref })),
-          // A host that publishes no head ref leaves the remote-tracking branch,
-          // taken only where it is the head branch's own rather than whatever the checkout
-          // happened to be cut from.
-          Effect.catch(() =>
-            Effect.gen(function* () {
-              const details = yield* gitCore.statusDetails(worktreePath);
-              if (
-                details.upstreamRef === null ||
-                !details.upstreamRef.endsWith(`/${pullRequest.headBranch}`)
-              ) {
-                return yield* new GitManagerError({
-                  operation: "preparePullRequestThread",
-                  cwd: worktreePath,
-                  detail: "The pull request head could not be resolved for this checkout.",
-                });
-              }
-              return yield* gitCore.resolveCommit({
-                cwd: worktreePath,
-                revision: details.upstreamRef,
-              });
-            }),
-          ),
+        const getTarget =
+          privateCompanion !== undefined
+            ? gitCore.resolveCommit({ cwd: worktreePath, revision: "@{upstream}" })
+            : changeRequestHeadRef(worktreePath, pullRequest.number).pipe(
+                Effect.flatMap((ref) => gitCore.fetchRefCommit({ cwd: worktreePath, ref })),
+                // A host that publishes no head ref leaves the remote-tracking branch,
+                // taken only where it is the head branch's own rather than whatever the checkout
+                // happened to be cut from.
+                Effect.catch(() =>
+                  Effect.gen(function* () {
+                    const details = yield* gitCore.statusDetails(worktreePath);
+                    if (
+                      details.upstreamRef === null ||
+                      !details.upstreamRef.endsWith(`/${pullRequest.headBranch}`)
+                    ) {
+                      return yield* new GitManagerError({
+                        operation: "preparePullRequestThread",
+                        cwd: worktreePath,
+                        detail: "The pull request head could not be resolved for this checkout.",
+                      });
+                    }
+                    return yield* gitCore.resolveCommit({
+                      cwd: worktreePath,
+                      revision: details.upstreamRef,
+                    });
+                  }),
+                ),
+              );
+        const refreshed = yield* getTarget.pipe(
           Effect.flatMap((target) =>
             gitCore.refreshCheckedOutBranch({
               cwd: worktreePath,
@@ -3906,9 +3975,9 @@ export const make = Effect.gen(function* () {
       });
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
-        for (const [index, name] of [
-          ...new Set([localPullRequestBranch, pullRequest.headBranch]),
-        ].entries()) {
+        const names = new Set([localPullRequestBranch]);
+        if (privateCompanion === undefined) names.add(pullRequest.headBranch);
+        for (const [index, name] of [...names].entries()) {
           let cursor: number | undefined;
           do {
             const result = yield* gitCore.listRefs({
@@ -3947,13 +4016,21 @@ export const make = Effect.gen(function* () {
             Effect.map((resolved) => resolved.commitSha),
             Effect.orElseSucceed(() => null),
           );
-        yield* configurePullRequestHeadUpstream(
-          cwd,
-          pullRequestWithRemoteInfo,
-          localPullRequestBranch,
-        );
-        const target = yield* changeRequestHeadRef(cwd, pullRequest.number).pipe(
-          Effect.flatMap((ref) => gitCore.fetchRefCommit({ cwd, ref })),
+        if (privateCompanion === undefined) {
+          yield* configurePullRequestHeadUpstream(
+            cwd,
+            pullRequestWithRemoteInfo,
+            localPullRequestBranch,
+          );
+        }
+        const upstream = gitCore.resolveCommit({ cwd, revision: "@{upstream}" });
+        const pullRequestHead =
+          privateCompanion !== undefined
+            ? upstream
+            : changeRequestHeadRef(cwd, pullRequest.number).pipe(
+                Effect.flatMap((ref) => gitCore.fetchRefCommit({ cwd, ref })),
+              );
+        const target = yield* pullRequestHead.pipe(
           Effect.filterOrFail(
             (resolved) =>
               pullRequestSummary.headSha === undefined ||
@@ -3966,7 +4043,7 @@ export const make = Effect.gen(function* () {
               }),
           ),
           Effect.catch(() =>
-            gitCore.resolveCommit({ cwd, revision: "@{upstream}" }).pipe(
+            upstream.pipe(
               Effect.filterOrFail(
                 (resolved) => resolved.commitSha === pullRequestSummary.headSha,
                 () =>
@@ -4053,6 +4130,7 @@ export const make = Effect.gen(function* () {
       }
       // Materializing would force this branch onto the head.
       if (existingBranchBeforeFetch !== null) {
+        if (privateCompanion !== undefined) yield* ensureExistingWorktreeUpstream(input.cwd);
         let isOnPullRequestHead = false;
         const worktree = yield* createPullRequestWorktree((cwd) =>
           refreshNewWorktree(cwd).pipe(
@@ -4082,11 +4160,21 @@ export const make = Effect.gen(function* () {
         };
       }
 
-      yield* materializePullRequestHeadBranch(
-        input.cwd,
-        pullRequestWithRemoteInfo,
-        localPullRequestBranch,
-      );
+      if (privateCompanion !== undefined) {
+        yield* configurePrivatePullRequestHead(
+          input.cwd,
+          pullRequest,
+          privateCompanion,
+          localPullRequestBranch,
+          true,
+        );
+      } else {
+        yield* materializePullRequestHeadBranch(
+          input.cwd,
+          pullRequestWithRemoteInfo,
+          localPullRequestBranch,
+        );
+      }
 
       const existingBranchAfterFetch = yield* findLocalHeadBranch(input.cwd);
       const existingBranchAfterFetchPath = existingBranchAfterFetch?.worktreePath
@@ -4111,7 +4199,8 @@ export const make = Effect.gen(function* () {
       }
 
       const worktree = yield* createPullRequestWorktree();
-      yield* ensureExistingWorktreeUpstream(worktree.worktree.path);
+      if (privateCompanion === undefined)
+        yield* ensureExistingWorktreeUpstream(worktree.worktree.path);
       yield* maybeRunSetupScript(worktree.worktree.path);
 
       return {

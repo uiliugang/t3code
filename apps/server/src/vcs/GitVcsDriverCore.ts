@@ -44,6 +44,7 @@ import {
   isMainOrMasterBranch,
   resolveAutoFeatureBranchName,
 } from "@t3tools/shared/git";
+import { privatePullRequestPushConfigKey } from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
@@ -3771,12 +3772,56 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     ),
   );
 
+  const resolvePrivatePullRequestPushDestination = Effect.fn(
+    "resolvePrivatePullRequestPushDestination",
+  )(function* (cwd: string, branch: string) {
+    const url = yield* readConfigValue(cwd, privatePullRequestPushConfigKey(branch));
+    if (url === null) return null;
+    const [remoteName, pushRemote, mergeRef] = yield* Effect.all([
+      readConfigValue(cwd, `branch.${branch}.remote`),
+      readConfigValue(cwd, `branch.${branch}.pushRemote`),
+      readConfigValue(cwd, `branch.${branch}.merge`),
+    ]);
+    const branchName = mergeRef?.startsWith("refs/heads/")
+      ? mergeRef.slice("refs/heads/".length)
+      : null;
+    if (
+      !remoteName ||
+      remoteName !== pushRemote ||
+      !branchName ||
+      !(yield* pushesOnlyToFetchUrl(
+        cwd,
+        remoteName,
+        sourceControlDefinitions.repositoryKeyFromRemote(url),
+      ))
+    ) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.resolvePrivatePullRequestPushDestination",
+          cwd,
+          args: ["push"],
+        }),
+        detail:
+          "The private pull request's push remote has changed. Reopen the pull request to restore it.",
+      });
+    }
+    return {
+      remoteName,
+      branchName,
+      publishes: false,
+      upstream: { remoteName, branchName, upstreamRef: `${remoteName}/${branchName}` },
+      pushRemote: null,
+    };
+  });
+
   // `publishes` is false only when HEAD goes to the head of its current `upstream`.
   const resolvePushDestination = Effect.fn("resolvePushDestination")(function* (
     cwd: string,
     branch: string,
     hasUpstream: boolean,
   ) {
+    const privateDestination = yield* resolvePrivatePullRequestPushDestination(cwd, branch);
+    if (privateDestination) return privateDestination;
     if (!hasUpstream) {
       // A deleted upstream keeps its config: republish to it when it was this branch's own,
       // otherwise it was the base, so keep that before publishing.
@@ -3897,7 +3942,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const requestedRemoteName = options?.remoteName?.trim() || null;
-    if (requestedRemoteName) {
+    const privateDestination = requestedRemoteName
+      ? yield* resolvePrivatePullRequestPushDestination(cwd, branch)
+      : null;
+    if (privateDestination && requestedRemoteName !== privateDestination.remoteName) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({ operation: "GitVcsDriver.pushCurrentBranch", cwd, args: ["push"] }),
+        detail: "A private pull request can only be pushed to its companion repository.",
+      });
+    }
+    if (requestedRemoteName && !privateDestination) {
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
       yield* executeGitWithStableDiagnostics(
         "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
@@ -3914,7 +3968,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const hasNoLocalDelta = details.aheadCount === 0 && details.behindCount === 0;
-    const destination = yield* resolvePushDestination(cwd, branch, details.hasUpstream);
+    const destination =
+      privateDestination ?? (yield* resolvePushDestination(cwd, branch, details.hasUpstream));
     if (hasNoLocalDelta && details.hasUpstream) {
       if (!destination?.pushRemote) {
         // A local upstream and a separate push URL both leave the publish destination unchecked.

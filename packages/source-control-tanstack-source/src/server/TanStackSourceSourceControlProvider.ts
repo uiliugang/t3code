@@ -1,7 +1,6 @@
 import {
   requireSettingsSecretLiteral,
   SourceControlProviderError,
-  type ChangeRequest,
   type SourceControlProviderAuth,
   type SourceControlProviderDiscoveryItem,
 } from "@t3tools/contracts";
@@ -305,8 +304,18 @@ export const make = Effect.gen(function* () {
   const toChangeRequest = (
     target: Target,
     pull: Json.SourcePullDetail,
-  ): ChangeRequest & { readonly visibility: string | undefined } => {
+  ): SourceControlProvider.ChangeRequestForCheckout => {
     const headRepository = pull.headRepo ?? target.repository;
+    const baseRepository = target.repository.toLowerCase();
+    const privateHeadRepository =
+      pull.visibility === "private"
+        ? headRepository.toLowerCase() === baseRepository
+          ? null
+          : headRepository
+        : pull.visibility === undefined &&
+            headRepository.toLowerCase() === `${baseRepository}.private`
+          ? headRepository
+          : undefined;
     const headBranch = Json.headBranchName(pull.head);
     // A pull request synced from a GitHub fork names its head only by its pull ref.
     const crossRepository =
@@ -326,7 +335,7 @@ export const make = Effect.gen(function* () {
       mergedAt: pull.mergedAt === null ? null : Json.iso(pull.mergedAt),
       updatedAt: Option.some(DateTime.makeUnsafe(updatedAt)),
       isCrossRepository: crossRepository,
-      visibility: pull.visibility,
+      ...(privateHeadRepository === undefined ? {} : { privateHeadRepository }),
       headRepositoryNameWithOwner: headRepository,
       headRepositoryOwnerLogin: headRepository.split("/")[0] ?? null,
     };
@@ -537,24 +546,14 @@ export const make = Effect.gen(function* () {
                 });
           const operation = "TanStackSourceSourceControlProvider.checkoutChangeRequest";
           const branches = yield* git.listLocalBranchNames(input.cwd);
-          const headRepository = pull.headRepositoryNameWithOwner ?? null;
-          const isPrivate = pull.visibility === "private";
-          const companion =
-            pullRepository !== null &&
-            headRepository !== null &&
-            (isPrivate
-              ? headRepository.toLowerCase() !== pullRepository.toLowerCase()
-              : pull.visibility === undefined &&
-                headRepository.toLowerCase() === `${pullRepository}.private`.toLowerCase())
-              ? headRepository
-              : null;
-          if (isPrivate && companion === null) {
+          if (pull.privateHeadRepository === null) {
             return yield* error(
               operation,
               input.cwd,
               "The private pull request has no companion repository.",
             );
           }
+          const companion = pull.privateHeadRepository ?? null;
           if (!pull.isCrossRepository || companion !== null) {
             const localBranch = pull.headRefName;
             const companionUrl =
@@ -632,7 +631,12 @@ export const make = Effect.gen(function* () {
                   args: ["checkout", "--no-track", "-B", localBranch, trackingRef, "--"],
                 });
               }
-              if (companion !== null) {
+              if (companionUrl !== null) {
+                yield* git.writeConfigValue({
+                  cwd: input.cwd,
+                  key: SourceControlProvider.privatePullRequestPushConfigKey(localBranch),
+                  value: companionUrl,
+                });
                 yield* git.writeConfigValue({
                   cwd: input.cwd,
                   key: `branch.${localBranch}.pushRemote`,

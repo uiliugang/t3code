@@ -44,6 +44,14 @@ export interface SourceControlProviderContext {
 export const privateCompanionConfigKey = (remoteName: string) =>
   `remote.${remoteName}.t3-private-pr-companion`;
 
+export const privatePullRequestPushConfigKey = (branch: string) =>
+  `branch.${branch}.t3-private-pr-companion`;
+
+export type ChangeRequestForCheckout = ChangeRequest & {
+  /** Null means the provider reported a private request without a head repository. */
+  readonly privateHeadRepository?: string | null;
+};
+
 type IssueContext = { readonly cwd: string; readonly source: IssueSource };
 
 export interface SourceControlRefSelector {
@@ -270,7 +278,7 @@ export class SourceControlProvider extends Context.Service<
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
       readonly reference: string;
-    }) => Effect.Effect<ChangeRequest, SourceControlProviderError>;
+    }) => Effect.Effect<ChangeRequestForCheckout, SourceControlProviderError>;
     readonly createChangeRequest: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
