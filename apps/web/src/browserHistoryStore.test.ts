@@ -354,6 +354,17 @@ describe("thread project resolution", () => {
     const keys = Object.keys(useBrowserHistoryStore.getState().projectKeyByThreadKey);
     expect(keys).toHaveLength(100);
     expect(keys).not.toContain(scopedThreadKey(oldest));
+
+    const reassigned = { ...threadRef, threadId: ThreadId.make("registered-1") };
+    store.registerThreadProject(reassigned, "proj-b");
+    store.registerThreadProject(oldest, "proj-a");
+
+    const mappings = useBrowserHistoryStore.getState().projectKeyByThreadKey;
+    expect(Object.keys(mappings)).toHaveLength(100);
+    expect(mappings[scopedThreadKey(reassigned)]).toBe("proj-b");
+    expect(
+      mappings[scopedThreadKey({ ...threadRef, threadId: ThreadId.make("registered-2") })],
+    ).toBeUndefined();
   });
 
   it("files a browser tab's visits and titles under the thread's project with no view registering it", () => {

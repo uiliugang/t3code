@@ -284,6 +284,11 @@ const CreateIssueTool = Tool.make("create_issue", {
     projectId: Schema.optional(
       ProjectId.annotate({ description: "Defaults to this thread's project." }),
     ),
+    scope: Schema.optional(
+      TrimmedNonEmptyString.annotate({
+        description: "A bound team or repository, such as OPS. Defaults to the project's first.",
+      }),
+    ),
     title: TrimmedNonEmptyString.check(Schema.isMaxLength(1024)),
     body: Schema.optional(Schema.String.check(Schema.isMaxLength(65_536))),
     labels: Schema.optional(Schema.Array(TrimmedNonEmptyString).check(Schema.isMaxLength(50))),
@@ -334,8 +339,7 @@ const SetIssueStateTool = Tool.make("set_issue_state", {
   .annotate(Tool.OpenWorld, true);
 
 const LinkIssueTool = Tool.make("link_issue", {
-  description:
-    "Link an issue to a thread so T3 Code shows it beside the thread. Link every issue you work on or file.",
+  description: "Link every issue you work on or file so it appears beside the thread.",
   parameters: Schema.Struct({ ...IssueTargetInput.fields, ...ThreadTargetInput.fields }),
   success: LinkIssueResult,
   failure: IssueToolError,

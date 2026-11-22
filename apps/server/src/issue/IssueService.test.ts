@@ -161,7 +161,9 @@ function makeService(input: {
   readonly bindingsFailure?: PersistenceSqlError;
   readonly spaces?: ReadonlyArray<string>;
   readonly discoveryFailure?: RequirementIssueError;
-  readonly readBindings?: IssueTrackerBindings.IssueTrackerBindingsRepository["Service"]["list"];
+  readonly readBindings?: ReturnType<
+    IssueTrackerBindings.IssueTrackerBindingsRepository["Service"]["list"]
+  >;
 }) {
   return IssueService.IssueService.pipe(
     Effect.provide(
@@ -183,7 +185,7 @@ function makeService(input: {
               }),
             }),
             Layer.mock(IssueTrackerBindings.IssueTrackerBindingsRepository)({
-              list:
+              list: () =>
                 input.readBindings ??
                 (input.bindingsFailure !== undefined
                   ? Effect.fail(input.bindingsFailure)
@@ -298,6 +300,21 @@ describe("IssueService", () => {
       expect(
         yield* enterprise.resolveUrl("https://code.acme.test/acme/web/issues/7"),
       ).toMatchObject({ projectId: "ghes", host: "code.acme.test", key: "7", writable: true });
+
+      const unsupported = yield* makeService({
+        projects: [
+          project({
+            id: "forge",
+            repository: "acme/web",
+            provider: "forgejo",
+            host: "code.acme.test",
+          }),
+        ],
+        trackers: [fakeTracker({ kind: IssueTrackerKind.make("forgejo") })],
+      });
+      expect(
+        yield* Effect.flip(unsupported.resolveUrl("https://code.acme.test/acme/web/issues/7")),
+      ).toMatchObject({ reason: "not-found" });
 
       // A fork lists its upstream's issues and its own, counted once, and may write to both.
       const fork = project({ id: "fork", repository: "acme/web" });
@@ -664,7 +681,12 @@ describe("IssueService with a standalone tracker", () => {
         writable: false,
       });
       expect((yield* bound.projectScope("web" as ProjectId)).scope).toBe("ENG");
-      expect((yield* bound.projectScope("web" as ProjectId, "ops-12")).scope).toBe("OPS");
+      expect((yield* bound.projectScope("web" as ProjectId, { key: "ops-12" })).scope).toBe("OPS");
+      expect(yield* bound.projectScope("web" as ProjectId, { scope: "ACME/Web" })).toMatchObject({
+        tracker: GITHUB,
+        host: "github.com",
+        scope: "acme/web",
+      });
       expect(
         yield* bound.detail({
           projectId: "web" as ProjectId,

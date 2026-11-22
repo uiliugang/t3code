@@ -36,6 +36,7 @@ import {
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
   type AddProjectRemoteSourceReadiness,
+  resolveOfferedSourceControlProviders,
 } from "@t3tools/client-runtime/operations/projects";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
@@ -1173,8 +1174,9 @@ function OpenCommandPaletteDialog(props: {
       ?.newProjectsRoot ?? null;
 
   const offeredProvidersFor = (environmentId: EnvironmentId | null) =>
-    environments.find((environment) => environment.environmentId === environmentId)?.serverConfig
-      ?.settings.offeredSourceControlProviders;
+    resolveOfferedSourceControlProviders(
+      environments.find((environment) => environment.environmentId === environmentId)?.serverConfig,
+    );
 
   const startNewProject = (
     environmentId: EnvironmentId,

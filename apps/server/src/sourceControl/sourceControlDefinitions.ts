@@ -2,12 +2,17 @@ import { builtInSourceControlDefinitions } from "@t3tools/source-control-definit
 import * as GitHubDriver from "@t3tools/source-control-github/server/driver";
 import * as GitLabDriver from "@t3tools/source-control-gitlab/server/driver";
 import * as MeituanDriver from "@t3tools/source-control-meituan/server/driver";
+import * as TanStackSourceDriver from "@t3tools/source-control-tanstack-source/server/driver";
 
-/** In the shared registry's order, which is the order hosts are listed and probed in. */
+/**
+ * In the shared registry's order, which is the order hosts are listed and probed in. Feature
+ * flags leave some out; see `builtInDrivers.ts`.
+ */
 export const BUILT_IN_SOURCE_CONTROL_DRIVER_LIST = [
   GitHubDriver.driver,
   GitLabDriver.driver,
   MeituanDriver.driver,
+  TanStackSourceDriver.driver,
 ] as const;
 
 export const sourceControlDefinitions = builtInSourceControlDefinitions;

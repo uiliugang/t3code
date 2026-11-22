@@ -32,7 +32,17 @@ function logPathHydrationWarning(message: string, error?: unknown): void {
 // __MISE_DIFF is mise's record of the PATH entries it added. It must travel
 // with the shell's PATH, or `mise x` can rebuild PATH behind a same-named
 // wrapper (`exec mise x claude -- claude`) that then re-runs itself forever.
-const LOGIN_SHELL_ENV_NAMES = ["PATH", "__MISE_DIFF", "JAVA_HOME"] as const;
+const FEATURE_FLAG_ENV_NAMES = [
+  "T3CODE_FEATURE_FLAGS",
+  "T3CODE_FEATURE_SECRETS",
+  "T3CODE_GITHUB_APP_CLIENT_ID",
+] as const;
+const LOGIN_SHELL_ENV_NAMES = [
+  "PATH",
+  "__MISE_DIFF",
+  "JAVA_HOME",
+  ...FEATURE_FLAG_ENV_NAMES,
+] as const;
 const LOGIN_SHELL_TIMEOUT = Duration.seconds(5);
 const SLOW_LOGIN_SHELL_TIMEOUT_MS = 20_000;
 
@@ -63,6 +73,10 @@ function applyLoginShellEnvironment(
   // is only reachable through the JAVA_HOME the shell profile sets.
   if (!env.JAVA_HOME && shellEnvironment.JAVA_HOME) {
     env.JAVA_HOME = shellEnvironment.JAVA_HOME;
+  }
+  // A headless server (systemd, launchd) reads no profile, yet flags belong where users export them.
+  for (const name of FEATURE_FLAG_ENV_NAMES) {
+    if (env[name] === undefined && shellEnvironment[name]) env[name] = shellEnvironment[name];
   }
 }
 

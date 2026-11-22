@@ -35,6 +35,7 @@ import {
   sortAddProjectProviderSources,
   type OfferedSourceControlProviders,
   type AddProjectRemoteSource,
+  resolveOfferedSourceControlProviders,
 } from "@t3tools/client-runtime/operations/projects";
 import {
   connectionStatusText,
@@ -476,7 +477,7 @@ function useEnvironmentOptions(
           : { i18nConnectionError: runtime.i18nConnectionError }),
         connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,
         ghqCloneLayout: config?.settings.ghqCloneLayout === true,
-        offeredSourceControlProviders: config?.settings.offeredSourceControlProviders,
+        offeredSourceControlProviders: resolveOfferedSourceControlProviders(config),
         meituanIntegrationEnabled: isMeituanServiceEnabled(config?.settings, "sourceControl"),
       };
     });

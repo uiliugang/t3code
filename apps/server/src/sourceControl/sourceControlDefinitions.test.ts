@@ -13,11 +13,12 @@ it("runs a driver for every host the server and clients read, in their order", (
   );
 });
 
-it("only registers GitHub, GitLab and Meituan Code", () => {
+it("recognizes GitHub, GitLab, Meituan Code and the TanStack Source beta", () => {
   expect(sourceControlDefinitions.definitions.map((definition) => definition.kind)).toEqual([
     "github",
     "gitlab",
     "meituan",
+    "tanstack-source",
   ]);
   expect(
     sourceControlDefinitions.recognizeRemote("git@git.sankuai.com:project/repo.git")?.kind,

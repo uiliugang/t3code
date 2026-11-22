@@ -1185,6 +1185,25 @@ it.effect("provisions independent launches concurrently instead of behind a glob
   }),
 );
 
+it.effect("keeps an explicitly chosen launch title when dispatching the first message", () => {
+  const harness = makeHarness();
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const launched = yield* launches.launch({
+      ...launchInput({
+        command: "manual-launch-title",
+        thread: "manual-launch-title-thread",
+        message: "Fix the failing parser",
+      }),
+      title: "Parser follow-up",
+      titleRenamed: true,
+    });
+    assert.equal(launched.projection.thread.title, "Parser follow-up");
+    assert.isTrue(launched.projection.thread.titleRenamed);
+    assert.isUndefined(launched.projection.thread.titleRegeneration);
+  }).pipe(Effect.provide(harness.layer));
+});
+
 it.effect.each([" /COMPACT "])(
   "uses the first conversation message for a title after %s",
   (nativeCommand) =>
@@ -1306,7 +1325,7 @@ it.effect("keeps native maintenance commands out of steering and restart message
           attachments: [],
           dispatchMode: { type: scenario.mode, targetRunId: targetRun.id },
         });
-        if (scenario.name.startsWith("steer-")) {
+        if (scenario.mode === "steer_active") {
           yield* dispatch;
           const queued = (yield* threads.getThreadProjection(launched.threadId)).runs[1];
           assert.equal(queued?.status, "queued");

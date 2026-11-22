@@ -432,7 +432,7 @@ To list Linear issues beside a project's, connect Linear with an API key under
 Settings → Source control & issues, then pick one or more teams for that project there. Pick
 another team at any time to add it; uncheck every team to unbind the project. Each team's
 issues appear in the Linear group of the issue list, sorted with the rest by last update, and
-each can be loaded further on its own. Agents file new issues in the first team picked.
+each can be loaded further on its own. Agents file new issues in the first team picked unless you name another bound team.
 
 MEP ONES uses the environment's `ones2` sign-in, not a Linear API key. Use the ONES form to create a work item with its space's required fields. When two spaces share an issue number, use its full URL to identify the work item.
 
