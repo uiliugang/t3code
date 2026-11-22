@@ -466,17 +466,20 @@ export const useBrowserHistoryStore = create<BrowserHistoryStoreState>()((set, g
       if (state.projectKeyByThreadKey[threadKey] === projectKey && !pendingVisits) return;
       const nextPendingVisits = { ...state.pendingVisitsByThreadKey };
       delete nextPendingVisits[threadKey];
+      const recordMapping = (mappings: BrowserHistoryStoreState["projectKeyByThreadKey"]) => {
+        const { [threadKey]: _previous, ...otherProjects } = mappings;
+        return migratePersistedThreadProjectKeys({
+          projectKeyByThreadKey: { ...otherProjects, [threadKey]: projectKey },
+        });
+      };
       set({
-        projectKeyByThreadKey: { ...state.projectKeyByThreadKey, [threadKey]: projectKey },
+        projectKeyByThreadKey: recordMapping(state.projectKeyByThreadKey),
         pendingVisitsByThreadKey: nextPendingVisits,
       });
       updateHistory((shared) =>
         shared.projectKeyByThreadKey[threadKey] === projectKey
           ? shared
-          : {
-              ...shared,
-              projectKeyByThreadKey: { ...shared.projectKeyByThreadKey, [threadKey]: projectKey },
-            },
+          : { ...shared, projectKeyByThreadKey: recordMapping(shared.projectKeyByThreadKey) },
       );
       for (const visit of pendingVisits ?? [])
         get().recordVisit(projectKey, visit.url, visit.at, {
@@ -508,10 +511,16 @@ if (typeof window !== "undefined") {
   const hydrate = (history: PersistedBrowserHistory) => {
     useBrowserHistoryStore.setState((state) => ({
       byProjectKey: history.byProjectKey,
-      projectKeyByThreadKey: {
-        ...migratePersistedThreadProjectKeys(history, history.byProjectKey),
-        ...state.projectKeyByThreadKey,
-      },
+      projectKeyByThreadKey: migratePersistedThreadProjectKeys({
+        projectKeyByThreadKey: {
+          ...Object.fromEntries(
+            Object.entries(migratePersistedThreadProjectKeys(history, history.byProjectKey)).filter(
+              ([threadKey]) => !Object.hasOwn(state.projectKeyByThreadKey, threadKey),
+            ),
+          ),
+          ...state.projectKeyByThreadKey,
+        },
+      }),
     }));
   };
   void transactIndexedHistory((history) => history).then(
