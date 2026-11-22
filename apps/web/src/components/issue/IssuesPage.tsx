@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import {
   continueIssuePage,
   groupIssues,
@@ -16,11 +15,10 @@ import type {
   IssueListInput,
   IssueListSort,
   IssueListState,
-  IssueTrackerKind,
   IssueTrackerSummary,
   ProjectId,
+  ScopedThreadRef,
 } from "@t3tools/contracts";
-import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ArrowDownUpIcon,
   AtSignIcon,
@@ -34,19 +32,17 @@ import {
   UsersIcon,
 } from "lucide-react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
-import { Fragment, useEffect, useEffectEvent, useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { IssueDetailPanel } from "~/components/issue/IssueDetailPanel";
 import { IssueRow, type IssueRowTarget } from "~/components/issue/IssueRow";
 import {
   issueListPreferences,
+  readIssueListPreferences,
   writeIssueListPreferences,
   type IssueListPreferences,
 } from "~/components/issue/issueListPreferences";
 import { IssueGlyph, issueTrackerPresentation } from "~/components/issue/issuePresentation";
-import { PullRequestDetailPanel } from "~/components/pullRequest/PullRequestDetailPanel";
-import { PullRequestMarkdownPanelContext } from "~/components/pullRequest/PullRequestMarkdown";
 import { PullRequestListGhost } from "~/components/pullRequest/PullRequestGhosts";
 import {
   PullRequestFilterOptionIcon,
@@ -62,11 +58,7 @@ import { ISSUE_SAVED_VIEWS } from "./issueSavedViews";
 import { SavedViewsMenu } from "~/components/SavedViewsMenu";
 import { PullRequestCompactFilterMenu } from "../pullRequest/PullRequestCompactFilterMenu";
 import { PullRequestsUnavailableState } from "~/components/pullRequest/PullRequestsUnavailableState";
-import { RightPanelTabs } from "~/components/RightPanelTabs";
-import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "~/components/WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "~/components/WorkspacePageContainer";
-import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
-import { PanelLayoutControls } from "~/components/chat/PanelLayoutControls";
 import { Button } from "~/components/ui/button";
 import {
   Empty,
@@ -77,21 +69,11 @@ import {
   EmptyTitle,
 } from "~/components/ui/empty";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "~/components/ui/menu";
-import { SidebarInset } from "~/components/ui/sidebar";
-import { isCommandPaletteOpen } from "~/commandPaletteBus";
-import { isElectron } from "~/env";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
-import { shortcutLabelForCommand, resolveShortcutCommand } from "~/keybindings";
-import { isTerminalFocused } from "~/lib/terminalFocus";
-import { usePanelAnimationSettings, usePanelPresence } from "~/panelAnimations";
 import {
-  ISSUES_PANEL_REF,
   selectActiveRightPanelSurface,
-  selectSelectedRightPanelSurface,
-  selectThreadRightPanelState,
   useRightPanelStore,
-  type PullRequestSurface,
   type RightPanelSurface,
 } from "~/rightPanelStore";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -100,7 +82,12 @@ import { useProjects } from "~/state/entities";
 import { useEnvironments, useIssuesSupported } from "~/state/environments";
 import { issueEnvironment, useIssueList } from "~/state/issues";
 import { useDebouncedValue } from "~/state/queries";
-import { primaryServerKeybindingsAtom } from "~/state/server";
+import {
+  isRequirementTracker,
+  requirementSelection,
+  type RequirementSearchPatch,
+} from "../requirements/requirementPanelSearch";
+import type { RequirementsSearch } from "../../routes/_chat.requirements";
 
 export interface IssuesSearch extends IssueListPreferences {
   readonly selectedEnvironmentId?: EnvironmentId | undefined;
@@ -135,21 +122,6 @@ const SORT_OPTIONS = [
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<IssueListSort>>;
 
 const PAGE_SIZE = 50;
-const EMPTY_SET: ReadonlySet<string> = new Set();
-const EMPTY_RECORD = {} as const;
-const EMPTY_MAP = new Map<string, string>();
-
-function getShortcutContext() {
-  return {
-    terminalFocus: isTerminalFocused(),
-    terminalOpen: false,
-    previewFocus: false,
-    previewOpen: false,
-    modelPickerOpen: false,
-    isWeb: !isElectron,
-    isDesktop: isElectron,
-  };
-}
 
 function hostOptionsFor(
   trackers: ReadonlyArray<IssueTrackerSummary>,
@@ -190,16 +162,85 @@ function hostOptionsFor(
   ];
 }
 
-export function IssuesPage() {
+function surfaceMatchesRow(
+  surface: RightPanelSurface | null,
+  row: {
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+    readonly tracker: string;
+    readonly host: string;
+    readonly scope: string;
+    readonly key: string;
+  },
+  fallbackEnvironmentId: EnvironmentId,
+) {
+  if (!surface) return false;
+  const surfaceEnvironmentId =
+    ("environmentId" in surface
+      ? (surface.environmentId as EnvironmentId | undefined)
+      : undefined) ?? fallbackEnvironmentId;
+  if (surfaceEnvironmentId !== row.environmentId) return false;
+  if (surface.kind === "issue") {
+    return (
+      issueEntryKey({
+        ...surface,
+        host: surface.host ?? "",
+        projectId: surface.projectId as ProjectId,
+      }) === issueEntryKey(row)
+    );
+  }
+  if (surface.kind === "requirement-issue") {
+    return (
+      surface.projectId === row.projectId &&
+      surface.provider === row.tracker &&
+      surface.issueId === row.key &&
+      (surface.scope === undefined || surface.scope === row.scope) &&
+      (surface.host === undefined || surface.host === row.host)
+    );
+  }
+  return false;
+}
+
+export function TrackerIssuesView({
+  search,
+  updateSearch,
+  panelRef,
+  renderedSurface,
+  fallbackEnvironmentId,
+}: {
+  search: RequirementsSearch;
+  updateSearch: (patch: RequirementSearchPatch) => void;
+  panelRef: ScopedThreadRef;
+  renderedSurface: RightPanelSurface | null;
+  fallbackEnvironmentId: EnvironmentId;
+}) {
   const t = useUiTranslation();
   const gt = useGT();
   const resolve = useMessages();
-  const navigate = useNavigate({ from: "/issues" });
-  const search = useSearch({ from: "/_chat/issues" });
   const { environments } = useEnvironments();
   const projects = useProjects();
   const issuesSupported = useIssuesSupported();
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+
+  const savedDefaults = readIssueListPreferences();
+  const who = search.who ?? savedDefaults.who;
+  const status = search.status ?? savedDefaults.status;
+  const hideProjects = search.hideProjects ?? savedDefaults.hideProjects;
+  const host = search.host ?? savedDefaults.host;
+  const labels = search.labels ?? savedDefaults.label;
+  const assignee = search.assignee ?? savedDefaults.assignee;
+  const order = search.order ?? savedDefaults.order;
+  const queryText = search.q ?? "";
+
+  const currentPreferences = issueListPreferences({
+    who,
+    status,
+    hideProjects,
+    host,
+    q: queryText || undefined,
+    label: labels,
+    assignee,
+    order,
+  });
 
   const capableEnvironments = environments.filter(
     (environment) => environment.serverConfig?.environment.capabilities.issues === true,
@@ -211,18 +252,18 @@ export function IssuesPage() {
     ),
     environmentLabels,
   );
-  const hiddenProjects = issueProjectKeys(search.hideProjects);
+  const hiddenProjects = issueProjectKeys(hideProjects);
 
-  const debouncedQuery = useDebouncedValue(search.q ?? "", 300);
+  const debouncedQuery = useDebouncedValue(queryText, 300);
   const listInput: IssueListInput = {
-    state: search.status,
-    involvement: search.who,
+    state: status,
+    involvement: who,
     limit: PAGE_SIZE,
-    ...(search.host ? { host: search.host } : {}),
+    ...(host ? { host } : {}),
     ...(debouncedQuery ? { query: debouncedQuery } : {}),
-    ...(search.label?.length ? { labels: search.label } : {}),
-    ...(search.assignee ? { assignee: search.assignee } : {}),
-    ...(search.order ? { sort: search.order } : {}),
+    ...(labels?.length ? { labels } : {}),
+    ...(assignee ? { assignee } : {}),
+    ...(order ? { sort: order } : {}),
   };
   const everyProjectHidden =
     filterProjects.length > 0 &&
@@ -232,7 +273,7 @@ export function IssuesPage() {
     : issueListTargets(
         capableEnvironments.map((e) => e.environmentId),
         filterProjects,
-        search.hideProjects,
+        hideProjects,
         listInput,
       );
   const list = useIssueList(targets);
@@ -249,11 +290,11 @@ export function IssuesPage() {
   const loadPage = useAtomCommand(issueEnvironment.listPage, { reportFailure: false });
   const [loadingMore, setLoadingMore] = useState<string | null>(null);
   // One tracker group's button carries on that tracker's scopes only.
-  const loadMore = async (environmentId: EnvironmentId, host: string) => {
+  const loadMore = async (environmentId: EnvironmentId, trackerHost: string) => {
     const page = held.get(environmentId);
-    const cursors = page ? issueCursorsForHost(page.nextCursors, host) : {};
+    const cursors = page ? issueCursorsForHost(page.nextCursors, trackerHost) : {};
     if (!page || Object.keys(cursors).length === 0 || loadingMore !== null) return;
-    setLoadingMore(`${environmentId} ${host}`);
+    setLoadingMore(`${environmentId} ${trackerHost}`);
     const input = targets.find((target) => target.environmentId === environmentId)?.input;
     if (!input) return;
     const result = await loadPage({ environmentId, input: { ...input, cursors } });
@@ -278,11 +319,7 @@ export function IssuesPage() {
     });
   };
 
-  // Rows grouped per tracker account, so a tracker that cannot be read says so where its rows
-  // would be, and each tracker's rows carry on from their own cursors.
-  // The server names every tracker so the menu can switch hosts, but reads only the chosen one.
-  const chosenHost = search.host?.toLowerCase();
-  // A server older than `excludeProjectIds` still answers for hidden projects.
+  const chosenHost = host?.toLowerCase();
   const shown =
     chosenHost || hiddenProjects.size > 0
       ? new Map(
@@ -320,7 +357,7 @@ export function IssuesPage() {
           ]),
         )
       : held;
-  const groups = groupIssues(shown, debouncedQuery, projects, search.order ?? "updated");
+  const groups = groupIssues(shown, debouncedQuery, projects, order ?? "updated");
   const filterScopes = issueFilterScopes(
     shown,
     projects.filter((project) => !hiddenProjects.has(pullRequestProjectKey(project))),
@@ -328,180 +365,54 @@ export function IssuesPage() {
 
   const hostOptions = hostOptionsFor(
     [...held.values()].flatMap((page) => page.answer.trackers),
-    search.host,
+    host,
     resolve,
   );
 
-  const updateSearch = (patch: { [Key in keyof IssuesSearch]?: IssuesSearch[Key] | undefined }) => {
-    const merged = { ...search, ...patch };
-    const next: IssuesSearch = {
-      who: merged.who ?? search.who,
-      status: merged.status ?? search.status,
-      ...(merged.hideProjects?.length ? { hideProjects: merged.hideProjects } : {}),
-      ...(merged.host ? { host: merged.host } : {}),
-      q: merged.q || undefined,
-      ...(merged.label?.length ? { label: merged.label } : {}),
-      ...(merged.assignee ? { assignee: merged.assignee } : {}),
-      ...(merged.order ? { order: merged.order } : {}),
-      ...(merged.selectedEnvironmentId
-        ? { selectedEnvironmentId: merged.selectedEnvironmentId }
-        : {}),
-      ...(merged.selectedProjectId ? { selectedProjectId: merged.selectedProjectId } : {}),
-      ...(merged.selectedHost ? { selectedHost: merged.selectedHost } : {}),
-      ...(merged.tracker ? { tracker: merged.tracker } : {}),
-      ...(merged.scope ? { scope: merged.scope } : {}),
-      ...(merged.key ? { key: merged.key } : {}),
-    };
-    writeIssueListPreferences(issueListPreferences(next));
-    void navigate({ search: next });
+  const applyListPatch = (patch: Partial<IssueListPreferences>) => {
+    const next = issueListPreferences({
+      who: "who" in patch ? (patch.who ?? "all") : who,
+      status: "status" in patch ? (patch.status ?? "open") : status,
+      hideProjects: "hideProjects" in patch ? patch.hideProjects : hideProjects,
+      host: "host" in patch ? patch.host : host,
+      q: "q" in patch ? patch.q : queryText || undefined,
+      label: "label" in patch ? patch.label : labels,
+      assignee: "assignee" in patch ? patch.assignee : assignee,
+      order: "order" in patch ? patch.order : order,
+    });
+    writeIssueListPreferences(next);
+    updateSearch({
+      mode: "issues",
+      who: next.who,
+      status: next.status,
+      hideProjects: next.hideProjects,
+      host: next.host,
+      q: next.q,
+      labels: next.label,
+      assignee: next.assignee,
+      order: next.order,
+    });
   };
-  const clearedSelection = {
-    selectedEnvironmentId: undefined,
-    selectedProjectId: undefined,
-    selectedHost: undefined,
-    tracker: undefined,
-    scope: undefined,
-    key: undefined,
-  } as const;
-
-  // One shared panel for the page, with a fixed sentinel ref, as the pull-request page does.
-  const rightPanelRef = capableEnvironments.length === 0 ? null : ISSUES_PANEL_REF;
-  const rightPanelState = useRightPanelStore((state) =>
-    selectThreadRightPanelState(state.byThreadKey, rightPanelRef),
-  );
-  const selectedSurface = useRightPanelStore((state) =>
-    selectSelectedRightPanelSurface(state.byThreadKey, rightPanelRef),
-  );
-  const panelSurface =
-    selectedSurface?.kind === "issue" || selectedSurface?.kind === "pull-request"
-      ? selectedSurface
-      : null;
-  const { active: panelAnimationsActive, durationMs } = usePanelAnimationSettings();
-  const presenceValue = { activeSurface: panelSurface, surfaces: rightPanelState.surfaces };
-  const presence = usePanelPresence(
-    rightPanelState.isOpen && panelSurface !== null,
-    presenceValue,
-    panelAnimationsActive,
-    rightPanelRef?.threadId ?? null,
-    durationMs,
-  );
-  const renderedSurface = presence.value?.activeSurface ?? null;
-  const panelEnvironmentId =
-    (renderedSurface?.environmentId as EnvironmentId | undefined) ??
-    capableEnvironments[0]?.environmentId ??
-    null;
-
-  const panelListEntry =
-    renderedSurface?.kind === "issue"
-      ? (groups
-          .flatMap((group) => group.rows)
-          .find(
-            (row) =>
-              row.environmentId === panelEnvironmentId &&
-              issueEntryKey(row) ===
-                issueEntryKey({
-                  ...renderedSurface,
-                  host: renderedSurface.host ?? row.host,
-                  projectId: renderedSurface.projectId as ProjectId,
-                }),
-          ) ?? null)
-      : null;
-
-  const selectSurfaceInUrl = (surface: RightPanelSurface | null) =>
-    updateSearch(
-      surface?.kind === "issue"
-        ? {
-            selectedEnvironmentId: surface.environmentId as EnvironmentId | undefined,
-            selectedProjectId: surface.projectId as ProjectId,
-            selectedHost: surface.host,
-            tracker: surface.tracker,
-            scope: surface.scope,
-            key: surface.key,
-          }
-        : clearedSelection,
-    );
 
   const selectEntry = (entry: IssueRowTarget) => {
-    if (rightPanelRef === null) return;
-    useRightPanelStore.getState().openIssue(rightPanelRef, entry);
-    updateSearch({
-      selectedEnvironmentId: entry.environmentId,
-      selectedProjectId: entry.projectId,
-      selectedHost: entry.host,
-      tracker: entry.tracker,
-      scope: entry.scope,
-      key: entry.key,
-    });
-  };
-
-  // A link into the page names an issue before any row was pressed.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the URL-linked issue in the right panel store
-  useEffect(() => {
-    if (
-      rightPanelRef === null ||
-      !search.tracker ||
-      !search.scope ||
-      !search.key ||
-      !search.selectedProjectId
-    )
-      return;
-    useRightPanelStore.getState().openIssue(rightPanelRef, {
-      ...(search.selectedEnvironmentId === undefined
-        ? {}
-        : { environmentId: search.selectedEnvironmentId }),
-      projectId: search.selectedProjectId,
-      ...(search.selectedHost === undefined ? {} : { host: search.selectedHost }),
-      tracker: search.tracker,
-      scope: search.scope,
-      key: search.key,
-    });
-  }, [
-    rightPanelRef,
-    search.tracker,
-    search.scope,
-    search.key,
-    search.selectedProjectId,
-    search.selectedHost,
-    search.selectedEnvironmentId,
-  ]);
-
-  const closeSurface = (surface: RightPanelSurface) => {
-    if (rightPanelRef === null) return;
-    useRightPanelStore.getState().closeSurface(rightPanelRef, surface.id);
-    selectSurfaceInUrl(
-      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, rightPanelRef),
-    );
-  };
-  const toggleRightPanel = () => {
-    if (rightPanelRef === null) return;
-    if (rightPanelState.isOpen) {
-      useRightPanelStore.getState().close(rightPanelRef);
-      updateSearch(clearedSelection);
-      return;
+    const panels = useRightPanelStore.getState();
+    if (isRequirementTracker(entry.tracker)) {
+      panels.openRequirementIssue(panelRef, {
+        environmentId: entry.environmentId,
+        projectId: entry.projectId,
+        provider: entry.tracker,
+        host: entry.host,
+        scope: entry.scope,
+        issueId: entry.key,
+      });
+    } else {
+      panels.openIssue(panelRef, entry);
     }
-    if (panelSurface === null) return;
-    useRightPanelStore.getState().show(rightPanelRef);
-    selectSurfaceInUrl(panelSurface);
-  };
-
-  const onRightPanelKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || isCommandPaletteOpen() || panelSurface === null) return;
-    const command = resolveShortcutCommand(event, keybindings, {
-      context: { ...getShortcutContext(), rightPanelOpen: rightPanelState.isOpen },
+    updateSearch({
+      mode: "issues",
+      ...requirementSelection(selectActiveRightPanelSurface(panels.byThreadKey, panelRef)),
     });
-    if (command !== "rightPanel.toggle") return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (!event.repeat) toggleRightPanel();
-  });
-
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the document right panel shortcut
-  useEffect(() => {
-    document.addEventListener("keydown", onRightPanelKeyDown);
-    return () => document.removeEventListener("keydown", onRightPanelKeyDown);
-  }, []);
-
-  // Every writable scope the workspace has, for the composer.
+  };
 
   const showTracker = groups.length > 1;
   const noneAnswered = list.answers.length === 0;
@@ -530,7 +441,7 @@ export function IssuesPage() {
         </EmptyTitle>
       </EmptyHeader>
       <EmptyContent>
-        <Button variant="outline" onClick={() => updateSearch({ hideProjects: undefined })}>
+        <Button variant="outline" onClick={() => applyListPatch({ hideProjects: undefined })}>
           <T>Show all projects</T>
         </Button>
       </EmptyContent>
@@ -601,14 +512,7 @@ export function IssuesPage() {
             ) : null}
             {group.rows.map((row) => {
               const key = issueEntryKey(row);
-              const selected =
-                renderedSurface?.kind === "issue" &&
-                renderedSurface.environmentId === row.environmentId &&
-                issueEntryKey({
-                  ...renderedSurface,
-                  host: renderedSurface.host ?? "",
-                  projectId: renderedSurface.projectId as ProjectId,
-                }) === key;
+              const selected = surfaceMatchesRow(renderedSurface, row, fallbackEnvironmentId);
               return (
                 <IssueRow
                   key={`${row.environmentId}:${key}`}
@@ -653,231 +557,85 @@ export function IssuesPage() {
   );
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      <div className="relative flex min-h-0 flex-1">
-        <div className="@container/issue-list flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-          <WorkspacePageHeader
-            electron={isElectron}
-            reserveNativeControls={!rightPanelState.isOpen}
-            className="relative bg-background"
-          >
-            <WorkspaceBreadcrumb ariaLabel={t("Issues breadcrumb")}>
-              <WorkspaceBreadcrumbItem current>
-                <h1 className="truncate">{t("Issues")}</h1>
-              </WorkspaceBreadcrumbItem>
-            </WorkspaceBreadcrumb>
-            <div className="min-w-0 flex-1" />
-            <div
-              className="flex items-center gap-1 [-webkit-app-region:no-drag]"
-              data-workspace-titlebar-controls
-            >
-              <PanelLayoutControls
-                showTerminalControl={false}
-                showThreadPanelControl={false}
-                terminalAvailable={false}
-                terminalOpen={false}
-                terminalShortcutLabel={null}
-                threadPanelOpen={false}
-                threadPanelPresentation="inline"
-                threadPanelShortcutLabel={null}
-                onToggleThreadPanel={() => undefined}
-                rightPanelAvailable={panelSurface !== null}
-                rightPanelOpen={rightPanelState.isOpen}
-                rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-                rightPanelUnavailableLabel={t("Select an issue first")}
-                onToggleTerminal={() => undefined}
-                onToggleRightPanel={toggleRightPanel}
-              />
-            </div>
-          </WorkspacePageHeader>
-
-          <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
-            <WorkspacePageContainer width="expanded" className="min-h-full gap-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-0 basis-full @lg/issue-list:min-w-48 @lg/issue-list:basis-0 @lg/issue-list:flex-1">
-                  <PullRequestSearchInput
-                    value={search.q ?? ""}
-                    label={t("Search issues")}
-                    placeholder={t("Search issues")}
-                    busy={
-                      (search.q ?? "") !== debouncedQuery ||
-                      (debouncedQuery.length > 0 && list.isPending)
-                    }
-                    onChange={(q) => updateSearch({ q: q || undefined })}
-                    onSubmit={(q) => updateSearch({ q: q || undefined })}
-                  />
-                </div>
-                <PullRequestCompactFilterMenu
-                  label={t("Sort issues")}
-                  triggerIcon={<ArrowDownUpIcon aria-hidden className="size-4" />}
-                  triggerLabel={t("Sort")}
-                  outlined
-                  value={search.order ?? "updated"}
-                  options={resolveFilterOptions(SORT_OPTIONS, resolve)}
-                  onChange={(order) =>
-                    updateSearch({ order: order === "created" ? "created" : undefined })
-                  }
-                />
-                <IssueFiltersMenu
-                  state={search.status}
-                  stateOptions={resolveFilterOptions(STATE_TABS, resolve)}
-                  onState={(status) => updateSearch({ status })}
-                  involvement={search.who}
-                  involvementOptions={resolveFilterOptions(INVOLVEMENT_TABS, resolve)}
-                  onInvolvement={(who) => updateSearch({ who })}
-                  scopes={filterScopes}
-                  labels={search.label ?? []}
-                  onLabels={(label) => updateSearch({ label })}
-                  assignee={search.assignee}
-                  onAssignee={(assignee) => updateSearch({ assignee })}
-                  projects={filterProjects}
-                  hiddenProjects={hiddenProjects}
-                  onHiddenProjects={(hideProjects) => updateSearch({ hideProjects })}
-                />
-                <SavedViewsMenu
-                  kind={ISSUE_SAVED_VIEWS}
-                  preferences={search}
-                  onApply={(view) =>
-                    // Explicit clears replace the old list scope; the selected issue stays open.
-                    updateSearch({
-                      who: view.who,
-                      status: view.status,
-                      hideProjects: view.hideProjects,
-                      host: view.host,
-                      q: view.q,
-                      label: view.label,
-                      assignee: view.assignee,
-                      order: view.order,
-                    })
-                  }
-                />
-                {hostOptions.length > 1 ? (
-                  <FilterMenu
-                    label={t("Filter by tracker")}
-                    value={search.host ?? ""}
-                    options={hostOptions}
-                    onChange={(host) => updateSearch({ host: host || undefined })}
-                  />
-                ) : null}
-                <Button
-                  size="icon"
-                  variant="outline"
-                  aria-label={t("Refresh issues")}
-                  onClick={list.refresh}
-                  disabled={list.isPending}
-                >
-                  <RefreshIcon size="md" refreshing={list.isPending} />
-                </Button>
-              </div>
-              {listBody}
-            </WorkspacePageContainer>
+    <div className="@container/issue-list topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
+      <WorkspacePageContainer width="expanded" className="min-h-full gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-0 basis-full @lg/issue-list:min-w-48 @lg/issue-list:basis-0 @lg/issue-list:flex-1">
+            <PullRequestSearchInput
+              value={queryText}
+              label={t("Search issues")}
+              placeholder={t("Search issues")}
+              busy={queryText !== debouncedQuery || (debouncedQuery.length > 0 && list.isPending)}
+              onChange={(q) => applyListPatch({ q: q || undefined })}
+              onSubmit={(q) => applyListPatch({ q: q || undefined })}
+            />
           </div>
-        </div>
-
-        {presence.present &&
-        renderedSurface &&
-        panelEnvironmentId !== null &&
-        rightPanelRef !== null ? (
-          <RightPanelTabs
-            mode="inline"
-            open={rightPanelState.isOpen}
-            keybindings={keybindings}
-            getShortcutContext={getShortcutContext}
-            widthStorageKey="t3code:issue-panel-width"
-            defaultWidth={typeof window === "undefined" ? 640 : Math.floor(window.innerWidth / 2)}
-            surfaces={presence.value?.surfaces ?? []}
-            environmentId={panelEnvironmentId}
-            activeSurfaceId={renderedSurface.id}
-            pendingSurfaceIds={EMPTY_SET}
-            previewSessions={EMPTY_RECORD}
-            desktopByTabId={EMPTY_RECORD}
-            terminalLabelsById={EMPTY_MAP}
-            onActivate={(surface) => {
-              useRightPanelStore.getState().activateSurface(rightPanelRef, surface.id);
-              selectSurfaceInUrl(surface);
-            }}
-            onCloseSurface={closeSurface}
-            onCloseOtherSurfaces={(surface) => {
-              useRightPanelStore.getState().closeOtherSurfaces(rightPanelRef, surface.id);
-              selectSurfaceInUrl(surface);
-            }}
-            onCloseSurfacesToRight={(surface) => {
-              useRightPanelStore.getState().closeSurfacesToRight(rightPanelRef, surface.id);
-              selectSurfaceInUrl(
-                selectActiveRightPanelSurface(
-                  useRightPanelStore.getState().byThreadKey,
-                  rightPanelRef,
-                ),
-              );
-            }}
-            onCloseAllSurfaces={() => {
-              useRightPanelStore.getState().closeAllSurfaces(rightPanelRef);
-              selectSurfaceInUrl(null);
-            }}
-            onMoveSurface={(surfaceId, toIndex) =>
-              useRightPanelStore.getState().moveSurface(rightPanelRef, surfaceId, toIndex)
+          <PullRequestCompactFilterMenu
+            label={t("Sort issues")}
+            triggerIcon={<ArrowDownUpIcon aria-hidden className="size-4" />}
+            triggerLabel={t("Sort")}
+            outlined
+            value={order ?? "updated"}
+            options={resolveFilterOptions(SORT_OPTIONS, resolve)}
+            onChange={(nextOrder) =>
+              applyListPatch({ order: nextOrder === "created" ? "created" : undefined })
             }
-            onCopyFilePath={() => undefined}
-            onAddBrowser={() => undefined}
-            onAddBrowserInProfile={() => undefined}
-            onAddTerminal={() => undefined}
-            onAddDiff={() => undefined}
-            onAddFiles={() => undefined}
-            onAddPullRequest={() => undefined}
-            onAddPullRequests={() => undefined}
-            onAddDevice={() => undefined}
-            browserAvailable={false}
-            terminalAvailable={false}
-            diffAvailable={false}
-            filesAvailable={false}
-            pullRequestAvailable={false}
-            pullRequestsAvailable={false}
-            deviceAvailable={false}
+          />
+          <IssueFiltersMenu
+            state={status}
+            stateOptions={resolveFilterOptions(STATE_TABS, resolve)}
+            onState={(nextStatus) => applyListPatch({ status: nextStatus })}
+            involvement={who}
+            involvementOptions={resolveFilterOptions(INVOLVEMENT_TABS, resolve)}
+            onInvolvement={(nextWho) => applyListPatch({ who: nextWho })}
+            scopes={filterScopes}
+            labels={labels ?? []}
+            onLabels={(nextLabels) =>
+              applyListPatch({ label: nextLabels.length ? nextLabels : undefined })
+            }
+            assignee={assignee}
+            onAssignee={(nextAssignee) => applyListPatch({ assignee: nextAssignee })}
+            projects={filterProjects}
+            hiddenProjects={hiddenProjects}
+            onHiddenProjects={(nextHidden) => applyListPatch({ hideProjects: nextHidden })}
+          />
+          <SavedViewsMenu
+            kind={ISSUE_SAVED_VIEWS}
+            preferences={currentPreferences}
+            onApply={(view) =>
+              applyListPatch({
+                who: view.who,
+                status: view.status,
+                hideProjects: view.hideProjects,
+                host: view.host,
+                q: view.q,
+                label: view.label,
+                assignee: view.assignee,
+                order: view.order,
+              })
+            }
+          />
+          {hostOptions.length > 1 ? (
+            <FilterMenu
+              label={t("Filter by tracker")}
+              value={host ?? ""}
+              options={hostOptions}
+              onChange={(nextHost) => applyListPatch({ host: nextHost || undefined })}
+            />
+          ) : null}
+          <Button
+            size="icon"
+            variant="outline"
+            aria-label={t("Refresh issues")}
+            onClick={list.refresh}
+            disabled={list.isPending}
           >
-            <PullRequestMarkdownPanelContext value={rightPanelRef}>
-              {renderedSurface.kind === "issue" ? (
-                <IssueDetailPanel
-                  key={`${panelEnvironmentId}:${renderedSurface.id}`}
-                  environmentId={panelEnvironmentId}
-                  listEntry={panelListEntry}
-                  reference={{
-                    projectId: renderedSurface.projectId as ProjectId,
-                    tracker: renderedSurface.tracker as IssueTrackerKind,
-                    ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
-                    scope: renderedSurface.scope,
-                    key: renderedSurface.key,
-                  }}
-                  onSelectPullRequest={(reference) => {
-                    useRightPanelStore.getState().openPullRequest(rightPanelRef, {
-                      projectId: reference.projectId,
-                      repository: reference.repository,
-                      number: reference.number,
-                      ...(reference.host === undefined ? {} : { host: reference.host }),
-                      environmentId: panelEnvironmentId,
-                    });
-                  }}
-                />
-              ) : (
-                <PullRequestDetailPanel
-                  key={renderedSurface.id}
-                  getShortcutContext={getShortcutContext}
-                  shortcutsEnabled={panelSurface?.id === renderedSurface.id}
-                  environmentId={panelEnvironmentId}
-                  reference={{
-                    projectId: (renderedSurface as PullRequestSurface).projectId as ProjectId,
-                    repository: (renderedSurface as PullRequestSurface).repository,
-                    number: (renderedSurface as PullRequestSurface).number,
-                    ...((renderedSurface as PullRequestSurface).host
-                      ? { host: (renderedSurface as PullRequestSurface).host }
-                      : {}),
-                  }}
-                />
-              )}
-            </PullRequestMarkdownPanelContext>
-          </RightPanelTabs>
-        ) : null}
-      </div>
-    </SidebarInset>
+            <RefreshIcon size="md" refreshing={list.isPending} />
+          </Button>
+        </div>
+        {listBody}
+      </WorkspacePageContainer>
+    </div>
   );
 }
 

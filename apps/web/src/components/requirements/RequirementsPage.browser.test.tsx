@@ -22,7 +22,8 @@ vi.mock(import("~/hooks/useUiTranslation"), async () => {
 vi.mock(import("~/state/use-atom-command"), () => ({
   useAtomCommand: () => mocks.command,
 }));
-vi.mock(import("~/state/environments"), () => ({
+vi.mock(import("~/state/environments"), async (original) => ({
+  ...(await original()),
   usePrimaryEnvironmentId: () => "local" as never,
   usePrimaryEnvironment: () => null,
   useEnvironments: () =>
@@ -152,6 +153,9 @@ vi.mock(import("./IssueDetailPanel"), () => ({
     <div data-testid={`issue-detail:${id}`}>Issue {id}</div>
   ),
 }));
+vi.mock(import("../issue/IssuesPage"), () => ({
+  TrackerIssuesView: () => <div data-testid="tracker-issues-view">Tracker issues</div>,
+}));
 vi.mock(
   import("../pullRequest/PullRequestDetailPanel"),
   () =>
@@ -169,10 +173,14 @@ vi.mock(
       useMobileSidebarSheetMounted: () => false,
     }) as never,
 );
-vi.mock(
-  import("../ui/toast"),
-  () => ({ stackedThreadToast: vi.fn(), toastManager: { add: vi.fn() } }) as never,
-);
+vi.mock(import("../ui/toast"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    stackedThreadToast: vi.fn(),
+    toastManager: { add: vi.fn() } as unknown as typeof actual.toastManager,
+  };
+});
 
 import { act, render } from "../../../test/render";
 import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "~/rightPanelStore";
@@ -575,4 +583,18 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
   await page.getByRole("menuitemcheckbox", { name: "remote", exact: true }).click();
   await expect.element(screen.getByTestId("work-item-detail:item-beta")).not.toBeInTheDocument();
   expect(router.state.location.search).toMatchObject({ environmentId: "remote", view: "list" });
+});
+it("switches between workflow and tracker issue modes from the shared requirements page", async () => {
+  using fixture = setup();
+  const updateSearch = vi.fn();
+  await using screen = await render(fixture.board({ mode: "issues" }, updateSearch));
+  await expect.element(screen.getByTestId("tracker-issues-view")).toBeVisible();
+  const modeSwitch = screen.getByRole("group", { name: "View mode" });
+  await expect.element(modeSwitch).toBeVisible();
+  await screen.getByRole("button", { name: "Workflow", exact: true }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ mode: "board" });
+  await screen.rerender(fixture.board({ mode: "board" }, updateSearch));
+  await expect.element(screen.getByTestId("tracker-issues-view")).not.toBeInTheDocument();
+  await screen.getByRole("button", { name: "Issues", exact: true }).click();
+  expect(updateSearch).toHaveBeenLastCalledWith({ mode: "issues" });
 });

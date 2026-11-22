@@ -5,9 +5,14 @@ import type {
   WorkItemExecution,
   WorkItemExecutionId,
   DeliverySummary,
+  IssueActor,
+  IssueLabel,
+  IssueListSort,
+  IssueListState,
   IssueProvider,
   IssueListResult,
   IssueScopeRef,
+  IssueState,
   Issue,
   RequirementIssueListResult,
   ProjectId,
@@ -102,10 +107,19 @@ export function trackerCreateTargets(
 export type RequirementSource = "all" | RequirementTracker | "local";
 type LegacyPage = typeof RequirementIssueListResult.Type;
 type LegacyGroup = LegacyPage["groups"][number];
+export type RequirementBoardIssue = Issue & {
+  readonly displayKey?: string | undefined;
+  readonly stateInfo?: IssueState | undefined;
+  readonly author?: IssueActor | null | undefined;
+  readonly assigneeActors?: ReadonlyArray<IssueActor> | undefined;
+  readonly labels?: ReadonlyArray<IssueLabel> | undefined;
+  readonly commentCount?: number | undefined;
+};
 export type RequirementBoardPage = Omit<LegacyPage, "groups"> & {
   groups: ReadonlyArray<
-    Omit<LegacyGroup, "source"> & {
+    Omit<LegacyGroup, "source" | "issues"> & {
       source: Omit<LegacyGroup["source"], "provider"> & { provider: RequirementTracker };
+      issues: ReadonlyArray<RequirementBoardIssue>;
     }
   >;
 };
@@ -123,20 +137,48 @@ type RequirementEntryBase = {
   priority: string;
   state: string;
   group: RequirementGroup;
+  createdAt?: string | undefined;
   updatedAt: string;
   summary: DeliverySummary | undefined;
 };
 export type RequirementEntry = RequirementEntryBase &
   (
-    | { kind: "issue"; issue: Issue; provider: RequirementTracker; scope: string; host: string }
+    | {
+        kind: "issue";
+        issue: RequirementBoardIssue;
+        provider: RequirementTracker;
+        scope: string;
+        host: string;
+      }
     | { kind: "local"; item: WorkItemSummary }
   );
+
+export function compareRequirementEntries(
+  left: Pick<RequirementEntryBase, "key" | "createdAt" | "updatedAt">,
+  right: Pick<RequirementEntryBase, "key" | "createdAt" | "updatedAt">,
+  sort: IssueListSort = "updated",
+): number {
+  const leftTime = sort === "created" ? (left.createdAt ?? left.updatedAt) : left.updatedAt;
+  const rightTime = sort === "created" ? (right.createdAt ?? right.updatedAt) : right.updatedAt;
+  return rightTime.localeCompare(leftTime) || left.key.localeCompare(right.key);
+}
+
+function matchesIssueStateFilter(closed: boolean, issueState: IssueListState | undefined): boolean {
+  if (!issueState || issueState === "all") return true;
+  return issueState === "closed" ? closed : !closed;
+}
 
 export function mergeRequirementEntries(
   issuePages: ReadonlyArray<RequirementBoardPage>,
   items: ReadonlyArray<WorkItemSummary>,
   tracked: ReadonlyMap<string, WorkItemSummary>,
-  options: { source?: RequirementSource; query?: string; archived?: boolean } = {},
+  options: {
+    source?: RequirementSource;
+    query?: string;
+    archived?: boolean;
+    issueState?: IssueListState | undefined;
+    sort?: IssueListSort | undefined;
+  } = {},
 ): ReadonlyArray<RequirementEntry> {
   const entries = new Map<string, RequirementEntry>();
   if (!options.archived && options.source !== "local") {
@@ -147,6 +189,10 @@ export function mergeRequirementEntries(
         const projectId = group.projectIds[0];
         if (!projectId) continue;
         for (const issue of group.issues) {
+          const isClosed = issue.stateInfo
+            ? issue.stateInfo.category === "closed"
+            : issue.stateCategory === "done";
+          if (!matchesIssueStateFilter(isClosed, options.issueState)) continue;
           const summary = tracked.get(issue.url)?.deliverySummary;
           entries.set(issue.url, {
             key: issue.url,
@@ -155,6 +201,7 @@ export function mergeRequirementEntries(
             projectId,
             priority: issue.priority,
             state: issue.state,
+            createdAt: issue.createdAt,
             updatedAt: issue.updatedAt,
             group: requirementGroup(issue.stateCategory, summary),
             summary,
@@ -168,12 +215,14 @@ export function mergeRequirementEntries(
   }
   const query = options.query?.trim().toLowerCase() ?? "";
   for (const item of items) {
+    const group = requirementGroup(item.status, item.deliverySummary);
     if (
       (item.issue && entries.has(item.issue.url)) ||
       (options.source &&
         options.source !== "all" &&
         options.source !== (item.issue?.provider ?? "local")) ||
       item.archived !== Boolean(options.archived) ||
+      !matchesIssueStateFilter(group === "done", options.issueState) ||
       !`${item.title}\n${item.description}`.toLowerCase().includes(query)
     )
       continue;
@@ -185,14 +234,13 @@ export function mergeRequirementEntries(
       projectId: item.projectId,
       priority: item.priority,
       state: WORK_ITEM_STATUS_LABELS[item.status],
+      createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-      group: requirementGroup(item.status, item.deliverySummary),
+      group,
       summary: item.deliverySummary,
     });
   }
-  return [...entries.values()].sort(
-    (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.key.localeCompare(b.key),
-  );
+  return [...entries.values()].sort((a, b) => compareRequirementEntries(a, b, options.sort));
 }
 
 export function pullRequestLabel(url: string): string {

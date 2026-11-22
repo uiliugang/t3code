@@ -5,8 +5,11 @@ import {
 } from "@t3tools/contracts";
 import type {
   EnvironmentId,
+  IssueInvolvement,
   IssueListInput,
   IssueListResult,
+  IssueListSort,
+  IssueListState,
   IssueScopeRef,
   ProjectId,
   RequirementIssueListInput,
@@ -21,6 +24,7 @@ import * as Data from "effect/Data";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 import { executeAtomQuery } from "./runtime.ts";
 import {
+  compareRequirementEntries,
   mergeRequirementEntries,
   mergeWorkItemPages,
   type RequirementEntry,
@@ -40,14 +44,17 @@ type TrackerList = (target: {
 }) => Atom.Atom<AsyncResult.AsyncResult<IssueListResult, unknown>>;
 type TrackerFilters = Pick<
   RequirementBoardKey,
-  "source" | "assignee" | "query" | "projectId" | "labels"
+  "source" | "assignee" | "query" | "projectId" | "labels" | "involvement" | "issueState" | "sort"
 >;
 function trackerInput(key: TrackerFilters): IssueListInput {
+  const involvement =
+    key.involvement ?? (key.assignee === "me" ? ("assigned" as const) : undefined);
   return {
-    state: "all",
+    state: key.issueState ?? "all",
     ...(key.labels?.length ? { labels: key.labels } : {}),
-    ...(key.assignee === "me" ? { involvement: "assigned" as const } : {}),
+    ...(involvement && involvement !== "all" ? { involvement } : {}),
     ...(!["all", "me", "unassigned"].includes(key.assignee) ? { assignee: key.assignee } : {}),
+    ...(key.sort === "created" ? { sort: "created" as const } : {}),
     ...(key.query.trim() ? { query: key.query.trim() } : {}),
     ...(key.projectId ? { projectId: key.projectId } : {}),
     ...(key.source !== "all" && key.source !== "local"
@@ -88,14 +95,21 @@ function trackerPage(result: IssueListResult, key: TrackerFilters): RequirementB
     };
     group.issues.push({
       id: entry.key,
+      displayKey: entry.displayKey,
       url: entry.url,
       title: entry.title,
       state: entry.state.name,
+      stateInfo: entry.state,
       stateCategory:
         entry.state.boardCategory ?? (entry.state.category === "closed" ? "done" : "todo"),
       type: "issue",
       priority: entry.priority ?? "",
+      createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
+      author: entry.author,
+      assigneeActors: entry.assignees,
+      labels: entry.labels,
+      commentCount: entry.commentCount,
       assignees: entry.assignees.map((person) => ({
         value: person.login,
         label: person.name ?? person.login,
@@ -157,6 +171,9 @@ export class RequirementBoardKey extends Data.Class<{
   meituanEnabled?: boolean;
   trackerSupported?: boolean;
   labels?: ReadonlyArray<string>;
+  involvement?: IssueInvolvement;
+  issueState?: IssueListState;
+  sort?: IssueListSort;
 }> {}
 
 export function createRequirementBoardAtoms(queries: {
@@ -258,7 +275,11 @@ export function createRequirementBoardAtoms(queries: {
           }
         }
       }
-      if (key.localSupported && !key.labels?.length) {
+      if (
+        key.localSupported &&
+        !key.labels?.length &&
+        (!key.involvement || key.involvement === "all" || key.involvement === "assigned")
+      ) {
         for (const cursor of key.cursors) {
           const result = read(
             queries.workItemsLive({
@@ -312,6 +333,9 @@ export class RequirementOverviewKey extends Data.Class<{
   archived: boolean;
   pagination: RequirementPagination;
   labels?: ReadonlyArray<string>;
+  involvement?: IssueInvolvement;
+  issueState?: IssueListState;
+  sort?: IssueListSort;
 }> {}
 
 export type EnvironmentRequirementEntry = RequirementEntry & { environmentId: EnvironmentId };
@@ -368,6 +392,9 @@ export function createRequirementOverviewAtoms(
               query: key.query,
               archived: key.archived,
               ...(key.labels?.length ? { labels: key.labels } : {}),
+              ...(key.involvement ? { involvement: key.involvement } : {}),
+              ...(key.issueState ? { issueState: key.issueState } : {}),
+              ...(key.sort ? { sort: key.sort } : {}),
               ...pagination,
               environmentId,
               localSupported: get(queries.config(environmentId))?.workItems === true,
@@ -403,7 +430,7 @@ export function createRequirementOverviewAtoms(
       return {
         entries: environments
           .flatMap((environment) => environment.entries)
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.key.localeCompare(b.key)),
+          .sort((a, b) => compareRequirementEntries(a, b, key.sort)),
         issuePages: environments.flatMap((environment) => environment.issuePages),
         scopes: environments.flatMap((environment) => environment.scopes),
         errors: environments.flatMap(({ environmentId, errors }) =>

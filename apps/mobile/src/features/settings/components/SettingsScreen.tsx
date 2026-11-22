@@ -2,6 +2,7 @@ import { useRoute } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { AppBarProps } from "../../../components/ui/AppBar.types";
 import { AppBar } from "../../../components/ui/AppBar";
@@ -28,6 +29,7 @@ export function SettingsScreen(
 ) {
   const route = useRoute();
   const workspace = useWorkspaceTabs();
+  const insets = useSafeAreaInsets();
   const deviceType = useDeviceType();
   const compactTabs = useCompactWorkspaceTabs();
   const back = useSettingsPageBack();
@@ -36,6 +38,12 @@ export function SettingsScreen(
   const workspaceRoot = props.workspaceRoot || (workspace !== null && route.name === "Settings");
 
   const surfaceClassName = workspaceRoot || cover ? "bg-screen" : "bg-sheet";
+  const iosBottomInset =
+    deviceType === "pad" || compactTabs
+      ? 80
+      : workspace !== null
+        ? Math.max(workspace.bottomClearance - insets.bottom, 0)
+        : 0;
 
   return (
     <View collapsable={false} className={`flex-1 ${surfaceClassName}`}>
@@ -52,11 +60,11 @@ export function SettingsScreen(
       />
       <KeyboardAvoidingView
         automaticOffset
-        behavior="height"
+        behavior="padding"
         enabled={Platform.OS === "android"}
-        className="flex-1"
+        style={{ flex: 1 }}
       >
-        <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+        <ScreenScrollViewBottomInset value={iosBottomInset}>
           <ScreenScrollViewSurface value={surfaceClassName}>
             <SettingsScreenContent>{props.children}</SettingsScreenContent>
           </ScreenScrollViewSurface>

@@ -5,6 +5,7 @@ import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   parseBranchIssueUrl,
   type IssueProvider,
+  type IssueTrackerKind,
   type ProjectId,
   type EnvironmentId,
   type ScopedThreadRef,
@@ -20,7 +21,6 @@ import {
 } from "@t3tools/client-runtime/state/requirement-board";
 import {
   requirementGroups,
-  DELIVERY_PROGRESS_LABELS,
   type RequirementSource,
   type TrackerCreateTarget,
   prepareWorkItemCommandRetry,
@@ -35,6 +35,7 @@ import {
   SlidersHorizontalIcon,
   ListIcon,
   LayoutGridIcon,
+  XIcon,
 } from "lucide-react";
 import { useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -51,7 +52,6 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { Input } from "../ui/input";
 import {
   Empty,
   EmptyContent,
@@ -67,6 +67,8 @@ import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { RightPanelTabs } from "../RightPanelTabs";
 import { PanelLayoutControls } from "../chat/PanelLayoutControls";
 import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
+import { PullRequestMarkdownPanelContext } from "../pullRequest/PullRequestMarkdown";
+import { PullRequestSearchInput } from "../pullRequest/PullRequestListFilters";
 import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
@@ -95,9 +97,15 @@ import {
   MenuSubPopup,
   MenuCheckboxItem,
 } from "../ui/menu";
-import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { WorkItemEditor, WorkItemDetailPanel } from "../work-items/WorkItemsPage";
 import { IssueDetailPanel } from "./IssueDetailPanel";
+import { IssueDetailPanel as TrackerIssueDetailPanel } from "../issue/IssueDetailPanel";
+import { TrackerIssuesView } from "../issue/IssuesPage";
+import { RequirementEntryItem } from "./RequirementEntryItem";
+import { ToggleGroup, ToggleGroupItem } from "../ui/toggle-group";
+import { Badge } from "../ui/badge";
+import { useDebouncedValue } from "../../state/queries";
+import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { issueEnvironment } from "../../state/issues";
 import {
   RequirementFilters,
@@ -111,7 +119,6 @@ import { IssueCreateDialog, TrackerCreateDialog } from "./IssueCreateDialog";
 import { Popover, PopoverTrigger, PopoverPopup, PopoverTitle } from "../ui/popover";
 import { RequirementCreateMenu, RequirementScanMenu } from "./RequirementBoardActions";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
-import { ProjectTag } from "./ProjectTag";
 import type { RequirementsSearch } from "../../routes/_chat.requirements";
 
 const requirementViews = {
@@ -160,6 +167,7 @@ function getShortcutContext() {
 function isRequirementPanelSurface(surface: RightPanelSurface | null | undefined) {
   return (
     surface?.kind === "work-item" ||
+    surface?.kind === "issue" ||
     surface?.kind === "requirement-issue" ||
     surface?.kind === "pull-request"
   );
@@ -219,6 +227,7 @@ export function RequirementBoard({
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const rightPanelRef = panelRef ?? REQUIREMENTS_PANEL_REF;
   const usesStandalonePanel = !compact && panelRef === undefined;
+  const mode = usesStandalonePanel && search.mode === "issues" ? "issues" : "board";
   const rightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, rightPanelRef),
   );
@@ -270,6 +279,11 @@ export function RequirementBoard({
   const unified = queryEnvironments.some((env) => env.serverConfig?.requirementIssueTrackers);
   const labels =
     !archived && source !== "local" && source !== "meituan" && unified ? (search.labels ?? []) : [];
+  const queryText = search.q ?? "";
+  const debouncedQuery = useDebouncedValue(queryText, 300);
+  const involvement = search.involvement ?? (assignee === "me" ? "assigned" : "all");
+  const issueState = search.issueState ?? "all";
+  const sort = search.sort ?? "updated";
   const [pagination, setPagination] = useState<{ key: string; pages: RequirementPagination }>({
     key: "",
     pages: {},
@@ -281,8 +295,11 @@ export function RequirementBoard({
     queryEnvironmentIds,
     source,
     assignee,
+    involvement,
+    issueState,
+    sort,
     search.projectId,
-    search.q,
+    debouncedQuery,
     labels,
     archived,
   ]);
@@ -290,13 +307,16 @@ export function RequirementBoard({
   const data = useAtomValue(
     boardAtoms(
       new RequirementOverviewKey({
-        environmentIds: queryEnvironmentIds,
+        environmentIds: mode === "issues" ? [] : queryEnvironmentIds,
         source,
         assignee,
         projectId: search.projectId ?? null,
-        query: search.q ?? "",
+        query: debouncedQuery,
         archived,
         labels,
+        involvement,
+        issueState,
+        sort,
         pagination: pagination.key === filterKey ? pagination.pages : {},
       }),
     ),
@@ -330,7 +350,7 @@ export function RequirementBoard({
   const presenceValue = {
     activeSurface: panelSurface,
     surfaces: rightPanelState.surfaces.filter(isRequirementPanelSurface).map((surface) => {
-      if (surface.kind === "pull-request" || surface.title) return surface;
+      if (surface.kind === "pull-request" || ("title" in surface && surface.title)) return surface;
       const entry = entryForSurface(surface);
       return entry ? { ...surface, title: entry.title } : surface;
     }),
@@ -370,6 +390,12 @@ export function RequirementBoard({
   const refresh = () => {
     for (const atom of data.atoms) registry.refresh(atom);
   };
+  useLiveRefresh(
+    () => {
+      if (!data.isPending) refresh();
+    },
+    { enabled: mode === "board", key: `requirements:${filterKey}` },
+  );
   const selectSurfaceInUrl = (surface: RightPanelSurface | null) =>
     updateSearch(requirementSelection(surface));
   const selectOpened = (patch: RequirementSearchPatch = {}) => {
@@ -403,12 +429,22 @@ export function RequirementBoard({
   };
   const { workItemId, issueId, issueProjectId, issueScope, pullRequest } = search;
   const issueProvider = search.issueProvider ?? search.provider ?? "meituan";
+  const issueTracker = search.issueTracker;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reflects browser history and deep links in the standalone panel
   useEffect(() => {
     if (!usesStandalonePanel) return;
     const panels = useRightPanelStore.getState();
     if (workItemId)
       panels.openWorkItem(rightPanelRef, { environmentId: detailEnvironmentId, workItemId });
+    else if (issueId && issueProjectId && issueTracker && issueScope)
+      panels.openIssue(rightPanelRef, {
+        environmentId: detailEnvironmentId,
+        projectId: issueProjectId,
+        tracker: issueTracker,
+        ...(search.issueHost ? { host: search.issueHost } : {}),
+        scope: issueScope,
+        key: issueId,
+      });
     else if (issueId && issueProjectId)
       panels.openRequirementIssue(rightPanelRef, {
         environmentId: detailEnvironmentId,
@@ -438,6 +474,7 @@ export function RequirementBoard({
     issueScope,
     search.issueHost,
     issueProvider,
+    issueTracker,
     pullRequest,
   ]);
   const closeSurface = (surface: RightPanelSurface) => {
@@ -568,6 +605,87 @@ export function RequirementBoard({
   ];
   if (!assigneeOptions.some((person) => person.value === assignee))
     assigneeOptions.push({ value: assignee, label: assignee });
+  const activeFilters: Array<{ key: string; label: string; clear: RequirementSearchPatch }> = [];
+  if (filterEnvironmentId)
+    activeFilters.push({
+      key: "environment",
+      label: environmentLabel(filterEnvironmentId),
+      clear: { environmentId: undefined, projectId: undefined },
+    });
+  if (source !== "all")
+    activeFilters.push({
+      key: "source",
+      label: source === "local" ? t("Local work items") : requirementTrackerLabel[source],
+      clear: { source: undefined, provider: undefined, local: undefined },
+    });
+  if (search.projectId !== undefined)
+    activeFilters.push({
+      key: "project",
+      label:
+        projects.find(
+          (project) =>
+            project.id === search.projectId &&
+            project.environmentId === (filterEnvironmentId ?? fallbackEnvironmentId),
+        )?.title ?? search.projectId,
+      clear: { projectId: undefined },
+    });
+  if (labels.length)
+    activeFilters.push({
+      key: "labels",
+      label: `${t("Labels")}: ${labels.join(", ")}`,
+      clear: { labels: undefined },
+    });
+  if (involvement !== "assigned")
+    activeFilters.push({
+      key: "involvement",
+      label: !["me", "all", "unassigned"].includes(assignee)
+        ? assignee
+        : involvement === "authored"
+          ? t("Opened by me")
+          : involvement === "mentioned"
+            ? t("Mentioning me")
+            : assignee === "unassigned"
+              ? t("Unassigned")
+              : assignee === "all"
+                ? t("All assignees")
+                : t("Everyone"),
+      clear: { involvement: undefined, assignee: undefined },
+    });
+  if (issueState !== "all")
+    activeFilters.push({
+      key: "state",
+      label: issueState === "open" ? t("Open") : t("Closed"),
+      clear: { issueState: undefined },
+    });
+  if (sort === "created")
+    activeFilters.push({ key: "sort", label: t("Newest"), clear: { sort: undefined } });
+  if (archived)
+    activeFilters.push({
+      key: "archived",
+      label: t("Show archived"),
+      clear: { archived: undefined },
+    });
+  if (queryText)
+    activeFilters.push({
+      key: "query",
+      label: `${t("Search title or number")}: ${queryText}`,
+      clear: { q: undefined },
+    });
+  const resetFilters = () =>
+    updateSearch({
+      environmentId: undefined,
+      source: undefined,
+      provider: undefined,
+      local: undefined,
+      projectId: undefined,
+      assignee: undefined,
+      involvement: undefined,
+      issueState: undefined,
+      sort: undefined,
+      labels: undefined,
+      archived: undefined,
+      q: undefined,
+    });
   return (
     <div className="flex h-full min-h-0 flex-1 overflow-hidden">
       <div className="relative flex h-full min-h-0 flex-1 overflow-hidden">
@@ -586,12 +704,26 @@ export function RequirementBoard({
             <div className="flex min-w-0 items-center gap-2.5">
               <ClipboardListIcon className="size-4 shrink-0 text-muted-foreground" />
               <h1 className="truncate text-sm font-semibold">{t("Requirements board")}</h1>
-              {entries.length > 0 ? (
+              {usesStandalonePanel ? (
+                <ToggleGroup
+                  aria-label={t("View mode")}
+                  value={[mode]}
+                  onValueChange={(values) => {
+                    const nextMode = values[0];
+                    if (nextMode === "board" || nextMode === "issues")
+                      updateSearch({ mode: nextMode });
+                  }}
+                >
+                  <ToggleGroupItem value="board">{t("Workflow")}</ToggleGroupItem>
+                  <ToggleGroupItem value="issues">{t("Issues")}</ToggleGroupItem>
+                </ToggleGroup>
+              ) : null}
+              {mode === "board" && entries.length > 0 ? (
                 <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground tabular-nums">
                   {entries.length}
                 </span>
               ) : null}
-              {errors.length ? (
+              {mode === "board" && errors.length ? (
                 <Popover>
                   <PopoverTrigger
                     render={
@@ -621,7 +753,7 @@ export function RequirementBoard({
                   </PopoverPopup>
                 </Popover>
               ) : null}
-              {data.isPending && entries.length ? (
+              {mode === "board" && data.isPending && entries.length ? (
                 <span
                   role="status"
                   className="inline-flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground"
@@ -632,544 +764,587 @@ export function RequirementBoard({
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
-              <RequirementScanMenu
-                environments={visibleEnvironments}
-                {...(search.projectId ? { projectId: search.projectId } : {})}
-                refreshed={refresh}
-              />
-              <RequirementCreateMenu
-                createTrackerIssue={(id, target) => {
-                  setCreatingEnvironmentId(id);
-                  setCreatingTracker(target);
-                }}
-                environments={visibleEnvironments}
-                {...(search.projectId ? { projectId: search.projectId } : {})}
-                createIssue={(id, provider) => {
-                  setCreatingEnvironmentId(id);
-                  setCreatingIssue(provider);
-                }}
-                createLocal={(id, projectId) => {
-                  setCreatingEnvironmentId(id);
-                  setCandidate(null);
-                  setCreatingLocal(projectId);
-                }}
-              />
+              {mode === "board" ? (
+                <>
+                  <RequirementScanMenu
+                    environments={visibleEnvironments}
+                    {...(search.projectId ? { projectId: search.projectId } : {})}
+                    refreshed={refresh}
+                  />
+                  <RequirementCreateMenu
+                    createTrackerIssue={(id, target) => {
+                      setCreatingEnvironmentId(id);
+                      setCreatingTracker(target);
+                    }}
+                    environments={visibleEnvironments}
+                    {...(search.projectId ? { projectId: search.projectId } : {})}
+                    createIssue={(id, provider) => {
+                      setCreatingEnvironmentId(id);
+                      setCreatingIssue(provider);
+                    }}
+                    createLocal={(id, projectId) => {
+                      setCreatingEnvironmentId(id);
+                      setCandidate(null);
+                      setCreatingLocal(projectId);
+                    }}
+                  />
+                </>
+              ) : null}
               {!panelOpen && panelControls}
             </div>
           </WorkspacePageHeader>
-          <div className="flex shrink-0 items-center gap-1.5 px-5 pt-3 pb-2">
-            {!compact ? (
-              <Menu>
-                <MenuTrigger
-                  render={
-                    <Button size="sm" variant="outline" aria-label={t("Environment")}>
-                      <ServerIcon />
-                      <span className="max-w-36 truncate">
-                        {filterEnvironmentId
-                          ? environmentLabel(filterEnvironmentId)
-                          : t("All environments")}
-                      </span>
-                      <ChevronDownIcon />
-                    </Button>
-                  }
-                />
-                <MenuPopup align="start">
-                  {[
-                    { environmentId: undefined, label: t("All environments") },
-                    ...onlineEnvironments,
-                  ].map((environment) => (
-                    <MenuCheckboxItem
-                      key={environment.environmentId ?? "all"}
-                      checked={filterEnvironmentId === environment.environmentId}
-                      onCheckedChange={() =>
-                        updateSearch({
-                          environmentId: environment.environmentId,
-                          projectId: undefined,
-                          ...requirementSelection(null),
-                        })
+          {mode === "board" ? (
+            <>
+              <div className="flex shrink-0 items-center gap-1.5 px-5 pt-3 pb-2">
+                {!compact ? (
+                  <Menu>
+                    <MenuTrigger
+                      render={
+                        <Button size="sm" variant="outline" aria-label={t("Environment")}>
+                          <ServerIcon />
+                          <span className="max-w-36 truncate">
+                            {filterEnvironmentId
+                              ? environmentLabel(filterEnvironmentId)
+                              : t("All environments")}
+                          </span>
+                          <ChevronDownIcon />
+                        </Button>
                       }
-                    >
-                      {environment.label}
-                    </MenuCheckboxItem>
-                  ))}
-                </MenuPopup>
-              </Menu>
-            ) : null}
-            <form
-              className="min-w-0 flex-1"
-              onSubmit={(event) => {
-                event.preventDefault();
-                updateSearch({ q: String(new FormData(event.currentTarget).get("query") ?? "") });
-              }}
-            >
-              <Input
-                name="query"
-                key={search.q ?? ""}
-                defaultValue={search.q ?? ""}
-                placeholder={t("Search title or number")}
-                aria-label={t("Search title or number")}
-                size="sm"
-              />
-            </form>
-            <SavedViewsMenu
-              size="sm"
-              kind={requirementViews}
-              preferences={{
-                source,
-                assignee,
-                archived,
-                labels,
-                environmentId: filterEnvironmentId ?? null,
-                projectId: search.projectId ?? null,
-                query: search.q ?? "",
-              }}
-              onApply={(saved) =>
-                updateSearch({
-                  ...requirementSelection(null),
-                  source: saved.source,
-                  assignee: saved.assignee,
-                  archived: saved.archived,
-                  labels: saved.labels,
-                  environmentId: saved.environmentId ?? undefined,
-                  projectId: saved.projectId ?? undefined,
-                  q: saved.query || undefined,
-                  local: undefined,
-                  provider: undefined,
-                })
-              }
-            />
-            <Menu>
-              <MenuTrigger
-                render={
-                  <Button size="icon-sm" variant="ghost" aria-label={t("Filters")}>
-                    <SlidersHorizontalIcon />
-                  </Button>
-                }
-              />
-              <MenuPopup align="end">
-                <MenuSub>
-                  <MenuSubTrigger>{t("Issue source")}</MenuSubTrigger>
-                  <MenuSubPopup>
-                    {(
-                      [
-                        { value: "all", label: t("All sources") },
-                        { value: "meituan", label: gt("MEP ONES") },
-                        { value: "github", label: gt("GitHub Issues") },
-                        { value: "gitlab", label: "GitLab" },
-                        { value: "linear", label: gt("Linear") },
-                        { value: "local", label: t("Local work items") },
-                      ] as const
-                    )
-                      .filter(
-                        (option) =>
-                          (option.value !== "meituan" || meituanEnabled) &&
-                          (unified || (option.value !== "gitlab" && option.value !== "linear")),
-                      )
-                      .map((option) => (
+                    />
+                    <MenuPopup align="start">
+                      {[
+                        { environmentId: undefined, label: t("All environments") },
+                        ...onlineEnvironments,
+                      ].map((environment) => (
                         <MenuCheckboxItem
-                          key={option.value}
-                          checked={source === option.value}
+                          key={environment.environmentId ?? "all"}
+                          checked={filterEnvironmentId === environment.environmentId}
                           onCheckedChange={() =>
                             updateSearch({
-                              source: option.value,
-                              provider: undefined,
-                              local: undefined,
-                              assignee: undefined,
-                              labels: undefined,
+                              environmentId: environment.environmentId,
+                              projectId: undefined,
                               ...requirementSelection(null),
                             })
                           }
                         >
-                          {option.label}
+                          {environment.label}
                         </MenuCheckboxItem>
                       ))}
-                  </MenuSubPopup>
-                </MenuSub>
-                {labels.length || data.scopes.some((scope) => scope.labels) ? (
-                  <MenuSub>
-                    <MenuSubTrigger>
-                      {t("Labels")}
-                      {labels.length ? ` (${labels.length})` : ""}
-                    </MenuSubTrigger>
-                    <MenuSubPopup>
-                      <LabelChoices
-                        scopes={data.scopes.filter((scope) => scope.labels)}
-                        value={labels}
-                        onChange={(value) =>
-                          updateSearch({ labels: value.length ? value : undefined })
-                        }
-                      />
-                    </MenuSubPopup>
-                  </MenuSub>
+                    </MenuPopup>
+                  </Menu>
                 ) : null}
-                {!compact ? (
-                  <MenuSub>
-                    <MenuSubTrigger>{t("Project")}</MenuSubTrigger>
-                    <MenuSubPopup>
-                      <MenuCheckboxItem
-                        checked={!search.projectId}
-                        onCheckedChange={() => updateSearch({ projectId: undefined })}
-                      >
-                        {t("All projects")}
-                      </MenuCheckboxItem>
-                      {projects.map((project) => (
-                        <MenuCheckboxItem
-                          key={`${project.environmentId}:${project.id}`}
-                          checked={
-                            search.projectId === project.id &&
-                            (filterEnvironmentId ?? fallbackEnvironmentId) === project.environmentId
-                          }
-                          onCheckedChange={() =>
-                            updateSearch({
-                              environmentId: project.environmentId,
-                              projectId: project.id,
-                            })
-                          }
-                        >
-                          {filterEnvironmentId
-                            ? project.title
-                            : `${environmentLabel(project.environmentId)} · ${project.title}`}
-                        </MenuCheckboxItem>
-                      ))}
-                    </MenuSubPopup>
-                  </MenuSub>
-                ) : null}
-                {source !== "local" ? (
-                  <MenuSub>
-                    <MenuSubTrigger>{t("Assignee")}</MenuSubTrigger>
-                    <MenuSubPopup>
-                      {[
-                        { value: "me", label: t("Assigned to me") },
-                        { value: "all", label: t("All assignees") },
-                        { value: "unassigned", label: t("Unassigned") },
-                        ...assigneeOptions.filter(
-                          (person) => !["me", "all", "unassigned"].includes(person.value),
-                        ),
-                      ].map((person) => (
-                        <MenuCheckboxItem
-                          key={person.value}
-                          checked={assignee === person.value}
-                          onCheckedChange={() => updateSearch({ assignee: person.value })}
-                        >
-                          {person.label}
-                        </MenuCheckboxItem>
-                      ))}
-                    </MenuSubPopup>
-                  </MenuSub>
-                ) : null}
-                <MenuCheckboxItem
-                  checked={archived}
-                  onCheckedChange={(checked) => updateSearch({ archived: checked })}
-                >
-                  {t("Show archived")}
-                </MenuCheckboxItem>
-              </MenuPopup>
-            </Menu>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={
-                      view === "list" ? t("Switch to board view") : t("Switch to list view")
+                <div className="min-w-0 flex-1">
+                  <PullRequestSearchInput
+                    value={queryText}
+                    label={t("Search title or number")}
+                    placeholder={t("Search title or number")}
+                    busy={
+                      queryText !== debouncedQuery || (debouncedQuery.length > 0 && data.isPending)
                     }
-                    onClick={() => updateSearch({ view: view === "list" ? "board" : "list" })}
+                    onChange={(q) => updateSearch({ q: q || undefined })}
+                    onSubmit={(q) => updateSearch({ q: q || undefined })}
                   />
-                }
-              >
-                {view === "list" ? <ListIcon /> : <LayoutGridIcon />}
-              </TooltipTrigger>
-              <TooltipPopup>
-                {view === "list" ? t("Switch to board view") : t("Switch to list view")}
-              </TooltipPopup>
-            </Tooltip>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={t("Refresh issues")}
-              aria-busy={data.isPending}
-              disabled={data.isPending}
-              onClick={refresh}
-            >
-              <RefreshIcon refreshing={data.isPending} />
-            </Button>
-          </div>
-          {source !== "all" || search.projectId !== undefined || archived ? (
-            <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2 text-xs text-muted-foreground">
-              {source !== "all" ? (
-                <span>
-                  {source === "local" ? t("Local work items") : requirementTrackerLabel[source]}
-                </span>
-              ) : null}
-              {source !== "all" && search.projectId !== undefined ? <span>·</span> : null}
-              {search.projectId !== undefined ? (
-                <span>
-                  {projects.find(
-                    (project) =>
-                      project.id === search.projectId &&
-                      project.environmentId === (filterEnvironmentId ?? fallbackEnvironmentId),
-                  )?.title ?? search.projectId}
-                </span>
-              ) : null}
-              {archived ? (
-                <span>
-                  {source !== "all" || search.projectId !== undefined ? "· " : ""}
-                  {t("Show archived")}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          <div
-            aria-busy={data.isPending}
-            className={`flex min-h-0 flex-1 flex-col px-5 pb-6 ${view === "board" ? "overflow-hidden" : "overflow-auto"}`}
-          >
-            {data.isPending && !entries.length ? (
-              <div role="status" aria-label={t("Loading...")} className="space-y-4 py-4">
-                <span className="sr-only">{t("Loading...")}</span>
-                {[0, 1, 2, 3].map((row) => (
-                  <div
-                    key={row}
-                    aria-hidden="true"
-                    className="space-y-3 border-b border-border/50 py-3"
-                  >
-                    <div className="h-4 w-2/3 rounded-sm bg-muted-foreground/15" />
-                    <div className="h-3 w-1/3 rounded-sm bg-muted-foreground/15" />
-                  </div>
-                ))}
-              </div>
-            ) : !entries.length && errors.length ? (
-              <Empty size="compact">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <AlertTriangleIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>{t("Some requirements could not be loaded")}</EmptyTitle>
-                  <EmptyDescription>{errors[0]}</EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                  <Button size="sm" variant="outline" onClick={refresh}>
-                    <RefreshCwIcon />
-                    {t("Retry")}
-                  </Button>
-                </EmptyContent>
-              </Empty>
-            ) : !entries.length ? (
-              <Empty size="compact">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <ClipboardListIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>{t("No matching work items.")}</EmptyTitle>
-                  <EmptyDescription>
-                    {t("Create or scan items, or adjust your filters.")}
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <div
-                className={
-                  view === "board"
-                    ? "grid min-h-0 flex-1 auto-cols-[minmax(260px,1fr)] grid-flow-col gap-5 overflow-auto"
-                    : "space-y-4"
-                }
-              >
-                {requirementGroups(t).map((group) => {
-                  const rows = entries.filter((entry) => entry.group === group.key);
-                  if (!rows.length) return null;
-                  const folded = collapsed.includes(group.key);
-                  return (
-                    <section key={group.key} className="min-w-0">
-                      <button
-                        type="button"
-                        className="flex min-h-11 w-full items-center gap-2 text-left text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                        aria-expanded={!folded}
-                        onClick={() =>
-                          setCollapsed((previous) =>
-                            folded
-                              ? previous.filter((key) => key !== group.key)
-                              : [...previous, group.key],
+                </div>
+                <SavedViewsMenu
+                  size="sm"
+                  kind={requirementViews}
+                  preferences={{
+                    source,
+                    assignee,
+                    archived,
+                    labels,
+                    environmentId: filterEnvironmentId ?? null,
+                    projectId: search.projectId ?? null,
+                    query: queryText,
+                    involvement,
+                    issueState,
+                    sort,
+                  }}
+                  onApply={(saved) =>
+                    updateSearch({
+                      ...requirementSelection(null),
+                      source: saved.source,
+                      assignee: saved.assignee,
+                      archived: saved.archived,
+                      labels: saved.labels,
+                      involvement: saved.involvement,
+                      issueState: saved.issueState,
+                      sort: saved.sort,
+                      environmentId: saved.environmentId ?? undefined,
+                      projectId: saved.projectId ?? undefined,
+                      q: saved.query || undefined,
+                      local: undefined,
+                      provider: undefined,
+                    })
+                  }
+                />
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button size="icon-sm" variant="ghost" aria-label={t("Filters")}>
+                        <SlidersHorizontalIcon />
+                      </Button>
+                    }
+                  />
+                  <MenuPopup align="end">
+                    <MenuSub>
+                      <MenuSubTrigger>{t("Issue source")}</MenuSubTrigger>
+                      <MenuSubPopup>
+                        {(
+                          [
+                            { value: "all", label: t("All sources") },
+                            { value: "meituan", label: gt("MEP ONES") },
+                            { value: "github", label: gt("GitHub Issues") },
+                            { value: "gitlab", label: "GitLab" },
+                            { value: "linear", label: gt("Linear") },
+                            { value: "local", label: t("Local work items") },
+                          ] as const
+                        )
+                          .filter(
+                            (option) =>
+                              (option.value !== "meituan" || meituanEnabled) &&
+                              (unified || (option.value !== "gitlab" && option.value !== "linear")),
                           )
+                          .map((option) => (
+                            <MenuCheckboxItem
+                              key={option.value}
+                              checked={source === option.value}
+                              onCheckedChange={() =>
+                                updateSearch({
+                                  source: option.value,
+                                  provider: undefined,
+                                  local: undefined,
+                                  assignee: undefined,
+                                  labels: undefined,
+                                  ...requirementSelection(null),
+                                })
+                              }
+                            >
+                              {option.label}
+                            </MenuCheckboxItem>
+                          ))}
+                      </MenuSubPopup>
+                    </MenuSub>
+                    {labels.length || data.scopes.some((scope) => scope.labels) ? (
+                      <MenuSub>
+                        <MenuSubTrigger>
+                          {t("Labels")}
+                          {labels.length ? ` (${labels.length})` : ""}
+                        </MenuSubTrigger>
+                        <MenuSubPopup>
+                          <LabelChoices
+                            scopes={data.scopes.filter((scope) => scope.labels)}
+                            value={labels}
+                            onChange={(value) =>
+                              updateSearch({ labels: value.length ? value : undefined })
+                            }
+                          />
+                        </MenuSubPopup>
+                      </MenuSub>
+                    ) : null}
+                    {!compact ? (
+                      <MenuSub>
+                        <MenuSubTrigger>{t("Project")}</MenuSubTrigger>
+                        <MenuSubPopup>
+                          <MenuCheckboxItem
+                            checked={!search.projectId}
+                            onCheckedChange={() => updateSearch({ projectId: undefined })}
+                          >
+                            {t("All projects")}
+                          </MenuCheckboxItem>
+                          {projects.map((project) => (
+                            <MenuCheckboxItem
+                              key={`${project.environmentId}:${project.id}`}
+                              checked={
+                                search.projectId === project.id &&
+                                (filterEnvironmentId ?? fallbackEnvironmentId) ===
+                                  project.environmentId
+                              }
+                              onCheckedChange={() =>
+                                updateSearch({
+                                  environmentId: project.environmentId,
+                                  projectId: project.id,
+                                })
+                              }
+                            >
+                              {filterEnvironmentId
+                                ? project.title
+                                : `${environmentLabel(project.environmentId)} · ${project.title}`}
+                            </MenuCheckboxItem>
+                          ))}
+                        </MenuSubPopup>
+                      </MenuSub>
+                    ) : null}
+                    {source !== "local" ? (
+                      <MenuSub>
+                        <MenuSubTrigger>{t("Involvement")}</MenuSubTrigger>
+                        <MenuSubPopup>
+                          {(
+                            [
+                              { value: "assigned", label: t("Assigned to me") },
+                              { value: "all", label: t("Everyone") },
+                              { value: "authored", label: t("Opened by me") },
+                              { value: "mentioned", label: t("Mentioning me") },
+                            ] as const
+                          ).map((option) => (
+                            <MenuCheckboxItem
+                              key={option.value}
+                              checked={involvement === option.value}
+                              onCheckedChange={() =>
+                                updateSearch({
+                                  involvement: option.value,
+                                  assignee:
+                                    option.value === "assigned"
+                                      ? "me"
+                                      : option.value === "all"
+                                        ? "all"
+                                        : "all",
+                                })
+                              }
+                            >
+                              {option.label}
+                            </MenuCheckboxItem>
+                          ))}
+                        </MenuSubPopup>
+                      </MenuSub>
+                    ) : null}
+                    <MenuSub>
+                      <MenuSubTrigger>{t("State")}</MenuSubTrigger>
+                      <MenuSubPopup>
+                        {(
+                          [
+                            { value: "all", label: t("All states") },
+                            { value: "open", label: t("Open") },
+                            { value: "closed", label: t("Closed") },
+                          ] as const
+                        ).map((option) => (
+                          <MenuCheckboxItem
+                            key={option.value}
+                            checked={issueState === option.value}
+                            onCheckedChange={() => updateSearch({ issueState: option.value })}
+                          >
+                            {option.label}
+                          </MenuCheckboxItem>
+                        ))}
+                      </MenuSubPopup>
+                    </MenuSub>
+                    <MenuSub>
+                      <MenuSubTrigger>{t("Sort")}</MenuSubTrigger>
+                      <MenuSubPopup>
+                        <MenuCheckboxItem
+                          checked={sort === "updated"}
+                          onCheckedChange={() => updateSearch({ sort: "updated" })}
+                        >
+                          {t("Recently updated")}
+                        </MenuCheckboxItem>
+                        <MenuCheckboxItem
+                          checked={sort === "created"}
+                          onCheckedChange={() => updateSearch({ sort: "created" })}
+                        >
+                          {t("Newest")}
+                        </MenuCheckboxItem>
+                      </MenuSubPopup>
+                    </MenuSub>
+                    {source !== "local" ? (
+                      <MenuSub>
+                        <MenuSubTrigger>{t("Assignee")}</MenuSubTrigger>
+                        <MenuSubPopup>
+                          {[
+                            { value: "me", label: t("Assigned to me") },
+                            { value: "all", label: t("All assignees") },
+                            { value: "unassigned", label: t("Unassigned") },
+                            ...assigneeOptions.filter(
+                              (person) => !["me", "all", "unassigned"].includes(person.value),
+                            ),
+                          ].map((person) => (
+                            <MenuCheckboxItem
+                              key={person.value}
+                              checked={assignee === person.value}
+                              onCheckedChange={() =>
+                                updateSearch({
+                                  assignee: person.value,
+                                  ...(involvement === "assigned" || involvement === "all"
+                                    ? {}
+                                    : { involvement: person.value === "me" ? "assigned" : "all" }),
+                                })
+                              }
+                            >
+                              {person.label}
+                            </MenuCheckboxItem>
+                          ))}
+                        </MenuSubPopup>
+                      </MenuSub>
+                    ) : null}
+                    <MenuCheckboxItem
+                      checked={archived}
+                      onCheckedChange={(checked) => updateSearch({ archived: checked })}
+                    >
+                      {t("Show archived")}
+                    </MenuCheckboxItem>
+                  </MenuPopup>
+                </Menu>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={
+                          view === "list" ? t("Switch to board view") : t("Switch to list view")
                         }
-                      >
-                        {folded ? (
-                          <ChevronRightIcon className="size-3.5 text-muted-foreground" />
-                        ) : (
-                          <ChevronDownIcon className="size-3.5 text-muted-foreground" />
-                        )}
-                        <span className={group.key === "attention" ? "text-destructive" : ""}>
-                          {group.label}
-                        </span>
-                        <span className="font-normal text-muted-foreground tabular-nums">
-                          {rows.length}
-                        </span>
-                      </button>
+                        onClick={() => updateSearch({ view: view === "list" ? "board" : "list" })}
+                      />
+                    }
+                  >
+                    {view === "list" ? <ListIcon /> : <LayoutGridIcon />}
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    {view === "list" ? t("Switch to board view") : t("Switch to list view")}
+                  </TooltipPopup>
+                </Tooltip>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={t("Refresh issues")}
+                  aria-busy={data.isPending}
+                  disabled={data.isPending}
+                  onClick={refresh}
+                >
+                  <RefreshIcon refreshing={data.isPending} />
+                </Button>
+              </div>
+              {activeFilters.length ? (
+                <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-5 pb-2">
+                  {activeFilters.map((filter) => (
+                    <Badge
+                      key={filter.key}
+                      size="sm"
+                      variant="secondary"
+                      render={
+                        <button
+                          type="button"
+                          aria-label={`${filter.label}, ${t("Reset filters")}`}
+                          onClick={() => updateSearch(filter.clear)}
+                        />
+                      }
+                    >
+                      <span className="max-w-56 truncate">{filter.label}</span>
+                      <XIcon aria-hidden />
+                    </Badge>
+                  ))}
+                  <Button size="xs" variant="ghost-muted" onClick={resetFilters}>
+                    {t("Reset filters")}
+                  </Button>
+                </div>
+              ) : null}
+              <div
+                aria-busy={data.isPending}
+                className={`flex min-h-0 flex-1 flex-col px-5 pb-6 ${view === "board" ? "overflow-hidden" : "overflow-auto"}`}
+              >
+                {data.isPending && !entries.length ? (
+                  <div role="status" aria-label={t("Loading...")} className="space-y-4 py-4">
+                    <span className="sr-only">{t("Loading...")}</span>
+                    {[0, 1, 2, 3].map((row) => (
                       <div
-                        hidden={folded}
-                        className={view === "board" ? "space-y-2" : "divide-y divide-border/50"}
+                        key={row}
+                        aria-hidden="true"
+                        className="space-y-3 border-b border-border/50 py-3"
                       >
-                        {rows.map((entry) => (
+                        <div className="h-4 w-2/3 rounded-sm bg-muted-foreground/15" />
+                        <div className="h-3 w-1/3 rounded-sm bg-muted-foreground/15" />
+                      </div>
+                    ))}
+                  </div>
+                ) : !entries.length && errors.length ? (
+                  <Empty size="compact">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <AlertTriangleIcon />
+                      </EmptyMedia>
+                      <EmptyTitle>{t("Some requirements could not be loaded")}</EmptyTitle>
+                      <EmptyDescription>{errors[0]}</EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyContent>
+                      <Button size="sm" variant="outline" onClick={refresh}>
+                        <RefreshCwIcon />
+                        {t("Retry")}
+                      </Button>
+                    </EmptyContent>
+                  </Empty>
+                ) : !entries.length ? (
+                  <Empty size="compact">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <ClipboardListIcon />
+                      </EmptyMedia>
+                      <EmptyTitle>{t("No matching work items.")}</EmptyTitle>
+                      <EmptyDescription>
+                        {t("Create or scan items, or adjust your filters.")}
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  <div
+                    className={
+                      view === "board"
+                        ? "flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2"
+                        : "space-y-4"
+                    }
+                  >
+                    {requirementGroups(t).map((group) => {
+                      const rows = entries.filter((entry) => entry.group === group.key);
+                      if (!rows.length) return null;
+                      const folded = collapsed.includes(group.key);
+                      const accentClass =
+                        group.key === "attention"
+                          ? "bg-destructive"
+                          : group.key === "done"
+                            ? "bg-success"
+                            : group.key === "release"
+                              ? "bg-warning"
+                              : group.key === "active"
+                                ? "bg-info"
+                                : "bg-muted-foreground";
+                      return (
+                        <section
+                          key={group.key}
+                          className={
+                            view === "board"
+                              ? `flex w-72 shrink-0 flex-col rounded-xl border border-border/60 bg-muted/20 ${folded ? "self-start" : "min-h-0 self-stretch"}`
+                              : "min-w-0"
+                          }
+                        >
                           <button
                             type="button"
-                            key={entry.key}
-                            aria-current={entry === activeEntry ? "true" : undefined}
-                            onClick={() => open(entry)}
-                            className={
-                              "flex w-full min-w-0 flex-col gap-2 rounded-md px-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring " +
-                              (entry === activeEntry
-                                ? view === "board"
-                                  ? "border border-ring/60 bg-accent"
-                                  : "bg-accent"
-                                : view === "board"
-                                  ? "border border-border/70 bg-card hover:bg-accent/60"
-                                  : "hover:bg-accent/60")
+                            className={`flex min-h-11 w-full shrink-0 items-center gap-2 text-left text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${view === "board" ? "sticky top-0 z-10 rounded-t-xl border-b border-border/50 bg-muted/95 px-3" : ""}`}
+                            aria-expanded={!folded}
+                            onClick={() =>
+                              setCollapsed((previous) =>
+                                folded
+                                  ? previous.filter((key) => key !== group.key)
+                                  : [...previous, group.key],
+                              )
                             }
                           >
-                            <span className="flex w-full items-start gap-3">
-                              <span className="min-w-0 flex-1 text-sm font-medium wrap-anywhere">
-                                {entry.title}
-                              </span>
-                              <span className="shrink-0 text-xs text-muted-foreground">
-                                {entry.priority}
-                              </span>
+                            {folded ? (
+                              <ChevronRightIcon className="size-3.5 text-muted-foreground" />
+                            ) : (
+                              <ChevronDownIcon className="size-3.5 text-muted-foreground" />
+                            )}
+                            <span className={`size-2 shrink-0 rounded-full ${accentClass}`} />
+                            <span className={group.key === "attention" ? "text-destructive" : ""}>
+                              {group.label}
                             </span>
-                            <span className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
-                              <Tooltip>
-                                <TooltipTrigger
-                                  render={
-                                    <span className="inline-flex max-w-48 items-center gap-1 rounded border border-border/70 px-1.5 py-0.5" />
-                                  }
-                                >
-                                  <ServerIcon className="size-3 shrink-0" />
-                                  <span className="truncate">
-                                    {environmentLabel(entry.environmentId)}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipPopup>
-                                  {t("Environment")}: {environmentLabel(entry.environmentId)}
-                                </TooltipPopup>
-                              </Tooltip>
-                              <ProjectTag
-                                title={
+                            <Badge size="sm" variant="secondary">
+                              {rows.length}
+                            </Badge>
+                          </button>
+                          <div
+                            hidden={folded}
+                            className={
+                              view === "board"
+                                ? "min-h-0 flex-1 space-y-2 overflow-y-auto p-2"
+                                : "divide-y divide-border/50"
+                            }
+                          >
+                            {rows.map((entry) => (
+                              <RequirementEntryItem
+                                key={entry.key}
+                                entry={entry}
+                                selected={entry === activeEntry}
+                                view={view}
+                                environmentLabel={environmentLabel(entry.environmentId)}
+                                projectTitle={
                                   projects.find(
                                     (project) =>
                                       project.id === entry.projectId &&
                                       project.environmentId === entry.environmentId,
                                   )?.title ?? entry.projectId
                                 }
+                                showEnvironment={
+                                  onlineEnvironments.length > 1 || filterEnvironmentId !== undefined
+                                }
+                                onSelect={open}
                               />
-                              <span>
-                                {entry.kind === "local"
-                                  ? t("Local work item")
-                                  : `${requirementTrackerLabel[entry.provider]} ${entry.provider === "linear" ? "" : "#"}${entry.issue.id}`}
-                              </span>
-                              {entry.kind === "local" ? (
-                                <span>
-                                  {entry.item.activeExecutionCount} {t("Active agents")}
-                                </span>
-                              ) : (
-                                <span className="min-w-0 truncate">
-                                  {entry.issue.assignees.map((person) => person.label).join(", ") ||
-                                    t("Unassigned")}
-                                </span>
-                              )}
-                              <span className="ml-auto flex items-center gap-2">
-                                {entry.summary && entry.summary.requiredPullRequests > 0 ? (
-                                  <span className="inline-flex items-center gap-1 tabular-nums">
-                                    <PullRequestGlyph.pullRequest className="size-3.5" />
-                                    {entry.summary.mergedPullRequests}/
-                                    {entry.summary.requiredPullRequests}
-                                  </span>
-                                ) : null}
-                                <span
-                                  className={
-                                    group.key === "attention"
-                                      ? "text-destructive"
-                                      : group.key === "done"
-                                        ? "text-success"
-                                        : ""
-                                  }
-                                >
-                                  {entry.summary
-                                    ? t(
-                                        entry.summary.synced &&
-                                          entry.summary.progress === "delivery_complete"
-                                          ? "Completed"
-                                          : DELIVERY_PROGRESS_LABELS[entry.summary.progress],
-                                      )
-                                    : entry.kind === "local"
-                                      ? t(entry.state)
-                                      : entry.state}
-                                </span>
-                              </span>
-                            </span>
-                          </button>
-                        ))}
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
+                {data.candidates.length && (source === "all" || source === "local") ? (
+                  <section className="space-y-3 border-t border-border/60 py-4">
+                    <h2 className="text-sm font-medium">{t("Discovered tasks")}</h2>
+                    {data.candidates.map((item) => (
+                      <div
+                        key={`${item.environmentId}:${item.id}`}
+                        className="flex items-center gap-3"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm">{item.title}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {environmentLabel(item.environmentId)}
+                          </span>
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!permissions.get(item.environmentId)?.mutateWorkItem || busy}
+                          onClick={() => {
+                            setCreatingEnvironmentId(item.environmentId);
+                            setCandidate(item);
+                            setCreatingLocal(item.projectId);
+                          }}
+                        >
+                          {t("Add task")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={
+                            !permissions.get(item.environmentId)?.discoverWorkItems ||
+                            busy ||
+                            registry.get(serverEnvironment.configValueAtom(item.environmentId))
+                              ?.workItemDiscovery !== true
+                          }
+                          onClick={async () => {
+                            await discover({
+                              environmentId: item.environmentId,
+                              input: { projectId: item.projectId, dismissThreadId: item.id },
+                            });
+                            refresh();
+                          }}
+                        >
+                          {t("Ignore")}
+                        </Button>
                       </div>
-                    </section>
-                  );
-                })}
-              </div>
-            )}
-            {data.candidates.length && (source === "all" || source === "local") ? (
-              <section className="space-y-3 border-t border-border/60 py-4">
-                <h2 className="text-sm font-medium">{t("Discovered tasks")}</h2>
-                {data.candidates.map((item) => (
-                  <div key={`${item.environmentId}:${item.id}`} className="flex items-center gap-3">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{item.title}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {environmentLabel(item.environmentId)}
-                      </span>
-                    </span>
+                    ))}
+                  </section>
+                ) : null}
+                {data.hasMore ? (
+                  <div className="flex shrink-0 justify-center py-5">
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!permissions.get(item.environmentId)?.mutateWorkItem || busy}
-                      onClick={() => {
-                        setCreatingEnvironmentId(item.environmentId);
-                        setCandidate(item);
-                        setCreatingLocal(item.projectId);
-                      }}
+                      disabled={data.isPending}
+                      onClick={() => setPagination({ key: filterKey, pages: data.nextPagination })}
                     >
-                      {t("Add task")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={
-                        !permissions.get(item.environmentId)?.discoverWorkItems ||
-                        busy ||
-                        registry.get(serverEnvironment.configValueAtom(item.environmentId))
-                          ?.workItemDiscovery !== true
-                      }
-                      onClick={async () => {
-                        await discover({
-                          environmentId: item.environmentId,
-                          input: { projectId: item.projectId, dismissThreadId: item.id },
-                        });
-                        refresh();
-                      }}
-                    >
-                      {t("Ignore")}
+                      {t("Load more")}
                     </Button>
                   </div>
-                ))}
-              </section>
-            ) : null}
-            {data.hasMore ? (
-              <div className="flex shrink-0 justify-center py-5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={data.isPending}
-                  onClick={() => setPagination({ key: filterKey, pages: data.nextPagination })}
-                >
-                  {t("Load more")}
-                </Button>
+                ) : null}
               </div>
-            ) : null}
-          </div>
+            </>
+          ) : (
+            <TrackerIssuesView
+              search={search}
+              updateSearch={updateSearch}
+              panelRef={rightPanelRef}
+              renderedSurface={renderedSurface}
+              fallbackEnvironmentId={fallbackEnvironmentId}
+            />
+          )}
         </div>
         {presence.present && renderedSurface ? (
           <RightPanelTabs
@@ -1229,45 +1404,69 @@ export function RequirementBoard({
             pullRequestsAvailable={false}
             deviceAvailable={false}
           >
-            {renderedSurface.kind === "work-item" ? (
-              <WorkItemDetailPanel
-                key={renderedSurface.id}
-                embedded
-                panelRef={rightPanelRef}
-                environmentId={panelEnvironmentId}
-                id={renderedSurface.workItemId as WorkItemId}
-              />
-            ) : renderedSurface.kind === "requirement-issue" ? (
-              <IssueDetailPanel
-                key={renderedSurface.id}
-                embedded
-                panelRef={rightPanelRef}
-                environmentId={panelEnvironmentId}
-                target={{
-                  projectId: renderedSurface.projectId as ProjectId,
-                  provider: renderedSurface.provider,
-                  ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
-                  ...(renderedSurface.scope ? { scope: renderedSurface.scope } : {}),
-                }}
-                id={renderedSurface.issueId}
-                cwd={renderedIssueProject?.workspaceRoot ?? ""}
-                projectTitle={renderedIssueProject?.title ?? renderedSurface.projectId}
-                changed={refresh}
-              />
-            ) : (
-              <PullRequestDetailPanel
-                key={renderedSurface.id}
-                getShortcutContext={getShortcutContext}
-                shortcutsEnabled={panelSurface?.id === renderedSurface.id}
-                environmentId={panelEnvironmentId}
-                reference={{
-                  projectId: renderedSurface.projectId as ProjectId,
-                  repository: renderedSurface.repository,
-                  number: renderedSurface.number,
-                  ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
-                }}
-              />
-            )}
+            <PullRequestMarkdownPanelContext value={rightPanelRef}>
+              {renderedSurface.kind === "work-item" ? (
+                <WorkItemDetailPanel
+                  key={renderedSurface.id}
+                  embedded
+                  panelRef={rightPanelRef}
+                  environmentId={panelEnvironmentId}
+                  id={renderedSurface.workItemId as WorkItemId}
+                />
+              ) : renderedSurface.kind === "requirement-issue" ? (
+                <IssueDetailPanel
+                  key={renderedSurface.id}
+                  embedded
+                  panelRef={rightPanelRef}
+                  environmentId={panelEnvironmentId}
+                  target={{
+                    projectId: renderedSurface.projectId as ProjectId,
+                    provider: renderedSurface.provider,
+                    ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
+                    ...(renderedSurface.scope ? { scope: renderedSurface.scope } : {}),
+                  }}
+                  id={renderedSurface.issueId}
+                  cwd={renderedIssueProject?.workspaceRoot ?? ""}
+                  projectTitle={renderedIssueProject?.title ?? renderedSurface.projectId}
+                  changed={refresh}
+                />
+              ) : renderedSurface.kind === "issue" ? (
+                <TrackerIssueDetailPanel
+                  key={renderedSurface.id}
+                  environmentId={panelEnvironmentId}
+                  reference={{
+                    projectId: renderedSurface.projectId as ProjectId,
+                    tracker: renderedSurface.tracker as IssueTrackerKind,
+                    ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
+                    scope: renderedSurface.scope,
+                    key: renderedSurface.key,
+                  }}
+                  onSelectPullRequest={(reference) => {
+                    useRightPanelStore.getState().openPullRequest(rightPanelRef, {
+                      projectId: reference.projectId,
+                      repository: reference.repository,
+                      number: reference.number,
+                      ...(reference.host ? { host: reference.host } : {}),
+                      environmentId: panelEnvironmentId,
+                    });
+                    selectOpened();
+                  }}
+                />
+              ) : (
+                <PullRequestDetailPanel
+                  key={renderedSurface.id}
+                  getShortcutContext={getShortcutContext}
+                  shortcutsEnabled={panelSurface?.id === renderedSurface.id}
+                  environmentId={panelEnvironmentId}
+                  reference={{
+                    projectId: renderedSurface.projectId as ProjectId,
+                    repository: renderedSurface.repository,
+                    number: renderedSurface.number,
+                    ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
+                  }}
+                />
+              )}
+            </PullRequestMarkdownPanelContext>
           </RightPanelTabs>
         ) : null}
         {creatingTracker ? (

@@ -52,6 +52,8 @@ import { readIssueListPreferences } from "./issue/issueListPreferences";
 import {
   patchRequirementsSearch,
   requirementSelection,
+  requirementsSearchFromIssuesSearch,
+  type RequirementSearchPatch,
 } from "./requirements/requirementPanelSearch";
 
 declare module "@tanstack/react-router" {
@@ -169,19 +171,35 @@ export function ReopenClosedViewShortcut() {
         ref,
       );
       destination = linkOptions({
+        from: "/pull-requests",
         to: "/pull-requests",
         search: (previous) => pullRequestsSearchForRestore(previous, selected),
       });
     } else if (globalIssues) {
-      destination = linkOptions({ to: "/issues", search: readIssueListPreferences() });
-    } else if (globalRequirements) {
       const selected = selectSelectedRightPanelSurface(
         useRightPanelStore.getState().byThreadKey,
         ref,
       );
       destination = linkOptions({
         to: "/requirements",
-        search: (previous) => patchRequirementsSearch(previous, requirementSelection(selected)),
+        search: patchRequirementsSearch(
+          requirementsSearchFromIssuesSearch(readIssueListPreferences()),
+          requirementSelection(selected),
+        ),
+      });
+    } else if (globalRequirements) {
+      const selected = selectSelectedRightPanelSurface(
+        useRightPanelStore.getState().byThreadKey,
+        ref,
+      );
+      destination = linkOptions({
+        from: "/requirements",
+        to: "/requirements",
+        search: (previous) =>
+          patchRequirementsSearch(
+            previous as RequirementSearchPatch,
+            requirementSelection(selected),
+          ),
       });
     } else {
       const draftId = thread === null ? drafts.getDraftIdByRef(ref) : null;

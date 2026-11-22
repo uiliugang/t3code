@@ -3,6 +3,7 @@ import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import { EnvironmentId, ProjectId, type IssueProvider } from "@t3tools/contracts";
 import { useState } from "react";
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
@@ -19,6 +20,7 @@ import { IssuePicker } from "./IssuePicker";
 
 export function RequirementsSettingsScreen() {
   const t = useUiTranslation();
+  const insets = useSafeAreaInsets();
   const { availableTargets } = useSettingsEnvironmentFilter();
   const [selectedEnvironment, setEnvironment] = useState<EnvironmentId | null>(null);
   const environment =
@@ -29,7 +31,13 @@ export function RequirementsSettingsScreen() {
   );
   return (
     <SettingsScreen title={t("Issue management")}>
-      <ScreenScrollView className="flex-1" contentContainerClassName="gap-5 px-5 pb-12">
+      <ScreenScrollView
+        className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        contentContainerClassName="gap-5 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+      >
         <IssuePicker
           label={t("Environment")}
           value={environment?.environmentId ?? ""}

@@ -55,19 +55,20 @@ function SheetContainer(props: {
   readonly children: ReactNode;
 }) {
   const { height } = useWindowDimensions();
-  const style = { maxHeight: height * 0.92 };
+  const maxHeight = height * 0.92;
   return props.avoidsKeyboard ? (
-    <KeyboardAvoidingView
-      automaticOffset
-      behavior="padding"
-      collapsable={false}
-      className="flex-col-reverse bg-sheet"
-      style={style}
-    >
-      {props.children}
-    </KeyboardAvoidingView>
+    <View collapsable={false} className="bg-sheet" style={{ maxHeight }}>
+      <KeyboardAvoidingView
+        automaticOffset
+        behavior="padding"
+        collapsable={false}
+        style={{ maxHeight, flexDirection: "column-reverse" }}
+      >
+        {props.children}
+      </KeyboardAvoidingView>
+    </View>
   ) : (
-    <View collapsable={false} className="flex-col-reverse bg-sheet" style={style}>
+    <View collapsable={false} className="flex-col-reverse bg-sheet" style={{ maxHeight }}>
       {props.children}
     </View>
   );

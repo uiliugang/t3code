@@ -12,7 +12,7 @@ export function KeyboardSheetBody(props: KeyboardSheetBodyProps) {
   const insets = useSafeAreaInsets();
   return (
     <>
-      <KeyboardAvoidingView automaticOffset behavior="padding" className="flex-1">
+      <KeyboardAvoidingView automaticOffset behavior="padding" style={{ flex: 1 }}>
         <View
           className="flex-1 px-5"
           style={{
@@ -25,7 +25,7 @@ export function KeyboardSheetBody(props: KeyboardSheetBodyProps) {
       </KeyboardAvoidingView>
       {props.toolbar ? (
         <KeyboardStickyView
-          className="absolute inset-x-0 bottom-0"
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
           offset={{ closed: 0, opened: 0 }}
         >
           <View

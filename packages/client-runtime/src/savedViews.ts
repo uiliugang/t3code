@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  IssueInvolvement,
+  IssueListSort,
+  IssueListState,
+  ProjectId,
+} from "@t3tools/contracts";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
@@ -13,8 +19,16 @@ export const RequirementFilters = Schema.Struct({
   labels: Schema.Array(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))).check(
     Schema.isMaxLength(20),
   ),
+  involvement: Schema.optionalKey(IssueInvolvement),
+  issueState: Schema.optionalKey(IssueListState),
+  sort: Schema.optionalKey(IssueListSort),
 });
 export type RequirementFilters = typeof RequirementFilters.Type;
+
+function effectiveInvolvement(filters: Pick<RequirementFilters, "involvement" | "assignee">) {
+  return filters.involvement ?? (filters.assignee === "me" ? "assigned" : "all");
+}
+
 export function requirementViewsMatch(left: RequirementFilters, right: RequirementFilters) {
   return (
     left.environmentId === right.environmentId &&
@@ -23,6 +37,9 @@ export function requirementViewsMatch(left: RequirementFilters, right: Requireme
     left.query === right.query &&
     left.assignee === right.assignee &&
     left.archived === right.archived &&
+    effectiveInvolvement(left) === effectiveInvolvement(right) &&
+    (left.issueState ?? "all") === (right.issueState ?? "all") &&
+    (left.sort ?? "updated") === (right.sort ?? "updated") &&
     left.labels.length === right.labels.length &&
     left.labels.every((label) => right.labels.includes(label))
   );
