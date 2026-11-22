@@ -629,6 +629,7 @@ const make = Effect.gen(function* () {
       title: detail.title,
       state: detail.state,
       isDraft: detail.isDraft,
+      ...(detail.visibility === undefined ? {} : { visibility: detail.visibility }),
       author: detail.author?.login ?? null,
       headBranch: detail.headBranch,
       baseBranch: detail.baseBranch,
@@ -1067,6 +1068,7 @@ const make = Effect.gen(function* () {
             body: input.body,
             baseBranch: input.base,
             draft: input.draft,
+            private: input.private,
           })
           .pipe(Effect.mapError(forgeFailure));
         if (created.url === undefined) {

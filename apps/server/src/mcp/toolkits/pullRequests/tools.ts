@@ -16,6 +16,7 @@ import {
   PullRequestReviewGuideRun,
   PullRequestState,
   PullRequestUnavailableError,
+  PullRequestVisibility,
   PullRequestWatchUntil,
   ThreadPullRequestLinkSource,
   TrimmedNonEmptyString,
@@ -321,8 +322,7 @@ const LinkPullRequestTool = Tool.make("link_pull_request", {
   .annotate(Tool.OpenWorld, false);
 
 const LinkPullRequestsTool = Tool.make("link_pull_requests", {
-  description:
-    "Link several PRs to a thread. Use it instead of one `link_pull_request` per PR. URLs that are not PRs come back in `invalidUrls`.",
+  description: "Link several PRs to a thread in one call. Non-PR URLs appear in `invalidUrls`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId.annotate({ description: "Thread. Default: this thread." })),
@@ -353,8 +353,7 @@ const UnlinkPullRequestTool = Tool.make("unlink_pull_request", {
   .annotate(Tool.OpenWorld, false);
 
 const UnlinkPullRequestsTool = Tool.make("unlink_pull_requests", {
-  description:
-    "Unlink a thread's PRs whose last known state is in `states`. Use it instead of one `unlink_pull_request` per PR. PRs with no known state stay linked.",
+  description: "Unlink PRs whose last known state matches `states`. Unknown states stay linked.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId.annotate({ description: "Thread. Default: this thread." })),
@@ -520,6 +519,9 @@ export const ReadPullRequestResult = Schema.Struct({
   title: Schema.String,
   state: PullRequestState,
   isDraft: Schema.Boolean,
+  visibility: Schema.optional(PullRequestVisibility).annotate({
+    description: "Only on a host with private PRs.",
+  }),
   author: Schema.NullOr(Schema.String),
   headBranch: Schema.String,
   baseBranch: Schema.String,
@@ -678,6 +680,9 @@ const CreatePullRequestTool = Tool.make("pull_request_create", {
     body: Schema.String,
     base: Schema.optional(TrimmedNonEmptyString),
     draft: Schema.optional(Schema.Boolean),
+    private: Schema.optional(Schema.Boolean).annotate({
+      description: "Push only to the private companion. Unsupported hosts fail without pushing.",
+    }),
   }),
   success: CreatePullRequestResult,
   failure: PullRequestToolError,

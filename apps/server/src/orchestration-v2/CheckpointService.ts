@@ -959,10 +959,11 @@ export const layer: Layer.Layer<
       Effect.fn("CheckpointService.repositoryScopes")(
         function* (input) {
           if (input.rootScope.workspace !== undefined) return [];
-          const [workspace, submodules] = yield* Effect.all([
-            workspaceFolders.forThread(input),
-            workspaceFolders.submodules(input),
-          ]);
+          const workspace = yield* workspaceFolders.forThread(input);
+          const submodules = yield* workspaceFolders.submodules({
+            ...input,
+            folders: workspace.folders,
+          });
           return yield* Effect.forEach(
             [...workspace.folders.filter((folder) => folder.isGitRepository), ...submodules],
             (folder) =>
