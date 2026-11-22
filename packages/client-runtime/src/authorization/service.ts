@@ -158,7 +158,9 @@ function isGatewayError(error: RemoteEnvironmentAuthError | ConnectionAttemptErr
 
 function isEndpointUnavailable(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
   return (
-    isGatewayError(error) ||
+    (error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" &&
+      error.status >= 500 &&
+      error.status < 600) ||
     error._tag === "RemoteEnvironmentAuthFetchError" ||
     error._tag === "RemoteEnvironmentAuthTimeoutError"
   );
