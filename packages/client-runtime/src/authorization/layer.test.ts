@@ -968,7 +968,31 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
-  it.effect("refreshes a cached endpoint after its first transient failure", () =>
+  it.effect("reconnects through a brief gateway failure without replacing a valid credential", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        initialToken: persistedToken(),
+        descriptor: DESCRIPTOR,
+        responses: [new Response("Bad Gateway", { status: 502 }), websocketTicket("reconnected")],
+      });
+      const authorized = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+        (remote) => remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }),
+      ).pipe(Effect.provide(harness.layer));
+      expect(authorized.socketUrl).toContain("wsTicket=reconnected");
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+      expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(2);
+      const proofs = (yield* Ref.get(harness.proofInputs)).filter(
+        (proof) => proof.method === "POST",
+      );
+      expect(proofs.map((proof) => proof.accessToken)).toEqual([
+        "cached-access-token",
+        "cached-access-token",
+      ]);
+      expect(requestsTo(harness, "/oauth/token")).toBe(0);
+    }),
+  );
+
+  it.effect("refreshes a cached endpoint after repeated gateway failures", () =>
     Effect.gen(function* () {
       const cached = new TokenStore.RemoteDpopAccessToken({
         environmentId: ENVIRONMENT_ID,
@@ -984,6 +1008,7 @@ describe("RemoteEnvironmentAuthorization", () => {
         descriptor: DESCRIPTOR,
         responses: [
           new Response("endpoint unavailable", { status: 503 }),
+          new Response("endpoint unavailable", { status: 504 }),
           accessToken("replacement-access-token"),
           websocketTicket("replacement-ticket"),
         ],
@@ -1003,7 +1028,7 @@ describe("RemoteEnvironmentAuthorization", () => {
           accessToken: "replacement-access-token",
         }),
       );
-      expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(2);
+      expect(requestsTo(harness, "/api/auth/websocket-ticket/rpc")).toBe(3);
       expect(requestsTo(harness, "/oauth/token")).toBe(1);
     }),
   );

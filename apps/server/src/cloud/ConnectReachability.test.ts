@@ -37,6 +37,7 @@ const facts = (overrides: Partial<ReachabilityFacts>): ReachabilityFacts => ({
   managedTunnelConfigured: true,
   connector: connected,
   endpoint: null,
+  originAcceptsTcp: null,
   edgeReachable: null,
   exitNode: null,
   ...overrides,
@@ -44,7 +45,7 @@ const facts = (overrides: Partial<ReachabilityFacts>): ReachabilityFacts => ({
 
 describe("classifyReachability", () => {
   it.each([
-    [{ kind: "status", status: 502 }, "origin_unreachable"],
+    [{ kind: "status", status: 502 }, "unexpected_response"],
     [{ kind: "status", status: 530 }, "no_connector"],
     [{ kind: "status", status: 530, cloudflareError: "1033" }, "no_connector"],
     [{ kind: "status", status: 530, cloudflareError: "1016" }, "dns_failed"],
@@ -63,7 +64,7 @@ describe("classifyReachability", () => {
         facts({ endpoint: { kind: "status", status: 502 }, edgeReachable: false }),
         checkedAt,
       ),
-    ).toMatchObject({ cause: "origin_unreachable" });
+    ).toMatchObject({ cause: "unexpected_response" });
     expect(
       classifyReachability(
         facts({
@@ -79,7 +80,7 @@ describe("classifyReachability", () => {
         }),
         checkedAt,
       ),
-    ).toMatchObject({ cause: "origin_unreachable" });
+    ).toMatchObject({ cause: "unexpected_response" });
     // Failed DNS also fails the edge lookups.
     expect(
       classifyReachability(
@@ -129,12 +130,13 @@ type Served = Effect.Effect<ServedResponse, HttpClientError.HttpClientError>;
 const reachabilityLayer = (
   respond: Served | ((request: HttpClientRequest.HttpClientRequest) => Served),
   restartConnector: (pid: number, stillDead: Effect.Effect<boolean>) => Effect.Effect<boolean>,
+  origin: string | null = null,
 ) =>
   ConnectReachability.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ManagedEndpointRuntime.CloudManagedEndpointRuntime)({
-          inspectConnector: Effect.succeed(connected),
+          inspectConnector: Effect.succeed({ ...connected, origin }),
           readinessChanged: Stream.never,
           restartConnector,
         }),
@@ -175,6 +177,46 @@ const mockEdgeConnect = () =>
   });
 
 describe("ConnectReachability stale connector recovery", () => {
+  it.effect("checks the configured loopback port before blaming the origin for a 502", () =>
+    Effect.gen(function* () {
+      for (const [origin, accepts, expected] of [
+        ["http://127.0.0.1:3773", true, "unexpected_response"],
+        ["http://[::1]:3773", false, "origin_unreachable"],
+        ["http://elsewhere.test:3773", false, "unexpected_response"],
+        [null, false, "unexpected_response"],
+      ] as const) {
+        using connect = vi.spyOn(NodeNet, "connect").mockImplementation(() => {
+          const socket = new NodeNet.Socket();
+          queueMicrotask(() => {
+            if (!accepts) socket.emit("error", new Error("connection refused"));
+            else socket.emit("connect");
+          });
+          return socket;
+        });
+        const layer = reachabilityLayer(
+          Effect.succeed({ status: 502, body: "Bad Gateway" }),
+          () => Effect.succeed(false),
+          origin,
+        );
+        const result = yield* ConnectReachability.ConnectReachability.use(
+          (service) => service.check,
+        ).pipe(Effect.provide(layer));
+        expect(result).toMatchObject({ status: "unreachable", cause: expected });
+        if (expected === "unexpected_response" && result.status === "unreachable") {
+          expect(result.fix).not.toMatch(/restart/i);
+        }
+        if (origin?.includes("127.0.0.1") || origin?.includes("[::1]")) {
+          expect(connect).toHaveBeenCalledExactlyOnceWith({
+            port: 3773,
+            host: accepts ? "127.0.0.1" : "::1",
+          });
+        } else {
+          expect(connect).not.toHaveBeenCalled();
+        }
+      }
+    }),
+  );
+
   it.effect("restarts cloudflared when Cloudflare has no connector but it reports ready", () =>
     Effect.gen(function* () {
       using _connect = mockEdgeConnect();

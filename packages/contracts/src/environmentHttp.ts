@@ -573,7 +573,7 @@ const REACHABILITY_SECTION = {
   no_connector: "the-hosts-tunnel-is-offline",
   edge_unreachable: "port-7844-is-blocked-on-the-host",
   origin_unreachable: "the-tunnel-works-but-t3-code-does-not-answer",
-  unexpected_response: "the-tunnel-works-but-t3-code-does-not-answer",
+  unexpected_response: "t3-connect-returned-an-error",
   dns_failed: "the-t3-connect-address-does-not-resolve-or-answer",
   timeout: "the-t3-connect-address-does-not-resolve-or-answer",
 } satisfies Record<EnvironmentConnectReachabilityCause, T3ConnectTroubleshootingSection>;

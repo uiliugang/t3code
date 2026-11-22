@@ -57,7 +57,8 @@ Tailscale address as a direct route. See
 
 ## The tunnel works, but T3 Code does not answer
 
-The host's tunnel is up, but it cannot reach T3 Code on the host. Common causes:
+If the public address returns HTTP 502 and the configured local port does not
+accept a connection, check these causes:
 
 - T3 Code on the host stopped, crashed, or is still starting.
 - T3 Code restarted on a different port, for example after an update, and the
@@ -143,6 +144,10 @@ This app needs a newer T3 Code on the host. Update T3 Code on the host. See
 [Updating T3 Code](./updating.md).
 
 ## T3 Connect returned an error
+
+An HTTP 502 can occur after T3 Code has answered a request, if the tunnel loses
+its connection before delivering the response. Retry shortly. If it keeps
+happening, check the host's `relay-client.ndjson` for edge connection errors.
 
 | Error                                                     | Fix                                                                                                                                                                                                  |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

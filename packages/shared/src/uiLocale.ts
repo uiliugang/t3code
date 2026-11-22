@@ -348,6 +348,14 @@ const zhCN: Readonly<Record<string, string>> = {
   "Run on your computer:": "在你的计算机上运行：",
   "Or download the desktop app": "或下载桌面应用",
   "Retry T3 Connect": "重试 T3 Connect",
+  "The tunnel returned HTTP 502 and its configured local port did not accept a connection.":
+    "隧道返回了 HTTP 502，且配置的本机端口未接受连接。",
+  "Check that T3 Code is listening on the address and port configured for the tunnel.":
+    "请检查 T3 Code 是否正在监听隧道配置的地址和端口。",
+  "The T3 Connect address returned HTTP 502 (Bad Gateway).":
+    "T3 Connect 地址返回了 HTTP 502（网关错误）。",
+  "Try again shortly. If it keeps failing, check the host's tunnel log.":
+    "请稍后重试。如果持续失败，请查看主机的隧道日志。",
   "Browser authorization": "浏览器授权",
   "Connecting your terminal": "正在连接你的终端",
   "Redirecting to authorize T3 Connect for your CLI…": "正在跳转，为命令行授权 T3 Connect…",

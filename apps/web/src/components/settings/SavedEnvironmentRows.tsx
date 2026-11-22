@@ -649,7 +649,7 @@ function ConfiguredCloudLinkRow({
       formatConnectReachable(reachability)
     ) : reachability?.status === "unreachable" ? (
       <span className="block text-destructive">
-        {[reachability.reason, reachability.hint, gt("Fix: {fix}", { fix: reachability.fix })]
+        {[t(reachability.reason), reachability.hint, gt("Fix: {fix}", { fix: t(reachability.fix) })]
           .filter(Boolean)
           .join(" ")}{" "}
         <a

@@ -474,7 +474,9 @@ function GateScreen({
           <GateMessage
             title={reachability ? offlineTitle : cannotCheckTitle}
             lines={
-              reachability ? [reachability.reason, gt("Fix: {fix}", { fix: reachability.fix })] : []
+              reachability
+                ? [t(reachability.reason), gt("Fix: {fix}", { fix: t(reachability.fix) })]
+                : []
             }
           >
             {checkAgain}
