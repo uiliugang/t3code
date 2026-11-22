@@ -1,5 +1,8 @@
 import type { ClientConnectionMethod, EnvironmentId } from "@t3tools/contracts";
-import type { RelayProtectedError } from "@t3tools/contracts/relay";
+import type {
+  RelayEnvironmentEndpointFailure,
+  RelayProtectedError,
+} from "@t3tools/contracts/relay";
 import type { ManagedRelayClientError } from "../relay/managedRelay.ts";
 import { msg } from "gt-i18n";
 import { dpopFailureText, relayProtectedErrorText } from "../relay/errorPresentation.ts";
@@ -60,6 +63,23 @@ export function environmentMismatchError(input: {
       }),
     ),
   });
+}
+
+export function relayEndpointFailureLocation(
+  cause: RelayEnvironmentEndpointFailure | undefined,
+  status?: number,
+) {
+  // Older relays inferred origin_unreachable from a bare gateway response without probing the host.
+  if (
+    isGatewayStatus(status) &&
+    (cause === undefined || cause === "unknown" || cause === "origin_unreachable")
+  ) {
+    return { hop: "tunnel", failureCause: "gateway_error" } as const;
+  }
+  return {
+    hop: cause === "origin_unreachable" || cause === "invalid_response" ? "server" : "tunnel",
+    ...(cause === undefined ? {} : { failureCause: cause }),
+  } as const;
 }
 
 function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError {
@@ -145,13 +165,8 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         detail,
         i18nMessage,
         traceId,
-        // The tunnel carried the request when T3 Code is what failed to answer.
-        hop:
-          endpointFailure === "origin_unreachable" || endpointFailure === "invalid_response"
-            ? "server"
-            : "tunnel",
+        ...relayEndpointFailureLocation(endpointFailure, error.endpointStatus),
         via: "relay",
-        ...(endpointFailure ? { failureCause: endpointFailure } : {}),
         ...(error.endpointStatus ? { httpStatus: error.endpointStatus } : {}),
       });
     }
@@ -174,6 +189,34 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         failureCause: "relay_error",
       });
   }
+}
+
+export function mapCloudSessionTokenError(error: {
+  readonly message: string;
+  readonly cause?: unknown;
+}): ConnectionAttemptError {
+  const cause = error.cause;
+  const status =
+    typeof cause === "object" &&
+    cause !== null &&
+    "status" in cause &&
+    typeof cause.status === "number"
+      ? cause.status
+      : undefined;
+  if (status === 401 || status === 403) {
+    return new ConnectionBlockedError({
+      reason: "authentication",
+      hop: "relay",
+      ...detailFromError(error),
+      httpStatus: status,
+    });
+  }
+  return new ConnectionTransientError({
+    reason: "network",
+    hop: "relay",
+    ...detailFromError(error),
+    ...(status === undefined ? {} : { httpStatus: status }),
+  });
 }
 
 export function mapManagedRelayError(error: ManagedRelayClientError): ConnectionAttemptError {
@@ -219,6 +262,10 @@ export function mapManagedRelayError(error: ManagedRelayClientError): Connection
         hop: "device",
       });
   }
+}
+
+export function isGatewayStatus(status: number | undefined): boolean {
+  return status === 502 || status === 503 || status === 504;
 }
 
 export function mapRemoteEnvironmentError(
@@ -304,13 +351,19 @@ export function mapRemoteEnvironmentError(
         via,
       });
     case "RemoteEnvironmentAuthInvalidJsonError":
-    case "RemoteEnvironmentAuthUndeclaredStatusError":
+    case "RemoteEnvironmentAuthUndeclaredStatusError": {
+      const status =
+        error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" ? error.status : undefined;
       return new ConnectionTransientError({
         reason: "remote-unavailable",
         ...detailFromError(error),
-        hop: "server",
+        ...(via === "relay" && isGatewayStatus(status)
+          ? ({ hop: "tunnel", failureCause: "gateway_error" } as const)
+          : ({ hop: "server" } as const)),
         via,
+        ...(status === undefined ? {} : { httpStatus: status }),
       });
+    }
   }
 }
 

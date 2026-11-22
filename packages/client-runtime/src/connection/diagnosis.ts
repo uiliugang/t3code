@@ -9,6 +9,7 @@ import type { MFunctionType } from "gt-i18n/types";
 import { resolveMarkedText } from "../errors/translatable.ts";
 import * as DateTime from "effect/DateTime";
 
+import { relayEndpointFailureLocation } from "./errors.ts";
 import type {
   ConnectionAttemptError,
   ConnectionFailureCause,
@@ -61,11 +62,6 @@ interface Located {
   readonly guessed?: true;
 }
 
-const NOT_ANSWERING: ReadonlySet<ConnectionFailureCause> = new Set([
-  "origin_unreachable",
-  "invalid_response",
-]);
-
 function locate(input: ConnectionDiagnosisInput): Located | null {
   const failure = input.state.lastFailure;
   if (input.state.network === "offline" || input.state.phase === "offline") {
@@ -95,8 +91,11 @@ function locate(input: ConnectionDiagnosisInput): Located | null {
   const status = input.relayStatus;
   if (status?.status !== "offline") return null;
   if (status.offlineReason === "tunnel_released") return { hop: "tunnel", cause: "released" };
-  const cause = status.endpointFailure ?? null;
-  return { hop: cause !== null && NOT_ANSWERING.has(cause) ? "server" : "tunnel", cause };
+  const { hop, failureCause } = relayEndpointFailureLocation(
+    status.endpointFailure,
+    status.endpointStatus,
+  );
+  return { hop, cause: failureCause ?? null };
 }
 
 function headline(
@@ -118,6 +117,7 @@ function headline(
       return t("This device's clock is off");
     case "not_linked":
       return t("{host} is not linked to your T3 Connect account", { host });
+    case "gateway_error":
     case "relay_error":
       return t("T3 Connect returned an error");
     case "tunnel_pending":
@@ -213,6 +213,8 @@ function steps(
       ];
     case "tunnel_pending":
       return [t("Wait a minute. T3 Code retries on its own."), checkHost];
+    case "gateway_error":
+      return [t("Try again shortly. If it keeps failing, check the host's tunnel log."), checkHost];
     case "relay_error":
       return [
         t("Wait a few minutes. T3 Code retries on its own."),
@@ -296,6 +298,7 @@ function helpSection(
     case "not_linked":
     case "tunnel_not_enabled":
       return "sign-in-account-or-link-problems";
+    case "gateway_error":
     case "relay_error":
       return "t3-connect-returned-an-error";
     case "released":
@@ -376,7 +379,7 @@ export function presentConnectionDiagnosis(
     hop,
     label: hopLabel(hop, host, t),
     result:
-      index === failedIndex
+      index === failedIndex && located.cause !== "gateway_error"
         ? "failed"
         : index < failedIndex && located.guessed !== true
           ? "ok"

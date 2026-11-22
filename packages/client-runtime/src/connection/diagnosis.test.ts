@@ -17,7 +17,10 @@ import {
   type SupervisorConnectionState,
 } from "./model.ts";
 import { ManagedRelayRequestFailedError } from "../relay/managedRelay.ts";
-import { RemoteEnvironmentAuthFetchError } from "../rpc/http.ts";
+import {
+  RemoteEnvironmentAuthFetchError,
+  RemoteEnvironmentAuthUndeclaredStatusError,
+} from "../rpc/http.ts";
 
 const backoff = (lastFailure: ConnectionAttemptError): SupervisorConnectionState => ({
   ...AVAILABLE_CONNECTION_STATE,
@@ -38,13 +41,16 @@ const fromRelay = (relayError: RelayProtectedError) =>
     }),
   );
 
-const unavailable = (endpointFailure: "tunnel_down" | "origin_unreachable") =>
+const unavailable = (
+  endpointFailure: "tunnel_down" | "origin_unreachable" | "unknown",
+  endpointStatus?: number,
+) =>
   fromRelay(
     new RelayEnvironmentEndpointUnavailableError({
       code: "environment_endpoint_unavailable",
       reason: "endpoint_request_failed",
       endpointFailure,
-      endpointStatus: endpointFailure === "tunnel_down" ? 530 : 502,
+      ...(endpointStatus === undefined ? {} : { endpointStatus }),
       traceId: "trace-1",
     }),
   );
@@ -67,6 +73,49 @@ describe("presentConnectionDiagnosis", () => {
       "server:failed",
     ]);
   });
+
+  it.each([502, 503])(
+    "preserves HTTP %i in client, legacy relay, and current relay diagnostics",
+    (status) => {
+      const response = new RemoteEnvironmentAuthUndeclaredStatusError({
+        requestUrl: "https://environment.example.test/api/auth/websocket-ticket/rpc",
+        status,
+      });
+      const relayDiagnoses = (["origin_unreachable", "unknown"] as const).flatMap(
+        (endpointFailure) => [
+          diagnose(backoff(unavailable(endpointFailure, status))),
+          presentConnectionDiagnosis({
+            hostLabel: "Mac mini",
+            state: AVAILABLE_CONNECTION_STATE,
+            via: "relay",
+            relayStatus: { status: "offline", endpointFailure, endpointStatus: status },
+          }),
+        ],
+      );
+      for (const diagnosis of [
+        diagnose(backoff(mapRemoteEnvironmentError(response, "relay"))),
+        ...relayDiagnoses,
+      ]) {
+        expect(diagnosis?.headline).toBe("T3 Connect returned an error");
+        expect(diagnosis?.hops.map((hop) => hop.result)).toEqual([
+          "ok",
+          "ok",
+          "unchecked",
+          "unchecked",
+        ]);
+        expect(diagnosis?.facts).toContainEqual(["HTTP status", String(status)]);
+        expect(diagnosis?.steps.join(" ")).toMatch(/retry|try again/i);
+        expect(diagnosis?.moreInfoUrl).toBe(
+          "https://github.com/uiliugang/t3code/blob/main/docs/user/t3-connect-troubleshooting.md#t3-connect-returned-an-error",
+        );
+      }
+      expect(
+        diagnose(backoff(mapRemoteEnvironmentError(response, "direct")), "direct")?.hops.map(
+          (hop) => hop.hop,
+        ),
+      ).toEqual(["device", "server"]);
+    },
+  );
 
   it("blames this device when it cannot reach a tunnel the relay already reached", () => {
     const failure = mapRemoteEnvironmentError(

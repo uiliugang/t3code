@@ -7,6 +7,7 @@ import {
   StoredOrchestrationThreadSnapshot,
   decodeOrDiscardOrchestrationCache,
   putRemoteDpopTokenInCatalog,
+  removeRemoteDpopTokenFromCatalog,
   registerConnectionInCatalog,
   removeCatalogValue,
   removeConnectionFromCatalog,
@@ -37,7 +38,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Ref from "effect/Ref";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -285,10 +285,12 @@ function writeDatabaseValueOnConnection(
   storeName: string,
   key: IDBValidKey,
   value: unknown,
+  expected?: string | null,
 ) {
-  return Effect.callback<void, ConnectionTransientError>((resume) => {
+  return Effect.callback<boolean, ConnectionTransientError>((resume) => {
     try {
       const transaction = database.transaction(storeName, "readwrite");
+      let applied = true;
       // Commit failures can fire abort without error; every failed write fires abort.
       transaction.addEventListener("abort", () => {
         resume(
@@ -298,9 +300,18 @@ function writeDatabaseValueOnConnection(
         );
       });
       transaction.addEventListener("complete", () => {
-        resume(Effect.void);
+        resume(Effect.succeed(applied));
       });
-      transaction.objectStore(storeName).put(value, key);
+      const store = transaction.objectStore(storeName);
+      if (expected === undefined) {
+        store.put(value, key);
+      } else {
+        const read = store.get(key);
+        read.addEventListener("success", () => {
+          applied = (typeof read.result === "string" ? read.result : null) === expected;
+          if (applied) store.put(value, key);
+        });
+      }
     } catch (cause) {
       resume(Effect.fail(catalogError("write", cause)));
     }
@@ -458,7 +469,7 @@ function writeDatabaseValue(
   value: unknown,
 ) {
   return withDatabase(database, (opened) =>
-    writeDatabaseValueOnConnection(opened, storeName, key, value),
+    writeDatabaseValueOnConnection(opened, storeName, key, value).pipe(Effect.asVoid),
   );
 }
 
@@ -511,33 +522,38 @@ const encodeCatalog = Effect.fn("web.connectionStorage.encodeCatalog")(function*
 export interface CatalogBackend {
   readonly read: Effect.Effect<string | null, ConnectionTransientError>;
   readonly write: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
+  readonly writeIfCurrent?: (
+    expected: string | null,
+    raw: string,
+  ) => Effect.Effect<boolean, ConnectionTransientError>;
   readonly quarantine?: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
 }
 
 export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
   const bridge = window.desktopBridge;
   if (bridge !== undefined) {
+    const save = async (raw: string) => {
+      if (!(await bridge.setConnectionCatalog(raw))) {
+        throw new Error(m(msg("Desktop secure storage is unavailable in this system context.")));
+      }
+    };
     return {
       read: Effect.tryPromise({
         try: () => bridge.getConnectionCatalog(),
         catch: (cause) => catalogError("load", cause),
       }),
       write: (raw) =>
+        Effect.tryPromise({ try: () => save(raw), catch: (cause) => catalogError("save", cause) }),
+      writeIfCurrent: (expected, raw) =>
         Effect.tryPromise({
-          try: () => bridge.setConnectionCatalog(raw),
+          try: () =>
+            navigator.locks.request("t3code:desktop-connection-catalog", async () => {
+              if ((await bridge.getConnectionCatalog()) !== expected) return false;
+              await save(raw);
+              return true;
+            }),
           catch: (cause) => catalogError("save", cause),
-        }).pipe(
-          Effect.flatMap((stored) =>
-            stored
-              ? Effect.void
-              : Effect.fail(
-                  catalogError(
-                    "save",
-                    m(msg("Desktop secure storage is unavailable in this system context.")),
-                  ),
-                ),
-          ),
-        ),
+        }),
     };
   }
 
@@ -546,6 +562,10 @@ export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
       Effect.map((value) => (typeof value === "string" ? value : null)),
     ),
     write: (raw) => writeDatabaseValue(database, CATALOG_STORE_NAME, CATALOG_KEY, raw),
+    writeIfCurrent: (expected, raw) =>
+      withDatabase(database, (opened) =>
+        writeDatabaseValueOnConnection(opened, CATALOG_STORE_NAME, CATALOG_KEY, raw, expected),
+      ),
     quarantine: (raw) =>
       writeDatabaseValue(database, CATALOG_STORE_NAME, `${CATALOG_KEY}:corrupt:${Date.now()}`, raw),
   };
@@ -561,15 +581,16 @@ interface CatalogStore {
 export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStore")(function* (
   backend: CatalogBackend,
 ) {
-  const state = yield* Ref.make<Option.Option<ConnectionCatalogDocumentType>>(Option.none());
+  let cached:
+    | { readonly raw: string | null; readonly catalog: ConnectionCatalogDocumentType }
+    | undefined;
+  const save = (expected: string | null, raw: string) =>
+    backend.writeIfCurrent?.(expected, raw) ?? backend.write(raw).pipe(Effect.as(true));
   const lock = yield* Semaphore.make(1);
 
   const loadUnlocked = Effect.fn("web.connectionStorage.loadCatalog")(function* () {
-    const cached = yield* Ref.get(state);
-    if (Option.isSome(cached)) {
-      return cached.value;
-    }
     const raw = yield* backend.read;
+    if (cached?.raw === raw) return cached;
     let catalog = EMPTY_CONNECTION_CATALOG_DOCUMENT;
     if (raw !== null && raw.trim() !== "") {
       catalog = yield* decodeCatalog(raw).pipe(
@@ -588,7 +609,7 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
               );
             }
             const encoded = yield* encodeCatalog(EMPTY_CONNECTION_CATALOG_DOCUMENT);
-            yield* backend.write(encoded).pipe(
+            yield* save(raw, encoded).pipe(
               Effect.catch((cause) =>
                 Effect.logWarning("Could not persist the recovered web connection catalog.", {
                   error: cause.message,
@@ -600,18 +621,28 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
         ),
       );
     }
-    yield* Ref.set(state, Option.some(catalog));
-    return catalog;
+    cached = { raw, catalog };
+    return cached;
   });
 
-  const read = lock.withPermits(1)(loadUnlocked());
+  const read = lock
+    .withPermits(1)(loadUnlocked())
+    .pipe(Effect.map(({ catalog }) => catalog));
   const update: CatalogStore["update"] = Effect.fn("web.connectionStorage.updateCatalog")(
     function* (transform) {
       yield* lock.withPermits(1)(
         Effect.gen(function* () {
-          const next = transform(yield* loadUnlocked());
-          yield* backend.write(yield* encodeCatalog(next));
-          yield* Ref.set(state, Option.some(next));
+          // A concurrent tab can commit between reading and writing the catalog.
+          for (;;) {
+            const { raw, catalog } = yield* loadUnlocked();
+            const next = transform(catalog);
+            if (next === catalog) return;
+            const encoded = yield* encodeCatalog(next);
+            if (yield* save(raw, encoded)) {
+              cached = { raw: encoded, catalog: next };
+              return;
+            }
+          }
         }),
       );
     },
@@ -857,16 +888,14 @@ export const layer = Layer.effectContext(
             ),
           ),
         ),
-      put: (token) => catalog.update((document) => putRemoteDpopTokenInCatalog(document, token)),
-      remove: (environmentId) =>
-        catalog.update((document) => ({
-          ...document,
-          remoteDpopTokens: removeCatalogValue(
-            document.remoteDpopTokens,
-            (value) => value.environmentId,
-            environmentId,
-          ),
-        })),
+      put: (token, ifCurrentAccessToken) =>
+        catalog.update((document) =>
+          putRemoteDpopTokenInCatalog(document, token, ifCurrentAccessToken),
+        ),
+      remove: (environmentId, ifCurrentAccessToken) =>
+        catalog.update((document) =>
+          removeRemoteDpopTokenFromCatalog(document, environmentId, ifCurrentAccessToken),
+        ),
     });
     const cacheStore = Persistence.EnvironmentCacheStore.of({
       loadShell: Effect.fn("Persistence.EnvironmentCacheStore.loadShell")(function (environmentId) {

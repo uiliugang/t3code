@@ -8,6 +8,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   isHostCredentialRefusal,
+  mapCloudSessionTokenError,
   mapManagedRelayError,
   mapRemoteDpopEnvironmentError,
 } from "./errors.ts";
@@ -15,6 +16,21 @@ import { DPOP_UNKNOWN_HINT } from "../relay/errorPresentation.ts";
 import { ManagedRelayRequestFailedError } from "../relay/managedRelay.ts";
 import { NETWORK_BLOCKING_HINT } from "../errors/network.ts";
 import { RemoteEnvironmentAuthFetchError, RemoteEnvironmentAuthTimeoutError } from "../rpc/http.ts";
+
+describe("mapCloudSessionTokenError", () => {
+  it.each([
+    [401, "authentication"],
+    [403, "authentication"],
+    [429, "network"],
+    [503, "network"],
+  ] as const)("preserves the sign-in provider's HTTP %i response", (status, reason) => {
+    const error = mapCloudSessionTokenError({
+      message: "Could not read the session token",
+      cause: { status },
+    });
+    expect(error).toMatchObject({ reason, httpStatus: status, hop: "relay" });
+  });
+});
 
 describe("mapManagedRelayError", () => {
   it("keeps a timeout reported by the relay distinct from a local network failure", () => {

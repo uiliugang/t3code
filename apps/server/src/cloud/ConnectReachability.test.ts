@@ -179,17 +179,35 @@ const mockEdgeConnect = () =>
 describe("ConnectReachability stale connector recovery", () => {
   it.effect("checks the configured loopback port before blaming the origin for a 502", () =>
     Effect.gen(function* () {
-      for (const [origin, accepts, expected] of [
-        ["http://127.0.0.1:3773", true, "unexpected_response"],
-        ["http://[::1]:3773", false, "origin_unreachable"],
-        ["http://elsewhere.test:3773", false, "unexpected_response"],
-        [null, false, "unexpected_response"],
+      const refused = Object.assign(new Error("connection refused"), { code: "ECONNREFUSED" });
+      const denied = Object.assign(new Error("socket denied"), { code: "EACCES" });
+      for (const [origin, outcome, host, expected] of [
+        ["http://127.0.0.1:3773", "connect", "127.0.0.1", "unexpected_response"],
+        ["http://[::1]:3773", refused, "::1", "origin_unreachable"],
+        ["http://127.0.0.1:3773", denied, "127.0.0.1", "unexpected_response"],
+        ["http://127.0.0.1:3773", "timeout", "127.0.0.1", "unexpected_response"],
+        [
+          "http://localhost:3773",
+          Object.assign(new AggregateError([refused, denied]), {
+            code: "ECONNREFUSED",
+          }),
+          "localhost",
+          "unexpected_response",
+        ],
+        [
+          "http://localhost:3773",
+          new AggregateError([refused, refused]),
+          "localhost",
+          "origin_unreachable",
+        ],
+        ["http://elsewhere.test:3773", refused, null, "unexpected_response"],
+        [null, refused, null, "unexpected_response"],
       ] as const) {
         using connect = vi.spyOn(NodeNet, "connect").mockImplementation(() => {
           const socket = new NodeNet.Socket();
           queueMicrotask(() => {
-            if (!accepts) socket.emit("error", new Error("connection refused"));
-            else socket.emit("connect");
+            if (outcome instanceof Error) socket.emit("error", outcome);
+            else socket.emit(outcome);
           });
           return socket;
         });
@@ -205,10 +223,10 @@ describe("ConnectReachability stale connector recovery", () => {
         if (expected === "unexpected_response" && result.status === "unreachable") {
           expect(result.fix).not.toMatch(/restart/i);
         }
-        if (origin?.includes("127.0.0.1") || origin?.includes("[::1]")) {
+        if (host !== null) {
           expect(connect).toHaveBeenCalledExactlyOnceWith({
             port: 3773,
-            host: accepts ? "127.0.0.1" : "::1",
+            host,
           });
         } else {
           expect(connect).not.toHaveBeenCalled();

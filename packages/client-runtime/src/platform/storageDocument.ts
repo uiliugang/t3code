@@ -198,12 +198,18 @@ export function setConnectionEnabledInCatalog(
 export function putRemoteDpopTokenInCatalog(
   document: ConnectionCatalogDocument,
   token: TokenStore.RemoteDpopAccessToken,
+  ifCurrentAccessToken?: string | null,
 ): ConnectionCatalogDocument {
   const registered = document.targets.some(
     (target) =>
       target._tag === "RelayConnectionTarget" && target.environmentId === token.environmentId,
   );
-  if (!registered) {
+  if (
+    !registered ||
+    (ifCurrentAccessToken !== undefined &&
+      (document.remoteDpopTokens.find((current) => current.environmentId === token.environmentId)
+        ?.accessToken ?? null) !== ifCurrentAccessToken)
+  ) {
     return document;
   }
   return {
@@ -212,6 +218,25 @@ export function putRemoteDpopTokenInCatalog(
       document.remoteDpopTokens,
       (value) => value.environmentId,
       token,
+    ),
+  };
+}
+
+export function removeRemoteDpopTokenFromCatalog(
+  document: ConnectionCatalogDocument,
+  environmentId: EnvironmentId,
+  ifCurrentAccessToken?: string,
+): ConnectionCatalogDocument {
+  const current = document.remoteDpopTokens.find((token) => token.environmentId === environmentId);
+  if (
+    !current ||
+    (ifCurrentAccessToken !== undefined && current.accessToken !== ifCurrentAccessToken)
+  )
+    return document;
+  return {
+    ...document,
+    remoteDpopTokens: document.remoteDpopTokens.filter(
+      (token) => token.environmentId !== environmentId,
     ),
   };
 }
