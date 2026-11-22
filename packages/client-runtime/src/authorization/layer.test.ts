@@ -1043,24 +1043,43 @@ describe("RemoteEnvironmentAuthorization", () => {
     {
       name: "environment mismatch",
       response: () => Response.json({ ...DESCRIPTOR, environmentId: "another-host" }),
+      ticket: () => new Response(null, { status: 530 }),
       expected: { _tag: "ConnectionBlockedError", reason: "configuration" },
     },
-    ...[401, 403].map((status) => ({
+    {
+      name: "an invalid descriptor",
+      response: () => Response.json({}),
+      ticket: () => websocketTicket("public"),
+      expected: { _tag: "ConnectionTransientError", reason: "remote-unavailable" },
+    },
+    ...[400, 401, 403, 407].map((status) => ({
       name: `HTTP ${status}`,
       response: () => new Response(null, { status }),
+      ticket: () =>
+        status === 400 ? websocketTicket("public") : new Response(null, { status: 530 }),
       expected: { httpStatus: status },
     })),
-  ])("stops on $name returned by a retried public descriptor", ({ response, expected }) =>
+  ])("stops on $name returned by a retried public descriptor", ({ response, ticket, expected }) =>
     Effect.gen(function* () {
       let reads = 0;
+      const retried = Promise.withResolvers<void>();
+      const reply = Promise.withResolvers<Response>();
       const harness = yield* makeHarness({
         initialToken: persistedToken(),
-        descriptor: () => (++reads === 1 ? new Response(null, { status: 502 }) : response()),
-        responses: [websocketTicket("public")],
+        descriptor: () => {
+          if (++reads === 1) return new Response(null, { status: 502 });
+          retried.resolve();
+          return response();
+        },
+        responses: [() => reply.promise],
       });
-      const error = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
+      const attempt = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.use(
         (remote) => remote.authorizeDpop({ expectedEnvironmentId: ENVIRONMENT_ID }),
-      ).pipe(Effect.provide(harness.layer), Effect.flip);
+      ).pipe(Effect.provide(harness.layer), Effect.flip, Effect.forkChild);
+      yield* Effect.promise(() => retried.promise);
+      yield* TestClock.adjust("1 second");
+      reply.resolve(ticket());
+      const error = yield* Fiber.join(attempt);
       expect(error).toMatchObject(expected);
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
       expect((yield* Ref.get(harness.tokens)).get(ENVIRONMENT_ID)).toEqual(persistedToken());
@@ -1111,8 +1130,8 @@ describe("RemoteEnvironmentAuthorization", () => {
       }),
   );
 
-  it.effect.each([521, 522, 523, 524, 525, 526, 530])(
-    "discovers the new tunnel when its cached descriptor returns HTTP %i before the ticket",
+  it.effect.each([200, 404, 408, 410, 421, 429, 521, 522, 523, 524, 525, 526, 530])(
+    "discovers the new tunnel when unusable metadata (HTTP %i) arrives before a ticket 530",
     (status) =>
       Effect.gen(function* () {
         const oldTicket = Promise.withResolvers<Response>();
@@ -1142,7 +1161,7 @@ describe("RemoteEnvironmentAuthorization", () => {
         ).pipe(Effect.provide(harness.layer), Effect.forkChild);
         yield* Effect.promise(() => firstRead.promise);
         yield* TestClock.adjust("1 second");
-        oldTicket.resolve(new Response(null, { status }));
+        oldTicket.resolve(new Response(null, { status: 530 }));
         const socket = yield* Fiber.join(attempting);
         expect(new URL(socket.socketUrl).origin).toBe(newEndpoint.wsBaseUrl);
         expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
@@ -1159,6 +1178,8 @@ describe("RemoteEnvironmentAuthorization", () => {
     { request: "descriptor", statuses: [502, 502] },
     { request: "ticket", statuses: [530] },
     { request: "descriptor", statuses: [530] },
+    { request: "ticket", statuses: [410] },
+    { request: "descriptor", statuses: [410] },
   ])(
     "keeps LAN access and rediscovers the public endpoint after the $request returns $statuses",
     ({ request, statuses }) =>

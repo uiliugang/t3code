@@ -157,10 +157,11 @@ function isGatewayError(error: RemoteEnvironmentAuthError | ConnectionAttemptErr
 }
 
 function isEndpointUnavailable(error: RemoteEnvironmentAuthError | ConnectionAttemptError) {
+  if (error._tag === "RemoteEnvironmentAuthUndeclaredStatusError") {
+    const { status } = error;
+    return [404, 408, 410, 421, 429].includes(status) || (status >= 500 && status < 600);
+  }
   return (
-    (error._tag === "RemoteEnvironmentAuthUndeclaredStatusError" &&
-      error.status >= 500 &&
-      error.status < 600) ||
     error._tag === "RemoteEnvironmentAuthFetchError" ||
     error._tag === "RemoteEnvironmentAuthTimeoutError"
   );
@@ -871,16 +872,32 @@ export const make = Effect.gen(function* () {
               ),
             )
           : Effect.succeed(known);
-      const ready = Effect.all([ticket, descriptor], { concurrency: "unbounded" }).pipe(
-        Effect.flatMap(([socketUrl, host]) =>
-          host.environmentId === input.expectedEnvironmentId
-            ? Effect.succeed(authorized(issued.token, socketUrl, host))
-            : Effect.fail(
-                environmentMismatchError({
-                  expected: input.expectedEnvironmentId,
-                  actual: host.environmentId,
-                }),
-              ),
+      const checked = descriptor.pipe(
+        Effect.filterOrFail(
+          (host) => host.environmentId === input.expectedEnvironmentId,
+          (host) =>
+            environmentMismatchError({
+              expected: input.expectedEnvironmentId,
+              actual: host.environmentId,
+            }),
+        ),
+        Effect.map(Result.succeed),
+        // An unexpected metadata response cannot explain a ticket failure on the same route.
+        Effect.catchIf(
+          (error) =>
+            error._tag === "ConnectionTransientError" &&
+            error.reason === "remote-unavailable" &&
+            error.httpStatus !== 401 &&
+            error.httpStatus !== 403 &&
+            error.httpStatus !== 407,
+          (error) => Effect.succeed(Result.fail(error)),
+        ),
+      );
+      const ready = Effect.all([ticket, checked], { concurrency: "unbounded" }).pipe(
+        Effect.flatMap(([socketUrl, reading]) =>
+          Result.isSuccess(reading)
+            ? Effect.succeed(authorized(issued.token, socketUrl, reading.success))
+            : Effect.fail(reading.failure),
         ),
         Effect.result,
       );
