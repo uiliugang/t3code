@@ -1,5 +1,7 @@
 import type { DeliveryScope, DeliveryEvidence } from "@t3tools/contracts";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { makeResolveMCodeCommand } from "../sourceControl/MCodeRuntime.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -80,6 +82,8 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const runner = yield* ProcessRunner.ProcessRunner;
     const settings = yield* Settings.ServerSettingsService;
+    const resolveMCodeCommand = yield* makeResolveMCodeCommand;
+    const cwd = yield* HostProcess.WorkingDirectory;
     const read = Effect.fn("McmReleaseService.read")(
       function* (planId: string, services: DeliveryScope["changedServices"]) {
         if (!isMeituanServiceEnabled(yield* settings.getSettings, "requirements"))
@@ -88,11 +92,13 @@ export const layer = Layer.effect(
           });
         if (!/^[1-9]\d*$/.test(planId))
           return yield* new McmReleaseError({ cause: new Error("Invalid MCM plan identifier") });
-        const result = yield* runner.run({
+        const invocation = yield* resolveMCodeCommand({
+          operation: "McmReleaseService.read",
+          cwd,
           command: "mcm",
           args: ["plan", "detail", planId, "--format", "json"],
-          timeout: "30 seconds",
         });
+        const result = yield* runner.run({ ...invocation, timeout: "30 seconds" });
         if (result.code !== 0 || result.timedOut || result.stdoutTruncated)
           return yield* new McmReleaseError({ cause: new Error("Could not read MCM plan") });
         const plan = yield* decodePlanJson(result.stdout);

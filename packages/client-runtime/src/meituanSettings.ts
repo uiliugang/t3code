@@ -58,6 +58,18 @@ export function mepAccountLabel(tool: MeituanTool | undefined, t: UiTranslator) 
   return t(tool?.account === null ? "Account not detected" : "Account status unknown");
 }
 
+export function mepSpaceSummary(
+  spaces: readonly string[],
+  manual: boolean,
+  discovery: "pending" | "failed" | "ready",
+  t: UiTranslator,
+) {
+  if (spaces.length)
+    return `${t("MEP space IDs")} · ${spaces.join(", ")} · ${t(manual ? "Manual override" : "Automatic")}`;
+  if (discovery === "ready") return t("No MEP space linked");
+  return `${t("MEP space IDs")} · ${t(discovery === "failed" ? "Unknown" : "Loading...")}`;
+}
+
 export function mepTrackerSummary(
   tool: MeituanTool | undefined,
   projects: string,

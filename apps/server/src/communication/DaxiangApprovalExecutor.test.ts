@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodePath from "@effect/platform-node/NodePath";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -44,10 +45,7 @@ function testLayer(
 ) {
   const run: ProcessRunner.ProcessRunner["Service"]["run"] = (input) =>
     Effect.suspend(() => {
-      const resolvedCodeCli =
-        input.command.includes("/node") && input.args[0]?.includes("code-cli");
-      const command = resolvedCodeCli ? "code-cli" : input.command;
-      const args = resolvedCodeCli ? input.args.slice(1) : input.args;
+      const { command, args } = input;
       calls.push([command, ...args].join(" "));
       const result = reply(command, args);
       return Effect.isEffect(result) ? result : Effect.succeed(result);
@@ -68,6 +66,7 @@ function testLayer(
     );
   return Executor.layer.pipe(
     Layer.provide(Layer.succeed(ProcessRunner.ProcessRunner, { run })),
+    Layer.provide(Layer.succeed(HostProcess.Environment, { PATH: "" })),
     Layer.provide(
       ServerConfig.ServerConfig.layerTest("/tmp", baseDir ?? { prefix: "daxiang-approval-test-" }),
     ),

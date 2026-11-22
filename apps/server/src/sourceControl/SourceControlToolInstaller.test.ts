@@ -147,6 +147,22 @@ it.effect.each(["ones2", "mcm", "mtskills"] as const)(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+it.live(
+  "reads the installed ONES account with the server runtime when node is absent from PATH",
+  () =>
+    Effect.gen(function* () {
+      const { installer, bin } = yield* fixture({ binaries: ["ones2"], realProcess: true });
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.writeFileString(
+        `${bin}/ones2`,
+        '#!/usr/bin/env node\nconsole.log(process.argv[2] === "config" ? "MIS 账号：demo.user" : "2.43.0");\n',
+      );
+      const tool = yield* installer.inspectMeituan("ones2");
+      assert.strictEqual(tool.version, "2.43.0");
+      assert.strictEqual(tool.account, "demo.user");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.live.each([[], ["mtskills"]])(
   "inspects the configured private installer with PATH binaries %j",
   (binaries) =>
@@ -207,7 +223,7 @@ it.effect(
 );
 
 it.effect.each(["ones2", "mcm"] as const)(
-  "does not probe %s while requirements are disabled",
+  "keeps %s hidden while requirements are disabled but verifies an installation already started",
   (id) =>
     Effect.gen(function* () {
       const { installer, calls } = yield* fixture({
@@ -217,6 +233,8 @@ it.effect.each(["ones2", "mcm"] as const)(
       const result = yield* Effect.flip(installer.inspectMeituan(id));
       assert.strictEqual(result.reason, "inspection");
       assert.isEmpty(calls);
+      const verified = yield* installer.verifyRequirementCli(id);
+      assert.strictEqual(verified.version, "2.43.0");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

@@ -84,9 +84,9 @@ export function MepIssueTrackerSettings({
                 <>
                   <span className="font-mono">{tool.id}</span> ·{" "}
                   {tool.version ?? t(tool.status === "missing" ? "Not installed" : "Unknown")}
-                  <SourceControlToolStatus tool={tool} />
                 </>
               }
+              status={<SourceControlToolStatus tool={tool} />}
               control={
                 <SourceControlToolControls
                   tool={tool}

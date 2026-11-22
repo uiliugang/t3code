@@ -4,17 +4,19 @@ import { type StaticScreenProps, useNavigation } from "@react-navigation/native"
 import {
   mergeProjectIssueSources,
   parseMepSpaceIds,
+  projectIssueSourceEdit,
+  withGithubRepositoryOverride,
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
 import {
   meituanAssociationCountLabel,
   mepAccountLabel,
+  mepSpaceSummary,
   mepTrackerSummary,
 } from "@t3tools/client-runtime/meituanSettings";
 import {
   EnvironmentId,
   isMeituanServiceEnabled,
-  type IssueProvider,
   type IssueSource,
   type ProjectId,
 } from "@t3tools/contracts";
@@ -40,6 +42,7 @@ import {
   useSettingsEnvironmentFilter,
   type SettingsTarget,
 } from "../settings/settings-environment-filter";
+import { settingsEditorTarget } from "../settings/settings-environment-filter.logic";
 import { IssuePicker } from "./IssuePicker";
 
 export function RequirementsSettingsScreen({
@@ -47,15 +50,13 @@ export function RequirementsSettingsScreen({
 }: StaticScreenProps<{ environmentId?: EnvironmentId } | undefined>) {
   const t = useUiTranslation();
   const insets = useSafeAreaInsets();
-  const { availableTargets, selectedTargets } = useSettingsEnvironmentFilter();
+  const { availableTargets, selectedTargets, selectedIds } = useSettingsEnvironmentFilter();
   const navigation =
     useNavigation<
       NativeStackNavigationProp<ReactNavigation.RootParamList, "SettingsRequirements">
     >();
   const selected = route.params?.environmentId;
-  const environment = selected
-    ? availableTargets.find((entry) => entry.environmentId === selected)
-    : (selectedTargets[0] ?? availableTargets[0]);
+  const environment = settingsEditorTarget(selected, availableTargets, selectedTargets);
   return (
     <SettingsScreen title={t("Issue management")}>
       <ScreenScrollView
@@ -79,7 +80,7 @@ export function RequirementsSettingsScreen({
         ) : (
           <Text>
             {t(
-              selected
+              selected || selectedIds?.size
                 ? "The selected environment is offline."
                 : "Choose an environment to configure issue sources.",
             )}
@@ -154,6 +155,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
             saved={saved}
             sources={sources}
             error={result?.error}
+            discovery={query.error || result?.error ? "failed" : result ? "ready" : "pending"}
             mep={enabled}
             allowed={allowed}
           />
@@ -206,6 +208,8 @@ function MepTracker({ environment, projects }: { environment: SettingsTarget; pr
   );
 }
 
+type SourceEdit = { provider: "meituan" } | { provider: "github"; source: IssueSource | undefined };
+
 function ProjectSourcesRow({
   environmentId,
   projectId,
@@ -214,6 +218,7 @@ function ProjectSourcesRow({
   saved,
   sources,
   error,
+  discovery,
   mep,
   allowed,
 }: {
@@ -224,97 +229,99 @@ function ProjectSourcesRow({
   saved: readonly IssueSource[];
   sources: readonly IssueSource[];
   error: string | undefined;
+  discovery: "pending" | "failed" | "ready";
   mep: boolean;
   allowed: boolean;
 }) {
   const t = useUiTranslation();
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
-  const [editing, setEditing] = useState<IssueProvider | null>(null);
+  const [editing, setEditing] = useState<(SourceEdit & { saved: readonly IssueSource[] }) | null>(
+    null,
+  );
   const [draft, setDraft] = useState("");
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const github = sources.find((s) => s.provider === "github");
+  const githubSources = sources.filter((s) => s.provider === "github");
   const spaces = sources.filter((s) => s.provider === "meituan").map((s) => s.scope);
   const manual = saved.some((s) => s.provider === "meituan");
   const valid =
-    editing === "meituan"
+    editing?.provider === "meituan"
       ? parseMepSpaceIds(draft) !== null
-      : /^[\w.-]+\/[\w.-]+$/u.test(draft.trim());
-  const edit = (provider: IssueProvider) => {
-    setEditing(provider);
-    setDraft(provider === "meituan" ? spaces.join(", ") : (github?.scope ?? ""));
+      : draft.trim().length <= 200 && /^[\w.-]+\/[\w.-]+$/u.test(draft.trim());
+  const edit = (target: SourceEdit) => {
+    setEditing({ ...target, saved });
+    setDraft(target.provider === "meituan" ? spaces.join(", ") : (target.source?.scope ?? ""));
     setFailure(null);
   };
   const save = async (restore: boolean) => {
-    if (!editing || busy || !allowed || (!restore && !valid) || (editing === "meituan" && !mep))
+    if (
+      !editing ||
+      busy ||
+      !allowed ||
+      (!restore && !valid) ||
+      (editing.provider === "meituan" && !mep)
+    )
       return;
+    const input = projectIssueSourceEdit(
+      projectId,
+      editing.provider,
+      saved,
+      editing.saved,
+      (latest) =>
+        editing.provider === "meituan"
+          ? withMepSpaceOverrides(latest, restore ? [] : (parseMepSpaceIds(draft) ?? []))
+          : withGithubRepositoryOverride(latest, editing.source, restore ? null : draft.trim()),
+    );
+    if (!input) {
+      setFailure(t("Project sources have changed. Reopen the editor and try again."));
+      return;
+    }
     setBusy(true);
     setFailure(null);
-    const overrides =
-      editing === "meituan"
-        ? withMepSpaceOverrides(saved, restore ? [] : (parseMepSpaceIds(draft) ?? []))
-        : [
-            ...saved.filter((s) => s.provider !== "github"),
-            ...(restore
-              ? []
-              : [
-                  {
-                    provider: "github" as const,
-                    scope: draft.trim(),
-                    host: github?.host ?? "github.com",
-                  },
-                ]),
-          ];
-    const result = await update({
-      environmentId,
-      input: {
-        issueSourceProvider: editing,
-        patch: { issueProjectSources: { [projectId]: overrides } },
-      },
-    });
+    const result = await update({ environmentId, input });
     if (result._tag === "Success") {
       setEditing(null);
-    } else setFailure(t("Could not save project sources. Try again."));
+    } else setFailure(t("Could not save project sources. Reopen the editor and try again."));
     setBusy(false);
   };
   return (
     <View className="gap-1 border-b border-border-subtle p-4">
       <Text className="font-t3-medium">{title}</Text>
-      {repository || github ? (
-        <Text className="text-sm text-foreground-muted">{repository ?? github?.scope}</Text>
-      ) : null}
-      {github && repository && github.scope !== repository ? (
-        <Text>
-          {t("GitHub Issues")} · {github.scope}
-        </Text>
-      ) : null}
+      {repository ? <Text className="text-sm text-foreground-muted">{repository}</Text> : null}
+      {githubSources
+        .filter(
+          (source) => source.scope !== repository || saved.some((s) => s.provider === "github"),
+        )
+        .map((source) => (
+          <Text key={JSON.stringify([source.host, source.scope])} className="text-sm">
+            {t("GitHub Issues")} · {source.host}/{source.scope}
+          </Text>
+        ))}
       {error ? (
         <Text accessibilityRole="alert" className="text-danger">
           {error}
         </Text>
       ) : null}
       {mep ? (
-        <Text className="text-sm">
-          {spaces.length
-            ? `${t("MEP space IDs")} · ${spaces.join(", ")} · ${t(manual ? "Manual override" : "Automatic")}`
-            : t("No MEP space linked")}
-        </Text>
+        <Text className="text-sm">{mepSpaceSummary(spaces, manual, discovery, t)}</Text>
       ) : null}
-      {editing && (editing !== "meituan" || mep) ? (
+      {editing && (editing.provider !== "meituan" || mep) ? (
         <>
           <Text className="text-sm">
-            {t(editing === "meituan" ? "MEP space IDs" : "GitHub repository")}
+            {t(editing.provider === "meituan" ? "MEP space IDs" : "GitHub repository")}
           </Text>
           <AppTextInput
-            accessibilityLabel={t(editing === "meituan" ? "MEP space IDs" : "GitHub repository")}
+            accessibilityLabel={t(
+              editing.provider === "meituan" ? "MEP space IDs" : "GitHub repository",
+            )}
             value={draft}
             onChangeText={setDraft}
             editable={allowed && !busy}
-            placeholder={editing === "meituan" ? "10001, 10002" : "owner/repository"}
+            placeholder={editing.provider === "meituan" ? "10001, 10002" : "owner/repository"}
             autoCapitalize="none"
             autoCorrect={false}
           />
-          {!valid && editing === "meituan" ? (
+          {!valid && editing.provider === "meituan" ? (
             <Text className="text-sm text-danger">
               {t("Enter positive space IDs separated by commas.")}
             </Text>
@@ -339,10 +346,14 @@ function ProjectSourcesRow({
               disabled={busy}
               onPress={() => setEditing(null)}
             />
-            {saved.some((s) => s.provider === editing) ? (
+            {saved.some((s) => s.provider === editing.provider) ? (
               <Button
                 size="compact"
-                label={t("Restore automatic")}
+                label={t(
+                  editing.provider === "github" && githubSources.length > 1
+                    ? "Remove"
+                    : "Restore automatic",
+                )}
                 tone="text"
                 disabled={!allowed || busy}
                 onPress={() => void save(true)}
@@ -355,19 +366,26 @@ function ProjectSourcesRow({
           {mep ? (
             <Button
               size="compact"
-              label={t(spaces.length ? "Edit spaces" : "Link spaces")}
+              label={t(spaces.length || discovery !== "ready" ? "Edit spaces" : "Link spaces")}
               disabled={!allowed || busy}
               tone="text"
-              onPress={() => edit("meituan")}
+              onPress={() => edit({ provider: "meituan" })}
             />
           ) : null}
-          <Button
-            size="compact"
-            label={t("GitHub repository")}
-            disabled={!allowed || busy}
-            tone="text"
-            onPress={() => edit("github")}
-          />
+          {(githubSources.length ? githubSources : [undefined]).map((source) => (
+            <Button
+              key={source ? JSON.stringify([source.host, source.scope]) : "github"}
+              size="compact"
+              label={
+                source && githubSources.length > 1
+                  ? `${t("Edit")} ${source.host}/${source.scope}`
+                  : t("GitHub repository")
+              }
+              disabled={!allowed || busy}
+              tone="text"
+              onPress={() => edit({ provider: "github", source })}
+            />
+          ))}
         </View>
       )}
     </View>

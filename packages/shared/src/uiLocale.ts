@@ -110,7 +110,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Edit spaces": "编辑空间",
   "Link spaces": "关联空间",
   "Enter positive space IDs separated by commas.": "请输入正整数空间 ID，多个 ID 用逗号分隔。",
-  "Could not save project sources. Try again.": "项目来源保存失败，请重试。",
+  "Could not save project sources. Reopen the editor and try again.":
+    "项目来源保存失败。请重新打开编辑框后重试。",
+  "Project sources have changed. Reopen the editor and try again.":
+    "项目来源已有变更。请重新打开编辑框后重试。",
   "Manual maintenance": "手动维护",
   "Inspection failed.": "检查失败。",
   "Tool status unavailable. Retrying…": "暂时无法获取工具状态，正在重试…",

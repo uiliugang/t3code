@@ -1,5 +1,13 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
+export function settingsEditorTarget<T extends { readonly environmentId: EnvironmentId }>(
+  requested: EnvironmentId | undefined,
+  connected: readonly T[],
+  selected: readonly T[],
+) {
+  return requested ? connected.find((target) => target.environmentId === requested) : selected[0];
+}
+
 /**
  * Toggles one connected environment in the Settings scope. `null` means every environment.
  * Known offline environments keep their selection when they reconnect.

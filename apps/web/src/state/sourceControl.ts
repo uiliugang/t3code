@@ -6,5 +6,5 @@ import { serverEnvironment } from "./server";
 
 export const sourceControlEnvironment = createSourceControlEnvironmentAtoms(
   connectionAtomRuntime,
-  serverEnvironment.settingsValueAtom,
+  (environmentId) => serverEnvironment.settingsValueAtom(environmentId),
 );

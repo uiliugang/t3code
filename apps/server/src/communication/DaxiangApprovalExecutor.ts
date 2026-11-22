@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
-import { resolveMCodeCommand } from "../sourceControl/MCodeRuntime.ts";
+import { makeResolveMCodeCommand } from "../sourceControl/MCodeRuntime.ts";
 import { approvalTargetLabel, type ParsedApprovalTarget } from "./daxiangApprovalLinks.ts";
 import { boundedAdd, isProductionMcmTarget } from "./daxiangApprovalState.ts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
@@ -95,6 +95,7 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const resolveMCodeCommand = yield* makeResolveMCodeCommand;
   const commentedPrCommits = new Set<string>();
   const approvedPrCommits = new Set<string>();
   const unknownPrCommits = new Set<string>();
@@ -158,8 +159,6 @@ const make = Effect.gen(function* () {
       cwd: config.cwd,
       env: { MCODE_HOST: "http://git.sankuai.com" },
     }).pipe(
-      Effect.provideService(FileSystem.FileSystem, fs),
-      Effect.provideService(Path.Path, path),
       Effect.mapError(
         () =>
           new DaxiangApprovalError({

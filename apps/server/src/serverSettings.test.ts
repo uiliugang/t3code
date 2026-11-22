@@ -456,6 +456,23 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           "meituan",
         );
         assert.deepStrictEqual(restored.issueProjectSources[id], [github]);
+        const second = { ...github, scope: "acme/mobile" };
+        const renamed = { ...github, scope: "acme/web" };
+        const expected = { [id]: [github, second] };
+        yield* service.updateSettings({ issueProjectSources: expected });
+        yield* service.updateSettings(
+          { issueProjectSources: { [id]: [renamed, second] } },
+          "github",
+          expected,
+        );
+        const stale = yield* service
+          .updateSettings({ issueProjectSources: { [id]: [github] } }, "github", expected)
+          .pipe(Effect.result);
+        assert.strictEqual(stale._tag, "Failure");
+        assert.deepStrictEqual((yield* service.getSettings).issueProjectSources[id], [
+          renamed,
+          second,
+        ]);
       }).pipe(Effect.provide(ServerSettingsModule.ServerSettingsService.layerTest())),
   );
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>

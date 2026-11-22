@@ -93,6 +93,9 @@ export class SourceControlToolInstaller extends Context.Service<
     readonly inspect: (
       id: SourceControlToolId,
     ) => Effect.Effect<ToolInstallationPlan, SourceControlToolError>;
+    readonly verifyRequirementCli: (
+      id: "ones2" | "mcm",
+    ) => Effect.Effect<MeituanTool, MeituanToolError>;
     readonly inspectMeituan: (
       id: MeituanToolId,
       executable?: string,
@@ -140,14 +143,20 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.map((result) => result.stdout.trim()));
   });
+  const probeMeituanCli = Effect.fn("SourceControlToolInstaller.probeMeituanCli")(function* (
+    executable: string,
+    args: ReadonlyArray<string>,
+  ) {
+    const invocation = yield* skillInstallerNode(executable, args, env);
+    return yield* probe(
+      invocation?.command ?? executable,
+      invocation?.args ?? args,
+      invocation?.env,
+    );
+  }, Effect.scoped);
 
-  const inspect = Effect.fn("SourceControlToolInstaller.inspect")(
+  const readPlan = Effect.fn("SourceControlToolInstaller.readPlan")(
     function* (id: SourceControlToolId) {
-      if (
-        (id === "meituan" || isRequirementCli(id)) &&
-        !isSourceControlToolEnabled(id, yield* settings.getSettings)
-      )
-        return yield* new SourceControlToolError({ id, reason: "unsupported" });
       const definition = definitionFor(id);
       const npmPackage = isRequirementCli(id)
         ? MEITUAN_DEFINITIONS[id].packageName
@@ -165,17 +174,17 @@ const make = Effect.gen(function* () {
             env,
           ).pipe(Effect.orElseSucceed(() => null))
         : null;
-      const versionOutput = executablePath
-        ? yield* probe(
-            node && realPath?.endsWith(".js") ? node : executablePath,
-            node && realPath?.endsWith(".js") ? [realPath, "--version"] : ["--version"],
-            node ? { ELECTRON_RUN_AS_NODE: "1" } : undefined,
-          ).pipe(
-            Effect.catch((error) =>
-              isRequirementCli(id) ? Effect.succeed(null) : Effect.fail(error),
-            ),
-          )
-        : null;
+      const versionOutput = !executablePath
+        ? null
+        : isRequirementCli(id)
+          ? yield* probeMeituanCli(executablePath, ["--version"]).pipe(
+              Effect.orElseSucceed(() => null),
+            )
+          : yield* probe(
+              node && realPath?.endsWith(".js") ? node : executablePath,
+              node && realPath?.endsWith(".js") ? [realPath, "--version"] : ["--version"],
+              node ? { ELECTRON_RUN_AS_NODE: "1" } : undefined,
+            );
       const version = versionOutput?.match(/\b\d+\.\d+\.\d+(?:-[\w.-]+)?/u)?.[0] ?? null;
       const tool: SourceControlTool = {
         id,
@@ -323,12 +332,42 @@ const make = Effect.gen(function* () {
         env: { DEBIAN_FRONTEND: "noninteractive" },
       });
     },
+    Effect.provideService(FileSystem.FileSystem, fs),
+    Effect.provideService(Path.Path, path),
+    Effect.provideService(HostProcess.Platform, platform),
+  );
+
+  const inspect = Effect.fn("SourceControlToolInstaller.inspect")(
+    function* (id: SourceControlToolId) {
+      if (
+        (id === "meituan" || isRequirementCli(id)) &&
+        !isSourceControlToolEnabled(id, yield* settings.getSettings)
+      )
+        return yield* new SourceControlToolError({ id, reason: "unsupported" });
+      return yield* readPlan(id);
+    },
     (effect, id) =>
       effect.pipe(
         Effect.mapError((cause) => new SourceControlToolError({ id, reason: "inspection", cause })),
+      ),
+  );
+
+  const readRequirementTool = Effect.fn("SourceControlToolInstaller.readRequirementTool")(
+    function* (id: "ones2" | "mcm") {
+      const { tool } = yield* readPlan(id);
+      if (id !== "ones2" || !tool.executablePath) return { ...tool, id };
+      const account = yield* probeMeituanCli(tool.executablePath, ["config"]).pipe(
+        Effect.map(mepAccountFromConfig),
+        Effect.orElseSucceed(() => undefined),
+      );
+      return { ...tool, id, ...(account === undefined ? {} : { account }) };
+    },
+    (effect, id) =>
+      effect.pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
         Effect.provideService(Path.Path, path),
         Effect.provideService(HostProcess.Platform, platform),
+        Effect.mapError((cause) => new MeituanToolError({ id, reason: "inspection", cause })),
       ),
   );
 
@@ -338,32 +377,13 @@ const make = Effect.gen(function* () {
         return yield* new MeituanToolError({ id, reason: "unsupported" });
       const definition = MEITUAN_DEFINITIONS[id];
       const binary = executable || definition.executable;
-      if (isRequirementCli(id) && binary === definition.executable) {
-        const { tool } = yield* inspect(id);
-        if (id !== "ones2" || !tool.executablePath) return { ...tool, id };
-        const account = yield* probe(tool.executablePath, ["config"]).pipe(
-          Effect.map(mepAccountFromConfig),
-          Effect.orElseSucceed(() => undefined),
-        );
-        return { ...tool, id, ...(account === undefined ? {} : { account }) };
-      }
+      if (isRequirementCli(id) && binary === definition.executable)
+        return yield* readRequirementTool(id);
       const executablePath = yield* binary.includes("/") || binary.includes("\\")
         ? resolveCommandPath(binary, { env })
         : find(binary);
       const versionOutput = executablePath
-        ? yield* Effect.gen(function* () {
-            const args = ["--version"];
-            const invocation =
-              id === "mtskills" || id === "dumbo-web"
-                ? yield* skillInstallerNode(executablePath, args, env)
-                : undefined;
-            return yield* probe(
-              invocation?.command ?? executablePath,
-              invocation?.args ?? args,
-              invocation?.env,
-            );
-          }).pipe(
-            Effect.scoped,
+        ? yield* probeMeituanCli(executablePath, ["--version"]).pipe(
             Effect.orElseSucceed(() => null),
           )
         : null;
@@ -466,7 +486,12 @@ const make = Effect.gen(function* () {
       });
     return "installed" as const;
   });
-  return SourceControlToolInstaller.of({ inspect, inspectMeituan, install });
+  return SourceControlToolInstaller.of({
+    inspect,
+    inspectMeituan,
+    verifyRequirementCli: readRequirementTool,
+    install,
+  });
 });
 
 export const layer = Layer.effect(SourceControlToolInstaller, make);

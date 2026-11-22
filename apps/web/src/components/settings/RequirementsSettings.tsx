@@ -3,7 +3,10 @@ import { isMeituanServiceEnabled, type IssueSourcesResult } from "@t3tools/contr
 import { Atom } from "effect/reactivity";
 import { RefreshCwIcon, Settings2Icon, Undo2Icon, SaveIcon } from "lucide-react";
 import { useState } from "react";
-import { meituanAssociationCountLabel } from "@t3tools/client-runtime/meituanSettings";
+import {
+  meituanAssociationCountLabel,
+  mepSpaceSummary,
+} from "@t3tools/client-runtime/meituanSettings";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useProjects } from "../../state/entities";
@@ -19,6 +22,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   mergeProjectIssueSources,
   parseMepSpaceIds,
+  projectIssueSourceEdit,
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -128,33 +132,36 @@ function ProjectSourceRow({
   const saved = settings.issueProjectSources[project.id] ?? [];
   const enabled = isMeituanServiceEnabled(settings, "requirements");
   const sources = mergeProjectIssueSources(result?.sources ?? [], saved);
-  const github = sources.find((entry) => entry.provider === "github");
+  const githubSources = sources.filter((entry) => entry.provider === "github");
+  const manualGithub = saved.some((entry) => entry.provider === "github");
+  const discovery = error || result?.error ? "failed" : result ? "ready" : "pending";
   const spaces = sources
     .filter((entry) => entry.provider === "meituan")
     .map((entry) => entry.scope);
   const manual = saved.some((entry) => entry.provider === "meituan");
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ text: string; saved: typeof saved } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const inputId = `mep-spaces-${projectKey(project)}`;
   const submit = async (ids: string[] | null) => {
-    if (!ids || saving || disabled || !enabled) return;
+    if (!ids || !draft || saving || disabled || !enabled) return;
+    const input = projectIssueSourceEdit(project.id, "meituan", saved, draft.saved, (latest) =>
+      withMepSpaceOverrides(latest, ids),
+    );
+    if (!input) {
+      setFailure(t("Project sources have changed. Reopen the editor and try again."));
+      return;
+    }
     setSaving(true);
     setFailure(null);
-    const response = await update({
-      environmentId: project.environmentId,
-      input: {
-        issueSourceProvider: "meituan",
-        patch: { issueProjectSources: { [project.id]: withMepSpaceOverrides(saved, ids) } },
-      },
-    });
+    const response = await update({ environmentId: project.environmentId, input });
     setSaving(false);
     if (response._tag === "Success") {
       setDraft(null);
-    } else setFailure(t("Could not save project sources. Try again."));
+    } else setFailure(t("Could not save project sources. Reopen the editor and try again."));
   };
-  const invalid = draft !== null && !parseMepSpaceIds(draft);
+  const invalid = draft !== null && !parseMepSpaceIds(draft.text);
   return (
     <tr className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-3 text-sm sm:table-row">
       <td className="row-span-4 align-top sm:py-4 sm:pr-3">
@@ -181,21 +188,16 @@ function ProjectSourceRow({
         ) : null}
       </td>
       <td className="col-start-2 min-w-0 space-y-1 align-top sm:py-4 sm:pr-3">
-        {github ? (
-          <p className="text-xs wrap-anywhere">
+        {githubSources.map((github) => (
+          <p key={JSON.stringify([github.host, github.scope])} className="text-xs wrap-anywhere">
             {t("GitHub Issues")}
-            {saved.some((source) => source.provider === "github")
-              ? ` · ${github.host}/${github.scope} · ${t("Manual override")}`
-              : ""}
+            {manualGithub || githubSources.length > 1 ? ` · ${github.host}/${github.scope}` : ""}
+            {manualGithub ? ` · ${t("Manual override")}` : ""}
           </p>
-        ) : null}
+        ))}
         {enabled ? (
           <>
-            <p className="text-xs wrap-anywhere">
-              {spaces.length
-                ? `${t("MEP space IDs")} · ${spaces.join(", ")} · ${t(manual ? "Manual override" : "Automatic")}`
-                : t("No MEP space linked")}
-            </p>
+            <p className="text-xs wrap-anywhere">{mepSpaceSummary(spaces, manual, discovery, t)}</p>
             {draft === null ? (
               <Button
                 variant="ghost-muted"
@@ -203,17 +205,17 @@ function ProjectSourceRow({
                 disabled={disabled}
                 onClick={() => {
                   setFailure(null);
-                  setDraft(spaces.join(", "));
+                  setDraft({ text: spaces.join(", "), saved });
                 }}
               >
-                {t(spaces.length ? "Edit spaces" : "Link spaces")}
+                {t(spaces.length || discovery !== "ready" ? "Edit spaces" : "Link spaces")}
               </Button>
             ) : (
               <form
                 className="grid gap-2 pt-1"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void submit(parseMepSpaceIds(draft));
+                  void submit(parseMepSpaceIds(draft.text));
                 }}
                 onKeyDown={(event) => {
                   if (event.key !== "Escape") return;
@@ -225,12 +227,12 @@ function ProjectSourceRow({
                 <Label htmlFor={inputId}>{t("MEP space IDs")}</Label>
                 <Input
                   id={inputId}
-                  value={draft}
+                  value={draft.text}
                   disabled={saving || disabled}
                   aria-invalid={Boolean(invalid)}
                   aria-describedby={invalid ? inputId + "-error" : undefined}
                   placeholder="10001, 10002"
-                  onChange={(event) => setDraft(event.target.value)}
+                  onChange={(event) => setDraft({ ...draft, text: event.target.value })}
                 />
                 {invalid ? (
                   <p id={inputId + "-error"} className="text-xs text-destructive">
@@ -380,6 +382,9 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
           environmentId: environment.environmentId,
           input: {
             patch: { issueProjectSources: entries },
+            expectedIssueProjectSources: Object.fromEntries(
+              targets.map((project) => [project.id, saved[project.id] ?? []]),
+            ),
             ...(action === "save" ? { issueSourceProvider: "github" as const } : {}),
           },
         });
@@ -543,7 +548,6 @@ export function RequirementsSettings() {
   const projects = useProjects().filter(
     (project) =>
       !project.isScratch &&
-      project.title !== "No project" &&
       connectedEnvironments.some((entry) => entry.environmentId === project.environmentId) &&
       (scope.kind === "project" || scope.kind === "checkout"
         ? scope.members.some(
