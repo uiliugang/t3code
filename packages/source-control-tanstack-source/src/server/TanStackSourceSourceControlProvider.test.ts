@@ -35,27 +35,77 @@ const PULL = {
 function checkout(options: {
   readonly recordedOwner: string | null;
   readonly isAncestor: boolean;
+  readonly pull?: Partial<typeof PULL> & { readonly visibility?: "private" | "public" };
+  readonly force?: boolean;
+  readonly existingBranchRemote?: string | null;
+  readonly pendingPushRemote?: string;
+  readonly samePrivateHead?: boolean;
+  readonly branchAppearsWhileFetching?: boolean;
 }) {
   const git: Array<string> = [];
   const config = new Map<string, string>(
     options.recordedOwner === null ? [] : [[OWNER_KEY, options.recordedOwner]],
   );
+  if (options.existingBranchRemote != null) {
+    config.set("branch.fix-thing.remote", options.existingBranchRemote);
+    if (options.pendingPushRemote === undefined)
+      config.set("branch.fix-thing.merge", "refs/heads/fix-thing");
+  }
+  if (options.pendingPushRemote !== undefined)
+    config.set("branch.fix-thing.pushRemote", options.pendingPushRemote);
   const api = TanStackSourceApi.TanStackSourceApi.of({
     request: (input) =>
       input.path === "/repos/acme/web/pulls/42"
-        ? Effect.succeed(JSON.stringify(PULL))
+        ? Effect.succeed(JSON.stringify({ ...PULL, ...options.pull }))
         : Effect.die(`unexpected ${input.path}`),
     response: () => Effect.die("unexpected response read"),
   });
   const host = TestSourceControlHost.layer({
     git: {
       resolvePrimaryRemoteName: () => Effect.succeed("origin"),
-      ensureRemote: () => Effect.succeed("origin"),
+      ensureRemote: (input) =>
+        Effect.sync(() => {
+          git.push(`remote ${input.preferredName} ${input.url}`);
+          return input.url === REMOTE ? "origin" : input.preferredName;
+        }),
+      fetchRemoteBranch: (input) =>
+        Effect.sync(
+          () =>
+            void git.push(`fetch ${input.remoteName} ${input.remoteBranch}:${input.localBranch}`),
+        ),
+      fetchRemoteTrackingBranch: ({ remoteName, remoteBranch }) =>
+        Effect.sync(() => void git.push(`fetch tracking ${remoteName} ${remoteBranch}`)),
+      setBranchUpstream: (input) =>
+        Effect.sync(
+          () => void git.push(`upstream ${input.branch} ${input.remoteName}/${input.remoteBranch}`),
+        ),
       readConfigValue: (_cwd, key) =>
         Effect.succeed(key === "remote.origin.url" ? REMOTE : (config.get(key) ?? null)),
+      resolveCommit: ({ revision }) =>
+        Effect.succeed({
+          commitSha:
+            revision.startsWith("refs/heads/") && options.samePrivateHead === false
+              ? "b".repeat(40)
+              : "c".repeat(40),
+        }),
       writeConfigValue: (input) => Effect.sync(() => void config.set(input.key, input.value)),
-      listLocalBranchNames: () => Effect.succeed(["main", "pr-42"]),
-      createBranch: (input) => Effect.sync(() => void git.push(`create ${input.branch}`)),
+      listLocalBranchNames: () =>
+        Effect.succeed(
+          options.existingBranchRemote === undefined
+            ? ["main", "pr-42"]
+            : ["main", "pr-42", "fix-thing"],
+        ),
+      createBranch: (input) =>
+        options.branchAppearsWhileFetching
+          ? Effect.fail(
+              new GitCommandError({
+                operation: "createBranch",
+                command: "git",
+                cwd: input.cwd,
+                detail: "branch already exists",
+              }),
+            )
+          : Effect.sync(() => void git.push(`create ${input.branch}`)),
       switchRef: (input) =>
         Effect.sync(() => {
           git.push(`switch ${input.refName}`);
@@ -86,7 +136,13 @@ function checkout(options: {
     },
   });
   const run = TanStackSourceSourceControlProvider.make.pipe(
-    Effect.flatMap((provider) => provider.checkoutChangeRequest({ cwd: "/repo", reference: "42" })),
+    Effect.flatMap((provider) =>
+      provider.checkoutChangeRequest({
+        cwd: "/repo",
+        reference: "42",
+        ...(options.force === undefined ? {} : { force: options.force }),
+      }),
+    ),
     Effect.provideService(TanStackSourceApi.TanStackSourceApi, api),
     Effect.provide(Layer.merge(host, FileSystem.layerNoop({}))),
   );
@@ -128,5 +184,173 @@ describe("TanStackSourceSourceControlProvider.checkoutChangeRequest", () => {
       assert.include(error.detail, "has commits pull request #42 does not");
       assert.isFalse(git.some((command) => command.startsWith("checkout")));
     });
+  });
+
+  // Source publishes no `refs/pull/<n>/head` for a private pull request, on either repository.
+  it.effect.each(["web.private", "web.private-2"])(
+    "takes a private pull request's branch from companion %s",
+    (companion) => {
+      const pull = {
+        head: "acme:fix-thing",
+        headRepo: `acme/${companion}`,
+        visibility: "private" as const,
+      };
+      const { run, git, config } = checkout({ recordedOwner: null, isAncestor: true, pull });
+      const forced = checkout({ recordedOwner: null, isAncestor: true, pull, force: true });
+      return Effect.gen(function* () {
+        yield* forced.run;
+        assert.include(forced.git, "create fix-thing");
+        yield* run;
+        assert.strictEqual(config.get("branch.fix-thing.pushRemote"), "acme");
+        assert.deepStrictEqual(git, [
+          `remote source ${REMOTE}`,
+          `remote acme https://source.tanstack.com/@acme/${companion}.git`,
+          "fetch tracking acme fix-thing",
+          "create fix-thing",
+          "upstream fix-thing acme/fix-thing",
+          "switch fix-thing",
+        ]);
+      });
+    },
+  );
+
+  it.effect("leaves a same-named public branch and its push destination alone", () => {
+    const { run, git, config } = checkout({
+      recordedOwner: null,
+      isAncestor: true,
+      existingBranchRemote: "origin",
+      pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "private" },
+    });
+    return Effect.gen(function* () {
+      const failure = yield* Effect.flip(run);
+      assert.include(failure.detail, "fix-thing");
+      assert.strictEqual(config.get("branch.fix-thing.remote"), "origin");
+      assert.isFalse(config.has("branch.fix-thing.pushRemote"));
+      assert.isFalse(git.some((command) => /^(checkout|switch|upstream) /u.test(command)));
+    });
+  });
+
+  it.effect("treats an explicitly public PR from a repository named .private as a fork", () => {
+    const { run, git, config } = checkout({
+      recordedOwner: "acme/web#42",
+      isAncestor: true,
+      pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "public" },
+    });
+    return Effect.gen(function* () {
+      yield* run;
+      assert.include(git, "fetch --no-tags origin +refs/pull/42/head:refs/remotes/origin/pull/42");
+      assert.isFalse(config.has("remote.acme.t3-private-pr-companion"));
+      assert.isFalse(config.has("branch.fix-thing.pushRemote"));
+    });
+  });
+
+  it.effect("does not overwrite a branch created during the companion fetch", () => {
+    const { run, git, config } = checkout({
+      recordedOwner: null,
+      isAncestor: true,
+      branchAppearsWhileFetching: true,
+      pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "private" },
+    });
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(run);
+      assert.strictEqual(result._tag, "Failure");
+      assert.isFalse(config.has("branch.fix-thing.pushRemote"));
+      assert.isFalse(git.some((command) => /^(checkout|switch|upstream) /u.test(command)));
+    });
+  });
+
+  it.effect.each([true, false])(
+    "resumes a partial private checkout only if the untracked ref matches (%s)",
+    (samePrivateHead) => {
+      const { run, git, config } = checkout({
+        recordedOwner: null,
+        isAncestor: true,
+        existingBranchRemote: null,
+        samePrivateHead,
+        force: true,
+        pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "private" },
+      });
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(run);
+        assert.strictEqual(result._tag, samePrivateHead ? "Success" : "Failure");
+        assert.strictEqual(config.has("branch.fix-thing.pushRemote"), samePrivateHead);
+        assert.isFalse(git.some((command) => /^(checkout|create) /u.test(command)));
+      });
+    },
+  );
+
+  it.effect("finishes partially written companion tracking without moving the branch", () => {
+    const { run, git } = checkout({
+      recordedOwner: null,
+      isAncestor: true,
+      existingBranchRemote: "acme",
+      pendingPushRemote: "acme",
+      force: true,
+      pull: { head: "acme:fix-thing", headRepo: "acme/web.private", visibility: "private" },
+    });
+    return Effect.gen(function* () {
+      yield* run;
+      assert.include(git, "upstream fix-thing acme/fix-thing");
+      assert.isFalse(git.some((command) => /^(checkout|create) /u.test(command)));
+    });
+  });
+});
+
+describe("TanStackSourceSourceControlProvider private pull requests", () => {
+  it.effect("asks Source for the companion and opens the pull request as private", () => {
+    const requests: Array<{ method: string; path: string; body: unknown }> = [];
+    const api = TanStackSourceApi.TanStackSourceApi.of({
+      request: (input) => {
+        requests.push({ method: input.method ?? "GET", path: input.path, body: input.body });
+        return Effect.succeed(
+          JSON.stringify({
+            owner: "acme",
+            name: "web.private",
+            defaultBranch: null,
+            cloneUrl: "https://source.tanstack.com/@acme/web.private.git",
+          }),
+        );
+      },
+      response: () => Effect.die("unexpected response read"),
+    });
+    const files = FileSystem.layerNoop({ readFileString: () => Effect.succeed("Body") });
+    return Effect.gen(function* () {
+      const provider = yield* TanStackSourceSourceControlProvider.make;
+      const companion = provider.privateChangeRequestRemote;
+      assert.isDefined(companion);
+      assert.deepStrictEqual(yield* companion({ cwd: "/repo" }), {
+        url: "https://source.tanstack.com/@acme/web.private.git",
+        repository: "acme/web.private",
+      });
+      yield* provider.createChangeRequest({
+        cwd: "/repo",
+        baseRefName: "main",
+        headSelector: "sec/fix",
+        title: "Fix",
+        bodyFile: "/tmp/body.md",
+        private: true,
+      });
+      assert.deepStrictEqual(requests, [
+        { method: "POST", path: "/repos/acme/web/private-remote", body: undefined },
+        {
+          method: "POST",
+          path: "/repos/acme/web/pulls",
+          body: { title: "Fix", head: "sec/fix", base: "main", body: "Body", private: true },
+        },
+      ]);
+    }).pipe(
+      Effect.provideService(TanStackSourceApi.TanStackSourceApi, api),
+      Effect.provide(
+        Layer.merge(
+          TestSourceControlHost.layer({
+            git: {
+              resolvePrimaryRemoteName: () => Effect.succeed("origin"),
+              readConfigValue: () => Effect.succeed(REMOTE),
+            },
+          }),
+          files,
+        ),
+      ),
+    );
   });
 });

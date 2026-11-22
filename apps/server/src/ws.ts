@@ -244,6 +244,7 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import { assertCheckoutIdle } from "./git/sharedCheckoutGuard.ts";
 import { refreshPushedPullRequests } from "./git/refreshPushedPullRequests.ts";
 import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
@@ -3396,7 +3397,14 @@ export const layerWsRpc = (
         [WS_METHODS.gitResolvePullRequest]: (input) => gitWorkflow.resolvePullRequest(input),
         [WS_METHODS.gitPreparePullRequestThread]: (input) =>
           workspaceAccess
-            .run(input, gitWorkflow.preparePullRequestThread(input), input.mode === "local")
+            .run(
+              input,
+              (input.mode === "local"
+                ? assertCheckoutIdle("GitWorkflowService.preparePullRequestThread", input.cwd)
+                : Effect.void
+              ).pipe(Effect.andThen(gitWorkflow.preparePullRequestThread(input))),
+              input.mode === "local",
+            )
             .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.vcsListRefs]: (input) => gitWorkflow.listRefs(input),
         [WS_METHODS.vcsCreateWorktree]: (input) =>
@@ -3456,7 +3464,13 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.vcsCreateRef]: (input) =>
           workspaceAccess
-            .run(input, gitWorkflow.createRef(input))
+            .run(
+              input,
+              (input.switchRef
+                ? assertCheckoutIdle("GitWorkflowService.createRef", input.cwd)
+                : Effect.void
+              ).pipe(Effect.andThen(gitWorkflow.createRef(input))),
+            )
             .pipe(
               Effect.tap(() =>
                 input.switchRef
@@ -3466,7 +3480,12 @@ export const layerWsRpc = (
             ),
         [WS_METHODS.vcsSwitchRef]: (input) =>
           workspaceAccess
-            .run(input, gitWorkflow.switchRef(input))
+            .run(
+              input,
+              assertCheckoutIdle("GitWorkflowService.switchRef", input.cwd).pipe(
+                Effect.andThen(gitWorkflow.switchRef(input)),
+              ),
+            )
             .pipe(Effect.tap(() => vcsStatusBroadcaster.refreshAfterCheckout(input.cwd))),
         [WS_METHODS.workspaceRecovery]: (input) => workspaceRecovery.resolve(input),
         [WS_METHODS.managedWorktreesListResiduals]: () => managedWorktrees.listResiduals,

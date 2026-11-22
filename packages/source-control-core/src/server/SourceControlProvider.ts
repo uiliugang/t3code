@@ -41,6 +41,17 @@ export interface SourceControlProviderContext {
   readonly requestedHost?: string;
 }
 
+export const privateCompanionConfigKey = (remoteName: string) =>
+  `remote.${remoteName}.t3-private-pr-companion`;
+
+export const privatePullRequestPushConfigKey = (branch: string) =>
+  `branch.${branch}.t3-private-pr-companion`;
+
+export type ChangeRequestForCheckout = ChangeRequest & {
+  /** Null means the provider reported a private request without a head repository. */
+  readonly privateHeadRepository?: string | null;
+};
+
 type IssueContext = { readonly cwd: string; readonly source: IssueSource };
 
 export interface SourceControlRefSelector {
@@ -238,6 +249,18 @@ export class SourceControlProvider extends Context.Service<
     }) => Effect.Effect<void>;
     /** True when `createChangeRequest` opens the change request as a draft when asked. */
     readonly createsDraftChangeRequests?: boolean;
+    /**
+     * The private companion of the checkout's repository, made when it has none. The branch of
+     * a private change request is pushed to `url` and never to the repository itself, which
+     * everyone can read. Absent on a host without private change requests.
+     */
+    readonly privateChangeRequestRemote?: (input: {
+      readonly cwd: string;
+      readonly context?: SourceControlProviderContext;
+    }) => Effect.Effect<
+      { readonly url: string; readonly repository: string },
+      SourceControlProviderError
+    >;
     readonly listChangeRequests: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
@@ -255,7 +278,7 @@ export class SourceControlProvider extends Context.Service<
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
       readonly reference: string;
-    }) => Effect.Effect<ChangeRequest, SourceControlProviderError>;
+    }) => Effect.Effect<ChangeRequestForCheckout, SourceControlProviderError>;
     readonly createChangeRequest: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
@@ -267,6 +290,8 @@ export class SourceControlProvider extends Context.Service<
       readonly bodyFile: string;
       /** Honored only by a provider with `createsDraftChangeRequests`. */
       readonly draft?: boolean;
+      /** Asked only of a provider with `privateChangeRequestRemote`, which holds the head. */
+      readonly private?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;

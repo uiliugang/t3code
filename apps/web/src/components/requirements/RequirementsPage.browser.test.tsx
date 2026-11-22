@@ -236,7 +236,7 @@ async function openFilterSubmenu(name: string) {
   await userEvent.keyboard("{ArrowRight}");
 }
 
-it("keeps filter checkmarks in sync with selection and distinguishes projects across environments", async () => {
+it("keeps filter checkmarks in sync with keyboard selection and distinguishes projects across environments", async () => {
   using fixture = setup();
   const updateSearch = vi.fn();
   const search: RequirementsSearch = {
@@ -255,7 +255,9 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: "remote · remote project" }))
     .not.toBeChecked();
-  await page.getByRole("menuitemcheckbox", { name: "All projects" }).click();
+  const allProjects = page.getByRole("menuitemcheckbox", { name: "All projects" });
+  await expect.element(allProjects).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
   expect(updateSearch).toHaveBeenLastCalledWith({ projectId: undefined });
   await screen.rerender(
     fixture.board(
@@ -264,32 +266,44 @@ it("keeps filter checkmarks in sync with selection and distinguishes projects ac
     ),
   );
   await expect.element(screen.getByText("Remote conversation")).toBeVisible();
-  await expect.element(page.getByRole("menuitemcheckbox", { name: "All projects" })).toBeChecked();
+  await expect.element(allProjects).toBeChecked();
   await userEvent.keyboard("{Escape}");
   await expect
     .element(page.getByRole("menuitem", { name: "Project", exact: true }))
     .toHaveAttribute("aria-expanded", "false");
   await openFilterSubmenu("Assignee");
   await expect.element(page.getByRole("menuitemcheckbox", { name: "selected-user" })).toBeChecked();
-  await page.getByRole("menuitemcheckbox", { name: "All assignees" }).click();
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Assigned to me" }))
+    .toHaveFocus();
+  await userEvent.keyboard("{ArrowDown}");
+  const allAssignees = page.getByRole("menuitemcheckbox", { name: "All assignees" });
+  await expect.element(allAssignees).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
   expect(updateSearch).toHaveBeenLastCalledWith({ assignee: "all", workflowInvolvement: "all" });
   await screen.rerender(fixture.board({ assignee: "all", archived: true }, updateSearch));
-  await expect.element(page.getByRole("menuitemcheckbox", { name: "All assignees" })).toBeChecked();
+  await expect.element(allAssignees).toBeChecked();
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: "Assigned to me" }))
     .not.toBeChecked();
   await userEvent.keyboard("{Escape}");
-  await expect
-    .element(page.getByRole("menuitem", { name: "Assignee", exact: true }))
-    .toHaveAttribute("aria-expanded", "false");
-  await page.getByRole("menuitemcheckbox", { name: "Show archived" }).click();
+  const assigneeMenu = page.getByRole("menuitem", { name: "Assignee", exact: true });
+  await expect.element(assigneeMenu).toHaveAttribute("aria-expanded", "false");
+  await expect.element(assigneeMenu).toHaveFocus();
+  const showArchived = page.getByRole("menuitemcheckbox", { name: "Show archived" });
+  await userEvent.keyboard("{End}");
+  await expect.element(showArchived).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
   expect(updateSearch).toHaveBeenLastCalledWith({ archived: false });
   await screen.rerender(fixture.board({ assignee: "all" }, updateSearch));
-  await expect
-    .element(page.getByRole("menuitemcheckbox", { name: "Show archived" }))
-    .not.toBeChecked();
+  await expect.element(showArchived).not.toBeChecked();
   await openFilterSubmenu("Issue source");
-  await page.getByRole("menuitemcheckbox", { name: "Local work items" }).click();
+  await expect.element(page.getByRole("menuitemcheckbox", { name: "All sources" })).toHaveFocus();
+  await userEvent.keyboard("{End}");
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Local work items" }))
+    .toHaveFocus();
+  await userEvent.keyboard("{Enter}");
   expect(updateSearch).toHaveBeenLastCalledWith(
     expect.objectContaining({ source: "local", workflowInvolvement: undefined }),
   );

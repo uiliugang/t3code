@@ -130,9 +130,15 @@ export const make = Effect.gen(function* () {
     return fiber ? Fiber.interrupt(fiber).pipe(Effect.ignore) : Effect.void;
   };
 
-  const remove = (projectId: ProjectId) =>
+  const remove = (projectId: ProjectId, expectedSequence?: number) =>
     Ref.update(clones, (current) => {
-      if (!current.has(projectId)) return current;
+      const tracked = current.get(projectId);
+      if (
+        !tracked ||
+        (expectedSequence !== undefined && tracked.snapshot.sequence !== expectedSequence)
+      ) {
+        return current;
+      }
       const next = new Map(current);
       next.delete(projectId);
       return next;
@@ -140,9 +146,10 @@ export const make = Effect.gen(function* () {
 
   const scheduleRemoval = Effect.fn("ProjectCloneTracker.scheduleRemoval")(function* (
     projectId: ProjectId,
+    sequence: number,
   ) {
     yield* clearRetention(projectId);
-    const fiber = yield* remove(projectId).pipe(
+    const fiber = yield* remove(projectId, sequence).pipe(
       Effect.delay(DONE_RETENTION),
       Effect.ensuring(
         Effect.sync(() => {
@@ -198,7 +205,7 @@ export const make = Effect.gen(function* () {
     error: string | null,
   ) {
     const endedAt = yield* nowIso;
-    yield* modify(projectId, (tracked) => ({
+    const snapshot = yield* modify(projectId, (tracked) => ({
       ...tracked,
       fiber: null,
       snapshot: {
@@ -210,7 +217,7 @@ export const make = Effect.gen(function* () {
         error: error === null ? null : clampText(error, PROJECT_CLONE_ERROR_MAX_LENGTH),
       },
     }));
-    if (phase === "done") yield* scheduleRemoval(projectId);
+    if (phase === "done" && snapshot) yield* scheduleRemoval(projectId, snapshot.sequence);
   });
 
   const cloneWatchingForStall = Effect.fn("ProjectCloneTracker.cloneWatchingForStall")(function* (
@@ -297,62 +304,71 @@ export const make = Effect.gen(function* () {
         endedAt: null,
         sequence: ++sequence,
       };
-      const claimed = yield* Ref.modify(clones, (current) => {
-        const conflict = Array.from(current.values()).some(
-          (tracked) =>
-            tracked.snapshot.projectId === input.projectId ||
-            tracked.input.destinationPath === prepared.destinationPath,
-        );
-        if (conflict) return [false, current] as const;
-        const next = new Map(current);
-        next.set(input.projectId, {
-          snapshot,
-          fiber: null,
-          hooks,
-          input: {
-            cloneUrl: prepared.cloneUrl,
-            destinationPath: prepared.destinationPath,
-            repository: prepared.repository,
-            protocol: input.protocol ?? "auto",
-          },
-        });
-        return [true, next] as const;
-      });
       const alreadyInProgress = new SourceControlRepositoryError({
         operation: "cloneRepository",
         provider: input.provider ?? SourceControlProviderKind.make("unknown"),
         detail: "A clone into this destination is already in progress.",
       });
-      if (!claimed) return yield* alreadyInProgress;
       // Finish or release the claim despite disconnects; a claim without a fiber cannot be cancelled or retried.
       const projectId = yield* Effect.uninterruptible(
         Effect.gen(function* () {
-          yield* clearRetention(input.projectId);
-          // Register before creation so racing thread.create and project.delete see the clone.
-          const projectId = yield* hooks
-            .createProject({
-              projectId: input.projectId,
-              title: input.title,
-              workspaceRoot: prepared.destinationPath,
-              createdAt: input.createdAt,
-            })
-            .pipe(
-              Effect.as(input.projectId),
-              // A failed clone's project still owns its empty folder after a restart
-              // forgets the clone; clone for that project instead.
-              Effect.catchTags({
-                ProjectConflictError: (conflict) =>
-                  moveClaim(input.projectId, conflict.conflictingProjectId).pipe(
-                    Effect.flatMap((moved) =>
-                      moved ? Effect.succeed(conflict.conflictingProjectId) : alreadyInProgress,
-                    ),
-                  ),
-              }),
+          const claim = yield* Ref.modify(clones, (current) => {
+            const overlapping = Array.from(current.values()).filter(
+              (tracked) =>
+                tracked.snapshot.projectId === input.projectId ||
+                tracked.input.destinationPath === prepared.destinationPath,
             );
-          yield* publish;
-          yield* launch(projectId);
-          return projectId;
-        }).pipe(Effect.tapError(() => remove(input.projectId))),
+            // Only a running clone owns its destination; a failed or cancelled one
+            // left nothing behind, so a fresh start supersedes it.
+            if (overlapping.some((tracked) => tracked.snapshot.phase === "running")) {
+              return [null, current] as const;
+            }
+            const next = new Map(current);
+            for (const stale of overlapping) next.delete(stale.snapshot.projectId);
+            next.set(input.projectId, {
+              snapshot,
+              fiber: null,
+              hooks,
+              input: {
+                cloneUrl: prepared.cloneUrl,
+                destinationPath: prepared.destinationPath,
+                repository: prepared.repository,
+                protocol: input.protocol ?? "auto",
+              },
+            });
+            return [overlapping.map((stale) => stale.snapshot.projectId), next] as const;
+          });
+          if (claim === null) return yield* alreadyInProgress;
+          yield* Effect.forEach(new Set([input.projectId, ...claim]), clearRetention, {
+            discard: true,
+          });
+          return yield* Effect.gen(function* () {
+            // Register before creation so racing thread.create and project.delete see the clone.
+            const projectId = yield* hooks
+              .createProject({
+                projectId: input.projectId,
+                title: input.title,
+                workspaceRoot: prepared.destinationPath,
+                createdAt: input.createdAt,
+              })
+              .pipe(
+                Effect.as(input.projectId),
+                // A failed clone's project still owns its empty folder after a restart
+                // forgets the clone; clone for that project instead.
+                Effect.catchTags({
+                  ProjectConflictError: (conflict) =>
+                    moveClaim(input.projectId, conflict.conflictingProjectId).pipe(
+                      Effect.flatMap((moved) =>
+                        moved ? Effect.succeed(conflict.conflictingProjectId) : alreadyInProgress,
+                      ),
+                    ),
+                }),
+              );
+            yield* publish;
+            yield* launch(projectId);
+            return projectId;
+          }).pipe(Effect.tapError(() => remove(input.projectId)));
+        }),
       );
       return {
         projectId,

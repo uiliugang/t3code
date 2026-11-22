@@ -8,6 +8,8 @@ import {
   SourceControlRepositoryError,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
+import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -311,6 +313,118 @@ describe("ProjectCloneTracker", () => {
       expect(yield* tracker.get(projectId)).toBeNull();
     }).pipe(Effect.provide(harness.layer));
   });
+
+  it.effect("a fresh clone into a failed clone's destination supersedes it", () => {
+    let attempts = 0;
+    const harness = makeHarness({
+      clone: (input) =>
+        Effect.suspend(() =>
+          ++attempts === 1
+            ? Effect.fail(
+                new SourceControlRepositoryError({
+                  operation: "cloneRepository",
+                  provider: SourceControlProviderKind.make("unknown"),
+                  detail: "fatal: repository not found",
+                }),
+              )
+            : Effect.succeed({
+                cwd: input.destinationPath,
+                remoteUrl: input.remoteUrl ?? "",
+                repository: null,
+              }),
+        ),
+    });
+    // The failed clone's project still owns the destination.
+    const conflictingHooks: ProjectCloneTracker.ProjectCloneHooks = {
+      ...harness.hooks,
+      createProject: (input) =>
+        Effect.fail(
+          new ProjectConflictError({
+            projectId: input.projectId,
+            workspaceRoot: input.workspaceRoot,
+            conflictingProjectId: projectId,
+          }),
+        ),
+    };
+    return Effect.gen(function* () {
+      const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      yield* tracker.start(startInput, harness.hooks);
+      yield* Effect.yieldNow;
+      expect((yield* tracker.get(projectId))?.phase).toBe("failed");
+
+      const second = ProjectId.make("project-2");
+      const result = yield* tracker.start({ ...startInput, projectId: second }, conflictingHooks);
+      expect(result.projectId).toBe(projectId);
+      yield* Effect.yieldNow;
+      expect((yield* tracker.get(projectId))?.phase).toBe("done");
+      expect(yield* tracker.get(second)).toBeNull();
+      expect(harness.cloned).toEqual([projectId]);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("refuses a second clone into a destination that is still cloning", () => {
+    const harness = makeHarness({ clone: () => Effect.never });
+    return Effect.gen(function* () {
+      const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      yield* tracker.start(startInput, harness.hooks);
+      yield* Effect.yieldNow;
+      const error = yield* Effect.flip(
+        tracker.start({ ...startInput, projectId: ProjectId.make("project-2") }, harness.hooks),
+      );
+      expect(error.message).toContain("already in progress");
+      expect((yield* tracker.get(projectId))?.phase).toBe("running");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("a disconnect while replacing a completed clone leaves a cancellable retry", () =>
+    Effect.gen(function* () {
+      const clock = yield* Clock.Clock;
+      const retentionStarted = Deferred.makeUnsafe<void>();
+      const clearingRetention = Deferred.makeUnsafe<void>();
+      const releaseRetention = Deferred.makeUnsafe<void>();
+      let started = false;
+      const harness = makeHarness({
+        clone: (input) => {
+          if (started) return Effect.never;
+          started = true;
+          return Effect.succeed({
+            cwd: input.destinationPath,
+            remoteUrl: input.remoteUrl ?? "",
+            repository: null,
+          });
+        },
+      });
+      yield* Effect.gen(function* () {
+        const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+        yield* tracker.start(startInput, harness.hooks);
+        yield* Deferred.await(retentionStarted);
+
+        const restart = yield* tracker.start(startInput, harness.hooks).pipe(Effect.forkChild);
+        yield* Deferred.await(clearingRetention);
+        restart.interruptUnsafe();
+        yield* Deferred.succeed(releaseRetention, undefined);
+        yield* Fiber.await(restart);
+
+        expect(yield* tracker.cancel(projectId)).toBe(true);
+      }).pipe(
+        Effect.provide(harness.layer),
+        Effect.provideService(Clock.Clock, {
+          ...clock,
+          sleep: (duration) =>
+            Duration.toMillis(duration) === 30_000
+              ? Deferred.succeed(retentionStarted, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.onInterrupt(() =>
+                    Deferred.succeed(clearingRetention, undefined).pipe(
+                      Effect.andThen(Deferred.await(releaseRetention)),
+                    ),
+                  ),
+                )
+              : clock.sleep(duration),
+        }),
+      );
+    }),
+  );
 
   it.effect("does not create a project when the clone cannot be prepared", () => {
     const harness = makeHarness();

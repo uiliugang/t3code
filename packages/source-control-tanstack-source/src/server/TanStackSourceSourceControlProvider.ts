@@ -1,7 +1,6 @@
 import {
   requireSettingsSecretLiteral,
   SourceControlProviderError,
-  type ChangeRequest,
   type SourceControlProviderAuth,
   type SourceControlProviderDiscoveryItem,
 } from "@t3tools/contracts";
@@ -302,8 +301,21 @@ export const make = Effect.gen(function* () {
     return yield* error(operation, input.cwd, "No TanStack Source repository remote was found.");
   });
 
-  const toChangeRequest = (target: Target, pull: Json.SourcePullDetail): ChangeRequest => {
+  const toChangeRequest = (
+    target: Target,
+    pull: Json.SourcePullDetail,
+  ): SourceControlProvider.ChangeRequestForCheckout => {
     const headRepository = pull.headRepo ?? target.repository;
+    const baseRepository = target.repository.toLowerCase();
+    const privateHeadRepository =
+      pull.visibility === "private"
+        ? headRepository.toLowerCase() === baseRepository
+          ? null
+          : headRepository
+        : pull.visibility === undefined &&
+            headRepository.toLowerCase() === `${baseRepository}.private`
+          ? headRepository
+          : undefined;
     const headBranch = Json.headBranchName(pull.head);
     // A pull request synced from a GitHub fork names its head only by its pull ref.
     const crossRepository =
@@ -323,6 +335,7 @@ export const make = Effect.gen(function* () {
       mergedAt: pull.mergedAt === null ? null : Json.iso(pull.mergedAt),
       updatedAt: Option.some(DateTime.makeUnsafe(updatedAt)),
       isCrossRepository: crossRepository,
+      ...(privateHeadRepository === undefined ? {} : { privateHeadRepository }),
       headRepositoryNameWithOwner: headRepository,
       headRepositoryOwnerLogin: headRepository.split("/")[0] ?? null,
     };
@@ -395,6 +408,18 @@ export const make = Effect.gen(function* () {
       },
     ),
     createsDraftChangeRequests: true,
+    privateChangeRequestRemote: Effect.fn(
+      "TanStackSourceSourceControlProvider.privateChangeRequestRemote",
+    )(function* (input) {
+      const target = yield* resolveTarget("privateChangeRequestRemote", input);
+      const companion = yield* read(
+        "privateChangeRequestRemote",
+        input.cwd,
+        { host: target.host, method: "POST", path: `/repos/${target.repository}/private-remote` },
+        Repository,
+      );
+      return { url: companion.cloneUrl, repository: `${companion.owner}/${companion.name}` };
+    }),
     createChangeRequest: Effect.fn("TanStackSourceSourceControlProvider.createChangeRequest")(
       function* (input) {
         const target = yield* resolveTarget("createChangeRequest", {
@@ -437,6 +462,7 @@ export const make = Effect.gen(function* () {
               base: input.target?.refName ?? input.baseRefName,
               ...(body.trim().length === 0 ? {} : { body }),
               ...(input.draft === true ? { draft: true } : {}),
+              ...(input.private === true ? { private: true } : {}),
             },
           })
           .pipe(
@@ -494,7 +520,8 @@ export const make = Effect.gen(function* () {
         return repository.defaultBranch;
       },
     ),
-    // Every pull request's head is published as `refs/pull/<n>/head`, forks and GitHub sync too.
+    // A pull request's head is published as `refs/pull/<n>/head`, forks and GitHub sync too. A
+    // private one has no such ref: its branch is read from the companion repository.
     checkoutChangeRequest: Effect.fn("TanStackSourceSourceControlProvider.checkoutChangeRequest")(
       function* (input) {
         const pull = yield* getPull(input);
@@ -519,27 +546,106 @@ export const make = Effect.gen(function* () {
                 });
           const operation = "TanStackSourceSourceControlProvider.checkoutChangeRequest";
           const branches = yield* git.listLocalBranchNames(input.cwd);
-          if (!pull.isCrossRepository) {
+          if (pull.privateHeadRepository === null) {
+            return yield* error(
+              operation,
+              input.cwd,
+              "The private pull request has no companion repository.",
+            );
+          }
+          const companion = pull.privateHeadRepository ?? null;
+          if (!pull.isCrossRepository || companion !== null) {
             const localBranch = pull.headRefName;
-            const remoteBranch = { cwd: input.cwd, remoteName, remoteBranch: localBranch };
-            if (input.force !== true && !branches.includes(localBranch))
+            const companionUrl =
+              companion === null ? null : `${Hosts.webRepositoryUrl(HOST, companion)}.git`;
+            const remoteBranch = {
+              cwd: input.cwd,
+              remoteName:
+                companion === null || companionUrl === null
+                  ? remoteName
+                  : yield* git.ensureRemote({
+                      cwd: input.cwd,
+                      preferredName: companion.split("/")[0] ?? "private",
+                      url: companionUrl,
+                      requireMatchingPushUrl: true,
+                    }),
+              remoteBranch: localBranch,
+            };
+            const hasLocalBranch = branches.includes(localBranch);
+            if (companionUrl !== null) {
+              yield* git.writeConfigValue({
+                cwd: input.cwd,
+                key: SourceControlProvider.privateCompanionConfigKey(remoteBranch.remoteName),
+                value: companionUrl,
+              });
+            }
+            const invalidPrivateBranch = () =>
+              error(
+                operation,
+                input.cwd,
+                `Local branch ${localBranch} does not track this private pull request. Rename the local branch and try again.`,
+              );
+            let recoverUntrackedBranch = false;
+            let finishTracking = false;
+            if (companion !== null && hasLocalBranch) {
+              const [trackedRemote, trackedRef, pushRemote] = yield* Effect.all([
+                git.readConfigValue(input.cwd, `branch.${localBranch}.remote`),
+                git.readConfigValue(input.cwd, `branch.${localBranch}.merge`),
+                git.readConfigValue(input.cwd, `branch.${localBranch}.pushRemote`),
+              ]);
+              const tracksCompanion =
+                trackedRemote === remoteBranch.remoteName &&
+                trackedRef === `refs/heads/${localBranch}`;
+              finishTracking =
+                (trackedRemote === null || trackedRemote === remoteBranch.remoteName) &&
+                trackedRef === null &&
+                pushRemote === remoteBranch.remoteName;
+              recoverUntrackedBranch =
+                trackedRemote === null && trackedRef === null && pushRemote === null;
+              if (!tracksCompanion && !finishTracking && !recoverUntrackedBranch)
+                return yield* invalidPrivateBranch();
+            }
+            if (companion === null && input.force !== true && !hasLocalBranch)
               yield* git.fetchRemoteBranch({ ...remoteBranch, localBranch });
             else yield* git.fetchRemoteTrackingBranch(remoteBranch);
-            if (input.force === true)
-              yield* git.execute({
-                operation,
-                cwd: input.cwd,
-                // The upstream is recorded next, through the host's serialized config write.
-                args: [
-                  "checkout",
-                  "--no-track",
-                  "-B",
-                  localBranch,
-                  `refs/remotes/${remoteName}/${localBranch}`,
-                  "--",
-                ],
-              });
-            yield* git.setBranchUpstream({ ...remoteBranch, branch: localBranch });
+            const trackingRef = `refs/remotes/${remoteBranch.remoteName}/${localBranch}`;
+            if (recoverUntrackedBranch) {
+              const [localHead, privateHead] = yield* Effect.all([
+                git.resolveCommit({ cwd: input.cwd, revision: `refs/heads/${localBranch}` }),
+                git.resolveCommit({ cwd: input.cwd, revision: trackingRef }),
+              ]);
+              if (localHead.commitSha !== privateHead.commitSha)
+                return yield* invalidPrivateBranch();
+            }
+            const bindBranch = Effect.gen(function* () {
+              if (companion !== null && !hasLocalBranch) {
+                yield* git.createBranch({
+                  cwd: input.cwd,
+                  branch: localBranch,
+                  startPoint: trackingRef,
+                });
+              } else if (input.force === true && !recoverUntrackedBranch && !finishTracking) {
+                yield* git.execute({
+                  operation,
+                  cwd: input.cwd,
+                  args: ["checkout", "--no-track", "-B", localBranch, trackingRef, "--"],
+                });
+              }
+              if (companionUrl !== null) {
+                yield* git.writeConfigValue({
+                  cwd: input.cwd,
+                  key: SourceControlProvider.privatePullRequestPushConfigKey(localBranch),
+                  value: companionUrl,
+                });
+                yield* git.writeConfigValue({
+                  cwd: input.cwd,
+                  key: `branch.${localBranch}.pushRemote`,
+                  value: remoteBranch.remoteName,
+                });
+              }
+              yield* git.setBranchUpstream({ ...remoteBranch, branch: localBranch });
+            });
+            yield* companion === null ? bindBranch : Effect.uninterruptible(bindBranch);
             yield* Effect.scoped(git.switchRef({ cwd: input.cwd, refName: localBranch }));
             return;
           }

@@ -142,6 +142,7 @@ describe("sidebar numbered jumps", () => {
     const initial = useComposerDraftStore.getState();
     using stack = new DisposableStack();
     stack.defer(() => useComposerDraftStore.setState(initial, true));
+    useComposerDraftStore.setState(useComposerDraftStore.getInitialState(), true);
     const previousSettings = getClientSettings();
     stack.defer(() => __setClientSettingsForTests(previousSettings));
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
@@ -162,11 +163,12 @@ describe("sidebar numbered jumps", () => {
       routeThreadRef: threadRef,
     });
     const draftId = DraftId.make("unsent-draft");
-    initial.setProjectDraftThreadId(scopeProjectRef(web.environmentId, web.id), draftId, {
+    const drafts = useComposerDraftStore.getState();
+    drafts.setProjectDraftThreadId(scopeProjectRef(web.environmentId, web.id), draftId, {
       threadId: ThreadId.make("unsent-draft-thread"),
       createdAt: "2026-01-02T00:00:00.000Z",
     });
-    initial.setPrompt(draftId, "Unsent prompt");
+    drafts.setPrompt(draftId, "Unsent prompt");
 
     await using screen = await render(
       <SidebarProvider>
@@ -211,6 +213,9 @@ describe("sidebar render isolation", () => {
   // regression: #33100 Cmd+J re-rendered every sidebar row, which took hundreds of ms with many threads
   it("does not re-render thread rows when a quick Mod shortcut opens and focuses the terminal", async () => {
     using stack = new DisposableStack();
+    const initialDrafts = useComposerDraftStore.getState();
+    stack.defer(() => useComposerDraftStore.setState(initialDrafts, true));
+    useComposerDraftStore.setState(useComposerDraftStore.getInitialState(), true);
     const activeProject = project("active");
     const threads = Array.from({ length: 5 }, (_, index) => threadShell(activeProject.id, index));
     const routeThreadRef: ScopedThreadRef = {

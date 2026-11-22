@@ -244,6 +244,16 @@ describe("ProjectSetupScriptRunner", () => {
     }),
   );
 
+  it.effect("keeps emoji whole when capping a long output line or partial-line buffer", () =>
+    Effect.gen(function* () {
+      const { outputLines, emit } = yield* setup();
+      yield* emit({ ...event, type: "output", data: `x${"🙂".repeat(250)}\r\n` });
+      yield* emit({ ...event, type: "output", data: `${"🙂".repeat(2_100)}x` });
+      yield* emit({ ...event, type: "output", data: "\r\n" });
+      expect(yield* Queue.takeAll(outputLines)).toEqual([`x${"🙂".repeat(199)}`, "🙂".repeat(200)]);
+    }),
+  );
+
   it.effect.each([false, true])(
     "types into a quiet shell without letting metadata postpone readiness (initial output: %s)",
     (initialOutput) =>
@@ -331,26 +341,19 @@ describe("ProjectSetupScriptRunner", () => {
   );
 });
 
-const runObservedSetup = Effect.fnUntraced(function* (command: string) {
-  const { writes, outputLines, emit, completion } = yield* setup({ command });
-  yield* emit({ ...event, type: "output", data: "\x1b[?2004h" });
-  const submitted = yield* Queue.take(writes);
+const runTestBash = Effect.fn("ProjectSetupScriptRunner.test.runBash")(function* (
+  script: string,
+  ...args: string[]
+) {
   const cwd = yield* HostProcess.WorkingDirectory;
   const env = yield* HostProcess.Environment;
-
-  // Enter becomes a newline at the terminal boundary; transport assertions below
-  // cover line-editor submissions and canonical TTY limits that bash -c bypasses.
-  const child = yield* Effect.gen(function* () {
+  return yield* Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const handle = yield* spawner.spawn(
-      ChildProcess.make(
-        "/bin/bash",
-        ["--noprofile", "--norc", "-c", submitted.replaceAll("\r", "\n")],
-        {
-          cwd,
-          env: { PATH: env.PATH },
-        },
-      ),
+      ChildProcess.make("/bin/bash", ["--noprofile", "--norc", "-c", script, "bash", ...args], {
+        cwd,
+        env: { PATH: env.PATH },
+      }),
     );
     return yield* Effect.all(
       {
@@ -361,6 +364,14 @@ const runObservedSetup = Effect.fnUntraced(function* (command: string) {
       { concurrency: "unbounded" },
     );
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+});
+
+const runObservedSetup = Effect.fnUntraced(function* (command: string) {
+  const { writes, outputLines, emit, completion } = yield* setup({ command });
+  yield* emit({ ...event, type: "output", data: "\x1b[?2004h" });
+  const submitted = yield* Queue.take(writes);
+  // Enter becomes a newline at the terminal boundary.
+  const child = yield* runTestBash(submitted.replaceAll("\r", "\n"));
   yield* emit({ ...event, type: "output", data: submitted + "\n" });
   yield* emit({ ...event, type: "output", data: child.stdout + child.stderr });
   yield* emit({ ...event, type: "closed" });
@@ -427,11 +438,10 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("POSIX setup co
     }),
   );
 
-  it.live.each([
-    { name: "an explicit exit", command: "exit 7", exitCode: 7 },
-    { name: "a syntax error", command: "if then", exitCode: 2 },
-  ])("reports a nonzero completion for $name", ({ command, exitCode }) =>
+  it.live.each(["exit 7", "if then"])("reports the shell's nonzero status for %s", (command) =>
     Effect.gen(function* () {
+      const { exitCode } = yield* runTestBash('eval "$1"', command);
+      assert.isAbove(exitCode, 0);
       const result = yield* runObservedSetup(command);
       assert.equal(result.exitCode, exitCode);
     }),

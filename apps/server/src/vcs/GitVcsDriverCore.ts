@@ -44,6 +44,7 @@ import {
   isMainOrMasterBranch,
   resolveAutoFeatureBranchName,
 } from "@t3tools/shared/git";
+import { privatePullRequestPushConfigKey } from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
@@ -84,6 +85,10 @@ const legacyBranchBaseConfigKey = (branch: string) => `branch.${branch}.gh-merge
 const isAliasOfUpstreamHead = (branch: string, upstreamBranch: string, upstreamRef: string) =>
   branch === upstreamBranch ||
   (branch.endsWith(`/${upstreamBranch}`) && upstreamRef.endsWith(`/${branch}`));
+export const isPrivatePullRequestWorktreeBranchName = (branch: string) =>
+  /^t3code[/-]private-pr-/iu.test(branch);
+export const directPullRequestUpstreamConfigKey = (branch: string) =>
+  `branch.${branch}.t3-pr-push-upstream`;
 const gitProcesses = Semaphore.makeUnsafe(8);
 const backgroundGitProcesses = Semaphore.makeUnsafe(2);
 // The fetch before `git worktree add` downloads everything the remote gained since
@@ -2324,7 +2329,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   // A fetch reads only the remote's first url, while a push writes every push URL (pushurl, else
   // each url). A fetched ref is evidence of the push destination only when those are the same one.
   const pushesOnlyToFetchUrl = Effect.fn("GitVcsDriver.pushesOnlyToFetchUrl")(
-    function* (cwd: string, remoteName: string) {
+    function* (cwd: string, remoteName: string, expectedRepository?: string) {
       const [fetchUrl, pushUrls] = yield* Effect.all([
         runGitStdout("GitVcsDriver.pushesOnlyToFetchUrl.fetchUrl", cwd, [
           "remote",
@@ -2343,7 +2348,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ]);
       // Preserve whitespace in URLs and reject ambiguous multiline fetch URLs.
       return (
-        fetchUrl.endsWith("\n") && !fetchUrl.slice(0, -1).includes("\n") && pushUrls === fetchUrl
+        fetchUrl.endsWith("\n") &&
+        !fetchUrl.slice(0, -1).includes("\n") &&
+        pushUrls === fetchUrl &&
+        (expectedRepository === undefined ||
+          sourceControlDefinitions.repositoryKeyFromRemote(fetchUrl.slice(0, -1)) ===
+            expectedRepository)
       );
     },
     Effect.orElseSucceed(() => false),
@@ -2359,14 +2369,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.cwd,
       ["remote", "-v"],
     ).pipe(Effect.map((stdout) => parseRemoteFetchUrls(stdout)));
-    const findMatchingRemote = (remoteFetchUrls: Map<string, string>) =>
-      Array.from(remoteFetchUrls.entries()).find(
-        ([, remoteUrl]) =>
-          sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl) === normalizedTargetUrl,
-      )?.[0];
+    const findMatchingRemote = Effect.fn("GitVcsDriver.ensureRemote.findMatching")(function* (
+      remoteFetchUrls: Map<string, string>,
+    ) {
+      for (const [remoteName, remoteUrl] of remoteFetchUrls) {
+        if (sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl) !== normalizedTargetUrl)
+          continue;
+        if (
+          !input.requireMatchingPushUrl ||
+          (yield* pushesOnlyToFetchUrl(input.cwd, remoteName, normalizedTargetUrl))
+        ) {
+          return remoteName;
+        }
+      }
+      return undefined;
+    });
 
     const remoteFetchUrls = yield* listRemoteFetchUrls;
-    const existing = findMatchingRemote(remoteFetchUrls);
+    const existing = yield* findMatchingRemote(remoteFetchUrls);
     if (existing !== undefined) return existing;
 
     let remoteName = preferredName;
@@ -2376,7 +2396,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       suffix += 1;
     }
 
-    return yield* executeGitWithStableDiagnostics(
+    const addedRemote = yield* executeGitWithStableDiagnostics(
       "GitVcsDriver.ensureRemote.add",
       input.cwd,
       ["remote", "add", "--", remoteName, input.url],
@@ -2387,13 +2407,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       // A parallel launch for the same fork may have added it since the listing above.
       Effect.catch((error) =>
         listRemoteFetchUrls.pipe(
-          Effect.flatMap((current) => {
-            const added = findMatchingRemote(current);
-            return added === undefined ? Effect.fail(error) : Effect.succeed(added);
-          }),
+          Effect.flatMap(findMatchingRemote),
+          Effect.filterOrFail(
+            (added): added is string => added !== undefined,
+            () => error,
+          ),
         ),
       ),
     );
+    if (
+      input.requireMatchingPushUrl &&
+      !(yield* pushesOnlyToFetchUrl(input.cwd, addedRemote, normalizedTargetUrl))
+    ) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.ensureRemote",
+        command: "git remote get-url",
+        cwd: input.cwd,
+        detail: "The private remote must push only to its expected fetch repository.",
+      });
+    }
+    return addedRemote;
   });
 
   const resolveComparisonBaseRef = Effect.fn("resolveComparisonBaseRef")(function* (
@@ -3743,12 +3776,69 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     ),
   );
 
+  const resolvePrivatePullRequestPushDestination = Effect.fn(
+    "resolvePrivatePullRequestPushDestination",
+  )(function* (cwd: string, branch: string) {
+    const url = yield* readConfigValue(cwd, privatePullRequestPushConfigKey(branch));
+    if (url === null) return null;
+    const [remoteName, pushRemote, mergeRef] = yield* Effect.all([
+      readConfigValue(cwd, `branch.${branch}.remote`),
+      readConfigValue(cwd, `branch.${branch}.pushRemote`),
+      readConfigValue(cwd, `branch.${branch}.merge`),
+    ]);
+    const branchName = mergeRef?.startsWith("refs/heads/")
+      ? mergeRef.slice("refs/heads/".length)
+      : null;
+    if (
+      !remoteName ||
+      remoteName !== pushRemote ||
+      !branchName ||
+      !(yield* pushesOnlyToFetchUrl(
+        cwd,
+        remoteName,
+        sourceControlDefinitions.repositoryKeyFromRemote(url),
+      ))
+    ) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.resolvePrivatePullRequestPushDestination",
+          cwd,
+          args: ["push"],
+        }),
+        detail:
+          "The private pull request's push remote has changed. Reopen the pull request to restore it.",
+      });
+    }
+    return {
+      remoteName,
+      branchName,
+      publishes: false,
+      upstream: { remoteName, branchName, upstreamRef: `${remoteName}/${branchName}` },
+      pushRemote: null,
+    };
+  });
+
+  const pushesToUpstreamHead = (
+    cwd: string,
+    branch: string,
+    upstreamBranch: string,
+    upstreamRef: string,
+  ) => {
+    if (isAliasOfUpstreamHead(branch, upstreamBranch, upstreamRef)) return Effect.succeed(true);
+    if (!isPrivatePullRequestWorktreeBranchName(upstreamBranch)) return Effect.succeed(false);
+    return readConfigValue(cwd, directPullRequestUpstreamConfigKey(branch)).pipe(
+      Effect.map((expected) => expected === upstreamRef),
+    );
+  };
+
   // `publishes` is false only when HEAD goes to the head of its current `upstream`.
   const resolvePushDestination = Effect.fn("resolvePushDestination")(function* (
     cwd: string,
     branch: string,
     hasUpstream: boolean,
   ) {
+    const privateDestination = yield* resolvePrivatePullRequestPushDestination(cwd, branch);
+    if (privateDestination) return privateDestination;
     if (!hasUpstream) {
       // A deleted upstream keeps its config: republish to it when it was this branch's own,
       // otherwise it was the base, so keep that before publishing.
@@ -3761,7 +3851,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         : null;
       const configuredRemoteName = yield* readConfigValue(cwd, `branch.${branch}.remote`);
       if (mergeBranch && configuredRemoteName && configuredRemoteName !== ".") {
-        if (isAliasOfUpstreamHead(branch, mergeBranch, `${configuredRemoteName}/${mergeBranch}`)) {
+        if (
+          yield* pushesToUpstreamHead(
+            cwd,
+            branch,
+            mergeBranch,
+            `${configuredRemoteName}/${mergeBranch}`,
+          )
+        ) {
           goneUpstream = { remoteName: configuredRemoteName, branchName: mergeBranch };
         } else {
           goneBaseUpstream = {
@@ -3807,7 +3904,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     const upstream = yield* resolveCurrentUpstream(cwd).pipe(Effect.orElseSucceed(() => null));
     if (!upstream) return null;
-    if (isAliasOfUpstreamHead(branch, upstream.branchName, upstream.upstreamRef)) {
+    if (yield* pushesToUpstreamHead(cwd, branch, upstream.branchName, upstream.upstreamRef)) {
       // A fork workflow pushes to the configured push remote and keeps the upstream for pulls, as plain `git push` does.
       const configuredPushRemote = yield* resolveConfiguredPushRemoteName(cwd, branch).pipe(
         Effect.orElseSucceed(() => null),
@@ -3869,7 +3966,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const requestedRemoteName = options?.remoteName?.trim() || null;
-    if (requestedRemoteName) {
+    const privateDestination = requestedRemoteName
+      ? yield* resolvePrivatePullRequestPushDestination(cwd, branch)
+      : null;
+    if (privateDestination && requestedRemoteName !== privateDestination.remoteName) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({ operation: "GitVcsDriver.pushCurrentBranch", cwd, args: ["push"] }),
+        detail: "A private pull request can only be pushed to its companion repository.",
+      });
+    }
+    if (requestedRemoteName && !privateDestination) {
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
       yield* executeGitWithStableDiagnostics(
         "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
@@ -3886,7 +3992,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const hasNoLocalDelta = details.aheadCount === 0 && details.behindCount === 0;
-    const destination = yield* resolvePushDestination(cwd, branch, details.hasUpstream);
+    const destination =
+      privateDestination ?? (yield* resolvePushDestination(cwd, branch, details.hasUpstream));
     if (hasNoLocalDelta && details.hasUpstream) {
       if (!destination?.pushRemote) {
         // A local upstream and a separate push URL both leave the publish destination unchecked.
@@ -6416,20 +6523,32 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     "GitVcsDriver.fetchRefIntoBranch",
   )(function* (input) {
     const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
-    yield* executeGit(
-      "GitVcsDriver.fetchRefIntoBranch",
-      input.cwd,
-      [
-        "fetch",
-        "--quiet",
-        "--no-tags",
-        "--",
-        remoteName,
-        `+${input.ref}:refs/heads/${input.branch}`,
-      ],
-      {
-        fallbackErrorDetail: "git fetch ref into branch failed",
-      },
+    const fetchedRef = `refs/t3code/pr-head-fetch/${yield* random.uuidV4()}`;
+    // Keep concurrent fetches off both the destination branch and the shared FETCH_HEAD.
+    yield* Effect.gen(function* () {
+      yield* executeGit(
+        "GitVcsDriver.fetchRefIntoBranch",
+        input.cwd,
+        [
+          "fetch",
+          "--quiet",
+          "--no-tags",
+          "--no-write-fetch-head",
+          "--",
+          remoteName,
+          `+${input.ref}:${fetchedRef}`,
+        ],
+        { fallbackErrorDetail: "git fetch ref into branch failed" },
+      );
+      yield* createBranch({ cwd: input.cwd, branch: input.branch, startPoint: fetchedRef });
+    }).pipe(
+      Effect.ensuring(
+        executeGit("GitVcsDriver.fetchRefIntoBranch.cleanup", input.cwd, [
+          "update-ref",
+          "-d",
+          fetchedRef,
+        ]).pipe(Effect.ignoreCause({ log: true })),
+      ),
     );
   });
 

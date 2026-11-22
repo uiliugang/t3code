@@ -126,7 +126,10 @@ export const PullRequestListRow = memo(
                 number: String(item.number),
                 title: String(item.title),
                 label: status.label,
-                value2: conflict ? `, ${conflict.label}` : "",
+                value2: [item.visibility === "private" ? t("Private") : null, conflict?.label]
+                  .filter(Boolean)
+                  .map((label) => `, ${label}`)
+                  .join(""),
                 value3: item.author?.login ?? t("Unknown author"),
                 value4: review ? `, ${review.accessibleLabel}` : "",
                 value5: checksSpoken ? `, ${checksSpoken}` : "",
@@ -182,6 +185,17 @@ export const PullRequestListRow = memo(
                 <Text className={cn("min-w-0 flex-1 text-xs", mutedForeground)} numberOfLines={1}>
                   {item.repository} <Text className={tertiaryForeground}>#{item.number}</Text>
                 </Text>
+                {item.visibility === "private" ? (
+                  <View>
+                    <SymbolView
+                      name={PullRequestGlyph.private}
+                      size={11}
+                      tintColorClassName={
+                        props.sidebar ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+                      }
+                    />
+                  </View>
+                ) : null}
                 {item.stack ? (
                   <View className="flex-row items-center gap-1">
                     <SymbolView

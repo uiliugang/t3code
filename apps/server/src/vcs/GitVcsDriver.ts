@@ -273,6 +273,7 @@ export interface GitEnsureRemoteInput {
   cwd: string;
   preferredName: string;
   url: string;
+  requireMatchingPushUrl?: boolean;
 }
 
 export interface GitFetchRemoteBranchInput {

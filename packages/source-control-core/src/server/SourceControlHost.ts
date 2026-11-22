@@ -110,6 +110,7 @@ export class SourceControlHost extends Context.Service<
         readonly cwd: string;
         readonly preferredName: string;
         readonly url: string;
+        readonly requireMatchingPushUrl?: boolean;
       }) => Effect.Effect<string, GitCommandError>;
       readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
       readonly fetchRemoteBranch: (
