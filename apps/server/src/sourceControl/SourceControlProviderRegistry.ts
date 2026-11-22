@@ -78,7 +78,7 @@ function unsupportedProvider(
     kind,
     // Unknown hosts have no readable change requests; return none to avoid poll warnings on every refresh.
     listChangeRequests: (input) =>
-      kind === "unknown" || disabled
+      kind === "unknown" || kind === "tanstack-source" || disabled
         ? Effect.succeed([])
         : new SourceControlProviderError({
             provider: kind,

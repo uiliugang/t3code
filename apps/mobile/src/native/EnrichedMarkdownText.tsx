@@ -23,6 +23,7 @@ import {
   type MarkdownImageBlock,
   type MarkdownLinkOccurrence,
   type MarkdownStyle,
+  type TextSelectionMenuConfig,
 } from "react-native-enriched-markdown";
 import { codeFenceRenderer } from "./codeBlockMarkdown";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
@@ -51,6 +52,8 @@ function enrichedStyle(
   fontScale: number,
 ): MarkdownStyle {
   const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
+  // Android only bolds fallback glyphs when the bold family is asked for at a bold weight (app.config.ts).
+  const boldFontWeight = Platform.OS === "android" ? "bold" : undefined;
   // Keep the radius modest: iOS clips square table-cell borders without stroking the corner arcs.
   const block = {
     marginTop: 4,
@@ -73,6 +76,7 @@ function enrichedStyle(
       ...body,
       color: style.strongColor,
       fontFamily: style.headingFontFamily,
+      fontWeight: boldFontWeight,
       fontSize,
       lineHeight: fontSize * 1.35,
       marginTop: 8,
@@ -95,7 +99,11 @@ function enrichedStyle(
     h4: heading(4),
     h5: heading(5),
     h6: heading(6),
-    strong: { color: style.strongColor, fontFamily: style.boldFontFamily, fontWeight: "normal" },
+    strong: {
+      color: style.strongColor,
+      fontFamily: style.boldFontFamily,
+      fontWeight: boldFontWeight ?? "normal",
+    },
     link: { color: style.linkColor, underline: false },
     code: {
       fontFamily: monospace,
@@ -187,6 +195,7 @@ function codeBlockElement(
   accessibilityLabels: AccessibilityLabels,
   onCiteFormula: SelectableMarkdownTextProps["onCiteFormula"],
   citeFormulaLabel: string,
+  selectionMenuConfig: TextSelectionMenuConfig,
 ): ReactElement | undefined {
   const renderer = codeFenceRenderer(block.language, mathRenderingEnabled);
   if (renderer.kind === "mermaid") {
@@ -208,6 +217,7 @@ function codeBlockElement(
           selectionColor={textStyle.selectionColor}
           selectionHandleColor={textStyle.selectionHandleColor}
           accessibilityLabels={accessibilityLabels}
+          selectionMenuConfig={selectionMenuConfig}
         />
         {onCiteFormula ? (
           <View style={{ alignSelf: "flex-end" }}>
@@ -264,6 +274,18 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
       },
     }),
     [gt],
+  );
+  // The library's built-in selection menu items default to English labels.
+  const selectionMenuConfig = useMemo<TextSelectionMenuConfig>(
+    () => ({
+      copy: { label: t("Copy") },
+      copyAsMarkdown: { label: t("Copy as Markdown") },
+      copyImageUrl: {
+        label: t("Copy image URL"),
+        pluralLabels: { other: gt("Copy {count} Image URLs", { count: "{count}" }) },
+      },
+    }),
+    [gt, t],
   );
   const { markdown, fileHrefs } = useMemo(() => {
     if (!fileEmbedLabel) {
@@ -428,6 +450,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
         accessibilityLabels,
         props.onCiteFormula,
         gt("Cite formula"),
+        selectionMenuConfig,
       ),
   };
   const resolveNativeImageSource = useRetryingImageSource(resolveImageSource);
@@ -485,6 +508,7 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
               : undefined
           }
           selectionClipboard={selectionClipboard}
+          selectionMenuConfig={selectionMenuConfig}
           selectionColor={props.textStyle.selectionColor}
           selectionHandleColor={props.textStyle.selectionHandleColor}
           md4cFlags={{
@@ -496,11 +520,6 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           enableTaskListItemToggle={props.onTaskListItemPress !== undefined}
           onTaskListItemPress={props.onTaskListItemPress}
           enableCodeBlockWrapToggle
-          selectionMenuConfig={{
-            copy: { label: t("Copy") },
-            copyAsMarkdown: { label: t("Copy as Markdown") },
-            copyImageUrl: { label: t("Copy image URL") },
-          }}
           spoilerOverlay="solid"
           onLinkPress={
             props.onLinkPress || props.onImagePress ? ({ url }) => onLinkPress(url) : undefined

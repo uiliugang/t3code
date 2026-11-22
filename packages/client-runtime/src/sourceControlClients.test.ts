@@ -175,6 +175,8 @@ describe("sourceControlClients repository keys", () => {
     ["git@ssh.dev.azure.com:v3/o/p", "ssh.dev.azure.com/v3/o/p"],
     ["ssh.dev.azure.com/v3/o/p/r", "ssh.dev.azure.com/v3/o/p/r"],
     ["C:/repos/project", "c:/repos/project"],
+    // The owner's `@` is the web's spelling; the API and every key name it without.
+    ["https://source.tanstack.com/@TanStack/router.git", "source.tanstack.com/tanstack/router"],
   ])("keys %s as %s", (remote, key) => {
     expect(sourceControlClients.repositoryKeyFromRemote(remote)).toBe(key);
   });
@@ -253,11 +255,12 @@ describe("sourceControlClients.findByPublicDomain", () => {
   });
 });
 
-it("offers only the supported git hosts, independently of standalone issue trackers", () => {
+it("recognizes supported Git hosts, including the TanStack Source beta", () => {
   expect(sourceControlClients.definitions.map((definition) => definition.kind)).toEqual([
     "github",
     "gitlab",
     "meituan",
+    "tanstack-source",
   ]);
   expect(kindOf("https://dev.azure.com/acme/team/_git/repo/pullrequest/1")).toBeUndefined();
   expect(sourceControlClients.recognizeRemote("git@git.sankuai.com:project/repo.git")?.kind).toBe(
@@ -269,6 +272,7 @@ it("offers only the supported git hosts, independently of standalone issue track
     )?.definition.kind,
   ).toBe("meituan");
   expect(kindOf("https://gitlab.com/team/repo/-/merge_requests/42")).toBe("gitlab");
+  expect(kindOf("https://source.tanstack.com/@team/repo/pull/42")).toBe("tanstack-source");
 });
 
 describe("appSignInTargetForRemote", () => {

@@ -21,6 +21,7 @@ import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
 import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-worktree";
 import { vcsEnvironment } from "../../../state/vcs";
+import { useRefreshBranchesOnFocus } from "../use-refresh-branches-on-focus";
 import { SheetActionButton } from "./gitSheetComponents";
 
 type GitBranchesSheetProps = StaticScreenProps<{
@@ -39,6 +40,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
   const liveRepository = useThreadRepository();
   const [resourceId] = useState(liveRepository.selectionTarget);
   const { selectedThreadCwd } = useSelectedThreadWorktree(resourceId);
+  useRefreshBranchesOnFocus(selectedThread?.environmentId, selectedThreadCwd);
   const gitState = useSelectedThreadGitState(resourceId);
   const gitActions = useSelectedThreadGitActions(resourceId);
   const { canChangeThreadBranch } = gitActions;

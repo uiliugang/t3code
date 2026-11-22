@@ -536,7 +536,7 @@ export function useComposerCommandMenu({
         : [];
       const environmentItems = environmentId
         ? matchComposerEnvironmentItems(
-            { environments, environmentId, query: trigger.query },
+            { environments, linkedEnvironments, environmentId, query: trigger.query },
             messages,
           )
         : [];

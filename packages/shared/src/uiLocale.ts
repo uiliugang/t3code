@@ -14,6 +14,8 @@ export type UiTranslator = (
 ) => string;
 
 const zhCN: Readonly<Record<string, string>> = {
+  "Page {number}": "第 {number} 页",
+  "Move this command to the front of the queue": "将此命令移到队列最前面",
   "Virtual models": "虚拟模型",
   "Update this environment's server before importing virtual models.":
     "请升级此环境的服务器后再导入虚拟模型。",
