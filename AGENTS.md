@@ -101,7 +101,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 ## Verifying
 
 - Before you push, run `vp run check:changed`. It runs CI's fast checks for changed files: format, lint, knip, typecheck of affected packages and dependents, tests beside changes, and the cross-file checks those miss. CI still runs the full test suites.
-- While you iterate, run `vp test run <files>`. For big files, add `-t "<name>"`.
+- While you iterate, run Node unit tests with `vp test run <files>` and browser tests (`*.browser.test.{ts,tsx}` and `apps/server/src/preview/ServerBrowser*.test.ts`) with `vp run test:browser:local <files>`. For big files, add `-t "<name>"`. Pass every browser test file for a verification pass in one `vp run test:browser:local` command instead of starting parallel background runs; direct `vp test run` serializes files within one process locally, but skips the cross-worktree browser lock and should only be used when debugging with no concurrent worktrees.
 - Use `vp run typecheck`; it caches per package. Each package runs `effect-tsgo tsrs --noEmit`, the Rust TypeScript 7 checker with Effect's diagnostics built in. There is no `typescript` package to run.
 - Run `node -e` snippets from `apps/server` or the owning package. `effect` does not resolve from the repo root.
 - Test behavior that can break, such as orchestration and event-sourcing, provider protocol translation, auth and permission guards, persistence and migrations, external-format parsing, race fixes, and the logic a bug fix changed. Leave out tests for what types already guarantee, trivial logic, copy text, smoke runs, mock-call mirrors, callback wiring, and props rendered to static markup.

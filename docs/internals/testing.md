@@ -26,6 +26,7 @@ Rules for writing tests, and for asking for them in review. AGENTS.md carries th
 
 ## Web browser tests
 
+- Run browser tests locally (`*.browser.test.{ts,tsx}` and `apps/server/src/preview/ServerBrowser*.test.ts`) with `vp run test:browser:local <files>` (add `-t "<name>"` to filter), combining files from the same verification pass into one command instead of parallel background runs. Direct `vp test run` still runs one browser test file at a time locally, but bypasses the repository-wide browser lock shared across worktrees.
 - Web browser tests are `*.browser.test.tsx` or `*.browser.test.ts` and render with `await using screen = await render(...)` from `apps/web/test/render.tsx`. `t3code/require-disposable-render` errors on the old patterns.
   - Acquire what the test drives after mounting (fake timers it advances, spies it sets up after mounting) after the render, so it disposes before the unmount. Anything the first render reads comes before it.
   - A helper that renders and then waits or clicks puts the screen in an `AsyncDisposableStack` and `move()`s it out only on success, so a failed wait still unmounts.

@@ -1,10 +1,20 @@
-// @effect-diagnostics nodeBuiltinImport:off globalConsole:off - a synchronous wrapper around one vitest project.
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off - wrapper around the renders vitest project.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Console from "effect/Console";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
+
 import { vitePlusCommand } from "./check-changed-command.ts";
+import { withBrowserTestLock } from "./check-changed-lock.ts";
 
 const HELP = `Usage:
   node scripts/render-metrics.ts run [--out <file>] [--runs <n>]
@@ -63,6 +73,51 @@ export function runOnce(): RenderMetrics {
   }
 }
 
+const runOnceEffect = Effect.fn("renderMetrics.runOnce")(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-renders-" });
+      const [command, commandArgs] = vitePlusCommand(
+        ["test", "run", "--project", "renders"],
+        platform,
+      );
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(command, commandArgs, {
+          cwd: path.join(root, "apps/web"),
+          env: { T3CODE_RENDER_REPORT_DIR: directory },
+          extendEnv: true,
+          stdin: "ignore",
+          stdout: "inherit",
+          stderr: "inherit",
+          forceKillAfter: "5 seconds",
+        }),
+      );
+      const exitCode = Number(yield* handle.exitCode);
+      if (exitCode !== 0) {
+        return yield* Effect.fail(`render scenarios failed (exit ${exitCode})`);
+      }
+      const files = (yield* fs.readDirectory(directory))
+        .filter((file) => file.endsWith(".json"))
+        .toSorted();
+      const entries = yield* Effect.forEach(files, (file) =>
+        fs
+          .readFileString(path.join(directory, file))
+          .pipe(
+            Effect.map(
+              (content) =>
+                [file.replace(/\.json$/, ""), JSON.parse(content) as ScenarioReport] as const,
+            ),
+          ),
+      );
+      return Object.fromEntries(entries) as RenderMetrics;
+    }),
+  );
+});
+
 /** Scenarios whose counts differ between runs, by name. */
 export function nondeterministic(runs: ReadonlyArray<RenderMetrics>): string[] {
   const [first, ...rest] = runs;
@@ -118,35 +173,71 @@ function option(args: ReadonlyArray<string>, name: string): string | undefined {
   return index === -1 ? undefined : args[index + 1];
 }
 
-if (import.meta.main) {
-  const [command, ...args] = process.argv.slice(2);
-  if (command === "run") {
-    const runs = Number(option(args, "--runs") ?? 3);
-    const results = Array.from({ length: runs }, runOnce);
-    const unstable = nondeterministic(results);
-    if (unstable.length) {
-      for (const scenario of unstable) {
-        const counts = results.map((run) => `${run[scenario]?.commits}/${run[scenario]?.renders}`);
-        console.error(`${scenario} differed between runs (commits/renders): ${counts.join(", ")}`);
-        const first = results[0]?.[scenario]?.components ?? {};
-        for (const [index, run] of results.entries()) {
-          const other = run[scenario]?.components ?? {};
-          const names = [...new Set([...Object.keys(first), ...Object.keys(other)])];
-          const moved = names.filter((name) => first[name] !== other[name]);
-          if (moved.length) {
-            const detail = moved.map((name) => `${name} ${first[name] ?? 0}→${other[name] ?? 0}`);
-            console.error(`  run ${index + 1} vs run 1: ${detail.join(", ")}`);
-          }
+function reportResults(
+  results: ReadonlyArray<RenderMetrics>,
+  runs: number,
+  out: string | undefined,
+): void {
+  const unstable = nondeterministic(results);
+  if (unstable.length) {
+    for (const scenario of unstable) {
+      const counts = results.map((run) => `${run[scenario]?.commits}/${run[scenario]?.renders}`);
+      console.error(`${scenario} differed between runs (commits/renders): ${counts.join(", ")}`);
+      const first = results[0]?.[scenario]?.components ?? {};
+      for (const [index, run] of results.entries()) {
+        const other = run[scenario]?.components ?? {};
+        const names = [...new Set([...Object.keys(first), ...Object.keys(other)])];
+        const moved = names.filter((name) => first[name] !== other[name]);
+        if (moved.length) {
+          const detail = moved.map((name) => `${name} ${first[name] ?? 0}→${other[name] ?? 0}`);
+          console.error(`  run ${index + 1} vs run 1: ${detail.join(", ")}`);
         }
       }
-      process.exitCode = 1;
-    } else {
-      const json = JSON.stringify(results[0], null, 2);
-      const out = option(args, "--out");
-      if (out) NodeFS.writeFileSync(out, json + "\n");
-      else console.log(json);
-      console.error(`${runs} run(s) produced identical counts.`);
     }
+    process.exitCode = 1;
+  } else {
+    const json = JSON.stringify(results[0], null, 2);
+    if (out) NodeFS.writeFileSync(out, json + "\n");
+    else console.log(json);
+    console.error(`${runs} run(s) produced identical counts.`);
+  }
+}
+
+if (import.meta.main) {
+  const cliArgs = process.argv[2] === "--" ? process.argv.slice(3) : process.argv.slice(2);
+  const [command, ...args] = cliArgs;
+  if (command === "run") {
+    const runs = Number(option(args, "--runs") ?? 3);
+    const out = option(args, "--out");
+    const commonDir = NodePath.resolve(
+      root,
+      NodeChildProcess.execFileSync(
+        "git",
+        ["-c", "core.quotePath=false", "rev-parse", "--git-common-dir"],
+        { cwd: root, encoding: "utf8" },
+      ).trim(),
+    );
+    withBrowserTestLock(
+      commonDir,
+      Effect.forEach(Array.from({ length: runs }), () => runOnceEffect()),
+      {
+        waitingMessage:
+          "report:renders: waiting for another browser test in this repository to finish.",
+      },
+    ).pipe(
+      Effect.flatMap((results) => Effect.sync(() => reportResults(results, runs, out))),
+      Effect.catch((error) =>
+        Console.error(String(error)).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              process.exitCode = 1;
+            }),
+          ),
+        ),
+      ),
+      Effect.provide(NodeServices.layer),
+      NodeRuntime.runMain,
+    );
   } else if (command === "compare" && args[0] && args[1]) {
     const read = (path: string) => JSON.parse(NodeFS.readFileSync(path, "utf8")) as RenderMetrics;
     console.log(

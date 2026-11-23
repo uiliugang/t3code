@@ -104,6 +104,12 @@ const unitTestProject = {
 // Stay below ephemeral ranges: Windows reserves Hyper-V/WSL blocks there and EACCES is not skipped.
 const browserTestApiPort = 20_000 + ((Hash.string(import.meta.dirname) >>> 0) % 4_000);
 
+// CI shards run on dedicated runners; locally, run one browser test file at a time
+// so headless Chromium and Vite module transforms do not spike memory on 16-18 GiB machines.
+const localBrowserFileParallelism = process.env.CI
+  ? undefined
+  : process.env.T3_BROWSER_FILE_PARALLELISM === "1";
+
 const browserTestProject = {
   extends: true,
   // Pre-bundle lazy browser and worker dependencies to avoid mid-run reloads.
@@ -180,6 +186,9 @@ const browserTestProject = {
     hookTimeout: 15_000,
     testTimeout: 15_000,
     setupFiles: ["./test/browserSetup.ts"],
+    ...(localBrowserFileParallelism !== undefined
+      ? { fileParallelism: localBrowserFileParallelism }
+      : {}),
     api: { port: browserTestApiPort, strictPort: false },
     browser: {
       enabled: true,
