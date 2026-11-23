@@ -32,10 +32,12 @@ import {
 } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { delegatedTaskProgress } from "@t3tools/provider-core/server/subagentProjection";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
   latestRootProviderFailure,
   orchestrationV2WorktreePending,
 } from "@t3tools/shared/orchestrationV2ThreadError";
+import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Digest from "effect/crypto/Digest";
@@ -995,31 +997,41 @@ const make = Effect.gen(function* () {
         row.source_updated_at,
       ]),
     );
-    const candidates: WorkItemCandidate[] = [];
-    for (const listed of allThreads) {
-      if (bound.has(listed.id) || DateTime.toEpochMillis(listed.updatedAt) < cutoff) continue;
-      const thread = yield* threads.getThreadShell(listed.id);
-      if (
-        thread === null ||
-        thread.projectId !== input.projectId ||
-        thread.deletedAt !== null ||
-        thread.archivedAt !== null
+    const recentThreadIds = allThreads
+      .filter(
+        (thread) => !bound.has(thread.id) && DateTime.toEpochMillis(thread.updatedAt) >= cutoff,
       )
-        continue;
-      const sourceAt = DateTime.formatIso(
-        thread.latestUserAuthoredMessageAt ?? thread.latestUserMessageAt ?? thread.updatedAt,
-      );
-      if (ignored.get(thread.id) === sourceAt) continue;
-      candidates.push({
-        id: thread.id,
-        projectId: thread.projectId,
-        title: thread.title,
-        description: (yield* threadSearch.latestMessagePreview(thread.id)).slice(0, 500),
-        status: thread.status,
-        updatedAt: sourceAt,
-      });
-      if (candidates.length >= MAX_WORK_ITEM_DISCOVERY_LIMIT) break;
+      .map((thread) => thread.id);
+    const ranked: Omit<WorkItemCandidate, "description">[] = [];
+    for (const threadIds of Arr.chunksOf(recentThreadIds, MAX_WORK_ITEM_DISCOVERY_LIMIT)) {
+      const read = yield* sql
+        .withTransaction(threads.readShellSnapshot({ location: "active", threadIds }))
+        .pipe(NodeSqliteClient.readOnly);
+      const { threads: shells } = yield* read;
+      for (const thread of shells) {
+        if (thread.projectId !== input.projectId) continue;
+        const sourceAt = DateTime.formatIso(
+          thread.latestUserAuthoredMessageAt ?? thread.latestUserMessageAt ?? thread.updatedAt,
+        );
+        if (ignored.get(thread.id) === sourceAt) continue;
+        ranked.push({
+          id: thread.id,
+          projectId: thread.projectId,
+          title: thread.title,
+          status: thread.status,
+          updatedAt: sourceAt,
+        });
+      }
+      ranked.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
+      ranked.splice(MAX_WORK_ITEM_DISCOVERY_LIMIT);
     }
+    const candidates = yield* Effect.forEach(ranked, (candidate) =>
+      threadSearch
+        .latestMessagePreview(candidate.id)
+        .pipe(
+          Effect.map((description) => ({ ...candidate, description: description.slice(0, 500) })),
+        ),
+    );
     yield* writes.withPermits(1)(
       sql.withTransaction(
         Effect.gen(function* () {
@@ -1033,11 +1045,7 @@ const make = Effect.gen(function* () {
       ),
     );
     yield* notify;
-    return {
-      candidates: candidates
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
-        .slice(0, workItemDiscoveryLimit),
-    };
+    return { candidates: candidates.slice(0, workItemDiscoveryLimit) };
   }, Effect.mapError(persistenceError));
 
   const mutate = Effect.fn("WorkItemService.mutate")(function* (

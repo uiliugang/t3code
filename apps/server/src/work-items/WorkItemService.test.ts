@@ -8,6 +8,7 @@ import {
   EventId,
   IssueTrackerKind,
   EnvironmentId,
+  MAX_WORK_ITEM_DISCOVERY_LIMIT,
   MessageId,
   NodeId,
   ProjectId,
@@ -203,6 +204,22 @@ function setup(
                 ? threadShellFromProjection(projections.get(id) ?? projection(id))
                 : null,
             ),
+      readShellSnapshot: (input) =>
+        Effect.succeed(
+          Effect.sync(() => ({
+            schemaVersion: 1,
+            snapshotSequence: 0,
+            threads: [...projections.values()]
+              .map(threadShellFromProjection)
+              .filter(
+                (thread) =>
+                  thread.deletedAt === null &&
+                  thread.archivedAt === null &&
+                  (input?.threadIds === undefined || input.threadIds.includes(thread.id)),
+              ),
+            archivedThreads: [],
+          })),
+        ),
       getThreadRecords: (id) =>
         failures.records
           ? Effect.fail(new Orchestrator.OrchestratorProjectionError({ threadId: id }))
@@ -1655,6 +1672,56 @@ it.effect("limits discovery to the newest candidates and preserves them while di
 
     yield* settings.updateSettings({ workItemDiscoveryEnabled: true, workItemDiscoveryLimit: 2 });
     assert.deepEqual(yield* Queue.take(updates), [newer, older]);
+  }).pipe(Effect.provide(test.layer), Effect.scoped);
+});
+
+it.effect("ranks candidate recency before capping large projects", () => {
+  const test = setup();
+  return Effect.gen(function* () {
+    yield* TestClock.setTime(Date.parse(now));
+    const service = yield* WorkItems.WorkItemService;
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const recentActivity = DateTime.makeUnsafe(Date.parse(now));
+    const oldRequest = DateTime.makeUnsafe(Date.parse(now) - 120_000);
+    const newestRequest = DateTime.makeUnsafe(Date.parse(now) - 60_000);
+    const newest = ThreadId.make("newest-request");
+    for (let index = 0; index <= MAX_WORK_ITEM_DISCOVERY_LIMIT; index++) {
+      const hasNewestRequest = index === MAX_WORK_ITEM_DISCOVERY_LIMIT;
+      const id = hasNewestRequest ? newest : ThreadId.make(`active-${index}`);
+      const updatedAt = hasNewestRequest ? newestRequest : recentActivity;
+      const requestedAt = hasNewestRequest ? newestRequest : oldRequest;
+      const base = projection(id);
+      test.projections.set(id, {
+        ...base,
+        thread: { ...base.thread, updatedAt },
+        updatedAt,
+        messages: [
+          {
+            id: MessageId.make(`request-${index}`),
+            threadId: id,
+            runId: null,
+            nodeId: null,
+            role: "user",
+            createdBy: "user",
+            creationSource: "web",
+            text: "Please update the task",
+            attachments: [],
+            streaming: false,
+            createdAt: requestedAt,
+            updatedAt: requestedAt,
+          },
+        ],
+      });
+    }
+    yield* settings.updateSettings({ workItemDiscoveryLimit: 1 });
+    assert.deepEqual(
+      (yield* service.discover({ projectId })).candidates.map(({ id }) => id),
+      [newest],
+    );
+    assert.deepEqual(
+      (yield* service.list({ projectId })).candidates.map(({ id }) => id),
+      [newest],
+    );
   }).pipe(Effect.provide(test.layer), Effect.scoped);
 });
 
