@@ -4,7 +4,7 @@ import { SymbolView } from "../../../components/ui/AppSymbol";
 import { GlassSurface } from "../../../components/ui/GlassSurface";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WORKSPACE_DOCK } from "./workspace-tabs-state";
-import { PullRequestGlyph } from "../../pull-requests/pullRequestGlyphs";
+import { NAVIGATION_TAB_ICONS } from "./navigation-tabs";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 
@@ -45,9 +45,9 @@ export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
                 }
               >
                 <SymbolView
-                  name={tab === "threads" ? "text.bubble" : PullRequestGlyph.pullRequest}
+                  name={NAVIGATION_TAB_ICONS[tab]}
                   size={23}
-                  tintColorClassName={selected ? "accent-focus" : "accent-icon"}
+                  tintColorClassName={selected ? "accent-foreground" : "accent-foreground-muted"}
                 />
               </Pressable>
             );
@@ -60,7 +60,11 @@ export function WorkspaceDock(props: { readonly onNewTask: () => void }) {
         onPress={() => selectTab("requirements")}
         className="min-h-12 min-w-12 items-center justify-center"
       >
-        <SymbolView name="ticket" size={23} tintColorClassName="accent-icon" />
+        <SymbolView
+          name={NAVIGATION_TAB_ICONS.requirements}
+          size={23}
+          tintColorClassName="accent-foreground-muted"
+        />
       </Pressable>
       <GlassSurface
         style={{

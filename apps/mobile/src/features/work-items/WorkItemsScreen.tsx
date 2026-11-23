@@ -9,7 +9,6 @@ import {
   type RuntimeMode,
   type ThreadId,
   type WorkItem,
-  type WorkItemCandidate,
   type WorkItemCommandInput,
   type WorkItemExecutionId,
   type WorkItemId,
@@ -219,27 +218,6 @@ export function TaskEditor(props: {
         <Button label={t("Cancel")} disabled={disabled} onPress={props.onCancel} />
       </View>
     </Section>
-  );
-}
-
-export function CandidateCard(props: {
-  readonly candidate: WorkItemCandidate;
-  readonly disabled: boolean;
-  readonly onCreate: () => void;
-  readonly onIgnore: () => void;
-}) {
-  const t = useUiTranslation();
-  return (
-    <View className="gap-2 border-t border-border-subtle py-3">
-      <Text className="font-t3-medium">{props.candidate.title}</Text>
-      <Text className="text-sm text-foreground-muted" numberOfLines={3}>
-        {props.candidate.description}
-      </Text>
-      <View className="flex-row flex-wrap gap-3">
-        <Button label={t("Create task")} disabled={props.disabled} onPress={props.onCreate} />
-        <Button label={t("Ignore")} disabled={props.disabled} onPress={props.onIgnore} />
-      </View>
-    </View>
   );
 }
 

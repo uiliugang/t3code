@@ -8,6 +8,7 @@ import {
   EventId,
   IssueTrackerKind,
   EnvironmentId,
+  MAX_WORK_ITEM_DISCOVERY_LIMIT,
   MessageId,
   NodeId,
   ProjectId,
@@ -16,6 +17,7 @@ import {
   RunId,
   RuntimeRequestId,
   RequirementIssueError,
+  ServerSettingsError,
   type OrchestrationV2Run,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
@@ -33,6 +35,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Statement from "effect/sql/Statement";
 import * as WorkItems from "./WorkItemService.ts";
 import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import * as DeliveryAutomation from "./DeliveryAutomationService.ts";
@@ -50,7 +53,6 @@ import { threadShellFromProjection } from "../orchestration-v2/ProjectionStore.t
 import { workspaceThreadFixture } from "../orchestration-v2/testkit/workspaceFixtures.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import * as Providers from "../provider/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
@@ -119,6 +121,7 @@ function projection(threadId: ThreadId): OrchestrationV2ThreadProjection {
 function setup(
   events?: Queue.Queue<OrchestrationV2DomainEvent>,
   eventStream?: Stream.Stream<OrchestrationV2DomainEvent>,
+  settingsLayer = ServerSettings.layerTest(),
 ) {
   const projections = new Map<ThreadId, OrchestrationV2ThreadProjection>();
   const references: LinkThreadIssueInput[] = [];
@@ -155,9 +158,7 @@ function setup(
           acceptanceCriteria: ["Observable result"],
         }),
     }),
-    Layer.mock(ServerSettings.ServerSettingsService)({
-      getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-    }),
+    settingsLayer,
     Layer.mock(ThreadLaunch.ThreadLaunchService)({
       launch: (input) =>
         Effect.gen(function* () {
@@ -203,6 +204,22 @@ function setup(
                 ? threadShellFromProjection(projections.get(id) ?? projection(id))
                 : null,
             ),
+      readShellSnapshot: (input) =>
+        Effect.succeed(
+          Effect.sync(() => ({
+            schemaVersion: 1,
+            snapshotSequence: 0,
+            threads: [...projections.values()]
+              .map(threadShellFromProjection)
+              .filter(
+                (thread) =>
+                  thread.deletedAt === null &&
+                  thread.archivedAt === null &&
+                  (input?.threadIds === undefined || input.threadIds.includes(thread.id)),
+              ),
+            archivedThreads: [],
+          })),
+        ),
       getThreadRecords: (id) =>
         failures.records
           ? Effect.fail(new Orchestrator.OrchestratorProjectionError({ threadId: id }))
@@ -343,7 +360,7 @@ function setup(
     }),
   );
   const layer = WorkItems.layer.pipe(
-    Layer.provide(dependencies),
+    Layer.provideMerge(dependencies),
     Layer.provide(NodeCrypto.layer),
     Layer.provideMerge(Sqlite.layerMemory),
   );
@@ -1551,6 +1568,160 @@ it.effect("holds completion for children and requires explicit current-version r
       expectedVersion: accepted.item.version,
     });
     assert.equal(reopened.item.status, "todo");
+  }).pipe(Effect.provide(test.layer), Effect.scoped);
+});
+
+it.effect("streams work items when unrelated provider secrets cannot be read", () => {
+  const settingsLayer = Layer.effect(
+    ServerSettings.ServerSettingsService,
+    Effect.map(ServerSettings.ServerSettingsService, (settings) => ({
+      ...settings,
+      getSettings: Effect.fail(
+        new ServerSettingsError({ settingsPath: "settings.json", operation: "read-secret" }),
+      ),
+    })),
+  ).pipe(Layer.provide(ServerSettings.layerTest()));
+  const test = setup(undefined, undefined, settingsLayer);
+  return Effect.gen(function* () {
+    const service = yield* WorkItems.WorkItemService;
+    const { item } = yield* create(service);
+    const [initial] = yield* service
+      .subscribeList({ projectId })
+      .pipe(Stream.take(1), Stream.runCollect);
+    assert.deepEqual(
+      initial?.items.map(({ id }) => id),
+      [item.id],
+    );
+  }).pipe(Effect.provide(test.layer), Effect.scoped);
+});
+
+it.effect("reads bounded discovery candidates without sorting the candidate table", () => {
+  const test = setup();
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const service = yield* WorkItems.WorkItemService;
+    const statements: Array<ReturnType<Statement.Statement<unknown>["compile"]>> = [];
+    const observe: Statement.Transformer = (statement) => {
+      const compiled = statement.compile();
+      if (compiled[0].includes("FROM work_item_candidates")) statements.push(compiled);
+      return Effect.succeed(statement);
+    };
+    yield* Effect.all([service.list({}), service.list({ projectId })]).pipe(
+      Effect.provideService(Statement.CurrentTransformer, observe),
+    );
+    assert.lengthOf(statements, 2);
+    for (const [query, params] of statements) {
+      const plan = yield* sql.unsafe<{ detail: string }>(`EXPLAIN QUERY PLAN ${query}`, params);
+      assert.isFalse(
+        plan.some(({ detail }) => detail.includes("TEMP B-TREE")),
+        JSON.stringify(plan),
+      );
+    }
+  }).pipe(Effect.provide(test.layer), Effect.scoped);
+});
+
+it.effect("limits discovery to the newest candidates and preserves them while disabled", () => {
+  const test = setup();
+  return Effect.gen(function* () {
+    yield* TestClock.setTime(Date.parse(now));
+    const service = yield* WorkItems.WorkItemService;
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const older = ThreadId.make("older-candidate");
+    const newer = ThreadId.make("newer-candidate");
+    const recent = DateTime.makeUnsafe(Date.parse(now) - 60_000);
+    const olderProjection = projection(older);
+    test.projections.set(older, {
+      ...olderProjection,
+      thread: { ...olderProjection.thread, updatedAt: recent },
+      updatedAt: recent,
+    });
+    const newerProjection = projection(newer);
+    test.projections.set(newer, {
+      ...newerProjection,
+      thread: { ...newerProjection.thread, updatedAt: DateTime.makeUnsafe(now) },
+    });
+
+    yield* settings.updateSettings({ workItemDiscoveryLimit: 1 });
+    assert.deepEqual(
+      (yield* service.discover({ projectId })).candidates.map(({ id }) => id),
+      [newer],
+    );
+    assert.deepEqual(
+      (yield* service.list({})).candidates.map(({ id }) => id),
+      [newer],
+    );
+
+    const updates = yield* Queue.unbounded<ReadonlyArray<ThreadId>>();
+    yield* service.subscribeList({ projectId }).pipe(
+      Stream.map(({ candidates }) => candidates.map(({ id }) => id)),
+      Stream.changesWith(
+        (previous, next) =>
+          previous.length === next.length && previous.every((id, index) => id === next[index]),
+      ),
+      Stream.runForEach((ids) => Queue.offer(updates, ids)),
+      Effect.forkScoped,
+    );
+    assert.deepEqual(yield* Queue.take(updates), [newer]);
+
+    yield* settings.updateSettings({ workItemDiscoveryEnabled: false });
+    assert.deepEqual(yield* Queue.take(updates), []);
+    assert.deepEqual(
+      (yield* service.discover({ projectId, dismissThreadId: older })).candidates,
+      [],
+    );
+
+    yield* settings.updateSettings({ workItemDiscoveryEnabled: true, workItemDiscoveryLimit: 2 });
+    assert.deepEqual(yield* Queue.take(updates), [newer, older]);
+  }).pipe(Effect.provide(test.layer), Effect.scoped);
+});
+
+it.effect("ranks candidate recency before capping large projects", () => {
+  const test = setup();
+  return Effect.gen(function* () {
+    yield* TestClock.setTime(Date.parse(now));
+    const service = yield* WorkItems.WorkItemService;
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const recentActivity = DateTime.makeUnsafe(Date.parse(now));
+    const oldRequest = DateTime.makeUnsafe(Date.parse(now) - 120_000);
+    const newestRequest = DateTime.makeUnsafe(Date.parse(now) - 60_000);
+    const newest = ThreadId.make("newest-request");
+    for (let index = 0; index <= MAX_WORK_ITEM_DISCOVERY_LIMIT; index++) {
+      const hasNewestRequest = index === MAX_WORK_ITEM_DISCOVERY_LIMIT;
+      const id = hasNewestRequest ? newest : ThreadId.make(`active-${index}`);
+      const updatedAt = hasNewestRequest ? newestRequest : recentActivity;
+      const requestedAt = hasNewestRequest ? newestRequest : oldRequest;
+      const base = projection(id);
+      test.projections.set(id, {
+        ...base,
+        thread: { ...base.thread, updatedAt },
+        updatedAt,
+        messages: [
+          {
+            id: MessageId.make(`request-${index}`),
+            threadId: id,
+            runId: null,
+            nodeId: null,
+            role: "user",
+            createdBy: "user",
+            creationSource: "web",
+            text: "Please update the task",
+            attachments: [],
+            streaming: false,
+            createdAt: requestedAt,
+            updatedAt: requestedAt,
+          },
+        ],
+      });
+    }
+    yield* settings.updateSettings({ workItemDiscoveryLimit: 1 });
+    assert.deepEqual(
+      (yield* service.discover({ projectId })).candidates.map(({ id }) => id),
+      [newest],
+    );
+    assert.deepEqual(
+      (yield* service.list({ projectId })).candidates.map(({ id }) => id),
+      [newest],
+    );
   }).pipe(Effect.provide(test.layer), Effect.scoped);
 });
 

@@ -35,6 +35,7 @@ import { useDeviceType } from "../../../native/native-layout-metrics";
 import { WorkspaceTabDock } from "./WorkspaceTabDock";
 import { useAdaptiveWorkspaceLayout, useWorkspacePaneState } from "../AdaptiveWorkspaceLayout";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
+import { workspaceBottomNavigationColors } from "./workspace-navigation-colors";
 
 const PULL_REQUEST_ICON = require("../../../../assets/icons/pull-request.png");
 const ISSUE_ICON = require("../../../../assets/icons/issue.png");
@@ -163,6 +164,18 @@ export function WorkspaceNativeTabs(props: {
     workspaceUsesColumns(workspace.state.selectedTab, workspace.settingsOpen) &&
     !panes.primarySidebarVisible;
   const { colors } = useControlTheme();
+  const barColors = workspaceBottomNavigationColors(colors);
+  const itemAppearance = {
+    normal: { tabBarItemIconColor: barColors.unselectedColor },
+    selected: { tabBarItemIconColor: barColors.selectedColor },
+  };
+  const barAppearance = {
+    tabBarBackgroundColor: barColors.containerColor,
+    tabBarBlurEffect: "none" as const,
+    stacked: itemAppearance,
+    inline: itemAppearance,
+    compactInline: itemAppearance,
+  };
   const selectedTab = workspace.state.selectedTab;
   const selectedSlot = workspace.settingsOpen ? -1 : primaryTabs.indexOf(selectedTab);
   const selectedScreenKey =
@@ -205,7 +218,7 @@ export function WorkspaceNativeTabs(props: {
           ios={{
             tabBarControllerMode: "tabBar",
             tabBarMinimizeBehavior: "never",
-            tabBarTintColor: colors["--color-primary"],
+            tabBarTintColor: barColors.selectedColor,
           }}
           onTabSelectionRejected={({
             nativeEvent,
@@ -235,6 +248,8 @@ export function WorkspaceNativeTabs(props: {
                 ios={{
                   prewarmRequest: prewarmRequests.get(slot) ?? 0,
                   contentReady: mountedSlots.has(slot),
+                  standardAppearance: barAppearance,
+                  scrollEdgeAppearance: barAppearance,
                   icon: settings
                     ? { type: "sfSymbol", name: "gearshape" }
                     : tab === "pullRequests"
@@ -242,10 +257,6 @@ export function WorkspaceNativeTabs(props: {
                       : tab === "issues"
                         ? { type: "templateSource", templateSource: ISSUE_ICON }
                         : { type: "sfSymbol", name: NAVIGATION_TAB_ICONS[tab] },
-                  selectedIcon:
-                    !settings && tab === "threads"
-                      ? { type: "sfSymbol", name: "text.bubble.fill" }
-                      : undefined,
                   overrideScrollViewContentInsetAdjustmentBehavior: false,
                 }}
               >

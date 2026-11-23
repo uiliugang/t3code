@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { DEFAULT_COLLAPSED_REQUIREMENT_GROUPS } from "@t3tools/client-runtime/work-item";
 import { AsyncResult } from "effect/reactivity";
 import { useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
@@ -7,6 +8,22 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { Preferences } from "../../persistence/mobile-preferences";
+import { useUiTranslation } from "../../lib/useUiTranslation";
+
+export function EnvironmentTag({ label }: { readonly label: string }) {
+  const t = useUiTranslation();
+  return (
+    <View
+      className="max-w-32 shrink-0 flex-row items-center gap-1 rounded border border-border-subtle bg-subtle px-1.5 py-0.5"
+      accessibilityLabel={`${t("Environment")}: ${label}`}
+    >
+      <SymbolView name="server.rack" size={12} tintColorClassName="accent-foreground-muted" />
+      <Text numberOfLines={1} className="min-w-0 shrink text-xs text-foreground-muted">
+        {label}
+      </Text>
+    </View>
+  );
+}
 
 export function ProjectTag({ title }: { title: string }) {
   return (
@@ -21,14 +38,16 @@ export function ProjectTag({ title }: { title: string }) {
 export function useRequirementGroups() {
   const preferences = useAtomValue(mobilePreferencesAtom);
   const update = useAtomCommand(saveMobilePreferences);
-  const collapsed = AsyncResult.getOrElse(preferences, (): Preferences => ({}))
-    .requirementCollapsedGroups ?? ["done", "local:done"];
+  const collapsed =
+    AsyncResult.getOrElse(preferences, (): Preferences => ({})).requirementCollapsedGroups ??
+    DEFAULT_COLLAPSED_REQUIREMENT_GROUPS;
   return {
     collapsed,
     toggle: (key: string) => {
       void update({
         transform: (current) => {
-          const previous = current.requirementCollapsedGroups ?? ["done", "local:done"];
+          const previous =
+            current.requirementCollapsedGroups ?? DEFAULT_COLLAPSED_REQUIREMENT_GROUPS;
           return {
             requirementCollapsedGroups: previous.includes(key)
               ? previous.filter((entry) => entry !== key)
@@ -64,7 +83,7 @@ export function Disclosure({
         accessibilityLabel={title}
         accessibilityState={{ expanded: open }}
         onPress={onToggle ?? (() => setExpanded(!expanded))}
-        className="min-h-12 flex-row items-center gap-2 py-2"
+        className="min-h-[44px] flex-row items-center gap-2 py-2 android:min-h-[48px]"
       >
         <SymbolView
           name={open ? "chevron.down" : "chevron.right"}

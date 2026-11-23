@@ -5,7 +5,10 @@ import { MOBILE_THEME_IDS } from "../../../lib/mobileTheme";
 import { getMobileThemeRuntimeVariables } from "../../../lib/mobileThemeVariables";
 import { materialYouPaletteToMobileThemeVariables } from "../../../lib/materialYouTheme.android";
 import type { MaterialYouPalette } from "../../../lib/materialYouPalette";
-import { androidWorkspaceNavigationColors } from "./android-workspace-navigation-colors";
+import {
+  androidWorkspaceNavigationColors,
+  workspaceBottomNavigationColors,
+} from "./workspace-navigation-colors";
 
 function luminance(hex: string) {
   const channels = hex
@@ -36,6 +39,9 @@ function expectVisibleSelection(colors: ReturnType<typeof androidWorkspaceNaviga
 describe("Android workspace navigation colors", () => {
   it.each(MOBILE_THEME_IDS)("keeps %s selection visible in every navigation layout", (themeId) => {
     for (const appearance of ["light", "dark"] as const) {
+      expectVisibleSelection(
+        workspaceBottomNavigationColors(getMobileThemeRuntimeVariables(themeId, appearance, "ios")),
+      );
       const variables = getMobileThemeRuntimeVariables(themeId, appearance, "android");
       const snapshot = { ...variables };
       for (const [rail, floating] of [

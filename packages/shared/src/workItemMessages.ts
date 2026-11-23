@@ -79,6 +79,7 @@ export const workItemMessages: Readonly<Record<string, string>> = {
   "Start agents": "启动 agent",
   "Stop all agents": "停止全部 agent",
   "Active agents": "运行中的 agent",
+  "Agent({count})": "Agent({count})",
   "Agent executions": "Agent 执行记录",
   "Agent model": "Agent 模型",
   Assignment: "分工",
@@ -104,6 +105,10 @@ export const workItemMessages: Readonly<Record<string, string>> = {
   "Some requirements could not be loaded": "部分需求加载失败",
   "Discovered conversations": "发现的会话",
   "Discovered tasks": "发现的任务",
+  "Discovered tasks · {environment}": "发现的任务 · {environment}",
+  "Enable task discovery": "开启任务发现",
+  "Maximum discovered tasks": "最多显示的发现任务数",
+  "Enter a whole number from 1 to {max}.": "请输入 1 到 {max} 之间的整数。",
   "Suggestions do not start agents or change existing tasks.":
     "建议不会启动 agent 或修改已有任务。",
   "No tasks yet.": "暂无任务。",

@@ -42,6 +42,7 @@ import {
   type ScrollViewInstance,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
@@ -71,7 +72,13 @@ import { IssuePicker } from "./IssuePicker";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { serverEnvironment } from "../../state/server";
 import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
-import { ProjectTag, Disclosure, useRequirementGroups } from "./RequirementPrimitives";
+import { CandidateSwipeRow } from "./CandidateSwipeRow";
+import {
+  ProjectTag,
+  Disclosure,
+  EnvironmentTag,
+  useRequirementGroups,
+} from "./RequirementPrimitives";
 import { DraftFillButton } from "./DraftFillButton";
 import {
   DEFAULT_REQUIREMENT_FILTER_STATE,
@@ -98,12 +105,7 @@ import {
 } from "@t3tools/client-runtime/state/requirement-board";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as Dialog from "../../components/ui/Dialog";
-import {
-  TaskEditor,
-  TaskDetail,
-  CandidateCard,
-  type WorkItemsRouteParams,
-} from "../work-items/WorkItemsScreen";
+import { TaskEditor, TaskDetail, type WorkItemsRouteParams } from "../work-items/WorkItemsScreen";
 
 type Target = {
   environmentId: EnvironmentId;
@@ -316,6 +318,7 @@ function UnifiedRequirementBoard({
       : null,
   );
   const scrollRef = useRef<ScrollViewInstance>(null);
+  const openCandidateSwipe = useRef<SwipeableMethods | null>(null);
   const listOffset = useRef(0);
   const pendingRestoreOffset = useRef<number | null>(null);
   const showItem = (id: WorkItemId) => {
@@ -365,6 +368,10 @@ function UnifiedRequirementBoard({
     return response.value.item;
   };
   const run = (input: WorkItemCommandInput) => runOnEnvironment(environmentId, input);
+  const canDiscover = (id: EnvironmentId) => {
+    const config = registry.get(serverEnvironment.configValueAtom(id));
+    return config?.workItemDiscovery === true && config.settings.workItemDiscoveryEnabled;
+  };
   const scan = async (
     target: { environmentId: EnvironmentId; projectId: ProjectId },
     dismissThreadId?: ThreadId,
@@ -372,8 +379,7 @@ function UnifiedRequirementBoard({
     if (
       pending.current ||
       !registry.get(serverEnvironment.discoverWorkItems.permissionAtom(target.environmentId)) ||
-      registry.get(serverEnvironment.configValueAtom(target.environmentId))?.workItemDiscovery !==
-        true
+      !canDiscover(target.environmentId)
     )
       return;
     pending.current = true;
@@ -445,63 +451,74 @@ function UnifiedRequirementBoard({
       <View className="flex-row items-start gap-3">
         <Text className="min-w-0 flex-1 text-base font-t3-medium">{entry.title}</Text>
         {entry.priority ? (
-          <Text className="text-xs text-foreground-muted">{entry.priority}</Text>
+          <Text
+            className={
+              entry.priority === "P0" || entry.priority === "P1"
+                ? "shrink-0 text-xs font-t3-semibold text-warning-foreground"
+                : "shrink-0 text-xs text-foreground-muted"
+            }
+          >
+            {entry.priority}
+          </Text>
         ) : null}
       </View>
-      <View className="flex-row flex-wrap items-center gap-2">
-        <View
-          className="max-w-48 flex-row items-center gap-1 rounded border border-border-subtle px-1.5 py-0.5"
-          accessibilityLabel={`${t("Environment")}: ${environmentLabel(entry.environmentId)}`}
-        >
-          <SymbolView name="server.rack" size={12} tintColorClassName="accent-foreground-muted" />
-          <Text numberOfLines={1} className="min-w-0 shrink text-xs text-foreground-muted">
-            {environmentLabel(entry.environmentId)}
-          </Text>
+      <View className="flex-row items-end gap-2">
+        <View className="min-w-0 flex-1 gap-2">
+          <View className="flex-row flex-wrap items-center gap-2">
+            <ProjectTag
+              title={
+                projects.find(
+                  (project) =>
+                    project.id === entry.projectId && project.environmentId === entry.environmentId,
+                )?.title ?? entry.projectId
+              }
+            />
+            <Text className="text-xs text-foreground-muted">
+              {entry.kind === "local"
+                ? t("Local work item")
+                : `${requirementTrackerLabel[entry.provider]} ${entry.provider === "linear" ? "" : "#"}${entry.issue.id}`}
+            </Text>
+            {entry.kind === "local" ? (
+              <Text
+                accessibilityLabel={`${entry.item.activeExecutionCount} ${t("Active agents")}`}
+                className="text-xs text-foreground-muted"
+              >
+                {t("Agent({count})", { count: entry.item.activeExecutionCount })}
+              </Text>
+            ) : (
+              <Text className="text-xs text-foreground-muted">
+                {entry.issue.assignees.map((person) => person.label).join(", ") || t("Unassigned")}
+              </Text>
+            )}
+          </View>
+          {entry.summary || entry.kind !== "local" || entry.item.status === "in_review" ? (
+            <View className="flex-row flex-wrap items-center gap-3">
+              {entry.summary && entry.summary.requiredPullRequests > 0 ? (
+                <Text className="text-xs text-foreground-muted">
+                  PR {entry.summary.mergedPullRequests}/{entry.summary.requiredPullRequests}
+                </Text>
+              ) : null}
+              <Text
+                className={
+                  entry.group === "attention"
+                    ? "text-xs text-danger"
+                    : "text-xs text-foreground-muted"
+                }
+              >
+                {entry.summary
+                  ? t(
+                      entry.summary.synced && entry.summary.progress === "delivery_complete"
+                        ? "Completed"
+                        : DELIVERY_PROGRESS_LABELS[entry.summary.progress],
+                    )
+                  : entry.kind === "local"
+                    ? t(entry.state)
+                    : entry.state}
+              </Text>
+            </View>
+          ) : null}
         </View>
-        <ProjectTag
-          title={
-            projects.find(
-              (project) =>
-                project.id === entry.projectId && project.environmentId === entry.environmentId,
-            )?.title ?? entry.projectId
-          }
-        />
-        <Text className="text-xs text-foreground-muted">
-          {entry.kind === "local"
-            ? t("Local work item")
-            : `${requirementTrackerLabel[entry.provider]} ${entry.provider === "linear" ? "" : "#"}${entry.issue.id}`}
-        </Text>
-        {entry.kind === "local" ? (
-          <Text className="text-xs text-foreground-muted">
-            {entry.item.activeExecutionCount} {t("Active agents")}
-          </Text>
-        ) : (
-          <Text className="text-xs text-foreground-muted">
-            {entry.issue.assignees.map((person) => person.label).join(", ") || t("Unassigned")}
-          </Text>
-        )}
-      </View>
-      <View className="flex-row flex-wrap items-center gap-3">
-        {entry.summary && entry.summary.requiredPullRequests > 0 ? (
-          <Text className="text-xs text-foreground-muted">
-            PR {entry.summary.mergedPullRequests}/{entry.summary.requiredPullRequests}
-          </Text>
-        ) : null}
-        <Text
-          className={
-            entry.group === "attention" ? "text-xs text-danger" : "text-xs text-foreground-muted"
-          }
-        >
-          {entry.summary
-            ? t(
-                entry.summary.synced && entry.summary.progress === "delivery_complete"
-                  ? "Completed"
-                  : DELIVERY_PROGRESS_LABELS[entry.summary.progress],
-              )
-            : entry.kind === "local"
-              ? t(entry.state)
-              : entry.state}
-        </Text>
+        <EnvironmentTag label={environmentLabel(entry.environmentId)} />
       </View>
     </Pressable>
   );
@@ -614,8 +631,7 @@ function UnifiedRequirementBoard({
     disabled:
       busy ||
       !permissions.get(project.environmentId)?.discoverWorkItems ||
-      registry.get(serverEnvironment.configValueAtom(project.environmentId))?.workItemDiscovery !==
-        true,
+      !canDiscover(project.environmentId),
     onPress: () => void scan({ environmentId: project.environmentId, projectId: project.id }),
   }));
   const headerActions: ReadonlyArray<AppBarAction> = [
@@ -742,6 +758,7 @@ function UnifiedRequirementBoard({
           onScroll={(event) => {
             if (!creating && !selectedId) listOffset.current = event.nativeEvent.contentOffset.y;
           }}
+          onScrollBeginDrag={() => openCandidateSwipe.current?.close()}
           refreshControl={
             showingList ? (
               <RefreshControl
@@ -972,31 +989,42 @@ function UnifiedRequirementBoard({
                 />
               ) : null}
               {data.candidates.length && (source === "all" || source === "local") ? (
-                <View className="gap-3">
-                  <Text className="text-sm font-t3-semibold">{t("Discovered tasks")}</Text>
+                <Disclosure title={t("Discovered tasks")} count={data.candidates.length}>
                   {data.candidates.map((candidate) => (
-                    <View key={`${candidate.environmentId}:${candidate.id}`} className="gap-2">
-                      <Text className="text-xs text-foreground-muted">
-                        {environmentLabel(candidate.environmentId)}
-                      </Text>
-                      <CandidateCard
-                        candidate={candidate}
-                        disabled={!permissions.get(candidate.environmentId)?.mutateWorkItem || busy}
-                        onCreate={() =>
-                          createLocal(
-                            {
-                              environmentId: candidate.environmentId,
-                              projectId: candidate.projectId,
-                            },
-                            { threadId: candidate.id, title: candidate.title },
-                            candidate.description,
-                          )
-                        }
-                        onIgnore={() => void scan(candidate, candidate.id)}
-                      />
-                    </View>
+                    <CandidateSwipeRow
+                      key={`${candidate.environmentId}:${candidate.id}`}
+                      candidate={candidate}
+                      environmentLabel={environmentLabel(candidate.environmentId)}
+                      canCreate={
+                        !busy && permissions.get(candidate.environmentId)?.mutateWorkItem === true
+                      }
+                      canIgnore={
+                        !busy &&
+                        permissions.get(candidate.environmentId)?.discoverWorkItems === true &&
+                        canDiscover(candidate.environmentId)
+                      }
+                      onCreate={() =>
+                        createLocal(
+                          {
+                            environmentId: candidate.environmentId,
+                            projectId: candidate.projectId,
+                          },
+                          { threadId: candidate.id, title: candidate.title },
+                          candidate.description,
+                        )
+                      }
+                      onIgnore={() => void scan(candidate, candidate.id)}
+                      onWillOpen={(row) => {
+                        if (openCandidateSwipe.current === row) return;
+                        openCandidateSwipe.current?.close();
+                        openCandidateSwipe.current = row;
+                      }}
+                      onClose={(row) => {
+                        if (openCandidateSwipe.current === row) openCandidateSwipe.current = null;
+                      }}
+                    />
                   ))}
-                </View>
+                </Disclosure>
               ) : null}
             </>
           )}
