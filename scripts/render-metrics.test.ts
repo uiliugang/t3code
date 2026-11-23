@@ -12,7 +12,13 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { vi } from "vite-plus/test";
 
-import { nondeterministic, parseRunOptions, renderComparison, runOnce } from "./render-metrics.ts";
+import {
+  nondeterministic,
+  parseCompareOptions,
+  parseRunOptions,
+  renderComparison,
+  runOnce,
+} from "./render-metrics.ts";
 
 const mountReport = { commits: 2, renders: 10, components: { Row: 10 } };
 
@@ -72,18 +78,22 @@ describe("runOnce", () => {
 });
 
 describe("parseRunOptions", () => {
-  it("validates --runs and --out arguments", () => {
-    expect(parseRunOptions([])).toEqual({ runs: 3, out: undefined });
+  it("validates --runs, --out, --help, and unknown arguments", () => {
+    expect(parseRunOptions([])).toEqual({ help: false, runs: 3, out: undefined });
+    expect(parseRunOptions(["--help"])).toEqual({ help: true, runs: 3, out: undefined });
     expect(parseRunOptions(["--runs", "2", "--out", "metrics.json"])).toEqual({
+      help: false,
       runs: 2,
       out: "metrics.json",
     });
-    expect(parseRunOptions(["--runs=4", "--out=out.json"])).toEqual({
+    expect(parseRunOptions(["--runs=1", "--runs=4", "--out=out.json"])).toEqual({
+      help: false,
       runs: 4,
       out: "out.json",
     });
     for (const invalid of [
       ["--runs", "0"],
+      ["--runs", "2", "--runs", "0"],
       ["--runs=0"],
       ["--runs="],
       ["--runs", "-1"],
@@ -92,8 +102,29 @@ describe("parseRunOptions", () => {
       ["--out"],
       ["--out="],
       ["--out", "--runs"],
+      ["--output", "foo.json"],
+      ["unexpected-positional"],
     ]) {
       expect(() => parseRunOptions(invalid)).toThrow();
+    }
+    expect(parseCompareOptions(["a.json", "b.json", "--top=5"])).toEqual({
+      help: false,
+      before: "a.json",
+      after: "b.json",
+      top: 5,
+    });
+    expect(parseCompareOptions(["--help"])).toEqual({
+      help: true,
+      before: "",
+      after: "",
+      top: 10,
+    });
+    for (const invalid of [
+      ["a.json"],
+      ["a.json", "b.json", "--top", "0"],
+      ["a.json", "b.json", "--bad"],
+    ]) {
+      expect(() => parseCompareOptions(invalid)).toThrow();
     }
   });
 });

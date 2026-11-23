@@ -164,7 +164,7 @@ export const resolveGitCommonDir = Effect.fn("repoLock.gitCommonDir")(function* 
           `${caller}: git rev-parse --git-common-dir exited with ${exitCode}: ${stderr.trim()}`,
         );
       }
-      return path.resolve(cwd, stdout.trim());
+      return path.resolve(cwd, stdout.replace(/\r?\n$/, ""));
     }),
   );
 });

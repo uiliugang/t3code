@@ -146,39 +146,82 @@ export function renderComparison(before: RenderMetrics, after: RenderMetrics, to
   return lines.join("\n");
 }
 
-function option(
-  args: ReadonlyArray<string>,
-  name: string,
-): {
-  readonly present: boolean;
-  readonly value: string | undefined;
-} {
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]!;
-    if (arg === name) {
-      return { present: true, value: args[index + 1] };
-    }
-    if (arg.startsWith(`${name}=`)) {
-      return { present: true, value: arg.slice(name.length + 1) };
-    }
-  }
-  return { present: false, value: undefined };
-}
-
 export function parseRunOptions(args: ReadonlyArray<string>): {
+  readonly help: boolean;
   readonly runs: number;
   readonly out: string | undefined;
 } {
-  const runsOpt = option(args, "--runs");
-  const runs = !runsOpt.present ? 3 : Number(runsOpt.value);
-  if (!Number.isSafeInteger(runs) || runs < 1 || runsOpt.value === "") {
-    throw new RangeError("report:renders: --runs must be a positive integer.");
+  let help = false;
+  let runs = 3;
+  let out: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "-h" || arg === "--help") {
+      help = true;
+      continue;
+    }
+    if (arg === "--runs" || arg.startsWith("--runs=")) {
+      const raw = arg === "--runs" ? args[++index] : arg.slice("--runs=".length);
+      const parsed = raw === undefined || raw === "" ? Number.NaN : Number(raw);
+      if (!Number.isSafeInteger(parsed) || parsed < 1) {
+        throw new RangeError("report:renders: --runs must be a positive integer.");
+      }
+      runs = parsed;
+      continue;
+    }
+    if (arg === "--out" || arg.startsWith("--out=")) {
+      const raw = arg === "--out" ? args[++index] : arg.slice("--out=".length);
+      if (!raw || raw.startsWith("-")) {
+        throw new RangeError("report:renders: --out requires a file path.");
+      }
+      out = raw;
+      continue;
+    }
+    throw new RangeError(`report:renders: unknown argument "${arg}".`);
   }
-  const outOpt = option(args, "--out");
-  if (outOpt.present && (!outOpt.value || outOpt.value.startsWith("-"))) {
-    throw new RangeError("report:renders: --out requires a file path.");
+
+  return { help, runs, out };
+}
+
+export function parseCompareOptions(args: ReadonlyArray<string>): {
+  readonly help: boolean;
+  readonly before: string;
+  readonly after: string;
+  readonly top: number;
+} {
+  let help = false;
+  let top = 10;
+  const positionals: Array<string> = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "-h" || arg === "--help") {
+      help = true;
+      continue;
+    }
+    if (arg === "--top" || arg.startsWith("--top=")) {
+      const raw = arg === "--top" ? args[++index] : arg.slice("--top=".length);
+      const parsed = raw === undefined || raw === "" ? Number.NaN : Number(raw);
+      if (!Number.isSafeInteger(parsed) || parsed < 1) {
+        throw new RangeError("report:renders: --top must be a positive integer.");
+      }
+      top = parsed;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      throw new RangeError(`report:renders: unknown argument "${arg}".`);
+    }
+    positionals.push(arg);
   }
-  return { runs, out: outOpt.value };
+
+  if (help) {
+    return { help: true, before: "", after: "", top };
+  }
+  if (positionals.length !== 2) {
+    throw new RangeError("report:renders: compare requires <before.json> and <after.json>.");
+  }
+  return { help: false, before: positionals[0]!, after: positionals[1]!, top };
 }
 
 function reportResults(
@@ -216,10 +259,14 @@ if (import.meta.main) {
   const [command, ...args] = cliArgs;
   if (command === "run") {
     Effect.gen(function* () {
-      const { runs, out } = yield* Effect.try({
+      const { help, runs, out } = yield* Effect.try({
         try: () => parseRunOptions(args),
         catch: (error) => (error instanceof Error ? error.message : String(error)),
       });
+      if (help) {
+        yield* Console.log(HELP);
+        return;
+      }
       const commonDir = yield* resolveGitCommonDir(root, "report:renders");
       const results = yield* withBrowserTestLock(
         commonDir,
@@ -229,7 +276,10 @@ if (import.meta.main) {
             "report:renders: waiting for another browser test in this repository to finish.",
         },
       );
-      yield* Effect.sync(() => reportResults(results, runs, out));
+      yield* Effect.try({
+        try: () => reportResults(results, runs, out),
+        catch: (error) => (error instanceof Error ? error.message : String(error)),
+      });
     }).pipe(
       Effect.catch((error) =>
         Console.error(String(error)).pipe(
@@ -243,15 +293,19 @@ if (import.meta.main) {
       Effect.provide(NodeServices.layer),
       NodeRuntime.runMain,
     );
-  } else if (command === "compare" && args[0] && args[1]) {
-    const read = (path: string) => JSON.parse(NodeFS.readFileSync(path, "utf8")) as RenderMetrics;
-    const topOpt = option(args, "--top");
-    const top = !topOpt.present ? 10 : Number(topOpt.value);
-    if (!Number.isSafeInteger(top) || top < 1 || topOpt.value === "") {
-      console.error("report:renders: --top must be a positive integer.");
+  } else if (command === "compare") {
+    try {
+      const { help, before, after, top } = parseCompareOptions(args);
+      if (help) {
+        console.log(HELP);
+      } else {
+        const read = (path: string) =>
+          JSON.parse(NodeFS.readFileSync(path, "utf8")) as RenderMetrics;
+        console.log(renderComparison(read(before), read(after), top));
+      }
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
       process.exitCode = 1;
-    } else {
-      console.log(renderComparison(read(args[0]), read(args[1]), top));
     }
   } else {
     console.log(HELP);

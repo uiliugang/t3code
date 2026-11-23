@@ -60,10 +60,12 @@ const assertImmediateLockAvailable = (filename: string): void => {
 };
 
 describe("test:browser:local", () => {
-  it("parses targets, value-taking vitest flags, and -h/-t interactions", () => {
+  it("parses targets, value/boolean vitest flags, and interactive mode via Vitest CAC", () => {
     for (const missingTarget of [
       [],
       ["-t", "saves on Enter"],
+      ["--test-name-pattern", "saves"],
+      ["--reporters", "dot"],
       ["-p", "browser"],
       ["--bail", "1", "--testTimeout", "5000", "--browser.name", "chromium"],
       ["-u", "new"],
@@ -73,11 +75,22 @@ describe("test:browser:local", () => {
       assert.isFalse(parseBrowserTestArgs(missingTarget).hasTarget, missingTarget.join(" "));
     }
     assert.deepStrictEqual(
-      parseBrowserTestArgs(["apps/web/src/Foo.browser.test.tsx", "-t", "-h"]),
+      parseBrowserTestArgs(["--browser.headless", "apps/web/src/Foo.browser.test.tsx"]),
       {
-        forwardedArgs: ["apps/web/src/Foo.browser.test.tsx", "-t", "-h"],
+        forwardedArgs: ["--browser.headless", "apps/web/src/Foo.browser.test.tsx"],
         help: false,
         hasTarget: true,
+        interactive: false,
+        specifiesFileParallelism: false,
+      },
+    );
+    assert.deepStrictEqual(
+      parseBrowserTestArgs(["apps/web/src/Foo.browser.test.tsx", "-t", "foo -h bar"]),
+      {
+        forwardedArgs: ["apps/web/src/Foo.browser.test.tsx", "-t", "foo -h bar"],
+        help: false,
+        hasTarget: true,
+        interactive: false,
         specifiesFileParallelism: false,
       },
     );
@@ -85,21 +98,24 @@ describe("test:browser:local", () => {
       forwardedArgs: ["--help"],
       help: true,
       hasTarget: false,
+      interactive: false,
       specifiesFileParallelism: false,
     });
     assert.isTrue(
       parseBrowserTestArgs(["apps/web/src/Foo.browser.test.tsx", "--fileParallelism"])
         .specifiesFileParallelism,
     );
-    assert.deepStrictEqual(parseBrowserTestArgs(["--", "-dash-file.browser.test.tsx"]), {
-      forwardedArgs: ["--", "-dash-file.browser.test.tsx"],
-      help: false,
-      hasTarget: true,
-      specifiesFileParallelism: false,
-    });
+    assert.isTrue(
+      parseBrowserTestArgs(["apps/web/src/Foo.browser.test.tsx", "--file-parallelism=true"])
+        .specifiesFileParallelism,
+    );
+    assert.isTrue(
+      parseBrowserTestArgs(["--", "-w", "apps/web/src/Foo.browser.test.tsx"]).interactive,
+    );
+    assert.isTrue(parseBrowserTestArgs(["--ui", "apps/web/src/Foo.browser.test.tsx"]).interactive);
   });
 
-  it.effect("rejects invocations with no test file or directory target", () =>
+  it.effect("rejects invocations with no test target or interactive watch/UI flags", () =>
     Effect.gen(function* () {
       const errors: Array<string> = [];
       const testConsole: Console.Console = Object.assign(Object.create(console), {
@@ -108,18 +124,28 @@ describe("test:browser:local", () => {
         },
       });
       const spawner = ChildProcessSpawner.make(() =>
-        Effect.die("should not spawn any process when no target is passed"),
+        Effect.die("should not spawn any process when rejected"),
       );
 
-      for (const args of [[], ["-t", "saves on Enter"], ["-p", "browser"], ["--", "-t", "saves"]]) {
+      for (const args of [
+        [],
+        ["-t", "saves on Enter"],
+        ["--reporters", "dot"],
+        ["-p", "browser"],
+        ["--", "-t", "saves"],
+        ["-w", "apps/web/src/Foo.browser.test.tsx"],
+        ["--watch", "apps/web/src/Foo.browser.test.tsx"],
+        ["--ui", "apps/web/src/Foo.browser.test.tsx"],
+      ]) {
         const code = yield* runBrowserTestLocal(args).pipe(
           Effect.provideService(Console.Console, testConsole),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         );
         assert.strictEqual(code, 1);
       }
-      assert.strictEqual(errors.length, 4);
+      assert.strictEqual(errors.length, 8);
       assert.include(errors[0]!, "pass one or more test file or directory paths");
+      assert.include(errors[5]!, "interactive watch/UI flags");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
