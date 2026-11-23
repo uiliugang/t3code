@@ -47,6 +47,7 @@ export function MeituanCodeSettingsSection(props: {
   const wait = useAtomCommand(sourceControlEnvironment.waitForSignIn, { reportFailure: false });
   const cancel = useAtomCommand(sourceControlEnvironment.cancelSignIn, { reportFailure: false });
   const pending = item?.authorization?.status === "pending";
+  const authenticated = item?.auth.status === "authenticated";
   const observe = useEffectEvent(async (environmentId: EnvironmentId, active: () => boolean) => {
     await wait({ environmentId, input });
     if (active()) discovery.refresh();
@@ -63,10 +64,7 @@ export function MeituanCodeSettingsSection(props: {
   const value = draft ?? savedMis;
   const mis = readMis({ mis: value });
   const dirty = value.trim() !== savedMis;
-  const errorMessage = error ?? (savedMis ? item?.authorization?.detail : null);
-  const attempted =
-    Array.isArray(saved?.authorizationAttemptedMis) &&
-    saved.authorizationAttemptedMis.includes(savedMis);
+  const errorMessage = error ?? (authenticated ? null : item?.authorization?.detail);
   const save = async () => {
     setBusy(true);
     setError(null);
@@ -100,17 +98,20 @@ export function MeituanCodeSettingsSection(props: {
       <SettingsRow
         icon="person.crop.circle"
         label={t("Meituan Code")}
-        value={t(item?.auth.status === "authenticated" ? "Authenticated" : "Not authenticated")}
+        value={t(
+          pending
+            ? "Signing in with MOA…"
+            : authenticated
+              ? "Authenticated"
+              : item?.auth.status === "unauthenticated"
+                ? "Not authenticated"
+                : "Status unknown",
+        )}
         onPress={() => setExpanded((open) => !open)}
       />
       {expanded ? (
         <>
           <View className="gap-2 px-4 py-3">
-            <Text className="text-sm text-foreground-muted">
-              {t(
-                "Save your MIS ID to receive authorization requests in DaXiang. The first unauthenticated check sends one request automatically; send later requests manually.",
-              )}
-            </Text>
             <Text className="text-sm text-foreground">{t("MIS ID")}</Text>
             <AppTextInput
               accessibilityLabel={t("MIS ID")}
@@ -127,9 +128,7 @@ export function MeituanCodeSettingsSection(props: {
               {t(
                 value.trim() && !mis
                   ? "Use letters, numbers, dots, underscores or hyphens, starting with a letter."
-                  : pending
-                    ? "Authorization in progress. Confirm the request in DaXiang when it arrives."
-                    : "No authorization requests are sent without a saved MIS ID. Clear it and save to stop future requests.",
+                  : "MIS ID for DaXiang approval reminders. Not used for sign-in.",
               )}
             </Text>
             {errorMessage ? (
@@ -144,21 +143,11 @@ export function MeituanCodeSettingsSection(props: {
             disabled={props.disabled || busy || pending || !dirty || Boolean(value.trim() && !mis)}
             onPress={() => void save()}
           />
-          {item?.auth.status !== "authenticated" || pending ? (
+          {!authenticated || pending ? (
             <SettingsRow
               icon="person.crop.circle"
-              label={
-                pending
-                  ? t("Cancel authorization")
-                  : attempted
-                    ? t("Send again")
-                    : t("Send authorization request")
-              }
-              disabled={
-                !canSignIn ||
-                busy ||
-                (!pending && (!savedMis || dirty || item?.status !== "available"))
-              }
+              label={t(pending ? "Cancel sign-in" : "Sign in with MOA")}
+              disabled={!canSignIn || busy || (!pending && item?.status !== "available")}
               onPress={() => void request()}
             />
           ) : null}

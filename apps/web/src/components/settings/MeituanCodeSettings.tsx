@@ -62,6 +62,7 @@ export function MeituanCodeSettings(props: {
   const mis = readMis({ mis: value });
   const dirty = value.trim() !== savedMis;
   const pending = props.item?.authorization?.status === "pending";
+  const authenticated = props.item?.auth.status === "authenticated";
   const canSave = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(props.environmentId),
   );
@@ -71,10 +72,7 @@ export function MeituanCodeSettings(props: {
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const start = useAtomCommand(sourceControlEnvironment.startSignIn, { reportFailure: false });
   const cancel = useAtomCommand(sourceControlEnvironment.cancelSignIn, { reportFailure: false });
-  const errorMessage = error ?? (savedMis ? props.item?.authorization?.detail : null);
-  const attempted =
-    Array.isArray(saved?.authorizationAttemptedMis) &&
-    saved.authorizationAttemptedMis.includes(savedMis);
+  const errorMessage = error ?? (authenticated ? null : props.item?.authorization?.detail);
   const save = async () => {
     setBusy(true);
     setError(null);
@@ -108,11 +106,6 @@ export function MeituanCodeSettings(props: {
         if (dirty && (mis || !value.trim())) void save();
       }}
     >
-      <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
-        {t(
-          "Save your MIS ID to receive authorization requests in DaXiang. The first unauthenticated check sends one request automatically; send later requests manually.",
-        )}
-      </p>
       <div className="grid gap-1.5 sm:max-w-sm">
         <Label htmlFor={`meituan-mis-${props.environmentId}`}>{t("MIS ID")}</Label>
         <Input
@@ -133,7 +126,7 @@ export function MeituanCodeSettings(props: {
           {t(
             value.trim() && !mis
               ? "Use letters, numbers, dots, underscores or hyphens, starting with a letter."
-              : "No authorization requests are sent without a saved MIS ID. Clear it and save to stop future requests.",
+              : "MIS ID for DaXiang approval reminders. Not used for sign-in.",
           )}
         </p>
       </div>
@@ -141,35 +134,25 @@ export function MeituanCodeSettings(props: {
         <p role="status" className="text-xs text-muted-foreground">
           {t(
             pending
-              ? "Authorization in progress. Confirm the request in DaXiang when it arrives."
-              : props.item?.auth.status === "authenticated"
+              ? "Signing in with MOA…"
+              : authenticated
                 ? "Authenticated"
-                : attempted
-                  ? "The automatic request has been used. Send another request manually if needed."
-                  : "Save a MIS ID to enable the first automatic authorization request.",
+                : props.item?.auth.status === "unauthenticated"
+                  ? "Not authenticated"
+                  : "Status unknown",
           )}
         </p>
         <div className="flex shrink-0 gap-2">
-          {props.item?.auth.status !== "authenticated" || pending ? (
+          {!authenticated || pending ? (
             <Button
               type="button"
               size="xs"
               variant="outline"
-              disabled={
-                !canSignIn ||
-                busy ||
-                (!pending && (!savedMis || dirty || props.item?.status !== "available"))
-              }
+              disabled={!canSignIn || busy || (!pending && props.item?.status !== "available")}
               onClick={() => void request()}
             >
               {busy ? <Spinner /> : null}
-              {t(
-                pending
-                  ? "Cancel authorization"
-                  : attempted
-                    ? "Send again"
-                    : "Send authorization request",
-              )}
+              {t(pending ? "Cancel sign-in" : "Sign in with MOA")}
             </Button>
           ) : null}
           <Button

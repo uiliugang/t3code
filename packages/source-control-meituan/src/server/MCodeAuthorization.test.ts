@@ -24,8 +24,8 @@ const runProbe: SourceControlHost.SourceControlHost["Service"]["process"]["run"]
   );
 
 describe("Meituan authorization", () => {
-  it.effect.each(["", "   ", "bad mis", "bad\nmis"])(
-    "never sends without a valid configured MIS: %j",
+  it.effect.each(["", "other-account"])(
+    "signs in with the verified MOA account independently of the configured MIS: %j",
     (mis) =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -33,10 +33,22 @@ describe("Meituan authorization", () => {
           const auth = yield* make.pipe(
             Effect.provide(
               TestHost.layer({
-                settings: settings(mis),
+                settings: settings(mis, [mis]),
                 process: {
                   run: (input) => {
-                    if (input.args.includes("login")) logins++;
+                    if (input.args.includes("login")) {
+                      expect(input.args).toEqual(["auth", "login", "--moa"]);
+                      expect(input.env?.MIS_ID).toBeUndefined();
+                      logins++;
+                      return Effect.succeed(
+                        TestHost.processOutput("Logged in as zhangsan (via MOA)"),
+                      );
+                    }
+                    if (input.env?.MCODE_SKIP_MOA === "1") {
+                      return Effect.succeed(
+                        TestHost.processOutput("Logged in to http://git.sankuai.com as zhangsan"),
+                      );
+                    }
                     return runProbe(input);
                   },
                 },
@@ -44,8 +56,10 @@ describe("Meituan authorization", () => {
             ),
           );
           yield* auth.discovery.probe("/repo");
-          expect(Result.isFailure(yield* auth.signIn.start(host).pipe(Effect.result))).toBe(true);
           expect(logins).toBe(0);
+          expect(yield* auth.signIn.start(host)).toMatchObject({ delivery: "moa" });
+          expect(yield* auth.signIn.wait(host)).toEqual({ account: "zhangsan" });
+          expect(logins).toBe(1);
         }),
       ),
   );
@@ -97,84 +111,81 @@ describe("Meituan authorization", () => {
     ),
   );
 
-  it.effect(
-    "deduplicates concurrent discoveries and manual sends, persists the first attempt, and permits an explicit resend",
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const sent = yield* Deferred.make<void>();
-          const finish = yield* Deferred.make<void>();
-          const calls: string[] = [];
-          const testLayer = TestHost.layer({
-            settings: settings("zhangsan"),
-            process: {
-              run: (input) => {
-                if (!input.args.includes("login")) return runProbe(input);
-                calls.push(input.env?.MIS_ID ?? "");
-                return Deferred.succeed(sent, undefined).pipe(
-                  Effect.andThen(Deferred.await(finish)),
-                  Effect.as(TestHost.processOutput("Logged in as zhangsan")),
-                );
-              },
-            },
-          });
-          yield* Effect.gen(function* () {
-            const auth = yield* make;
-            yield* Effect.all([auth.discovery.probe("/repo"), auth.discovery.probe("/repo")], {
-              concurrency: 2,
-            });
-            yield* Deferred.await(sent);
-            yield* auth.signIn.start(host);
-            expect(calls).toEqual(["zhangsan"]);
-            const saved = yield* (yield* SourceControlHost.SourceControlHost).settings.get;
-            expect(saved.sourceControlHosts.meituan?.authorizationAttemptedMis).toEqual([
-              "zhangsan",
-            ]);
-            yield* Deferred.succeed(finish, undefined);
-            expect(yield* auth.signIn.wait(host)).toEqual({ account: "zhangsan" });
-            const restarted = yield* make;
-            yield* restarted.discovery.probe("/repo");
-            expect(calls).toHaveLength(1);
-            yield* restarted.signIn.start(host);
-            yield* restarted.signIn.wait(host);
-            expect(calls).toEqual(["zhangsan", "zhangsan"]);
-          }).pipe(Effect.provide(testLayer));
-        }),
-      ),
-  );
-
-  it.effect("does not retry failed automatic requests and reports missing CIBA configuration", () =>
+  it.effect("deduplicates concurrent sign-ins and permits an explicit retry", () =>
     Effect.scoped(
       Effect.gen(function* () {
+        const sent = yield* Deferred.make<void>();
+        const finish = yield* Deferred.make<void>();
         let logins = 0;
-        const auth = yield* make.pipe(
-          Effect.provide(
-            TestHost.layer({
-              settings: settings("zhangsan"),
-              process: {
-                run: (input) => {
-                  if (!input.args.includes("login")) return runProbe(input);
-                  logins++;
-                  return Effect.succeed(
-                    TestHost.processOutput("", {
-                      exitCode: ChildProcessSpawner.ExitCode(1),
-                      stderr: "cannot obtain sandbox IDENTIFIER",
-                    }),
-                  );
-                },
-              },
-            }),
-          ),
-        );
-        yield* auth.discovery.probe("/repo");
-        const result = yield* auth.signIn.wait(host).pipe(Effect.result);
-        expect(Result.isFailure(result)).toBe(true);
-        const discovered = yield* auth.discovery.probe("/repo");
-        expect(discovered.authorization?.status).toBe("failed");
-        expect(discovered.authorization?.detail).toContain("IDENTIFIER");
-        expect(logins).toBe(1);
+        const testLayer = TestHost.layer({
+          settings: settings("zhangsan"),
+          process: {
+            run: (input) => {
+              if (!input.args.includes("login")) {
+                return Effect.succeed(
+                  TestHost.processOutput("Logged in to http://git.sankuai.com as zhangsan"),
+                );
+              }
+              logins++;
+              return Deferred.succeed(sent, undefined).pipe(
+                Effect.andThen(Deferred.await(finish)),
+                Effect.as(TestHost.processOutput("Logged in as zhangsan")),
+              );
+            },
+          },
+        });
+        yield* Effect.gen(function* () {
+          const auth = yield* make;
+          const prompts = yield* Effect.all([auth.signIn.start(host), auth.signIn.start(host)], {
+            concurrency: 2,
+          });
+          yield* Deferred.await(sent);
+          expect(prompts[0]).toEqual(prompts[1]);
+          expect(logins).toBe(1);
+          yield* Deferred.succeed(finish, undefined);
+          expect(yield* auth.signIn.wait(host)).toEqual({ account: "zhangsan" });
+          yield* auth.signIn.start(host);
+          yield* auth.signIn.wait(host);
+          expect(logins).toBe(2);
+        }).pipe(Effect.provide(testLayer));
       }),
     ),
+  );
+
+  it.effect.each([0, 1])(
+    "reports failed MOA sign-in when login exits %i without valid credentials",
+    (exitCode) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          let logins = 0;
+          const auth = yield* make.pipe(
+            Effect.provide(
+              TestHost.layer({
+                settings: settings("zhangsan"),
+                process: {
+                  run: (input) => {
+                    if (!input.args.includes("login")) return runProbe(input);
+                    logins++;
+                    return Effect.succeed(
+                      TestHost.processOutput("", {
+                        exitCode: ChildProcessSpawner.ExitCode(exitCode),
+                        stderr: "MOA agent unreachable",
+                      }),
+                    );
+                  },
+                },
+              }),
+            ),
+          );
+          yield* auth.signIn.start(host);
+          const result = yield* auth.signIn.wait(host).pipe(Effect.result);
+          expect(Result.isFailure(result)).toBe(true);
+          const discovered = yield* auth.discovery.probe("/repo");
+          expect(discovered.authorization?.status).toBe("failed");
+          expect(discovered.authorization?.detail).toContain("MOA sign-in failed");
+          expect(logins).toBe(1);
+        }),
+      ),
   );
 
   it.effect("cancels the pending process and releases waiters without an automatic resend", () =>
