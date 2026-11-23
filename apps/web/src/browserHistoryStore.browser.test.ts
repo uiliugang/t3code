@@ -1,8 +1,9 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
-import { resetBrowserHistoryForTests, useBrowserHistoryStore } from "./browserHistoryStore";
+import { createBrowserHistoryStore } from "./browserHistoryPersistence";
 
+const useBrowserHistoryStore = createBrowserHistoryStore();
 const storageKey = "t3code:browser-history:v1";
 const oldEntry = { url: "http://example.test/removed", lastVisitedAt: 1 };
 const otherEntry = { url: "http://example.test/other", lastVisitedAt: 2 };
@@ -169,14 +170,14 @@ async function openHistoryDocument(
   { withoutIndexedDB = false } = {},
 ) {
   const source = new URL(import.meta.url);
-  source.pathname = source.pathname.replace(/\.browser\.test\.ts$/, ".ts");
+  source.pathname = source.pathname.replace(/Store\.browser\.test\.ts$/, "Persistence.ts");
   source.search = "";
   const frame = document.createElement("iframe");
   disposables.defer(() => frame.remove());
   frame.srcdoc = `${withoutIndexedDB ? '<script>Object.defineProperty(window, "indexedDB", { value: { open() { throw new Error("blocked"); } } });</script>' : ""}
     <script type="module">
-      import { useBrowserHistoryStore } from ${JSON.stringify(source.href)};
-      window.historyStore = useBrowserHistoryStore;
+      import { createBrowserHistoryStore } from ${JSON.stringify(source.href)};
+      window.historyStore = createBrowserHistoryStore();
     </script>`;
   await new Promise<void>((resolve) => {
     frame.onload = () => resolve();
@@ -200,7 +201,11 @@ function deleteHistoryDatabase() {
 async function resetHistoryFixture() {
   localStorage.removeItem(storageKey);
   await deleteHistoryDatabase();
-  resetBrowserHistoryForTests();
+  useBrowserHistoryStore.setState({
+    byProjectKey: {},
+    projectKeyByThreadKey: {},
+    pendingVisitsByThreadKey: {},
+  });
 }
 
 it("moves the legacy snapshot into the shared database", async () => {
