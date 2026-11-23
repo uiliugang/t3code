@@ -404,6 +404,7 @@ interface ServerTab {
   crash: PreviewAutomationLoadError | undefined;
   /** What Reload loads after a crash; the reported URL is shortened and drops data payloads. */
   crashedUrl: string | undefined;
+  readonly privateInitialUrl: string | undefined;
   closing: boolean;
   recording: Recording | null;
   initialNavigation: Promise<void> | null;
@@ -615,7 +616,7 @@ const make = Effect.gen(function* () {
   const closedPendingTabs = new Set<string>();
   const adoptedPages = new Map<string, { readonly page: Page; readonly openerTabId?: string }>();
   const closedSessions = new Set<string>();
-  const privateSessions = new Map<string, string>();
+  const privateSessions = new Map<string, { sessionId: string; context: BrowserContext }>();
   let hostConnectionId: string | null = null;
   let viewerResizeOrder = 0;
 
@@ -659,8 +660,9 @@ const make = Effect.gen(function* () {
     if (tab.desktop) return dropTab(tab, true);
     const key = tabKey(tab.threadId, tab.tabId);
     if (tabs.get(key) !== tab) return;
+    const url = tab.page.url();
     const crash = {
-      url: ServerBrowserPage.withoutDataPayload(tab.page.url()).slice(0, 2048),
+      url: ServerBrowserPage.withoutDataPayload(url).slice(0, 2048),
       code: -2,
       description: "Page crashed",
     };
@@ -689,7 +691,17 @@ const make = Effect.gen(function* () {
       if (!snapshot) {
         throw new ServerBrowserTabNotFoundError({ threadId: tab.threadId, tabId: tab.tabId });
       }
-      return createTab(snapshot, tab.page.url());
+      if (isPrivateBrowserThread(tab.threadId)) {
+        return createTab({
+          ...snapshot,
+          navStatus: {
+            _tag: "Loading",
+            title: "",
+            url: url === "about:blank" ? (tab.privateInitialUrl ?? url) : url,
+          },
+        });
+      }
+      return createTab(snapshot, url);
     })().finally(() => {
       pendingTabs.delete(key);
       closedPendingTabs.delete(key);
@@ -1121,8 +1133,12 @@ const make = Effect.gen(function* () {
   ): Promise<ServerTab> => {
     const adopted = adoptedPages.get(tabKey(snapshot.threadId, snapshot.tabId));
     adoptedPages.delete(tabKey(snapshot.threadId, snapshot.tabId));
+    const privateSession = privateSessions.get(snapshot.threadId);
+    if (isPrivateBrowserThread(snapshot.threadId) && !privateSession) {
+      throw new ServerBrowserTabNotFoundError(snapshot);
+    }
     const desktop =
-      adopted === undefined && (await desktopRenders(snapshot))
+      !privateSession && adopted === undefined && (await desktopRenders(snapshot))
         ? await connectDesktop(snapshot)
         : null;
     if (desktop) opened.push(desktop.close);
@@ -1137,6 +1153,7 @@ const make = Effect.gen(function* () {
       );
     }
     const isolatedContext =
+      !privateSession &&
       adopted === undefined &&
       desktop === null &&
       ((snapshot.automationOwner !== undefined && snapshot.profileId === undefined) ||
@@ -1149,7 +1166,8 @@ const make = Effect.gen(function* () {
       if (!desktop) opened.push(() => page.close());
       return page;
     };
-    const existingContext = adopted?.page.context() ?? desktop?.page.context();
+    const existingContext =
+      privateSession?.context ?? adopted?.page.context() ?? desktop?.page.context();
     const page = existingContext
       ? await createPage(existingContext)
       : await contexts.withContext(
@@ -1222,6 +1240,10 @@ const make = Effect.gen(function* () {
             }
           : undefined,
       crashedUrl,
+      privateInitialUrl:
+        privateSession && snapshot.navStatus._tag === "Loading"
+          ? snapshot.navStatus.url
+          : undefined,
       closing: false,
       recording: null,
       recordingStart: null,
@@ -1400,7 +1422,7 @@ const make = Effect.gen(function* () {
     // Existing desktop and popup PDFs can start loading before interception attaches.
     if (
       snapshot.navStatus._tag === "Loading" &&
-      ((!adopted && !desktop) || isPdfAssetUrl(snapshot.navStatus.url))
+      ((!desktop && adopted?.openerTabId === undefined) || isPdfAssetUrl(snapshot.navStatus.url))
     ) {
       tab.loading = true;
       const initialUrl = URL.parse(snapshot.navStatus.url);
@@ -3247,7 +3269,7 @@ const make = Effect.gen(function* () {
       isPrivateBrowserThread(input.threadId) &&
       (!input.canOperate ||
         input.sessionId === undefined ||
-        privateSessions.get(input.threadId) !== input.sessionId)
+        privateSessions.get(input.threadId)?.sessionId !== input.sessionId)
     ) {
       return yield* new ServerBrowserTabNotFoundError({
         threadId: input.threadId,
@@ -3602,13 +3624,6 @@ const make = Effect.gen(function* () {
   const openPrivateTab = Effect.fn("ServerBrowser.openPrivateTab")(
     function* (url: string, sessionId: string) {
       const threadId = ThreadId.make(`${PRIVATE_BROWSER_THREAD_PREFIX}${NodeCrypto.randomUUID()}`);
-      yield* Effect.acquireRelease(
-        Effect.sync(() => privateSessions.set(threadId, sessionId)),
-        () =>
-          Effect.sync(() => {
-            privateSessions.delete(threadId);
-          }),
-      );
       const directory = yield* Context.get(
         fileServices,
         FileSystem.FileSystem,
@@ -3619,6 +3634,13 @@ const make = Effect.gen(function* () {
           catch: (cause) => new ServerBrowserLaunchError({ cause }),
         }),
         ({ context }) => Effect.promise(() => context.close().catch(constVoid)),
+      );
+      yield* Effect.acquireRelease(
+        Effect.sync(() => privateSessions.set(threadId, { sessionId, context })),
+        () =>
+          Effect.sync(() => {
+            privateSessions.delete(threadId);
+          }),
       );
       yield* Effect.addFinalizer(() => manager.close({ threadId }).pipe(Effect.ignore));
       const page = yield* Effect.tryPromise({

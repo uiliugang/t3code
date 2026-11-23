@@ -42,11 +42,16 @@ const outcomeMessages = {
   failed: msg("failed"),
 } as const;
 
+const openBrowserLogin = { type: "open_browser_login" } as const;
+
 export function DaxiangApprovalSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const t = useUiTranslation();
+  const canOpenBrowser = useAtomValue(
+    serverEnvironment.mutateDaxiangApproval.permissionAtom(environmentId, openBrowserLogin),
+  );
   const browserLoginSupported =
     useAtomValue(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .daxiangApprovalBrowserLogin === true;
+      .daxiangApprovalBrowserLogin === true && canOpenBrowser;
   const monitor = useEnvironmentSettings(
     environmentId,
     (settings) => settings.daxiang.approvalMonitor,
@@ -64,6 +69,8 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
   const [failed, setFailed] = useState(false);
   const [showChrome, setShowChrome] = useState(false);
   const [browserLogin, setBrowserLogin] = useState<DaxiangApprovalMutationResult>();
+  const [popupTabs, setPopupTabs] = useState<string[]>([]);
+  const visibleTabId = popupTabs.at(-1) ?? browserLogin?.tabId;
   const [browserLoginFailed, setBrowserLoginFailed] = useState(false);
   const [drafts, setDrafts] = useState<{
     port?: string;
@@ -104,6 +111,7 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
     if (result._tag === "Success") {
       if (input.type === "open_browser_login") {
         setBrowserLogin(result.value);
+        setPopupTabs([]);
         setFailed(!result.value);
       }
       if (input.type === "finish_browser_login") setBrowserLogin(undefined);
@@ -173,7 +181,7 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
               <Button
                 size="xs"
                 disabled={!canMutate || busy}
-                onClick={() => void run({ type: "open_browser_login" })}
+                onClick={() => void run(openBrowserLogin)}
               >
                 {t("Import DaXiang login")}
               </Button>
@@ -234,7 +242,7 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
         )}
       </div>
 
-      {browserLogin ? (
+      {browserLogin && visibleTabId ? (
         <Dialog
           open
           onOpenChange={(open) => {
@@ -247,12 +255,15 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
             </DialogHeader>
             <div className="h-[min(62dvh,45rem)] min-h-48 overflow-hidden border-y">
               <ServerBrowserSurface
-                key={browserLogin.tabId}
+                key={visibleTabId}
                 visible
                 environmentId={environmentId}
                 threadId={browserLogin.threadId}
-                tabId={browserLogin.tabId}
-                onPopup={(tabId) => setBrowserLogin({ threadId: browserLogin.threadId, tabId })}
+                tabId={visibleTabId}
+                onPopup={(tabId) => setPopupTabs((tabs) => [...tabs, tabId])}
+                onGone={() =>
+                  setPopupTabs((tabs) => (tabs.at(-1) === visibleTabId ? tabs.slice(0, -1) : tabs))
+                }
               />
             </div>
             {browserLoginFailed ? (

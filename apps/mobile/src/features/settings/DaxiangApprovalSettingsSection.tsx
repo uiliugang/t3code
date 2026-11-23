@@ -45,6 +45,8 @@ const outcomeMessages = {
   failed: msg("failed"),
 } as const;
 
+const openBrowserLogin = { type: "open_browser_login" } as const;
+
 export function DaxiangApprovalSettingsSection({
   environmentId,
   disabled = false,
@@ -54,9 +56,12 @@ export function DaxiangApprovalSettingsSection({
 }) {
   const t = useUiTranslation();
   const { themeVariables } = useAppearancePreferences();
+  const canOpenBrowser = useAtomValue(
+    serverEnvironment.mutateDaxiangApproval.permissionAtom(environmentId, openBrowserLogin),
+  );
   const browserLoginSupported =
     useAtomValue(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .daxiangApprovalBrowserLogin === true;
+      .daxiangApprovalBrowserLogin === true && canOpenBrowser;
   const monitor = useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.daxiang
     .approvalMonitor;
   const allowed =
@@ -73,6 +78,8 @@ export function DaxiangApprovalSettingsSection({
   const [failed, setFailed] = useState(false);
   const [showChrome, setShowChrome] = useState(false);
   const [browserLogin, setBrowserLogin] = useState<DaxiangApprovalMutationResult>();
+  const [popupTabs, setPopupTabs] = useState<string[]>([]);
+  const visibleTabId = popupTabs.at(-1) ?? browserLogin?.tabId;
   const [browserLoginFailed, setBrowserLoginFailed] = useState(false);
   const [port, setPort] = useState<string | null>(null);
   const [prComment, setPrComment] = useState<string | null>(null);
@@ -106,6 +113,7 @@ export function DaxiangApprovalSettingsSection({
     if (result._tag === "Success") {
       if (input.type === "open_browser_login") {
         setBrowserLogin(result.value);
+        setPopupTabs([]);
         setFailed(!result.value);
       }
       if (input.type === "finish_browser_login") setBrowserLogin(undefined);
@@ -155,7 +163,7 @@ export function DaxiangApprovalSettingsSection({
               <Button
                 label={t("Import DaXiang login")}
                 disabled={!canMutate || busy}
-                onPress={() => void run({ type: "open_browser_login" })}
+                onPress={() => void run(openBrowserLogin)}
               />
               <Button
                 label={t("Use Chrome instead")}
@@ -210,7 +218,7 @@ export function DaxiangApprovalSettingsSection({
             </Text>
           ) : null}
         </View>
-        {browserLogin ? (
+        {browserLogin && visibleTabId ? (
           <Modal onRequestClose={cancelBrowserLogin}>
             <SafeAreaView className="flex-1 bg-sheet">
               <View className="gap-1 px-4 py-3">
@@ -219,13 +227,16 @@ export function DaxiangApprovalSettingsSection({
                 </Text>
               </View>
               <PreviewStreamWebView
-                key={browserLogin.tabId}
+                key={visibleTabId}
                 environmentId={environmentId}
                 threadId={browserLogin.threadId}
-                tabId={browserLogin.tabId}
+                tabId={visibleTabId}
                 interactive
                 background={themeVariables["--color-sheet-solid"]}
-                onPopup={(tabId) => setBrowserLogin({ threadId: browserLogin.threadId, tabId })}
+                onPopup={(tabId) => setPopupTabs((tabs) => [...tabs, tabId])}
+                onGone={() =>
+                  setPopupTabs((tabs) => (tabs.at(-1) === visibleTabId ? tabs.slice(0, -1) : tabs))
+                }
               />
               {browserLoginFailed && (
                 <Text accessibilityRole="alert" className="px-4 text-sm text-danger-foreground">

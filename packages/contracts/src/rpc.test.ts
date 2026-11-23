@@ -6,7 +6,13 @@ import { AssetCreateUrlResult, AttachmentCreateUploadUrlResult } from "./assets.
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
 import { clientRpcRequiredScopes } from "./clientRpcPermissions.ts";
-import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "./auth.ts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  AuthPreviewOperateScope,
+  AuthSettingsWriteScope,
+  AuthSourceControlWriteScope,
+} from "./auth.ts";
 import { RequirementIssueError } from "./issues.ts";
 
 const decodeIssueError = Schema.decodeUnknownSync(RequirementIssueError);
@@ -18,6 +24,16 @@ describe("WebSocket RPC contracts", () => {
     const tab = { threadId: "private-browser:login", tabId: "tab" };
     expect(Schema.decodeUnknownSync(schema)(Schema.encodeSync(schema)(tab))).toEqual(tab);
     expect(Schema.encodeSync(schema)(undefined)).toBeUndefined();
+  });
+
+  it("requires preview permissions only to open the built-in DaXiang browser", () => {
+    const method = WS_METHODS.daxiangApprovalMutate;
+    expect(clientRpcRequiredScopes(method, { type: "open_browser_login" })).toEqual([
+      AuthSettingsWriteScope,
+      AuthOrchestrationReadScope,
+      AuthPreviewOperateScope,
+    ]);
+    expect(clientRpcRequiredScopes(method, { type: "login" })).toEqual([AuthSettingsWriteScope]);
   });
 
   it("keeps shipped requirement clients and servers on the same wire contract", () => {
