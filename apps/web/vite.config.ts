@@ -106,7 +106,9 @@ const browserTestApiPort = 20_000 + ((Hash.string(import.meta.dirname) >>> 0) % 
 
 // CI shards run on dedicated runners; locally, run one browser test file at a time
 // so headless Chromium and Vite module transforms do not spike memory on 16-18 GiB machines.
-const localBrowserFileParallelism = process.env.CI
+const ciEnv = process.env.CI?.trim().toLowerCase();
+const isCi = Boolean(ciEnv && ciEnv !== "0" && ciEnv !== "false");
+const localBrowserFileParallelism = isCi
   ? undefined
   : process.env.T3_BROWSER_FILE_PARALLELISM === "1";
 

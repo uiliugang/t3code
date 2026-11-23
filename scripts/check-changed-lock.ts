@@ -5,51 +5,64 @@ import * as NodeSqlite from "node:sqlite";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-export class CheckLockError extends Schema.TaggedError<
+class CheckLockError extends Schema.TaggedError<
   CheckLockError,
   { readonly brand: unique symbol }
 >()("CheckLockError", { filename: Schema.String, cause: Schema.Defect() }) {
   override get message() {
-    return "Could not acquire the repository check lock.";
+    return `Could not acquire repository lock ${this.filename}: ${String(this.cause)}`;
   }
 }
 
-export interface SlotLockOptions {
+interface SlotLockOptions {
   readonly slots?: number;
   readonly waitingMessage?: string;
 }
 
 const DEFAULT_WAITING_MESSAGE =
   "check:changed: waiting for another check in this repository to finish.";
-export const BROWSER_TEST_WAITING_MESSAGE =
+const BROWSER_TEST_WAITING_MESSAGE =
   "test:browser:local: waiting for another browser test in this repository to finish.";
 
+// Slot 1 always uses `filename` so callers with default concurrency=1 and callers
+// with T3_BROWSER_TEST_CONCURRENCY>=2 share the first slot instead of bypassing each other.
 const slotFilenames = (filename: string, slots: number): ReadonlyArray<string> => {
   if (slots <= 1) return [filename];
   const parsed = NodePath.parse(filename);
   return Array.from({ length: slots }, (_, index) =>
-    NodePath.join(parsed.dir, `${parsed.name}-slot-${index + 1}${parsed.ext}`),
+    index === 0
+      ? filename
+      : NodePath.join(parsed.dir, `${parsed.name}-slot-${index + 1}${parsed.ext}`),
   );
 };
 
-const tryAcquireImmediate = (database: NodeSqlite.DatabaseSync, filename: string) =>
-  Effect.try({
-    try: () => {
-      try {
-        database.exec("BEGIN IMMEDIATE");
-        return true;
-      } catch (cause) {
-        if (cause instanceof Error && "errcode" in cause && cause.errcode === 5) return false;
-        throw cause;
-      }
-    },
-    catch: (cause) => new CheckLockError({ filename, cause }),
-  });
+const isSqliteBusyOrLocked = (cause: unknown): boolean => {
+  if (!(cause instanceof Error) || !("errcode" in cause) || typeof cause.errcode !== "number") {
+    return false;
+  }
+  const primary = cause.errcode & 0xff;
+  return primary === 5 || primary === 6;
+};
+
+const openAndLockSlot = (filename: string): NodeSqlite.DatabaseSync | null => {
+  let database: NodeSqlite.DatabaseSync | undefined;
+  try {
+    database = new NodeSqlite.DatabaseSync(filename, { timeout: 0 });
+    database.exec("BEGIN IMMEDIATE");
+    return database;
+  } catch (cause) {
+    database?.close();
+    if (isSqliteBusyOrLocked(cause)) return null;
+    throw cause;
+  }
+};
 
 export const withSlotLock = Effect.fn("checkChanged.withSlotLock")(function* <A, E, R>(
   filename: string,
@@ -66,31 +79,29 @@ export const withSlotLock = Effect.fn("checkChanged.withSlotLock")(function* <A,
   const waitingMessage = options.waitingMessage ?? DEFAULT_WAITING_MESSAGE;
   const filenames = slotFilenames(filename, slots);
 
-  return yield* Effect.scoped(
+  return yield* Effect.scopedWith((scope) =>
     Effect.gen(function* () {
-      const outerScope = yield* Effect.scope;
       let reported = false;
       while (true) {
         for (const slotFilename of filenames) {
-          const slotScope = yield* Scope.make();
-          const acquired = yield* Effect.gen(function* () {
-            const database = yield* Effect.acquireRelease(
-              Effect.try({
-                try: () => new NodeSqlite.DatabaseSync(slotFilename, { timeout: 0 }),
+          const acquired = yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              const database = yield* Effect.try({
+                try: () => openAndLockSlot(slotFilename),
                 catch: (cause) => new CheckLockError({ filename: slotFilename, cause }),
-              }),
-              (db) => Effect.sync(() => db.close()),
-            );
-            return yield* tryAcquireImmediate(database, slotFilename);
-          }).pipe(
-            Scope.provide(slotScope),
-            Effect.onError(() => Scope.close(slotScope, Exit.void)),
+              });
+              if (database !== null) {
+                yield* Scope.addFinalizer(
+                  scope,
+                  Effect.sync(() => database.close()),
+                );
+              }
+              return database;
+            }),
           );
-          if (acquired) {
-            yield* Scope.addFinalizerExit(outerScope, (exit) => Scope.close(slotScope, exit));
+          if (acquired !== null) {
             return yield* task;
           }
-          yield* Scope.close(slotScope, Exit.void);
         }
         if (!reported) {
           yield* Console.log(waitingMessage);
@@ -105,7 +116,7 @@ export const withSlotLock = Effect.fn("checkChanged.withSlotLock")(function* <A,
 export const withCheckLock = <A, E, R>(filename: string, task: Effect.Effect<A, E, R>) =>
   withSlotLock(filename, task);
 
-export const browserTestConcurrency = Effect.fn("browserTestLock.concurrency")(function* () {
+const browserTestConcurrency = Effect.fn("browserTestLock.concurrency")(function* () {
   const configured = yield* Config.option(Config.Int("T3_BROWSER_TEST_CONCURRENCY")).pipe(
     Effect.mapError(() => "T3_BROWSER_TEST_CONCURRENCY must be a positive integer."),
   );
@@ -125,4 +136,35 @@ export const withBrowserTestLock = Effect.fn("browserTestLock.withLock")(functio
     slots,
     waitingMessage: options.waitingMessage ?? BROWSER_TEST_WAITING_MESSAGE,
   });
+});
+
+export const resolveGitCommonDir = Effect.fn("repoLock.gitCommonDir")(function* (
+  cwd: string,
+  caller = "git",
+) {
+  const path = yield* Path.Path;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const handle = yield* spawner.spawn(
+        ChildProcess.make("git", ["-c", "core.quotePath=false", "rev-parse", "--git-common-dir"], {
+          cwd,
+        }),
+      );
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [
+          Stream.mkString(Stream.decodeText(handle.stdout)),
+          Stream.mkString(Stream.decodeText(handle.stderr)),
+          handle.exitCode,
+        ],
+        { concurrency: 3 },
+      );
+      if (exitCode !== 0) {
+        return yield* Effect.fail(
+          `${caller}: git rev-parse --git-common-dir exited with ${exitCode}: ${stderr.trim()}`,
+        );
+      }
+      return path.resolve(cwd, stdout.trim());
+    }),
+  );
 });

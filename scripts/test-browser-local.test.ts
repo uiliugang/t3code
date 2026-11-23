@@ -5,6 +5,7 @@ import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Console from "effect/Console";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -18,12 +19,24 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as TestClock from "effect/testing/TestClock";
 
 import { withBrowserTestLock } from "./check-changed-lock.ts";
-import { runBrowserTestLocal } from "./test-browser-local.ts";
+import { parseBrowserTestArgs, runBrowserTestLocal } from "./test-browser-local.ts";
 
 const makeGitRepo = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-browser-local-test-" });
-  NodeChildProcess.execFileSync("git", ["init"], { cwd: root, stdio: "pipe" });
+  const emptyConfig = path.join(root, ".empty.gitconfig");
+  yield* fs.writeFileString(emptyConfig, "");
+  const cleanGitEnv = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))),
+    GIT_CONFIG_GLOBAL: emptyConfig,
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+  NodeChildProcess.execFileSync("git", ["-c", "init.defaultBranch=main", "init"], {
+    cwd: root,
+    env: cleanGitEnv,
+    stdio: "pipe",
+  });
   return root;
 });
 
@@ -47,6 +60,45 @@ const assertImmediateLockAvailable = (filename: string): void => {
 };
 
 describe("test:browser:local", () => {
+  it("parses targets, value-taking vitest flags, and -h/-t interactions", () => {
+    for (const missingTarget of [
+      [],
+      ["-t", "saves on Enter"],
+      ["-p", "browser"],
+      ["--bail", "1", "--testTimeout", "5000", "--browser.name", "chromium"],
+      ["-u", "new"],
+      ["--changed", "main"],
+      ["--", "-t", "saves"],
+    ]) {
+      assert.isFalse(parseBrowserTestArgs(missingTarget).hasTarget, missingTarget.join(" "));
+    }
+    assert.deepStrictEqual(
+      parseBrowserTestArgs(["apps/web/src/Foo.browser.test.tsx", "-t", "-h"]),
+      {
+        forwardedArgs: ["apps/web/src/Foo.browser.test.tsx", "-t", "-h"],
+        help: false,
+        hasTarget: true,
+        specifiesFileParallelism: false,
+      },
+    );
+    assert.deepStrictEqual(parseBrowserTestArgs(["--help"]), {
+      forwardedArgs: ["--help"],
+      help: true,
+      hasTarget: false,
+      specifiesFileParallelism: false,
+    });
+    assert.isTrue(
+      parseBrowserTestArgs(["apps/web/src/Foo.browser.test.tsx", "--fileParallelism"])
+        .specifiesFileParallelism,
+    );
+    assert.deepStrictEqual(parseBrowserTestArgs(["--", "-dash-file.browser.test.tsx"]), {
+      forwardedArgs: ["--", "-dash-file.browser.test.tsx"],
+      help: false,
+      hasTarget: true,
+      specifiesFileParallelism: false,
+    });
+  });
+
   it.effect("rejects invocations with no test file or directory target", () =>
     Effect.gen(function* () {
       const errors: Array<string> = [];
@@ -59,20 +111,20 @@ describe("test:browser:local", () => {
         Effect.die("should not spawn any process when no target is passed"),
       );
 
-      for (const args of [[], ["-t", "saves on Enter"], ["--", "-t", "saves"]]) {
+      for (const args of [[], ["-t", "saves on Enter"], ["-p", "browser"], ["--", "-t", "saves"]]) {
         const code = yield* runBrowserTestLocal(args).pipe(
           Effect.provideService(Console.Console, testConsole),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         );
         assert.strictEqual(code, 1);
       }
-      assert.strictEqual(errors.length, 3);
+      assert.strictEqual(errors.length, 4);
       assert.include(errors[0]!, "pass one or more test file or directory paths");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect(
-    "waits for the repository browser lock before spawning vitest and forwards arguments",
+    "waits for the repository browser lock before spawning vitest, forwards arguments, and honors T3_BROWSER_FILE_PARALLELISM=1",
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -168,6 +220,20 @@ describe("test:browser:local", () => {
 
         const exitCode = yield* Fiber.join(waiter);
         assert.strictEqual(exitCode, 7);
+
+        yield* runBrowserTestLocal(["apps/web/src/components/Sidebar.browser.test.tsx"], {
+          cwd: root,
+        }).pipe(
+          Effect.provideService(Console.Console, testConsole),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, testSpawner),
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({ env: { T3_BROWSER_FILE_PARALLELISM: "1" } }),
+            ),
+          ),
+        );
+
         assert.deepStrictEqual(spawnedCommands, [
           {
             command: "vp",
@@ -179,6 +245,11 @@ describe("test:browser:local", () => {
               "-t",
               "drags",
             ],
+            cwd: root,
+          },
+          {
+            command: "vp",
+            args: ["test", "run", "apps/web/src/components/Sidebar.browser.test.tsx"],
             cwd: root,
           },
         ]);

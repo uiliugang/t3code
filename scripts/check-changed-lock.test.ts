@@ -55,6 +55,7 @@ it.effect("releases the check lock after failure and interruption", () =>
     const lockPath = path.join(directory, "checks.sqlite");
     const invalid = yield* withCheckLock(directory, Effect.void).pipe(Effect.flip);
     assert.strictEqual(invalid._tag, "CheckLockError");
+    assert.include(invalid.message, directory);
     assert.strictEqual(
       yield* withCheckLock(lockPath, Effect.fail("failed")).pipe(Effect.flip),
       "failed",
@@ -147,17 +148,38 @@ it.effect("bounds concurrency to configured slots and logs a custom waiting mess
     assert.strictEqual(active, 2);
     assert.deepStrictEqual(logs, ["waiting for browser slot"]);
 
+    // A caller using default slots=1 shares slot 1 (`lockPath`) with slots=2 callers.
+    const singleStarted = yield* Deferred.make<void>();
+    const singleRelease = yield* Deferred.make<void>();
+    const singleSlotCaller = yield* withCheckLock(
+      lockPath,
+      Deferred.succeed(singleStarted, undefined).pipe(
+        Effect.andThen(Deferred.await(singleRelease)),
+      ),
+    ).pipe(Effect.forkChild);
+
+    yield* TestClock.adjust("1 second");
+    assert.isFalse(yield* Deferred.isDone(singleStarted));
+
     yield* Deferred.succeed(release1, undefined);
     yield* Fiber.join(first);
     yield* TestClock.adjust("1 second");
+    // `third` (slots=2) or `singleSlotCaller` (slots=1) takes slot 1, leaving total active <= 2.
     yield* Deferred.await(started3);
     assert.strictEqual(active, 2);
     assert.strictEqual(maxActive, 2);
+    assert.isFalse(yield* Deferred.isDone(singleStarted));
 
     yield* Deferred.succeed(release2, undefined);
     yield* Fiber.join(second);
     yield* Fiber.join(third);
-    assert.isTrue(yield* fs.exists(path.join(directory, "t3-browser-test-slot-1.sqlite")));
+    yield* TestClock.adjust("1 second");
+    yield* Deferred.await(singleStarted);
+    yield* Deferred.succeed(singleRelease, undefined);
+    yield* Fiber.join(singleSlotCaller);
+
+    assert.isTrue(yield* fs.exists(lockPath));
+    assert.isFalse(yield* fs.exists(path.join(directory, "t3-browser-test-slot-1.sqlite")));
     assert.isTrue(yield* fs.exists(path.join(directory, "t3-browser-test-slot-2.sqlite")));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

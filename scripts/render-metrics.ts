@@ -1,7 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off - wrapper around the renders vitest project.
-import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -11,10 +9,11 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { vitePlusCommand } from "./check-changed-command.ts";
-import { withBrowserTestLock } from "./check-changed-lock.ts";
+import { resolveGitCommonDir, withBrowserTestLock } from "./check-changed-lock.ts";
 
 const HELP = `Usage:
   node scripts/render-metrics.ts run [--out <file>] [--runs <n>]
@@ -39,6 +38,13 @@ Comparing two refs needs both checkouts, since the scenarios run each tree's cod
 A second checkout comes from \`git worktree add ../<name> main\`; copy the harness files
 in if that tree predates them.`;
 
+const ScenarioReportSchema = Schema.Struct({
+  commits: Schema.NullOr(Schema.Number),
+  renders: Schema.Number,
+  components: Schema.Record(Schema.String, Schema.Number),
+});
+const decodeScenarioReport = Schema.decodeEffect(Schema.fromJsonString(ScenarioReportSchema));
+
 export interface ScenarioReport {
   /** null where a scenario's commit count depends on frame timing. */
   readonly commits: number | null;
@@ -49,31 +55,7 @@ export type RenderMetrics = Readonly<Record<string, ScenarioReport>>;
 
 const root = NodePath.resolve(import.meta.dirname, "..");
 
-export function runOnce(): RenderMetrics {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-renders-"));
-  try {
-    const [command, commandArgs] = vitePlusCommand(["test", "run", "--project", "renders"]);
-    const result = NodeChildProcess.spawnSync(command, commandArgs, {
-      cwd: NodePath.join(root, "apps/web"),
-      env: { ...process.env, T3CODE_RENDER_REPORT_DIR: directory },
-      stdio: ["ignore", "inherit", "inherit"],
-    });
-    if (result.status !== 0) throw new Error(`render scenarios failed (exit ${result.status})`);
-    const files = NodeFS.readdirSync(directory)
-      .filter((file) => file.endsWith(".json"))
-      .toSorted();
-    return Object.fromEntries(
-      files.map((file) => [
-        file.replace(/\.json$/, ""),
-        JSON.parse(NodeFS.readFileSync(NodePath.join(directory, file), "utf8")) as ScenarioReport,
-      ]),
-    );
-  } finally {
-    NodeFS.rmSync(directory, { recursive: true, force: true });
-  }
-}
-
-const runOnceEffect = Effect.fn("renderMetrics.runOnce")(function* () {
+export const runOnce = Effect.fn("renderMetrics.runOnce")(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
@@ -104,14 +86,10 @@ const runOnceEffect = Effect.fn("renderMetrics.runOnce")(function* () {
         .filter((file) => file.endsWith(".json"))
         .toSorted();
       const entries = yield* Effect.forEach(files, (file) =>
-        fs
-          .readFileString(path.join(directory, file))
-          .pipe(
-            Effect.map(
-              (content) =>
-                [file.replace(/\.json$/, ""), JSON.parse(content) as ScenarioReport] as const,
-            ),
-          ),
+        fs.readFileString(path.join(directory, file)).pipe(
+          Effect.flatMap(decodeScenarioReport),
+          Effect.map((report) => [file.replace(/\.json$/, ""), report] as const),
+        ),
       );
       return Object.fromEntries(entries) as RenderMetrics;
     }),
@@ -168,9 +146,39 @@ export function renderComparison(before: RenderMetrics, after: RenderMetrics, to
   return lines.join("\n");
 }
 
-function option(args: ReadonlyArray<string>, name: string): string | undefined {
-  const index = args.indexOf(name);
-  return index === -1 ? undefined : args[index + 1];
+function option(
+  args: ReadonlyArray<string>,
+  name: string,
+): {
+  readonly present: boolean;
+  readonly value: string | undefined;
+} {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === name) {
+      return { present: true, value: args[index + 1] };
+    }
+    if (arg.startsWith(`${name}=`)) {
+      return { present: true, value: arg.slice(name.length + 1) };
+    }
+  }
+  return { present: false, value: undefined };
+}
+
+export function parseRunOptions(args: ReadonlyArray<string>): {
+  readonly runs: number;
+  readonly out: string | undefined;
+} {
+  const runsOpt = option(args, "--runs");
+  const runs = !runsOpt.present ? 3 : Number(runsOpt.value);
+  if (!Number.isSafeInteger(runs) || runs < 1 || runsOpt.value === "") {
+    throw new RangeError("report:renders: --runs must be a positive integer.");
+  }
+  const outOpt = option(args, "--out");
+  if (outOpt.present && (!outOpt.value || outOpt.value.startsWith("-"))) {
+    throw new RangeError("report:renders: --out requires a file path.");
+  }
+  return { runs, out: outOpt.value };
 }
 
 function reportResults(
@@ -207,25 +215,22 @@ if (import.meta.main) {
   const cliArgs = process.argv[2] === "--" ? process.argv.slice(3) : process.argv.slice(2);
   const [command, ...args] = cliArgs;
   if (command === "run") {
-    const runs = Number(option(args, "--runs") ?? 3);
-    const out = option(args, "--out");
-    const commonDir = NodePath.resolve(
-      root,
-      NodeChildProcess.execFileSync(
-        "git",
-        ["-c", "core.quotePath=false", "rev-parse", "--git-common-dir"],
-        { cwd: root, encoding: "utf8" },
-      ).trim(),
-    );
-    withBrowserTestLock(
-      commonDir,
-      Effect.forEach(Array.from({ length: runs }), () => runOnceEffect()),
-      {
-        waitingMessage:
-          "report:renders: waiting for another browser test in this repository to finish.",
-      },
-    ).pipe(
-      Effect.flatMap((results) => Effect.sync(() => reportResults(results, runs, out))),
+    Effect.gen(function* () {
+      const { runs, out } = yield* Effect.try({
+        try: () => parseRunOptions(args),
+        catch: (error) => (error instanceof Error ? error.message : String(error)),
+      });
+      const commonDir = yield* resolveGitCommonDir(root, "report:renders");
+      const results = yield* withBrowserTestLock(
+        commonDir,
+        Effect.forEach(Array.from({ length: runs }), () => runOnce()),
+        {
+          waitingMessage:
+            "report:renders: waiting for another browser test in this repository to finish.",
+        },
+      );
+      yield* Effect.sync(() => reportResults(results, runs, out));
+    }).pipe(
       Effect.catch((error) =>
         Console.error(String(error)).pipe(
           Effect.andThen(
@@ -240,9 +245,14 @@ if (import.meta.main) {
     );
   } else if (command === "compare" && args[0] && args[1]) {
     const read = (path: string) => JSON.parse(NodeFS.readFileSync(path, "utf8")) as RenderMetrics;
-    console.log(
-      renderComparison(read(args[0]), read(args[1]), Number(option(args, "--top") ?? 10)),
-    );
+    const topOpt = option(args, "--top");
+    const top = !topOpt.present ? 10 : Number(topOpt.value);
+    if (!Number.isSafeInteger(top) || top < 1 || topOpt.value === "") {
+      console.error("report:renders: --top must be a positive integer.");
+      process.exitCode = 1;
+    } else {
+      console.log(renderComparison(read(args[0]), read(args[1]), top));
+    }
   } else {
     console.log(HELP);
     if (command !== "--help" && command !== "-h" && command !== undefined) process.exitCode = 1;

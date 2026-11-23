@@ -146,6 +146,26 @@ describe("check:changed", () => {
     }),
   );
 
+  it.effect("does not count step withLock wait time toward timeoutSeconds", () =>
+    Effect.gen(function* () {
+      const fiber = yield* runSteps(
+        [
+          {
+            name: "waits on browser lock",
+            withLock: (task) => Effect.sleep("25 seconds").pipe(Effect.andThen(task)),
+            run: Effect.sleep("2 seconds").pipe(Effect.as({ ok: true, output: "" })),
+          },
+        ],
+        { concurrency: 2, timeoutSeconds: 10 },
+      ).pipe(Effect.forkChild);
+      yield* TestClock.adjust("30 seconds");
+      const results = yield* Fiber.join(fiber);
+      assert.deepStrictEqual(results, [
+        { name: "waits on browser lock", outcome: "pass", time: "2.0s" },
+      ]);
+    }),
+  );
+
   it("runs the .github/scripts node:test files with node --test, not vitest", () => {
     assert.deepStrictEqual(
       splitTests([
@@ -176,6 +196,7 @@ describe("check:changed", () => {
     }
     for (const file of [
       "apps/web/src/components/Sidebar.logic.test.ts",
+      "apps/mobile/src/features/devices/device-stream.browser.test.ts",
       "apps/server/src/preview/Manager.test.ts",
       "scripts/check-changed.test.ts",
     ]) {
@@ -406,7 +427,7 @@ function launcherFixture() {
     write(file, NodeFS.readFileSync(NodePath.join(import.meta.dirname, "..", file), "utf8"));
   }
   write(".gitignore", "node_modules/\nrecords/\n");
-  write("pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+  write("pnpm-workspace.yaml", "packages:\n  - apps/*\n  - packages/*\n");
   write(
     "package.json",
     JSON.stringify({
@@ -417,6 +438,7 @@ function launcherFixture() {
       },
     }),
   );
+  write("apps/web/package.json", JSON.stringify({ name: "@t3tools/web" }));
   write("packages/example/package.json", JSON.stringify({ name: "example" }));
   const source = "packages/example/space & (draft) %PATH% ! 研究.ts";
   write(source, "export const value = 1;\n");
@@ -583,8 +605,8 @@ it("acquires the repository browser test lock only when changed tests launch Chr
   }
   NodeFS.rmSync(browserLockPath, { force: true });
 
-  // When a *.browser.test.tsx file changes, check:changed creates and acquires t3-browser-test.sqlite.
-  project.write("packages/example/Component.browser.test.tsx", "export {};\n");
+  // When an apps/web *.browser.test.tsx file changes, check:changed creates and acquires t3-browser-test.sqlite.
+  project.write("apps/web/src/Component.browser.test.tsx", "export {};\n");
   const browserResult = project.run();
   expect(browserResult.status, browserResult.stdout + browserResult.stderr).toBe(0);
   expect(NodeFS.existsSync(browserLockPath)).toBe(true);

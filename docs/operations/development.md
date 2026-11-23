@@ -239,10 +239,11 @@ test suites and the jobs the summary lists, so a local pass does not promise a g
 Checks from worktrees of the same repository run one at a time. A waiting check can be cancelled;
 waiting does not count toward a step's timeout. The lock lives in the common Git directory and is
 released when the check exits. Direct `vp test` commands and builds do not take this lock. When a
-check runs Chromium tests (`*.browser.test.{ts,tsx}` or `ServerBrowser*.test.ts`), its test step
-also takes the shared browser test lock in the common Git directory (`T3_BROWSER_TEST_CONCURRENCY`,
-default `1`) so it coordinates with `vp run test:browser:local` and `vp run report:renders` across
-worktrees without blocking pure Node unit test runs.
+check runs Chromium tests (`apps/web/**/*.browser.test.{ts,tsx}` or `ServerBrowser*.test.ts`), its
+test step also takes the shared browser test lock in the common Git directory
+(`T3_BROWSER_TEST_CONCURRENCY`, default `1`) outside the step timeout so it coordinates with
+`vp run test:browser:local` and `vp run report:renders` across worktrees without blocking pure Node
+unit test runs.
 
 Within a check, steps share a budget of one per two cores and per 6 GiB of available memory.
 Test steps take the entire budget and run test files one at a time with one worker, so they do not
