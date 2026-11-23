@@ -1,3 +1,4 @@
+import { sidebarSpaceCommands } from "../components/sidebar/SidebarSpaces";
 import { AuthPreviewOperateScope, type EnvironmentId } from "@t3tools/contracts";
 import type { AnyRouter } from "@tanstack/react-router";
 import { msg } from "gt-react";
@@ -115,6 +116,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
 
   const startNewLocal: CommandHandler = (event) => {
     claim(event);
+    if (sidebarSpaceCommands.newThread()) return;
     // With no current or open project, such as when every project is archived, pick one.
     void startNewThreadFromContext(readThreadContext()).then((started) => {
       if (!started) openCommandPalette({ open: "new-thread-in" });
@@ -140,6 +142,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     {
       "chat.newLocal": startNewLocal,
       "chat.newWithoutProject": (event) => {
+        if (sidebarSpaceCommands.newThread()) {
+          claim(event);
+          return;
+        }
         const { activeThread, activeDraftThread } = readThreadContext();
         const environmentId = scratch.scratchEnvironmentId(
           activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null,
@@ -149,6 +155,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         void scratch.startScratchThread(environmentId);
       },
       "chat.new": (event) => {
+        if (sidebarSpaceCommands.newThread()) {
+          claim(event);
+          return;
+        }
         const groups = readProjectGroups();
         if (
           !shouldCreateNewThreadInCurrentProject(

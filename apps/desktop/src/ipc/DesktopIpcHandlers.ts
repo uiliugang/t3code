@@ -69,6 +69,7 @@ import {
   syncHtmlFullscreen,
   showContextMenu,
 } from "./methods/window.ts";
+import * as ProjectNotesIpc from "./methods/projectNotes.ts";
 import * as PreviewIpc from "./methods/preview.ts";
 import * as AppActivationIpc from "./methods/appActivation.ts";
 import * as WebLinksIpc from "./methods/webLinks.ts";
@@ -104,6 +105,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
   yield* ipc.handle(getHostEnvironmentId);
+  yield* ipc.handle(ProjectNotesIpc.getProjectNotesEnvironment);
+  yield* ipc.handle(ProjectNotesIpc.callProjectNotes);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
 
   yield* ipc.handle(startFileDrag);

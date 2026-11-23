@@ -1,3 +1,17 @@
+import {
+  resolveSidebarSpaceScope,
+  sidebarSpaceProjectKey,
+  sidebarSpaceProjectsByEnvironment,
+  type SidebarSpace,
+} from "@t3tools/client-runtime/sidebar-spaces";
+import {
+  SidebarSpaceEditor,
+  SidebarSpaceFooter,
+  SidebarSpaceNewThread,
+  SidebarSpacePicker,
+  sidebarSpaceCommands,
+  useSidebarSpaces,
+} from "./sidebar/SidebarSpaces";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, useGT, useMessages } from "gt-react";
@@ -59,6 +73,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   type ContextMenuSource,
   ProjectId,
   type ScopedThreadRef,
@@ -117,6 +132,7 @@ import {
 } from "@t3tools/client-runtime/state/project-grouping";
 import {
   buildSidebarProjectPickerEntries,
+  buildSidebarProjectSnapshots,
   projectGroupsSpanEnvironments,
   resolveSidebarProjectScopeKeys,
   getSidebarProjectSettingsKey,
@@ -250,6 +266,13 @@ import { titleRegenerationToast } from "./threadTitleRegenerationToast";
 import { copyThreadReference } from "../lib/copyThreadReference";
 import { canOpenThreadHandoff, openThreadHandoff } from "./chat/ThreadHandoffDialog";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
+import {
+  prepareProjectNotesSelection,
+  localNotesEnvironment,
+  ProjectNotesDialog,
+  type ProjectNotesSelection,
+} from "./projectNotes/ProjectNotesDialog";
+import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { Button } from "./ui/button";
 import { isProjectPinShortcut, ProjectPinButton } from "./ProjectPinButton";
 import {
@@ -266,6 +289,7 @@ import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipScrollDismissArea } from "./ui/tooltip";
+import { SidebarHumanActionInbox } from "./sidebar/SidebarHumanActionInbox";
 import {
   composerDraftHasUserContent,
   DraftId,
@@ -767,10 +791,10 @@ function olderSettledScopes(
     return environmentIds.map((environmentId) => ({ environmentId, projectIds: null }));
   }
   return environmentIds.flatMap((environmentId) => {
-    const prefix = `${environmentId}:`;
-    const projectIds = [...scopedProjectKeys].flatMap((key) =>
-      key.startsWith(prefix) ? [ProjectId.make(key.slice(prefix.length))] : [],
-    );
+    const projectIds = [...scopedProjectKeys].flatMap((key) => {
+      const [candidate, projectId] = JSON.parse(key) as [EnvironmentId, string];
+      return candidate === environmentId ? [ProjectId.make(projectId)] : [];
+    });
     return projectIds.length === 0 ? [] : [{ environmentId, projectIds }];
   });
 }
@@ -1051,6 +1075,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
   const environmentMachineById = useEnvironmentMachines();
   const projectGroupsRef = useRef(projectGroups);
+  const spaces = useSidebarSpaces();
+  const [spaceEditor, setSpaceEditor] = useState<{ editing: SidebarSpace | null } | null>(null);
+  const [chooseSpaceProject, setChooseSpaceProject] = useState<string | null>(null);
+  const pendingSpaceNavigation = useRef<Promise<unknown> | null>(null);
   const persistedProjectScopeKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
   const setPersistedProjectScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
   const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
@@ -1143,14 +1171,38 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const chosenProjectGroups = scopeGroups.filter((project) =>
     chosenProjectScopeKeys.includes(project.projectKey),
   );
+  const eligibleSpaceProjects = projects.filter(
+    (project) =>
+      project.archivedAt == null &&
+      connectedEnvironmentIds.includes(project.environmentId) &&
+      readEnvironmentScope(project.environmentId, AuthOrchestrationReadScope),
+  );
+  const spaceProjectOptions = eligibleSpaceProjects.map((project) => ({
+    ref: scopeProjectRef(project.environmentId, project.id),
+    label: [project.title, environmentLabelById.get(project.environmentId)]
+      .filter(Boolean)
+      .join(" · "),
+  }));
+  const spaceScope = resolveSidebarSpaceScope(
+    spaces.active,
+    spaceProjectOptions.map(({ ref }) => ref),
+  );
+  const isCustomSpace = spaceScope.kind === "space";
+  const spaceProjectKeys =
+    spaceScope.kind === "space"
+      ? new Set(spaceScope.projectRefs.map(sidebarSpaceProjectKey))
+      : null;
+  const writableSpaceProjects = spaceProjectOptions.filter(
+    ({ ref }) =>
+      spaceProjectKeys?.has(sidebarSpaceProjectKey(ref)) &&
+      readEnvironmentScope(ref.environmentId, AuthOrchestrationOperateScope),
+  );
   const chosenScopeProjectKeys =
     chosenProjectGroups.length === 0
       ? null
       : new Set(
           chosenProjectGroups.flatMap((project) =>
-            project.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
-            ),
+            project.memberProjectRefs.map(sidebarSpaceProjectKey),
           ),
         );
   const threads = useQuietThreadShells();
@@ -1176,17 +1228,23 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // scrolled away; a remount starts at the top, so each mount scrolls to the open
   // thread once. Render decides the widening, so the first frame of the new route
   // already lists the row; the active row's ref callback scrolls to it.
-  const { widensScope: revealWidensScope } = resolveSidebarRouteReveal({
+  const { widensScope: legacyRevealWidensScope } = resolveSidebarRouteReveal({
     reveal: routeReveal,
     routeKey: routeRowThreadKey,
     routeKeyInPlace,
     isSearching: isSearchingThreads,
-    scopedProjectKeys: chosenScopeProjectKeys,
+    scopedProjectKeys: isCustomSpace ? null : chosenScopeProjectKeys,
     delegatedUnderParent,
     findThread: (key) => threads.find((candidate) => threadShellKey(candidate) === key),
   });
+  const revealWidensScope = !isCustomSpace && legacyRevealWidensScope;
   const projectScopeKeys = revealWidensScope ? [] : chosenProjectScopeKeys;
-  const projectScopeKey = projectScopeKeys.length === 0 ? null : projectScopeKeys.join("\n");
+  const projectScopeKey =
+    spaceScope.kind === "space"
+      ? JSON.stringify([spaceScope.id, spaceScope.projectRefs])
+      : projectScopeKeys.length === 0
+        ? null
+        : projectScopeKeys.join("\n");
   const toggleProjectScopeKey = (key: string) =>
     setProjectScopeKeys(
       projectScopeKeys.includes(key)
@@ -1229,15 +1287,43 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     matches: (item, query) =>
       projectScopeFilter.contains(item, query, (candidate) => candidate.label),
   });
-  const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;
+  const scopedProjectGroups = isCustomSpace
+    ? buildSidebarProjectSnapshots(
+        {
+          projects: eligibleSpaceProjects.filter((project) =>
+            spaceProjectKeys?.has(
+              sidebarSpaceProjectKey(scopeProjectRef(project.environmentId, project.id)),
+            ),
+          ),
+          settings: projectGroupingSettings,
+          groupScratchProjects: true,
+          primaryEnvironmentId,
+          resolveEnvironmentLabel: (environmentId) =>
+            environmentLabelById.get(environmentId) ?? null,
+        },
+        messages,
+      )
+    : revealWidensScope
+      ? []
+      : chosenProjectGroups;
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
-  const scopedProjectKeys = revealWidensScope ? null : chosenScopeProjectKeys;
+  const scopedProjectKeys = spaceProjectKeys ?? (revealWidensScope ? null : chosenScopeProjectKeys);
+  const spaceSearchEnvironments =
+    spaceScope.kind === "space" ? [...sidebarSpaceProjectsByEnvironment(spaceScope)] : [];
+  const remoteSpaceSearch = spaceSearchEnvironments.filter(
+    ([environmentId]) =>
+      serverConfigs.get(environmentId)?.environment.capabilities.scopedThreadSearch === true,
+  );
   const threadSearch = useThreadSearch(
-    connectedEnvironmentIds,
+    isCustomSpace
+      ? remoteSpaceSearch.map(([environmentId]) => environmentId)
+      : connectedEnvironmentIds,
     threadSearchQuery,
-    scopedProjectGroups.length === 0
-      ? {}
-      : { projectIds: scopedProjectRefs.map((projectRef) => projectRef.projectId) },
+    isCustomSpace
+      ? { spaceProjectIdsByEnvironment: remoteSpaceSearch }
+      : scopedProjectGroups.length === 0
+        ? {}
+        : { projectIds: scopedProjectRefs.map((projectRef) => projectRef.projectId) },
   );
   const routeDraftIdForRows = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
   const draftTerminalLabels = useDraftTerminalLabels();
@@ -1253,10 +1339,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ) {
         continue;
       }
-      if (
-        scopedProjectKeys !== null &&
-        !scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`)
-      ) {
+      if (scopedProjectKeys !== null && !scopedProjectKeys.has(sidebarSpaceProjectKey(session))) {
         continue;
       }
       count += 1;
@@ -1311,6 +1394,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const target = entry?.targetProject ?? group;
     void handleNewThread(scopeProjectRef(target.environmentId, target.id));
   });
+  const [notesProject, setNotesProject] = useState<ProjectNotesSelection | null>(null);
+  const notesPrimaryEnvironment = useAtomValue(primaryEnvironmentIdAtom);
+  if (notesProject !== null && notesProject.environmentId !== notesPrimaryEnvironment)
+    setNotesProject(null);
   const handleProjectFolderContextMenu = useStableCallback(
     (
       group: SidebarProjectSnapshot,
@@ -1320,6 +1407,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       const api = readLocalApi();
       if (!api) return;
       void (async () => {
+        const canOpenNotes =
+          appAtomRegistry.get(primaryEnvironmentIdAtom) === group.environmentId &&
+          (await localNotesEnvironment()) === group.environmentId;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             [
@@ -1333,6 +1423,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   ]
                 : []),
               { id: "project-settings", label: gt("Project settings"), icon: "settings" },
+              ...(canOpenNotes ? [{ id: "project-notes", label: t("Project notes") }] : []),
             ],
             position,
             source,
@@ -1352,6 +1443,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "project-settings":
             openProjectSettings(group);
+            return;
+          case "project-notes":
+            if (canOpenNotes) {
+              const selection = await prepareProjectNotesSelection(
+                group.environmentId,
+                group.id,
+                group.title,
+              );
+              if (
+                selection !== null &&
+                appAtomRegistry.get(primaryEnvironmentIdAtom) === group.environmentId
+              )
+                setNotesProject(selection);
+            }
             return;
         }
       })();
@@ -1406,7 +1511,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     routeRowThreadKey,
     departingThreadKey,
     folderGroups: boringSidebarEnabled
-      ? scopedProjectGroups.length === 0
+      ? !isCustomSpace && scopedProjectGroups.length === 0
         ? // An archived project keeps a folder for its active threads, below the rest.
           [...scopeGroups, ...projectGroups.filter((project) => project.archived)]
         : scopedProjectGroups
@@ -2785,7 +2890,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 canHandoffToMachine: canOpenThreadHandoff(threadRef.environmentId),
                 // An archived project is not a filter choice.
                 projectFilter:
-                  threadProjectGroup && !threadProjectGroup.archived
+                  !isCustomSpace && threadProjectGroup && !threadProjectGroup.archived
                     ? {
                         label: threadProjectGroup.displayName,
                         isActive: projectScopeKeys.includes(threadProjectGroup.projectKey),
@@ -3113,7 +3218,32 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       )
     : null;
 
+  const createInSpace = () => {
+    if (spaceScope.kind !== "space") return;
+    if (writableSpaceProjects.length === 1) {
+      if (isMobile) setOpenMobile(false);
+      if (
+        readEnvironmentScope(
+          writableSpaceProjects[0]!.ref.environmentId,
+          AuthOrchestrationOperateScope,
+        )
+      )
+        void handleNewThread(writableSpaceProjects[0]!.ref);
+    } else if (writableSpaceProjects.length > 1) {
+      setChooseSpaceProject(spaceScope.id);
+    } else {
+      toastManager.add({ type: "info", title: t("This Space has no writable projects.") });
+    }
+  };
+  const onSpaceCreateThread = useStableCallback(createInSpace);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the route shortcut with the current sidebar handler
+  useEffect(() => sidebarSpaceCommands.subscribe(onSpaceCreateThread), [onSpaceCreateThread]);
+
   const handleNewThreadClick = (event?: ReactMouseEvent) => {
+    if (isCustomSpace) {
+      createInSpace();
+      return;
+    }
     const scopedProjectRef = resolveScopedNewThreadProjectRef({
       shiftKey: event?.shiftKey ?? false,
       // The folder sidebar's header button always opens the picker.
@@ -3154,16 +3284,98 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ? shortcutLabelForCommand(keybindings, "chat.newLocal")
       : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  const visibleRouteThread =
+    routeThreadKey === null
+      ? undefined
+      : threads.find((thread) => threadShellKey(thread) === routeThreadKey);
+  const activeSpaceId = spaces.active?.id ?? null;
+  const belongsToSpace =
+    visibleRouteThread !== undefined &&
+    spaceProjectKeys?.has(sidebarSpaceProjectKey(visibleRouteThread)) === true;
+  const rememberSpaceRoute = useStableCallback((id: string, ref: ScopedThreadRef) =>
+    spaces.rememberThread(id, ref),
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- checkpoints the last authorized route into the window session
+  useEffect(() => {
+    if (
+      activeSpaceId !== null &&
+      routeThreadRef !== null &&
+      belongsToSpace &&
+      pendingSpaceNavigation.current === null
+    ) {
+      rememberSpaceRoute(activeSpaceId, routeThreadRef);
+    }
+  }, [activeSpaceId, belongsToSpace, rememberSpaceRoute, routeThreadRef]);
+  const routeOutsideSpace = isCustomSpace && visibleRouteThread !== undefined && !belongsToSpace;
+  const goToSpace = (space: SidebarSpace | null) => {
+    const last = space === null ? undefined : spaces.restoreThread(space.id);
+    const thread =
+      last === undefined
+        ? undefined
+        : threads.find(
+            (item) => item.id === last.threadId && item.environmentId === last.environmentId,
+          );
+    const currentScope = resolveSidebarSpaceScope(
+      space,
+      spaceProjectOptions.map(({ ref }) => ref),
+    );
+    const inScope =
+      currentScope.kind === "space" &&
+      thread !== undefined &&
+      thread.archivedAt == null &&
+      currentScope.projectRefs.some(
+        (ref) => sidebarSpaceProjectKey(ref) === sidebarSpaceProjectKey(thread),
+      );
+    const navigation =
+      last && inScope
+        ? router.navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(last) })
+        : router.navigate({ to: "/", search: space === null ? {} : { spaceLanding: true } });
+    pendingSpaceNavigation.current = navigation;
+    const clear = () => {
+      if (pendingSpaceNavigation.current === navigation) pendingSpaceNavigation.current = null;
+    };
+    void navigation.then(clear, clear);
+  };
+  const switchSpace = (space: SidebarSpace | null) => {
+    const nextId = space?.id ?? null;
+    if (nextId === activeSpaceId) return;
+    spaces.select(nextId);
+    if (space === null) setPersistedProjectScopeKeys([]);
+    clearSelection();
+    setThreadSearchQuery("");
+    setSearchHighlightKey(null);
+    setChooseSpaceProject(null);
+    goToSpace(space);
+  };
+  const onSwitchSpaceCommand = useStableCallback((id: string | null) => {
+    if (id === null) switchSpace(null);
+    else {
+      const space = spaces.spaces.find((candidate) => candidate.id === id);
+      if (space !== undefined) switchSpace(space);
+    }
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens for the command palette's chosen Space
+  useEffect(
+    () => sidebarSpaceCommands.subscribeSwitch(onSwitchSpaceCommand),
+    [onSwitchSpaceCommand],
+  );
   return (
     <SidebarFolderDrop>
-      <SidebarChromeHeader isElectron={isElectron} />
+      <SidebarChromeHeader isElectron={isElectron} isInSpace={isCustomSpace} />
+      <SidebarSpacePicker
+        spaces={spaces.spaces}
+        active={spaces.active}
+        onSelect={switchSpace}
+        onEdit={() => setSpaceEditor({ editing: spaces.active })}
+      />
       <SidebarContent
         ref={sidebarContentRef}
         className="min-h-full"
         fixedHeader={
           <SidebarGroup className="z-[1]">
+            <SidebarHumanActionInbox />
             <SidebarThreadHeader
-              hasProjects={projectGroups.length > 0}
+              hasProjects={!isCustomSpace && projectGroups.length > 0}
               projectScope={
                 <Combobox
                   items={projectScopeItems}
@@ -3423,7 +3635,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 </Combobox>
               }
               onNewThread={handleNewThreadClick}
-              newThreadDisabled={projects.length === 0}
+              newThreadDisabled={
+                isCustomSpace ? writableSpaceProjects.length === 0 : projects.length === 0
+              }
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
               showNewThreadInProjectHint={
@@ -3525,6 +3739,74 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               </p>
             )
           ) : null}
+          {routeOutsideSpace ? (
+            <div className="flex flex-wrap items-center gap-1 px-2 py-1 text-xs text-sidebar-muted-foreground">
+              <p role="status">{t("This thread is outside the current Space.")}</p>
+              <Button size="sm" variant="ghost" onClick={() => goToSpace(spaces.active)}>
+                {t("Return to Space")}
+              </Button>
+              {spaces.spaces
+                .filter(
+                  (space) =>
+                    visibleRouteThread &&
+                    space.projectRefs.some(
+                      (ref) =>
+                        sidebarSpaceProjectKey(ref) === sidebarSpaceProjectKey(visibleRouteThread),
+                    ),
+                )
+                .map((space) => (
+                  <Button
+                    key={space.id}
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      spaces.select(space.id);
+                      setThreadSearchQuery("");
+                      clearSelection();
+                      if (routeThreadRef !== null) spaces.rememberThread(space.id, routeThreadRef);
+                    }}
+                  >
+                    {space.name}
+                  </Button>
+                ))}
+            </div>
+          ) : null}
+          {isCustomSpace && isSearchingThreads ? (
+            <div className="px-2 py-1 text-xs text-sidebar-muted-foreground">
+              {remoteSpaceSearch.length < spaceSearchEnvironments.length ? (
+                <p>
+                  {remoteSpaceSearch.length === 0
+                    ? t("Showing matches from loaded threads only.")
+                    : t("Some connections only search loaded threads.")}
+                </p>
+              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => openCommandPalette({ query: threadSearchQuery })}
+              >
+                {t("Search all projects")}
+              </Button>
+            </div>
+          ) : null}
+          {spaceScope.kind === "space" &&
+          (spaceScope.status !== "ready" ||
+            spaceScope.projectRefs.length < (spaces.active?.projectRefs.length ?? 0)) ? (
+            <div className="px-2 py-3 text-xs text-sidebar-muted-foreground">
+              <p role="status">
+                {spaceScope.status === "empty"
+                  ? t("This Space has no projects.")
+                  : t("Some projects in this Space are unavailable.")}
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSpaceEditor({ editing: spaces.active })}
+              >
+                {t("Edit Space")}
+              </Button>
+            </div>
+          ) : null}
           {/* A scope can hide every active thread; say so even when its project still has settled ones. */}
           {!isSearchingThreads &&
           !hasProjectFolders &&
@@ -3568,7 +3850,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   </span>
                   <button
                     type="button"
-                    onClick={() => setProjectScopeKeys([])}
+                    onClick={() => (isCustomSpace ? switchSpace(null) : setProjectScopeKeys([]))}
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     {t("Show all projects")}
@@ -3933,7 +4215,58 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ) : null}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarChromeFooter />
+      <SidebarChromeFooter>
+        <SidebarSpaceFooter
+          spaces={spaces.spaces}
+          active={spaces.active}
+          onSelect={switchSpace}
+          onCreate={() => setSpaceEditor({ editing: null })}
+        />
+      </SidebarChromeFooter>
+      {spaceEditor !== null ? (
+        <SidebarSpaceEditor
+          editing={spaceEditor.editing}
+          spaces={spaces.spaces}
+          projects={spaceProjectOptions}
+          onSave={(space) => {
+            spaces.save(space);
+            if (spaceEditor.editing === null) switchSpace(space);
+            setSpaceEditor(null);
+          }}
+          onRemove={(id) => {
+            if (id === activeSpaceId) switchSpace(null);
+            spaces.remove(id);
+            setSpaceEditor(null);
+          }}
+          onClose={() => setSpaceEditor(null)}
+        />
+      ) : null}
+      {chooseSpaceProject !== null && chooseSpaceProject === activeSpaceId ? (
+        <SidebarSpaceNewThread
+          projects={writableSpaceProjects}
+          onSelect={(ref) => {
+            setChooseSpaceProject(null);
+            if (
+              !writableSpaceProjects.some(
+                ({ ref: candidate }) =>
+                  sidebarSpaceProjectKey(candidate) === sidebarSpaceProjectKey(ref),
+              ) ||
+              !readEnvironmentScope(ref.environmentId, AuthOrchestrationOperateScope)
+            )
+              return;
+            if (isMobile) setOpenMobile(false);
+            void handleNewThread(ref);
+          }}
+          onClose={() => setChooseSpaceProject(null)}
+        />
+      ) : null}
+      {notesProject ? (
+        <ProjectNotesDialog
+          key={`${notesProject.environmentId}:${notesProject.projectId}`}
+          project={notesProject}
+          onClose={() => setNotesProject(null)}
+        />
+      ) : null}
     </SidebarFolderDrop>
   );
 }

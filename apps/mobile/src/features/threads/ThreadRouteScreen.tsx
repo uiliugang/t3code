@@ -29,6 +29,7 @@ import { useGT, useMessages } from "gt-react-native";
 import * as Option from "effect/Option";
 import {
   AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
   DEFAULT_SERVER_SETTINGS,
@@ -96,6 +97,11 @@ import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
+import { hasLiveHumanAction } from "@t3tools/client-runtime/state/human-action-inbox";
+import {
+  useLiveMobileHumanAction,
+  type MobileHumanActionTarget,
+} from "../../state/human-action-inbox";
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
@@ -181,6 +187,7 @@ type ThreadRouteScreenRouteProps = StaticScreenProps<{
   readonly draft?: NewTaskDraftRouteParams;
   readonly inspector?: ThreadInspectorTarget;
   readonly prompt?: string | string[];
+  readonly pendingHumanAction?: MobileHumanActionTarget & { readonly activation: string };
 }>;
 
 interface ThreadRouteScreenProps extends ThreadRouteScreenRouteProps {
@@ -190,6 +197,7 @@ interface ThreadRouteScreenProps extends ThreadRouteScreenRouteProps {
 }
 
 function ThreadUnavailableScreen(props: {
+  readonly detail?: string;
   readonly actionLabel: string;
   readonly onAction: () => void;
 }) {
@@ -208,7 +216,9 @@ function ThreadUnavailableScreen(props: {
       >
         <EmptyState
           title={gt("Thread unavailable")}
-          detail={gt("This thread is not available in the current mobile snapshot.")}
+          detail={
+            props.detail ?? gt("This thread is not available in the current mobile snapshot.")
+          }
           actionLabel={props.actionLabel}
           onAction={props.onAction}
         />
@@ -339,6 +349,16 @@ function LiveThreadRouteController(props: ThreadRouteScreenProps) {
     return withInspectorHeader(<OpeningThreadLoadingScreen />);
   }
 
+  if (params.pendingHumanAction) {
+    return withInspectorHeader(
+      <ThreadUnavailableScreen
+        detail={t("This request is no longer available.")}
+        actionLabel={t("Back")}
+        onAction={() => navigation.goBack()}
+      />,
+    );
+  }
+
   if (
     routeName === "Thread" &&
     !props.inspectorPresentation &&
@@ -405,7 +425,47 @@ function ThreadRouteContent(
   const composer = useThreadComposerState({ startSideChat });
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
-  const requests = useSelectedThreadRequests();
+  const requestedAction = props.route.params?.pendingHumanAction;
+  const [ignoredAction, setIgnoredAction] = useState<string | null>(null);
+  const canReadThread = useEnvironmentScope(
+    selectedThread?.environmentId ?? null,
+    AuthOrchestrationReadScope,
+  );
+  const requestedInboxTarget =
+    requestedAction &&
+    ignoredAction !== requestedAction.activation &&
+    requestedAction.environmentId === selectedThread?.environmentId &&
+    requestedAction.threadId === selectedThread.id
+      ? requestedAction
+      : null;
+  const authorizedTarget = canReadThread && canOperateThread ? requestedInboxTarget : null;
+  const inboxStatus = useLiveMobileHumanAction(authorizedTarget);
+  const liveTarget =
+    authorizedTarget !== null &&
+    inboxStatus === "ready" &&
+    selectedThreadDetailState.status === "live" &&
+    selectedThreadDetail !== null &&
+    hasLiveHumanAction(selectedThreadDetail, authorizedTarget)
+      ? authorizedTarget
+      : null;
+  const requests = useSelectedThreadRequests(
+    requestedInboxTarget === null ? undefined : liveTarget,
+  );
+  const targetShown =
+    liveTarget?.kind === "approval"
+      ? requests.activePendingApproval !== null
+      : requests.activePendingUserInput !== null;
+  const inboxTargetNotice =
+    requestedInboxTarget !== null && !targetShown
+      ? {
+          message:
+            inboxStatus === "checking" ||
+            (inboxStatus === "ready" && selectedThreadDetailState.status !== "live")
+              ? t("Checking…")
+              : t("This request is no longer available."),
+          onContinue: () => setIgnoredAction(requestedInboxTarget.activation),
+        }
+      : null;
   useThreadStatusAnnouncements({
     threadKey:
       selectedThread === null || isProviderNativeSubagentThread(selectedThread.source)
@@ -1163,6 +1223,9 @@ function ThreadRouteContent(
               }
             : null
         }
+        inboxTargeted={requestedInboxTarget !== null}
+        inboxTargetNotice={inboxTargetNotice}
+        inboxQuestionActivation={liveTarget?.kind === "user_input" ? liveTarget.activation : null}
         activePendingApproval={requests.activePendingApproval}
         activePendingApprovals={requests.activePendingApprovals}
         respondingApprovalId={requests.respondingApprovalId}

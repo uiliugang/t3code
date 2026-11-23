@@ -716,6 +716,10 @@
       "types": "./src/threadFindBlockTags.ts",
       "import": "./src/threadFindBlockTags.ts"
     },
+    "./desktopProjectNotesFrames": {
+      "types": "./src/desktopProjectNotesFrames.ts",
+      "import": "./src/desktopProjectNotesFrames.ts"
+    },
     "./assistantInsights": {
       "types": "./src/assistantInsights.ts",
       "import": "./src/assistantInsights.ts"

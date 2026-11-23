@@ -197,7 +197,12 @@ function collectAnsweredRequestDrafts(
   );
 }
 
-export function useSelectedThreadRequests() {
+export function useSelectedThreadRequests(
+  inboxTarget?: {
+    readonly kind: "approval" | "user_input";
+    readonly requestId: RuntimeRequestId;
+  } | null,
+) {
   const respondToApproval = useAtomCommand(
     threadEnvironment.respondToApproval,
     "thread approval response",
@@ -217,9 +222,23 @@ export function useSelectedThreadRequests() {
   const [respondingApprovalId, setRespondingApprovalId] = useState<RuntimeRequestId | null>(null);
   const [respondingUserInputId, setRespondingUserInputId] = useState<RuntimeRequestId | null>(null);
 
-  const activePendingApprovals = pendingRequests?.approvals ?? EMPTY_PENDING_REQUESTS.approvals;
+  const approvals = pendingRequests?.approvals ?? EMPTY_PENDING_REQUESTS.approvals;
+  const userInputs = pendingRequests?.userInputs ?? EMPTY_PENDING_REQUESTS.userInputs;
+  const activePendingApprovals =
+    inboxTarget === undefined
+      ? approvals
+      : approvals.filter(
+          (request) =>
+            inboxTarget?.kind === "approval" && request.requestId === inboxTarget.requestId,
+        );
+  const activePendingUserInputs =
+    inboxTarget === undefined
+      ? userInputs
+      : userInputs.filter(
+          (request) =>
+            inboxTarget?.kind === "user_input" && request.requestId === inboxTarget.requestId,
+        );
   const activePendingApproval = activePendingApprovals[0] ?? null;
-  const activePendingUserInputs = pendingRequests?.userInputs ?? EMPTY_PENDING_REQUESTS.userInputs;
   const activePendingUserInput = activePendingUserInputs[0] ?? null;
   const questionServerConfigs = useServerConfigs();
   const attachmentDrafts = useAtomValue(

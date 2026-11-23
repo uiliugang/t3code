@@ -77,6 +77,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.skillsSubscribe
   | typeof WS_METHODS.providerAuthSubscribe
   | typeof WS_METHODS.providerInstallSubscribe
+  | typeof ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions
   | typeof ORCHESTRATION_V2_WS_METHODS.subscribeShell
   | typeof ORCHESTRATION_V2_WS_METHODS.subscribeThread
   | typeof WS_METHODS.peerLinksSubscribeThread
@@ -314,7 +315,7 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
     input: EnvironmentRpcInput<TTag>,
     stream: Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>,
   ) => Stream.Stream<A, EnvironmentRpcStreamFailure<TTag>>,
-  options?: SubscriptionOptions<TTag> & { readonly retryValue?: A },
+  options?: SubscriptionOptions<TTag> & { readonly retryValue?: A; readonly resetValue?: A },
 ): Stream.Stream<
   A,
   EnvironmentRpcStreamFailure<TTag>,
@@ -337,7 +338,8 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
       return sessions.pipe(
         Stream.switchMap(
           Option.match({
-            onNone: () => Stream.empty,
+            onNone: () =>
+              options?.resetValue === undefined ? Stream.empty : Stream.succeed(options.resetValue),
             onSome: (session) => {
               const method = (
                 tag === WS_METHODS.subscribeServerConfig
@@ -482,7 +484,9 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
                     }),
                   ),
                 );
-              return subscribeToSession();
+              return options?.resetValue === undefined
+                ? subscribeToSession()
+                : Stream.concat(Stream.succeed(options.resetValue), subscribeToSession());
             },
           }),
         ),
@@ -557,6 +561,18 @@ export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
   EnvironmentSupervisor.EnvironmentSupervisor
 > {
   return subscribeDynamic(tag, () => Effect.succeed(input), options);
+}
+
+export function subscribeResetOnSession<TTag extends EnvironmentSubscriptionRpcTag>(
+  tag: TTag,
+  input: EnvironmentRpcInput<TTag>,
+) {
+  return subscribeDynamicMapped<TTag, EnvironmentRpcStreamValue<TTag> | null>(
+    tag,
+    () => Effect.succeed(input),
+    (_session, stream) => stream,
+    { resetValue: null, retryValue: null },
+  );
 }
 
 const sessionCapabilities = (session: RpcSession) =>

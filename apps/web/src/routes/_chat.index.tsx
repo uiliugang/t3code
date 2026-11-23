@@ -1,3 +1,8 @@
+import {
+  readActiveSidebarSpaceId,
+  useActiveSidebarSpaceId,
+} from "../components/sidebar/SidebarSpaces";
+import { useUiTranslation } from "../hooks/useUiTranslation";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -24,6 +29,8 @@ import { useEnvironments } from "../state/environments";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
+  const activeSpace = useActiveSidebarSpaceId();
+  const { spaceLanding } = Route.useSearch();
   const { environments, isReady } = useEnvironments();
 
   if (authGateState.status === "hosted-static") {
@@ -31,7 +38,26 @@ function ChatIndexRouteView() {
     if (environments.length === 0) return <HostedEmptyState />;
   }
 
-  return <IndexDraftLanding />;
+  return activeSpace !== null || spaceLanding ? <SpaceLanding /> : <IndexDraftLanding />;
+}
+
+function SpaceLanding() {
+  const t = useUiTranslation();
+  return (
+    <SidebarInset
+      {...workspaceAreaProps("home", 1, t("Space threads"))}
+      role="main"
+      className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
+    >
+      {isElectron ? <WorkspacePageHeader electron /> : null}
+      <Empty className="flex-1">
+        <EmptyHeader>
+          <EmptyTitle>{t("Choose a thread")}</EmptyTitle>
+          <EmptyDescription>{t("Open a thread or start one from the sidebar.")}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    </SidebarInset>
+  );
 }
 
 function IndexDraftLanding() {
@@ -41,7 +67,12 @@ function IndexDraftLanding() {
   const handleNewThread = useNewThreadHandler();
   const router = useRouter();
   // Read at effect time; this page can stay mounted while the router is already navigating away.
-  const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
+  const isStillOnIndex = useEffectEvent(
+    () =>
+      router.state.location.pathname === "/" &&
+      router.state.location.search.spaceLanding !== true &&
+      readActiveSidebarSpaceId() === null,
+  );
   const startedAttemptRef = useRef<number | null>(null);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
@@ -122,5 +153,7 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
 }
 
 export const Route = createFileRoute("/_chat/")({
+  validateSearch: (search: Record<string, unknown>): { readonly spaceLanding?: true } =>
+    search.spaceLanding === true ? { spaceLanding: true } : {},
   component: ChatIndexRouteView,
 });

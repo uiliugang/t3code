@@ -63,6 +63,8 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
       role="group"
       aria-label={m(label)}
       data-v2-item-type="approval_request"
+      data-human-action-request={approval.requestId}
+      tabIndex={-1}
       wrapLabel
       icon={
         <ToolActivityIconView

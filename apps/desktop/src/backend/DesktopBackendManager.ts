@@ -21,6 +21,11 @@ import {
   SERVER_EXIT_CODE_MANAGED_POLICY,
   SERVER_EXIT_CODE_STATE_DIR_OWNED,
   DesktopBackendBootstrap,
+  DESKTOP_PROJECT_NOTES_INPUT_FD,
+  DESKTOP_PROJECT_NOTES_OUTPUT_FD,
+  type DesktopProjectNotesCall,
+  type DesktopProjectNotesOutcome,
+  type EnvironmentId,
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   DesktopTelemetryControlMessage,
@@ -31,11 +36,17 @@ import {
   databaseMigrationProgress,
   isRunningDatabaseMigrations,
 } from "@t3tools/shared/databaseMigrationLog";
+import { desktopProjectNotesLines } from "@t3tools/shared/desktopProjectNotesFrames";
 import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/httpReadiness";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
+
+import {
+  makeDesktopProjectNotesTransport,
+  type DesktopProjectNotesTransport,
+} from "./DesktopProjectNotesTransport.ts";
 
 const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
@@ -201,6 +212,7 @@ type TrackBackendProcess = (pid: number) => Effect.Effect<Effect.Effect<void>>;
 interface RunBackendProcessOptions extends DesktopBackendStartConfig {
   readonly desktopTelemetryStream: Stream.Stream<Uint8Array>;
   readonly desktopBrowserStream?: Stream.Stream<Uint8Array>;
+  readonly projectNotesTransport?: DesktopProjectNotesTransport;
   readonly onDesktopBrowserCommand?: (line: string) => Effect.Effect<void>;
   readonly onDesktopTelemetryControl?: (
     message: DesktopTelemetryControlMessageValue,
@@ -251,6 +263,11 @@ export interface DesktopBackendInstance {
   readonly currentConfig: Effect.Effect<Option.Option<DesktopBackendStartConfig>>;
   readonly snapshot: Effect.Effect<DesktopBackendSnapshot>;
   readonly waitForReady: (timeout: Duration.Duration) => Effect.Effect<boolean>;
+  readonly projectNotesEnvironmentId?: Effect.Effect<EnvironmentId | null>;
+  readonly callProjectNotes?: (
+    environmentId: EnvironmentId,
+    call: DesktopProjectNotesCall,
+  ) => Effect.Effect<DesktopProjectNotesOutcome>;
 }
 
 export interface BackendInstanceSpec {
@@ -445,7 +462,17 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
   options: RunBackendProcessOptions,
 ): Effect.fn.Return<BackendProcessExit, BackendProcessError, BackendProcessRunRequirements> {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const bootstrapJson = yield* encodeBootstrapJson(options.bootstrap).pipe(
+  const notes =
+    options.bootstrapDelivery === "fd3" && options.bootstrap.desktopProjectNotesNonce !== undefined
+      ? options.projectNotesTransport
+      : undefined;
+  const { desktopProjectNotesNonce, ...bootstrap } = options.bootstrap;
+  const bootstrapJson = yield* encodeBootstrapJson({
+    ...bootstrap,
+    ...(notes === undefined || desktopProjectNotesNonce === undefined
+      ? {}
+      : { desktopProjectNotesNonce }),
+  }).pipe(
     Effect.mapError(
       (cause) =>
         new BackendProcessBootstrapEncodeError({
@@ -487,6 +514,13 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     }
     if (options.bootstrap.desktopBrowserControlFd !== undefined) {
       additionalFds[`fd${options.bootstrap.desktopBrowserControlFd}`] = { type: "output" };
+    }
+    if (notes !== undefined) {
+      additionalFds[`fd${DESKTOP_PROJECT_NOTES_INPUT_FD}`] = {
+        type: "input",
+        stream: notes.outgoing,
+      };
+      additionalFds[`fd${DESKTOP_PROJECT_NOTES_OUTPUT_FD}`] = { type: "output" };
     }
   }
   const command = ChildProcess.make(options.executablePath, options.args, {
@@ -577,6 +611,14 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
           cause: Cause.pretty(cause),
         }),
       ),
+      Effect.forkScoped,
+    );
+  }
+  if (notes !== undefined) {
+    yield* desktopProjectNotesLines(handle.getOutputFd(DESKTOP_PROJECT_NOTES_OUTPUT_FD)).pipe(
+      Stream.runForEach(notes.accept),
+      Effect.ignore,
+      Effect.ensuring(notes.close),
       Effect.forkScoped,
     );
   }
@@ -724,6 +766,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const mutex = yield* Semaphore.make(1);
   const outputTail = yield* Ref.make("");
   const migrationProgress = yield* Ref.make<DatabaseMigrationProgress | null>(null);
+  const currentProjectNotes = yield* Ref.make<DesktopProjectNotesTransport | null>(null);
   // One streaming decoder per stream keeps UTF-8 characters split across chunks intact.
   const makeOutputDecoders = () => ({ stdout: new TextDecoder(), stderr: new TextDecoder() });
   let outputDecoders = makeOutputDecoders();
@@ -982,9 +1025,24 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           );
         });
 
+        const notesNonce =
+          spec.id === PRIMARY_INSTANCE_ID && config.value.bootstrapDelivery === "fd3"
+            ? Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
+                byte.toString(16).padStart(2, "0"),
+              ).join("")
+            : undefined;
+        const notes =
+          notesNonce === undefined ? null : yield* makeDesktopProjectNotesTransport(notesNonce);
+        yield* Ref.set(currentProjectNotes, notes);
         const program = runBackendProcess({
           ...config.value,
           ...(spec.trackProcess === undefined ? {} : { trackProcess: spec.trackProcess }),
+          ...(notes === null || notesNonce === undefined
+            ? {}
+            : {
+                bootstrap: { ...config.value.bootstrap, desktopProjectNotesNonce: notesNonce },
+                projectNotesTransport: notes,
+              }),
           desktopTelemetryStream: desktopTelemetryPublisher.encoded,
           desktopBrowserStream: desktopBrowserHost.events,
           onDesktopBrowserCommand: desktopBrowserHost.handleCommandLine,
@@ -1079,6 +1137,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
               Effect.andThen(backendOutputLog.writeOutputChunk(streamName, chunk)),
             ),
         }).pipe(
+          Effect.ensuring(notes?.close ?? Effect.void),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HttpClient.HttpClient, httpClient),
           Scope.provide(runScope),
@@ -1266,6 +1325,29 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
       ),
   );
 
+  const projectNotesEnvironmentId = Effect.gen(function* () {
+    const current = yield* SubscriptionRef.get(state);
+    if (!current.ready || Option.isNone(current.active) || current.active.value.stopRequested)
+      return null;
+    const notes = yield* Ref.get(currentProjectNotes);
+    return notes === null ? null : yield* notes.status;
+  });
+  const rejectNotes: DesktopProjectNotesOutcome = { ok: false, failure: { reason: "unavailable" } };
+  const callProjectNotes = Effect.fn("desktop.backendInstance.callProjectNotes")(function* (
+    environmentId: EnvironmentId,
+    call: DesktopProjectNotesCall,
+  ) {
+    const generation = yield* Ref.get(currentProjectNotes);
+    if (generation === null || (yield* projectNotesEnvironmentId) !== environmentId)
+      return rejectNotes;
+    const outcome = yield* generation.call(environmentId, call);
+    if (
+      (yield* Ref.get(currentProjectNotes)) !== generation ||
+      (yield* projectNotesEnvironmentId) !== environmentId
+    )
+      return rejectNotes;
+    return outcome;
+  });
   yield* Effect.addFinalizer(() => stop());
 
   return {
@@ -1276,5 +1358,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     currentConfig,
     snapshot,
     waitForReady,
+    projectNotesEnvironmentId,
+    callProjectNotes,
   } satisfies DesktopBackendInstance;
 });

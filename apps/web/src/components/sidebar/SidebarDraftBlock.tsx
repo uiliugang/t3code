@@ -1,3 +1,4 @@
+import { sidebarSpaceProjectKey } from "@t3tools/client-runtime/sidebar-spaces";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
 import type { ContextMenuSource } from "@t3tools/contracts";
 import { contextMenuSourceOf } from "../../contextMenuSource";
@@ -244,9 +245,11 @@ export function useSidebarDrafts(
         if (session.promotedTo != null) continue;
         if (
           scopedProjectKeys !== null &&
-          !scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`) &&
+          !scopedProjectKeys.has(sidebarSpaceProjectKey(session)) &&
           !(session.selectedProjectIds ?? []).some((id) =>
-            scopedProjectKeys.has(`${session.environmentId}:${id}`),
+            scopedProjectKeys.has(
+              sidebarSpaceProjectKey({ environmentId: session.environmentId, projectId: id }),
+            ),
           )
         ) {
           continue;

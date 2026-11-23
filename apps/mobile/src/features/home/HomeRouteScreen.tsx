@@ -22,6 +22,7 @@ import {
   useWorkspacePaneState,
 } from "../layout/AdaptiveWorkspaceLayout";
 import { AndroidHomeFabLayout } from "./AndroidHomeFab";
+import { HomeHumanActionInbox } from "./HomeHumanActionInbox";
 import { HomeScreen } from "./HomeScreen";
 import { useHomeListOptions } from "./home-list-options";
 import {
@@ -194,6 +195,19 @@ export function HomeRouteScreen() {
         />
 
         <HomeScreen
+          inboxEntry={
+            visible ? (
+              <HomeHumanActionInbox
+                onOpenTarget={(target) =>
+                  selectThreadRoute({
+                    environmentId: target.environmentId,
+                    threadId: target.threadId,
+                    pendingHumanAction: { ...target, activation: uuidv4() },
+                  })
+                }
+              />
+            ) : null
+          }
           catalogState={catalogState}
           environments={environments}
           onAddConnection={() => openSettings(navigation, "SettingsEnvironmentNew")}

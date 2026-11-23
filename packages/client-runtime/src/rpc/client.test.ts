@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  ORCHESTRATION_V2_WS_METHODS,
   type RelayClientInstallProgressEvent,
   type ServerConfig,
   type ServerLifecycleStreamEvent,
@@ -33,6 +34,7 @@ import {
   runStream,
   subscribe,
   subscribeDynamicWithSession,
+  subscribeResetOnSession,
   refreshVcsBranch,
   subscribeMeituanTools,
 } from "./client.ts";
@@ -129,6 +131,35 @@ describe("environment RPC", () => {
         });
       }
       expect(calls).toEqual(["first", "last"]);
+    }),
+  );
+
+  it.effect("clears pending actions on disconnect before restarting the sequence", () =>
+    Effect.gen(function* () {
+      const { activeSession, supervisor } = yield* makeHarness();
+      const snapshots = yield* Queue.unbounded<number | null>();
+      const taggedSession = (sequence: number) =>
+        session({
+          [ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions]: () =>
+            Stream.concat(Stream.succeed({ sequence, targets: [] }), Stream.never),
+        } as unknown as WsRpcProtocolClient);
+      yield* subscribeResetOnSession(
+        ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions,
+        {},
+      ).pipe(
+        Stream.runForEach((value) => Queue.offer(snapshots, value?.sequence ?? null)),
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.forkChild,
+      );
+      expect(yield* Queue.take(snapshots)).toBeNull();
+      yield* SubscriptionRef.set(activeSession, Option.some(taggedSession(37)));
+      expect(yield* Queue.take(snapshots)).toBeNull();
+      expect(yield* Queue.take(snapshots)).toBe(37);
+      yield* SubscriptionRef.set(activeSession, Option.none());
+      expect(yield* Queue.take(snapshots)).toBeNull();
+      yield* SubscriptionRef.set(activeSession, Option.some(taggedSession(1)));
+      expect(yield* Queue.take(snapshots)).toBeNull();
+      expect(yield* Queue.take(snapshots)).toBe(1);
     }),
   );
 

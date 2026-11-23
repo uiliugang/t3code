@@ -277,6 +277,7 @@ export function usePendingThreadRequests(input: {
   readonly environmentId: EnvironmentId;
   readonly activeThreadId: ThreadId | null;
   readonly serverProjection: ThreadStructure | null;
+  readonly preferredQuestion?: RuntimeRequestId | null | undefined;
   readonly supportsQuestionAttachments: boolean;
   readonly composerDraftTarget: ScopedThreadRef | DraftId;
   readonly setComposerDraftPrompt: (target: ScopedThreadRef | DraftId, prompt: string) => void;
@@ -331,10 +332,22 @@ export function usePendingThreadRequests(input: {
     pendingRequests.approvals.length === 0
       ? NO_PENDING_APPROVALS
       : derivePendingApprovals(pendingRequests.approvals);
-  const pendingUserInputs =
+  const orderedUserInputs =
     pendingRequests.userInputs.length === 0
       ? NO_PENDING_USER_INPUTS
       : derivePendingUserInputs(pendingRequests.userInputs);
+  const preferredQuestion = orderedUserInputs.find(
+    (request) => request.requestId === input.preferredQuestion,
+  );
+  const pendingUserInputs =
+    input.preferredQuestion === null
+      ? NO_PENDING_USER_INPUTS
+      : preferredQuestion === undefined || preferredQuestion === orderedUserInputs[0]
+        ? orderedUserInputs
+        : [
+            preferredQuestion,
+            ...orderedUserInputs.filter((request) => request !== preferredQuestion),
+          ];
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const activePendingRequestKey = userInputDraftKey(
     environmentId,

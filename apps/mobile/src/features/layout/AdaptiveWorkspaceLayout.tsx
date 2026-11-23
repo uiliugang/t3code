@@ -16,7 +16,13 @@ import {
 } from "./adaptive-workspace-context";
 import { threadSelectionDeferral } from "./deferred-navigation";
 import { uuidv4 } from "../../lib/uuid";
-import { EnvironmentId, ThreadId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
+  EnvironmentId,
+  ThreadId,
+  type SidebarProjectGroupingMode,
+} from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
   CommonActions,
@@ -68,6 +74,15 @@ import { useProjects } from "../../state/entities";
 import { environmentThreadShells } from "../../state/threads";
 import { withKnownPullRequestSummary } from "../../state/use-thread-pr";
 import { mobilePreferencesAtom } from "../../state/preferences";
+import { readEnvironmentScope } from "../../state/session";
+import {
+  activeAndroidSidebarSpace,
+  androidSidebarSpaceAnchor,
+  androidSidebarSpaceDraftTargets,
+  availableAndroidSidebarProjects,
+  EMPTY_ANDROID_SIDEBAR_SPACES,
+} from "./workspace/android-sidebar-spaces";
+import { AndroidSpaceNewThreadPicker } from "./workspace/AndroidSpaceNewThreadPicker";
 import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";
 import { workspaceConnections } from "../../state/workspace";
 import {
@@ -563,10 +578,13 @@ function AdaptiveWorkspaceLayoutContent(
     const state = rootStackState(navigation);
     if (!state) return;
     const { workspace, overlays } = workspaceRoutesOf(state.routes.slice(0, state.index + 1));
+    const selections = currentWorkspaceSelections();
     const next = workspaceTabNavigationState(
       { ...state, routes: workspace },
       tab,
-      currentWorkspaceSelections(),
+      tab === "threads" && Platform.OS === "android" && layout.usesSplitView
+        ? scopedThreadSelections(selections)
+        : selections,
       {
         columns: workspaceTabColumns(Platform.OS, tab, options?.columns ?? layout.usesSplitView),
         check: workspaceSelectionCheck,
@@ -598,10 +616,81 @@ function AdaptiveWorkspaceLayoutContent(
     handleSelectDetail({ name: "Thread", params });
 
   const projects = useProjects();
+  const [newThreadSpaceId, setNewThreadSpaceId] = useState<string | null>(null);
+  const androidSpaceContext = () => {
+    const preferences = appAtomRegistry.get(mobilePreferencesAtom);
+    if (!AsyncResult.isSuccess(preferences)) return { kind: "loading" } as const;
+    const space = activeAndroidSidebarSpace(
+      preferences.value.androidSidebarSpaces ?? EMPTY_ANDROID_SIDEBAR_SPACES,
+    );
+    if (!space) return { kind: "all" } as const;
+    const readable = new Set(
+      appAtomRegistry
+        .get(workspaceConnections.environmentsAtom)
+        .filter(
+          (environment) =>
+            environment.isEnabled &&
+            environment.connectionState === "connected" &&
+            readEnvironmentScope(environment.environmentId, AuthOrchestrationReadScope),
+        )
+        .map((environment) => environment.environmentId),
+    );
+    return {
+      kind: "space",
+      space,
+      available: availableAndroidSidebarProjects(projects, readable),
+    } as const;
+  };
+  const scopedThreadSelections = (selections: ReturnType<typeof currentWorkspaceSelections>) => {
+    const scoped = androidSpaceContext();
+    if (scoped.kind === "all") return selections;
+    const { threads: _globalThread, threadsDraft: _globalDraft, ...otherTabs } = selections;
+    const anchor =
+      scoped.kind === "space"
+        ? androidSidebarSpaceAnchor(scoped.space, scoped.available, (ref) =>
+            appAtomRegistry
+              .get(environmentThreadShells.environmentThreadIndexAtom(ref.environmentId))
+              .get(ref.threadId),
+          )
+        : null;
+    return anchor ? { ...otherTabs, threads: anchor } : otherTabs;
+  };
+  const scopedDraftProjects = () => {
+    const scoped = androidSpaceContext();
+    if (scoped.kind !== "space") return null;
+    return {
+      spaceId: scoped.space.id,
+      targets: androidSidebarSpaceDraftTargets(scoped.space, scoped.available, (environmentId) =>
+        readEnvironmentScope(environmentId, AuthOrchestrationOperateScope),
+      ),
+    };
+  };
+  const startScopedProject = (project: (typeof projects)[number]) => {
+    handleSelectThreadRoute({
+      draft: {
+        requestId: uuidv4(),
+        environmentId: project.environmentId,
+        projectId: project.id,
+        title: project.title,
+      },
+    });
+  };
   const compactAndroidSettings =
     Platform.OS === "android" && androidSettingsOpen && !layout.usesSplitView;
   // Reads the open page when pressed, so the layout context doesn't change on every navigation.
   const handleStartNewTask = () => {
+    if (Platform.OS === "android" && layout.usesSplitView) {
+      const preferences = appAtomRegistry.get(mobilePreferencesAtom);
+      // Until hydration, we don't know whether the keyboard command must respect a saved Space.
+      if (!AsyncResult.isSuccess(preferences)) return;
+      const scoped = scopedDraftProjects();
+      if (scoped) {
+        const [only] = scoped.targets;
+        if (scoped.targets.length === 1 && only) startScopedProject(only);
+        else setNewThreadSpaceId(scoped.spaceId);
+        return;
+      }
+    }
     const state = rootStackState(navigation);
     const currentRoute = workspaceRoutesOf(
       state?.routes.slice(0, state.index + 1) ?? [],
@@ -670,6 +759,28 @@ function AdaptiveWorkspaceLayoutContent(
     handleStartNewTask();
     return true;
   });
+
+  const pickerScope = newThreadSpaceId && layout.usesSplitView ? scopedDraftProjects() : null;
+  const scopedNewThreadSheet =
+    newThreadSpaceId !== null && pickerScope?.spaceId === newThreadSpaceId ? (
+      <AndroidSpaceNewThreadPicker
+        projects={pickerScope.targets}
+        onClose={() => setNewThreadSpaceId(null)}
+        onPick={(project) => {
+          const freshScope = scopedDraftProjects();
+          const target =
+            freshScope?.spaceId === newThreadSpaceId
+              ? freshScope.targets.find(
+                  (candidate) =>
+                    candidate.environmentId === project.environmentId &&
+                    candidate.id === project.id,
+                )
+              : undefined;
+          if (target) startScopedProject(target);
+          setNewThreadSpaceId(null);
+        }}
+      />
+    ) : null;
 
   const inspectorColumnTargetWidth = panes.auxiliaryPaneVisible
     ? (panes.auxiliaryPaneWidth ?? 0)
@@ -1060,14 +1171,6 @@ function AdaptiveWorkspaceLayoutContent(
                 {sidebar ?? <WorkspaceThreadSidebar />}
               </RenderErrorBoundary>
             </PaneContext>
-            {/* Keep the pill under the content throughout the sidebar's clipping animation. */}
-            {floatingTabsEnabled && !workspacePage ? (
-              <FloatingWorkspaceTabs
-                paneWidth={layout.listPaneWidth}
-                onNewThread={handleStartNewTask}
-                onSelect={revealPrimarySidebar}
-              />
-            ) : null}
           </Animated.View>
         </Animated.View>
       ) : null}
@@ -1167,6 +1270,7 @@ function AdaptiveWorkspaceLayoutContent(
         />
       </PaneContext>
       {inspectorSheet}
+      {scopedNewThreadSheet}
       {shouldRenderNavigationRail && navigationRailWidth > 0 ? (
         // Its trailing inset clips the old rail as soon as Android fits the workspace to a cover display.
         <View

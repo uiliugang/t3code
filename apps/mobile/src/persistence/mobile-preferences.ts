@@ -8,6 +8,8 @@ import * as Semaphore from "effect/Semaphore";
 import { RequirementFilters, SavedViewIdentity } from "@t3tools/client-runtime/saved-views";
 import {
   EnvironmentId,
+  ScopedProjectRef,
+  ScopedThreadRef,
   IssueInvolvement,
   IssueListSort,
   IssueListState,
@@ -133,6 +135,19 @@ const PullRequestActivityVisibility = Schema.Struct({
 });
 export type PullRequestActivityVisibility = typeof PullRequestActivityVisibility.Type;
 
+const AndroidSidebarSpaces = Schema.Struct({
+  selectedId: Schema.NullOr(Schema.NonEmptyString),
+  spaces: Schema.Array(
+    Schema.Struct({
+      id: Schema.NonEmptyString,
+      name: Schema.NonEmptyString,
+      projectRefs: Schema.Array(ScopedProjectRef),
+      lastThread: Schema.optional(ScopedThreadRef),
+    }),
+  ),
+});
+const isAndroidSidebarSpaces = Schema.is(AndroidSidebarSpaces);
+
 const isThreadListFilters = Schema.is(ThreadListFilters);
 const isPullRequestActivityVisibility = Schema.is(PullRequestActivityVisibility);
 const isWorkspaceSelections = Schema.is(WorkspaceSelections);
@@ -205,6 +220,7 @@ export interface Preferences {
   readonly threadListSnoozedShelfExpanded?: boolean;
   readonly threadListWorkingShelfExpanded?: boolean;
   readonly threadListFilters?: ThreadListFilters;
+  readonly androidSidebarSpaces?: typeof AndroidSidebarSpaces.Type;
   readonly pullRequestListFilters?: PullRequestListPreferences;
   readonly workspaceSelections?: WorkspaceSelections;
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
@@ -308,6 +324,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSnoozedShelfExpanded?: boolean;
     threadListWorkingShelfExpanded?: boolean;
     threadListFilters?: ThreadListFilters;
+    androidSidebarSpaces?: typeof AndroidSidebarSpaces.Type;
     pullRequestListFilters?: PullRequestListPreferences;
     workspaceSelections?: WorkspaceSelections;
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
@@ -506,6 +523,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
     preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
+  }
+  if (isAndroidSidebarSpaces(parsed.androidSidebarSpaces)) {
+    preferences.androidSidebarSpaces = parsed.androidSidebarSpaces;
   }
   if (isThreadListFilters(parsed.threadListFilters)) {
     preferences.threadListFilters = parsed.threadListFilters;

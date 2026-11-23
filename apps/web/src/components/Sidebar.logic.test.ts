@@ -1634,7 +1634,7 @@ describe("pendingSidebarRouteReveal", () => {
 });
 
 describe("resolveSidebarRouteReveal", () => {
-  const scopedProjectKeys = new Set(["environment-test:project-scoped"]);
+  const scopedProjectKeys = new Set([JSON.stringify(["environment-test", "project-scoped"])]);
   const hidden = makeThreadFixture({ projectId: ProjectId.make("project-other") });
   const hiddenKey = "environment-test:thread-test";
   const findThread = (key: string) => (key === hiddenKey ? hidden : undefined);

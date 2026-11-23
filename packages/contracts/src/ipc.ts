@@ -1,5 +1,9 @@
 import * as Schema from "effect/Schema";
 import type { DatabaseMigrationProgress } from "./server.ts";
+import type {
+  DesktopProjectNotesOutcome,
+  DesktopProjectNotesPayload,
+} from "./desktopProjectNotes.ts";
 import type { PreviewCaptureFailureEncoded } from "./previewCapture.ts";
 
 import { EnvironmentId, PortSchema, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -999,6 +1003,8 @@ export interface DesktopBridge {
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;
   /** The environment ID recorded in this app's T3 home, such as its own machine's background service. */
   getHostEnvironmentId?: () => Promise<string | null>;
+  getProjectNotesEnvironment?: () => Promise<EnvironmentId | null>;
+  callProjectNotes?: (request: DesktopProjectNotesPayload) => Promise<DesktopProjectNotesOutcome>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;

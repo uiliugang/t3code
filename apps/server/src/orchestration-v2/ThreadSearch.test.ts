@@ -1420,6 +1420,65 @@ it.layer(layerTest)("ThreadSearch.searchThreadsWithOlderSettledRows", (it) => {
       assert.deepEqual((yield* searchMessages([])).matches, []);
     }),
   );
+  it.effect("restricts message limits and older rows to exact Space projects", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const sql = yield* SqlClient.SqlClient;
+      const project = ProjectId.make("project:space-tern");
+      const alsoAllowed = ProjectId.make("project:space-tern-archive");
+      const excluded = ProjectId.make("project:outside");
+      yield* createProject(project);
+      yield* createProject(alsoAllowed);
+      yield* createProject(excluded);
+      const allowed = ThreadId.make("thread:space-tern");
+      const older = ThreadId.make("thread:space-old");
+      const outside = ThreadId.make("thread:outside-old");
+      yield* Effect.forEach(
+        [
+          thread(allowed, project),
+          message(allowed, "inside", "user", "a tern note"),
+          thread(older, alsoAllowed, { title: "Tern sightings", settledAt: at(10) }),
+          thread(outside, excluded, { title: "Tern sightings", settledAt: at(10) }),
+          message(outside, "outside", "user", "tern tern tern"),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      const run = (projectIds?: ReadonlyArray<ProjectId>) =>
+        ThreadSearch.searchThreadsWithOlderSettledRows({
+          request: {
+            query: "tern",
+            limit: 1,
+            olderSettledBefore: DateTime.formatIso(at(30)),
+            ...(projectIds === undefined ? {} : { projectIds }),
+          },
+          search: search.search,
+          searchOlderSettled: search.searchOlderSettled,
+          sql,
+          readThreads: (threadIds) =>
+            projections.readShellSnapshot({ location: "active", threadIds }),
+          latestSequence: Effect.succeed(7),
+        });
+      const legacy = yield* run();
+      assert.deepEqual(
+        legacy.matches.map((match) => match.threadId),
+        [outside],
+      );
+      const scoped = yield* run([project, alsoAllowed]);
+      assert.deepEqual(
+        scoped.matches.map((match) => match.threadId),
+        [allowed],
+      );
+      assert.deepEqual(
+        scoped.threads?.map((row) => row.id),
+        [older],
+      );
+      const empty = yield* run([]);
+      assert.deepEqual(empty.matches, []);
+      assert.deepEqual(empty.threads, []);
+    }),
+  );
 });
 
 it.layer(layerTest)("ThreadSearch.searchThreads", (it) => {

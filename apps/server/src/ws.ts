@@ -283,6 +283,7 @@ import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { makeNoiseHttpBridge } from "./auth/noiseHttp.ts";
+import { subscribePendingHumanActions } from "./orchestration-v2/PendingHumanActions.ts";
 import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
 import type * as Socket from "effect/socket/Socket";
 import { serveNoiseMedia } from "./auth/noiseMedia.ts";
@@ -2409,6 +2410,10 @@ export const layerWsRpc = (
                   }),
                 ),
             ),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions]: () =>
+          Stream.unwrap(
+            authorizeEffect(AuthOrchestrationOperateScope, subscribePendingHumanActions()),
           ),
         [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: (input) =>
           Stream.unwrap(subscribeOrchestrationV2Shell(input)),

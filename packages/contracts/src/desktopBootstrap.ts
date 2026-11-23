@@ -2,6 +2,11 @@ import * as Schema from "effect/Schema";
 
 import { PortSchema, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
+import { DesktopProjectNotesLaunchNonce } from "./desktopProjectNotes.ts";
+
+export const DESKTOP_PROJECT_NOTES_INPUT_FD = 8;
+export const DESKTOP_PROJECT_NOTES_OUTPUT_FD = 9;
+
 // A supervisor must not restart a server refused by the state-directory owner.
 export const SERVER_EXIT_CODE_STATE_DIR_OWNED = 78;
 // A server the managed policy refused, so the desktop app blames the policy rather than the release.
@@ -29,6 +34,7 @@ export const DesktopBackendBootstrap = Schema.Struct({
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
   desktopBrowserFd: Schema.optionalKey(PositiveInt),
   desktopBrowserControlFd: Schema.optionalKey(PositiveInt),
+  desktopProjectNotesNonce: Schema.optionalKey(DesktopProjectNotesLaunchNonce),
   resourceMonitorPath: Schema.optionalKey(TrimmedNonEmptyString),
 });
 

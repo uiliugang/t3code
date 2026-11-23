@@ -210,6 +210,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
             ? t("Show the question and its options")
             : t("Hide the question and its options")
         }
+        data-human-action-request={prompt.requestId}
         data-pending-user-input-toggle={isCollapsed ? "collapsed" : "expanded"}
         className="px-4 py-1.5"
       >

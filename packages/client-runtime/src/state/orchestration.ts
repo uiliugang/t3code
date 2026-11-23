@@ -27,6 +27,7 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
+  createEnvironmentSubscriptionAtomFamily,
   createEnvironmentCommand,
   type QueryAnswerHandler,
 } from "./runtime.ts";
@@ -34,7 +35,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as ManagedRelayDpopSigner from "../relay/managedRelay.ts";
-import { EnvironmentRpcUnavailableError, request } from "../rpc/client.ts";
+import { EnvironmentRpcUnavailableError, request, subscribeResetOnSession } from "../rpc/client.ts";
 import type { EnvironmentShellState } from "./shell.ts";
 import { fetchEnvironmentThreadTranscript } from "./threadTranscriptHttp.ts";
 
@@ -158,6 +159,12 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       dispatchCommand: createEnvironmentRpcCommand(runtime, {
         label: "environment-data:orchestration-v2:dispatch-command",
         tag: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
+      }),
+      pendingHumanActions: createEnvironmentSubscriptionAtomFamily(runtime, {
+        label: "environment-data:orchestration-v2:pending-human-actions",
+        subscribe: (_input: Record<string, never>) =>
+          subscribeResetOnSession(ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions, {}),
+        idleTtlMs: 0,
       }),
       shell: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
         label: "environment-data:orchestration-v2:shell",

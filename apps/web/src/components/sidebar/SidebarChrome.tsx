@@ -46,8 +46,10 @@ import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
+  isInSpace = false,
 }: {
   isElectron: boolean;
+  isInSpace?: boolean;
 }) {
   const t = useUiTranslation();
   const stageLabel = useEnvironmentStageLabel();
@@ -62,34 +64,39 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       : null;
 
   return (
-    <div
-      className={cn(
-        "relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3",
-        isElectron && "drag-region",
-      )}
-    >
-      {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
-      <div className="relative top-[calc(var(--workspace-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
-        <SidebarTrigger
-          variant={backdropVariant ? "media-navigation" : "ghost"}
-          className="relative top-auto translate-y-0"
-          aria-label={t("Toggle main sidebar")}
-        />
-      </div>
-      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
-        <div className="flex shrink-0 items-center gap-1">
-          <SidebarBrand onBackdrop={backdropVariant !== null} />
+    <>
+      <div
+        className={cn(
+          "relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3",
+          isElectron && "drag-region",
+        )}
+      >
+        {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
+        <div className="relative top-[calc(var(--workspace-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
+          <SidebarTrigger
+            variant={backdropVariant ? "media-navigation" : "ghost"}
+            className="relative top-auto translate-y-0"
+            aria-label={t("Toggle main sidebar")}
+          />
         </div>
-        {pillLabel ? (
-          <div className="ml-1 flex h-7 items-center">
-            <Badge data-environment-identification="pill" size="sm" variant="secondary">
-              {pillLabel}
-            </Badge>
+        <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
+          <div className="flex shrink-0 items-center gap-1">
+            <SidebarBrand onBackdrop={backdropVariant !== null} isInSpace={isInSpace} />
           </div>
-        ) : null}
+          {pillLabel ? (
+            <div className="ml-1 flex h-7 items-center">
+              <Badge data-environment-identification="pill" size="sm" variant="secondary">
+                {pillLabel}
+              </Badge>
+            </div>
+          ) : null}
+        </div>
+        <NavigationHistoryControls onBackdrop={backdropVariant !== null} />
       </div>
-      <NavigationHistoryControls onBackdrop={backdropVariant !== null} />
-    </div>
+      <div className="shrink-0 px-2">
+        <SidebarUtilityMenu />
+      </div>
+    </>
   );
 });
 
@@ -120,7 +127,7 @@ export function SidebarBrandWidthProbe({
   );
 }
 
-function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
+function SidebarBrand({ onBackdrop, isInSpace }: { onBackdrop: boolean; isInSpace: boolean }) {
   const t = useUiTranslation();
   return (
     <Link
@@ -130,6 +137,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
+      search={isInSpace ? { spaceLanding: true } : {}}
     >
       <SidebarBrandMark onBackdrop={onBackdrop} />
     </Link>
@@ -158,11 +166,13 @@ function SidebarUtilityItem({
   label,
   onClick,
   onIntent,
+  current,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
   onIntent?: () => void;
+  current?: boolean;
 }) {
   return (
     <SidebarMenuItem className="shrink-0">
@@ -170,7 +180,8 @@ function SidebarUtilityItem({
         render={
           <SidebarMenuButton
             aria-label={label}
-            onClick={onClick}
+            aria-current={current ? "page" : undefined}
+            onClick={current ? undefined : onClick}
             onPointerEnter={onIntent}
             onFocus={onIntent}
             size="icon"
@@ -190,9 +201,8 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
-  const isOnUtilityPage = useLocation({
-    select: (location) => isSidebarUtilityPage(location.pathname),
-  });
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const isOnUtilityPage = isSidebarUtilityPage(pathname);
   const pullRequestsSupported = usePullRequestsSupported();
   const environmentIds = useConnectedEnvironmentIds();
   const closeMobileSidebar = () => {
@@ -226,72 +236,75 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
   return (
     <SidebarMenu className="flex-row items-center">
+      <SidebarUtilityItem
+        icon={<SettingsIcon />}
+        label={t("Settings")}
+        current={pathname === "/settings" || pathname.startsWith("/settings/")}
+        onClick={handleSettingsClick}
+      />
+      {pullRequestsSupported ? (
+        <SidebarUtilityItem
+          icon={<PullRequestGlyph.pullRequest />}
+          label={t("Pull requests")}
+          current={pathname === "/pull-requests"}
+          onClick={handlePullRequestsClick}
+        />
+      ) : null}
+      <SidebarUtilityItem
+        icon={<ClipboardListIcon />}
+        label={t("Requirements board")}
+        current={pathname === "/requirements" || pathname === "/issues"}
+        onIntent={() => {
+          void prefetchRequirementIssues(
+            appAtomRegistry,
+            sourceControlEnvironment.issues,
+            environmentIds,
+            undefined,
+            (id) =>
+              isMeituanServiceEnabled(
+                appAtomRegistry.get(serverEnvironment.settingsValueAtom(id)),
+                "requirements",
+              ),
+            (id) =>
+              appAtomRegistry.get(serverEnvironment.configValueAtom(id))?.requirementIssueTrackers
+                ? issueEnvironment.list
+                : undefined,
+          );
+        }}
+        onClick={() => {
+          closeMobileSidebar();
+          void navigate({ to: "/requirements" });
+        }}
+      />
+      <SidebarUtilityItem
+        icon={<ChartNoAxesColumnIcon />}
+        label={t("Usage")}
+        current={pathname === "/usage"}
+        onClick={handleUsageClick}
+      />
       {isOnUtilityPage ? (
-        <SidebarMenuItem className="min-w-0 flex-1">
-          <SidebarMenuButton onClick={handleBackClick}>
+        <SidebarMenuItem className="shrink-0">
+          <SidebarMenuButton size="icon" aria-label={t("Back")} onClick={handleBackClick}>
             <ArrowLeftIcon />
-            <span>{t("Back")}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
-      ) : (
-        <>
-          <SidebarUtilityItem
-            icon={<SettingsIcon />}
-            label={t("Settings")}
-            onClick={handleSettingsClick}
-          />
-          {pullRequestsSupported ? (
-            <SidebarUtilityItem
-              icon={<PullRequestGlyph.pullRequest />}
-              label={t("Pull requests")}
-              onClick={handlePullRequestsClick}
-            />
-          ) : null}
-          <SidebarUtilityItem
-            icon={<ClipboardListIcon />}
-            label={t("Requirements board")}
-            onIntent={() => {
-              void prefetchRequirementIssues(
-                appAtomRegistry,
-                sourceControlEnvironment.issues,
-                environmentIds,
-                undefined,
-                (id) =>
-                  isMeituanServiceEnabled(
-                    appAtomRegistry.get(serverEnvironment.settingsValueAtom(id)),
-                    "requirements",
-                  ),
-                (id) =>
-                  appAtomRegistry.get(serverEnvironment.configValueAtom(id))
-                    ?.requirementIssueTrackers
-                    ? issueEnvironment.list
-                    : undefined,
-              );
-            }}
-            onClick={() => {
-              closeMobileSidebar();
-              void navigate({ to: "/requirements" });
-            }}
-          />
-          <SidebarUtilityItem
-            icon={<ChartNoAxesColumnIcon />}
-            label={t("Usage")}
-            onClick={handleUsageClick}
-          />
-        </>
-      )}
-      <SidebarThreadUndoNotice />
-      <SidebarUpdatePill />
+      ) : null}
     </SidebarMenu>
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter({
+  children,
+}: {
+  children?: ReactNode;
+}) {
   return (
     <SidebarFooter>
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
-      <SidebarUtilityMenu />
+      <SidebarThreadUndoNotice />
+      <SidebarUpdatePill />
+      {children}
     </SidebarFooter>
   );
 });

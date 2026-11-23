@@ -1,3 +1,4 @@
+import { sidebarSpaceCommands, useSidebarSpaces } from "./sidebar/SidebarSpaces";
 import { ProjectLabel } from "./ProjectLabel";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { resolveDraftProjectSelection } from "./createWorkspace";
@@ -450,6 +451,7 @@ function OpenCommandPaletteDialog(props: {
   readonly initialContext: CommandPaletteReturnContext | undefined;
 }) {
   const t = useUiTranslation();
+  const sidebarSpaces = useSidebarSpaces();
   const gt = useGT();
   const messages = useMessages();
   const navigate = useNavigate();
@@ -965,6 +967,7 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
+    if (sidebarSpaceCommands.newThread()) return;
     await handleNewThread(scopeProjectRef(project.environmentId, project.id));
   };
 
@@ -986,6 +989,7 @@ function OpenCommandPaletteDialog(props: {
 
   const openingOrderThreadItems = useOrderWhileOpen(
     (() => {
+      if (sidebarSpaces.active !== null) return [];
       const isScratch = (project: CommandPaletteProject) =>
         isScratchProject(project, scratchWorkspaceRootFor(project.environmentId));
       const currentEntry =
@@ -1485,7 +1489,33 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (projects.length > 0) {
+  if (sidebarSpaces.active !== null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:new-thread-in-space",
+      searchTerms: ["new thread", "new chat", "space", "draft"],
+      title: t("New thread in this Space"),
+      icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "chat.newLocal",
+      run: () => {
+        sidebarSpaceCommands.newThread();
+        return Promise.resolve();
+      },
+    });
+  }
+  if (sidebarSpaces.spaces.length > 0) {
+    for (const space of [{ id: null, name: t("All projects") }, ...sidebarSpaces.spaces]) {
+      actionItems.push({
+        kind: "action",
+        value: `action:switch-space:${space.id ?? "all"}`,
+        searchTerms: ["space", "switch", space.name],
+        title: t("Switch Space to {name}", { name: space.name }),
+        icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+        run: () => Promise.resolve(sidebarSpaceCommands.switch(space.id)),
+      });
+    }
+  }
+  if (sidebarSpaces.active === null && projects.length > 0) {
     const activeProjectTitle =
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
       currentProject?.title ??
@@ -1533,7 +1563,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (scratchTargetEnvironmentId !== null) {
+  if (sidebarSpaces.active === null && scratchTargetEnvironmentId !== null) {
     actionItems.push({
       kind: "action",
       value: "action:new-thread-without-project",
