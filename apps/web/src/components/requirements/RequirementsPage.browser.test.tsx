@@ -118,6 +118,35 @@ vi.mock(import("~/state/server"), async () => {
     },
   } as never;
 });
+vi.mock(import("~/state/issues"), async (original) => {
+  const actual = await original();
+  const { Atom, AsyncResult } = await import("effect/reactivity");
+  const list = Atom.family((_key: string) =>
+    Atom.make(
+      AsyncResult.success({
+        viewers: {},
+        trackers: [],
+        entries: [],
+        errors: [],
+        nextCursors: {},
+      }),
+    ),
+  );
+  return {
+    ...actual,
+    issueEnvironment: {
+      ...actual.issueEnvironment,
+      list: (({ environmentId }: { environmentId: string }) => list(environmentId)) as never,
+      candidates: Atom.family(() =>
+        Atom.make(AsyncResult.success({ labels: [], assignees: [], truncated: false })),
+      ) as never,
+      create: {
+        ...actual.issueEnvironment.create,
+        permissionAtom: Atom.family(() => Atom.make(true)) as never,
+      },
+    },
+  };
+});
 vi.mock(import("~/state/sourceControl"), async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
   const issues = Atom.family((_key: string) =>
@@ -206,6 +235,7 @@ import {
   selectActiveRightPanelSurface,
   useRightPanelStore,
 } from "~/rightPanelStore";
+import { issueEnvironment } from "~/state/issues";
 import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { RequirementBoard, RequirementsPage } from "./RequirementsPage";
@@ -466,6 +496,124 @@ it("opens a compact workflow issue with its requirement details", async () => {
   ).toMatchObject({
     kind: "requirement-issue",
     issueId: "42",
+  });
+});
+
+it("preserves Linear workspace URLs in compact thread panels and does not falsely match a rebound workspace row", async () => {
+  using fixture = setup({ unifiedOnes: true });
+  await page.viewport(1280, 800);
+  const threadRef = {
+    environmentId: EnvironmentId.make("local"),
+    threadId: "thread-1" as import("@t3tools/contracts").ThreadId,
+  };
+  fixture.registry.set(
+    serverEnvironment.configValueAtom("local" as never) as Atom.Writable<unknown>,
+    {
+      workItems: true,
+      workItemDiscovery: true,
+      requirementIssueTrackers: true,
+      environment: { capabilities: { issues: true } },
+    },
+  );
+  const trackerAtom = issueEnvironment.list({
+    environmentId: "local",
+    input: { state: "all" },
+  } as never) as Atom.Writable<unknown>;
+  fixture.registry.set(
+    trackerAtom,
+    AsyncResult.success({
+      viewers: {},
+      trackers: [
+        {
+          tracker: "linear",
+          host: "linear.app",
+          projectCount: 1,
+          capabilities: {
+            create: true,
+            edit: true,
+            comment: true,
+            labels: true,
+            assignees: true,
+            reactions: true,
+            templates: true,
+            linkedPullRequests: true,
+            events: true,
+            search: true,
+          },
+          configured: true,
+          detail: null,
+        },
+      ],
+      entries: [
+        {
+          projectId: "project",
+          projectTitle: "Project",
+          tracker: "linear",
+          host: "linear.app",
+          scope: "ENG",
+          key: "ENG-1",
+          displayKey: "ENG-1",
+          title: "Globex ENG-1",
+          url: "https://linear.app/globex/issue/ENG-1/globex",
+          author: null,
+          state: { category: "open", name: "Todo" },
+          createdAt: "2026-11-16T00:00:00Z",
+          updatedAt: "2026-11-16T00:00:00Z",
+          closedAt: null,
+          assignees: [],
+          labels: [],
+          commentCount: 0,
+        },
+      ],
+      errors: [],
+      nextCursors: {},
+      scopes: [{ projectId: "project", tracker: "linear", host: "linear.app", scope: "ENG" }],
+    }),
+  );
+
+  // Saved Acme ENG-1 tab on the full Requirements board must not highlight Globex ENG-1 as selected.
+  useRightPanelStore.getState().openIssue(REQUIREMENTS_PANEL_REF, {
+    environmentId: "local",
+    projectId: "project",
+    tracker: "linear",
+    host: "linear.app",
+    scope: "ENG",
+    key: "ENG-1",
+    url: "https://linear.app/acme/issue/ENG-1/acme",
+  });
+  await using boardScreen = await render(
+    fixture.board({
+      assignee: "all",
+      detailEnvironmentId: EnvironmentId.make("local"),
+      issueId: "ENG-1",
+      issueProjectId: "project" as import("@t3tools/contracts").ProjectId,
+      issueTracker: "linear",
+      issueHost: "linear.app",
+      issueScope: "ENG",
+      issueUrl: "https://linear.app/acme/issue/ENG-1/acme",
+    }),
+  );
+  await expect
+    .element(boardScreen.getByRole("button", { name: /Globex ENG-1/ }))
+    .not.toHaveAttribute("aria-current", "true");
+
+  // Clicking Globex ENG-1 in the compact thread Requirements panel must keep its Linear workspace URL.
+  await using compactScreen = await render(
+    <RegistryContext.Provider value={fixture.registry}>
+      <RequirementBoard
+        compact
+        panelRef={threadRef}
+        environmentId={EnvironmentId.make("local")}
+        search={{ assignee: "all" }}
+        updateSearch={vi.fn()}
+      />
+    </RegistryContext.Provider>,
+  );
+  await compactScreen.getByRole("button", { name: /Globex ENG-1/ }).click();
+  expect(
+    selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
+  ).toMatchObject({
+    url: "https://linear.app/globex/issue/ENG-1/globex",
   });
 });
 

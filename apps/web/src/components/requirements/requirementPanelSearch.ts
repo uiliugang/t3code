@@ -74,6 +74,7 @@ export function requirementSelection(surface: RightPanelSurface | null): Require
         issueProvider: surface.provider,
         issueScope: surface.scope,
         issueHost: surface.host,
+        issueUrl: surface.url,
       };
     case "issue":
       return {

@@ -338,4 +338,11 @@ it("gives distinct keys and disambiguated labels to same-team Linear create targ
     "Linear · ENG (Acme App)",
     "Linear · ENG (Globex App)",
   ]);
+  const sameTitleProjects = [
+    { id: ProjectId.make("p-acme"), title: "App", workspaceRoot: "/work/acme/app" },
+    { id: ProjectId.make("p-globex"), title: "App", workspaceRoot: "/work/globex/app" },
+  ];
+  expect(
+    targets.map((target) => trackerCreateTargetLabel(target, targets, sameTitleProjects)),
+  ).toEqual(["Linear · ENG (App · /work/acme/app)", "Linear · ENG (App · /work/globex/app)"]);
 });

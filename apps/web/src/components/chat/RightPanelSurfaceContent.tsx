@@ -296,6 +296,7 @@ export function RightPanelSurfaceContent(props: {
               provider: surface.provider,
               ...(surface.host ? { host: surface.host } : {}),
               ...(surface.scope ? { scope: surface.scope } : {}),
+              ...(surface.url ? { url: surface.url } : {}),
             }}
             id={surface.issueId}
             cwd={project?.workspaceRoot ?? ""}

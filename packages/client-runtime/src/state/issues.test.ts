@@ -153,11 +153,33 @@ describe("mergeIssueListPage", () => {
     expect(merged[0]?.state.category).toBe("closed");
   });
 
-  it("keys rows case-insensitively by host and scope, exactly by key", () => {
+  it("keys rows case-insensitively by host and scope, exactly by key, and apart across Linear workspaces", () => {
     expect(issueEntryKey(entry({ key: "1", host: "GitHub.com", scope: "Acme/App" }))).toBe(
       issueEntryKey(entry({ key: "1" })),
     );
     expect(issueEntryKey(entry({ key: "ENG-1" }))).not.toBe(issueEntryKey(entry({ key: "eng-1" })));
+    const linear = IssueTrackerKind.make("linear");
+    expect(
+      issueEntryKey(
+        entry({
+          tracker: linear,
+          host: "linear.app",
+          scope: "ENG",
+          key: "ENG-1",
+          url: "https://linear.app/acme/issue/ENG-1/slug",
+        }),
+      ),
+    ).not.toBe(
+      issueEntryKey(
+        entry({
+          tracker: linear,
+          host: "linear.app",
+          scope: "ENG",
+          key: "ENG-1",
+          url: "https://linear.app/globex/issue/ENG-1/slug",
+        }),
+      ),
+    );
   });
 });
 

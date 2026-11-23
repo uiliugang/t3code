@@ -6,6 +6,7 @@ import type {
   Router,
   StackNavigationState,
 } from "@react-navigation/native";
+import { IssueTrackerKind, standaloneIssueWorkspace } from "@t3tools/contracts";
 import { workspaceRoutesOf } from "../workspace-overlay-routes";
 
 type RootParams = ReactNavigation.RootParamList;
@@ -48,11 +49,26 @@ const IDENTITY = {
 
 type RouteLike = { readonly name: string; readonly key?: string; readonly params?: object };
 
+function issueWorkspaceOf(params: Readonly<Record<string, unknown>> | undefined) {
+  return typeof params?.tracker === "string" && typeof params.url === "string"
+    ? standaloneIssueWorkspace({
+        tracker: IssueTrackerKind.make(params.tracker),
+        url: params.url,
+      })
+    : null;
+}
+
 function showsDetail(route: RouteLike, detail: WorkspaceDetail) {
   if (route.name !== detail.name) return false;
   const current = route.params as Readonly<Record<string, unknown>> | undefined;
   const target = detail.params as Readonly<Record<string, unknown>> | undefined;
-  return IDENTITY[detail.name].every((key) => current?.[key] === target?.[key]);
+  if (!IDENTITY[detail.name].every((key) => current?.[key] === target?.[key])) return false;
+  if (detail.name !== "Issue") return true;
+  const currentWorkspace = issueWorkspaceOf(current);
+  const targetWorkspace = issueWorkspaceOf(target);
+  return (
+    currentWorkspace === null || targetWorkspace === null || currentWorkspace === targetWorkspace
+  );
 }
 
 // UIKit pops a card by native Back before the router hears of it, so a row tapped meanwhile

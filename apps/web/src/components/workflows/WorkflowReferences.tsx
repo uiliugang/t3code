@@ -11,11 +11,12 @@ import { CircleCheckIcon, CircleDotIcon, ExternalLinkIcon, LinkIcon } from "luci
 import { isElectron } from "~/env";
 import { isTerminalFocused } from "../../lib/terminalFocus";
 import { cn } from "../../lib/utils";
-import { ISSUES_PANEL_REF, useRightPanelStore } from "../../rightPanelStore";
+import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "../../rightPanelStore";
 import { IssueDetailPanel } from "../issue/IssueDetailPanel";
 import { readIssueListPreferences } from "../issue/issueListPreferences";
 import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PULL_REQUEST_STATE_PRESENTATION } from "../pullRequest/pullRequestIcons";
+import { requirementsSearchFromIssuesSearch } from "../requirements/requirementPanelSearch";
 import { Button } from "../ui/button";
 
 /** The mark a reference wears: its kind's icon, in the ink its state has on its own page. */
@@ -95,8 +96,8 @@ export function useOpenReferencePage(
     const issue = workflowReferenceIssue(reference);
     if (issue !== null) {
       return () => {
-        // The Issues page shows the issue its panel has open; the address keeps the list's place.
-        useRightPanelStore.getState().openIssue(ISSUES_PANEL_REF, {
+        // The Requirements page shows the issue its panel has open; the address keeps the list's place.
+        useRightPanelStore.getState().openIssue(REQUIREMENTS_PANEL_REF, {
           environmentId,
           projectId: issue.projectId,
           tracker: issue.tracker,
@@ -106,8 +107,8 @@ export function useOpenReferencePage(
           ...(reference.url === null ? {} : { url: reference.url }),
         });
         void navigate({
-          to: "/issues",
-          search: {
+          to: "/requirements",
+          search: requirementsSearchFromIssuesSearch({
             ...readIssueListPreferences(),
             selectedEnvironmentId: environmentId,
             selectedProjectId: issue.projectId,
@@ -116,7 +117,7 @@ export function useOpenReferencePage(
             scope: issue.scope,
             key: issue.key,
             ...(reference.url === null ? {} : { url: reference.url }),
-          },
+          }),
         });
       };
     }

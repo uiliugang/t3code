@@ -846,6 +846,7 @@ function IssueSurfaceIcon({
             ...(surface.host ? { host: surface.host } : {}),
             scope,
             key,
+            ...(surface.url ? { url: surface.url } : {}),
           },
         }),
   ).data;

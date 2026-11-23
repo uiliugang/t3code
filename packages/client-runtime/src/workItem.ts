@@ -119,6 +119,7 @@ export function trackerCreateTargetLabel(
     readonly id: ProjectId;
     readonly title: string;
     readonly cwd?: string | undefined;
+    readonly workspaceRoot?: string | undefined;
   }>,
 ): string {
   const base = `${requirementTrackerLabel[target.provider]} · ${target.scope}`;
@@ -135,7 +136,8 @@ export function trackerCreateTargetLabel(
     const otherProject = projects.find((entry) => entry.id === other.projectId);
     return otherProject?.title === project.title;
   });
-  if (titleShared && project.cwd) return `${base} (${project.title} · ${project.cwd})`;
+  const location = project.cwd ?? project.workspaceRoot;
+  if (titleShared && location) return `${base} (${project.title} · ${location})`;
   return `${base} (${project.title})`;
 }
 export type RequirementSource = "all" | RequirementTracker | "local";

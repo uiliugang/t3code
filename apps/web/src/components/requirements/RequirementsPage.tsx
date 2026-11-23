@@ -3,9 +3,10 @@ import { msg, useGT } from "gt-react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
+  IssueTrackerKind,
   parseBranchIssueUrl,
+  standaloneIssueWorkspace,
   type IssueProvider,
-  type IssueTrackerKind,
   type ProjectId,
   type EnvironmentId,
   type ScopedThreadRef,
@@ -350,18 +351,36 @@ export function RequirementBoard({
     )
       return undefined;
     const environment = surface.environmentId ?? fallbackEnvironmentId;
+    if (surface.kind === "work-item") {
+      return entries.find(
+        (entry) =>
+          entry.environmentId === environment &&
+          entry.kind === "local" &&
+          entry.item.id === surface.workItemId,
+      );
+    }
+    const surfaceTracker = surface.kind === "issue" ? surface.tracker : surface.provider;
+    const surfaceWorkspace = surface.url
+      ? standaloneIssueWorkspace({
+          tracker: IssueTrackerKind.make(surfaceTracker),
+          url: surface.url,
+        })
+      : null;
     let match: EnvironmentRequirementEntry | undefined;
     for (const entry of entries) {
       if (entry.environmentId !== environment) continue;
-      if (surface.kind === "work-item") {
-        if (entry.kind === "local" && entry.item.id === surface.workItemId) return entry;
-      } else if (
+      if (
         entry.kind === "issue" &&
         entry.projectId === surface.projectId &&
-        entry.provider === (surface.kind === "issue" ? surface.tracker : surface.provider) &&
+        entry.provider === surfaceTracker &&
         entry.issue.id === (surface.kind === "issue" ? surface.key : surface.issueId) &&
         (surface.host === undefined || entry.host === surface.host) &&
-        (surface.scope === undefined || entry.scope === surface.scope)
+        (surface.scope === undefined || entry.scope === surface.scope) &&
+        (surfaceWorkspace === null ||
+          standaloneIssueWorkspace({
+            tracker: IssueTrackerKind.make(entry.provider),
+            url: entry.issue.url,
+          }) === surfaceWorkspace)
       ) {
         if (surface.host && surface.scope) return entry;
         if (match) return undefined;
@@ -457,6 +476,7 @@ export function RequirementBoard({
         host: entry.host,
         ...(entry.scope ? { scope: entry.scope } : {}),
         issueId: entry.issue.id,
+        url: entry.issue.url,
         title: entry.title,
       });
     selectOpened();
@@ -488,6 +508,7 @@ export function RequirementBoard({
         ...(search.issueHost ? { host: search.issueHost } : {}),
         ...(issueScope ? { scope: issueScope } : {}),
         issueId,
+        ...(search.issueUrl ? { url: search.issueUrl } : {}),
       });
     else if (pullRequest)
       panels.openPullRequest(rightPanelRef, {
@@ -1617,6 +1638,7 @@ export function RequirementBoard({
                 provider: creatingIssue,
                 ...(issueScope ? { scope: issueScope } : {}),
                 issueId: issue.id,
+                url: issue.url,
                 title: issue.title,
               });
               selectOpened({

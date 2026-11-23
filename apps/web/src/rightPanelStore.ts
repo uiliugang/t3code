@@ -127,6 +127,7 @@ export type RightPanelSurface =
       host?: string;
       scope?: string;
       issueId: string;
+      url?: string;
       title?: string;
     }
   | {
@@ -427,6 +428,7 @@ export interface RequirementIssueSurfaceTarget {
   host?: string;
   scope?: string;
   issueId: string;
+  url?: string;
   title?: string;
 }
 
@@ -435,7 +437,15 @@ function requirementIssueSurfaceId(
 ): RequirementIssueSurface["id"] {
   const environment =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
-  const scope = target.scope === undefined ? "" : `${encodeURIComponent(target.scope)}:`;
+  const workspace = standaloneIssueWorkspace({
+    tracker: IssueTrackerKind.make(target.provider),
+    ...(target.url === undefined ? {} : { url: target.url }),
+  });
+  const rawScope =
+    workspace === null
+      ? target.scope
+      : `${workspace}/${target.scope === undefined ? "" : target.scope}`;
+  const scope = rawScope === undefined ? "" : `${encodeURIComponent(rawScope)}:`;
   const host = target.host ? `${encodeURIComponent(target.host)}:` : "";
   return `requirement-issue:${environment}${encodeURIComponent(target.projectId)}:${target.provider}:${host}${scope}${encodeURIComponent(target.issueId)}`;
 }
@@ -450,6 +460,7 @@ function requirementIssueSurface(target: RequirementIssueSurfaceTarget): Require
     ...(target.host ? { host: target.host } : {}),
     ...(typeof target.scope === "string" ? { scope: target.scope } : {}),
     issueId: target.issueId,
+    ...(typeof target.url === "string" ? { url: target.url } : {}),
     ...(typeof target.title === "string" ? { title: target.title } : {}),
   };
 }
@@ -823,12 +834,14 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         return [];
                       }
                       const { environmentId, ...rest } = surface;
-                      return [
-                        requirementIssueSurface({
-                          ...rest,
-                          ...(typeof environmentId === "string" ? { environmentId } : {}),
-                        }),
-                      ];
+                      const rebuilt = requirementIssueSurface({
+                        ...rest,
+                        ...(typeof environmentId === "string" ? { environmentId } : {}),
+                      });
+                      if (typeof surface.id === "string" && surface.id !== rebuilt.id) {
+                        migratedSurfaceIds.set(surface.id, rebuilt.id);
+                      }
+                      return [rebuilt];
                     }
                     if (surface.kind === "work-item") {
                       if (typeof surface.workItemId !== "string") return [];

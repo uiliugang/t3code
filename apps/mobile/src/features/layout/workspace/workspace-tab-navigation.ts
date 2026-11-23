@@ -1,3 +1,4 @@
+import { IssueTrackerKind, standaloneIssueWorkspace } from "@t3tools/contracts";
 import type { WorkspaceSelections } from "../../../persistence/mobile-preferences";
 import {
   SETTINGS_PAGE_TARGETS,
@@ -98,15 +99,27 @@ function issueSelection(params: object | undefined): Omit<IssueSelection, "key">
     scope: identity.scope,
     issueKey: identity.issueKey,
     ...(typeof value?.host === "string" ? { host: value.host } : {}),
+    ...(typeof value?.url === "string" ? { url: value.url } : {}),
   };
 }
 
+function issueWorkspace(selection: Pick<IssueSelection, "tracker" | "url">) {
+  return selection.url
+    ? standaloneIssueWorkspace({
+        tracker: IssueTrackerKind.make(selection.tracker),
+        url: selection.url,
+      })
+    : null;
+}
+
 function sameIssue(left: IssueSelection | undefined, right: Omit<IssueSelection, "key">) {
-  return (
-    left !== undefined &&
-    ISSUE_IDENTITY.every((key) => left[key] === right[key]) &&
-    left.host === right.host
-  );
+  if (left === undefined) return false;
+  if (!ISSUE_IDENTITY.every((key) => left[key] === right[key]) || left.host !== right.host) {
+    return false;
+  }
+  const leftWorkspace = issueWorkspace(left);
+  const rightWorkspace = issueWorkspace(right);
+  return leftWorkspace === rightWorkspace && left.url === right.url;
 }
 
 /**
@@ -283,7 +296,7 @@ export function workspaceTabNavigationState<
   }
   const home = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
   const detail =
-    options.columns && (tab === "threads" || tab === "pullRequests")
+    options.columns && (tab === "threads" || tab === "pullRequests" || tab === "issues")
       ? detailRoute(state, tab, selections, options.check, options.seedPullRequest)
       : undefined;
   const routes = [keyed(home), ...(detail ? [keyedPage(detail)] : []), ...overlays];
