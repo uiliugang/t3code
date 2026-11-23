@@ -179,7 +179,7 @@ export function createIssueEnvironmentAtoms<R, E>(
   const detail = (
     {
       environmentId,
-      input: { projectId, tracker, host, scope, key },
+      input: { projectId, tracker, host, scope, key, url },
     }: {
       readonly environmentId: EnvironmentId;
       readonly input: IssueRef;
@@ -189,7 +189,14 @@ export function createIssueEnvironmentAtoms<R, E>(
     detailQuery(
       {
         environmentId,
-        input: { projectId, tracker, ...(host === undefined ? {} : { host }), scope, key },
+        input: {
+          projectId,
+          tracker,
+          ...(host === undefined ? {} : { host }),
+          scope,
+          key,
+          ...(url === undefined ? {} : { url }),
+        },
       },
       mountScope,
     );

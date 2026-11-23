@@ -129,6 +129,33 @@ describe("ThreadIssueService", () => {
           expect(rejected._tag).toBe("OrchestratorDispatchError");
           const shell = yield* orchestrator.getThreadShell(THREAD_ID);
           expect(shell?.issues).toHaveLength(2);
+
+          // Even with one Linear link left, a URL-less unlink cannot prove which workspace the
+          // caller was viewing and must be rejected.
+          yield* orchestrator.dispatch({
+            type: "thread.issue.unlink",
+            commandId: CommandId.make("cmd:unlink:globex"),
+            threadId: THREAD_ID,
+            tracker,
+            host: "linear.app",
+            scope: "ENG",
+            key: "ENG-1",
+            url: "https://linear.app/globex/issue/ENG-1",
+          });
+          expect((yield* orchestrator.getThreadShell(THREAD_ID))?.issues).toHaveLength(1);
+          const rejectedSingle = yield* orchestrator
+            .dispatch({
+              type: "thread.issue.unlink",
+              commandId: CommandId.make("cmd:unlink:single-urlless"),
+              threadId: THREAD_ID,
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+            })
+            .pipe(Effect.flip);
+          expect(rejectedSingle._tag).toBe("OrchestratorDispatchError");
+          expect((yield* orchestrator.getThreadShell(THREAD_ID))?.issues).toHaveLength(1);
         }).pipe(Effect.provide(layer));
       }),
   );

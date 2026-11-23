@@ -346,27 +346,91 @@ const make = Effect.gen(function* () {
    * host is served by the project but marked read-only. A project with two trackers serves the
    * one the reference names.
    */
-  const requireProject = (
+  const requireProject = Effect.fn("IssueService.requireProject")(function* (
     ref: IssueScopeRef,
-  ): Effect.Effect<SupportedProject & { readonly writable: boolean }, IssueError> =>
-    listProjects({ projectId: ref.projectId }).pipe(
-      Effect.flatMap(({ supported }) => {
-        const host = ref.host?.trim().toLowerCase();
-        const candidates = supported.filter(
-          (candidate) =>
-            candidate.tracker === ref.tracker && (host === undefined || candidate.host === host),
+  ): Effect.fn.Return<SupportedProject & { readonly writable: boolean }, IssueError> {
+    const standalone = ref.url ? findStandaloneIssueUrl(registry.standalone, ref.url) : null;
+    if (standalone !== null && standalone.tracker === ref.tracker) {
+      const authority = new URL(ref.url!).host.toLowerCase();
+      const { supported } = yield* listProjects({ host: standalone.link.host, authority });
+      const onHost = supported.filter((project) => project.tracker === standalone.tracker);
+      const onAuthority = onHost.filter((project) => project.host === authority);
+      const onTracker = onAuthority.length > 0 ? onAuthority : onHost;
+      const preferFirst = (projects: ReadonlyArray<SupportedProject>) =>
+        projects.find((project) => project.project.id === ref.projectId) ?? projects[0];
+      const scope = ref.scope.trim();
+      const scopeLower = scope.toLowerCase();
+      const serve = (candidates: ReadonlyArray<SupportedProject>) => {
+        const own = preferFirst(
+          candidates.filter((project) => project.scope.toLowerCase() === scopeLower),
         );
-        const scope = ref.scope.trim();
-        const own = candidates.find(
-          (candidate) => candidate.scope.toLowerCase() === scope.toLowerCase(),
-        );
-        const lender = own ?? candidates[0];
-        if (lender === undefined || (!own && ref.tracker === "meituan")) {
-          return Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" }));
+        const lender = own ?? preferFirst(candidates);
+        if (lender === undefined) return null;
+        return {
+          ...lender,
+          scope: own === undefined ? scope : lender.scope,
+          writable: own !== undefined,
+        };
+      };
+      const exact = onTracker.filter((project) => project.scope.toLowerCase() === scopeLower);
+      const preferred = (projects: ReadonlyArray<SupportedProject>) => [
+        ...projects.filter((project) => project.project.id === ref.projectId),
+        ...projects,
+      ];
+      const ordered = [...preferred(exact), ...preferred(onTracker)];
+      const accounts = [...new Set(ordered.map((project) => project.accountId))];
+      if (accounts.length === 0) {
+        return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+      }
+      let failure: IssueError | null = null;
+      for (const accountId of accounts) {
+        const found = serve(onTracker.filter((project) => project.accountId === accountId));
+        if (found === null) continue;
+        const read = yield* (found.api.getIssueLink ?? found.api.getIssue)({
+          cwd: found.project.workspaceRoot,
+          host: found.host,
+          scope: standalone.link.scope,
+          key: standalone.link.key,
+        }).pipe(Effect.mapError(toIssueError("resolveUrl")), Effect.result);
+        if (read._tag === "Failure") {
+          if (failure === null || isNotFound(failure)) failure = read.failure;
+          continue;
         }
-        return Effect.succeed({ ...lender, scope, writable: own !== undefined });
-      }),
+        const canonicalUrl = parseUrl(read.success.url);
+        const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
+        if (
+          canonical !== null &&
+          canonical.workspace.toLowerCase() === standalone.link.workspace.toLowerCase()
+        ) {
+          return found;
+        }
+      }
+      return yield* (
+        failure ??
+          new IssueOperationError({
+            operation: "resolveUrl",
+            reason: "not-found",
+            detail: "This issue URL does not belong to the connected workspace.",
+          })
+      );
+    }
+
+    const { supported } = yield* listProjects({ projectId: ref.projectId });
+    const host = ref.host?.trim().toLowerCase();
+    const candidates = supported.filter(
+      (candidate) =>
+        candidate.tracker === ref.tracker && (host === undefined || candidate.host === host),
     );
+    const scope = ref.scope.trim();
+    const own = candidates.find(
+      (candidate) => candidate.scope.toLowerCase() === scope.toLowerCase(),
+    );
+    const lender = own ?? candidates[0];
+    if (lender === undefined || (!own && ref.tracker === "meituan")) {
+      return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+    }
+    return { ...lender, scope, writable: own !== undefined };
+  });
 
   const requireWritable = (ref: IssueScopeRef, operation: string) =>
     requireProject(ref).pipe(
@@ -559,22 +623,37 @@ const make = Effect.gen(function* () {
     capabilities: project.api.capabilities,
   });
 
-  const detail: IssueService["Service"]["detail"] = (input) =>
-    requireProject(input).pipe(
-      Effect.flatMap((project) =>
-        project.api
+  const detail: IssueService["Service"]["detail"] = Effect.fn("IssueService.detail")(
+    function* (input) {
+      const standalone = input.url ? findStandaloneIssueUrl(registry.standalone, input.url) : null;
+      if (standalone !== null && standalone.tracker === input.tracker) {
+        const resolved = yield* resolveUrl(input.url!, input.projectId);
+        if (resolved.issue !== undefined && resolved.key === input.key) {
+          return resolved.issue;
+        }
+        const project = yield* requireProject({ ...input, projectId: resolved.projectId });
+        const issue = yield* project.api
           .getIssue({
             cwd: project.project.workspaceRoot,
             host: project.host,
             scope: project.scope,
             key: input.key,
           })
-          .pipe(
-            Effect.mapError(toIssueError("detail")),
-            Effect.map((issue) => toDetail(project, issue)),
-          ),
-      ),
-    );
+          .pipe(Effect.mapError(toIssueError("detail")));
+        return toDetail(project, issue);
+      }
+      const project = yield* requireProject(input);
+      const issue = yield* project.api
+        .getIssue({
+          cwd: project.project.workspaceRoot,
+          host: project.host,
+          scope: project.scope,
+          key: input.key,
+        })
+        .pipe(Effect.mapError(toIssueError("detail")));
+      return toDetail(project, issue);
+    },
+  );
 
   const linkMetadata: IssueService["Service"]["linkMetadata"] = (input) =>
     requireProject(input).pipe(

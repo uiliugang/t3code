@@ -415,6 +415,7 @@ describe("issue toolkit handlers", () => {
             host: "github.com",
             scope: "t3tools/t3code",
             key: "7",
+            url: "https://github.com/T3Tools/T3Code/issues/7",
           },
           url: "https://github.com/T3Tools/T3Code/issues/7",
           displayKey: detail.displayKey,

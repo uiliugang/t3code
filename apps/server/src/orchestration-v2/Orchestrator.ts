@@ -13,7 +13,7 @@ import {
   runRanAfter,
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
-import { threadIssueKeysEqual } from "@t3tools/contracts";
+import { standaloneIssueWorkspace, threadIssueKeysEqual } from "@t3tools/contracts";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
 import {
   normalizeThreadPullRequestKey,
@@ -4552,15 +4552,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
     }
-    if (
-      command.type === "thread.issue.unlink" &&
-      (thread.issues ?? []).filter((link) => threadIssueKeysEqual(link, command)).length > 1
-    ) {
-      return yield* new OrchestratorDispatchError({
-        commandId: command.commandId,
-        commandType: command.type,
-        cause: `Multiple issues linked to thread ${command.threadId} match ${command.key}; unlink by URL instead.`,
-      });
+    if (command.type === "thread.issue.unlink") {
+      const matchedLinks = (thread.issues ?? []).filter((link) =>
+        threadIssueKeysEqual(link, command),
+      );
+      if (
+        matchedLinks.length > 1 ||
+        (standaloneIssueWorkspace(command) === null &&
+          matchedLinks.some((link) => standaloneIssueWorkspace(link) !== null))
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Ambiguous issue unlink for ${command.key} on thread ${command.threadId}; specify the issue URL to select the workspace.`,
+        });
+      }
     }
     if (
       command.type === "thread.metadata.update" &&

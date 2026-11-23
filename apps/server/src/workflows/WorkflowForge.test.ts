@@ -125,13 +125,17 @@ it("keeps standalone tracker references distinct across workspaces while unifyin
     url: "https://linear.app/acme/issue/ENG-1/acme",
     state: { category: "open", name: "Todo" },
   });
-  const acmeTouch = issueReference(linearRef("project-acme"));
+  const acmeOtherProject = issueReference(linearRef("project-acme-2"), {
+    title: "Acme",
+    url: "https://linear.app/acme/issue/ENG-1/acme",
+    state: { category: "open", name: "Todo" },
+  });
   const globex = issueReference(linearRef("project-globex"), {
     title: "Globex",
     url: "https://linear.app/globex/issue/ENG-1/globex",
     state: { category: "open", name: "Todo" },
   });
-  assert.strictEqual(acme.key, acmeTouch.key);
+  assert.strictEqual(acme.key, acmeOtherProject.key);
   assert.notStrictEqual(acme.key, globex.key);
 
   const githubA = issueReference({

@@ -236,6 +236,7 @@ export function RightPanelSurfaceContent(props: {
             ...(surface.host ? { host: surface.host } : {}),
             scope: surface.scope,
             key: surface.key,
+            ...(surface.url ? { url: surface.url } : {}),
           }}
           threadRef={threadRef}
           onSelectPullRequest={(reference) => {

@@ -92,6 +92,8 @@ export const IssueRef = Schema.Struct({
   host: Schema.optional(TrimmedNonEmptyString),
   scope: TrimmedNonEmptyString,
   key: TrimmedNonEmptyString,
+  /** Optional issue web URL; pins standalone tracker reads and writes to the saved workspace. */
+  url: Schema.optional(TrimmedNonEmptyString),
 });
 export type IssueRef = typeof IssueRef.Type;
 
@@ -101,6 +103,8 @@ export const IssueScopeRef = Schema.Struct({
   tracker: IssueTrackerKind,
   host: Schema.optional(TrimmedNonEmptyString),
   scope: TrimmedNonEmptyString,
+  /** Optional issue web URL; pins standalone tracker reads and writes to the saved workspace. */
+  url: Schema.optional(TrimmedNonEmptyString),
 });
 export type IssueScopeRef = typeof IssueScopeRef.Type;
 
@@ -555,7 +559,9 @@ export const ThreadIssueLink = Schema.Struct({
 });
 export type ThreadIssueLink = typeof ThreadIssueLink.Type;
 
-function standaloneIssueWorkspace(key: ThreadIssueKey): string | null {
+export function standaloneIssueWorkspace(
+  key: Pick<ThreadIssueKey, "tracker" | "url">,
+): string | null {
   if (key.url === undefined || key.tracker !== "linear") return null;
   try {
     const parsed = new URL(key.url.trim());

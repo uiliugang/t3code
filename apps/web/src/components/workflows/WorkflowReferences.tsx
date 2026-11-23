@@ -149,7 +149,12 @@ export function WorkflowReferencePanel({
 }) {
   const issue = workflowReferenceIssue(reference);
   if (issue !== null) {
-    return <IssueDetailPanel environmentId={environmentId} reference={issue} />;
+    return (
+      <IssueDetailPanel
+        environmentId={environmentId}
+        reference={reference.url === null ? issue : { ...issue, url: reference.url }}
+      />
+    );
   }
   const pullRequest = workflowReferencePullRequest(reference);
   if (pullRequest !== null) {

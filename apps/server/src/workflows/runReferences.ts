@@ -2,6 +2,7 @@
 // step merged. Anything that touches something calls `noteReference`; a new kind of thing is a
 // new caller, and nothing else changes.
 import {
+  standaloneIssueWorkspace,
   type IssueRef,
   type IssueState,
   type PullRequestRef,
@@ -58,17 +59,23 @@ export const issueReference = (
   ref: IssueRef,
   seen?: { readonly title: string; readonly url: string; readonly state: IssueState },
 ): ReferenceInput => {
+  const url = seen?.url ?? ref.url;
   // Git-hosted trackers share global repository scopes across projects; standalone trackers (such
-  // as Linear) scope team keys per workspace/account, which `ref.projectId` identifies.
+  // as Linear) scope team keys per workspace, which the canonical URL names (falling back to
+  // `projectId` only when no URL is available).
   const isGitHostTracker = sourceControlDefinitions.definitions.some(
     (definition) => definition.kind === String(ref.tracker),
   );
+  const workspace =
+    url === undefined ? null : standaloneIssueWorkspace({ tracker: ref.tracker, url });
   return {
     kind: WorkflowReferenceKind.issue,
     key: JSON.stringify(
       isGitHostTracker
         ? [ref.tracker, ref.host ?? "", ref.scope.toLowerCase(), ref.key]
-        : [ref.tracker, ref.host ?? "", ref.projectId, ref.scope.toLowerCase(), ref.key],
+        : workspace !== null
+          ? [ref.tracker, ref.host ?? "", workspace, ref.scope.toLowerCase(), ref.key]
+          : [ref.tracker, ref.host ?? "", ref.projectId, ref.scope.toLowerCase(), ref.key],
     ),
     address: {
       projectId: ref.projectId,
@@ -76,9 +83,10 @@ export const issueReference = (
       ...(ref.host === undefined ? {} : { host: ref.host }),
       scope: ref.scope,
       key: ref.key,
+      ...(url === undefined ? {} : { url }),
     } satisfies Schema.Json,
     title: seen?.title ?? "",
-    url: seen?.url,
+    url,
     state: seen?.state.category,
   };
 };

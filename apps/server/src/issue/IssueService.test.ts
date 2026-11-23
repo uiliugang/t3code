@@ -637,6 +637,19 @@ describe("IssueService with a standalone tracker", () => {
         ),
       ).toMatchObject({ projectId: "home", issue: { title: "second" } });
 
+      // Saved thread/workflow references carrying `url` keep resolving to that workspace even when
+      // `projectId` names a project now bound to a different Linear workspace.
+      expect(
+        yield* service.detail({
+          projectId: "home" as ProjectId,
+          tracker: LINEAR,
+          host: "linear.app",
+          scope: "ENG",
+          key: "ENG-1",
+          url: "https://linear.app/acme/issue/ENG-1/old-title",
+        }),
+      ).toMatchObject({ projectId: "work", title: "first" });
+
       // One refused key leaves the group usable, even on a continuation that skips the other.
       const refusing = (refused: ReadonlyArray<string>) =>
         twoAccounts({

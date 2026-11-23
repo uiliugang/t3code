@@ -79,6 +79,31 @@ describe("rightPanelStore", () => {
     ).toEqual(["device", "diff", pr.id]);
   });
 
+  it("keeps Linear issue surfaces from different workspaces in distinct tabs", () => {
+    const store = useRightPanelStore.getState();
+    store.openIssue(refA, {
+      projectId: "project-1",
+      tracker: "linear",
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/acme/issue/ENG-1",
+    });
+    store.openIssue(refA, {
+      projectId: "project-1",
+      tracker: "linear",
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/globex/issue/ENG-1",
+    });
+    const surfaces = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      refA,
+    ).surfaces;
+    expect(surfaces).toHaveLength(2);
+  });
+
   it("reopens the active tab first after a bulk close", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "files");

@@ -52,7 +52,8 @@ export { IssueDetail };
 /** An issue by its web address, or as a trigger or a listing gave it. */
 export type IssueAddress =
   | { readonly project: string; readonly url: string }
-  | Pick<Issue, "projectId" | "tracker" | "host" | "scope" | "key">;
+  | Pick<Issue, "projectId" | "tracker" | "host" | "scope" | "key">
+  | Pick<Issue, "projectId" | "tracker" | "host" | "scope" | "key" | "url">;
 /** A pull request by its web address, or as a trigger or a listing gave it. */
 export type PullRequestAddress =
   | { readonly project: string; readonly url: string }
@@ -284,6 +285,7 @@ export const layer = Layer.effect(
           host: issue.host,
           scope: issue.scope,
           key: issue.key,
+          ...("url" in issue ? { url: issue.url } : {}),
         } satisfies IssueRef;
       }
       const resolved = yield* issues
@@ -295,6 +297,7 @@ export const layer = Layer.effect(
         host: resolved.host,
         scope: resolved.scope,
         key: resolved.key,
+        url: resolved.issue?.url ?? issue.url,
       } satisfies IssueRef;
     });
 
@@ -395,12 +398,16 @@ export const layer = Layer.effect(
               assignees: [...(input.assignees ?? [])],
             })
             .pipe(Effect.mapError(failed("Could not file the issue")));
-          yield* noteReference({
-            ...issueReference({ ...scope, key: created.key }),
-            title: input.title,
-            url: created.url,
-            state: "open",
-          });
+          yield* noteReference(
+            issueReference(
+              { ...scope, key: created.key, url: created.url },
+              {
+                title: input.title,
+                url: created.url,
+                state: { category: "open", name: "open" },
+              },
+            ),
+          );
           return created;
         }),
       },

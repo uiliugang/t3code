@@ -28,7 +28,7 @@ import {
 } from "./tools.ts";
 
 /** A resolved reference, with the host the link stores and whether it may be written. */
-interface ResolvedTarget extends IssueRef {
+interface ResolvedTarget extends Omit<IssueRef, "url"> {
   readonly host: string;
   readonly url: string | null;
   readonly writable: boolean;
@@ -149,6 +149,7 @@ const make = Effect.gen(function* () {
     host: target.host,
     scope: target.scope,
     key: target.key,
+    ...(target.url === null ? {} : { url: target.url }),
   });
 
   const readIssue = (target: ResolvedTarget) =>

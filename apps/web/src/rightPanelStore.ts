@@ -3,7 +3,14 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, RunId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  IssueTrackerKind,
+  RunId,
+  standaloneIssueWorkspace,
+  ThreadId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import {
   requirementTrackerLabel,
   type RequirementTracker,
@@ -483,11 +490,17 @@ export interface IssueSurfaceTarget {
   url?: string;
 }
 
-function issueSurfaceId(target: Omit<IssueSurfaceTarget, "url">): IssueSurface["id"] {
+function issueSurfaceId(target: IssueSurfaceTarget): IssueSurface["id"] {
   const environment =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
   const host = target.host === undefined ? "" : `${encodeURIComponent(target.host.toLowerCase())}:`;
-  return `issue:${environment}${encodeURIComponent(target.projectId)}:${target.tracker}:${host}${encodeURIComponent(target.scope.toLowerCase())}:${encodeURIComponent(target.key)}`;
+  const workspace = standaloneIssueWorkspace({
+    tracker: IssueTrackerKind.make(target.tracker),
+    ...(target.url === undefined ? {} : { url: target.url }),
+  });
+  const scope =
+    workspace === null ? target.scope.toLowerCase() : `${workspace}/${target.scope.toLowerCase()}`;
+  return `issue:${environment}${encodeURIComponent(target.projectId)}:${target.tracker}:${host}${encodeURIComponent(scope)}:${encodeURIComponent(target.key)}`;
 }
 
 function issueSurface(target: IssueSurfaceTarget): IssueSurface {
