@@ -75,6 +75,7 @@ export class SshEnvironmentGateway extends Context.Service<
     readonly provision: (
       target: DesktopSshEnvironmentTarget,
       expectedEnvironmentId?: EnvironmentId,
+      password?: import("effect/Redacted").Redacted<string>,
     ) => Effect.Effect<ProvisionedSshEnvironment, ConnectionAttemptError>;
     /**
      * Starts or reuses the remote server for a saved connection. Returns

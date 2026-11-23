@@ -30,6 +30,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -133,6 +134,9 @@ export interface EnsureSshEnvironmentOptions {
   readonly issuePairingToken?: boolean;
   readonly targetVersion?: string;
   readonly reportInstallProgress?: ReportInstallProgress;
+  readonly passwordForTarget?: (
+    target: DesktopSshEnvironmentTarget,
+  ) => Effect.Effect<SshConnectionPassword | undefined, SshPasswordPromptError>;
 }
 
 export interface SshEnvironmentManagerOptions {
@@ -188,10 +192,16 @@ function sshRunnerLogFields(runner: RemoteT3RunnerOptions | undefined) {
 interface SshAuthOperationInput<T> {
   readonly key: string;
   readonly target: DesktopSshEnvironmentTarget;
+  readonly password?: SshConnectionPassword;
   readonly operation: (
     authOptions: SshAuth.SshAuthOptions,
   ) => Effect.Effect<T, SshEnvironmentEffectError, SshEnvironmentEffectContext>;
 }
+
+type SshConnectionPassword = {
+  readonly value: Redacted.Redacted<string>;
+  readonly source: "cloud-sandbox" | "manual";
+};
 
 interface SshAuthAttemptInput<T> extends SshAuthOperationInput<T> {
   readonly promptCount: number;
@@ -1558,6 +1568,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       timeoutMs: isNodeScriptRunner(runner)
         ? REMOTE_LAUNCH_TIMEOUT_MS
         : REMOTE_ARCHIVE_LAUNCH_TIMEOUT_MS,
+      ...input,
       onStderrLine: (line: string) => {
         if (line === "T3_INSTALL_PROGRESS:installing") {
           reportInstallProgress?.({ phase: "installing" });
@@ -1567,9 +1578,6 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
             reportInstallProgress?.({ phase: "downloading", bytes: Number(match[1]) });
         }
       },
-      ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
-      ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
-      ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
     };
     const result = yield* runSshCommand(target, launchOptions).pipe(
       Effect.catchTags({
@@ -1687,9 +1695,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
     remoteCommandArgs: remoteLoginShellArgs(),
     stdin: buildRemotePairingScript(stateKey, runner),
     ...(isNodeScriptRunner(runner) ? {} : { timeoutMs: REMOTE_ARCHIVE_LAUNCH_TIMEOUT_MS }),
-    ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
-    ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
-    ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
+    ...input,
   });
   if (!getLastNonEmptyOutputLine(result.stdout)) {
     return yield* new SshPairingError({
@@ -1738,9 +1744,7 @@ const stopRemoteServer = Effect.fn("ssh/tunnel.stopRemoteServer")(function* (
   yield* runSshCommand(target, {
     remoteCommandArgs: ["sh", "-s"],
     stdin: buildRemoteStopScript(stateKey),
-    ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
-    ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
-    ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
+    ...input,
   });
   yield* Effect.logInfo("ssh.remoteServer.stop.succeeded", {
     ...sshTargetLogFields(target),
@@ -1760,9 +1764,7 @@ const readRemoteServerLogTail = Effect.fn("ssh/tunnel.readRemoteServerLogTail")(
     remoteCommandArgs: ["sh", "-s"],
     stdin: buildRemoteLogTailScript(yield* remoteStateKey(target)),
     timeoutMs: 10_000,
-    ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
-    ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
-    ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
+    ...input,
   });
   return result.stdout.trim();
 });
@@ -1909,9 +1911,7 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
     ),
   );
   const directArgs = [
-    ...baseSshArgs(input.resolvedTarget, {
-      batchMode: input.authOptions.batchMode ?? "no",
-    }),
+    ...baseSshArgs(input.resolvedTarget, input.authOptions),
     "-o",
     "ExitOnForwardFailure=yes",
     "-o",
@@ -2311,6 +2311,28 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
   const runWithSshAuth = Effect.fn("ssh/tunnel.runWithSshAuth")(function* <T>(
     input: SshAuthOperationInput<T>,
   ): Effect.fn.Return<T, SshEnvironmentEffectError, SshEnvironmentEffectContext> {
+    const password = input.password;
+    if (password !== undefined) {
+      return yield* input
+        .operation({
+          authSecret: Redacted.value(password.value),
+          batchMode: "no",
+          interactiveAuth: true,
+          passwordDestination: input.target.hostname,
+        })
+        .pipe(
+          Effect.catchIf(
+            SshAuth.isSshAuthFailure,
+            () =>
+              new SshPasswordPromptError({
+                message:
+                  password.source === "cloud-sandbox"
+                    ? "[ssh_cloud_sandbox_password_rejected]"
+                    : "[ssh_manual_password_rejected]",
+              }),
+          ),
+        );
+    }
     return yield* runWithSshAuthAttempt({
       ...input,
       promptCount: 0,
@@ -2322,6 +2344,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     readonly key: string;
     readonly resolvedTarget: DesktopSshEnvironmentTarget;
     readonly runner?: RemoteT3RunnerOptions;
+    readonly password?: SshConnectionPassword;
     readonly reportInstallProgress?: ReportInstallProgress;
   }): Effect.fn.Return<SshTunnelEntry, SshEnvironmentEffectError, SshEnvironmentEffectContext> {
     yield* Effect.logDebug("ssh.environment.tunnel.create.start", {
@@ -2334,6 +2357,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     const remoteLaunch = yield* runWithSshAuth({
       key: input.key,
       target: input.resolvedTarget,
+      ...(input.password === undefined ? {} : { password: input.password }),
       operation: (authOptions) =>
         launchOrReuseRemoteServer(
           input.resolvedTarget,
@@ -2363,6 +2387,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     const tunnelEntry = yield* runWithSshAuth({
       key: input.key,
       target: input.resolvedTarget,
+      ...(input.password === undefined ? {} : { password: input.password }),
       operation: (authOptions) => {
         const start = (controlPath: string | null) =>
           startSshTunnel({
@@ -2379,15 +2404,17 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
           });
         // A fresh login cannot answer a second factor such as Duo, but the user's signed-in
         // ControlMaster already has. Without one, the auth failure goes on to the password prompt.
-        return start(null).pipe(
-          Effect.catchIf(SshAuth.isSshAuthFailure, (error) =>
-            findLiveControlPath(input.resolvedTarget).pipe(
-              Effect.flatMap((controlPath) =>
-                controlPath === null ? Effect.fail(error) : start(controlPath),
+        return input.password !== undefined
+          ? start(null)
+          : start(null).pipe(
+              Effect.catchIf(SshAuth.isSshAuthFailure, (error) =>
+                findLiveControlPath(input.resolvedTarget).pipe(
+                  Effect.flatMap((controlPath) =>
+                    controlPath === null ? Effect.fail(error) : start(controlPath),
+                  ),
+                ),
               ),
-            ),
-          ),
-        );
+            );
       },
     }).pipe(
       Effect.onExit((exit) =>
@@ -2461,6 +2488,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     key: string,
     resolvedTarget: DesktopSshEnvironmentTarget,
     runner?: RemoteT3RunnerOptions,
+    password?: SshConnectionPassword,
     reportInstallProgress?: ReportInstallProgress,
   ): Effect.fn.Return<SshTunnelEntry, SshEnvironmentEffectError, SshEnvironmentEffectContext> {
     const entry = tunnels.get(key) ?? null;
@@ -2536,6 +2564,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       key,
       resolvedTarget,
       ...(runner === undefined ? {} : { runner }),
+      ...(password === undefined ? {} : { password }),
       ...(reportInstallProgress === undefined ? {} : { reportInstallProgress }),
     }).pipe(
       Effect.tapError((cause) =>
@@ -2606,10 +2635,14 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
             yield* closeTunnelEntry(previous);
           }
         }
+        const password = yield* (
+          requestOptions?.passwordForTarget?.(resolvedTarget) ?? Effect.undefined
+        );
         const entry = yield* ensureTunnelEntry(
           key,
           resolvedTarget,
           runner,
+          password,
           requestOptions?.reportInstallProgress,
         );
 
@@ -2617,6 +2650,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
           ? yield* runWithSshAuth({
               key,
               target: entry.target,
+              ...(password === undefined ? {} : { password }),
               operation: (authOptions) =>
                 issueRemotePairingToken(entry.target, authOptions, runner),
             })

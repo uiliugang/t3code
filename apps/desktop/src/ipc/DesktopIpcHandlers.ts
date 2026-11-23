@@ -24,13 +24,16 @@ import {
 } from "./methods/serverExposure.ts";
 import {
   bootstrapSshBearerSession,
+  clearCloudSandboxConfig,
   disconnectSshEnvironment,
   discoverSshHosts,
   ensureSshEnvironment,
   fetchSshEnvironmentDescriptor,
   fetchSshSessionState,
+  getCloudSandboxConfig,
   resolveSshHost,
   resolveSshPasswordPrompt,
+  saveCloudSandboxConfig,
 } from "./methods/sshEnvironment.ts";
 import {
   checkForUpdate,
@@ -138,6 +141,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(discoverSshHosts);
   yield* ipc.handle(resolveSshHost);
   yield* ipc.handle(ensureSshEnvironment);
+  yield* ipc.handle(getCloudSandboxConfig);
+  yield* ipc.handle(saveCloudSandboxConfig);
+  yield* ipc.handle(clearCloudSandboxConfig);
   yield* ipc.handle(disconnectSshEnvironment);
   yield* ipc.handle(fetchSshEnvironmentDescriptor);
   yield* ipc.handle(bootstrapSshBearerSession);

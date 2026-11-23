@@ -33,6 +33,7 @@ export interface SshAuthOptions {
   readonly authSecret?: string | null;
   readonly batchMode?: "yes" | "no";
   readonly interactiveAuth?: boolean;
+  readonly passwordDestination?: string;
 }
 
 export interface SshPasswordPromptShape {

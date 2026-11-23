@@ -290,6 +290,13 @@ In the desktop app, open **Settings → Environments → Add environment**, choo
 or reuses a server there and opens the port forward for you. Projects, provider
 credentials, and agent work stay on the remote machine.
 
+For password authentication, choose **Enter password manually**. The password
+is used for that connection attempt and is not saved. For a Cloud Sandbox you
+connect to repeatedly, save its host and SSH password under **Settings → Meituan
+integration → Cloud Sandbox**. The desktop app uses that password only when the
+resolved host and port match. The SSH host key must already be trusted. If the
+saved password is rejected, update it in settings or enter a password manually.
+
 The remote host must be Linux or an Apple Silicon Mac with `curl` or `wget`,
 `tar`, `sha256sum` or `shasum`, and [provider setup](./install.md#providers).
 The first launch downloads T3 Code's server to `~/.t3/runtime` on the host, so

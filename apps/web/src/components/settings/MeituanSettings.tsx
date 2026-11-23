@@ -39,6 +39,7 @@ import { SettingsPageContainer } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { MeituanCodeSettings, MeituanCodeAuthorizationObserver } from "./MeituanCodeSettings";
 import { DaxiangSettings } from "./DaxiangSettings";
+import { CloudSandboxSettings } from "./CloudSandboxSettings";
 import { SourceControlToolControls, SourceControlToolStatus } from "./SourceControlToolControls";
 
 export type MeituanSection = "code" | "issues" | "daxiang" | "skills";
@@ -203,6 +204,9 @@ export function MeituanSettings({
   onSectionChange: (next?: MeituanSection) => void;
 }) {
   const { environment } = useSettingsScope();
+  const t = useUiTranslation();
+  const hash = useLocation({ select: (location) => location.hash });
+  const bridge = window.desktopBridge;
   return (
     <SettingsPageContainer>
       {environment?.serverConfig ? (
@@ -214,6 +218,15 @@ export function MeituanSettings({
           section={section}
           onSectionChange={onSectionChange}
         />
+      ) : bridge?.getCloudSandboxConfig ? (
+        <section>
+          <h2 className="mb-2 text-xs text-muted-foreground">{t("Service configuration")}</h2>
+          <CloudSandboxSettings
+            key={hash}
+            bridge={bridge}
+            initiallyOpen={hash === "cloud-sandbox"}
+          />
+        </section>
       ) : null}
     </SettingsPageContainer>
   );
@@ -515,6 +528,13 @@ function EnvironmentMeituanSettings({
             onClick={() => selected("skills")}
             {...(canToggle ? { toggle: toggles.skills } : {})}
           />
+          {window.desktopBridge?.getCloudSandboxConfig ? (
+            <CloudSandboxSettings
+              key={hash}
+              bridge={window.desktopBridge}
+              initiallyOpen={hash === "cloud-sandbox"}
+            />
+          ) : null}
         </section>
       ) : (
         <fieldset

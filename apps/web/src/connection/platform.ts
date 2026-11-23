@@ -39,6 +39,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -206,9 +207,19 @@ const pendingSshSetups = new Map<
   { readonly promise: Promise<DesktopSshEnvironmentBootstrap>; signal: AbortSignal }
 >();
 
-const ensureDesktopSshEnvironment = (bridge: DesktopBridge, target: DesktopSshEnvironmentTarget) =>
+const ensureDesktopSshEnvironment = (
+  bridge: DesktopBridge,
+  target: DesktopSshEnvironmentTarget,
+  password?: Redacted.Redacted<string>,
+) =>
   Effect.tryPromise({
     try: (signal) => {
+      if (password !== undefined) {
+        return bridge.ensureSshEnvironment(target, {
+          issuePairingToken: true,
+          password: Redacted.value(password),
+        });
+      }
       const key = sshTargetKey(target);
       const pending = pendingSshSetups.get(key);
       if (pending?.signal.aborted) {
@@ -235,8 +246,9 @@ export const provisionDesktopSshEnvironment = Effect.fn(
   bridge: DesktopBridge,
   target: DesktopSshEnvironmentTarget,
   expectedEnvironmentId?: EnvironmentId,
+  password?: Redacted.Redacted<string>,
 ) {
-  const bootstrap = yield* ensureDesktopSshEnvironment(bridge, target);
+  const bootstrap = yield* ensureDesktopSshEnvironment(bridge, target, password);
   const pairingToken = bootstrap.pairingToken;
   if (pairingToken === null) {
     return yield* new ConnectionBlockedError({
@@ -412,7 +424,7 @@ const layerCapabilities = Layer.effectContext(
     });
     const ssh = ClientCapabilities.SshEnvironmentGateway.of({
       provision: Effect.fn("web.connectionPlatform.ssh.provision")(
-        function* (target, expectedEnvironmentId) {
+        function* (target, expectedEnvironmentId, password) {
           const bridge = window.desktopBridge;
           if (bridge === undefined) {
             return yield* new ConnectionBlockedError({
@@ -420,7 +432,12 @@ const layerCapabilities = Layer.effectContext(
               detail: m(msg("SSH environments are only available in the desktop app.")),
             });
           }
-          return yield* provisionDesktopSshEnvironment(bridge, target, expectedEnvironmentId);
+          return yield* provisionDesktopSshEnvironment(
+            bridge,
+            target,
+            expectedEnvironmentId,
+            password,
+          );
         },
       ),
       prepare: Effect.fn("web.connectionPlatform.ssh.prepare")(function* (input) {

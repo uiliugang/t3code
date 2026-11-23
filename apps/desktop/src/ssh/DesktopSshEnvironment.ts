@@ -29,11 +29,13 @@ import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Option from "effect/Option";
+import type * as Redacted from "effect/Redacted";
 import serverPackageJson from "../../../server/package.json" with { type: "json" };
 
 import type * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
 import * as DesktopSshPasswordPrompts from "./DesktopSshPasswordPrompts.ts";
+import * as DesktopCloudSandbox from "./DesktopCloudSandbox.ts";
 
 export type DesktopSshEnvironmentRuntimeServices =
   | ChildProcessSpawner.ChildProcessSpawner
@@ -65,7 +67,9 @@ export class DesktopSshEnvironment extends Context.Service<
     ) => Effect.Effect<DesktopSshEnvironmentTarget, SshCommandError | SshInvalidTargetError>;
     readonly ensureEnvironment: (
       target: DesktopSshEnvironmentTarget,
-      options?: SshTunnel.EnsureSshEnvironmentOptions,
+      options?: Omit<SshTunnel.EnsureSshEnvironmentOptions, "passwordForTarget"> & {
+        readonly password?: Redacted.Redacted<string>;
+      },
     ) => Effect.Effect<DesktopSshEnvironmentBootstrap, DesktopSshEnvironmentOperationError>;
     readonly disconnectEnvironment: (
       target: DesktopSshEnvironmentTarget,
@@ -180,6 +184,7 @@ const makePasswordPrompt = (
 export const make = Effect.gen(function* () {
   const manager = yield* SshTunnel.SshEnvironmentManager;
   const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;
+  const sandbox = yield* DesktopCloudSandbox.DesktopCloudSandbox;
   const runtimeContext = yield* Effect.context<DesktopSshEnvironmentRuntimeServices>();
   const passwordPrompt = SshAuth.SshPasswordPrompt.of(makePasswordPrompt(prompts));
 
@@ -192,7 +197,19 @@ export const make = Effect.gen(function* () {
     }, Effect.provide(runtimeContext)),
     ensureEnvironment: Effect.fn("desktop.ssh.ensureEnvironment")(
       function* (target, ensureOptions) {
-        return yield* manager.ensureEnvironment(target, ensureOptions);
+        const { password, ...options } = ensureOptions ?? {};
+        return yield* manager.ensureEnvironment(target, {
+          ...options,
+          passwordForTarget: (resolved) =>
+            password === undefined
+              ? sandbox.passwordFor(resolved).pipe(
+                  Effect.map((value) =>
+                    value === undefined ? undefined : { value, source: "cloud-sandbox" as const },
+                  ),
+                  Effect.orElseSucceed(() => undefined),
+                )
+              : Effect.succeed({ value: password, source: "manual" as const }),
+        });
       },
       Effect.provideService(SshAuth.SshPasswordPrompt, passwordPrompt),
       Effect.provide(runtimeContext),
