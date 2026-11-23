@@ -607,9 +607,32 @@ describe("issue toolkit handlers", () => {
               displayKey: "ENG-1",
               title: "Acme",
             },
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-10",
+              projectId: PROJECT_ID,
+              url: "https://linear.app/acme/issue/ENG-10/logout",
+              source: "manual",
+              linkedAt: "2026-08-11T00:00:00.000Z",
+              displayKey: "ENG-10",
+              title: "Acme Ten",
+            },
           ],
           offlineLayer,
         );
+        // Unlinking ENG-10 must NOT match the earlier ENG-1 prefix!
+        const unlinkedTen = yield* offlineHarness.call("unlink_issue", {
+          url: "https://linear.app/acme/issue/ENG-10/different-slug",
+        });
+        expect(unlinkedTen).toMatchObject({
+          projectId: PROJECT_ID,
+          tracker: "linear",
+          key: "ENG-10",
+          url: "https://linear.app/acme/issue/ENG-10/logout",
+          wasLinked: true,
+        });
         const unlinkedOffline = yield* offlineHarness.call("unlink_issue", { url: acmeUrl });
         expect(unlinkedOffline).toMatchObject({
           projectId: PROJECT_ID,
@@ -619,6 +642,16 @@ describe("issue toolkit handlers", () => {
           wasLinked: true,
         });
         expect(yield* Ref.get(offlineHarness.unlinks)).toEqual([
+          {
+            threadId: THREAD_ID,
+            key: {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-10",
+              url: "https://linear.app/acme/issue/ENG-10/logout",
+            },
+          },
           {
             threadId: THREAD_ID,
             key: {

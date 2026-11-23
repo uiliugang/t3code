@@ -1,5 +1,4 @@
 import {
-  standaloneIssueWorkspace,
   threadIssueKeysEqual,
   type IssueDetail,
   type IssueRef,
@@ -7,6 +6,8 @@ import {
   type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
+import { parseLinearIssueUrl } from "@t3tools/issue-tracker-linear/shared/issueUrl";
+import { parseUrl } from "@t3tools/shared/url";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -302,19 +303,22 @@ const make = Effect.gen(function* () {
         const thread = yield* requireThread(input.threadId);
         if (input.url !== undefined) {
           const requestedUrl = input.url.trim();
-          const storedByUrl = (thread.issues ?? []).find((link) => {
-            if (link.url.trim() === requestedUrl) return true;
-            const linkWorkspace = standaloneIssueWorkspace(link);
-            const requestedWorkspace = standaloneIssueWorkspace({
-              tracker: link.tracker,
-              url: requestedUrl,
-            });
-            return (
-              linkWorkspace !== null &&
-              linkWorkspace === requestedWorkspace &&
-              requestedUrl.toLowerCase().includes(`/issue/${link.key.trim().toLowerCase()}`)
-            );
-          });
+          const parsedUrl = parseUrl(requestedUrl);
+          const parsedLinear = parsedUrl === null ? null : parseLinearIssueUrl(parsedUrl);
+          const storedByUrl =
+            (thread.issues ?? []).find((link) => link.url.trim() === requestedUrl) ??
+            (parsedLinear === null
+              ? undefined
+              : (thread.issues ?? []).find((link) => {
+                  if (link.tracker !== "linear") return false;
+                  const linkUrl = parseUrl(link.url);
+                  const linkLinear = linkUrl === null ? null : parseLinearIssueUrl(linkUrl);
+                  return (
+                    linkLinear !== null &&
+                    linkLinear.workspace.toLowerCase() === parsedLinear.workspace.toLowerCase() &&
+                    linkLinear.key.toLowerCase() === parsedLinear.key.toLowerCase()
+                  );
+                }));
           if (storedByUrl !== undefined) {
             const { wasLinked } = yield* threadIssues
               .unlink({

@@ -1,5 +1,4 @@
 import {
-  standaloneIssueWorkspace,
   WS_METHODS,
   type EnvironmentId,
   type IssueAssigneeCandidate,
@@ -14,6 +13,7 @@ import {
   type IssueRef,
   type IssueScopeRef,
 } from "@t3tools/contracts";
+import { parseLinearIssueUrl } from "@t3tools/issue-tracker-linear/shared/issueUrl";
 import type * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -37,6 +37,35 @@ export function issueEntryKey(
   entry: Pick<IssueListEntry, "projectId" | "host" | "scope" | "key">,
 ): string {
   return `${entry.projectId}\u0000${entry.host.toLowerCase()}\u0000${entry.scope.toLowerCase()}\u0000${entry.key}`;
+}
+
+export function normalizeIssueDetailInput({
+  projectId,
+  tracker,
+  host,
+  scope,
+  key,
+  url,
+}: IssueRef): IssueRef {
+  let canonicalLinearUrl: string | null = null;
+  if (tracker === "linear" && url !== undefined) {
+    try {
+      const parsed = parseLinearIssueUrl(new URL(url.trim()));
+      if (parsed !== null) {
+        canonicalLinearUrl = `https://linear.app/${parsed.workspace.toLowerCase()}/issue/${parsed.key}`;
+      }
+    } catch {
+      canonicalLinearUrl = null;
+    }
+  }
+  return {
+    projectId,
+    tracker,
+    ...(host === undefined ? {} : { host }),
+    scope,
+    key,
+    ...(canonicalLinearUrl === null ? {} : { url: canonicalLinearUrl }),
+  };
 }
 
 /**
@@ -177,27 +206,6 @@ export function createIssueEnvironmentAtoms<R, E>(
     tag: WS_METHODS.issuesDetail,
     staleTimeMs: 30_000,
   });
-  const normalizeDetailInput = ({
-    projectId,
-    tracker,
-    host,
-    scope,
-    key,
-    url,
-  }: IssueRef): IssueRef => {
-    const workspace = standaloneIssueWorkspace({
-      tracker,
-      ...(url === undefined ? {} : { url }),
-    });
-    return {
-      projectId,
-      tracker,
-      ...(host === undefined ? {} : { host }),
-      scope,
-      key,
-      ...(workspace === null ? {} : { url: `https://linear.app/${workspace}/issue/${key}` }),
-    };
-  };
   const detail = (
     {
       environmentId,
@@ -207,7 +215,7 @@ export function createIssueEnvironmentAtoms<R, E>(
       readonly input: IssueRef;
     },
     mountScope?: string,
-  ) => detailQuery({ environmentId, input: normalizeDetailInput(input) }, mountScope);
+  ) => detailQuery({ environmentId, input: normalizeIssueDetailInput(input) }, mountScope);
   const refreshDetail = (
     target: Parameters<typeof detail>[0],
     registry: AtomRegistry.AtomRegistry,

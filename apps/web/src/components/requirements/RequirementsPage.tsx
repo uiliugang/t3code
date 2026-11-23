@@ -1506,6 +1506,9 @@ export function RequirementBoard({
                     ...(renderedRequirementIssue.scope
                       ? { scope: renderedRequirementIssue.scope }
                       : {}),
+                    ...("url" in renderedRequirementIssue && renderedRequirementIssue.url
+                      ? { url: renderedRequirementIssue.url }
+                      : {}),
                   }}
                   id={renderedRequirementIssue.issueId}
                   cwd={renderedIssueProject?.workspaceRoot ?? ""}
@@ -1523,6 +1526,7 @@ export function RequirementBoard({
                     ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
                     scope: renderedSurface.scope,
                     key: renderedSurface.key,
+                    ...(renderedSurface.url ? { url: renderedSurface.url } : {}),
                   }}
                   onSelectPullRequest={(reference) => {
                     useRightPanelStore.getState().openPullRequest(rightPanelRef, {
@@ -1568,7 +1572,7 @@ export function RequirementBoard({
               setCreatingTracker(null);
               setCreatingEnvironmentId(null);
             }}
-            created={(issueId) => {
+            created={(issueId, _title, issueUrl) => {
               useRightPanelStore.getState().openIssue(rightPanelRef, {
                 environmentId,
                 projectId: creatingTracker.projectId,
@@ -1576,6 +1580,7 @@ export function RequirementBoard({
                 scope: creatingTracker.scope,
                 ...(creatingTracker.host ? { host: creatingTracker.host } : {}),
                 key: issueId,
+                url: issueUrl,
               });
               setCreatingTracker(null);
               setCreatingEnvironmentId(null);

@@ -27,6 +27,7 @@ import {
   createMergedIssueListAtoms,
   issueEntryKey,
   mergeIssueListPage,
+  normalizeIssueDetailInput,
   type IssueListTarget,
 } from "./issues.ts";
 
@@ -116,6 +117,18 @@ it("refreshes the same issue detail regardless of how a surface orders the refer
     },
   });
   expect(acmeLinear === acmeLinearSlugTwo).toBe(true);
+  // Even when `input.key` was typed in lowercase (`eng-1`), a valid uppercase `/issue/ENG-1` URL
+  // must stay uppercase (`https://linear.app/acme/issue/ENG-1`) so `parseLinearIssueUrl` accepts it.
+  expect(
+    normalizeIssueDetailInput({
+      projectId,
+      tracker: linear,
+      host: "linear.app",
+      scope: "ENG",
+      key: "eng-1",
+      url: "https://linear.app/acme/issue/ENG-1/slug-two",
+    }).url,
+  ).toBe("https://linear.app/acme/issue/ENG-1");
   expect(acmeLinear === globexLinear).toBe(false);
 });
 

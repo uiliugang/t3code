@@ -158,16 +158,20 @@ vi.mock(import("./IssueCreateDialog"), () => ({
   TrackerCreateDialog: () => <></>,
 }));
 vi.mock(import("./IssueDetailPanel"), () => ({
-  IssueDetailPanel: ({ id }: { id: string }) => (
-    <div data-testid={`issue-detail:${id}`}>Issue {id}</div>
+  IssueDetailPanel: ({ id, target }: { id: string; target: { url?: string | undefined } }) => (
+    <div data-testid={`issue-detail:${id}`} data-issue-url={target.url ?? ""}>
+      Issue {id}
+    </div>
   ),
 }));
 vi.mock(import("../issue/IssuesPage"), () => ({
   TrackerIssuesView: () => <div data-testid="tracker-issues-view">Tracker issues</div>,
 }));
 vi.mock(import("../issue/IssueDetailPanel"), () => ({
-  IssueDetailPanel: ({ reference }: { reference: { key: string } }) => (
-    <div data-testid={`tracker-detail:${reference.key}`}>Tracker issue {reference.key}</div>
+  IssueDetailPanel: ({ reference }: { reference: { key: string; url?: string | undefined } }) => (
+    <div data-testid={`tracker-detail:${reference.key}`} data-issue-url={reference.url ?? ""}>
+      Tracker issue {reference.key}
+    </div>
   ),
 }));
 vi.mock(
@@ -767,16 +771,21 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
       to: "/requirements",
       search: {
         mode: "issues",
-        issueTracker: "github",
+        issueTracker: "linear",
         issueProjectId: ProjectId.make("project"),
-        issueScope: "acme/app",
-        issueId: "99",
+        issueScope: "ENG",
+        issueId: "ENG-1",
+        issueUrl: "https://linear.app/acme/issue/ENG-1",
       },
     }),
   );
-  await expect.element(screen.getByTestId("tracker-detail:99")).toBeVisible();
+  await expect
+    .element(screen.getByTestId("tracker-detail:ENG-1"))
+    .toHaveAttribute("data-issue-url", "https://linear.app/acme/issue/ENG-1");
   await screen.getByRole("button", { name: "Workflow", exact: true }).click();
-  await expect.element(screen.getByTestId("tracker-detail:99")).toBeVisible();
+  await expect
+    .element(screen.getByTestId("tracker-detail:ENG-1"))
+    .toHaveAttribute("data-issue-url", "https://linear.app/acme/issue/ENG-1");
 });
 it("switches between workflow and tracker issue modes from the shared requirements page", async () => {
   using fixture = setup();
