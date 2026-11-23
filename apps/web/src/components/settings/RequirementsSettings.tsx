@@ -1,8 +1,15 @@
 import { useAtomValue } from "@effect/atom-react";
-import { isMeituanServiceEnabled, type IssueSourcesResult } from "@t3tools/contracts";
+import {
+  isMeituanServiceEnabled,
+  MAX_WORK_ITEM_DISCOVERY_LIMIT,
+  WorkItemDiscoveryLimit,
+  type IssueSourcesResult,
+  type ServerSettingsPatch,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 import { RefreshCwIcon, Settings2Icon, Undo2Icon, SaveIcon } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useId, useState } from "react";
 import {
   meituanAssociationCountLabel,
   mepSpaceSummary,
@@ -18,6 +25,7 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   mergeProjectIssueSources,
@@ -48,6 +56,92 @@ function SourceValue({ value }: { value: string | null | undefined }) {
 
 type Environment = ReturnType<typeof useSettingsScope>["connectedEnvironments"][number];
 type Group = { environment: Environment; projects: Project[] };
+
+const isDiscoveryLimit = Schema.is(WorkItemDiscoveryLimit);
+
+function DiscoveredTasksSettings({
+  environment,
+  multiple,
+}: {
+  environment: Environment;
+  multiple: boolean;
+}) {
+  const t = useUiTranslation();
+  const { environmentId, label } = environment;
+  const { workItemDiscoveryEnabled, workItemDiscoveryLimit } = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings,
+  );
+  const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
+  const update = useAtomCommand(serverEnvironment.updateSettings);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const inputId = useId();
+  const limit = Number(draft ?? workItemDiscoveryLimit);
+  const valid = isDiscoveryLimit(limit);
+  const disabled = !allowed || saving;
+  const save = async (patch: ServerSettingsPatch) => {
+    setSaving(true);
+    const result = await update({ environmentId, input: { patch } });
+    if (result._tag === "Success" && patch.workItemDiscoveryLimit !== undefined) setDraft(null);
+    setSaving(false);
+  };
+
+  return (
+    <section className="space-y-3 border-t border-border py-4">
+      <h2 className="text-base font-semibold">
+        {multiple
+          ? t("Discovered tasks · {environment}", { environment: label })
+          : t("Discovered tasks")}
+      </h2>
+      <div className="flex items-center justify-between gap-4">
+        <Label htmlFor={`${inputId}-enabled`}>{t("Enable task discovery")}</Label>
+        <Switch
+          id={`${inputId}-enabled`}
+          checked={workItemDiscoveryEnabled}
+          disabled={disabled}
+          onCheckedChange={(workItemDiscoveryEnabled) => void save({ workItemDiscoveryEnabled })}
+        />
+      </div>
+      <form
+        className="grid gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!disabled && valid && limit !== workItemDiscoveryLimit) {
+            void save({ workItemDiscoveryLimit: limit });
+          }
+        }}
+      >
+        <Label htmlFor={inputId}>{t("Maximum discovered tasks")}</Label>
+        <div className="flex items-center gap-2">
+          <div className="w-28">
+            <Input
+              id={inputId}
+              type="number"
+              min={1}
+              max={MAX_WORK_ITEM_DISCOVERY_LIMIT}
+              value={draft ?? workItemDiscoveryLimit}
+              disabled={disabled}
+              aria-invalid={!valid}
+              aria-describedby={`${inputId}-range`}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          </div>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={disabled || !valid || limit === workItemDiscoveryLimit}
+          >
+            {t("Save")}
+          </Button>
+        </div>
+        <p id={`${inputId}-range`} className="text-xs text-muted-foreground">
+          {t("Enter a whole number from 1 to {max}.", { max: MAX_WORK_ITEM_DISCOVERY_LIMIT })}
+        </p>
+      </form>
+    </section>
+  );
+}
 
 function useProjectSources({ environment, projects }: Group) {
   return useEnvironmentQuery(
@@ -569,12 +663,12 @@ export function RequirementsSettings() {
           </p>
         ))}
       {groups.map((group, index) => (
-        <EnvironmentTrackers
-          key={group.environment.environmentId}
-          group={group}
-          multiple={groups.length > 1}
-          anchor={index === 0}
-        />
+        <Fragment key={group.environment.environmentId}>
+          <EnvironmentTrackers group={group} multiple={groups.length > 1} anchor={index === 0} />
+          {group.environment.serverConfig?.workItemDiscoverySettings ? (
+            <DiscoveredTasksSettings environment={group.environment} multiple={groups.length > 1} />
+          ) : null}
+        </Fragment>
       ))}
       <ProjectIssueSources
         key={`${JSON.stringify(search)}/${projects.map(projectKey).join(",")}`}

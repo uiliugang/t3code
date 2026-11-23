@@ -41,6 +41,7 @@ export interface RunSshCommandOptions extends SshAuthOptions {
   readonly remoteCommandArgs?: ReadonlyArray<string>;
   readonly stdin?: string | Stream.Stream<Uint8Array, PlatformError.PlatformError>;
   readonly timeoutMs?: number;
+  readonly onStderrLine?: (line: string) => void;
   /** Keep the end of long failed-command stdout, where the final cause usually is. */
   readonly keepErrorOutputTail?: boolean;
 }
@@ -174,21 +175,38 @@ const collectProcessOutput = <E>(
   output: SshCommandOutput,
   key: keyof SshCommandOutput,
   keepTail: boolean,
-): Effect.Effect<void, E> =>
-  stream.pipe(
+  onLine?: (line: string) => void,
+): Effect.Effect<void, E> => {
+  const append = (text: string) => {
+    const combined = output[key].text + text;
+    output[key] = {
+      text: keepTail
+        ? combined.slice(-MAX_SSH_COMMAND_OUTPUT_LENGTH)
+        : combined.slice(0, MAX_SSH_COMMAND_OUTPUT_LENGTH),
+      truncated: output[key].truncated || combined.length > MAX_SSH_COMMAND_OUTPUT_LENGTH,
+    };
+  };
+  let pending = "";
+  return stream.pipe(
     Stream.decodeText(),
     Stream.runForEach((chunk) =>
       Effect.sync(() => {
-        const combined = output[key].text + chunk;
-        output[key] = {
-          text: keepTail
-            ? combined.slice(-MAX_SSH_COMMAND_OUTPUT_LENGTH)
-            : combined.slice(0, MAX_SSH_COMMAND_OUTPUT_LENGTH),
-          truncated: output[key].truncated || combined.length > MAX_SSH_COMMAND_OUTPUT_LENGTH,
-        };
+        if (onLine === undefined) return append(chunk);
+        const lines = (pending + chunk).split("\n");
+        pending = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("T3_INSTALL_PROGRESS:")) onLine(line.trimEnd());
+          else append(`${line}\n`);
+        }
+        if (pending.length > 256) {
+          append(pending);
+          pending = "";
+        }
       }),
     ),
+    Effect.andThen(Effect.sync(() => append(pending))),
   );
+};
 
 function redactSshErrorOutput(
   output: { text: string; truncated: boolean },
@@ -359,7 +377,13 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   const [, , exitCode] = yield* Effect.all(
     [
       collectProcessOutput(child.stdout, output, "stdout", input.keepErrorOutputTail ?? false),
-      collectProcessOutput(child.stderr, output, "stderr", input.keepErrorOutputTail ?? false),
+      collectProcessOutput(
+        child.stderr,
+        output,
+        "stderr",
+        input.keepErrorOutputTail ?? false,
+        input.onStderrLine,
+      ),
       child.exitCode.pipe(Effect.map(Number)),
     ],
     { concurrency: "unbounded" },

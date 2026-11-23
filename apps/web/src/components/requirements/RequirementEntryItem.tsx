@@ -89,7 +89,17 @@ export function RequirementEntryItem({
           name: entry.state || "open",
         })
       : null;
-  const assigneeActors = entry.kind === "issue" ? entry.issue.assigneeActors : undefined;
+  const assignees =
+    entry.kind === "local"
+      ? []
+      : entry.issue.assigneeActors?.length
+        ? entry.issue.assigneeActors
+        : entry.issue.assignees.map(({ value, label }) => ({
+            login: value,
+            name: label,
+            avatarUrl: null,
+          }));
+  const assigneeLogins = assignees.map(({ login }) => login).join(", ");
   const issueLabels = entry.kind === "issue" ? (entry.issue.labels ?? []) : [];
   const commentCount = entry.kind === "issue" ? (entry.issue.commentCount ?? 0) : 0;
 
@@ -138,17 +148,6 @@ export function RequirementEntryItem({
               {entry.priority}
             </Badge>
           ) : null}
-          {assigneeActors && assigneeActors.length > 0 ? (
-            <span className="flex items-center -space-x-1">
-              {assigneeActors.slice(0, 3).map((actor) => (
-                <PullRequestActorAvatar
-                  key={actor.login}
-                  actor={actor}
-                  className="ring-1 ring-background"
-                />
-              ))}
-            </span>
-          ) : null}
           {commentCount > 0 ? (
             <span className="inline-flex items-center gap-0.5 text-2xs text-muted-foreground tabular-nums">
               <MessageSquareIcon aria-hidden className="size-3" />
@@ -183,11 +182,30 @@ export function RequirementEntryItem({
               {entry.item.activeExecutionCount} {t("Active agents")}
             </span>
           </>
-        ) : !assigneeActors?.length ? (
-          <span className="min-w-0 truncate">
-            {entry.issue.assignees.map((person) => person.label).join(", ") || t("Unassigned")}
-          </span>
-        ) : null}
+        ) : assignees.length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  className="inline-flex shrink-0 items-center -space-x-1"
+                  role="img"
+                  aria-label={assigneeLogins}
+                />
+              }
+            >
+              {assignees.slice(0, 3).map((actor) => (
+                <PullRequestActorAvatar
+                  key={actor.login}
+                  actor={actor}
+                  className="ring-1 ring-background"
+                />
+              ))}
+            </TooltipTrigger>
+            <TooltipPopup>{assigneeLogins}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          <span>{t("Unassigned")}</span>
+        )}
         {issueLabels.length > 0 ? (
           <span className="flex min-w-0 flex-wrap items-center gap-1">
             {issueLabels.slice(0, 3).map((label, index) => (

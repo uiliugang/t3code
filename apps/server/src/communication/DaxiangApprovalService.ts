@@ -29,6 +29,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettingsService from "../serverSettings.ts";
 import * as ExternalLauncher from "../process/externalLauncher.ts";
 import { makeSkillInstallerNode } from "../skills/skillInstallerNode.ts";
+import { findModernNpm } from "../sourceControl/meituanNpm.ts";
 import * as DaxiangMessages from "./DaxiangMessageService.ts";
 import * as Executor from "./DaxiangApprovalExecutor.ts";
 import {
@@ -137,7 +138,16 @@ const make = Effect.gen(function* () {
 
   const resolveInvocation = Effect.fn("DaxiangApprovalService.resolveInvocation")(
     function* () {
-      const executable = yield* resolveCommandPath("dumbo-web", { env: hostEnv }).pipe(
+      const npm = yield* findModernNpm(hostEnv, (node) =>
+        runner
+          .run({ command: node, args: ["--version"], cwd: config.cwd, timeout: "2 seconds" })
+          .pipe(
+            Effect.map((result) => (result.code === 0 ? result.stdout.trim() : "")),
+            Effect.orElseSucceed(() => ""),
+          ),
+      );
+      const env = { ...hostEnv, ...npm?.env };
+      const executable = yield* resolveCommandPath("dumbo-web", { env }).pipe(
         Effect.mapError(() =>
           cliError("missing_cli", "dumbo-web is not installed on this server."),
         ),
@@ -145,7 +155,11 @@ const make = Effect.gen(function* () {
       if (!executable) {
         return yield* cliError("missing_cli", "dumbo-web is not installed on this server.");
       }
-      const invocation = yield* skillInstallerNode(executable, [], hostEnv).pipe(
+      const invocation = yield* Effect.gen(function* () {
+        const script = yield* fs.realPath(executable);
+        if (npm && /\.[cm]?js$/u.test(script)) return { command: npm.node, args: [script], env };
+        return yield* skillInstallerNode(executable, [], env);
+      }).pipe(
         Effect.mapError(() =>
           cliError("missing_cli", "dumbo-web requires Node.js 20 or newer on this server."),
         ),

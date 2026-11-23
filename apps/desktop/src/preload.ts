@@ -200,6 +200,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ),
   disconnectSshEnvironment: (target) =>
     ipcRenderer.invoke(IpcChannels.DISCONNECT_SSH_ENVIRONMENT_CHANNEL, target),
+  onSshInstallProgress: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, ...args: Parameters<typeof listener>) =>
+      listener(...args);
+    ipcRenderer.on(IpcChannels.SSH_INSTALL_PROGRESS_CHANNEL, receive);
+    return () => ipcRenderer.removeListener(IpcChannels.SSH_INSTALL_PROGRESS_CHANNEL, receive);
+  },
   fetchSshEnvironmentDescriptor: (httpBaseUrl) =>
     ipcRenderer.invoke(IpcChannels.FETCH_SSH_ENVIRONMENT_DESCRIPTOR_CHANNEL, { httpBaseUrl }),
   bootstrapSshBearerSession: (httpBaseUrl, credential) =>

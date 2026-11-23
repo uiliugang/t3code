@@ -144,6 +144,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Automatic installation is not supported on this server platform.":
     "此服务器平台不支持自动安装。",
   "Install Node.js and npm on the server first.": "请先在服务器上安装 Node.js 和 npm。",
+  "Install Node.js 20 or newer and npm on the server first.":
+    "请先在服务器上安装 Node.js 20 或更高版本及 npm。",
   "This installation must be updated with the tool that installed it.":
     "请使用原安装方式更新此工具。",
   "The package manager's bin directory is not on the server PATH.":

@@ -235,7 +235,13 @@ function EnvironmentScanItems({
   return (
     <MenuSub>
       <MenuSubTrigger
-        disabled={!permitted || config?.workItemDiscovery !== true || !projects.length || busy}
+        disabled={
+          !permitted ||
+          config?.workItemDiscovery !== true ||
+          config.settings?.workItemDiscoveryEnabled === false ||
+          !projects.length ||
+          busy
+        }
       >
         {environment.label}
       </MenuSubTrigger>

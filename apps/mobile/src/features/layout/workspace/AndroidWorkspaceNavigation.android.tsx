@@ -16,7 +16,7 @@ import { useToolbarLayout } from "../../../components/ui/useToolbarLayout";
 import { rootNavigationRef } from "../../../lib/rootNavigation";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
 import { useWorkspaceConnectionState } from "../../../state/workspace";
-import { androidWorkspaceNavigationColors } from "./android-workspace-navigation-colors";
+import { androidWorkspaceNavigationColors } from "./workspace-navigation-colors";
 import {
   androidWorkspaceTabNavigationState,
   type AndroidWorkspaceNavigationTab,

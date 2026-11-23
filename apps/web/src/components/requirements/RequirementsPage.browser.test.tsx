@@ -245,7 +245,8 @@ it("keeps filter checkmarks in sync with keyboard selection and distinguishes pr
     assignee: "selected-user",
   };
   await using screen = await render(fixture.board(search, updateSearch));
-  await expect.element(screen.getByText("Remote conversation")).not.toBeInTheDocument();
+  const discovered = screen.getByRole("heading", { name: "Discovered tasks 1" });
+  await expect.element(discovered).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "Filters" }).click();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "Show archived" })).toBeChecked();
   await openFilterSubmenu("Project");
@@ -265,7 +266,7 @@ it("keeps filter checkmarks in sync with keyboard selection and distinguishes pr
       updateSearch,
     ),
   );
-  await expect.element(screen.getByText("Remote conversation")).toBeVisible();
+  await expect.element(discovered).toBeVisible();
   await expect.element(allProjects).toBeChecked();
   await userEvent.keyboard("{Escape}");
   await expect
@@ -316,8 +317,12 @@ it("updates remote candidate actions when that environment's grants or capabilit
   ) as Atom.Writable<boolean>;
   fixture.registry.set(permission, false);
   await using screen = await render(fixture.board());
+  const discovered = screen.getByRole("button", { name: /Discovered tasks/ });
   const add = screen.getByRole("button", { name: "Add task" });
   const ignore = screen.getByRole("button", { name: "Ignore" });
+  await expect.element(discovered).toHaveAttribute("aria-expanded", "false");
+  await expect.element(add).not.toBeInTheDocument();
+  await discovered.click();
   await expect.element(add).toBeDisabled();
   await act(() => fixture.registry.set(permission, true));
   await expect.element(add).toBeEnabled();
@@ -339,6 +344,8 @@ it("updates remote candidate actions when that environment's grants or capabilit
   await expect.element(ignore).toBeEnabled();
   await act(() => fixture.registry.set(permission, false));
   await expect.element(add).toBeDisabled();
+  await discovered.click();
+  await expect.element(discovered).toHaveAttribute("aria-expanded", "false");
 });
 
 it("keeps the scan action locked after its menu closes until the request settles", async () => {
@@ -456,6 +463,62 @@ it("opens a compact workflow issue with its requirement details", async () => {
     kind: "requirement-issue",
     issueId: "42",
   });
+});
+
+it("starts with to-do issues first and completed issues folded, and reveals full assignee logins on hover", async () => {
+  using fixture = setup();
+  const issuesAtom = sourceControlEnvironment.issues({
+    environmentId: "local",
+    input: { provider: "github", assignee: "me", query: "", page: 1 },
+  } as never) as Atom.Writable<unknown>;
+  fixture.registry.set(
+    issuesAtom,
+    AsyncResult.success({
+      groups: [
+        {
+          source: { provider: "github", host: "github.com", scope: "acme/app" },
+          projectIds: ["project"],
+          issues: [
+            { id: "1", title: "Unstarted issue", stateCategory: "todo" },
+            { id: "2", title: "Active issue", stateCategory: "doing" },
+            { id: "3", title: "Finished issue", stateCategory: "done" },
+          ].map((issue) => ({
+            ...issue,
+            url: `https://github.com/acme/app/issues/${issue.id}`,
+            state: "Open",
+            type: "Issue",
+            assignees: [{ value: "lee.product.dev", label: "Lee" }],
+            priority: "",
+            updatedAt: "2026-11-16T00:00:00Z",
+          })),
+          hasMore: false,
+        },
+      ],
+      failures: [],
+    }),
+  );
+  const collapseKey = "requirements.collapsed";
+  localStorage.removeItem(collapseKey);
+  using _storage = { [Symbol.dispose]: () => localStorage.removeItem(collapseKey) };
+  await using screen = await render(fixture.board());
+
+  const todo = screen.getByRole("button", { name: /^To do/ });
+  const active = screen.getByRole("button", { name: /^In progress/ });
+  const done = screen.getByRole("button", { name: /^Completed/ });
+  await expect.element(todo).toBeVisible();
+  await expect.element(active).toBeVisible();
+  expect(todo.element().getBoundingClientRect().top).toBeLessThan(
+    active.element().getBoundingClientRect().top,
+  );
+  await expect.element(done).toHaveAttribute("aria-expanded", "false");
+  const finished = screen.getByRole("button", { name: /Finished issue/ });
+  await expect.element(finished).not.toBeInTheDocument();
+
+  const row = screen.getByRole("button", { name: /Unstarted issue/ });
+  await row.getByLabelText("lee.product.dev").hover();
+  await expect.element(page.getByText("lee.product.dev", { exact: true })).toBeVisible();
+  await done.click();
+  await expect.element(finished).toBeVisible();
 });
 
 it("keeps the updating indicator inside the topbar on narrow viewports without vertical wrapping", async () => {

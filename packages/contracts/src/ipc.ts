@@ -475,6 +475,11 @@ export const DesktopCloudSandboxSaveInputSchema = Schema.Struct({
   password: Schema.optionalKey(Schema.RedactedFromValue(Schema.NonEmptyString)),
 });
 
+export type DesktopSshInstallProgress =
+  | { readonly phase: "downloading"; readonly bytes: number }
+  | { readonly phase: "relay-download" | "relay-upload" | "installing" }
+  | { readonly phase: "finished" };
+
 export const DesktopSshEnvironmentEnsureInputSchema = Schema.Struct({
   target: DesktopSshEnvironmentTargetSchema,
   options: Schema.optionalKey(DesktopSshEnvironmentEnsureOptionsSchema),
@@ -1189,6 +1194,9 @@ export interface DesktopBridge {
     password?: string;
   }) => Promise<DesktopCloudSandboxConfig>;
   clearCloudSandboxConfig: () => Promise<void>;
+  onSshInstallProgress?: (
+    listener: (target: DesktopSshEnvironmentTarget, progress: DesktopSshInstallProgress) => void,
+  ) => () => void;
   disconnectSshEnvironment: (target: DesktopSshEnvironmentTarget) => Promise<void>;
   fetchSshEnvironmentDescriptor: (httpBaseUrl: string) => Promise<ExecutionEnvironmentDescriptor>;
   bootstrapSshBearerSession: (

@@ -25,6 +25,7 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
   meituanRequirementsEnabled?: boolean;
   settingsUnavailable?: boolean;
   realProcess?: boolean;
+  legacyNode?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -50,6 +51,14 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
     yield* fs.chmod(real, 0o755);
     yield* fs.symlink(real, path.join(bin, name));
   }
+  if (options.binaries.includes("npm"))
+    yield* fs.writeFileString(path.join(bin, "node"), "", { mode: 0o755 });
+  const legacyBin = path.join(root, "legacy", "bin");
+  if (options.legacyNode) {
+    yield* fs.makeDirectory(legacyBin, { recursive: true });
+    yield* fs.writeFileString(path.join(legacyBin, "node"), "", { mode: 0o755 });
+    yield* fs.symlink(path.join(bin, "npm"), path.join(legacyBin, "npm"));
+  }
   const calls: VcsProcess.VcsProcessInput[] = [];
   const run: VcsProcess.VcsProcess["Service"]["run"] = (input) =>
     Effect.sync(() => {
@@ -60,6 +69,10 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
           exitCode: ChildProcessSpawner.ExitCode(options.installExit ?? 0),
         });
       if (args.at(-1) === "config") return processOutput("MIS 账号：  demo.user\n其他信息：忽略");
+      if (args.length === 1 && args[0] === "--version" && path.basename(input.command) === "node")
+        return processOutput(
+          input.command === path.join(legacyBin, "node") ? "v14.21.3" : "v20.20.2",
+        );
       if (args.includes("--version")) return processOutput("tool 2.43.0");
       if (args.includes("view"))
         return processOutput(JSON.stringify(options.npmVersion ?? "2.44.0"));
@@ -87,12 +100,18 @@ const fixture = Effect.fn("test.toolInstaller")(function* (options: {
           : Settings.ServerSettingsService.layerTest({
               meituanIntegrationEnabled: options.meituanEnabled ?? true,
               meituanRequirementsEnabled: options.meituanRequirementsEnabled ?? true,
+              daxiang: { approvalMonitor: { enabled: true } },
             }),
       ),
       Layer.provide(
         options.realProcess ? VcsProcess.layer : Layer.succeed(VcsProcess.VcsProcess, { run }),
       ),
-      Layer.provide(Layer.succeed(HostProcess.Environment, { PATH: bin })),
+      Layer.provide(
+        Layer.succeed(HostProcess.Environment, {
+          PATH: options.legacyNode ? `${legacyBin}:${bin}` : bin,
+          NVM_DIR: path.join(root, "nvm"),
+        }),
+      ),
       Layer.provide(Layer.succeed(HostProcess.Platform, options.platform ?? "linux")),
       Layer.provide(Layer.succeed(HostProcess.UserId, options.uid ?? 0)),
     ),
@@ -289,11 +308,7 @@ it.effect.each([
     const { installer, root, calls } = yield* fixture({ binaries: [binary, "npm"] });
     const result = yield* installer.inspect(id);
     assert.ok(result.args.includes(root));
-    if (id !== "meituan")
-      assert.strictEqual(
-        result.tool.manualCommand,
-        `npm install --global --prefix '${root}' ${pkg}@latest --registry=http://r.npm.sankuai.com --no-audit --no-fund`,
-      );
+    assert.isTrue(result.tool.command?.includes(`'${root}/bin/node'`));
     assert.strictEqual(yield* installer.install(result), "installed");
     const install = calls.find((call) => call.operation.endsWith("install"));
     assert.ok(install?.args.includes(pkg + "@2.44.0"));
@@ -315,6 +330,24 @@ it.effect.each(["2.42.0", "2.43.0"])(
       assert.strictEqual(yield* installer.install(result), "current");
       assert.ok(calls.every((call) => !call.operation.endsWith("install")));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("offers direct Dumbo installation using Node 20 instead of the first npm on PATH", () =>
+  Effect.gen(function* () {
+    const { installer, bin, root, calls } = yield* fixture({ binaries: ["npm"], legacyNode: true });
+    const tool = yield* installer.inspectMeituan("dumbo-web");
+    assert.strictEqual(tool.status, "missing");
+    assert.isNotNull(tool.command);
+    const plan = yield* installer.inspect("dumbo-web");
+    assert.strictEqual(plan.executable, `${bin}/node`);
+    assert.ok(plan.args.includes(root));
+    assert.strictEqual(yield* installer.install(plan), "installed");
+    assert.ok(
+      calls
+        .find((call) => call.operation.endsWith("install"))
+        ?.args.includes("@sailor/dumbo-cdp@2.44.0"),
+    );
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect("reports a nonzero installer exit without exposing process output", () =>

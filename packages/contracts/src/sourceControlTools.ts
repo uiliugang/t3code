@@ -1,7 +1,14 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-export const SourceControlToolId = Schema.Literals(["git", "github", "meituan", "ones2", "mcm"]);
+export const SourceControlToolId = Schema.Literals([
+  "git",
+  "github",
+  "meituan",
+  "ones2",
+  "mcm",
+  "dumbo-web",
+]);
 export type SourceControlToolId = typeof SourceControlToolId.Type;
 
 export function isRequirementCli(id: string): id is "ones2" | "mcm" {

@@ -8,12 +8,16 @@ import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import type { DesktopSshInstallProgress } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
+import { cliReleaseAssetUrl, cliReleaseDownloadBaseUrl } from "@t3tools/shared/cliRelease";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -32,8 +36,13 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { captureLauncher, captureLauncherFor, runLauncher } from "./launcherTestHarness.ts";
 import * as SshAuth from "./auth.ts";
-import { remoteStateKey } from "./command.ts";
-import { SshCommandError, SshPasswordPromptError, SshReadinessError } from "./errors.ts";
+import { remoteStateKey, targetConnectionKey } from "./command.ts";
+import {
+  SshCommandError,
+  SshLaunchError,
+  SshPasswordPromptError,
+  SshReadinessError,
+} from "./errors.ts";
 import * as SshTunnel from "./tunnel.ts";
 
 const isSshCommandError = Schema.is(SshCommandError);
@@ -439,6 +448,7 @@ esac
     (source) =>
       Effect.gen(function* () {
         const attempts: Array<ReadonlyArray<string>> = [];
+        const progress: DesktopSshInstallProgress[] = [];
         const spawner = ChildProcessSpawner.make((command) =>
           Effect.sync(() => {
             const args = commandArgs(command);
@@ -448,7 +458,11 @@ esac
             return {
               ...makeSuccessfulProcess(""),
               exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(255)),
-              stderr: Stream.make(new TextEncoder().encode("Permission denied (password).\n")),
+              stderr: Stream.make(
+                new TextEncoder().encode(
+                  "T3_INSTALL_PROGRESS:downloading:1024\nPermission denied (password).\n",
+                ),
+              ),
             };
           }),
         );
@@ -467,6 +481,7 @@ esac
             .ensureEnvironment(
               { alias: "sandbox", hostname: "sandbox", username: "root", port: 2022 },
               {
+                reportInstallProgress: (update) => progress.push(update),
                 passwordForTarget: (target) =>
                   Effect.sync(() => {
                     assert.equal(target.hostname, "sandbox.example.test");
@@ -495,68 +510,76 @@ esac
             ],
           );
           assert.notInclude(attempts[0]!, "fixture-password");
+          assert.deepEqual(progress, [{ phase: "downloading", bytes: 1024 }]);
         }).pipe(Effect.provide(layer), Effect.scoped);
       }),
   );
 
   it.effect.each([
-    { version: ARCHIVE.archiveVersion, runner: ARCHIVE },
-    { version: "1.2.4", runner: ARCHIVE },
+    { version: ARCHIVE.archiveVersion, runner: ARCHIVE, source: undefined },
+    { version: "1.2.4", runner: ARCHIVE, source: undefined },
     {
       version: "1.2.4",
       runner: {
         nodeScriptPath: "/opt/t3/server.mjs",
         releaseBaseUrl: "https://releases.example.test/download",
       },
+      source: "https://releases.example.test/download",
     },
-  ])("preserves SSH authentication failures while relaying $version", ({ version, runner }) => {
-    let launches = 0;
-    const downloads: string[] = [];
-    const httpClient = HttpClient.make((request) =>
-      Effect.sync(() => {
-        downloads.push(request.url);
-        return HttpClientResponse.fromWeb(request, new Response("", { status: 200 }));
-      }),
-    );
-    const spawner = ChildProcessSpawner.make(() =>
-      Effect.sync(() => {
-        const stderr =
-          launches++ === 0
-            ? `T3_DOWNLOAD_FAILED:t3-${version}-linux-x64.tar.gz\n`
-            : "Permission denied (publickey,password).";
-        return {
-          ...makeSuccessfulProcess(""),
-          stderr: Stream.make(new TextEncoder().encode(stderr)),
-          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(255)),
-        };
-      }),
-    );
-    return Effect.gen(function* () {
-      const error = yield* Effect.flip(
-        SshTunnel.launchOrReuseRemoteServer(
-          { alias: "devbox", hostname: "devbox", username: null, port: null },
-          undefined,
-          runner,
+    {
+      version: "1.2.4",
+      runner: { ...ARCHIVE, releaseBaseUrl: "https://releases.example.test/download" },
+      source: cliReleaseDownloadBaseUrl("").replace(/\/v$/u, ""),
+    },
+  ])(
+    "preserves SSH authentication failures while relaying $version from $source",
+    ({ version, runner, source }) => {
+      let launches = 0;
+      const downloads: string[] = [];
+      const httpClient = HttpClient.make((request) =>
+        Effect.sync(() => {
+          downloads.push(request.url);
+          return HttpClientResponse.fromWeb(request, new Response("", { status: 200 }));
+        }),
+      );
+      const spawner = ChildProcessSpawner.make(() =>
+        Effect.sync(() => {
+          const stderr =
+            launches++ === 0
+              ? `T3_DOWNLOAD_FAILED:t3-${version}-linux-x64.tar.gz\n${source ? `T3_DOWNLOAD_SOURCE:${source}\n` : ""}`
+              : "Permission denied (publickey,password).";
+          return {
+            ...makeSuccessfulProcess(""),
+            stderr: Stream.make(new TextEncoder().encode(stderr)),
+            exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(255)),
+          };
+        }),
+      );
+      return Effect.gen(function* () {
+        const error = yield* Effect.flip(
+          SshTunnel.launchOrReuseRemoteServer(
+            { alias: "devbox", hostname: "devbox", username: null, port: null },
+            undefined,
+            runner,
+          ),
+        );
+        assert.isTrue(SshAuth.isSshAuthFailure(error));
+        assert.equal(launches, 3);
+        assert.equal(downloads.length, 1);
+        assert.isTrue(downloads[0]?.endsWith(`/v${version}/SHA256SUMS`));
+        assert.equal(downloads[0], cliReleaseAssetUrl(version, "SHA256SUMS", source));
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            NodeCrypto.layer,
+            Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Layer.succeed(HttpClient.HttpClient, httpClient),
+          ),
         ),
       );
-      assert.isTrue(SshAuth.isSshAuthFailure(error));
-      assert.equal(launches, 3);
-      assert.equal(downloads.length, 1);
-      assert.isTrue(downloads[0]?.endsWith(`/v${version}/SHA256SUMS`));
-      if ("releaseBaseUrl" in runner) {
-        assert.equal(downloads[0], `${runner.releaseBaseUrl}/v${version}/SHA256SUMS`);
-      }
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          NodeServices.layer,
-          NodeCrypto.layer,
-          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
-          Layer.succeed(HttpClient.HttpClient, httpClient),
-        ),
-      ),
-    );
-  });
+    },
+  );
 
   it.effect.each([
     { stderr: "Permission denied (publickey).", explicit: false },
@@ -564,9 +587,15 @@ esac
     { stderr: "T3_DOWNLOAD_FAILED:../../other.tar.gz", explicit: false },
     { stderr: "T3_DOWNLOAD_FAILED:t3-../../outside-linux-x64.tar.gz", explicit: false },
     { stderr: "T3_DOWNLOAD_FAILED:t3-1.2.4-linux-x64.tar.gz", explicit: true },
+    {
+      stderr:
+        "T3_DOWNLOAD_FAILED:t3-1.2.4-linux-x64.tar.gz\nT3_DOWNLOAD_SOURCE:http://unconfigured.example\n",
+      explicit: false,
+      unconfigured: true,
+    },
   ])(
     "does not relay invalid launch failures ($stderr, explicit=$explicit)",
-    ({ stderr, explicit }) => {
+    ({ stderr, explicit, unconfigured }) => {
       const spawner = ChildProcessSpawner.make(() =>
         Effect.succeed({
           ...makeSuccessfulProcess(""),
@@ -582,8 +611,13 @@ esac
             { ...ARCHIVE, replaceExistingServer: explicit },
           ),
         );
-        assert.instanceOf(error, SshCommandError);
-        assert.equal(error.message, stderr);
+        if (unconfigured) {
+          assert.instanceOf(error, SshLaunchError);
+          assert.include(error.message, "T3CODE_RELEASE_BASE_URL");
+        } else {
+          assert.instanceOf(error, SshCommandError);
+          assert.equal(error.message, stderr);
+        }
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -600,17 +634,114 @@ esac
     },
   );
 
-  it.live("installs relayed archives only after checking their checksum", () =>
+  it.live("reinstalls a pinned runtime using its original version and mirror", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-install-test-" });
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-pinned-test-" });
+        const state = `${home}/.t3/ssh-launch/fixture`;
+        yield* fs.makeDirectory(state, { recursive: true });
+        yield* fs.makeDirectory(`${home}/bin`);
+        yield* fs.writeFileString(
+          `${state}/pinned-runner.sh`,
+          "#!/bin/sh\nT3_ARCHIVE_VERSION='1.2.2'\nT3_RELEASE_BASE_URL='https://original.example/releases'\nexit 9\n",
+        );
+        yield* fs.chmod(`${state}/pinned-runner.sh`, 0o700);
+        yield* fs.writeFileString(
+          `${home}/bin/curl`,
+          '#!/bin/sh\nprintf "%s\\n" "$@" >&2\nexit 1\n',
+        );
+        yield* fs.chmod(`${home}/bin/curl`, 0o700);
+        yield* fs.writeFileString(`${home}/launch`, SshTunnel.buildRemoteLaunchScript(ARCHIVE));
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const child = yield* spawner.spawn(
+          ChildProcess.make(
+            "sh",
+            ["-c", 'export PATH="$HOME/bin:$PATH"; exec sh "$HOME/launch" fixture'],
+            { env: { HOME: home } },
+          ),
+        );
+        const stderr = yield* Stream.mkString(Stream.decodeText(child.stderr));
+        assert.notEqual(Number(yield* child.exitCode), 0);
+        assert.include(stderr, "T3_INSTALL_PROGRESS:downloading:0");
+        assert.include(stderr, "https://original.example/releases/v1.2.2/SHA256SUMS");
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("does not remove a successor's runtime install lock", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-install-lock-" });
         yield* fs.writeFileString(
           `${home}/runner.sh`,
           SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
         );
         yield* fs.makeDirectory(`${home}/bin`);
-        yield* fs.writeFileString(`${home}/bin/curl`, "#!/bin/sh\nexit 28\n");
+        yield* fs.makeDirectory(`${home}/.t3/runtime/versions`, { recursive: true });
+        yield* fs.writeFileString(
+          `${home}/bin/cat`,
+          `#!/bin/sh
+if [ "$1" = "$T3_TEST_LOCK" ] && [ ! -e "$HOME/lock-replaced" ]; then
+  touch "$HOME/lock-replaced"
+  printf '%s\\n' "$T3_TEST_OWNER" > "$T3_TEST_LOCK"
+  printf 'not-a-pid\\n'
+  exit
+fi
+exec /bin/cat "$@"
+`,
+        );
+        yield* fs.writeFileString(`${home}/bin/sleep`, '#!/bin/sh\nkill -TERM "$PPID"\n');
+        yield* fs.writeFileString(
+          `${home}/bin/curl`,
+          '#!/bin/sh\ntouch "$HOME/unexpected-download"\nexit 1\n',
+        );
+        yield* fs.chmod(`${home}/bin/cat`, 0o700);
+        yield* fs.chmod(`${home}/bin/sleep`, 0o700);
+        yield* fs.chmod(`${home}/bin/curl`, 0o700);
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const child = yield* spawner.spawn(
+          ChildProcess.make(
+            "sh",
+            [
+              "-c",
+              `set -eu
+export PATH="$HOME/bin:$PATH"
+export T3_TEST_OWNER=$$
+export T3_TEST_LOCK="$HOME/.t3/runtime/versions/.${ARCHIVE.archiveVersion}.install.lock"
+printf 'not-a-pid\\n' > "$T3_TEST_LOCK"
+if sh "$HOME/runner.sh" --version 2> "$HOME/stderr"; then exit 1; fi
+test "$(cat "$T3_TEST_LOCK")" = "$$"
+test ! -e "$HOME/unexpected-download"
+`,
+            ],
+            { env: { HOME: home } },
+          ),
+        );
+        assert.equal(Number(yield* child.exitCode), 0);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("stops the checksum download when the SSH stderr pipe closes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-cancel-test-" });
+        yield* fs.writeFileString(
+          `${home}/runner.sh`,
+          SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
+        );
+        yield* fs.makeDirectory(`${home}/bin`);
+        yield* fs.writeFileString(
+          `${home}/bin/curl`,
+          `#!/bin/sh
+echo "$$" > "$HOME/downloader.pid"
+echo checksum-started >&2
+exec sleep 600
+`,
+        );
         yield* fs.writeFileString(
           `${home}/bin/uname`,
           '#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n',
@@ -625,11 +756,84 @@ esac
               "-c",
               `set -eu
 export PATH="$HOME/bin:$PATH"
+sh "$HOME/runner.sh" --version 2>&1 | awk '/^checksum-started$/ { exit }'
+PID="$(cat "$HOME/downloader.pid")"
+if kill -0 "$PID" 2>/dev/null; then exit 1; fi
+test ! -e "$HOME/.t3/runtime/versions/.${ARCHIVE.archiveVersion}.install.lock"
+`,
+            ],
+            { env: { HOME: home } },
+          ),
+        );
+        assert.equal(Number(yield* child.exitCode), 0);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("installs relayed archives only after checking their checksum", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-install-test-" });
+        yield* fs.writeFileString(
+          `${home}/runner.sh`,
+          SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
+        );
+        yield* fs.makeDirectory(`${home}/bin`);
+        yield* fs.writeFileString(
+          `${home}/bin/curl`,
+          `#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -C) resume="$2"; shift;;
+    -o) output="$2"; shift;;
+    */SHA256SUMS) checksums=1;;
+  esac
+  shift
+done
+if [ "\${checksums:-}" ]; then printf 'checksums\\n' > "$output"; exit 0; fi
+[ "\${resume:-}" = - ] || exit 28
+printf 'partial\\n' >> "$output"
+exit 28
+`,
+        );
+        yield* fs.writeFileString(
+          `${home}/bin/uname`,
+          '#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n',
+        );
+        yield* fs.writeFileString(
+          `${home}/bin/ln`,
+          `#!/bin/sh
+case "$2" in
+  *.install.lock)
+    test "$(cat "$1")" = "$PPID" || exit 24
+    touch "$HOME/published-lock"
+    ;;
+esac
+exec /bin/ln "$@"
+`,
+        );
+        yield* fs.chmod(`${home}/bin/curl`, 0o700);
+        yield* fs.chmod(`${home}/bin/uname`, 0o700);
+        yield* fs.chmod(`${home}/bin/ln`, 0o700);
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const child = yield* spawner.spawn(
+          ChildProcess.make(
+            "sh",
+            [
+              "-c",
+              `set -eu
+export PATH="$HOME/bin:$PATH"
 cd "$HOME"
 if T3_DOWNLOAD_ID=../outside sh runner.sh --version >out 2>err; then exit 1; fi
 grep -q 'Invalid t3 download ID' err
 if sh runner.sh --version >out 2>err; then exit 1; fi
 grep -q '^T3_DOWNLOAD_FAILED:' err
+test -e "$HOME/published-lock"
+PARTIAL="$HOME/.t3/runtime/versions/.t3-${ARCHIVE.archiveVersion}-linux-x64.tar.gz.partial"
+test "$(cat "$PARTIAL")" = partial
+if sh runner.sh --version >out 2>err; then exit 1; fi
+test "$(wc -l < "$PARTIAL" | tr -d ' ')" = 2
 echo 'Remote download failed; relay requested.'
 CACHE="$HOME/.t3/runtime/downloads/${ARCHIVE.archiveVersion}/attempt"
 export T3_DOWNLOAD_ID=attempt
@@ -654,6 +858,7 @@ grep -q '^fixture-runtime$' out
 test ! -e "$CACHE"
 test -d "$HOME/.t3/runtime/downloads/${ARCHIVE.archiveVersion}/other-attempt"
 echo 'Verified relay installed and executed.'
+test ! -e "$PARTIAL"
 `,
             ],
             { env: { HOME: home } },
@@ -673,15 +878,39 @@ echo 'Verified relay installed and executed.'
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.live.each([false, true])(
-    "relays downloads and cleans its cache (retry fails: %s)",
-    (retryFails) =>
+  it.live.each(["success", "launch failure", "stale cache"] as const)(
+    "relays downloads and cleans its cache (%s)",
+    (scenario) =>
       Effect.scoped(
         Effect.gen(function* () {
           const commands: Array<ReadonlyArray<string>> = [];
+          const archiveRequests: Array<string | undefined> = [];
+          const retryFails = scenario === "launch failure";
           const downloads: string[] = [];
           const fs = yield* FileSystem.FileSystem;
           const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-relay-test-" });
+          const target = { alias: "devbox", hostname: "devbox", username: null, port: null };
+          const relayCacheDirectory = `${home}/client-downloads`;
+          const archive = `t3-${ARCHIVE.archiveVersion}-linux-x64.tar.gz`;
+          const cacheKey = Hex.encode(
+            yield* Effect.service(Digest.Digest).pipe(
+              Effect.flatMap((digest) =>
+                digest.digest(
+                  Digest.sha256,
+                  new TextEncoder().encode(
+                    `${targetConnectionKey(target)}\0${cliReleaseAssetUrl(ARCHIVE.archiveVersion, archive)}`,
+                  ),
+                ),
+              ),
+              Effect.provide(NodeCrypto.layer),
+            ),
+          );
+          const partial = `${relayCacheDirectory}/${cacheKey}.partial`;
+          yield* fs.makeDirectory(relayCacheDirectory);
+          yield* fs.writeFile(
+            partial,
+            scenario === "stale cache" ? new Uint8Array(5) : new Uint8Array([0, 255]),
+          );
           const nativeSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
           const spawner = ChildProcessSpawner.make((command) =>
             Effect.gen(function* () {
@@ -700,12 +929,10 @@ echo 'Verified relay installed and executed.'
               const root = `${home}/.t3/runtime/downloads/${ARCHIVE.archiveVersion}`;
               const attempts = yield* fs.readDirectory(root);
               assert.lengthOf(attempts, 1);
-              for (const file of ["SHA256SUMS", "t3-1.2.3-preview.20260911.4-linux-x64.tar.gz"]) {
-                assert.deepEqual(
-                  Array.from(yield* fs.readFile(`${root}/${attempts[0]}/${file}`)),
-                  [0, 255, 10, 13, 128],
-                );
-              }
+              assert.deepEqual(
+                Array.from(yield* fs.readFile(`${root}/${attempts[0]}/${archive}`)),
+                [0, 255, 10, 13, 128],
+              );
               return retryFails
                 ? {
                     ...makeSuccessfulProcess(""),
@@ -727,6 +954,10 @@ echo 'Verified relay installed and executed.'
             }
             return spawner.spawn(command);
           });
+          const archiveBytes = new Uint8Array([0, 255, 10, 13, 128]);
+          const checksum = yield* Effect.flatMap(Digest.Digest, (digest) =>
+            digest.digestHex(Digest.sha256, archiveBytes),
+          ).pipe(Effect.provide(NodeCrypto.layer));
           const client = HttpClient.make((request) => {
             if (request.url.startsWith("https://github.com/")) {
               return Effect.succeed(
@@ -742,19 +973,41 @@ echo 'Verified relay installed and executed.'
               );
             }
             downloads.push(request.url);
+            if (request.url.endsWith(archive)) {
+              archiveRequests.push(request.headers.range);
+              if (scenario === "stale cache") {
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    request,
+                    request.headers.range === undefined
+                      ? new Response(archiveBytes)
+                      : new Response(null, {
+                          status: 416,
+                          headers: { "content-range": "bytes */5" },
+                        }),
+                  ),
+                );
+              }
+              assert.equal(request.headers.range, "bytes=2-");
+              return Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  new Response(new Uint8Array([10, 13, 128]), {
+                    status: 206,
+                    headers: { "content-range": "bytes 2-4/5" },
+                  }),
+                ),
+              );
+            }
             return Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                new Response(new Uint8Array([0, 255, 10, 13, 128])),
-              ),
+              HttpClientResponse.fromWeb(request, new Response(`${checksum}  ${archive}\n`)),
             );
           });
           return yield* Effect.gen(function* () {
-            const launch = SshTunnel.launchOrReuseRemoteServer(
-              { alias: "devbox", hostname: "devbox", username: null, port: null },
-              undefined,
-              ARCHIVE,
-            );
+            const launch = SshTunnel.launchOrReuseRemoteServer(target, undefined, {
+              ...ARCHIVE,
+              relayCacheDirectory,
+            });
             if (retryFails) {
               const error = yield* Effect.flip(launch);
               assert.instanceOf(error, SshCommandError);
@@ -763,9 +1016,11 @@ echo 'Verified relay installed and executed.'
               assert.equal((yield* launch).remotePort, 3774);
             }
             assert.equal(commands.length, 5);
+            assert.equal(yield* fs.exists(partial), retryFails);
+            assert.equal(downloads[0]?.split("/").at(-1), "SHA256SUMS");
             assert.deepEqual(
-              downloads.map((url) => url.split("/").at(-1)),
-              ["SHA256SUMS", "t3-1.2.3-preview.20260911.4-linux-x64.tar.gz"],
+              archiveRequests,
+              scenario === "stale cache" ? ["bytes=5-", undefined] : ["bytes=2-"],
             );
             assert.deepEqual(
               yield* fs.readDirectory(`${home}/.t3/runtime/downloads/${ARCHIVE.archiveVersion}`),
@@ -1026,7 +1281,19 @@ echo 'Verified relay installed and executed.'
       NodeChildProcess.execFileSync("sh", ["-c", `sha256sum ${archive} > SHA256SUMS`], {
         cwd: release,
       });
-      for (const tool of ["sh", "mkdir", "mktemp", "cat", "rm", "grep", "cut", checksum, "mv"]) {
+      for (const tool of [
+        "sh",
+        "mkdir",
+        "mktemp",
+        "cat",
+        "rm",
+        "grep",
+        "cut",
+        checksum,
+        "mv",
+        "ln",
+        "sleep",
+      ]) {
         NodeFS.symlinkSync(
           NodeChildProcess.execFileSync("sh", ["-c", `command -v ${tool}`], {
             encoding: "utf8",
@@ -1070,7 +1337,7 @@ echo 'Verified relay installed and executed.'
       const home = NodePath.join(root, "home");
       NodeFS.mkdirSync(bin);
       NodeFS.mkdirSync(home);
-      for (const tool of ["sh", "mkdir", "mktemp", "cat", "rm"]) {
+      for (const tool of ["sh", "mkdir", "mktemp", "cat", "rm", "ln"]) {
         NodeFS.symlinkSync(
           NodeChildProcess.execFileSync("sh", ["-c", `command -v ${tool}`], {
             encoding: "utf8",

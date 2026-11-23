@@ -13,6 +13,7 @@ import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useCompactWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { useUiTranslation } from "../../../lib/useUiTranslation";
+import { workspaceBottomNavigationColors } from "./workspace-navigation-colors";
 
 const PULL_REQUEST_ICON = require("../../../../assets/icons/pull-request.png");
 const ISSUE_ICON = require("../../../../assets/icons/issue.png");
@@ -30,7 +31,8 @@ export function WorkspaceTabToolbarButtons() {
     workspace.settingsOpen,
     hidden,
   );
-  const selectedTint = useControlTheme().colors["--color-primary"];
+  const { colors } = useControlTheme();
+  const { selectedColor, unselectedColor } = workspaceBottomNavigationColors(colors);
   return (
     <>
       {visibleNavigationTabs(order, hidden).map((tab) => (
@@ -45,7 +47,7 @@ export function WorkspaceTabToolbarButtons() {
                 ? { type: "image", source: ISSUE_ICON, tinted: true }
                 : NAVIGATION_TAB_ICONS[tab]
           }
-          tintColor={selected === tab ? selectedTint : undefined}
+          tintColor={selected === tab ? selectedColor : unselectedColor}
           onPress={() => selectTab(tab)}
         />
       ))}
@@ -53,7 +55,7 @@ export function WorkspaceTabToolbarButtons() {
         identifier="workspace-tab-settings"
         accessibilityLabel={t("Settings")}
         icon="gearshape"
-        tintColor={selected === "settings" ? selectedTint : undefined}
+        tintColor={selected === "settings" ? selectedColor : unselectedColor}
         onPress={() => selectTab("settings")}
       />
     </>

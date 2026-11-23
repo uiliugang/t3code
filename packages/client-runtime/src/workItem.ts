@@ -58,14 +58,17 @@ export function deliveryStages(
 
 export function requirementGroups(t: UiTranslator) {
   return [
+    { key: "todo", label: t("To do") },
     { key: "attention", label: t("Needs attention") },
     { key: "active", label: t("In progress") },
     { key: "release", label: t("Awaiting release") },
-    { key: "todo", label: t("To do") },
     { key: "done", label: t("Completed") },
   ] as const;
 }
 export type RequirementGroup = ReturnType<typeof requirementGroups>[number]["key"];
+export const DEFAULT_COLLAPSED_REQUIREMENT_GROUPS = [
+  "done",
+] as const satisfies ReadonlyArray<RequirementGroup>;
 
 export function requirementGroup(status: string, summary?: DeliverySummary): RequirementGroup {
   if (

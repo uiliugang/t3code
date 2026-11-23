@@ -145,6 +145,8 @@ const applicationServerSettingsTransferPolicy = {
   enablePreviewTunnel: "local",
   sourceControlHosts: "local",
   issueProjectSources: "local",
+  workItemDiscoveryEnabled: "portable",
+  workItemDiscoveryLimit: "portable",
   daxiang: "local",
   meituanIntegrationEnabled: "local",
   meituanSourceControlEnabled: "local",

@@ -428,6 +428,8 @@ function makeMutableServerSettingsService(
       start: Effect.void,
       ready: Effect.void,
       getSettings: Ref.get(settingsRef),
+      getWorkItemDiscoverySettings: Effect.die("Unexpected work item discovery settings read"),
+      subscribeWorkItemDiscoveryChanges: Effect.succeed(Stream.empty),
       validateProviderInstanceMutation: () => Effect.die("Unexpected provider validation"),
       updateSettings: (patch) =>
         Effect.gen(function* () {

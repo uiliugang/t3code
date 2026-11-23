@@ -52,7 +52,20 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
     }
   }
   var selectedTab = "threads" { didSet { updateSelection() } }
-  var selectedColor: UIColor = .systemBlue { didSet { tabBar.tintColor = selectedColor } }
+  var selectedColor: UIColor = .label { didSet { tabBar.tintColor = selectedColor } }
+  var unselectedColor: UIColor = .secondaryLabel {
+    didSet { tabBar.unselectedItemTintColor = unselectedColor }
+  }
+  var barColor: UIColor = .systemBackground {
+    didSet {
+      if #available(iOS 26.0, *) { return }
+      let appearance = UITabBarAppearance()
+      appearance.configureWithOpaqueBackground()
+      appearance.backgroundColor = barColor
+      tabBar.standardAppearance = appearance
+      tabBar.scrollEdgeAppearance = appearance
+    }
+  }
   var compact = false {
     didSet {
       tabBarTrailing.constant = showsCompose ? (compact ? -64 : -76) : 0
@@ -119,13 +132,12 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
     let pullRequestIcon = UIImage(named: "pull-request", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
     let labels = ["threads": "Chats", "requirements": "Requirements", "pullRequests": "PRs", "issues": "Issues", "usage": "Usage", "settings": "Settings"]
     let issueIcon = UIImage(named: "issue", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
-    let symbols = ["threads": "text.bubble", "requirements": "ticket", "usage": "chart.bar.xaxis", "settings": "gearshape"]
+    let symbols = ["threads": "text.bubble", "requirements": "list.clipboard", "usage": "chart.bar", "settings": "gearshape"]
     for (tab, label) in labels {
       let icon = tab == "pullRequests" ? pullRequestIcon : tab == "issues" ? issueIcon : UIImage(systemName: symbols[tab] ?? "circle")
       let item = UITabBarItem(title: nil, image: tabIcon(icon), tag: 0)
       item.accessibilityLabel = self.labels[tab] ?? label
       item.accessibilityIdentifier = "workspace-tab-\(tab)"
-      if tab == "threads" { item.selectedImage = tabIcon(UIImage(systemName: "text.bubble.fill")) }
       itemsByTab[tab] = item
     }
   }

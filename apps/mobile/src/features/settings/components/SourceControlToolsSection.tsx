@@ -63,7 +63,7 @@ export function SourceControlToolsSection({
   }, [completedTools, refreshDiscovery]);
 
   const install = async (tool: MaintainableTool) => {
-    if (!tool.command || pending || tool.id === "mtskills" || tool.id === "dumbo-web") return;
+    if (!tool.command || pending || tool.id === "mtskills") return;
     setPending(true);
     const result = await start({
       environmentId,

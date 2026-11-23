@@ -413,6 +413,8 @@ const fixture = Effect.fn("fixture")(function* (
         start: Effect.void,
         ready: Effect.void,
         getSettings: Ref.get(settings),
+        getWorkItemDiscoverySettings: Effect.die("Unexpected work item discovery settings read"),
+        subscribeWorkItemDiscoveryChanges: Effect.succeed(Stream.empty),
         updateSettings: (patch) =>
           Ref.updateAndGet(settings, (current) => ({
             ...current,

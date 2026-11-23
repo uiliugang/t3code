@@ -67,9 +67,7 @@ export class DesktopSshEnvironment extends Context.Service<
     ) => Effect.Effect<DesktopSshEnvironmentTarget, SshCommandError | SshInvalidTargetError>;
     readonly ensureEnvironment: (
       target: DesktopSshEnvironmentTarget,
-      options?: {
-        readonly issuePairingToken?: boolean;
-        readonly targetVersion?: string;
+      options?: Omit<SshTunnel.EnsureSshEnvironmentOptions, "passwordForTarget"> & {
         readonly password?: Redacted.Redacted<string>;
       },
     ) => Effect.Effect<DesktopSshEnvironmentBootstrap, DesktopSshEnvironmentOperationError>;
@@ -99,6 +97,7 @@ export const resolveDesktopSshCliRunner = (
   const releaseBaseUrl = env[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined;
   return {
     archiveVersion: environment.appVersion,
+    relayCacheDirectory: environment.path.join(environment.stateDir, "ssh-downloads"),
     ...(releaseBaseUrl === undefined ? {} : { releaseBaseUrl }),
   };
 };

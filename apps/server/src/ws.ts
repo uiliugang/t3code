@@ -1984,6 +1984,7 @@ export const layerWsRpc = (
           requirementIssueTrackers: true,
           workItemDelivery: true,
           workItemDiscovery: true,
+          workItemDiscoverySettings: true,
           workItemDraftGeneration: true,
           workItemAnalysis: false,
           threadPredictions: true,

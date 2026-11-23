@@ -407,6 +407,11 @@ function ensureProviderInstanceMutationAllowed(
   return Effect.void;
 }
 
+const selectWorkItemDiscoverySettings = ({
+  workItemDiscoveryEnabled,
+  workItemDiscoveryLimit,
+}: ServerSettings) => ({ workItemDiscoveryEnabled, workItemDiscoveryLimit });
+
 export class ServerSettingsService extends Context.Service<
   ServerSettingsService,
   {
@@ -418,6 +423,16 @@ export class ServerSettingsService extends Context.Service<
     readonly managedPolicy?: ManagedPolicySummary | undefined;
 
     readonly getSettings: Effect.Effect<ServerSettings, ServerSettingsError>;
+
+    readonly getWorkItemDiscoverySettings: Effect.Effect<
+      ReturnType<typeof selectWorkItemDiscoverySettings>,
+      ServerSettingsError
+    >;
+    readonly subscribeWorkItemDiscoveryChanges: Effect.Effect<
+      Stream.Stream<ReturnType<typeof selectWorkItemDiscoverySettings>>,
+      never,
+      Scope.Scope
+    >;
 
     readonly updateSettings: (
       patch: ServerSettingsPatch,
@@ -468,6 +483,8 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
       : {}),
   });
   const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
+  const discoveryChanges =
+    yield* PubSub.unbounded<ReturnType<typeof selectWorkItemDiscoverySettings>>();
   const writeSemaphore = yield* Semaphore.make(1);
   const getSettings = Ref.get(currentSettingsRef).pipe(Effect.map(resolveTextGenerationProvider));
 
@@ -479,6 +496,9 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
         Effect.flatMap(update),
         Effect.flatMap(normalizeServerSettings),
         Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
+        Effect.tap((nextSettings) =>
+          PubSub.publish(discoveryChanges, selectWorkItemDiscoverySettings(nextSettings)),
+        ),
         Effect.map(resolveTextGenerationProvider),
       ),
     );
@@ -488,6 +508,10 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
     start: Effect.void,
     ready: Effect.void,
     getSettings,
+    getWorkItemDiscoverySettings: getSettings.pipe(Effect.map(selectWorkItemDiscoverySettings)),
+    subscribeWorkItemDiscoveryChanges: PubSub.subscribe(discoveryChanges).pipe(
+      Effect.map((subscription) => Stream.fromSubscription(subscription)),
+    ),
     updateSettings: (patch, issueSourceProvider, expectedIssueProjectSources) =>
       updateTestSettings((currentSettings) =>
         applyCheckedSettingsPatch(
@@ -874,6 +898,8 @@ const make = Effect.gen(function* () {
       managedProviders.applyLimits(managed.applyLocks(settings)),
       managedProviders.isDriverAllowed,
     );
+  const toEffectiveWorkItemDiscovery = (settings: ServerSettings) =>
+    selectWorkItemDiscoverySettings(managed.applyLocks(settings));
   const writeSemaphore = yield* Semaphore.make(1);
   const cacheKey = "settings" as const;
   const changesPubSub = yield* PubSub.unbounded<ServerSettings>();
@@ -1743,6 +1769,14 @@ const make = Effect.gen(function* () {
     start,
     ready: Deferred.await(startedDeferred),
     getSettings: getMaterializedSettings,
+    getWorkItemDiscoverySettings: getSettingsFromCache.pipe(
+      Effect.map(toEffectiveWorkItemDiscovery),
+    ),
+    subscribeWorkItemDiscoveryChanges: PubSub.subscribe(changesPubSub).pipe(
+      Effect.map((subscription) =>
+        Stream.fromSubscription(subscription).pipe(Stream.map(toEffectiveWorkItemDiscovery)),
+      ),
+    ),
     updateSettings: (patch, issueSourceProvider, expectedIssueProjectSources) =>
       updateAndPersistSettings(patch, (current) =>
         ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
