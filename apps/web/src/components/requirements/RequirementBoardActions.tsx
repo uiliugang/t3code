@@ -10,8 +10,9 @@ import { sourceControlEnvironment } from "../../state/sourceControl";
 import { issueEnvironment } from "../../state/issues";
 import { useEnvironmentQuery } from "../../state/query";
 import {
+  trackerCreateTargetKey,
+  trackerCreateTargetLabel,
   trackerCreateTargets,
-  requirementTrackerLabel,
   type TrackerCreateTarget,
 } from "@t3tools/client-runtime/work-item";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -117,15 +118,16 @@ function EnvironmentCreateItems({
   const canCreateIssue = useAtomValue(
     sourceControlEnvironment.createIssue.permissionAtom(environmentId),
   );
+  const createTargets = trackerCreateTargets(trackers.data);
   return (
     <>
-      {trackerCreateTargets(trackers.data).map((target) => (
+      {createTargets.map((target) => (
         <MenuItem
-          key={`${target.host}/${target.scope}`}
+          key={trackerCreateTargetKey(target)}
           disabled={!canCreateTracker}
           onClick={() => createTrackerIssue(environmentId, target)}
         >
-          {requirementTrackerLabel[target.provider]} · {target.scope}
+          {trackerCreateTargetLabel(target, createTargets, projects)}
         </MenuItem>
       ))}
       {(["meituan", "github"] as const)

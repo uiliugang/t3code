@@ -77,7 +77,9 @@ const make = Effect.gen(function* () {
 
   const link: ThreadIssueService["Service"]["link"] = Effect.fn("ThreadIssueService.link")(
     function* (input) {
-      if (yield* isLinked(input.threadId, input.ref)) return { alreadyLinked: true };
+      if (yield* isLinked(input.threadId, { ...input.ref, url: input.url })) {
+        return { alreadyLinked: true };
+      }
       yield* orchestrator.dispatch({
         type: "thread.issue.link",
         commandId: yield* commandId("link", input.threadId),
@@ -107,6 +109,7 @@ const make = Effect.gen(function* () {
         host: input.key.host,
         scope: input.key.scope,
         key: input.key.key,
+        ...(input.key.url === undefined ? {} : { url: input.key.url }),
       });
       return { wasLinked: true };
     },

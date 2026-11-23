@@ -224,7 +224,20 @@ const CLEARED_TABLES: ReadonlyArray<string> = [
   "work_item_ignored",
   "work_item_delivery_actions",
   "work_item_issue_projects",
+  "agent_feedback",
+  "workflow_runs",
+  "workflow_steps",
+  "workflow_waits",
+  "workflow_mail",
+  "workflow_marks",
+  "workflow_signals",
+  "workflow_triggers",
+  "workflow_hooks",
+  "workflow_store",
+  "workflow_run_references",
 ];
+
+const CLEARED_TABLE_PREFIXES: ReadonlyArray<string> = ["workflow_", "effect_cluster_"];
 
 const PROVIDER_SESSIONS_TABLE = "orchestration_v2_projection_provider_sessions";
 const FTS5_SHADOW_SUFFIXES = ["_data", "_idx", "_content", "_docsize", "_config"];
@@ -269,6 +282,11 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
         SELECT m.name, f."table" AS parent FROM src.sqlite_master m, pragma_foreign_key_list(m.name, 'src') f
         WHERE m.type = 'table'`;
       const cleared = new Set(CLEARED_TABLES);
+      for (const { name } of tables) {
+        if (CLEARED_TABLE_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+          cleared.add(name);
+        }
+      }
       for (let grew = true; grew;) {
         grew = false;
         for (const { name, parent } of references) {

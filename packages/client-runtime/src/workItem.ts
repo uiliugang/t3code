@@ -107,6 +107,27 @@ export function trackerCreateTargets(
       : [];
   });
 }
+
+export function trackerCreateTargetKey(target: TrackerCreateTarget): string {
+  return `${target.projectId}/${target.host ?? ""}/${target.scope}`;
+}
+
+export function trackerCreateTargetLabel(
+  target: TrackerCreateTarget,
+  targets: ReadonlyArray<TrackerCreateTarget>,
+  projects: ReadonlyArray<{ readonly id: ProjectId; readonly title: string }>,
+): string {
+  const base = `${requirementTrackerLabel[target.provider]} · ${target.scope}`;
+  const ambiguous = targets.some(
+    (other) =>
+      other !== target &&
+      other.provider === target.provider &&
+      other.scope.toLowerCase() === target.scope.toLowerCase(),
+  );
+  if (!ambiguous) return base;
+  const projectTitle = projects.find((project) => project.id === target.projectId)?.title;
+  return projectTitle ? `${base} (${projectTitle})` : base;
+}
 export type RequirementSource = "all" | RequirementTracker | "local";
 type LegacyPage = typeof RequirementIssueListResult.Type;
 type LegacyGroup = LegacyPage["groups"][number];

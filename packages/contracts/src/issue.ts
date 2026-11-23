@@ -534,6 +534,8 @@ export const ThreadIssueKey = Schema.Struct({
   host: TrimmedNonEmptyString,
   scope: TrimmedNonEmptyString,
   key: TrimmedNonEmptyString,
+  /** Optional issue web URL; distinguishes standalone tracker workspaces that share a team key. */
+  url: Schema.optional(TrimmedNonEmptyString),
 });
 export type ThreadIssueKey = typeof ThreadIssueKey.Type;
 
@@ -553,12 +555,39 @@ export const ThreadIssueLink = Schema.Struct({
 });
 export type ThreadIssueLink = typeof ThreadIssueLink.Type;
 
+function standaloneIssueWorkspace(key: ThreadIssueKey): string | null {
+  if (key.url === undefined || key.tracker !== "linear") return null;
+  try {
+    const parsed = new URL(key.url.trim());
+    if (parsed.protocol !== "https:" || parsed.host.toLowerCase() !== "linear.app") return null;
+    const [, workspace, resource] = parsed.pathname.split("/");
+    return workspace && resource === "issue" ? workspace.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function threadIssueKeyOf(key: ThreadIssueKey): string {
-  return `${key.tracker}\u0000${key.host.trim().toLowerCase()}\u0000${key.scope.trim().toLowerCase()}\u0000${key.key.trim()}`;
+  const workspace = standaloneIssueWorkspace(key);
+  const scope =
+    workspace === null
+      ? key.scope.trim().toLowerCase()
+      : `${workspace}/${key.scope.trim().toLowerCase()}`;
+  return `${key.tracker}\u0000${key.host.trim().toLowerCase()}\u0000${scope}\u0000${key.key.trim()}`;
 }
 
 export function threadIssueKeysEqual(left: ThreadIssueKey, right: ThreadIssueKey): boolean {
-  return threadIssueKeyOf(left) === threadIssueKeyOf(right);
+  if (
+    left.tracker !== right.tracker ||
+    left.host.trim().toLowerCase() !== right.host.trim().toLowerCase() ||
+    left.scope.trim().toLowerCase() !== right.scope.trim().toLowerCase() ||
+    left.key.trim() !== right.key.trim()
+  ) {
+    return false;
+  }
+  const leftWorkspace = standaloneIssueWorkspace(left);
+  const rightWorkspace = standaloneIssueWorkspace(right);
+  return leftWorkspace === null || rightWorkspace === null || leftWorkspace === rightWorkspace;
 }
 
 /** The threads an issue is linked to, most recently active first. */

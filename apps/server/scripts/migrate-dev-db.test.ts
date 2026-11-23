@@ -185,6 +185,16 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           yield* sql`INSERT INTO work_item_ignored VALUES ('stopped-thread', '2026-08-01')`;
           yield* sql`INSERT INTO work_item_delivery_actions VALUES ('item', 1, 'complete', '{}')`;
           yield* sql`INSERT INTO work_item_issue_projects VALUES ('item', 'project-kept')`;
+          yield* sql`INSERT INTO agent_feedback
+            (id, thread_id, created_at, source, sent, kind, subject, expected, actual, workaround, user_requested)
+            VALUES ('fb-1', 'stopped-thread', '2026-08-01', 'mcp', 0, 'bug', 'general', 'a', 'b', '', 0)`;
+          yield* sql`INSERT INTO workflow_runs
+            (run_id, workflow, version, engine_tag, idempotency_key, title, status, started_at, updated_at)
+            VALUES ('wf-run-1', 'deploy', 1, 'tag', 'key-1', 'Deploy', 'running', '2026-08-01', '2026-08-01')`;
+          yield* sql`INSERT INTO workflow_hooks (hook_id, token) VALUES ('deploy:hook', 'secret-hook-token')`;
+          yield* sql`INSERT INTO workflow_triggers (trigger_id, next_at) VALUES ('deploy:daily', '2026-08-02')`;
+          yield* sql`CREATE TABLE effect_cluster_messages (id TEXT PRIMARY KEY)`;
+          yield* sql`INSERT INTO effect_cluster_messages VALUES ('msg-1')`;
         }),
       );
 
@@ -219,6 +229,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             links: number;
             wechat: number;
             workItems: number;
+            feedback: number;
+            workflows: number;
           }>`
             SELECT
               (SELECT COUNT(*) FROM auth_sessions) AS auth,
@@ -239,7 +251,12 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
                 (SELECT COUNT(*) FROM work_item_candidates) +
                 (SELECT COUNT(*) FROM work_item_ignored) +
                 (SELECT COUNT(*) FROM work_item_delivery_actions) +
-                (SELECT COUNT(*) FROM work_item_issue_projects) AS workItems`;
+                (SELECT COUNT(*) FROM work_item_issue_projects) AS workItems,
+              (SELECT COUNT(*) FROM agent_feedback) AS feedback,
+              (SELECT COUNT(*) FROM workflow_runs) +
+                (SELECT COUNT(*) FROM workflow_hooks) +
+                (SELECT COUNT(*) FROM workflow_triggers) +
+                (SELECT COUNT(*) FROM effect_cluster_messages) AS workflows`;
           return { threads, events, sessions, pullRequest, project, leftovers };
         }),
       );
@@ -288,6 +305,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         links: 0,
         wechat: 0,
         workItems: 0,
+        feedback: 0,
+        workflows: 0,
       });
     }),
   );

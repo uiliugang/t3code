@@ -12,6 +12,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
 
+import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import type { ReferenceInput, WorkflowStore } from "./WorkflowStore.ts";
 
 /** Keeps what the step whose code is running touches, against that step. */
@@ -56,20 +57,31 @@ export const stepReferences = (
 export const issueReference = (
   ref: IssueRef,
   seen?: { readonly title: string; readonly url: string; readonly state: IssueState },
-): ReferenceInput => ({
-  kind: WorkflowReferenceKind.issue,
-  key: JSON.stringify([ref.tracker, ref.host ?? "", ref.scope.toLowerCase(), ref.key]),
-  address: {
-    projectId: ref.projectId,
-    tracker: ref.tracker,
-    ...(ref.host === undefined ? {} : { host: ref.host }),
-    scope: ref.scope,
-    key: ref.key,
-  } satisfies Schema.Json,
-  title: seen?.title ?? "",
-  url: seen?.url,
-  state: seen?.state.category,
-});
+): ReferenceInput => {
+  // Git-hosted trackers share global repository scopes across projects; standalone trackers (such
+  // as Linear) scope team keys per workspace/account, which `ref.projectId` identifies.
+  const isGitHostTracker = sourceControlDefinitions.definitions.some(
+    (definition) => definition.kind === String(ref.tracker),
+  );
+  return {
+    kind: WorkflowReferenceKind.issue,
+    key: JSON.stringify(
+      isGitHostTracker
+        ? [ref.tracker, ref.host ?? "", ref.scope.toLowerCase(), ref.key]
+        : [ref.tracker, ref.host ?? "", ref.projectId, ref.scope.toLowerCase(), ref.key],
+    ),
+    address: {
+      projectId: ref.projectId,
+      tracker: ref.tracker,
+      ...(ref.host === undefined ? {} : { host: ref.host }),
+      scope: ref.scope,
+      key: ref.key,
+    } satisfies Schema.Json,
+    title: seen?.title ?? "",
+    url: seen?.url,
+    state: seen?.state.category,
+  };
+};
 
 /** A pull request by its normalized host and repository, so every way of naming it is one. */
 export const pullRequestReference = (

@@ -302,10 +302,19 @@ const make = Effect.gen(function* () {
           ...input,
           projectId: input.projectId ?? thread.projectId,
         });
-        const existing = (thread.issues ?? []).find((link) => threadIssueKeysEqual(link, target));
+        const targetKey = {
+          tracker: target.tracker,
+          host: target.host,
+          scope: target.scope,
+          key: target.key,
+          ...(target.url === null ? {} : { url: target.url }),
+        };
+        const existing = (thread.issues ?? []).find((link) =>
+          threadIssueKeysEqual(link, targetKey),
+        );
         if (existing === undefined) return { ...identityOf(target), wasLinked: false };
         const { wasLinked } = yield* threadIssues
-          .unlink({ threadId: thread.id, key: target })
+          .unlink({ threadId: thread.id, key: { ...targetKey, url: existing.url } })
           .pipe(Effect.catchCause(linkFailure));
         return { ...identityOf(target), url: existing.url, wasLinked };
       }),

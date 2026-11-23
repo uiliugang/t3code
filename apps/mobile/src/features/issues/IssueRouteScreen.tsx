@@ -298,7 +298,11 @@ function LinkedPullRequests(props: {
 }
 
 /** The threads this issue is linked to, most recently active first; hidden while there are none. */
-function LinkedThreads(props: { readonly params: IssueParams; readonly host: string }) {
+function LinkedThreads(props: {
+  readonly params: IssueParams;
+  readonly host: string;
+  readonly url: string;
+}) {
   const gt = useGT();
   const navigation = useNavigation();
   const { environmentId, input } = issueTarget(props.params);
@@ -308,7 +312,13 @@ function LinkedThreads(props: { readonly params: IssueParams; readonly host: str
     listsThreads
       ? issueEnvironment.linkedThreads({
           environmentId,
-          input: { tracker: input.tracker, host: props.host, scope: input.scope, key: input.key },
+          input: {
+            tracker: input.tracker,
+            host: props.host,
+            scope: input.scope,
+            key: input.key,
+            url: props.url,
+          },
         })
       : null,
   );
@@ -742,7 +752,7 @@ export function IssueRoute({
                     {detail.linkedPullRequests.length > 0 ? (
                       <LinkedPullRequests params={params} links={detail.linkedPullRequests} />
                     ) : null}
-                    <LinkedThreads params={params} host={detail.host} />
+                    <LinkedThreads params={params} host={detail.host} url={detail.url} />
                     {detail.capabilities.comment ||
                     detail.capabilities.events ||
                     timeline.length > 0 ||

@@ -15,6 +15,9 @@ import {
   deliveryStages,
   requirementGroup,
   mergeRequirementEntries,
+  trackerCreateTargetKey,
+  trackerCreateTargetLabel,
+  trackerCreateTargets,
 } from "./workItem.ts";
 
 it("keeps testing unverified after merge and only completes after a successful platform sync", () => {
@@ -281,4 +284,58 @@ it("merges issue sources and local tasks without duplicating tracked issues", ()
   expect(mergeRequirementEntries([], [awaitingRelease], new Map(), { issueState: "open" })).toEqual(
     [],
   );
+});
+
+it("gives distinct keys and disambiguated labels to same-team Linear create targets across projects", () => {
+  const targets = trackerCreateTargets({
+    viewers: {},
+    trackers: [
+      {
+        tracker: "linear" as never,
+        host: "linear.app",
+        projectCount: 2,
+        capabilities: {
+          create: true,
+          edit: true,
+          comment: true,
+          labels: true,
+          assignees: true,
+          reactions: true,
+          templates: true,
+          linkedPullRequests: true,
+          events: true,
+          search: true,
+        },
+        configured: true,
+        detail: null,
+      },
+    ],
+    entries: [],
+    errors: [],
+    nextCursors: {},
+    scopes: [
+      {
+        projectId: ProjectId.make("p-acme"),
+        tracker: "linear" as never,
+        host: "linear.app",
+        scope: "ENG",
+      },
+      {
+        projectId: ProjectId.make("p-globex"),
+        tracker: "linear" as never,
+        host: "linear.app",
+        scope: "ENG",
+      },
+    ],
+  });
+  expect(targets).toHaveLength(2);
+  expect(new Set(targets.map(trackerCreateTargetKey)).size).toBe(2);
+  const projects = [
+    { id: ProjectId.make("p-acme"), title: "Acme App" },
+    { id: ProjectId.make("p-globex"), title: "Globex App" },
+  ];
+  expect(targets.map((target) => trackerCreateTargetLabel(target, targets, projects))).toEqual([
+    "Linear · ENG (Acme App)",
+    "Linear · ENG (Globex App)",
+  ]);
 });

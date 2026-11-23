@@ -3,8 +3,10 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
+import { VcsProcessExitError } from "@t3tools/contracts";
 import * as TestHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import { userFacingSourceControlDetail } from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as MCodeCli from "./MCodeCli.ts";
 import * as Provider from "./MCodeSourceControlProvider.ts";
 import { pullRequest } from "./mcodeFixtures.ts";
@@ -257,5 +259,50 @@ describe("Meituan source control", () => {
         .pipe(Effect.result);
       expect(Result.isFailure(result) && result.failure.detail).toContain("must differ");
     }),
+  );
+
+  it.effect.each([
+    {
+      repository: "invalid-name",
+      stderr: "",
+      expected: "Select a Meituan Code repository in project/repository format.",
+    },
+    {
+      repository: "team/missing",
+      stderr: "404 Project Not Found",
+      expected: "Repository team/missing was not found. Check the owner and name and try again.",
+    },
+    {
+      repository: "team/private",
+      stderr: "auth login required",
+      expected: undefined,
+    },
+  ])(
+    "maps getRepositoryCloneUrls userFacingDetail ($repository)",
+    ({ repository, stderr, expected }) =>
+      Effect.gen(function* () {
+        const provider = yield* Provider.make.pipe(
+          Effect.provide(
+            layerFor((input) =>
+              Effect.fail(
+                new VcsProcessExitError({
+                  operation: input.operation,
+                  command: input.command,
+                  cwd: input.cwd,
+                  exitCode: 1,
+                  detail: stderr,
+                  ...(input.classifyFailure?.(stderr)
+                    ? { failureKind: input.classifyFailure(stderr)! }
+                    : {}),
+                }),
+              ),
+            ),
+          ),
+        );
+        const error = yield* Effect.flip(
+          provider.getRepositoryCloneUrls({ cwd: "/repo", repository }),
+        );
+        expect(userFacingSourceControlDetail(error.cause)).toBe(expected);
+      }),
   );
 });

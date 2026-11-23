@@ -27,6 +27,7 @@ export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
       host: string;
       scope: string;
       key: string;
+      url: string | null;
     }>`
       SELECT t.thread_id AS id, t.project_id AS "projectId", t.title,
         t.archived_at AS "archivedAt",
@@ -36,6 +37,7 @@ export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
         json_extract(link.value, '$.host') AS host,
         json_extract(link.value, '$.scope') AS scope,
         json_extract(link.value, '$.key') AS key,
+        json_extract(link.value, '$.url') AS url,
         t.updated_at AS "updatedAt"
       FROM orchestration_v2_projection_threads AS t
       JOIN json_each(t.payload_json, '$.issues') AS link
@@ -47,7 +49,18 @@ export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
       ORDER BY "updatedAt" DESC, id ASC
     `.pipe(NodeSqliteClient.readOnly);
     const threads = rows
-      .filter((row) => threadIssueKeysEqual(row, key))
+      .filter((row) =>
+        threadIssueKeysEqual(
+          {
+            tracker: row.tracker,
+            host: row.host,
+            scope: row.scope,
+            key: row.key,
+            ...(row.url ? { url: row.url } : {}),
+          },
+          key,
+        ),
+      )
       .map(({ id, projectId, title, archivedAt, settled }) => ({
         id,
         projectId,

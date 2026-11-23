@@ -3041,7 +3041,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
       const resolvedQueuedPolicy =
         storedCheckpointScope !== undefined &&
-        storedCheckpointScope.cwd === projection.thread.worktreePath
+        storedCheckpointScope.cwd === projection.thread.worktreePath &&
+        storedCheckpointScope.workspace?.id === projection.thread.workspace?.id
           ? undefined
           : yield* runtimePolicy
               .resolve({ thread: projection.thread, modelSelection: queuedRun.modelSelection })
@@ -3050,9 +3051,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         resolvedQueuedPolicy === undefined
           ? storedCheckpointScope!.cwd
           : (resolvedQueuedPolicy.cwd ?? projection.thread.worktreePath ?? process.cwd());
-      // The thread may have moved between worktree and checkout while this message waited.
+      // The thread may have moved between worktree, checkout, or workspace revision while this message waited.
       const reusableCheckpointScope =
-        storedCheckpointScope?.cwd === executionCwd ? storedCheckpointScope : undefined;
+        storedCheckpointScope?.cwd === executionCwd &&
+        storedCheckpointScope.workspace?.id ===
+          (resolvedQueuedPolicy?.workspace?.id ?? projection.thread.workspace?.id)
+          ? storedCheckpointScope
+          : undefined;
       const checkpointScope =
         reusableCheckpointScope ??
         (yield* checkpointService
@@ -3120,6 +3125,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : "automatic-queue";
       const startingRun: OrchestrationV2Run = {
         ...queuedRun,
+        ...(projection.thread.workspace === undefined
+          ? {}
+          : { workspaceRevisionId: projection.thread.workspace.id }),
         providerThreadId: queuedProviderThread.id,
         ordinal,
         status: "starting",

@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 import * as IssueService from "../issue/IssueService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
-import { StepReferences } from "./runReferences.ts";
+import { issueReference, StepReferences } from "./runReferences.ts";
 import * as WorkflowForge from "./WorkflowForge.ts";
 import type { ReferenceInput } from "./WorkflowStore.ts";
 
@@ -110,4 +110,43 @@ it("a step's pull requests are the ones its thread was linked to while it ran", 
     references.map((reference) => [reference.key, reference.url]),
     [['["github.com","me/app",2]', "https://github.com/me/app/pull/2"]],
   );
+});
+
+it("keeps standalone tracker references distinct across workspaces while unifying git repository issues", () => {
+  const linearRef = (project: string) => ({
+    projectId: ProjectId.make(project),
+    tracker: IssueTrackerKind.make("linear"),
+    host: "linear.app",
+    scope: "ENG",
+    key: "ENG-1",
+  });
+  const acme = issueReference(linearRef("project-acme"), {
+    title: "Acme",
+    url: "https://linear.app/acme/issue/ENG-1/acme",
+    state: { category: "open", name: "Todo" },
+  });
+  const acmeTouch = issueReference(linearRef("project-acme"));
+  const globex = issueReference(linearRef("project-globex"), {
+    title: "Globex",
+    url: "https://linear.app/globex/issue/ENG-1/globex",
+    state: { category: "open", name: "Todo" },
+  });
+  assert.strictEqual(acme.key, acmeTouch.key);
+  assert.notStrictEqual(acme.key, globex.key);
+
+  const githubA = issueReference({
+    projectId: ProjectId.make("project-1"),
+    tracker: IssueTrackerKind.make("github"),
+    host: "github.com",
+    scope: "acme/app",
+    key: "1",
+  });
+  const githubB = issueReference({
+    projectId: ProjectId.make("project-2"),
+    tracker: IssueTrackerKind.make("github"),
+    host: "github.com",
+    scope: "Acme/App",
+    key: "1",
+  });
+  assert.strictEqual(githubA.key, githubB.key);
 });

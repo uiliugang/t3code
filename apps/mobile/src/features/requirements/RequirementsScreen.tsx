@@ -10,6 +10,8 @@ import { requirementLabelsAtom } from "../issues/issueListFilters";
 import { Chip } from "../../components/ui/Chip";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
+  trackerCreateTargetKey,
+  trackerCreateTargetLabel,
   trackerCreateTargets,
   requirementTrackerLabel,
   type TrackerCreateTarget,
@@ -1133,7 +1135,6 @@ function RequirementCreateSheet({
     issueEnvironment.create.permissionAtom(project?.environmentId ?? EnvironmentId.make("")),
   );
   const trackable = trackerAllowed ? trackerCreateTargets(trackerList.data) : [];
-  const trackKey = (target: TrackerCreateTarget) => `${target.host}/${target.scope}`;
   const [kind, setKind] = useState<string>(() => {
     if (defaultSource === "local" && !localAllowed && issueAllowed) return "github";
     if (defaultSource !== "local" && !issueAllowed && localAllowed) return "local";
@@ -1145,8 +1146,8 @@ function RequirementCreateSheet({
 
   const kindOptions = [
     ...trackable.map((scope) => ({
-      value: trackKey(scope),
-      label: `${requirementTrackerLabel[scope.provider]} · ${scope.scope}`,
+      value: trackerCreateTargetKey(scope),
+      label: trackerCreateTargetLabel(scope, trackable, projects),
     })),
     ...(localAllowed ? [{ value: "local", label: t("Local work item") }] : []),
     ...(issueAllowed
@@ -1161,9 +1162,9 @@ function RequirementCreateSheet({
   const activeKind = kindOptions.some((option) => option.value === kind)
     ? kind
     : trackable.find((scope) => scope.provider === kind)
-      ? trackKey(trackable.find((scope) => scope.provider === kind)!)
+      ? trackerCreateTargetKey(trackable.find((scope) => scope.provider === kind)!)
       : (kindOptions[0]?.value ?? "local");
-  const trackerTarget = trackable.find((scope) => trackKey(scope) === activeKind);
+  const trackerTarget = trackable.find((scope) => trackerCreateTargetKey(scope) === activeKind);
 
   return (
     <Sheet
@@ -1218,7 +1219,7 @@ function RequirementCreateSheet({
           />
         ) : trackerTarget ? (
           <TrackerCreateForm
-            key={trackKey(trackerTarget)}
+            key={trackerCreateTargetKey(trackerTarget)}
             target={trackerTarget}
             environmentId={project.environmentId}
             busy={submitting}
