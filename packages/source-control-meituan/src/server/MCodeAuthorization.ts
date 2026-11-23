@@ -13,11 +13,15 @@ import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
-import { definition, readMis } from "../shared/definition.ts";
-import { discovery as cliDiscovery } from "./MCodeCli.ts";
+import { definition } from "../shared/definition.ts";
+import { discovery as cliDiscovery, parseMCodeAuth } from "./MCodeCli.ts";
 
 const HOST = "git.sankuai.com";
+const MCODE_HOST = `http://${HOST}`;
+const LOGIN_FAILED =
+  "MOA sign-in failed. Check that MOA is signed in on the server, then try again.";
 const failure = (
   detail: string,
   reason: "failed" | "cancelled" | "not-started" | "unsupported" = "failed",
@@ -29,7 +33,6 @@ export const make = Effect.gen(function* () {
   const lock = yield* Semaphore.make(1);
   let current:
     | {
-        mis: string;
         prompt: SourceControlSignInPrompt;
         done: Deferred.Deferred<{ readonly account: string }, SourceControlSignInError>;
         fiber: Fiber.Fiber<boolean>;
@@ -37,37 +40,11 @@ export const make = Effect.gen(function* () {
     | undefined;
   let state: NonNullable<SourceControlProviderDiscoveryItem["authorization"]> = { status: "idle" };
 
-  const begin = Effect.fn("MCodeAuthorization.begin")(function* (automatic: boolean) {
-    const settings = yield* host.settings.get.pipe(
-      Effect.mapError(() => failure("Could not read the Meituan Code settings.")),
-    );
-    const fields = settings.sourceControlHosts.meituan;
-    const mis = readMis(fields);
-    if (!mis) return yield* failure("Configure a valid MIS ID before requesting authorization.");
-    if (current && state.status === "pending") {
-      if (current.mis === mis) return current.prompt;
-      return yield* failure("Cancel the pending authorization before changing its recipient.");
-    }
-    const attempted = Array.isArray(fields?.authorizationAttemptedMis)
-      ? fields.authorizationAttemptedMis.filter(
-          (value): value is string => typeof value === "string",
-        )
-      : [];
-    if (automatic && attempted.includes(mis)) return;
-    // Persist before sending so a restart or a lost response never sends another automatic request.
-    yield* host.settings
-      .update({
-        sourceControlHosts: {
-          meituan: { authorizationAttemptedMis: [...new Set([...attempted, mis])] },
-        },
-      })
-      .pipe(
-        Effect.mapError(() => failure("Could not save the Meituan Code authorization attempt.")),
-      );
+  const begin = Effect.fn("MCodeAuthorization.begin")(function* () {
+    if (current && state.status === "pending") return current.prompt;
     const done = yield* Deferred.make<{ readonly account: string }, SourceControlSignInError>();
     const prompt = {
-      delivery: "daxiang" as const,
-      mis,
+      delivery: "moa" as const,
       expiresAt: (yield* Clock.currentTimeMillis) + 180_000,
     };
     state = { status: "pending" };
@@ -75,28 +52,39 @@ export const make = Effect.gen(function* () {
       .run({
         operation: "MCodeAuthorization.login",
         command: "code-cli",
-        args: ["auth", "login", "--ciba"],
+        args: ["auth", "login", "--moa"],
         cwd: ".",
-        env: { MIS_ID: mis, MCODE_HOST: "http://git.sankuai.com" },
+        env: { MCODE_HOST },
         allowNonZeroExit: true,
-        timeoutMs: 200_000,
+        timeoutMs: 150_000,
         maxOutputBytes: 16_000,
       })
       .pipe(
-        Effect.mapError(() =>
-          failure("Could not run code-cli authorization. Check the server and send again."),
+        Effect.mapError(() => failure(LOGIN_FAILED)),
+        Effect.flatMap((output) =>
+          output.exitCode === 0
+            ? host.process
+                .run({
+                  operation: "MCodeAuthorization.verify",
+                  command: "code-cli",
+                  args: cliDiscovery.authArgs,
+                  cwd: ".",
+                  env: { MCODE_HOST, MCODE_SKIP_MOA: "1" },
+                  allowNonZeroExit: true,
+                  timeoutMs: 20_000,
+                  maxOutputBytes: 8_000,
+                })
+                .pipe(
+                  Effect.map(parseMCodeAuth),
+                  Effect.mapError(() => failure(LOGIN_FAILED)),
+                  Effect.flatMap((auth) =>
+                    auth.status === "authenticated" && Option.isSome(auth.account)
+                      ? Effect.succeed({ account: auth.account.value })
+                      : Effect.fail(failure(LOGIN_FAILED)),
+                  ),
+                )
+            : Effect.fail(failure(LOGIN_FAILED)),
         ),
-        Effect.flatMap((output) => {
-          if (output.exitCode === 0) return Effect.succeed({ account: mis });
-          const detail = /IDENTIFIER/u.test(output.stderr)
-            ? "CIBA requires the server's sandbox IDENTIFIER. Configure it on the server, then send again."
-            : /timed out|expired/iu.test(output.stderr)
-              ? "Authorization expired. Send a new request when you are ready."
-              : /denied|reject|cancel/iu.test(output.stderr)
-                ? "Authorization was declined. Send again when you are ready."
-                : "Could not complete authorization. Check code-cli on the server, then send again.";
-          return Effect.fail(failure(detail));
-        }),
         Effect.tap(() =>
           Effect.sync(() => {
             state = { status: "succeeded" };
@@ -109,7 +97,7 @@ export const make = Effect.gen(function* () {
         ),
       );
     const fiber = yield* login.pipe(Deferred.into(done), Effect.forkIn(scope));
-    current = { mis, prompt, done, fiber };
+    current = { prompt, done, fiber };
     return prompt;
   });
 
@@ -117,10 +105,7 @@ export const make = Effect.gen(function* () {
     start: Effect.fn("MCodeAuthorization.start")(function* (hostname) {
       if (hostname !== HOST)
         return yield* failure("Meituan Code only signs in to git.sankuai.com.", "unsupported");
-      const prompt = yield* lock.withPermits(1)(begin(false));
-      if (!prompt)
-        return yield* failure("No Meituan Code authorization is in progress.", "not-started");
-      return prompt;
+      return yield* lock.withPermits(1)(begin());
     }),
     wait: Effect.fn("MCodeAuthorization.wait")(function* (hostname) {
       if (hostname !== HOST || !current)
@@ -151,15 +136,18 @@ export const make = Effect.gen(function* () {
           run: (input) =>
             host.process.run({
               ...input,
-              env: { ...input.env, MCODE_HOST: "http://git.sankuai.com" },
+              env: { ...input.env, MCODE_HOST },
             }),
         },
         cwd,
       });
-      if (item.status === "available" && item.auth.status === "unauthenticated") {
-        yield* lock.withPermits(1)(begin(true)).pipe(Effect.ignore);
-      }
-      return { ...item, authorization: state };
+      return {
+        ...item,
+        authorization:
+          item.auth.status === "authenticated" && state.status !== "pending"
+            ? { status: "succeeded" as const }
+            : state,
+      };
     }),
     refineUnknownRemote: () => Effect.succeed(null),
   };

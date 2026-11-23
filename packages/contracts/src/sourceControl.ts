@@ -207,6 +207,10 @@ export const SourceControlSignInPrompt = Schema.Union([
     mis: TrimmedNonEmptyString,
     expiresAt: Schema.Number,
   }),
+  Schema.Struct({
+    delivery: Schema.Literal("moa"),
+    expiresAt: Schema.Number,
+  }),
 ]);
 export type SourceControlSignInPrompt = typeof SourceControlSignInPrompt.Type;
 

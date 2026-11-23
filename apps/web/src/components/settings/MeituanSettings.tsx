@@ -470,7 +470,9 @@ function EnvironmentMeituanSettings({
                   ? "Disabled"
                   : item?.auth.status === "authenticated"
                     ? "Authenticated"
-                    : "Not authenticated",
+                    : item?.auth.status === "unauthenticated"
+                      ? "Not authenticated"
+                      : "Status unknown",
             )}
             onClick={() => selected("code")}
             {...(canToggle ? { toggle: toggles.code } : {})}
