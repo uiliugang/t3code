@@ -261,31 +261,34 @@ it("shows a lineage thread's full title in its tooltip", async () => {
   );
 });
 
-it("shows a side chat's full title in its tooltip", async () => {
+it("shows a side chat and its full title without an empty lineage section", async () => {
   setup();
+  const root = makeThreadProjectionFixture().thread;
+  state.projection = { ...(state.projection as Record<string, unknown>), thread: root };
   const longTitle = "Side chat question with a title that the side chat row truncates";
   state.relatedShells = [
     {
       id: "side",
       title: longTitle,
       lineage: {
-        parentThreadId: threadId,
+        parentThreadId: root.id,
         relationshipToParent: "fork",
-        rootThreadId: threadId,
+        rootThreadId: root.id,
         sideChat: true,
       },
     },
   ];
-  await using _screen = await render(
+  await using screen = await render(
     <ThreadRelationshipsPanel
       environmentId={environmentId}
-      threadId={threadId}
-      showLineage={false}
+      threadId={root.id}
+      showLineage
       showSideChats
     />,
   );
 
-  await userEvent.hover(page.getByText(longTitle, { exact: true }));
+  await expect.element(screen.getByText("Lineage", { exact: true })).not.toBeInTheDocument();
+  await userEvent.hover(screen.getByText(longTitle, { exact: true }));
   await vi.waitFor(() =>
     expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toContain(longTitle),
   );
