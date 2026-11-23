@@ -57,7 +57,11 @@ import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnviron
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
-import { hasLiveHumanAction } from "@t3tools/client-runtime/state/human-action-inbox";
+import {
+  hasLiveHumanAction,
+  humanActionSnapshotStatus,
+} from "@t3tools/client-runtime/state/human-action-inbox";
+import { pendingHumanActionsAtom } from "../state/orchestration";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { resolveWorktreeRepositorySelection } from "@t3tools/client-runtime/state/thread-repositories";
@@ -590,24 +594,41 @@ export default function ChatView(props: ChatViewProps) {
   const routeInboxAction = useLocation({
     select: ({ state }) => {
       const target = state.pendingHumanAction;
-      return target?.environmentId === environmentId && target.threadId === threadId
+      return !embedded && target?.environmentId === environmentId && target.threadId === threadId
         ? target
         : null;
     },
   });
   const requestedAction =
     routeInboxAction?.activation === clearedInboxActivation ? null : routeInboxAction;
-  const liveInboxAction =
-    requestedAction &&
-    threadStatus === "live" &&
+  const inboxEnvironment = requestedAction ? environmentById.get(environmentId) : undefined;
+  const canCheckInbox =
     canReadInboxThread &&
     canOperateThread &&
+    inboxEnvironment?.connection.phase === "connected" &&
+    inboxEnvironment.serverConfig?.environment.capabilities.pendingHumanActions === true;
+  const inboxSnapshot = useAtomValue(
+    pendingHumanActionsAtom(canCheckInbox ? environmentId : null, requestedAction?.activation),
+  );
+  const inboxStatus =
+    canCheckInbox && requestedAction
+      ? humanActionSnapshotStatus(inboxSnapshot, requestedAction)
+      : "unavailable";
+  const liveInboxAction =
+    requestedAction &&
+    inboxStatus === "ready" &&
+    threadStatus === "live" &&
     serverProjection &&
     hasLiveHumanAction(serverProjection, requestedAction)
       ? requestedAction
       : null;
-  const expiredInboxActivation =
-    threadStatus === "live" && liveInboxAction === null ? requestedAction?.activation : undefined;
+  const inboxNotice =
+    requestedAction && !liveInboxAction
+      ? inboxStatus === "checking" ||
+        (inboxStatus === "ready" && threadStatus !== "live" && threadStatus !== "deleted")
+        ? t("Checking…")
+        : t("This request is no longer available.")
+      : null;
   const chatColumn = useRef<HTMLDivElement>(null);
   const focusedInboxActivation = useRef<string | null>(null);
   const liveInboxActivation = liveInboxAction?.activation;
@@ -636,7 +657,12 @@ export default function ChatView(props: ChatViewProps) {
     const observer = new MutationObserver(() => {
       if (focus()) observer.disconnect();
     });
-    observer.observe(container, { childList: true, subtree: true });
+    observer.observe(container, {
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-human-action-request"],
+      subtree: true,
+    });
     return () => observer.disconnect();
   }, [liveInboxActivation, liveInboxRequest]);
 
@@ -3708,16 +3734,16 @@ export default function ChatView(props: ChatViewProps) {
         inert={rightPanelMaximized}
         onMouseUp={preventMiddleClickPasteOutsideEditable}
       >
-        {expiredInboxActivation ? (
+        {requestedAction && inboxNotice ? (
           <div
             role="status"
             className="flex items-center justify-between gap-2 border-b px-4 py-2 text-xs text-muted-foreground"
           >
-            <span>{t("This request is no longer available.")}</span>
+            <span>{inboxNotice}</span>
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setClearedInboxActivation(expiredInboxActivation)}
+              onClick={() => setClearedInboxActivation(requestedAction.activation)}
             >
               {t("Continue")}
             </Button>

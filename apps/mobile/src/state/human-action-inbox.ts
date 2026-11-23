@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-  sameHumanAction,
+  humanActionSnapshotStatus,
   type ScopedHumanAction,
 } from "@t3tools/client-runtime/state/human-action-inbox";
 import {
@@ -17,8 +17,11 @@ import { readEnvironmentScope } from "./session";
 import { workspaceConnections } from "./workspace";
 
 export type MobileHumanActionTarget = Omit<ScopedHumanAction, "createdAt">;
-const inbox = (environmentId: EnvironmentId) =>
-  orchestrationEnvironment.v2.pendingHumanActions({ environmentId, input: {} });
+const inbox = (environmentId: EnvironmentId, activation?: string) =>
+  orchestrationEnvironment.v2.pendingHumanActions({
+    environmentId,
+    input: activation === undefined ? {} : { activation },
+  });
 const empty = Atom.make(AsyncResult.initial<OrchestrationV2PendingHumanActionSnapshot | null>());
 export const mobileInboxes = Atom.family((ids: string) =>
   Atom.make((get) => (JSON.parse(ids) as EnvironmentId[]).map((id) => get(inbox(id)))),
@@ -41,15 +44,12 @@ export function openableMobileHumanAction(target: ScopedHumanAction) {
       .pendingHumanActions !== true
   )
     return false;
-  const result = appAtomRegistry.get(inbox(environmentId));
-  return (
-    AsyncResult.isSuccess(result) &&
-    !result.waiting &&
-    result.value?.targets.some((candidate) => sameHumanAction(candidate, target)) === true
-  );
+  return humanActionSnapshotStatus(appAtomRegistry.get(inbox(environmentId)), target) === "ready";
 }
 
-export function useLiveMobileHumanAction(target: MobileHumanActionTarget | null) {
+export function useLiveMobileHumanAction(
+  target: (MobileHumanActionTarget & { readonly activation: string }) | null,
+) {
   const connected = useAtomValue(
     workspaceConnections.environmentsAtom,
     (environments) =>
@@ -61,10 +61,8 @@ export function useLiveMobileHumanAction(target: MobileHumanActionTarget | null)
           environment.connectionState === "connected",
       ),
   );
-  const result = useAtomValue(connected && target ? inbox(target.environmentId) : empty);
-  if (!connected || target === null || AsyncResult.isFailure(result)) return "unavailable";
-  if (!AsyncResult.isSuccess(result) || result.waiting || result.value === null) return "checking";
-  return result.value.targets.some((candidate) => sameHumanAction(candidate, target))
-    ? "ready"
-    : "unavailable";
+  const result = useAtomValue(
+    connected && target ? inbox(target.environmentId, target.activation) : empty,
+  );
+  return connected && target !== null ? humanActionSnapshotStatus(result, target) : "unavailable";
 }

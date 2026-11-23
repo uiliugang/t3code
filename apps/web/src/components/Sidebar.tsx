@@ -9,9 +9,9 @@ import {
   SidebarSpaceFooter,
   SidebarSpaceNewThread,
   SidebarSpacePicker,
-  sidebarSpaceCommands,
   useSidebarSpaces,
 } from "./sidebar/SidebarSpaces";
+import { readActiveSidebarSpace, sidebarSpaceCommands } from "./sidebar/sidebarSpaceSession";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, useGT, useMessages } from "gt-react";
@@ -166,6 +166,7 @@ import {
   usePrimaryEnvironmentId,
 } from "../state/environments";
 import {
+  readProject,
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
   useDelegatedUnderParent,
@@ -173,7 +174,7 @@ import {
   useServerConfigs,
   useQuietThreadShells,
 } from "../state/entities";
-import { environmentPresentations } from "../state/presentation";
+import { environmentPresentations, environmentSummaries } from "../state/presentation";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
@@ -3218,17 +3219,33 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       )
     : null;
 
+  const startSpaceDraft = (spaceId: string, ref: ScopedProjectRef) => {
+    const canStillOpen = () => {
+      const space = readActiveSidebarSpace();
+      const project = readProject(ref);
+      return (
+        space?.id === spaceId &&
+        project !== null &&
+        project.archivedAt == null &&
+        space.projectRefs.some(
+          (member) => sidebarSpaceProjectKey(member) === sidebarSpaceProjectKey(ref),
+        ) &&
+        appAtomRegistry
+          .get(environmentSummaries.connectedEnvironmentIdsAtom)
+          .includes(ref.environmentId) &&
+        readEnvironmentScope(ref.environmentId, AuthOrchestrationReadScope) &&
+        readEnvironmentScope(ref.environmentId, AuthOrchestrationOperateScope)
+      );
+    };
+    if (!canStillOpen()) return;
+    if (isMobile) setOpenMobile(false);
+    void handleNewThread(ref, { canStillOpen });
+  };
   const createInSpace = () => {
     if (spaceScope.kind !== "space") return;
-    if (writableSpaceProjects.length === 1) {
-      if (isMobile) setOpenMobile(false);
-      if (
-        readEnvironmentScope(
-          writableSpaceProjects[0]!.ref.environmentId,
-          AuthOrchestrationOperateScope,
-        )
-      )
-        void handleNewThread(writableSpaceProjects[0]!.ref);
+    const [only] = writableSpaceProjects;
+    if (writableSpaceProjects.length === 1 && only) {
+      startSpaceDraft(spaceScope.id, only.ref);
     } else if (writableSpaceProjects.length > 1) {
       setChooseSpaceProject(spaceScope.id);
     } else {
@@ -4246,16 +4263,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           projects={writableSpaceProjects}
           onSelect={(ref) => {
             setChooseSpaceProject(null);
-            if (
-              !writableSpaceProjects.some(
-                ({ ref: candidate }) =>
-                  sidebarSpaceProjectKey(candidate) === sidebarSpaceProjectKey(ref),
-              ) ||
-              !readEnvironmentScope(ref.environmentId, AuthOrchestrationOperateScope)
-            )
-              return;
-            if (isMobile) setOpenMobile(false);
-            void handleNewThread(ref);
+            startSpaceDraft(chooseSpaceProject, ref);
           }}
           onClose={() => setChooseSpaceProject(null)}
         />

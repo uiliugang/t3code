@@ -6,9 +6,13 @@ type CachedProjectDraft = { readonly lease: object; draft: NoteDraft | null };
 type Drafts = Map<EnvironmentId, Map<ProjectId, CachedProjectDraft>>;
 // Retained only in the trusted native renderer, never in shared browser storage.
 const vaults = new WeakMap<Bridge, Drafts>();
+type RestoredDraft =
+  | { readonly available: true; readonly draft: NoteDraft | null }
+  | { readonly available: false };
 export type ConfirmedProjectNoteDrafts = {
-  readonly restore: (saved: ProjectNote) => NoteDraft | null;
-  readonly getPendingNoteId: () => NoteDraft["id"] | null;
+  readonly restorePending: (
+    read: (id: NoteDraft["id"]) => Promise<ProjectNote | null>,
+  ) => Promise<RestoredDraft>;
   readonly retain: (draft: NoteDraft | null) => void;
 };
 export async function confirmProjectNoteDrafts(
@@ -34,20 +38,27 @@ export async function confirmProjectNoteDrafts(
   scoped.set(projectId, scope);
   const current = () => scoped.get(projectId)?.lease === lease;
   return {
-    getPendingNoteId: () => (current() ? (scope.draft?.id ?? null) : null),
-    restore: (saved) => {
+    restorePending: async (read) => {
+      if (!current()) return { available: false };
       const draft = scope.draft;
+      if (!draft) return { available: true, draft: null };
+      const saved = await read(draft.id);
       if (
         !current() ||
-        draft === null ||
+        draft !== scope.draft ||
+        !saved ||
         saved.projectId !== projectId ||
         saved.id !== draft.id ||
         saved.revision < draft.base.revision
       )
-        return null;
-      return saved.revision > draft.base.revision
-        ? { ...draft, conflictingRevision: saved.revision }
-        : draft;
+        return { available: false };
+      return {
+        available: true,
+        draft:
+          saved.revision > draft.base.revision
+            ? { ...draft, conflictingRevision: saved.revision }
+            : draft,
+      };
     },
     retain: (draft) => {
       if (

@@ -162,7 +162,8 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       }),
       pendingHumanActions: createEnvironmentSubscriptionAtomFamily(runtime, {
         label: "environment-data:orchestration-v2:pending-human-actions",
-        subscribe: (_input: Record<string, never>) =>
+        // A route activation gets its own fresh snapshot even if the source list is still mounted.
+        subscribe: (_input: { readonly activation?: string }) =>
           subscribeResetOnSession(ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions, {}),
         idleTtlMs: 0,
       }),

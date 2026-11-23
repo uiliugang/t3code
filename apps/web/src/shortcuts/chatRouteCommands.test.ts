@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import * as commandPalette from "../commandPaletteBus";
 import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import * as previewActions from "../components/preview/previewActionBus";
+import { sidebarSpaceCommands } from "../components/sidebar/sidebarSpaceSession";
+import * as scratchProject from "../hooks/useScratchProject";
 import * as settings from "../hooks/useSettings";
 import * as storage from "../hooks/useLocalStorage";
 import * as threadActions from "../lib/chatThreadActions";
@@ -74,6 +76,31 @@ describe("new thread commands", () => {
         projectId: scenario.count === 1 ? "active" : "idle",
       });
     }
+  });
+
+  it("keeps the explicit no-project shortcut separate from Space-scoped creation", () => {
+    const environmentId = EnvironmentId.make("local");
+    using newInSpace = vi.spyOn(sidebarSpaceCommands, "newThread").mockReturnValue(true);
+    const startScratchThread = vi.fn(async () => {});
+    using _scratch = vi.spyOn(scratchProject, "createScratchProjectActions").mockReturnValue({
+      scratchWorkspaceRootFor: vi.fn(() => "/scratch"),
+      scratchEnvironmentId: vi.fn(() => environmentId),
+      openScratchProject: vi.fn(async () => null),
+      startScratchThread,
+    });
+    using register = vi.spyOn(dispatcher, "registerCommands").mockReturnValue(() => {});
+    using stack = new DisposableStack();
+    stack.defer(installChatRouteCommands({ state: { matches: [] } } as unknown as AnyRouter));
+    const commands = register.mock.calls[0]![0];
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as KeyboardEvent;
+
+    commands["chat.newWithoutProject"]!(event);
+    expect(startScratchThread).toHaveBeenCalledWith(environmentId);
+    expect(newInSpace).not.toHaveBeenCalled();
+
+    commands["chat.new"]!(event);
+    expect(newInSpace).toHaveBeenCalledOnce();
+    expect(startScratchThread).toHaveBeenCalledOnce();
   });
 });
 

@@ -1,4 +1,9 @@
-import type { EnvironmentId, OrchestrationV2PendingHumanActionSnapshot } from "@t3tools/contracts";
+import {
+  ProviderRequestKind,
+  type EnvironmentId,
+  type OrchestrationV2PendingHumanActionSnapshot,
+} from "@t3tools/contracts";
+import { AsyncResult } from "effect/reactivity";
 import type { ThreadStructure } from "./models.ts";
 
 export type HumanActionTarget = OrchestrationV2PendingHumanActionSnapshot["targets"][number];
@@ -6,12 +11,13 @@ export type ScopedHumanAction = HumanActionTarget & { readonly environmentId: En
 
 type HumanActionIdentity = Pick<
   HumanActionTarget,
-  "threadId" | "requestId" | "targetItemId" | "kind"
+  "threadId" | "projectId" | "requestId" | "targetItemId" | "kind"
 >;
 
 export function sameHumanAction(a: HumanActionIdentity, b: HumanActionIdentity): boolean {
   return (
     a.threadId === b.threadId &&
+    a.projectId === b.projectId &&
     a.requestId === b.requestId &&
     a.targetItemId === b.targetItemId &&
     a.kind === b.kind
@@ -38,29 +44,61 @@ export function collectHumanActions(
   );
 }
 
-export function hasLiveHumanAction(
-  projection: Pick<ThreadStructure, "thread" | "runtimeRequests" | "turnItems">,
+export function readHumanActionSnapshot<E>(
+  result: AsyncResult.AsyncResult<OrchestrationV2PendingHumanActionSnapshot | null, E> | undefined,
+) {
+  // A successful stream result keeps waiting=true while the subscription is open.
+  return result && AsyncResult.isSuccess(result) ? result.value : null;
+}
+
+export function humanActionSnapshotStatus<E>(
+  result: AsyncResult.AsyncResult<OrchestrationV2PendingHumanActionSnapshot | null, E>,
   target: HumanActionIdentity,
 ) {
+  if (AsyncResult.isFailure(result)) return "unavailable";
+  const snapshot = readHumanActionSnapshot(result);
+  if (snapshot === null) return "checking";
+  return snapshot.targets.some((candidate) => sameHumanAction(candidate, target))
+    ? "ready"
+    : "unavailable";
+}
+
+export function hasLiveHumanAction(
+  projection: Pick<ThreadStructure, "runtimeRequests" | "turnItems"> & {
+    readonly thread: Pick<
+      ThreadStructure["thread"],
+      "id" | "projectId" | "archivedAt" | "deletedAt"
+    >;
+  },
+  target: HumanActionIdentity,
+) {
+  const thread = projection.thread;
+  if (
+    thread.id !== target.threadId ||
+    thread.projectId !== target.projectId ||
+    thread.archivedAt !== null ||
+    thread.deletedAt !== null
+  )
+    return false;
   const approval = target.kind === "approval";
-  return (
-    projection.thread.id === target.threadId &&
-    projection.runtimeRequests.some(
-      (request) =>
-        request.id === target.requestId &&
-        request.status === "pending" &&
-        (approval
-          ? request.kind !== "user_input" && request.responseCapability.type === "live"
-          : request.kind === "user_input" && request.responseCapability.type !== "not_resumable"),
-    ) &&
-    projection.turnItems.some(
-      (item) =>
-        item.threadId === target.threadId &&
-        item.id === target.targetItemId &&
-        (item.status === "waiting" || item.status === "pending") &&
-        (item.type === "approval_request" || item.type === "user_input_request") &&
-        item.type === (approval ? "approval_request" : "user_input_request") &&
-        item.requestId === target.requestId,
-    )
+  const request = projection.runtimeRequests.find((request) => request.id === target.requestId);
+  if (
+    !request ||
+    request.status !== "pending" ||
+    (approval
+      ? !ProviderRequestKind.literals.some((kind) => kind === request.kind) ||
+        request.responseCapability.type !== "live"
+      : request.kind !== "user_input" || request.responseCapability.type === "not_resumable")
+  )
+    return false;
+  return projection.turnItems.some(
+    (item) =>
+      item.threadId === target.threadId &&
+      item.id === target.targetItemId &&
+      item.nodeId === request.nodeId &&
+      (item.status === "waiting" || item.status === "pending") &&
+      (item.type === "approval_request" || item.type === "user_input_request") &&
+      item.type === (approval ? "approval_request" : "user_input_request") &&
+      item.requestId === target.requestId,
   );
 }

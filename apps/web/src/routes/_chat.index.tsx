@@ -1,7 +1,7 @@
 import {
   readActiveSidebarSpaceId,
   useActiveSidebarSpaceId,
-} from "../components/sidebar/SidebarSpaces";
+} from "../components/sidebar/sidebarSpaceSession";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -30,7 +30,6 @@ import { useEnvironments } from "../state/environments";
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
   const activeSpace = useActiveSidebarSpaceId();
-  const { spaceLanding } = Route.useSearch();
   const { environments, isReady } = useEnvironments();
 
   if (authGateState.status === "hosted-static") {
@@ -38,7 +37,7 @@ function ChatIndexRouteView() {
     if (environments.length === 0) return <HostedEmptyState />;
   }
 
-  return activeSpace !== null || spaceLanding ? <SpaceLanding /> : <IndexDraftLanding />;
+  return activeSpace !== null ? <SpaceLanding /> : <IndexDraftLanding />;
 }
 
 function SpaceLanding() {
@@ -68,10 +67,7 @@ function IndexDraftLanding() {
   const router = useRouter();
   // Read at effect time; this page can stay mounted while the router is already navigating away.
   const isStillOnIndex = useEffectEvent(
-    () =>
-      router.state.location.pathname === "/" &&
-      router.state.location.search.spaceLanding !== true &&
-      readActiveSidebarSpaceId() === null,
+    () => router.state.location.pathname === "/" && readActiveSidebarSpaceId() === null,
   );
   const startedAttemptRef = useRef<number | null>(null);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
@@ -95,7 +91,10 @@ function IndexDraftLanding() {
       return;
     }
     startedAttemptRef.current = attempt;
-    void handleNewThread(projectRef, { replace: true })
+    void handleNewThread(projectRef, {
+      replace: true,
+      canStillOpen: () => readActiveSidebarSpaceId() === null,
+    })
       .then((opened) => {
         if (opened === null) {
           setStartState((state) => ({ ...state, retryRequest: state.retryRequest + 1 }));

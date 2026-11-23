@@ -25,7 +25,20 @@ export function makeNoteDraft(note: Saved): NoteDraft {
 export function isDirtyNoteDraft(draft: NoteDraft) {
   return draft.title !== draft.base.title || draft.markdown !== draft.base.markdown;
 }
-export function beginNoteSave(draft: NoteDraft, mutationId: string): NoteSaveSnapshot | null {
+export function openSavedNote(draft: NoteDraft | null, saved: Saved): NoteDraft {
+  return draft && isDirtyNoteDraft(draft) ? draft : makeNoteDraft(saved);
+}
+export function beginNoteSave(
+  draft: NoteDraft,
+  newMutationId: () => string,
+  pending: NoteSaveSnapshot | null = null,
+): NoteSaveSnapshot | null {
+  if (
+    pending !== null &&
+    matches(draft, pending) &&
+    draft.base.revision === pending.expectedRevision
+  )
+    return pending;
   if (draft.conflictingRevision !== null || !isDirtyNoteDraft(draft) || !draft.title.trim())
     return null;
   return {
@@ -35,7 +48,7 @@ export function beginNoteSave(draft: NoteDraft, mutationId: string): NoteSaveSna
     title: draft.title.trim(),
     markdown: draft.markdown,
     expectedRevision: draft.base.revision,
-    mutationId,
+    mutationId: newMutationId(),
   };
 }
 const matches = (draft: LocalNoteRef, other: LocalNoteRef) =>

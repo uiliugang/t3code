@@ -1,6 +1,7 @@
 import { EnvironmentId, ProjectId, ProjectNoteId, type ProjectNote } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
-import { beginNoteSave, confirmNoteSave, makeNoteDraft } from "./projectNoteDraft";
+import { beginNoteSave, confirmNoteSave, makeNoteDraft, openSavedNote } from "./projectNoteDraft";
+import { noteMutationUnconfirmed } from "./projectNoteMutation";
 import { confirmProjectNoteDrafts } from "./projectNoteDraftVault";
 
 const environmentId = EnvironmentId.make("native");
@@ -29,40 +30,80 @@ it("hides a dirty draft until the same desktop bridge, host, project and saved n
   host = null;
   expect(await confirmProjectNoteDrafts(bridge, environmentId, projectId)).toBeNull();
   host = other;
-  expect((await confirmProjectNoteDrafts(bridge, other, projectId))?.getPendingNoteId()).toBeNull();
+  expect(
+    await (
+      await confirmProjectNoteDrafts(bridge, other, projectId)
+    )?.restorePending(async () => saved),
+  ).toEqual({ available: true, draft: null });
   host = environmentId;
   expect(
-    (
+    await (
       await confirmProjectNoteDrafts(
         { getProjectNotesEnvironment: async () => environmentId },
         environmentId,
         projectId,
       )
-    )?.getPendingNoteId(),
-  ).toBeNull();
+    )?.restorePending(async () => saved),
+  ).toEqual({ available: true, draft: null });
   expect(
-    (
+    await (
       await confirmProjectNoteDrafts(bridge, environmentId, ProjectId.make("other"))
-    )?.getPendingNoteId(),
-  ).toBeNull();
+    )?.restorePending(async () => saved),
+  ).toEqual({ available: true, draft: null });
   const reopened = (await confirmProjectNoteDrafts(bridge, environmentId, projectId))!;
-  expect(reopened.restore({ ...saved, id: ProjectNoteId.make("other") })).toBeNull();
-  expect(reopened.restore({ ...saved, revision: 3 })).toBeNull();
-  expect(reopened.restore(saved)?.markdown).toBe(dirty.markdown);
+  expect(
+    await reopened.restorePending(async () => ({ ...saved, id: ProjectNoteId.make("other") })),
+  ).toEqual({ available: false });
+  expect(await reopened.restorePending(async () => ({ ...saved, revision: 3 }))).toEqual({
+    available: false,
+  });
+  expect(await reopened.restorePending(async () => null)).toEqual({ available: false });
   first.retain(null);
-  expect(reopened.restore(saved)?.markdown).toBe(dirty.markdown);
-  const conflict = reopened.restore({ ...saved, revision: 5 });
-  if (!conflict) throw new Error("Expected an owner-bound conflict");
-  expect(conflict.conflictingRevision).toBe(5);
-  expect(beginNoteSave(conflict, "no stale retry")).toBeNull();
+  expect(await reopened.restorePending(async () => saved)).toEqual({
+    available: true,
+    draft: dirty,
+  });
+  const conflicting = await reopened.restorePending(async () => ({ ...saved, revision: 5 }));
+  if (!conflicting.available || !conflicting.draft)
+    throw new Error("Expected an owner-bound conflict");
+  expect(conflicting.draft.conflictingRevision).toBe(5);
+  expect(beginNoteSave(conflicting.draft, () => "no stale retry")).toBeNull();
 });
 
 it("applies only the acknowledged revision and does not drop typing after submit", () => {
-  const snapshot = beginNoteSave(dirty, "save")!;
+  const snapshot = beginNoteSave(dirty, () => "save")!;
   const later = { ...dirty, markdown: "New text" };
   const wrongScope = { ...later, clientScopeKey: other };
   expect(confirmNoteSave(wrongScope, snapshot, { id: saved.id, revision: 5 })).toBe(wrongScope);
   const confirmed = confirmNoteSave(later, snapshot, { id: saved.id, revision: 5 });
   expect(confirmed.markdown).toBe("New text");
   expect(confirmed.base.markdown).toBe(dirty.markdown);
+});
+
+it("preserves edits typed while another note is loading", () => {
+  const destination = { ...saved, id: ProjectNoteId.make("next"), clientScopeKey: environmentId };
+  expect(
+    openSavedNote(makeNoteDraft({ ...saved, clientScopeKey: environmentId }), destination).id,
+  ).toBe(destination.id);
+  expect(openSavedNote(dirty, destination)).toBe(dirty);
+});
+
+it("retries the submitted save unchanged after a lost reply, then keeps newer typing", () => {
+  const first = beginNoteSave(dirty, () => "original");
+  if (!first) throw new Error("Expected an initial save");
+  const outcome = { ok: false, failure: { reason: "unavailable" } } as const;
+  expect(noteMutationUnconfirmed(outcome, "update")).toBe(true);
+  expect(noteMutationUnconfirmed(outcome, "create")).toBe(true);
+  expect(noteMutationUnconfirmed({ ok: false, failure: { reason: "conflict" } }, "update")).toBe(
+    false,
+  );
+  const editedBackToBase = { ...dirty, markdown: saved.markdown };
+  expect(beginNoteSave(editedBackToBase, () => "must not change", first)).toBe(first);
+  const confirmed = confirmNoteSave(editedBackToBase, first, { id: saved.id, revision: 5 });
+  expect(confirmed.markdown).toBe(saved.markdown);
+  expect(beginNoteSave(confirmed, () => "next", first)).toMatchObject({
+    mutationId: "next",
+    expectedRevision: 5,
+    markdown: saved.markdown,
+  });
 });

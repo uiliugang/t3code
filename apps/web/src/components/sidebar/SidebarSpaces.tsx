@@ -3,11 +3,11 @@ import {
   sidebarSpaceProjectKey,
   type SidebarSpace,
 } from "@t3tools/client-runtime/sidebar-spaces";
-import { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
+import { type ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import { EllipsisIcon, FolderIcon, PencilIcon, PlusIcon } from "lucide-react";
-import { useId, useState, useSyncExternalStore } from "react";
+import { useId, useState } from "react";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { randomUUID } from "../../lib/utils";
@@ -26,95 +26,38 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  EMPTY_SIDEBAR_SPACES,
+  SIDEBAR_SPACE_DEFINITIONS,
+  SidebarSpaceDefinitions,
+  readSpaceSessionStorage,
+  selectActiveSidebarSpace,
+  useActiveSidebarSpaceId,
+} from "./sidebarSpaceSession";
 
-const DEFINITIONS = "t3code:sidebar:spaces";
-const ACTIVE = "t3code:sidebar:active-space";
 const RETURNS = "t3code:sidebar:space-return";
 const ALL = "all";
-const EMPTY: readonly SidebarSpace[] = [];
-const Definitions = Schema.Array(
-  Schema.Struct({
-    id: Schema.String,
-    name: Schema.String,
-    projectRefs: Schema.Array(ScopedProjectRef),
-  }),
-);
 const ReturnRefs = Schema.fromJsonString(Schema.Record(Schema.String, ScopedThreadRef));
 const decodeReturns = Schema.decodeUnknownOption(ReturnRefs);
 const encodeReturns = Schema.encodeSync(ReturnRefs);
-let activeCache: string | null | undefined;
-function readStorage(key: string) {
-  try {
-    return sessionStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-export function readActiveSidebarSpaceId(): string | null {
-  return activeCache === undefined ? readStorage(ACTIVE) : activeCache;
-}
-
-let switchSidebarSpace: ((id: string | null) => void) | null = null;
-let openNewThreadInSpace: (() => void) | null = null;
-export const sidebarSpaceCommands = {
-  subscribeSwitch(handler: (id: string | null) => void) {
-    switchSidebarSpace = handler;
-    return () => {
-      if (switchSidebarSpace === handler) switchSidebarSpace = null;
-    };
-  },
-  switch(id: string | null) {
-    switchSidebarSpace?.(id);
-  },
-  subscribe(handler: () => void) {
-    openNewThreadInSpace = handler;
-    return () => {
-      if (openNewThreadInSpace === handler) openNewThreadInSpace = null;
-    };
-  },
-  newThread() {
-    if (readActiveSidebarSpaceId() === null) return false;
-    openNewThreadInSpace?.();
-    return true;
-  },
-};
-
-const subscribers = new Set<() => void>();
-function subscribeActive(callback: () => void) {
-  subscribers.add(callback);
-  return () => {
-    subscribers.delete(callback);
-  };
-}
-
-function selectActive(id: string | null) {
-  activeCache = id;
-  try {
-    if (id === null) sessionStorage.removeItem(ACTIVE);
-    else sessionStorage.setItem(ACTIVE, id);
-  } catch {
-    /* Keep the value in this window when browser storage is unavailable. */
-  }
-  for (const callback of subscribers) callback();
-}
-
-export function useActiveSidebarSpaceId(): string | null {
-  return useSyncExternalStore(subscribeActive, readActiveSidebarSpaceId, () => null);
-}
-
 let returnsCache: Readonly<Record<string, ScopedThreadRef>> | undefined;
 function readReturnRefs(): Readonly<Record<string, ScopedThreadRef>> {
-  return returnsCache ?? Option.getOrElse(decodeReturns(readStorage(RETURNS)), () => ({}));
+  return (
+    returnsCache ?? Option.getOrElse(decodeReturns(readSpaceSessionStorage(RETURNS)), () => ({}))
+  );
 }
 
 export function useSidebarSpaces() {
-  const [spaces, setSpaces] = useLocalStorage(DEFINITIONS, EMPTY, Definitions);
+  const [spaces, setSpaces] = useLocalStorage(
+    SIDEBAR_SPACE_DEFINITIONS,
+    EMPTY_SIDEBAR_SPACES,
+    SidebarSpaceDefinitions,
+  );
   const id = useActiveSidebarSpaceId();
   return {
     spaces,
     active: spaces.find((space) => space.id === id) ?? null,
-    select: selectActive,
+    select: selectActiveSidebarSpace,
     save(space: SidebarSpace) {
       setSpaces((previous) =>
         previous.some(({ id }) => id === space.id)

@@ -16,6 +16,7 @@ export function ProjectNoteEditor({
   canWrite,
   online,
   saving,
+  retryPending,
   onChange,
   onSave,
 }: {
@@ -23,6 +24,7 @@ export function ProjectNoteEditor({
   readonly canWrite: boolean;
   readonly online: boolean;
   readonly saving: boolean;
+  readonly retryPending: boolean;
   readonly onChange: (next: Partial<Pick<NoteDraft, "title" | "markdown">>) => void;
   readonly onSave: () => void;
 }) {
@@ -31,16 +33,14 @@ export function ProjectNoteEditor({
   const bodyId = useId();
   const composing = useRef(false);
   const [preview, setPreview] = useState(false);
-  const dirty = isDirtyNoteDraft(draft);
+  const dirty = retryPending || isDirtyNoteDraft(draft);
   const tooLarge = new TextEncoder().encode(draft.markdown).length > PROJECT_NOTE_MAX_BYTES;
   const canSave =
     canWrite &&
     online &&
     !saving &&
-    draft.conflictingRevision === null &&
-    dirty &&
-    !tooLarge &&
-    draft.title.trim().length > 0;
+    (retryPending ||
+      (draft.conflictingRevision === null && dirty && !tooLarge && draft.title.trim().length > 0));
   const save = () => {
     if (canSave && !composing.current) onSave();
   };

@@ -26,15 +26,17 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "~/components/ui/empty";
+import { noteMutationUnconfirmed } from "./projectNoteMutation";
 import { ProjectNoteEditor } from "./ProjectNoteEditor";
 import {
   beginNoteSave,
   confirmNoteSave,
   isDirtyNoteDraft,
-  makeNoteDraft,
   noteSaveConflicted,
+  openSavedNote,
   resolveNoteConflict,
   type NoteDraft,
+  type NoteSaveSnapshot,
 } from "./projectNoteDraft";
 import { confirmProjectNoteDrafts, type ConfirmedProjectNoteDrafts } from "./projectNoteDraftVault";
 
@@ -76,19 +78,24 @@ export async function prepareProjectNotesSelection(
   if (!bridge) return null;
   const drafts = await confirmProjectNoteDrafts(bridge, environmentId, projectId);
   if (!drafts || window.desktopBridge !== bridge) return null;
-  const initialPage = await loadProjectNotesPage(environmentId, projectId);
-  let initialDraft: NoteDraft | null = null;
-  const pendingId = drafts.getPendingNoteId();
-  if (initialPage && pendingId !== null) {
-    const saved = await requestNote(environmentId, {
-      _tag: "get",
-      input: { projectId, id: pendingId },
-    });
-    if (saved.ok && saved.result._tag === "get") initialDraft = drafts.restore(saved.result.value);
-  }
+  const page = await loadProjectNotesPage(environmentId, projectId);
+  const restored = page
+    ? await drafts.restorePending(async (id) => {
+        const saved = await requestNote(environmentId, { _tag: "get", input: { projectId, id } });
+        return saved.ok && saved.result._tag === "get" ? saved.result.value : null;
+      })
+    : { available: false as const };
   if (window.desktopBridge !== bridge || (await localNotesEnvironment()) !== environmentId)
     return null;
-  return { environmentId, projectId, title, initialPage, initialDraft, drafts };
+  return {
+    environmentId,
+    projectId,
+    title,
+    // A different note must not replace a cached draft that could not be restored.
+    initialPage: restored.available ? page : null,
+    initialDraft: restored.available ? restored.draft : null,
+    drafts,
+  };
 }
 export function ProjectNotesDialog({
   project,
@@ -104,9 +111,11 @@ export function ProjectNotesDialog({
   const latestDraft = useRef(project.initialDraft);
   const [comparison, setComparison] = useState<ProjectNote | null>(null);
   const [working, setWorking] = useState(false);
+  const pendingCreate = useRef<Extract<DesktopProjectNotesCall, { _tag: "create" }> | null>(null);
+  const [pendingSave, setPendingSave] = useState<NoteSaveSnapshot | null>(null);
   const [error, setError] = useState(false);
   const [discard, setDiscard] = useState(false);
-  const dirty = draft !== null && isDirtyNoteDraft(draft);
+  const dirty = pendingSave !== null || (draft !== null && isDirtyNoteDraft(draft));
   const changeDraft = (modify: (current: NoteDraft | null) => NoteDraft | null) => {
     const updated = modify(latestDraft.current);
     latestDraft.current = updated;
@@ -140,7 +149,7 @@ export function ProjectNotesDialog({
     const outcome = await requestNote(environmentId, { _tag: "get", input: { projectId, id } });
     if (outcome.ok && outcome.result._tag === "get") {
       const saved = outcome.result.value;
-      changeDraft(() => makeNoteDraft({ ...saved, clientScopeKey: environmentId }));
+      changeDraft((current) => openSavedNote(current, { ...saved, clientScopeKey: environmentId }));
     } else setError(true);
   };
   const choose = async (id: ProjectNoteId) => {
@@ -156,19 +165,31 @@ export function ProjectNotesDialog({
     if (working || dirty) return;
     setWorking(true);
     setError(false);
-    const outcome = await requestNote(environmentId, {
+    const request = pendingCreate.current ?? {
       _tag: "create",
       input: { projectId, title: t("Untitled note"), markdown: "", mutationId: randomUUID() },
-    });
+    };
+    const outcome = await requestNote(environmentId, request);
+    pendingCreate.current = noteMutationUnconfirmed(outcome, "create") ? request : null;
     if (outcome.ok && outcome.result._tag === "create") {
-      await read(outcome.result.value.id);
+      const { title, markdown } = request.input;
+      const created = outcome.result.value;
+      changeDraft((current) =>
+        openSavedNote(current, {
+          ...created,
+          projectId,
+          clientScopeKey: environmentId,
+          title,
+          markdown,
+        }),
+      );
       await updateList();
     } else setError(true);
     setWorking(false);
   };
   const save = async () => {
     if (working || draft === null) return;
-    const snapshot = beginNoteSave(draft, randomUUID());
+    const snapshot = beginNoteSave(draft, randomUUID, pendingSave);
     if (!snapshot) return;
     const { id, title, markdown, expectedRevision, mutationId } = snapshot;
     setWorking(true);
@@ -177,6 +198,7 @@ export function ProjectNotesDialog({
       _tag: "update",
       input: { projectId, id, title, markdown, expectedRevision, mutationId },
     });
+    setPendingSave(noteMutationUnconfirmed(outcome, "update") ? snapshot : null);
     if (outcome.ok && outcome.result._tag === "update") {
       const value = outcome.result.value;
       changeDraft((current) => (current ? confirmNoteSave(current, snapshot, value) : current));
@@ -297,6 +319,7 @@ export function ProjectNotesDialog({
                   canWrite
                   online
                   saving={working}
+                  retryPending={pendingSave !== null}
                   onChange={(next) =>
                     changeDraft((current) => (current ? { ...current, ...next } : current))
                   }
@@ -376,6 +399,7 @@ export function ProjectNotesDialog({
                     type="button"
                     size="sm"
                     variant="destructive"
+                    disabled={working}
                     onClick={() => {
                       changeDraft(() => null);
                       onClose();

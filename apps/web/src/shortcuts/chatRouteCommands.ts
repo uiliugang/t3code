@@ -1,4 +1,4 @@
-import { sidebarSpaceCommands } from "../components/sidebar/SidebarSpaces";
+import { sidebarSpaceCommands } from "../components/sidebar/sidebarSpaceSession";
 import { AuthPreviewOperateScope, type EnvironmentId } from "@t3tools/contracts";
 import type { AnyRouter } from "@tanstack/react-router";
 import { msg } from "gt-react";
@@ -142,10 +142,6 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     {
       "chat.newLocal": startNewLocal,
       "chat.newWithoutProject": (event) => {
-        if (sidebarSpaceCommands.newThread()) {
-          claim(event);
-          return;
-        }
         const { activeThread, activeDraftThread } = readThreadContext();
         const environmentId = scratch.scratchEnvironmentId(
           activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null,

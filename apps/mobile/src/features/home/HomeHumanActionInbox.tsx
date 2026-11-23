@@ -2,10 +2,10 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   collectHumanActions,
+  readHumanActionSnapshot,
   type ScopedHumanAction,
 } from "@t3tools/client-runtime/state/human-action-inbox";
 import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
-import { AsyncResult } from "effect/reactivity";
 import { useMessages } from "gt-react-native";
 import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
@@ -79,10 +79,8 @@ export function HomeHumanActionInbox({
     mobileInboxes(JSON.stringify(open ? connected.map(({ environmentId }) => environmentId) : [])),
   );
   const ready = connected.flatMap(({ environmentId }, index) => {
-    const result = results[index];
-    return result && AsyncResult.isSuccess(result) && !result.waiting && result.value !== null
-      ? [{ environmentId, targets: result.value.targets }]
-      : [];
+    const snapshot = readHumanActionSnapshot(results[index]);
+    return snapshot ? [{ environmentId, targets: snapshot.targets }] : [];
   });
   const actions = collectHumanActions(ready);
   const visible = filter === "all" ? actions : actions.filter(({ kind }) => kind === filter);

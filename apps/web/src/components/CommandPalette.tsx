@@ -1,4 +1,5 @@
-import { sidebarSpaceCommands, useSidebarSpaces } from "./sidebar/SidebarSpaces";
+import { useSidebarSpaces } from "./sidebar/SidebarSpaces";
+import { sidebarSpaceCommands } from "./sidebar/sidebarSpaceSession";
 import { ProjectLabel } from "./ProjectLabel";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 import { resolveDraftProjectSelection } from "./createWorkspace";
@@ -967,7 +968,6 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    if (sidebarSpaceCommands.newThread()) return;
     await handleNewThread(scopeProjectRef(project.environmentId, project.id));
   };
 
@@ -1563,7 +1563,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (sidebarSpaces.active === null && scratchTargetEnvironmentId !== null) {
+  if (scratchTargetEnvironmentId !== null) {
     actionItems.push({
       kind: "action",
       value: "action:new-thread-without-project",

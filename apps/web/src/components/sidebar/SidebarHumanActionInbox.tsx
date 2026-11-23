@@ -2,16 +2,12 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   collectHumanActions,
-  sameHumanAction,
+  readHumanActionSnapshot,
+  humanActionSnapshotStatus,
   type ScopedHumanAction,
 } from "@t3tools/client-runtime/state/human-action-inbox";
-import {
-  AuthOrchestrationOperateScope,
-  AuthOrchestrationReadScope,
-  type EnvironmentId,
-} from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AsyncResult } from "effect/reactivity";
 import { InboxIcon, MessageCircleIcon, ShieldIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -20,7 +16,7 @@ import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { useProject, useQuietThreadShell } from "../../state/entities";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
 import { readEnvironment, useEnvironments } from "../../state/environments";
-import { orchestrationEnvironment } from "../../state/orchestration";
+import { pendingHumanActionsAtom } from "../../state/orchestration";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { Button } from "../ui/button";
 import { Dialog, DialogDescription, DialogPopup, DialogTitle, DialogTrigger } from "../ui/dialog";
@@ -33,15 +29,15 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const pendingInbox = (environmentId: EnvironmentId) =>
-  orchestrationEnvironment.v2.pendingHumanActions({ environmentId, input: {} });
-const pendingInboxes = environmentAtomList("pending-human-actions", pendingInbox);
+const pendingInboxes = environmentAtomList("pending-human-actions", pendingHumanActionsAtom);
 
 function InboxRow({
   target,
+  environmentLabel,
   onOpen,
 }: {
   readonly target: ScopedHumanAction;
+  readonly environmentLabel: string | undefined;
   readonly onOpen: (target: ScopedHumanAction) => void;
 }) {
   const t = useUiTranslation();
@@ -63,7 +59,9 @@ function InboxRow({
             {approval ? t("Waiting for approval") : t("Waiting for your answer")}
           </span>
           <span className="truncate text-xs text-muted-foreground">
-            {[thread?.title ?? t("Thread"), project?.title].filter(Boolean).join(" · ")}
+            {[environmentLabel, thread?.title ?? t("Thread"), project?.title]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         </span>
       </Button>
@@ -94,10 +92,8 @@ export function SidebarHumanActionInbox() {
     ),
   );
   const ready = connected.flatMap(({ environmentId }, index) => {
-    const result = results[index];
-    return result && AsyncResult.isSuccess(result) && !result.waiting && result.value !== null
-      ? [{ environmentId, targets: result.value.targets }]
-      : [];
+    const snapshot = readHumanActionSnapshot(results[index]);
+    return snapshot ? [{ environmentId, targets: snapshot.targets }] : [];
   });
   const incomplete = ready.length < environments.length;
   const actions = collectHumanActions(ready);
@@ -107,14 +103,13 @@ export function SidebarHumanActionInbox() {
   const onOpen = (target: ScopedHumanAction) => {
     const { environmentId, threadId } = target;
     const environment = readEnvironment(environmentId);
-    const result = appAtomRegistry.get(pendingInbox(environmentId));
+    const result = appAtomRegistry.get(pendingHumanActionsAtom(environmentId));
     if (
       environment?.connection.phase !== "connected" ||
       !readEnvironmentScope(environmentId, AuthOrchestrationReadScope) ||
       !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) ||
-      !AsyncResult.isSuccess(result) ||
-      result.waiting ||
-      !result.value?.targets.some((candidate) => sameHumanAction(candidate, target))
+      environment.serverConfig?.environment.capabilities.pendingHumanActions !== true ||
+      humanActionSnapshotStatus(result, target) !== "ready"
     ) {
       toastManager.add({ type: "info", title: t("This request is no longer available.") });
       return;
@@ -224,6 +219,10 @@ export function SidebarHumanActionInbox() {
                   target.requestId,
                 ])}
                 target={target}
+                environmentLabel={
+                  connected.find(({ environmentId }) => environmentId === target.environmentId)
+                    ?.label
+                }
                 onOpen={onOpen}
               />
             ))}
