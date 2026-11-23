@@ -345,27 +345,53 @@ export const make = Effect.gen(function* () {
     listReviewerCandidates: Effect.fn("MCodePullRequestProvider.listReviewerCandidates")(
       function* (input) {
         const pr = yield* getPr(input);
+        const isCandidate = (user: { readonly mis: string }) =>
+          !!user.mis && user.mis.toLowerCase() !== pr.author.mis.toLowerCase();
         const result = yield* read(
           input,
           "listReviewerCandidates",
           ["reviewers"],
           Json.Reviewers,
           "repo",
-        );
-        const candidates = "candidates" in result ? result.candidates : result;
+        ).pipe(Effect.orElseSucceed(() => [] as const));
+        let candidates = ("candidates" in result ? result.candidates : result).filter(isCandidate);
+        if (candidates.length === 0) {
+          const viewer = yield* getViewer(input);
+          const recent = yield* read(
+            input,
+            "listPreviousReviewerCandidates",
+            [
+              "list",
+              "--author",
+              viewer,
+              "--state",
+              "all",
+              "--order",
+              "DESC",
+              "--order-by",
+              "id",
+              "--limit",
+              "2",
+            ],
+            Schema.Array(Json.PullRequest),
+          );
+          const previous = recent.find(
+            (entry) =>
+              entry.id !== pr.id && entry.author.mis.toLowerCase() === viewer.toLowerCase(),
+          );
+          candidates = previous?.reviewers.filter(isCandidate) ?? [];
+        }
         return {
-          candidates: candidates
-            .filter((user) => user.mis && user.mis.toLowerCase() !== pr.author.mis.toLowerCase())
-            .map((user) => ({
-              id: user.mis,
-              kind: "user" as const,
-              login: user.mis,
-              name: user.name || null,
-              avatarUrl: null,
-              isRequested: pr.reviewers.some(
-                (reviewer) => reviewer.mis.toLowerCase() === user.mis.toLowerCase(),
-              ),
-            })),
+          candidates: candidates.map((user) => ({
+            id: user.mis,
+            kind: "user" as const,
+            login: user.mis,
+            name: user.name || null,
+            avatarUrl: null,
+            isRequested: pr.reviewers.some(
+              (reviewer) => reviewer.mis.toLowerCase() === user.mis.toLowerCase(),
+            ),
+          })),
           truncated: false,
         };
       },

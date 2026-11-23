@@ -42,6 +42,7 @@ export const DaxiangApprovalKind = Schema.Literals([
   "mcm-plan",
   "mcm-event",
   "lion",
+  "kms",
   "rds",
   "dms",
 ]);

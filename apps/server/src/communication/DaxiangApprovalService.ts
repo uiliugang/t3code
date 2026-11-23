@@ -90,7 +90,9 @@ const isDaxiangApprovalError = Schema.is(DaxiangApprovalError);
 export class DaxiangApprovalService extends Context.Service<
   DaxiangApprovalService,
   {
-    readonly subscribe: Stream.Stream<DaxiangApprovalState, DaxiangApprovalError>;
+    readonly subscribe: (
+      includeKms?: boolean,
+    ) => Stream.Stream<DaxiangApprovalState, DaxiangApprovalError>;
     readonly mutate: (
       input: DaxiangApprovalMutation,
       sessionId: string,
@@ -648,7 +650,14 @@ const make = Effect.gen(function* () {
   );
 
   return DaxiangApprovalService.of({
-    subscribe: SubscriptionRef.changes(state),
+    subscribe: (includeKms) =>
+      SubscriptionRef.changes(state).pipe(
+        Stream.map((snapshot) =>
+          includeKms
+            ? snapshot
+            : { ...snapshot, records: snapshot.records.filter((record) => record.kind !== "kms") },
+        ),
+      ),
     mutate,
     start: start(),
   });

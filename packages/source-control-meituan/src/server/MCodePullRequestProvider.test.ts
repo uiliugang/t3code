@@ -114,6 +114,64 @@ describe("Meituan pull requests", () => {
     }),
   );
 
+  it.effect.each(["[]", "not json"])(
+    "falls back to the signed-in account's latest other PR when defaults are unavailable: %s",
+    (defaults) =>
+      Effect.gen(function* () {
+        const calls: ReadonlyArray<string>[] = [];
+        const provider = yield* Provider.make.pipe(
+          Effect.provide(
+            layerFor((input) => {
+              calls.push(input.args);
+              if (input.args.includes("auth"))
+                return Effect.succeed(
+                  TestHost.processOutput("Logged in to http://git.sankuai.com as author"),
+                );
+              if (input.args.includes("reviewers"))
+                return Effect.succeed(TestHost.processOutput(defaults));
+              const response = input.args.includes("view")
+                ? pullRequest
+                : [
+                    pullRequest,
+                    {
+                      ...pullRequest,
+                      id: 21,
+                      state: "MERGED",
+                      reviewers: [
+                        ...pullRequest.reviewers,
+                        { mis: "other", name: "Other", approved: true },
+                      ],
+                    },
+                  ];
+              return Effect.succeed(TestHost.processOutput(JSON.stringify(response)));
+            }),
+          ),
+        );
+        const result = yield* provider.listReviewerCandidates(repositoryRef);
+        expect(result.candidates).toMatchObject([
+          { login: "reviewer", isRequested: true },
+          { login: "other", isRequested: false },
+        ]);
+        expect(calls.at(-1)).toEqual([
+          "pr",
+          "-R",
+          "team/service",
+          "list",
+          "--author",
+          "author",
+          "--state",
+          "all",
+          "--order",
+          "DESC",
+          "--order-by",
+          "id",
+          "--limit",
+          "2",
+          "--json",
+        ]);
+      }),
+  );
+
   it.effect.each([
     { reviewers: [{ id: "reviewer", kind: "user" as const }], requested: false },
     { reviewers: [{ id: "team", kind: "team" as const }], requested: true },

@@ -3015,7 +3015,8 @@ export const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.requestReviewers(input)),
         [WS_METHODS.wechatSubscribe]: () => wechat.subscribe,
         [WS_METHODS.wechatMutate]: (input) => wechat.mutate(input),
-        [WS_METHODS.daxiangApprovalSubscribe]: () => daxiangApproval.subscribe,
+        [WS_METHODS.daxiangApprovalSubscribe]: (input) =>
+          daxiangApproval.subscribe(input.includeKms),
         [WS_METHODS.daxiangApprovalMutate]: (input) =>
           daxiangApproval.mutate(input, currentSessionId),
         [WS_METHODS.wechatSend]: (input) => wechat.send(input.text),

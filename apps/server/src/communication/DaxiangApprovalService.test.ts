@@ -31,6 +31,7 @@ it.effect("uses current approval settings for every link in a message", () =>
               approvalMonitor: {
                 enabled: true,
                 autoApprovePullRequest: true,
+                autoApproveMcm: true,
                 notifyUnsupportedLinks: false,
               },
             },
@@ -44,7 +45,7 @@ it.effect("uses current approval settings for every link in a message", () =>
         sessionType: "chat",
         sessionId: "chat-1",
         fromUid: "sender",
-        text: "https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
+        text: "https://kms.mws.sankuai.com/workflow?uid=42 https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
       });
       const context = yield* Layer.build(Approval.layer).pipe(
         Effect.provide(Layer.mock(ServerBrowser.ServerBrowser)({})),
@@ -108,10 +109,10 @@ it.effect("uses current approval settings for every link in a message", () =>
       );
       const service = Context.get(context, Approval.DaxiangApprovalService);
       yield* service.start;
-      const snapshot = yield* service.subscribe.pipe(
+      const snapshot = yield* service.subscribe(true).pipe(
         Stream.filter(
           (state) =>
-            state.records.length === 2 ||
+            state.records.some((record) => record.title === "group/repo #2") ||
             state.status === "error" ||
             state.status === "missing_cli" ||
             state.status === "unauthenticated",
@@ -123,7 +124,18 @@ it.effect("uses current approval settings for every link in a message", () =>
       if (snapshot._tag === "Some") {
         assert.deepStrictEqual(
           snapshot.value.records.map((record) => record.outcome),
-          ["skipped", "approved"],
+          ["skipped", "approved", "skipped"],
+        );
+        assert.include(snapshot.value.records[2], {
+          kind: "kms",
+          title: "KMS #42",
+          url: "https://kms.mws.sankuai.com/workflow?uid=42",
+          outcome: "skipped",
+        });
+        const legacy = yield* service.subscribe().pipe(Stream.runHead);
+        assert.deepStrictEqual(
+          legacy._tag === "Some" ? legacy.value.records.map((record) => record.kind) : [],
+          ["pr", "pr"],
         );
       }
     }),
