@@ -1,10 +1,19 @@
-// @effect-diagnostics nodeBuiltinImport:off globalConsole:off - a synchronous wrapper around one vitest project.
-import * as NodeChildProcess from "node:child_process";
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off - wrapper around the renders vitest project.
 import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Console from "effect/Console";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
+
 import { vitePlusCommand } from "./check-changed-command.ts";
+import { resolveGitCommonDir, withBrowserTestLock } from "./check-changed-lock.ts";
 
 const HELP = `Usage:
   node scripts/render-metrics.ts run [--out <file>] [--runs <n>]
@@ -29,6 +38,13 @@ Comparing two refs needs both checkouts, since the scenarios run each tree's cod
 A second checkout comes from \`git worktree add ../<name> main\`; copy the harness files
 in if that tree predates them.`;
 
+const ScenarioReportSchema = Schema.Struct({
+  commits: Schema.NullOr(Schema.Number),
+  renders: Schema.Number,
+  components: Schema.Record(Schema.String, Schema.Number),
+});
+const decodeScenarioReport = Schema.decodeEffect(Schema.fromJsonString(ScenarioReportSchema));
+
 export interface ScenarioReport {
   /** null where a scenario's commit count depends on frame timing. */
   readonly commits: number | null;
@@ -39,29 +55,46 @@ export type RenderMetrics = Readonly<Record<string, ScenarioReport>>;
 
 const root = NodePath.resolve(import.meta.dirname, "..");
 
-export function runOnce(): RenderMetrics {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-renders-"));
-  try {
-    const [command, commandArgs] = vitePlusCommand(["test", "run", "--project", "renders"]);
-    const result = NodeChildProcess.spawnSync(command, commandArgs, {
-      cwd: NodePath.join(root, "apps/web"),
-      env: { ...process.env, T3CODE_RENDER_REPORT_DIR: directory },
-      stdio: ["ignore", "inherit", "inherit"],
-    });
-    if (result.status !== 0) throw new Error(`render scenarios failed (exit ${result.status})`);
-    const files = NodeFS.readdirSync(directory)
-      .filter((file) => file.endsWith(".json"))
-      .toSorted();
-    return Object.fromEntries(
-      files.map((file) => [
-        file.replace(/\.json$/, ""),
-        JSON.parse(NodeFS.readFileSync(NodePath.join(directory, file), "utf8")) as ScenarioReport,
-      ]),
-    );
-  } finally {
-    NodeFS.rmSync(directory, { recursive: true, force: true });
-  }
-}
+export const runOnce = Effect.fn("renderMetrics.runOnce")(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-renders-" });
+      const [command, commandArgs] = vitePlusCommand(
+        ["test", "run", "--project", "renders"],
+        platform,
+      );
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(command, commandArgs, {
+          cwd: path.join(root, "apps/web"),
+          env: { T3CODE_RENDER_REPORT_DIR: directory },
+          extendEnv: true,
+          stdin: "ignore",
+          stdout: "inherit",
+          stderr: "inherit",
+          forceKillAfter: "5 seconds",
+        }),
+      );
+      const exitCode = Number(yield* handle.exitCode);
+      if (exitCode !== 0) {
+        return yield* Effect.fail(`render scenarios failed (exit ${exitCode})`);
+      }
+      const files = (yield* fs.readDirectory(directory))
+        .filter((file) => file.endsWith(".json"))
+        .toSorted();
+      const entries = yield* Effect.forEach(files, (file) =>
+        fs.readFileString(path.join(directory, file)).pipe(
+          Effect.flatMap(decodeScenarioReport),
+          Effect.map((report) => [file.replace(/\.json$/, ""), report] as const),
+        ),
+      );
+      return Object.fromEntries(entries) as RenderMetrics;
+    }),
+  );
+});
 
 /** Scenarios whose counts differ between runs, by name. */
 export function nondeterministic(runs: ReadonlyArray<RenderMetrics>): string[] {
@@ -113,45 +146,167 @@ export function renderComparison(before: RenderMetrics, after: RenderMetrics, to
   return lines.join("\n");
 }
 
-function option(args: ReadonlyArray<string>, name: string): string | undefined {
-  const index = args.indexOf(name);
-  return index === -1 ? undefined : args[index + 1];
+export function parseRunOptions(args: ReadonlyArray<string>): {
+  readonly help: boolean;
+  readonly runs: number;
+  readonly out: string | undefined;
+} {
+  let help = false;
+  let runs = 3;
+  let out: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "-h" || arg === "--help") {
+      help = true;
+      continue;
+    }
+    if (arg === "--runs" || arg.startsWith("--runs=")) {
+      const raw = arg === "--runs" ? args[++index] : arg.slice("--runs=".length);
+      const parsed = raw === undefined || raw === "" ? Number.NaN : Number(raw);
+      if (!Number.isSafeInteger(parsed) || parsed < 1) {
+        throw new RangeError("report:renders: --runs must be a positive integer.");
+      }
+      runs = parsed;
+      continue;
+    }
+    if (arg === "--out" || arg.startsWith("--out=")) {
+      const raw = arg === "--out" ? args[++index] : arg.slice("--out=".length);
+      if (!raw || raw.startsWith("-")) {
+        throw new RangeError("report:renders: --out requires a file path.");
+      }
+      out = raw;
+      continue;
+    }
+    throw new RangeError(`report:renders: unknown argument "${arg}".`);
+  }
+
+  return { help, runs, out };
+}
+
+export function parseCompareOptions(args: ReadonlyArray<string>): {
+  readonly help: boolean;
+  readonly before: string;
+  readonly after: string;
+  readonly top: number;
+} {
+  let help = false;
+  let top = 10;
+  const positionals: Array<string> = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "-h" || arg === "--help") {
+      help = true;
+      continue;
+    }
+    if (arg === "--top" || arg.startsWith("--top=")) {
+      const raw = arg === "--top" ? args[++index] : arg.slice("--top=".length);
+      const parsed = raw === undefined || raw === "" ? Number.NaN : Number(raw);
+      if (!Number.isSafeInteger(parsed) || parsed < 1) {
+        throw new RangeError("report:renders: --top must be a positive integer.");
+      }
+      top = parsed;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      throw new RangeError(`report:renders: unknown argument "${arg}".`);
+    }
+    positionals.push(arg);
+  }
+
+  if (help) {
+    return { help: true, before: "", after: "", top };
+  }
+  if (positionals.length !== 2) {
+    throw new RangeError("report:renders: compare requires <before.json> and <after.json>.");
+  }
+  return { help: false, before: positionals[0]!, after: positionals[1]!, top };
+}
+
+function reportResults(
+  results: ReadonlyArray<RenderMetrics>,
+  runs: number,
+  out: string | undefined,
+): void {
+  const unstable = nondeterministic(results);
+  if (unstable.length) {
+    for (const scenario of unstable) {
+      const counts = results.map((run) => `${run[scenario]?.commits}/${run[scenario]?.renders}`);
+      console.error(`${scenario} differed between runs (commits/renders): ${counts.join(", ")}`);
+      const first = results[0]?.[scenario]?.components ?? {};
+      for (const [index, run] of results.entries()) {
+        const other = run[scenario]?.components ?? {};
+        const names = [...new Set([...Object.keys(first), ...Object.keys(other)])];
+        const moved = names.filter((name) => first[name] !== other[name]);
+        if (moved.length) {
+          const detail = moved.map((name) => `${name} ${first[name] ?? 0}→${other[name] ?? 0}`);
+          console.error(`  run ${index + 1} vs run 1: ${detail.join(", ")}`);
+        }
+      }
+    }
+    process.exitCode = 1;
+  } else {
+    const json = JSON.stringify(results[0], null, 2);
+    if (out) NodeFS.writeFileSync(out, json + "\n");
+    else console.log(json);
+    console.error(`${runs} run(s) produced identical counts.`);
+  }
 }
 
 if (import.meta.main) {
-  const [command, ...args] = process.argv.slice(2);
+  const cliArgs = process.argv[2] === "--" ? process.argv.slice(3) : process.argv.slice(2);
+  const [command, ...args] = cliArgs;
   if (command === "run") {
-    const runs = Number(option(args, "--runs") ?? 3);
-    const results = Array.from({ length: runs }, runOnce);
-    const unstable = nondeterministic(results);
-    if (unstable.length) {
-      for (const scenario of unstable) {
-        const counts = results.map((run) => `${run[scenario]?.commits}/${run[scenario]?.renders}`);
-        console.error(`${scenario} differed between runs (commits/renders): ${counts.join(", ")}`);
-        const first = results[0]?.[scenario]?.components ?? {};
-        for (const [index, run] of results.entries()) {
-          const other = run[scenario]?.components ?? {};
-          const names = [...new Set([...Object.keys(first), ...Object.keys(other)])];
-          const moved = names.filter((name) => first[name] !== other[name]);
-          if (moved.length) {
-            const detail = moved.map((name) => `${name} ${first[name] ?? 0}→${other[name] ?? 0}`);
-            console.error(`  run ${index + 1} vs run 1: ${detail.join(", ")}`);
-          }
-        }
+    Effect.gen(function* () {
+      const { help, runs, out } = yield* Effect.try({
+        try: () => parseRunOptions(args),
+        catch: (error) => (error instanceof Error ? error.message : String(error)),
+      });
+      if (help) {
+        yield* Console.log(HELP);
+        return;
       }
-      process.exitCode = 1;
-    } else {
-      const json = JSON.stringify(results[0], null, 2);
-      const out = option(args, "--out");
-      if (out) NodeFS.writeFileSync(out, json + "\n");
-      else console.log(json);
-      console.error(`${runs} run(s) produced identical counts.`);
-    }
-  } else if (command === "compare" && args[0] && args[1]) {
-    const read = (path: string) => JSON.parse(NodeFS.readFileSync(path, "utf8")) as RenderMetrics;
-    console.log(
-      renderComparison(read(args[0]), read(args[1]), Number(option(args, "--top") ?? 10)),
+      const commonDir = yield* resolveGitCommonDir(root, "report:renders");
+      const results = yield* withBrowserTestLock(
+        commonDir,
+        Effect.forEach(Array.from({ length: runs }), () => runOnce()),
+        {
+          waitingMessage:
+            "report:renders: waiting for another browser test in this repository to finish.",
+        },
+      );
+      yield* Effect.try({
+        try: () => reportResults(results, runs, out),
+        catch: (error) => (error instanceof Error ? error.message : String(error)),
+      });
+    }).pipe(
+      Effect.catch((error) =>
+        Console.error(String(error)).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              process.exitCode = 1;
+            }),
+          ),
+        ),
+      ),
+      Effect.provide(NodeServices.layer),
+      NodeRuntime.runMain,
     );
+  } else if (command === "compare") {
+    try {
+      const { help, before, after, top } = parseCompareOptions(args);
+      if (help) {
+        console.log(HELP);
+      } else {
+        const read = (path: string) =>
+          JSON.parse(NodeFS.readFileSync(path, "utf8")) as RenderMetrics;
+        console.log(renderComparison(read(before), read(after), top));
+      }
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
   } else {
     console.log(HELP);
     if (command !== "--help" && command !== "-h" && command !== undefined) process.exitCode = 1;

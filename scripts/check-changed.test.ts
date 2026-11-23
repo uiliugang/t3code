@@ -3,6 +3,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
 import { expect } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Option from "effect/Option";
@@ -21,6 +22,7 @@ import {
   docReaderTests,
   gitLines,
   ignoredCheckInputs,
+  launchesChromium,
   runSteps,
   splitTests,
   type Step,
@@ -144,6 +146,26 @@ describe("check:changed", () => {
     }),
   );
 
+  it.effect("does not count step withLock wait time toward timeoutSeconds", () =>
+    Effect.gen(function* () {
+      const fiber = yield* runSteps(
+        [
+          {
+            name: "waits on browser lock",
+            withLock: (task) => Effect.sleep("25 seconds").pipe(Effect.andThen(task)),
+            run: Effect.sleep("2 seconds").pipe(Effect.as({ ok: true, output: "" })),
+          },
+        ],
+        { concurrency: 2, timeoutSeconds: 10 },
+      ).pipe(Effect.forkChild);
+      yield* TestClock.adjust("30 seconds");
+      const results = yield* Fiber.join(fiber);
+      assert.deepStrictEqual(results, [
+        { name: "waits on browser lock", outcome: "pass", time: "2.0s" },
+      ]);
+    }),
+  );
+
   it("runs the .github/scripts node:test files with node --test, not vitest", () => {
     assert.deepStrictEqual(
       splitTests([
@@ -160,6 +182,26 @@ describe("check:changed", () => {
         ],
       },
     );
+  });
+
+  it("identifies web browser tests and server Playwright tests that launch Chromium", () => {
+    for (const file of [
+      "apps/web/src/components/Sidebar.browser.test.tsx",
+      "apps/web/src/lib/editor.browser.test.ts",
+      "apps/server/src/preview/ServerBrowser.test.ts",
+      "apps/server/src/preview/ServerBrowserContexts.test.ts",
+      "apps/server/src/preview/ServerBrowserPage.test.ts",
+    ]) {
+      assert.isTrue(launchesChromium(file), file);
+    }
+    for (const file of [
+      "apps/web/src/components/Sidebar.logic.test.ts",
+      "apps/mobile/src/features/devices/device-stream.browser.test.ts",
+      "apps/server/src/preview/Manager.test.ts",
+      "scripts/check-changed.test.ts",
+    ]) {
+      assert.isFalse(launchesChromium(file), file);
+    }
   });
 
   it.effect("fails instead of returning an empty file list when git exits nonzero", () => {
@@ -385,7 +427,7 @@ function launcherFixture() {
     write(file, NodeFS.readFileSync(NodePath.join(import.meta.dirname, "..", file), "utf8"));
   }
   write(".gitignore", "node_modules/\nrecords/\n");
-  write("pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+  write("pnpm-workspace.yaml", "packages:\n  - apps/*\n  - packages/*\n");
   write(
     "package.json",
     JSON.stringify({
@@ -396,6 +438,7 @@ function launcherFixture() {
       },
     }),
   );
+  write("apps/web/package.json", JSON.stringify({ name: "@t3tools/web" }));
   write("packages/example/package.json", JSON.stringify({ name: "example" }));
   const source = "packages/example/space & (draft) %PATH% ! 研究.ts";
   write(source, "export const value = 1;\n");
@@ -544,4 +587,27 @@ it.each(["install", "lint"])("reports a failing %s step with its output", (step)
   expect(
     NodeFS.existsSync(NodePath.join(project.root, "node_modules/.cache/check-changed.json")),
   ).toBe(false);
+});
+
+it("acquires the repository browser test lock only when changed tests launch Chromium", () => {
+  using project = launcherFixture();
+  const browserLockPath = NodePath.join(project.root, ".git", "t3-browser-test.sqlite");
+
+  // Hold the browser lock externally while running pure Node unit tests: should not block.
+  const externalHolder = new NodeSqlite.DatabaseSync(browserLockPath, { timeout: 0 });
+  try {
+    externalHolder.exec("BEGIN IMMEDIATE");
+    project.write("packages/example/example.test.ts", "export {};\n");
+    const unitResult = project.run();
+    expect(unitResult.status, unitResult.stdout + unitResult.stderr).toBe(0);
+  } finally {
+    externalHolder.close();
+  }
+  NodeFS.rmSync(browserLockPath, { force: true });
+
+  // When an apps/web *.browser.test.tsx file changes, check:changed creates and acquires t3-browser-test.sqlite.
+  project.write("apps/web/src/Component.browser.test.tsx", "export {};\n");
+  const browserResult = project.run();
+  expect(browserResult.status, browserResult.stdout + browserResult.stderr).toBe(0);
+  expect(NodeFS.existsSync(browserLockPath)).toBe(true);
 });

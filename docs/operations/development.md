@@ -238,7 +238,12 @@ test suites and the jobs the summary lists, so a local pass does not promise a g
 
 Checks from worktrees of the same repository run one at a time. A waiting check can be cancelled;
 waiting does not count toward a step's timeout. The lock lives in the common Git directory and is
-released when the check exits. Direct `vp test` commands and builds do not take this lock.
+released when the check exits. Direct `vp test` commands and builds do not take this lock. When a
+check runs Chromium tests (`apps/web/**/*.browser.test.{ts,tsx}` or `ServerBrowser*.test.ts`), its
+test step also takes the shared browser test lock in the common Git directory
+(`T3_BROWSER_TEST_CONCURRENCY`, default `1`) outside the step timeout so it coordinates with
+`vp run test:browser:local` and `vp run report:renders` across worktrees without blocking pure Node
+unit test runs.
 
 Within a check, steps share a budget of one per two cores and per 6 GiB of available memory.
 Test steps take the entire budget and run test files one at a time with one worker, so they do not
@@ -252,14 +257,18 @@ the checks again.
 While you iterate, run single checks:
 
 ```sh
-vp test run <files>
+vp test run <unit-test-files>
+vp run test:browser:local <browser-test-files>
 vp lint <files>
 vp run --filter <package> typecheck
 ```
 
 In `apps/web`, a test that renders React or touches the DOM is named `*.browser.test.{ts,tsx}`
-and runs in headless Chromium with the React Compiler on, like the app. There is no jsdom; other
-`*.test.ts` files run in Node.
+and runs in headless Chromium with the React Compiler on, like the app. Locally, browser projects
+run one test file at a time unless `T3_BROWSER_FILE_PARALLELISM=1` is set, and
+`vp run test:browser:local <files>` acquires the common Git directory browser lock before starting
+Vitest or Chromium so queued runs across worktrees consume negligible memory. There is no jsdom;
+other `*.test.ts` files run in Node.
 
 TypeScript workspaces typecheck with `effect-tsgo tsrs --noEmit` from `@effect/tsgo`: the
 [tsrs](https://github.com/oxc-project/tsrs) checker with Effect diagnostics, quick fixes, and

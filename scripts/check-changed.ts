@@ -40,7 +40,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { decide, readWorkspace } from "../.github/scripts/ci-changes.cjs";
 import { vitePlusCommand } from "./check-changed-command.ts";
-import { withCheckLock } from "./check-changed-lock.ts";
+import { resolveGitCommonDir, withBrowserTestLock, withCheckLock } from "./check-changed-lock.ts";
 
 const GiB = 1024 ** 3;
 
@@ -54,6 +54,10 @@ export type Outcome = "pass" | "FAIL" | "TIMEOUT";
 export interface Step<R> {
   readonly name: string;
   readonly run: Effect.Effect<{ readonly ok: boolean; readonly output: string }, never, R>;
+  // Wraps execution outside the step timeout so cross-worktree lock waiting does not count as runtime.
+  readonly withLock?: <A, R2>(
+    task: Effect.Effect<A, never, R2>,
+  ) => Effect.Effect<A, string, R | R2>;
   // Budget slots the step holds: one per worker it runs in parallel.
   readonly weight?: number;
   // Vitest runs started together race to rebuild node_modules/.vitest-cache (ENOTEMPTY).
@@ -86,15 +90,38 @@ export const runSteps = Effect.fn("checkChanged.runSteps")(function* <R>(
           outcome === "TIMEOUT"
             ? `killed after ${options.timeoutSeconds}s`
             : `${seconds.toFixed(1)}s`;
-        yield* Console.log(`\n> vp ${step.name}  ${outcome}  ${time}`);
-        const output = Option.getOrUndefined(result)?.output.trimEnd();
-        if (output) yield* Console.log(output);
-        return { name: step.name, outcome, time };
+        return {
+          name: step.name,
+          outcome,
+          time,
+          output: Option.getOrUndefined(result)?.output.trimEnd(),
+        };
       });
+      const locked = step.withLock
+        ? step.withLock(timed).pipe(
+            Effect.catch((error) =>
+              Effect.succeed({
+                name: step.name,
+                outcome: "FAIL" as Outcome,
+                time: "0.0s",
+                output: String(error).trimEnd(),
+              }),
+            ),
+          )
+        : timed;
+      const reported = locked.pipe(
+        Effect.tap(({ name, outcome, time, output }) =>
+          Effect.gen(function* () {
+            yield* Console.log(`\n> vp ${name}  ${outcome}  ${time}`);
+            if (output) yield* Console.log(output);
+          }),
+        ),
+        Effect.map(({ name, outcome, time }) => ({ name, outcome, time })),
+      );
       const slots = Math.min(step.weight ?? 1, options.concurrency);
       const limited = Effect.acquireUseRelease(
         admission.withPermit(budget.take(slots)),
-        () => timed,
+        () => reported,
         () => budget.release(slots),
       );
       return step.serial ? serial.withPermit(limited) : limited;
@@ -233,6 +260,9 @@ export const splitTests = (tests: Iterable<string>) => {
     nodeTests: all.filter((file) => NODE_TEST.test(file)),
   };
 };
+export const launchesChromium = (file: string) =>
+  /^apps[/\\]web[/\\].*\.browser\.test\.[cm]?[jt]sx?$/.test(file) ||
+  /^apps[/\\]server[/\\]src[/\\]preview[/\\]ServerBrowser(?:Contexts|Page)?\.test\.ts$/.test(file);
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // A flag wins over its environment variable; either must be a positive integer.
@@ -260,6 +290,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   readonly ref: Option.Option<string>;
   readonly concurrency: Option.Option<number>;
   readonly timeout: Option.Option<number>;
+  readonly commonDir: string;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -553,6 +584,15 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
               "--no-file-parallelism",
               ...vitestTests,
             ]),
+            ...(vitestTests.some(launchesChromium)
+              ? {
+                  withLock: <A, R>(task: Effect.Effect<A, never, R>) =>
+                    withBrowserTestLock(input.commonDir, task, {
+                      waitingMessage:
+                        "check:changed: waiting for another browser test in this repository to finish.",
+                    }).pipe(Effect.mapError(String)),
+                }
+              : {}),
             serial: true,
             weight: concurrency,
           },
@@ -655,10 +695,10 @@ export const checkChangedCommand = Command.make(
     Effect.gen(function* () {
       const path = yield* Path.Path;
       const root = yield* path.fromFileUrl(new URL("..", import.meta.url));
-      const commonDir = (yield* git(root, ["rev-parse", "--git-common-dir"])).toString().trim();
+      const commonDir = yield* resolveGitCommonDir(root, "check:changed");
       return yield* withCheckLock(
-        path.resolve(root, commonDir, "t3-check-changed.sqlite"),
-        checkChanged(input),
+        path.join(commonDir, "t3-check-changed.sqlite"),
+        checkChanged({ ...input, commonDir }),
       );
     }).pipe(
       Effect.catch((message) => Console.error(message).pipe(Effect.as(false))),
