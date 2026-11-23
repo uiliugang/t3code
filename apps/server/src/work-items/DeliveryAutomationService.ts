@@ -13,7 +13,9 @@ import {
   parseBranchIssueUrl,
   type WorkItemMutationResult,
 } from "@t3tools/contracts";
+import { readMis } from "@t3tools/source-control-meituan/shared/definition";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -22,6 +24,7 @@ import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
 import * as Issues from "../sourceControl/IssueService.ts";
 import * as WorkItems from "./WorkItemService.ts";
 import * as Providers from "../provider/ProviderInstanceRegistry.ts";
+import * as Settings from "../serverSettings.ts";
 import { orchestrationV2WorktreePending } from "@t3tools/shared/orchestrationV2ThreadError";
 
 const decodeItemJson = Schema.decodeEffect(Schema.fromJsonString(WorkItem));
@@ -33,6 +36,7 @@ const isRequirementIssueError = Schema.is(RequirementIssueError);
 const decodeSourceJson = Schema.decodeEffect(Schema.fromJsonString(IssueSource));
 const decodeIssueJson = Schema.decodeEffect(Schema.fromJsonString(BranchIssueRef));
 const encodeIssueJson = Schema.encodeEffect(Schema.fromJsonString(BranchIssueRef));
+const mepTimeZone = DateTime.zoneMakeNamedUnsafe("Asia/Shanghai");
 
 export class DeliveryAutomationService extends Context.Service<
   DeliveryAutomationService,
@@ -55,6 +59,7 @@ export const layer = Layer.effect(
     const issues = yield* Issues.IssueService;
     const sql = yield* SqlClient.SqlClient;
     const providers = yield* Providers.ProviderInstanceRegistry;
+    const settings = yield* Settings.ServerSettingsService;
     const createIssue = Effect.fn("DeliveryAutomationService.createIssue")(
       function* (input: WorkItemCreateIssueInput) {
         const thread = yield* threads.getThreadShell(input.threadId);
@@ -136,6 +141,23 @@ export const layer = Layer.effect(
           })).item;
         }
         const sourceJson = yield* encodeSourceJson(input.source);
+        let mepGuidance = "";
+        if (input.source.provider === "meituan") {
+          const mis = yield* settings.getSettings.pipe(
+            Effect.map((saved) => readMis(saved.sourceControlHosts.meituan)),
+            Effect.orElseSucceed(() => ""),
+          );
+          const today = DateTime.setZone(yield* DateTime.now, mepTimeZone);
+          const weekday = DateTime.toParts(today).weekDay || 7;
+          const friday = DateTime.formatIsoDate(DateTime.add(today, { days: 5 - weekday }));
+          mepGuidance = [
+            "For a Meituan REQUIREMENT, preserve any explicit assignee or expected development end date from the conversation.",
+            mis
+              ? `The destination environment's Meituan integration identifies the user as MIS "${mis}". Use it in action.assignees when the user says "assign to me" or gives no assignee; do not also send fields.assigned.`
+              : 'If the assignee is omitted or the user says "assign to me", ask for the MIS because the destination environment has no available Meituan MIS. Do not guess from local usernames or messages.',
+            `In Asia/Shanghai, today is ${DateTime.formatIsoDate(today)} and this Friday is ${friday}. For the expected development end date (预计开发结束), use action.fields.customField13642 with a YYYY-MM-DD value, not the task's expectClose or the release date. Use this Friday when no date is specified; if it has passed, ask for a date rather than submitting a past default.`,
+          ].join(" ");
+        }
         const start: WorkItemCommandInput = {
           type: "start",
           commandId: CommandId.make(`${creationKey}:start`),
@@ -150,7 +172,12 @@ export const layer = Layer.effect(
               sideChatOf: thread.lineage.sideChat
                 ? (thread.lineage.parentThreadId ?? thread.id)
                 : thread.id,
-              assignment: `Create one external issue for this conversation using ONLY ${sourceJson}. Use work_item_issue with id ${item.id}: metadata reads the required subtype and fields; create submits the draft and links it automatically. Ask only for missing required fields. If creation is uncertain, check the platform and use recover with its canonical URL; never blindly retry. This side chat remains read-only for code. Do not use a CLI, modify code, start development, or create another task.`,
+              assignment: [
+                `Create one external issue for this conversation using ONLY ${sourceJson}. Use work_item_issue with id ${item.id}: metadata reads the required subtype and fields; create submits the draft and links it automatically. Ask only for missing required fields unless the guidance below requires clarification. If creation is uncertain, check the platform and use recover with its canonical URL; never blindly retry. This side chat remains read-only for code. Do not use a CLI, modify code, start development, or create another task.`,
+                mepGuidance,
+              ]
+                .filter(Boolean)
+                .join("\n\n"),
             },
           ],
         };
