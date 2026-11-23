@@ -86,6 +86,7 @@ export interface ThreadRunSummary {
   readonly startedAt: string | null;
   readonly completedAt: string | null;
   readonly assistantMessageId: MessageId | null;
+  readonly runningOutputTokensPerSecond?: number;
   readonly latestCompletedOutputSpeed?: {
     readonly runId: RunId;
     readonly tokensPerSecond: number;

@@ -277,6 +277,7 @@ export interface ThreadFeedLatestRun {
   readonly status: OrchestrationV2RunStatus;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
+  readonly runningOutputTokensPerSecond?: number;
   readonly latestCompletedOutputSpeed?: {
     readonly runId: RunId;
     readonly tokensPerSecond: number;

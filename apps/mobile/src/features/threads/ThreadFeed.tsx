@@ -139,7 +139,9 @@ import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspace
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { isDuoDevice } from "../../lib/device-type";
 import {
+  createContext,
   memo,
+  use,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -409,6 +411,7 @@ export interface ThreadFeedProps {
   readonly latestRun: ThreadFeedLatestRun | null;
   readonly activeWorkStartedAt: string | null;
   readonly runlessWorkActive?: boolean;
+  readonly runlessOutputTokensPerSecond?: number | undefined;
   readonly listRef: RefObject<LegendListRef | null>;
   readonly freeze: SharedValue<boolean>;
   readonly anchorMessageId: MessageId | null;
@@ -1950,15 +1953,28 @@ function compactionLabel(
   return text.replace(/ (→|tokens)/g, "\u00A0$1").replace(/→ /g, "→\u00A0");
 }
 
+// LegendList invalidates every fixed row size when extraData changes.
+const RunningOutputSpeedContext = createContext<{
+  readonly runId: RunId | null;
+  readonly tokensPerSecond: number;
+} | null>(null);
+
 function RunFoldWorking(props: {
   environmentId: EnvironmentId;
   startedAt: string;
+  runId: RunId;
   rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
 }) {
   const nowMs = toServerClock(props.environmentId, useVisibleSecondClock(true));
   const seconds = Math.floor((nowMs - Date.parse(props.startedAt)) / 1_000);
   const gt = useGT();
   const messages = useMessages();
+  const t = useUiTranslation();
+  const speed = use(RunningOutputSpeedContext);
+  const outputTokensPerSecond =
+    speed !== null && (speed.runId === null || speed.runId === props.runId)
+      ? speed.tokensPerSecond
+      : undefined;
   return (
     <View
       className="min-h-11 min-w-0 flex-1 flex-row items-center"
@@ -1966,7 +1982,7 @@ function RunFoldWorking(props: {
     >
       <Text
         key={props.rowSizing.textSizeKey}
-        numberOfLines={1}
+        numberOfLines={outputTokensPerSecond === undefined ? 1 : undefined}
         className="shrink font-t3-medium text-sm tabular-nums text-foreground-muted"
       >
         {gt("Working for {duration}", {
@@ -1975,6 +1991,11 @@ function RunFoldWorking(props: {
               ? formatDuration(seconds * 1_000, messages)
               : gt("{seconds}s", { seconds: 0 }),
         })}
+        {outputTokensPerSecond === undefined
+          ? null
+          : ` · ${t("{rate} tokens/s", {
+              rate: Math.round(outputTokensPerSecond * 10) / 10,
+            })}`}
       </Text>
     </View>
   );
@@ -2190,6 +2211,7 @@ function renderFeedEntry(
           <RunFoldWorking
             environmentId={props.environmentId}
             startedAt={entry.workingSince}
+            runId={entry.runId}
             rowSizing={props.workRowSizing}
           />
         ) : (
@@ -4037,6 +4059,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
   const reviewCommentColors = useReviewCommentColors();
   const unsettledTurnId = threadFeedRunIsUnsettled(props.latestRun) ? props.latestRun.runId : null;
+  const runningOutputTokensPerSecond =
+    unsettledTurnId === null
+      ? props.runlessOutputTokensPerSecond
+      : props.latestRun?.runningOutputTokensPerSecond;
   const compactionLabelsByEntryId = useMemo(
     () => threadFeedCompactionLabels(props.feed, m),
     [props.feed, m],
@@ -4461,7 +4487,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
     switch (entry.type) {
       case "run-fold":
-        return resolveThreadFeedFixedItemSize(entry.type);
+        return entry.workingSince === undefined
+          ? resolveThreadFeedFixedItemSize(entry.type)
+          : undefined;
       case "work-toggle":
         return entry.thought ? undefined : WORK_GROUP_TOGGLE_HEIGHT;
       case "thinking":
@@ -4624,7 +4652,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     );
   }
 
-  return (
+  const feedContent = (
     <PresentationSource identifier={fileShareSourceIdentifier} style={{ flex: 1 }}>
       <View className="flex-1" onLayout={handleViewportLayout}>
         {/* In a split, rows only re-wrap in the render that hands the list its new width. A native
@@ -4781,6 +4809,17 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         <FilePreviewModal source={expandedFile} onRequestClose={closeFilePreview} />
       </View>
     </PresentationSource>
+  );
+  return (
+    <RunningOutputSpeedContext
+      value={
+        runningOutputTokensPerSecond === undefined
+          ? null
+          : { runId: unsettledTurnId, tokensPerSecond: runningOutputTokensPerSecond }
+      }
+    >
+      {feedContent}
+    </RunningOutputSpeedContext>
   );
 });
 

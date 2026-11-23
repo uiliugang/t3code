@@ -229,6 +229,7 @@ export function canReuseCodexContextUsage(previous: ModelSelection, next: ModelS
 export function codexProviderTurnTokenUsage(
   tokenUsage: CodexSchema.V2ThreadTokenUsageUpdatedNotification["tokenUsage"],
   updatedAt: string,
+  turnOutputTokens?: number,
 ) {
   return {
     usedTokens: Math.max(0, tokenUsage.last.totalTokens),
@@ -236,6 +237,7 @@ export function codexProviderTurnTokenUsage(
     inputTokens: Math.max(0, tokenUsage.last.inputTokens),
     cachedInputTokens: Math.max(0, tokenUsage.last.cachedInputTokens),
     outputTokens: Math.max(0, tokenUsage.last.outputTokens),
+    ...(turnOutputTokens !== undefined && turnOutputTokens > 0 ? { turnOutputTokens } : {}),
     reasoningOutputTokens: Math.max(0, tokenUsage.last.reasoningOutputTokens),
     updatedAt,
   };
@@ -5178,7 +5180,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
         yield* client.handleServerNotification("thread/tokenUsage/updated", (payload) =>
           Effect.gen(function* () {
-            accumulateCodexTurnTokenUsage(
+            const turnOutputTokens = accumulateCodexTurnTokenUsage(
               usageStateForThread(payload.threadId),
               payload.turnId,
               payload.tokenUsage,
@@ -5209,6 +5211,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 tokenUsage: codexProviderTurnTokenUsage(
                   payload.tokenUsage,
                   DateTime.formatIso(now),
+                  turnOutputTokens,
                 ),
               },
             });

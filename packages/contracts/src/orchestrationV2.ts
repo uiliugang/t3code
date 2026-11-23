@@ -241,6 +241,8 @@ export const OrchestrationV2ProviderTurnTokenUsage = Schema.Struct({
   inputTokens: Schema.optional(NonNegativeInt),
   cachedInputTokens: Schema.optional(NonNegativeInt),
   outputTokens: Schema.optional(NonNegativeInt),
+  /** Cumulative output for this provider turn through updatedAt. */
+  turnOutputTokens: Schema.optional(NonNegativeInt),
   reasoningOutputTokens: Schema.optional(NonNegativeInt),
   promptCacheTtlMs: Schema.optional(PositiveInt),
   autoCompactThreshold: Schema.optional(PositiveInt),

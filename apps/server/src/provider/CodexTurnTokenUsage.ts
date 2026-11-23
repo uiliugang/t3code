@@ -98,7 +98,7 @@ export function accumulateCodexTurnTokenUsage(
   state: CodexTurnTokenUsageState,
   turnId: string,
   usage: EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification["tokenUsage"],
-): void {
+): number | undefined {
   const current = codexTokenUsageBreakdown(usage.total);
   if (state.activeTurnId !== turnId) {
     // Every thread-wide total updates the baseline; late finished-turn updates do not count toward the live turn.
@@ -131,6 +131,7 @@ export function accumulateCodexTurnTokenUsage(
   } else if (accumulator.cacheCreationTokens !== undefined) {
     accumulator.cacheCreationTokens += delta.cacheCreationTokens;
   }
+  return accumulator.outputTokens;
 }
 
 /** `model` is the thread model Codex last reported, which a reroute replaces. */

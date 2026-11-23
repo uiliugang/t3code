@@ -119,6 +119,7 @@ export interface TimelineRowSharedState {
 
 export interface TimelineRowActivityState {
   isWorking: boolean;
+  runningOutputTokensPerSecond: number | undefined;
   isCompacting: boolean;
   isRevertingCheckpoint: boolean;
   awaitingUser: boolean;

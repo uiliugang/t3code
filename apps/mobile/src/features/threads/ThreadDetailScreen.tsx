@@ -1611,6 +1611,9 @@ function ThreadDetailBody(
                   latestRun={props.activityRun}
                   activeWorkStartedAt={props.activeWorkStartedAt}
                   runlessWorkActive={props.runlessWorkActive ?? false}
+                  runlessOutputTokensPerSecond={
+                    props.providerSubagentStatus?.runningOutputTokensPerSecond
+                  }
                   listRef={listRef}
                   freeze={freeze}
                   anchorMessageId={anchorMessageId}

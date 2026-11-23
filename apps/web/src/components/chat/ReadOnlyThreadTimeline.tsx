@@ -1,5 +1,6 @@
 import type { LegendListRef } from "@legendapp/list/react";
 import {
+  deriveProviderSubagentStatus,
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
   deriveThreadStructureRuntime,
@@ -72,6 +73,7 @@ export function ReadOnlyThreadTimeline(props: {
   const activityRun = deriveThreadActivityRun(projection);
   const runtime = deriveThreadStructureRuntime(projection);
   const runlessWorkStartedAt = deriveRunlessWorkStartedAt(projection);
+  const providerSubagentStatus = deriveProviderSubagentStatus(projection);
   const isWorking = derivePhase(runtime) === "running" || runlessWorkStartedAt !== null;
   const workStartedAt =
     deriveActiveWorkStartedAt(activityRun, runtime, null) ?? runlessWorkStartedAt;
@@ -100,6 +102,7 @@ export function ReadOnlyThreadTimeline(props: {
             timelineEntries={entries}
             isWorking={isWorking}
             activeTurnStartedAt={workStartedAt}
+            runlessOutputTokensPerSecond={providerSubagentStatus?.runningOutputTokensPerSecond}
             latestRun={activityRun}
             runningRunId={runningRunId}
             turnDiffSummaries={NO_TURN_DIFFS}

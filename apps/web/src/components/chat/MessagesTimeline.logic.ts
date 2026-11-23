@@ -520,7 +520,13 @@ function maxIsoTimestamp(a: string | null, b: string | null): string | null {
 
 export type TimelineLatestRun = Pick<
   ThreadRunSummary,
-  "runId" | "status" | "startedAt" | "completedAt" | "turnEnded" | "latestCompletedOutputSpeed"
+  | "runId"
+  | "status"
+  | "startedAt"
+  | "completedAt"
+  | "turnEnded"
+  | "runningOutputTokensPerSecond"
+  | "latestCompletedOutputSpeed"
 >;
 
 const LIVE_ACTIVITY_ROW_ID = "live-activity-row";

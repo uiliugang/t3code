@@ -139,14 +139,26 @@ function completedTurnThroughput(
   return elapsed > 0 ? (usage.outputTokens * 1000) / elapsed : undefined;
 }
 
+function runningTurnThroughput(
+  turn: ThreadStructure["providerTurns"][number] | undefined,
+): number | undefined {
+  if (turn?.status !== "running" || turn.startedAt === null) return;
+  const usage = turn.tokenUsage;
+  if (usage?.turnOutputTokens === undefined || usage.turnOutputTokens === 0) return;
+  const elapsed = Date.parse(usage.updatedAt) - DateTime.toEpochMillis(turn.startedAt);
+  return elapsed > 0 ? (usage.turnOutputTokens * 1000) / elapsed : undefined;
+}
+
 function summarizeThreadRun(
   projection: ThreadStructure,
   run: OrchestrationV2ThreadProjection["runs"][number],
 ): ThreadRunSummary {
   const active = ACTIVITY_RUN_STATUSES.has(run.status);
-  const turnStatus = active
-    ? latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)?.status
+  const turn = active
+    ? latestProviderTurnForAttempt(projection.providerTurns, run.activeAttemptId)
     : undefined;
+  const turnStatus = turn?.status;
+  const runningOutputTokensPerSecond = runningTurnThroughput(turn);
   return {
     runId: run.id,
     status: run.status,
@@ -166,6 +178,7 @@ function summarizeThreadRun(
       : turnStatus === "pending" || turnStatus === "running"
         ? {}
         : { turnEnded: true }),
+    ...(runningOutputTokensPerSecond === undefined ? {} : { runningOutputTokensPerSecond }),
     ...(run.sourcePlanRef === undefined ? {} : { sourcePlanRef: run.sourcePlanRef }),
   };
 }
@@ -217,28 +230,40 @@ export function deriveThreadActivityRun(projection: ThreadStructure): ThreadRunS
  * root turn whose status follows the subagent.
  */
 export function deriveRunlessWorkStartedAt(projection: ThreadStructure): string | null {
-  const status = deriveProviderSubagentStatus(projection);
-  return status !== null && isOrchestrationV2WorkActive(status.status) ? status.startedAt : null;
+  const node = providerSubagentRootTurn(projection);
+  return node?.startedAt != null && isOrchestrationV2WorkActive(node.status)
+    ? DateTime.formatIso(node.startedAt)
+    : null;
 }
 
 export interface ProviderSubagentStatus {
   readonly status: OrchestrationV2ExecutionNode["status"];
   readonly startedAt: string | null;
   readonly completedAt: string | null;
+  readonly runningOutputTokensPerSecond?: number;
+}
+
+function providerSubagentRootTurn(projection: ThreadStructure) {
+  if (!isProviderNativeSubagentThread(projection.thread)) return;
+  return projection.nodes.findLast((node) => node.kind === "root_turn" && node.runId === null);
 }
 
 export function deriveProviderSubagentStatus(
   projection: ThreadStructure,
 ): ProviderSubagentStatus | null {
-  if (!isProviderNativeSubagentThread(projection.thread)) return null;
-  const node = projection.nodes.findLast(
-    (candidate) => candidate.kind === "root_turn" && candidate.runId === null,
-  );
+  const node = providerSubagentRootTurn(projection);
   if (node === undefined) return null;
+  const runningOutputTokensPerSecond =
+    node.providerTurnId !== null && isOrchestrationV2WorkActive(node.status)
+      ? runningTurnThroughput(
+          projection.providerTurns.find((turn) => turn.id === node.providerTurnId),
+        )
+      : undefined;
   return {
     status: node.status,
     startedAt: node.startedAt === null ? null : DateTime.formatIso(node.startedAt),
     completedAt: node.completedAt === null ? null : DateTime.formatIso(node.completedAt),
+    ...(runningOutputTokensPerSecond === undefined ? {} : { runningOutputTokensPerSecond }),
   };
 }
 
