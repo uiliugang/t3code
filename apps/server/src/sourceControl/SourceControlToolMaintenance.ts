@@ -22,6 +22,8 @@ import * as SourceControlToolInstaller from "./SourceControlToolInstaller.ts";
 import * as Settings from "../serverSettings.ts";
 import { SkillManager } from "../skills/SkillManager.ts";
 
+const isMeituanMaintenanceTool = (id: string) => isRequirementCli(id) || id === "dumbo-web";
+
 export class SourceControlToolMaintenance extends Context.Service<
   SourceControlToolMaintenance,
   {
@@ -62,7 +64,7 @@ const make = Effect.gen(function* () {
     patch: Partial<SourceControlTool>,
     verified?: SourceControlTool | MeituanTool,
   ) =>
-    isRequirementCli(id)
+    isMeituanMaintenanceTool(id)
       ? SubscriptionRef.update(meituanState, (tools) =>
           tools.map((tool) => (tool.id === id ? { ...(verified ?? tool), ...patch, id } : tool)),
         )
@@ -190,7 +192,7 @@ const make = Effect.gen(function* () {
     result: Pick<SourceControlTool, "phase" | "message">,
     verified?: SourceControlTool | MeituanTool,
   ) {
-    if (isRequirementCli(id))
+    if (isMeituanMaintenanceTool(id))
       return yield* meituanLock.withPermits(1)(update(id, result, verified));
     const patch = { ...verified, ...result, id };
     if (!sourceScanPending) return yield* update(id, patch);
@@ -320,7 +322,7 @@ const make = Effect.gen(function* () {
           Effect.gen(function* () {
             const id = input.id;
             const running = { ...plan.tool, phase: "running" as const, message: null };
-            if (isRequirementCli(id)) {
+            if (isMeituanMaintenanceTool(id)) {
               yield* meituanLock.withPermits(1)(
                 SubscriptionRef.update(meituanState, (tools) => [
                   ...tools.filter((tool) => tool.id !== id),
@@ -367,7 +369,7 @@ const make = Effect.gen(function* () {
     meituanChanges: meituanChanges.pipe(
       Stream.map((tools) =>
         tools.map((tool) =>
-          isRequirementCli(tool.id) && tool.command
+          isMeituanMaintenanceTool(tool.id) && tool.command
             ? {
                 ...tool,
                 maintenanceCommand: tool.command,

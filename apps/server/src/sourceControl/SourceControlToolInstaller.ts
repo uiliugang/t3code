@@ -24,6 +24,7 @@ import * as Schema from "effect/Schema";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as Settings from "../serverSettings.ts";
 import { makeSkillInstallerNode } from "../skills/skillInstallerNode.ts";
+import { findModernNpm, nodeMajor } from "./meituanNpm.ts";
 
 const MCODE_PACKAGE = "@ee/code-cli";
 const MCODE_REGISTRY = "--registry=http://r.npm.sankuai.com";
@@ -44,16 +45,18 @@ const MEITUAN_DEFINITIONS = {
   },
 } as const;
 
+const isMeituanMaintenanceTool = (id: SourceControlToolId) =>
+  isRequirementCli(id) || id === "dumbo-web";
 const definitionFor = (id: SourceControlToolId) =>
-  isRequirementCli(id) ? MEITUAN_DEFINITIONS[id] : DEFINITIONS[id];
+  isMeituanMaintenanceTool(id) ? MEITUAN_DEFINITIONS[id] : DEFINITIONS[id];
 export const sourceControlToolLabel = (id: SourceControlToolId) => definitionFor(id).label;
 export const meituanToolLabel = (id: MeituanToolId) => MEITUAN_DEFINITIONS[id].label;
 
 export function isSourceControlToolEnabled(
   id: SourceControlToolId,
-  settings: Parameters<typeof isMeituanServiceEnabled>[0],
+  settings: Parameters<typeof isMeituanToolEnabled>[1],
 ) {
-  if (isRequirementCli(id)) return isMeituanServiceEnabled(settings, "requirements");
+  if (isMeituanMaintenanceTool(id)) return isMeituanToolEnabled(id, settings);
   return id !== "meituan" || isMeituanServiceEnabled(settings, "sourceControl");
 }
 
@@ -122,8 +125,11 @@ const make = Effect.gen(function* () {
   const settings = yield* Settings.ServerSettingsService;
   const skillInstallerNode = yield* makeSkillInstallerNode;
   // Bypass command-result caching: verification must see a binary installed moments ago.
-  const find = Effect.fn("SourceControlToolInstaller.find")(function* (name: string) {
-    const matches = yield* resolveCommandPaths(name, { env, until: () => true });
+  const find = Effect.fn("SourceControlToolInstaller.find")(function* (
+    name: string,
+    environment = env,
+  ) {
+    const matches = yield* resolveCommandPaths(name, { env: environment, until: () => true });
     return matches[0] ?? null;
   });
   const probe = Effect.fn("SourceControlToolInstaller.probe")(function* (
@@ -155,10 +161,14 @@ const make = Effect.gen(function* () {
     );
   }, Effect.scoped);
 
+  const nodeVersion = Effect.fn("SourceControlToolInstaller.nodeVersion")((node: string) =>
+    probe(node, ["--version"]).pipe(Effect.orElseSucceed(() => "")),
+  );
+
   const readPlan = Effect.fn("SourceControlToolInstaller.readPlan")(
     function* (id: SourceControlToolId) {
       const definition = definitionFor(id);
-      const npmPackage = isRequirementCli(id)
+      const npmPackage = isMeituanMaintenanceTool(id)
         ? MEITUAN_DEFINITIONS[id].packageName
         : id === "meituan"
           ? MCODE_PACKAGE
@@ -166,25 +176,43 @@ const make = Effect.gen(function* () {
       const npmCommand = npmPackage
         ? `npm install -g ${npmPackage}@latest ${MCODE_REGISTRY}`
         : null;
-      const executablePath = yield* find(definition.executable);
-      const realPath = executablePath ? yield* fs.realPath(executablePath) : null;
-      const node = npmPackage
-        ? yield* resolveNodeExecutable(
-            isRequirementCli(id) ? "Meituan requirements" : "Meituan Code",
-            env,
-          ).pipe(Effect.orElseSucceed(() => null))
-        : null;
+      const npm = npmPackage ? yield* findModernNpm(env, nodeVersion) : null;
+      const node =
+        npm?.node ??
+        (npmPackage
+          ? yield* resolveNodeExecutable("Meituan Code", env).pipe(Effect.orElseSucceed(() => null))
+          : null);
+      let executablePath = yield* find(definition.executable, { ...env, ...npm?.env });
+      let realPath = executablePath ? yield* fs.realPath(executablePath) : null;
+      let existingPrefix =
+        realPath && npmPackage ? npmGlobalPrefixFromCommandPath(realPath, npmPackage) : null;
+      if (npm && existingPrefix && existingPrefix !== path.dirname(path.dirname(npm.node))) {
+        const existingNode = yield* find("node", {
+          ...env,
+          PATH: path.join(existingPrefix, "bin"),
+        });
+        const major = existingNode ? nodeMajor(yield* nodeVersion(existingNode)) : 0;
+        if (major > 0 && major < 20) {
+          executablePath = null;
+          realPath = null;
+          existingPrefix = null;
+        }
+      }
       const versionOutput = !executablePath
         ? null
-        : isRequirementCli(id)
-          ? yield* probeMeituanCli(executablePath, ["--version"]).pipe(
+        : npm && realPath && /\.[cm]?js$/u.test(realPath)
+          ? yield* probe(npm.node, [realPath, "--version"], npm.env).pipe(
               Effect.orElseSucceed(() => null),
             )
-          : yield* probe(
-              node && realPath?.endsWith(".js") ? node : executablePath,
-              node && realPath?.endsWith(".js") ? [realPath, "--version"] : ["--version"],
-              node ? { ELECTRON_RUN_AS_NODE: "1" } : undefined,
-            );
+          : isMeituanMaintenanceTool(id)
+            ? yield* probeMeituanCli(executablePath, ["--version"]).pipe(
+                Effect.orElseSucceed(() => null),
+              )
+            : yield* probe(
+                node && realPath?.endsWith(".js") ? node : executablePath,
+                node && realPath?.endsWith(".js") ? [realPath, "--version"] : ["--version"],
+                node ? { ELECTRON_RUN_AS_NODE: "1" } : undefined,
+              );
       const version = versionOutput?.match(/\b\d+\.\d+\.\d+(?:-[\w.-]+)?/u)?.[0] ?? null;
       const tool: SourceControlTool = {
         id,
@@ -200,7 +228,7 @@ const make = Effect.gen(function* () {
       };
       const manual = (
         reason: string,
-        manualCommand: string | null = isRequirementCli(id) ? npmCommand : null,
+        manualCommand: string | null = isMeituanMaintenanceTool(id) ? npmCommand : null,
       ): ToolInstallationPlan => ({
         tool: { ...tool, reason, manualCommand },
         executable: null,
@@ -213,8 +241,10 @@ const make = Effect.gen(function* () {
       ): ToolInstallationPlan => ({
         tool: {
           ...tool,
-          command: commandText(executable, args),
-          manualCommand: isRequirementCli(id) ? commandText("npm", args.slice(1)) : null,
+          command: extra?.npm
+            ? `PATH=${quote(path.dirname(executable))}:"$PATH" ${commandText(executable, args)}`
+            : commandText(executable, args),
+          manualCommand: null,
         },
         executable,
         args,
@@ -227,28 +257,18 @@ const make = Effect.gen(function* () {
 
       if (npmPackage) {
         const manualCommand = npmCommand;
-        const npmPath = yield* find("npm");
-        if (!npmPath || !node)
-          return manual("Install Node.js and npm on the server first.", manualCommand);
-        const npmScript = yield* fs.realPath(npmPath);
-        if (!npmScript.endsWith(".js"))
-          return manual(
-            "This installation must be updated with the tool that installed it.",
-            manualCommand,
-          );
-        const npmEnv = {
-          ELECTRON_RUN_AS_NODE: "1",
-          PATH: `${path.dirname(node)}:${env.PATH ?? ""}`,
-        };
+        if (!npm)
+          return manual("Install Node.js 20 or newer and npm on the server first.", manualCommand);
+        const { node, script: npmScript, env: npmEnv } = npm;
         const prefix = realPath
-          ? npmGlobalPrefixFromCommandPath(realPath, npmPackage)
+          ? existingPrefix
           : yield* probe(node, [npmScript, "prefix", "--global"], npmEnv);
         if (!prefix || !path.isAbsolute(prefix) || prefix.includes("\n"))
           return manual(
             "This installation must be updated with the tool that installed it.",
             manualCommand,
           );
-        if (!executablePath && !(env.PATH ?? "").split(":").includes(path.join(prefix, "bin")))
+        if (!executablePath && !npmEnv.PATH.split(":").includes(path.join(prefix, "bin")))
           return manual(
             "The package manager's bin directory is not on the server PATH.",
             manualCommand,
@@ -335,12 +355,13 @@ const make = Effect.gen(function* () {
     Effect.provideService(FileSystem.FileSystem, fs),
     Effect.provideService(Path.Path, path),
     Effect.provideService(HostProcess.Platform, platform),
+    Effect.provideService(HostProcess.HomeDirectory, home),
   );
 
   const inspect = Effect.fn("SourceControlToolInstaller.inspect")(
     function* (id: SourceControlToolId) {
       if (
-        (id === "meituan" || isRequirementCli(id)) &&
+        (id === "meituan" || isMeituanMaintenanceTool(id)) &&
         !isSourceControlToolEnabled(id, yield* settings.getSettings)
       )
         return yield* new SourceControlToolError({ id, reason: "unsupported" });
@@ -379,6 +400,8 @@ const make = Effect.gen(function* () {
       const binary = executable || definition.executable;
       if (isRequirementCli(id) && binary === definition.executable)
         return yield* readRequirementTool(id);
+      if (id === "dumbo-web" && binary === definition.executable)
+        return { ...(yield* readPlan(id)).tool, id };
       const executablePath = yield* binary.includes("/") || binary.includes("\\")
         ? resolveCommandPath(binary, { env })
         : find(binary);
