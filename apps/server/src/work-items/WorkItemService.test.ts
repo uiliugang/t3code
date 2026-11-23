@@ -588,17 +588,22 @@ it.effect("deduplicates issue conversations and preserves explicit unlinking acr
 it.effect(
   "reuses the original issue creation action after a client remount or lost dispatch reply",
   () => {
-    const test = setup();
+    const test = setup(
+      undefined,
+      undefined,
+      ServerSettings.layerTest({ sourceControlHosts: { meituan: { mis: "acme.user" } } }),
+    );
     const threadId = ThreadId.make("create-issue-source");
     test.projections.set(threadId, projection(threadId));
     const source = { provider: "github", host: "github.com", scope: "acme/app" } as const;
+    const mepSource = { provider: "meituan", host: "mep.sankuai.com", scope: "123" } as const;
     const layer = DeliveryAutomation.layer.pipe(
       Layer.provide(test.dependencies),
       Layer.provide(
         Layer.mock(Issues.IssueService)({
           sources: () =>
             Effect.succeed([
-              { projectId, repository: "acme/app", sources: [source], manual: true },
+              { projectId, repository: "acme/app", sources: [source, mepSource], manual: true },
             ]),
         }),
       ),
@@ -741,6 +746,17 @@ it.effect(
       assert.equal(missing.item.id, first.item.id);
       assert.equal(missing.item.executions.length, 3);
       assert.equal((yield* service.list({ projectId })).items.length, 1);
+      assert.isFalse(/acme\.user|customField13642/u.test(execution.prompt));
+      yield* TestClock.setTime(Date.parse("2026-11-08T16:30:00Z"));
+      const mep = yield* automation.createIssue({
+        commandId: command("create-mep-issue"),
+        threadId,
+        source: mepSource,
+      });
+      const prompt = mep.item.executions[0]!.prompt;
+      assert.isTrue(prompt.includes("acme.user"));
+      assert.isTrue(prompt.includes("customField13642"));
+      assert.isTrue(prompt.includes("2026-11-13"));
     }).pipe(Effect.provide(layer), Effect.scoped);
   },
 );
