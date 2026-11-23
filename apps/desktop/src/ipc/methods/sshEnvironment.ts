@@ -131,19 +131,10 @@ export const resolveSshHost = DesktopIpc.makeIpcMethod({
   }),
 });
 
-const pendingSshInstalls = new Map<string, Set<Deferred.Deferred<void>>>();
+const pendingSshInstalls = new Map<string, Map<Deferred.Deferred<void>, number | undefined>>();
 
-function sshInstallKey(
-  target: DesktopSshEnvironmentTarget,
-  event?: DesktopIpc.DesktopIpcInvokeEvent,
-) {
-  return JSON.stringify([
-    event?.sender.id,
-    target.alias,
-    target.hostname,
-    target.username,
-    target.port,
-  ]);
+function sshInstallKey(target: DesktopSshEnvironmentTarget) {
+  return JSON.stringify([target.alias, target.hostname, target.username, target.port]);
 }
 
 export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
@@ -155,9 +146,9 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
     event,
   ) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
-    const key = sshInstallKey(target, event);
+    const key = sshInstallKey(target);
+    const sender = event?.sender;
     const reportInstallProgress = (progress: DesktopSshInstallProgress) => {
-      const sender = event?.sender;
       if (sender?.isDestroyed?.() === false) {
         sender.send?.(IpcChannels.SSH_INSTALL_PROGRESS_CHANNEL, target, progress);
       }
@@ -166,8 +157,8 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
       Deferred.make<void>().pipe(
         Effect.tap((cancel) =>
           Effect.sync(() => {
-            const pending = pendingSshInstalls.get(key) ?? new Set();
-            pending.add(cancel);
+            const pending = pendingSshInstalls.get(key) ?? new Map();
+            pending.set(cancel, sender?.id);
             pendingSshInstalls.set(key, pending);
           }),
         ),
@@ -190,8 +181,8 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
         Effect.sync(() => {
           const pending = pendingSshInstalls.get(key);
           pending?.delete(cancel);
-          if (pending?.size === 0) {
-            pendingSshInstalls.delete(key);
+          if (pending?.size === 0) pendingSshInstalls.delete(key);
+          if (pending && !Array.from(pending.values()).includes(sender?.id)) {
             reportInstallProgress({ phase: "finished" });
           }
         }),
@@ -203,9 +194,9 @@ export const disconnectSshEnvironment = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DISCONNECT_SSH_ENVIRONMENT_CHANNEL,
   payload: DesktopSshEnvironmentTargetSchema,
   result: Schema.Void,
-  handler: Effect.fn("desktop.ipc.sshEnvironment.disconnectEnvironment")(function* (target, event) {
+  handler: Effect.fn("desktop.ipc.sshEnvironment.disconnectEnvironment")(function* (target) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
-    for (const cancel of pendingSshInstalls.get(sshInstallKey(target, event)) ?? []) {
+    for (const cancel of pendingSshInstalls.get(sshInstallKey(target))?.keys() ?? []) {
       yield* Deferred.succeed(cancel, undefined);
     }
     yield* sshEnvironment.disconnectEnvironment(target);

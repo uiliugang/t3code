@@ -39,7 +39,7 @@ function layerHttpClient(
 }
 
 describe("SSH environment IPC", () => {
-  it.effect("switching off interrupts the pending install and clears its progress", () =>
+  it.effect("switching off from a reopened window interrupts the pending install", () =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();
       const interrupted = yield* Deferred.make<void>();
@@ -57,7 +57,7 @@ describe("SSH environment IPC", () => {
       yield* Effect.gen(function* () {
         const install = yield* Effect.forkChild(ensureSshEnvironment.handler({ target }, event));
         yield* Deferred.await(started);
-        yield* disconnectSshEnvironment.handler(target, event);
+        yield* disconnectSshEnvironment.handler(target, { sender: { id: 2 } });
         assert.deepEqual(yield* Fiber.join(install), {
           type: "ssh-password-prompt-cancelled",
           message: "SSH installation cancelled.",

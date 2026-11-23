@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off - Hash release archives incrementally without buffering them.
+import * as NodeCrypto from "node:crypto";
 import {
   DESKTOP_UPDATE_IN_PROGRESS_MARKER_FILE,
   DESKTOP_UPDATE_IN_PROGRESS_TTL_MS,
@@ -8,7 +10,12 @@ import type {
   DesktopSshInstallProgress,
 } from "@t3tools/contracts";
 import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/httpReadiness";
-import { cliReleaseAssetUrl, cliReleaseDownloadBaseUrl } from "@t3tools/shared/cliRelease";
+import {
+  cliReleaseAssetUrl,
+  cliReleaseDownloadBaseUrl,
+  CLI_RELEASE_BASE_URL_ENV,
+  parseChecksums,
+} from "@t3tools/shared/cliRelease";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as NetService from "@t3tools/shared/Net";
 import { extractJsonObject, fromLenientJson } from "@t3tools/shared/schemaJson";
@@ -522,33 +529,51 @@ t3_runtime_ready() {
 if ! t3_runtime_ready; then
   mkdir -p "$HOME/.t3/runtime/versions"
   T3_LOCK="$HOME/.t3/runtime/versions/.$T3_ARCHIVE_VERSION.install.lock"
-  # uutils mkdir can report success on EEXIST, so use shell noclobber.
-  # An empty lock gets a short grace period for its owner to publish a PID.
+  T3_LOCK_BREAK="$T3_LOCK.break"
+  t3_discard_stale_lock() (
+    trap '' HUP INT TERM PIPE
+    (set -C; printf '%s\\n' "$$" > "$T3_LOCK_BREAK") 2>/dev/null || return 1
+    if [ "$(cat "$T3_LOCK" 2>/dev/null || true)" = "$1" ]; then
+      rm -f "$T3_LOCK"
+      rm -f "$T3_LOCK_BREAK"
+      return 0
+    fi
+    rm -f "$T3_LOCK_BREAK"
+    return 1
+  )
+  T3_LOCK_CLAIM="$(mktemp "$T3_LOCK.claim.XXXXXX")"
+  trap 'rm -f "$T3_LOCK_CLAIM"; if [ "$(cat "$T3_LOCK" 2>/dev/null || true)" = "$$" ]; then rm -f "$T3_LOCK"; fi' EXIT
+  printf '%s\\n' "$$" > "$T3_LOCK_CLAIM"
   T3_LOCK_WAITED=0
   T3_LOCK_UNOWNED=0
-  while ! (set -C; printf '%s\\n' "$$" > "$T3_LOCK") 2>/dev/null; do
+  trap 'exit 1' HUP INT TERM PIPE
+  while ! { [ ! -d "$T3_LOCK" ] && ln "$T3_LOCK_CLAIM" "$T3_LOCK" 2>/dev/null; }; do
     T3_LOCK_OWNER="$(cat "$T3_LOCK" 2>/dev/null || true)"
     if [ -n "$T3_LOCK_OWNER" ]; then
       T3_LOCK_UNOWNED=0
-      if ! kill -0 "$T3_LOCK_OWNER" 2>/dev/null; then
-        rm -rf "$T3_LOCK"
+      if ! kill -0 "$T3_LOCK_OWNER" 2>/dev/null && t3_discard_stale_lock "$T3_LOCK_OWNER"; then
         continue
       fi
     else
       T3_LOCK_UNOWNED=$((T3_LOCK_UNOWNED + 1))
-      if [ "$T3_LOCK_UNOWNED" -ge 5 ]; then
-        rm -rf "$T3_LOCK"
+      if [ "$T3_LOCK_UNOWNED" -ge 5 ] && t3_discard_stale_lock ""; then
+        T3_LOCK_UNOWNED=0
         continue
       fi
     fi
     if [ "$T3_LOCK_WAITED" -ge @@T3_ARCHIVE_LOCK_WAIT_SECONDS@@ ]; then
+      if [ -e "$T3_LOCK_BREAK" ]; then
+        printf 'A t3 installation stopped while recovering %s. If no installation is running, delete %s.\\n' "$T3_LOCK" "$T3_LOCK_BREAK" >&2
+        exit 1
+      fi
       printf 'Another t3 %s installation has held %s for too long.\\n' "$T3_ARCHIVE_VERSION" "$T3_LOCK" >&2
       exit 1
     fi
+    printf 'T3_INSTALL_HEARTBEAT\\n' >&2 || exit 1
     sleep 1
     T3_LOCK_WAITED=$((T3_LOCK_WAITED + 1))
   done
-  trap 'rm -rf "$T3_LOCK"' EXIT
+  rm -f "$T3_LOCK_CLAIM"
 fi
 if ! t3_runtime_ready; then
   # Keep aligned with CLI_ARCHIVE_PLATFORM_KEYS in packages/shared/src/cliRelease.ts.
@@ -574,20 +599,38 @@ if ! t3_runtime_ready; then
   }
   trap t3_cleanup EXIT
   trap 'exit 1' HUP INT TERM PIPE
+  t3_wait_for_install_command() {
+    T3_DOWNLOAD_PID=$!
+    while kill -0 "$T3_DOWNLOAD_PID" 2>/dev/null; do
+      if [ "$1" = archive ]; then
+        T3_BYTES="$(stat -c %s "$T3_PARTIAL" 2>/dev/null || stat -f %z "$T3_PARTIAL" 2>/dev/null || printf 0)"
+        printf 'T3_INSTALL_PROGRESS:downloading:%s\\n' "$T3_BYTES" >&2 || exit 1
+      else
+        printf 'T3_INSTALL_HEARTBEAT\\n' >&2 || exit 1
+      fi
+      sleep 1
+    done
+    T3_STATUS=0
+    wait "$T3_DOWNLOAD_PID" || T3_STATUS=$?
+    T3_DOWNLOAD_PID=""
+    return "$T3_STATUS"
+  }
   t3_fetch() {
     T3_CACHED="$T3_DOWNLOAD_CACHE/\${2##*/}"
-    if [ -n "$T3_DOWNLOAD_CACHE" ] && [ -f "$T3_CACHED" ]; then cp "$T3_CACHED" "$2"; return; fi
-    if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2"
-    elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2"
+    if [ -n "$T3_DOWNLOAD_CACHE" ] && [ -f "$T3_CACHED" ]; then cp "$T3_CACHED" "$2" &
+    elif command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2" &
+    elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2" &
     else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; return 1
     fi
+    t3_wait_for_install_command heartbeat
   }
   T3_PARTIAL="$HOME/.t3/runtime/versions/.$T3_ARCHIVE.partial"
   t3_archive_download() {
     T3_URL="$1"
     if [ -n "$T3_DOWNLOAD_CACHE" ] && [ -f "$T3_DOWNLOAD_CACHE/$T3_ARCHIVE" ]; then
-      cp "$T3_DOWNLOAD_CACHE/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE"
-      return
+      cp "$T3_DOWNLOAD_CACHE/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" &
+      t3_wait_for_install_command heartbeat
+      return $?
     fi
     T3_RESUME=1
     while :; do
@@ -599,15 +642,8 @@ if ! t3_runtime_ready; then
       else
         return 1
       fi
-      T3_DOWNLOAD_PID=$!
-      while kill -0 "$T3_DOWNLOAD_PID" 2>/dev/null; do
-        T3_BYTES="$(stat -c %s "$T3_PARTIAL" 2>/dev/null || stat -f %z "$T3_PARTIAL" 2>/dev/null || printf 0)"
-        printf 'T3_INSTALL_PROGRESS:downloading:%s\\n' "$T3_BYTES" >&2 || exit 1
-        sleep 1
-      done
       T3_STATUS=0
-      wait "$T3_DOWNLOAD_PID" || T3_STATUS=$?
-      T3_DOWNLOAD_PID=""
+      t3_wait_for_install_command archive || T3_STATUS=$?
       case "$T3_STATUS:$T3_RESUME" in
         0:*) break ;;
         33:1) rm -f "$T3_PARTIAL"; T3_RESUME=0 ;;
@@ -620,28 +656,32 @@ if ! t3_runtime_ready; then
   if ! t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@ ||
      ! t3_archive_download "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE"; then
     printf 'T3_DOWNLOAD_FAILED:%s\\n' "$T3_ARCHIVE" >&2
+    printf 'T3_DOWNLOAD_SOURCE:%s\\n' "$T3_RELEASE_BASE_URL" >&2
     printf 'Could not download t3 %s from %s. If this host cannot reach it, install t3 %s on it with https://t3.codes/install.sh (T3CODE_VERSION=%s; T3CODE_RELEASE_BASE_URL selects a mirror).\\n' "$T3_ARCHIVE_VERSION" "$T3_RELEASE_BASE_URL" "$T3_ARCHIVE_VERSION" "$T3_ARCHIVE_VERSION" >&2
     exit 1
   fi
   printf 'T3_INSTALL_PROGRESS:installing\\n' >&2
   T3_EXPECTED="$(grep " \\*\\{0,1\\}$T3_ARCHIVE$" "$T3_STAGING/SHA256SUMS" | cut -d' ' -f1)"
   if command -v sha256sum >/dev/null 2>&1; then
-    T3_ACTUAL="$(sha256sum < "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
+    sha256sum < "$T3_STAGING/$T3_ARCHIVE" > "$T3_STAGING/hash" &
   else
-    T3_ACTUAL="$(shasum -a 256 < "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
+    shasum -a 256 < "$T3_STAGING/$T3_ARCHIVE" > "$T3_STAGING/hash" &
   fi
+  t3_wait_for_install_command heartbeat
+  T3_ACTUAL="$(cut -d' ' -f1 "$T3_STAGING/hash")"
   if [ -z "$T3_EXPECTED" ] || [ "$T3_ACTUAL" != "$T3_EXPECTED" ]; then
     if [ -n "$T3_DOWNLOAD_CACHE" ]; then rm -rf "$T3_DOWNLOAD_CACHE"; else rm -f "$T3_PARTIAL"; fi
     printf 'Checksum mismatch for %s.\\n' "$T3_ARCHIVE" >&2; exit 1
   fi
-  if ! T3_TAR_ERROR="$(tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1 2>&1)"; then
+  tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1 > "$T3_STAGING/tar.log" 2>&1 &
+  if ! t3_wait_for_install_command heartbeat; then
     # Some tars (BusyBox) gunzip internally, so gzip is only blamed once extraction fails.
-    if command -v gzip >/dev/null 2>&1; then printf '%s\\n' "$T3_TAR_ERROR" >&2
+    if command -v gzip >/dev/null 2>&1; then cat "$T3_STAGING/tar.log" >&2
     else printf 'Remote host needs gzip to unpack %s. Install gzip on it and try again.\\n' "$T3_ARCHIVE" >&2
     fi
     exit 1
   fi
-  rm -f "$T3_STAGING/$T3_ARCHIVE" "$T3_STAGING/SHA256SUMS"
+  rm -f "$T3_STAGING/$T3_ARCHIVE" "$T3_STAGING/SHA256SUMS" "$T3_STAGING/hash" "$T3_STAGING/tar.log"
   # Prove the binary runs here (libc, arch) before marking it ready, or every
   # later launch would exec a broken install instead of retrying.
   if ! "$T3_STAGING/t3" --version >/dev/null 2>&1; then
@@ -716,7 +756,22 @@ cat >"$RUNNER_NEXT" <<'SH'
 SH
 T3_ARCHIVE_MODE=@@T3_ARCHIVE_MODE@@
 if [ "@@T3_REPLACE_EXISTING_SERVER@@" != "1" ] && [ -x "$PINNED_RUNNER" ]; then
-  cp "$PINNED_RUNNER" "$RUNNER_NEXT"
+  if awk '
+    NR == FNR {
+      if ($0 ~ /^T3_ARCHIVE_VERSION=\\047[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?\\047$/) version = $0
+      if ($0 ~ /^T3_RELEASE_BASE_URL=\\047.*\\047$/) release = $0
+      next
+    }
+    FNR == 1 && (!version || !release) { exit 1 }
+    /^T3_NODE_SCRIPT_PATH=/ { print "T3_NODE_SCRIPT_PATH=\\047\\047"; next }
+    /^T3_ARCHIVE_VERSION=/ { print version; next }
+    /^T3_RELEASE_BASE_URL=/ { print release; next }
+    { print }
+  ' "$PINNED_RUNNER" "$RUNNER_NEXT" > "$PINNED_NEXT"; then
+    mv "$PINNED_NEXT" "$RUNNER_NEXT"
+  else
+    cp "$PINNED_RUNNER" "$RUNNER_NEXT"
+  fi
   T3_ARCHIVE_MODE=1
 fi
 RUNNER_CHANGED=0
@@ -1369,41 +1424,64 @@ const relayReleaseAssets = Effect.fn("ssh/tunnel.relayReleaseAssets")(function* 
       const isArchive = fileName === archive;
       const localPath = isArchive ? localArchive : path.join(directory, fileName);
       if (isArchive) reportInstallProgress?.({ phase: "relay-download" });
-      const offset =
+      let offset =
         isArchive && (yield* fs.exists(localPath)) ? Number((yield* fs.stat(localPath)).size) : 0;
       const url = cliReleaseAssetUrl(version, fileName, runner?.releaseBaseUrl ?? undefined);
-      let response = yield* client.get(
-        url,
-        offset > 0 ? { headers: { range: `bytes=${offset}-` } } : {},
-      );
-      if (response.status === 416 && response.headers["content-range"] !== `bytes */${offset}`) {
-        response = yield* client.get(url);
-      }
-      if (
-        !(
-          offset > 0 &&
-          response.status === 416 &&
-          response.headers["content-range"] === `bytes */${offset}`
-        )
-      ) {
-        const checked = yield* HttpClientResponse.filterStatusOk(response);
-        const range = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(checked.headers["content-range"] ?? "");
+      const expected = isArchive
+        ? parseChecksums(yield* fs.readFileString(path.join(directory, "SHA256SUMS"))).get(archive)
+        : undefined;
+      const download = Effect.fn("ssh/tunnel.downloadRelayAsset")(function* (offset: number) {
+        let response = yield* client.get(
+          url,
+          offset > 0 ? { headers: { range: `bytes=${offset}-` } } : {},
+        );
+        if (response.status === 416 && response.headers["content-range"] !== `bytes */${offset}`) {
+          response = yield* client.get(url);
+          offset = 0;
+        }
         if (
-          checked.status === 206 &&
-          (offset === 0 ||
-            Number(range?.[1]) !== offset ||
-            Number(range?.[2]) + 1 !== Number(range?.[3]))
+          !(
+            offset > 0 &&
+            response.status === 416 &&
+            response.headers["content-range"] === `bytes */${offset}`
+          )
         ) {
-          yield* fs.remove(localPath, { force: true });
+          const checked = yield* HttpClientResponse.filterStatusOk(response);
+          const range = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(checked.headers["content-range"] ?? "");
+          if (
+            checked.status === 206 &&
+            (offset === 0 ||
+              Number(range?.[1]) !== offset ||
+              Number(range?.[2]) + 1 !== Number(range?.[3]))
+          ) {
+            yield* fs.remove(localPath, { force: true });
+            return yield* new SshLaunchError({
+              message: "The release server returned an invalid download range.",
+              stdout: "",
+            });
+          }
+          yield* Stream.run(
+            checked.stream,
+            fs.sink(localPath, { flag: checked.status === 206 ? "a" : "w" }),
+          );
+        }
+      });
+      while (true) {
+        yield* download(offset);
+        if (!isArchive) break;
+        const hash = NodeCrypto.createHash("sha256");
+        yield* Stream.runForEach(fs.stream(localPath), (chunk) =>
+          Effect.sync(() => hash.update(chunk)),
+        );
+        if (hash.digest("hex") === expected) break;
+        yield* fs.remove(localPath, { force: true });
+        if (offset === 0 || expected === undefined) {
           return yield* new SshLaunchError({
-            message: "The release server returned an invalid download range.",
+            message: `Checksum mismatch for ${archive}.`,
             stdout: "",
           });
         }
-        yield* Stream.run(
-          checked.stream,
-          fs.sink(localPath, { flag: checked.status === 206 ? "a" : "w" }),
-        );
+        offset = 0;
       }
       if (isArchive) reportInstallProgress?.({ phase: "relay-upload" });
       const destination = `${cacheDirectory}/${fileName}`;
@@ -1512,12 +1590,25 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
           ) {
             return yield* error;
           }
+          const releaseSource = /^T3_DOWNLOAD_SOURCE:([^\r\n]+)\r?$/mu.exec(error.stderr)?.[1];
+          const configuredSource = runner?.releaseBaseUrl?.trim().replace(/\/+$/u, "");
+          if (
+            releaseSource !== undefined &&
+            `${releaseSource}/v` !== cliReleaseDownloadBaseUrl("") &&
+            releaseSource !== configuredSource
+          ) {
+            return yield* new SshLaunchError({
+              message: `This runtime uses a different release mirror. Configure ${CLI_RELEASE_BASE_URL_ENV} on the desktop to use that mirror for relay downloads.`,
+              stdout: "",
+              cause: error,
+            });
+          }
           return yield* Effect.scoped(
             Effect.gen(function* () {
               const { downloadId, localArchive } = yield* relayReleaseAssets(
                 target,
                 input,
-                runner,
+                releaseSource === undefined ? runner : { ...runner, releaseBaseUrl: releaseSource },
                 version,
                 archive,
                 reportInstallProgress,
