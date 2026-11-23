@@ -71,6 +71,7 @@ export const FETCH_SSH_ENVIRONMENT_DESCRIPTOR_CHANNEL = "desktop:fetch-ssh-envir
 export const BOOTSTRAP_SSH_BEARER_SESSION_CHANNEL = "desktop:bootstrap-ssh-bearer-session";
 export const FETCH_SSH_SESSION_STATE_CHANNEL = "desktop:fetch-ssh-session-state";
 export const SSH_PASSWORD_PROMPT_CHANNEL = "desktop:ssh-password-prompt";
+export const SSH_INSTALL_PROGRESS_CHANNEL = "desktop:ssh-install-progress";
 export const RESOLVE_SSH_PASSWORD_PROMPT_CHANNEL = "desktop:resolve-ssh-password-prompt";
 export const SSH_PASSWORD_PROMPT_SETTLED_CHANNEL = "desktop:ssh-password-prompt-settled";
 export const GET_SERVER_EXPOSURE_STATE_CHANNEL = "desktop:get-server-exposure-state";

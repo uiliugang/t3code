@@ -8,7 +8,11 @@ import * as Scope from "effect/Scope";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 
 export interface DesktopIpcInvokeEvent {
-  readonly sender: { readonly id: number };
+  readonly sender: {
+    readonly id: number;
+    readonly isDestroyed?: () => boolean;
+    readonly send?: (channel: string, ...args: unknown[]) => void;
+  };
   readonly senderFrame?: unknown;
 }
 

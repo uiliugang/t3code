@@ -13,6 +13,8 @@ import {
   DesktopSshEnvironmentEnsureInputSchema,
   DesktopSshEnvironmentEnsureResultSchema,
   DesktopSshEnvironmentTargetSchema,
+  type DesktopSshEnvironmentTarget,
+  type DesktopSshInstallProgress,
   DesktopSshHttpBaseUrlInputSchema,
   DesktopSshPasswordPromptCancelledType,
   DesktopSshPasswordPromptResolutionInputSchema,
@@ -26,6 +28,7 @@ import {
 } from "@t3tools/contracts";
 import { SshHttpBridgeError } from "@t3tools/ssh/errors";
 import { resolveLoopbackSshHttpBaseUrl } from "@t3tools/ssh/tunnel";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -128,22 +131,61 @@ export const resolveSshHost = DesktopIpc.makeIpcMethod({
   }),
 });
 
+const pendingSshInstalls = new Map<string, Map<Deferred.Deferred<void>, number | undefined>>();
+
+function sshInstallKey(target: DesktopSshEnvironmentTarget) {
+  return JSON.stringify([target.alias, target.hostname, target.username, target.port]);
+}
+
 export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.ENSURE_SSH_ENVIRONMENT_CHANNEL,
   payload: DesktopSshEnvironmentEnsureInputSchema,
   result: DesktopSshEnvironmentEnsureResultSchema,
-  handler: Effect.fn("desktop.ipc.sshEnvironment.ensureEnvironment")(function* ({
-    target,
-    options,
-  }) {
+  handler: Effect.fn("desktop.ipc.sshEnvironment.ensureEnvironment")(function* (
+    { target, options },
+    event,
+  ) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
-    return yield* sshEnvironment.ensureEnvironment(target, options).pipe(
-      Effect.catchIf(DesktopSshEnvironment.isDesktopSshPasswordPromptCancellation, (error) =>
-        Effect.succeed({
-          type: DesktopSshPasswordPromptCancelledType,
-          message: error.message,
-        }),
+    const key = sshInstallKey(target);
+    const sender = event?.sender;
+    const reportInstallProgress = (progress: DesktopSshInstallProgress) => {
+      if (sender?.isDestroyed?.() === false) {
+        sender.send?.(IpcChannels.SSH_INSTALL_PROGRESS_CHANNEL, target, progress);
+      }
+    };
+    return yield* Effect.acquireUseRelease(
+      Deferred.make<void>().pipe(
+        Effect.tap((cancel) =>
+          Effect.sync(() => {
+            const pending = pendingSshInstalls.get(key) ?? new Map();
+            pending.set(cancel, sender?.id);
+            pendingSshInstalls.set(key, pending);
+          }),
+        ),
       ),
+      (cancel) =>
+        sshEnvironment.ensureEnvironment(target, { ...options, reportInstallProgress }).pipe(
+          Effect.catchIf(DesktopSshEnvironment.isDesktopSshPasswordPromptCancellation, (error) =>
+            Effect.succeed({ type: DesktopSshPasswordPromptCancelledType, message: error.message }),
+          ),
+          Effect.raceFirst(
+            Deferred.await(cancel).pipe(
+              Effect.as({
+                type: DesktopSshPasswordPromptCancelledType,
+                message: "SSH installation cancelled.",
+              }),
+            ),
+          ),
+        ),
+      (cancel) =>
+        Effect.sync(() => {
+          const pending = pendingSshInstalls.get(key);
+          pending?.delete(cancel);
+          if (pending?.size === 0) pendingSshInstalls.delete(key);
+          if (pending && !Array.from(pending.values()).includes(sender?.id)) {
+            reportInstallProgress({ phase: "finished" });
+          }
+        }),
     );
   }),
 });
@@ -154,6 +196,9 @@ export const disconnectSshEnvironment = DesktopIpc.makeIpcMethod({
   result: Schema.Void,
   handler: Effect.fn("desktop.ipc.sshEnvironment.disconnectEnvironment")(function* (target) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
+    for (const cancel of pendingSshInstalls.get(sshInstallKey(target))?.keys() ?? []) {
+      yield* Deferred.succeed(cancel, undefined);
+    }
     yield* sshEnvironment.disconnectEnvironment(target);
   }),
 });
