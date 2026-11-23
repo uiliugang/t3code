@@ -99,6 +99,7 @@ describe("V2 preview upgrade", () => {
         [117, "IssueTrackerAdditionalScopes"],
         [118, "ProjectionProjectsTrackedFolders"],
         [119, "TaskFolders"],
+        [120, "WorkItemCandidateRecencyIndexes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(
@@ -246,6 +247,7 @@ describe("V2 preview upgrade", () => {
         [117, "IssueTrackerAdditionalScopes"],
         [118, "ProjectionProjectsTrackedFolders"],
         [119, "TaskFolders"],
+        [120, "WorkItemCandidateRecencyIndexes"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

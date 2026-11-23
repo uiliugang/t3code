@@ -7,9 +7,12 @@ The board starts with all connected environments; each record shows its environm
 Use the source, environment, and project filters to narrow the same board, and switch between
 list and board views. **New** lets you create an external issue or a local task in a project.
 Existing tasks keep their conversations, execution history, review results, and archive state.
-Create a local task when there is no external issue to track. To discover recent conversations,
-choose **Scan chats**, then select the environment and project. You can turn a conversation into a local task
-without starting an agent or changing the conversation.
+Create a local task when there is no external issue to track. To find recent conversations,
+choose **Scan chats**, then select the environment and project. Expand **Discovered tasks** to
+turn a suggestion into a local task without starting an agent or changing the conversation.
+On mobile, swipe a suggestion left to reveal **Ignore** and **Create task**.
+In **Issue management**, you can turn discovery off or set the maximum number of suggestions
+for each environment. The board shows up to 20 suggestions per environment by default.
 
 The board groups all sources by delivery progress. Local tasks awaiting review appear under
 In progress and keep their In review label. Search within the selected project and show archived

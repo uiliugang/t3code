@@ -15,6 +15,7 @@ import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useFloatingWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { useWorkspaceCompose } from "./useWorkspaceCompose";
 import { useAdaptiveWorkspaceLayout } from "../adaptive-workspace-context";
+import { workspaceBottomNavigationColors } from "./workspace-navigation-colors";
 
 const NativeSidebarTabBar = requireNativeView<
   ViewProps & {
@@ -22,6 +23,8 @@ const NativeSidebarTabBar = requireNativeView<
     labels: Readonly<Record<string, string>>;
     selectedTab: string;
     selectedColor: string;
+    unselectedColor: string;
+    barColor: string;
     appearance: string;
     showsCompose: boolean;
     compact?: boolean;
@@ -45,6 +48,7 @@ export function WorkspaceTabDock(props: { readonly placement: "column" | "window
   const tabs = [...visibleNavigationTabs(order, hidden), "settings" as const];
   const selectTab = useSelectWorkspaceTab();
   const { colors, colorScheme } = useControlTheme();
+  const barColors = workspaceBottomNavigationColors(colors);
   const compose = useWorkspaceCompose();
   // Floating tabs carry compose beside them, and keep its room when it's gone so the tabs hold still.
   const compact = useFloatingWorkspaceTabs();
@@ -88,7 +92,9 @@ export function WorkspaceTabDock(props: { readonly placement: "column" | "window
           workspace.settingsOpen,
           hidden,
         )}
-        selectedColor={colors["--color-primary"]}
+        selectedColor={barColors.selectedColor}
+        unselectedColor={barColors.unselectedColor}
+        barColor={barColors.containerColor}
         appearance={colorScheme}
         showsCompose={onCompose !== undefined}
         compact={compact}

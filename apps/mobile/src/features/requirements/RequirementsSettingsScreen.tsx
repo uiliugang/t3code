@@ -7,20 +7,32 @@ import {
   mepAccountLabel,
   mepTrackerSummary,
 } from "@t3tools/client-runtime/meituanSettings";
-import { EnvironmentId, isMeituanServiceEnabled } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  isMeituanServiceEnabled,
+  MAX_WORK_ITEM_DISCOVERY_LIMIT,
+  WorkItemDiscoveryLimit,
+  type ServerSettingsPatch,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { useState } from "react";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { useProjects } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { ConnectionFormField } from "../connection/ConnectionFormField";
 import { IssueTrackerSection } from "../settings/components/IssueTrackerSection";
 import { SettingsRow } from "../settings/components/SettingsRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { SettingsSection } from "../settings/components/SettingsSection";
+import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
 import { SourceControlSignInSection } from "../settings/components/SourceControlSignInSection";
 import { SourceControlToolsSection } from "../settings/components/SourceControlToolsSection";
 import {
@@ -119,6 +131,14 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
           />
         ) : null}
       </IssueTrackerSection>
+      {serverConfig.workItemDiscoverySettings ? (
+        <DiscoveredTasksSettings
+          environmentId={environmentId}
+          enabled={settings.workItemDiscoveryEnabled}
+          maxTasks={settings.workItemDiscoveryLimit}
+          allowed={allowed}
+        />
+      ) : null}
       <SettingsSection
         title={t("Project issue sources")}
         footer={!allowed ? t("Read-only") : undefined}
@@ -149,6 +169,66 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
       </SettingsSection>
       <SourceControlSignInSection environments={[environment]} canWrite={() => allowed} />
     </>
+  );
+}
+
+const isDiscoveryLimit = Schema.is(WorkItemDiscoveryLimit);
+
+function DiscoveredTasksSettings({
+  environmentId,
+  enabled,
+  maxTasks,
+  allowed,
+}: {
+  environmentId: EnvironmentId;
+  enabled: boolean;
+  maxTasks: number;
+  allowed: boolean;
+}) {
+  const t = useUiTranslation();
+  const update = useAtomCommand(serverEnvironment.updateSettings);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const limit = Number(draft ?? maxTasks);
+  const valid = isDiscoveryLimit(limit);
+  const disabled = !allowed || saving;
+  const range = t("Enter a whole number from 1 to {max}.", { max: MAX_WORK_ITEM_DISCOVERY_LIMIT });
+  const save = async (patch: ServerSettingsPatch) => {
+    setSaving(true);
+    const result = await update({ environmentId, input: { patch } });
+    if (result._tag === "Success" && patch.workItemDiscoveryLimit !== undefined) setDraft(null);
+    setSaving(false);
+  };
+
+  return (
+    <SettingsSection title={t("Discovered tasks")} footer={!allowed ? t("Read-only") : undefined}>
+      <SettingsSwitchRow
+        label={t("Enable task discovery")}
+        value={enabled}
+        disabled={disabled}
+        onValueChange={(workItemDiscoveryEnabled) => void save({ workItemDiscoveryEnabled })}
+      />
+      <View className="gap-2 p-4">
+        <ConnectionFormField
+          label={t("Maximum discovered tasks")}
+          accessibilityHint={range}
+          keyboardType="number-pad"
+          value={draft ?? String(maxTasks)}
+          editable={!disabled}
+          onChangeText={setDraft}
+        />
+        <Text className={valid ? "text-xs text-foreground-muted" : "text-xs text-danger"}>
+          {range}
+        </Text>
+        <View className="self-start">
+          <Button
+            label={t("Save")}
+            disabled={disabled || !valid || limit === maxTasks}
+            onPress={() => void save({ workItemDiscoveryLimit: limit })}
+          />
+        </View>
+      </View>
+    </SettingsSection>
   );
 }
 

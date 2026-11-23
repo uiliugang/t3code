@@ -245,7 +245,8 @@ it("keeps filter checkmarks in sync with keyboard selection and distinguishes pr
     assignee: "selected-user",
   };
   await using screen = await render(fixture.board(search, updateSearch));
-  await expect.element(screen.getByText("Remote conversation")).not.toBeInTheDocument();
+  const discovered = screen.getByRole("heading", { name: "Discovered tasks 1" });
+  await expect.element(discovered).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "Filters" }).click();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "Show archived" })).toBeChecked();
   await openFilterSubmenu("Project");
@@ -265,7 +266,7 @@ it("keeps filter checkmarks in sync with keyboard selection and distinguishes pr
       updateSearch,
     ),
   );
-  await expect.element(screen.getByText("Remote conversation")).toBeVisible();
+  await expect.element(discovered).toBeVisible();
   await expect.element(allProjects).toBeChecked();
   await userEvent.keyboard("{Escape}");
   await expect
@@ -316,8 +317,12 @@ it("updates remote candidate actions when that environment's grants or capabilit
   ) as Atom.Writable<boolean>;
   fixture.registry.set(permission, false);
   await using screen = await render(fixture.board());
+  const discovered = screen.getByRole("button", { name: /Discovered tasks/ });
   const add = screen.getByRole("button", { name: "Add task" });
   const ignore = screen.getByRole("button", { name: "Ignore" });
+  await expect.element(discovered).toHaveAttribute("aria-expanded", "false");
+  await expect.element(add).not.toBeInTheDocument();
+  await discovered.click();
   await expect.element(add).toBeDisabled();
   await act(() => fixture.registry.set(permission, true));
   await expect.element(add).toBeEnabled();
@@ -339,6 +344,8 @@ it("updates remote candidate actions when that environment's grants or capabilit
   await expect.element(ignore).toBeEnabled();
   await act(() => fixture.registry.set(permission, false));
   await expect.element(add).toBeDisabled();
+  await discovered.click();
+  await expect.element(discovered).toHaveAttribute("aria-expanded", "false");
 });
 
 it("keeps the scan action locked after its menu closes until the request settles", async () => {
