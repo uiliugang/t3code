@@ -267,6 +267,7 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
+import { isPrivateBrowserThread } from "./preview/privateBrowserTab.ts";
 import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
@@ -3014,7 +3015,8 @@ export const layerWsRpc = (
         [WS_METHODS.wechatSubscribe]: () => wechat.subscribe,
         [WS_METHODS.wechatMutate]: (input) => wechat.mutate(input),
         [WS_METHODS.daxiangApprovalSubscribe]: () => daxiangApproval.subscribe,
-        [WS_METHODS.daxiangApprovalMutate]: (input) => daxiangApproval.mutate(input),
+        [WS_METHODS.daxiangApprovalMutate]: (input) =>
+          daxiangApproval.mutate(input, currentSessionId),
         [WS_METHODS.wechatSend]: (input) => wechat.send(input.text),
         [WS_METHODS.pullRequestsSendReviewLink]: (input) =>
           pullRequestNotifications.sendReviewLink(input),
@@ -3564,7 +3566,10 @@ export const layerWsRpc = (
         [WS_METHODS.previewClearProfile]: (input) => serverBrowser.clearProfile(input.profileId),
         [WS_METHODS.previewReportProfiles]: (input) => reportProfiles(input),
         [WS_METHODS.previewReportStatus]: (input) => previewManager.reportStatus(input),
-        [WS_METHODS.subscribePreviewEvents]: (_input) => previewManager.events,
+        [WS_METHODS.subscribePreviewEvents]: (_input) =>
+          previewManager.events.pipe(
+            Stream.filter((event) => !isPrivateBrowserThread(event.threadId)),
+          ),
         [WS_METHODS.deviceConfigure]: (input) => deviceService.configure(input),
         [WS_METHODS.deviceTestHost]: (input) => deviceService.testHost(input),
         [WS_METHODS.deviceEasAccount]: (input) => deviceService.easAccount(input),

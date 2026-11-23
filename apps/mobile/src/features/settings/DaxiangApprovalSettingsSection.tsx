@@ -1,19 +1,28 @@
 import { useState } from "react";
 import { msg } from "gt-react-native";
 import { useAtomValue } from "@effect/atom-react";
-import { View } from "react-native";
-import type { DaxiangApprovalStatus, EnvironmentId, ServerSettings } from "@t3tools/contracts";
+import { Modal, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import type {
+  DaxiangApprovalMutation,
+  DaxiangApprovalMutationResult,
+  DaxiangApprovalStatus,
+  EnvironmentId,
+  ServerSettings,
+} from "@t3tools/contracts";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ConnectionFormField } from "../connection/ConnectionFormField";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsRow } from "./components/SettingsRow";
-import { serverEnvironment } from "../../state/server";
+import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { PreviewStreamWebView } from "../browser/PreviewStreamWebView";
+import { useAppearancePreferences } from "./appearance/AppearancePreferencesProvider";
 
 type MonitorSettings = ServerSettings["daxiang"]["approvalMonitor"];
 type MonitorPatch = Partial<MonitorSettings>;
@@ -44,6 +53,10 @@ export function DaxiangApprovalSettingsSection({
   disabled?: boolean;
 }) {
   const t = useUiTranslation();
+  const { themeVariables } = useAppearancePreferences();
+  const browserLoginSupported =
+    useAtomValue(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .daxiangApprovalBrowserLogin === true;
   const monitor = useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.daxiang
     .approvalMonitor;
   const allowed =
@@ -58,6 +71,9 @@ export function DaxiangApprovalSettingsSection({
   );
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [showChrome, setShowChrome] = useState(false);
+  const [browserLogin, setBrowserLogin] = useState<DaxiangApprovalMutationResult>();
+  const [browserLoginFailed, setBrowserLoginFailed] = useState(false);
   const [port, setPort] = useState<string | null>(null);
   const [prComment, setPrComment] = useState<string | null>(null);
   const [mcmComment, setMcmComment] = useState<string | null>(null);
@@ -79,17 +95,31 @@ export function DaxiangApprovalSettingsSection({
     setFailed(result._tag !== "Success");
     if (result._tag === "Success") query.refresh();
   };
-  const run = async (
-    input: { type: "restart" | "clear_records" } | { type: "login"; port: number },
-  ) => {
+  const run = async (input: DaxiangApprovalMutation) => {
     if (!canMutate || busy) return;
     if (input.type === "login" && !validPort) return;
     setBusy(true);
     setFailed(false);
+    setBrowserLoginFailed(false);
     const result = await mutate({ environmentId, input });
     setBusy(false);
-    setFailed(result._tag !== "Success");
+    if (result._tag === "Success") {
+      if (input.type === "open_browser_login") {
+        setBrowserLogin(result.value);
+        setFailed(!result.value);
+      }
+      if (input.type === "finish_browser_login") setBrowserLogin(undefined);
+    } else if (input.type === "finish_browser_login") {
+      setBrowserLoginFailed(true);
+    } else {
+      setFailed(true);
+    }
     query.refresh();
+  };
+  const cancelBrowserLogin = () => {
+    if (!browserLogin || busy) return;
+    setBrowserLogin(undefined);
+    void run({ type: "cancel_browser_login", threadId: browserLogin.threadId });
   };
   const toggle = (key: keyof MonitorSettings, label: string, subtitle: string) => (
     <SettingsSwitchRow
@@ -120,34 +150,53 @@ export function DaxiangApprovalSettingsSection({
           valuePosition="below"
         />
         <View className="gap-3 p-4">
-          <ConnectionFormField
-            label={t("Chrome CDP port")}
-            value={port ?? String(monitor.chromeCdpPort)}
-            keyboardType="number-pad"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={allowed && !busy}
-            onChangeText={(value) => setPort(value.replace(/\D/gu, "").slice(0, 5))}
-            onBlur={() => {
-              const value = Number(port ?? monitor.chromeCdpPort);
-              if (value >= 1 && value <= 65535 && value !== monitor.chromeCdpPort) {
-                void save({ chromeCdpPort: value });
-              }
-              setPort(null);
-            }}
-          />
-          <Text className="text-sm text-foreground-muted">
-            {t(
-              "Open x.sankuai.com in a dedicated Chrome session with this loopback debugging port, finish SSO, then import.",
-            )}
-          </Text>
+          {browserLoginSupported && (
+            <View className="flex-row flex-wrap gap-2">
+              <Button
+                label={t("Import DaXiang login")}
+                disabled={!canMutate || busy}
+                onPress={() => void run({ type: "open_browser_login" })}
+              />
+              <Button
+                label={t("Use Chrome instead")}
+                tone="secondary"
+                disabled={!canMutate || busy}
+                onPress={() => setShowChrome(!showChrome)}
+              />
+            </View>
+          )}
+          {(!browserLoginSupported || showChrome) && (
+            <>
+              <ConnectionFormField
+                label={t("Chrome CDP port")}
+                value={port ?? String(monitor.chromeCdpPort)}
+                keyboardType="number-pad"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={allowed && !busy}
+                onChangeText={(value) => setPort(value.replace(/\D/gu, "").slice(0, 5))}
+                onBlur={() => {
+                  const value = Number(port ?? monitor.chromeCdpPort);
+                  if (value >= 1 && value <= 65535 && value !== monitor.chromeCdpPort) {
+                    void save({ chromeCdpPort: value });
+                  }
+                  setPort(null);
+                }}
+              />
+              <Text className="text-sm text-foreground-muted">
+                {t(
+                  "Open x.sankuai.com in a dedicated Chrome session with this loopback debugging port, finish SSO, then import.",
+                )}
+              </Text>
+              <Button
+                label={t(browserLoginSupported ? "Import from Chrome" : "Import DaXiang login")}
+                tone={browserLoginSupported ? "secondary" : "primary"}
+                disabled={!canMutate || busy || !validPort}
+                onPress={() => void run({ type: "login", port: portNumber })}
+              />
+            </>
+          )}
           <View className="flex-row flex-wrap gap-2">
-            <Button
-              label={t("Import DaXiang login")}
-              disabled={!canMutate || busy || !validPort}
-              loading={busy}
-              onPress={() => void run({ type: "login", port: portNumber })}
-            />
             <Button
               label={t("Restart listener")}
               tone="secondary"
@@ -161,6 +210,49 @@ export function DaxiangApprovalSettingsSection({
             </Text>
           ) : null}
         </View>
+        {browserLogin ? (
+          <Modal onRequestClose={cancelBrowserLogin}>
+            <SafeAreaView className="flex-1 bg-sheet">
+              <View className="gap-1 px-4 py-3">
+                <Text accessibilityRole="header" className="text-lg font-semibold">
+                  {t("DaXiang sign-in")}
+                </Text>
+              </View>
+              <PreviewStreamWebView
+                key={browserLogin.tabId}
+                environmentId={environmentId}
+                threadId={browserLogin.threadId}
+                tabId={browserLogin.tabId}
+                interactive
+                background={themeVariables["--color-sheet-solid"]}
+                onPopup={(tabId) => setBrowserLogin({ threadId: browserLogin.threadId, tabId })}
+              />
+              {browserLoginFailed && (
+                <Text accessibilityRole="alert" className="px-4 text-sm text-danger-foreground">
+                  {t(
+                    "Could not import DaXiang login. Finish signing in or reopen the login browser.",
+                  )}
+                </Text>
+              )}
+              <View className="flex-row flex-wrap justify-end gap-2 px-4 py-3">
+                <Button
+                  label={t("Cancel")}
+                  tone="secondary"
+                  disabled={busy}
+                  onPress={cancelBrowserLogin}
+                />
+                <Button
+                  label={t("Finish import")}
+                  loading={busy}
+                  disabled={busy || !canMutate}
+                  onPress={() =>
+                    void run({ type: "finish_browser_login", threadId: browserLogin.threadId })
+                  }
+                />
+              </View>
+            </SafeAreaView>
+          </Modal>
+        ) : null}
         {toggle(
           "includeGroupChats",
           "Include group chats",

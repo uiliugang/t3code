@@ -57,6 +57,7 @@ type NativeStreamBridge = {
   /** Asks for fresh access after a refusal, once `delayMs` has passed. */
   readonly onRefused: (delayMs: number) => void;
   readonly onGone?: () => void;
+  readonly onPopup?: (tabId: string) => void;
   readonly onViewport?: (viewport: { readonly width: number; readonly height: number }) => void;
   /** The direction a drag scrolls the page, every few dozen pixels of it. */
   readonly onScrollDirection?: (direction: "up" | "down") => void;
@@ -232,6 +233,7 @@ function PreviewStreamDocumentView({
   pdfUri,
   onUnauthorized,
   onGone,
+  onPopup,
   onViewport,
   onScrollDirection,
   onControl,
@@ -407,6 +409,9 @@ function PreviewStreamDocumentView({
                 setGone(true);
                 fail(m(msg("This tab was closed.")));
                 onGone?.();
+                return;
+              case "popup":
+                onPopup?.(message.tabId);
                 return;
               case "hostSetup":
                 setHostSetup({ need: message.need, command: message.command });

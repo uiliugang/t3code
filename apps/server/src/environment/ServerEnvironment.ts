@@ -285,6 +285,7 @@ export const make = Effect.gen(function* () {
       threadTerminalCleanup: true,
       meituanIntegration: true,
       daxiangApprovalMonitor: true,
+      daxiangApprovalBrowserLogin: true,
       sourceControlToolMaintenance: true,
       meituanTools: true,
       toolStatusFollowsSettings: true,

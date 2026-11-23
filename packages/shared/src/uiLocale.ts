@@ -2011,6 +2011,12 @@ const zhCN: Readonly<Record<string, string>> = {
   "Listener status": "监听状态",
   "Restart listener": "重启监听",
   "Import DaXiang login": "导入大象登录态",
+  "Use Chrome instead": "改用 Chrome",
+  "Import from Chrome": "从 Chrome 导入",
+  "DaXiang sign-in": "登录大象",
+  "Finish import": "完成导入",
+  "Could not import DaXiang login. Finish signing in or reopen the login browser.":
+    "未能导入大象登录态。请先完成登录，或重新打开登录窗口。",
   "Chrome CDP port": "Chrome CDP 端口",
   "Open x.sankuai.com in a dedicated Chrome session with this loopback debugging port, finish SSO, then import. Credentials stay on this server.":
     "在独立 Chrome 会话中使用此本地调试端口打开 x.sankuai.com，完成 SSO 后导入。凭据仅保存在此服务器。",

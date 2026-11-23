@@ -38,6 +38,7 @@ import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import { isProviderSignOutPrompt } from "../orchestration-v2/CommandPolicy.ts";
+import { isPrivateBrowserThread } from "../preview/privateBrowserTab.ts";
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
@@ -327,6 +328,16 @@ const requiredScopesForRpcCall = (
   method: string,
   payload: unknown,
 ): ReadonlyArray<AuthEnvironmentScope> => {
+  if (
+    method.startsWith("preview.") &&
+    typeof payload === "object" &&
+    payload !== null &&
+    "threadId" in payload &&
+    typeof payload.threadId === "string" &&
+    isPrivateBrowserThread(payload.threadId)
+  ) {
+    return [requiredScopeForRpcMethod(method), AuthSettingsWriteScope];
+  }
   if (method === WS_METHODS.serverRetryResourceTelemetry) {
     return [AuthEnvironmentMaintainScope, AuthDiagnosticsReadScope];
   }

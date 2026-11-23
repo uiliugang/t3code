@@ -1,14 +1,22 @@
 import { useState } from "react";
 import { msg } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
-import type { DaxiangApprovalStatus, EnvironmentId, ServerSettings } from "@t3tools/contracts";
+import type {
+  DaxiangApprovalMutation,
+  DaxiangApprovalMutationResult,
+  DaxiangApprovalStatus,
+  EnvironmentId,
+  ServerSettings,
+} from "@t3tools/contracts";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
-import { serverEnvironment } from "~/state/server";
+import { environmentServerConfigsAtom, serverEnvironment } from "~/state/server";
+import { ServerBrowserSurface } from "~/browser/ServerBrowserSurface";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { readLocalApi } from "~/localApi";
 import { Button } from "../ui/button";
+import { Dialog, DialogFooter, DialogHeader, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
@@ -36,6 +44,9 @@ const outcomeMessages = {
 
 export function DaxiangApprovalSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const t = useUiTranslation();
+  const browserLoginSupported =
+    useAtomValue(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .daxiangApprovalBrowserLogin === true;
   const monitor = useEnvironmentSettings(
     environmentId,
     (settings) => settings.daxiang.approvalMonitor,
@@ -51,6 +62,9 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
   );
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [showChrome, setShowChrome] = useState(false);
+  const [browserLogin, setBrowserLogin] = useState<DaxiangApprovalMutationResult>();
+  const [browserLoginFailed, setBrowserLoginFailed] = useState(false);
   const [drafts, setDrafts] = useState<{
     port?: string;
     prComment?: string;
@@ -79,17 +93,32 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
     setFailed(result._tag !== "Success");
     if (result._tag === "Success") query.refresh();
   };
-  const run = async (
-    input: { type: "refresh" | "restart" | "clear_records" } | { type: "login"; port: number },
-  ) => {
+  const run = async (input: DaxiangApprovalMutation) => {
     if (!canMutate || busy) return;
     if (input.type === "login" && !validPort) return;
     setBusy(true);
     setFailed(false);
+    setBrowserLoginFailed(false);
     const result = await mutate({ environmentId, input });
     setBusy(false);
-    setFailed(result._tag !== "Success");
+    if (result._tag === "Success") {
+      if (input.type === "open_browser_login") {
+        setBrowserLogin(result.value);
+        setFailed(!result.value);
+      }
+      if (input.type === "finish_browser_login") setBrowserLogin(undefined);
+    } else if (input.type === "finish_browser_login") {
+      setBrowserLoginFailed(true);
+    } else {
+      setFailed(true);
+    }
     query.refresh();
+  };
+
+  const cancelBrowserLogin = () => {
+    if (!browserLogin || busy) return;
+    setBrowserLogin(undefined);
+    void run({ type: "cancel_browser_login", threadId: browserLogin.threadId });
   };
 
   const toggle = (key: keyof MonitorSettings, title: string, subtitle: string) => (
@@ -140,41 +169,115 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
             >
               {t("Restart listener")}
             </Button>
+            {browserLoginSupported ? (
+              <Button
+                size="xs"
+                disabled={!canMutate || busy}
+                onClick={() => void run({ type: "open_browser_login" })}
+              >
+                {t("Import DaXiang login")}
+              </Button>
+            ) : null}
             <Button
               size="xs"
-              disabled={!canMutate || busy || !validPort}
-              onClick={() => void run({ type: "login", port: portNumber })}
+              variant={browserLoginSupported ? "outline" : "default"}
+              disabled={!canMutate || busy || (!browserLoginSupported && !validPort)}
+              aria-expanded={browserLoginSupported ? showChrome : undefined}
+              onClick={() =>
+                browserLoginSupported
+                  ? setShowChrome(!showChrome)
+                  : void run({ type: "login", port: portNumber })
+              }
             >
-              {t("Import DaXiang login")}
+              {t(browserLoginSupported ? "Use Chrome instead" : "Import DaXiang login")}
             </Button>
           </div>
         </div>
         {state?.error ? <p className="text-xs text-destructive">{state.error}</p> : null}
-        <div className="grid gap-1.5 sm:max-w-xs">
-          <Label htmlFor={`approval-port-${environmentId}`}>{t("Chrome CDP port")}</Label>
-          <Input
-            id={`approval-port-${environmentId}`}
-            value={port}
-            inputMode="numeric"
-            disabled={!allowed || busy}
-            onChange={(event) =>
-              editDraft("port", event.target.value.replace(/\D/gu, "").slice(0, 5))
-            }
-            onBlur={() => {
-              const value = Number(port);
-              clearDraft("port");
-              if (value >= 1 && value <= 65535 && value !== monitor.chromeCdpPort) {
-                void save({ chromeCdpPort: value });
+        {(!browserLoginSupported || showChrome) && (
+          <div className="grid gap-1.5 sm:max-w-xs">
+            <Label htmlFor={`approval-port-${environmentId}`}>{t("Chrome CDP port")}</Label>
+            <Input
+              id={`approval-port-${environmentId}`}
+              value={port}
+              inputMode="numeric"
+              disabled={!allowed || busy}
+              onChange={(event) =>
+                editDraft("port", event.target.value.replace(/\D/gu, "").slice(0, 5))
               }
-            }}
-          />
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Open x.sankuai.com in a dedicated Chrome session with this loopback debugging port, finish SSO, then import. Credentials stay on this server.",
-            )}
-          </p>
-        </div>
+              onBlur={() => {
+                const value = Number(port);
+                clearDraft("port");
+                if (value >= 1 && value <= 65535 && value !== monitor.chromeCdpPort) {
+                  void save({ chromeCdpPort: value });
+                }
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Open x.sankuai.com in a dedicated Chrome session with this loopback debugging port, finish SSO, then import. Credentials stay on this server.",
+              )}
+            </p>
+            {browserLoginSupported ? (
+              <div>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={!canMutate || busy || !validPort}
+                  onClick={() => void run({ type: "login", port: portNumber })}
+                >
+                  {t("Import from Chrome")}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
+
+      {browserLogin ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) cancelBrowserLogin();
+          }}
+        >
+          <DialogPopup className="w-[min(94vw,72rem)] max-w-none" showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>{t("DaXiang sign-in")}</DialogTitle>
+            </DialogHeader>
+            <div className="h-[min(62dvh,45rem)] min-h-48 overflow-hidden border-y">
+              <ServerBrowserSurface
+                key={browserLogin.tabId}
+                visible
+                environmentId={environmentId}
+                threadId={browserLogin.threadId}
+                tabId={browserLogin.tabId}
+                onPopup={(tabId) => setBrowserLogin({ threadId: browserLogin.threadId, tabId })}
+              />
+            </div>
+            {browserLoginFailed ? (
+              <p role="alert" className="px-4 text-sm text-destructive">
+                {t(
+                  "Could not import DaXiang login. Finish signing in or reopen the login browser.",
+                )}
+              </p>
+            ) : null}
+            <DialogFooter>
+              <Button variant="outline" disabled={busy} onClick={cancelBrowserLogin}>
+                {t("Cancel")}
+              </Button>
+              <Button
+                disabled={busy || !canMutate}
+                onClick={() =>
+                  void run({ type: "finish_browser_login", threadId: browserLogin.threadId })
+                }
+              >
+                {t("Finish import")}
+              </Button>
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
+      ) : null}
 
       <div className="grid gap-1">
         {toggle(

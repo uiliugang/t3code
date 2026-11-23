@@ -101,6 +101,7 @@ it.effect.each([
       ack: Effect.sync(() => acked.resolve()),
     });
     const browser = ServerBrowser.ServerBrowser.of({
+      openPrivateTab: () => Effect.die("Unexpected private browser launch"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
@@ -177,6 +178,7 @@ it.effect("sends replies ahead of stale frames and only the newest frame after a
       ack: Effect.sync(() => void released.push(id)),
     });
     const browser = ServerBrowser.ServerBrowser.of({
+      openPrivateTab: () => Effect.die("Unexpected private browser launch"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
@@ -252,11 +254,18 @@ it.effect.each([
   { scopes: [], error: undefined, status: 403 },
   { scopes: [AuthOrchestrationOperateScope], error: undefined, status: 403 },
   { scopes: [], error: new EnvironmentAuth.ServerAuthMissingCredentialError({}), status: 401 },
+  {
+    scopes: [AuthOrchestrationReadScope, AuthPreviewOperateScope],
+    error: undefined,
+    status: 404,
+    threadId: "private-browser:login",
+  },
 ])("rejects unauthorized stream connections before attaching a viewer (%s)", (testCase) =>
   Effect.gen(function* () {
     const auth = makeAuth(testCase.scopes, testCase.error);
     let attachments = 0;
     const browser = ServerBrowser.ServerBrowser.of({
+      openPrivateTab: () => Effect.die("Unexpected private browser launch"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
@@ -281,9 +290,12 @@ it.effect.each([
     );
     const response = yield* Effect.promise(() =>
       handler.handler(
-        new Request("http://t3.test/api/preview-stream/ws?threadId=thread&tabId=tab", {
-          headers: { upgrade: "websocket" },
-        }),
+        new Request(
+          `http://t3.test/api/preview-stream/ws?threadId=${"threadId" in testCase ? testCase.threadId : "thread"}&tabId=tab`,
+          {
+            headers: { upgrade: "websocket" },
+          },
+        ),
       ),
     );
     expect(response.status).toBe(testCase.status);
@@ -298,6 +310,7 @@ it.effect("serves a tab's download only to an authorized session", () =>
     yield* fs.writeFileString(path, "report contents");
     const requests: Array<unknown> = [];
     const browser = ServerBrowser.ServerBrowser.of({
+      openPrivateTab: () => Effect.die("Unexpected private browser launch"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: (input) =>
@@ -346,6 +359,7 @@ it.effect("passes uploaded files to the page's open picker and needs operate sco
   Effect.gen(function* () {
     const answers: Array<{ chooserId: string; files: Array<{ name: string; text: string }> }> = [];
     const browser = ServerBrowser.ServerBrowser.of({
+      openPrivateTab: () => Effect.die("Unexpected private browser launch"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
@@ -415,6 +429,7 @@ it.effect.each([
 ])("tells viewers the command that sets up the host ($need)", ({ error, need }) =>
   Effect.gen(function* () {
     const browser = ServerBrowser.ServerBrowser.of({
+      openPrivateTab: () => Effect.die("Unexpected private browser launch"),
       clearProfile: () => Effect.void,
       profileReporter: Effect.succeed(() => Effect.void),
       openDownload: () => Effect.succeedNone,
