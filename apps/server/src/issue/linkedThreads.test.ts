@@ -103,5 +103,16 @@ it.effect("keeps linked threads apart across Linear workspaces that share a team
       "both-thread",
       "globex-thread",
     ]);
+    const legacyNoUrl = yield* listLinkedIssueThreads({
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+    });
+    expect(legacyNoUrl.threads.map((thread) => thread.id)).toEqual([
+      "acme-thread",
+      "both-thread",
+      "globex-thread",
+    ]);
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

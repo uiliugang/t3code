@@ -115,18 +115,28 @@ export function trackerCreateTargetKey(target: TrackerCreateTarget): string {
 export function trackerCreateTargetLabel(
   target: TrackerCreateTarget,
   targets: ReadonlyArray<TrackerCreateTarget>,
-  projects: ReadonlyArray<{ readonly id: ProjectId; readonly title: string }>,
+  projects: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly title: string;
+    readonly cwd?: string | undefined;
+  }>,
 ): string {
   const base = `${requirementTrackerLabel[target.provider]} · ${target.scope}`;
-  const ambiguous = targets.some(
+  const matchingScope = targets.filter(
     (other) =>
-      other !== target &&
       other.provider === target.provider &&
       other.scope.toLowerCase() === target.scope.toLowerCase(),
   );
-  if (!ambiguous) return base;
-  const projectTitle = projects.find((project) => project.id === target.projectId)?.title;
-  return projectTitle ? `${base} (${projectTitle})` : base;
+  if (matchingScope.length <= 1) return base;
+  const project = projects.find((entry) => entry.id === target.projectId);
+  if (!project) return `${base} (${target.projectId})`;
+  const titleShared = matchingScope.some((other) => {
+    if (other === target) return false;
+    const otherProject = projects.find((entry) => entry.id === other.projectId);
+    return otherProject?.title === project.title;
+  });
+  if (titleShared && project.cwd) return `${base} (${project.title} · ${project.cwd})`;
+  return `${base} (${project.title})`;
 }
 export type RequirementSource = "all" | RequirementTracker | "local";
 type LegacyPage = typeof RequirementIssueListResult.Type;

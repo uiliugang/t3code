@@ -237,7 +237,15 @@ const CLEARED_TABLES: ReadonlyArray<string> = [
   "workflow_run_references",
 ];
 
-const CLEARED_TABLE_PREFIXES: ReadonlyArray<string> = ["workflow_", "effect_cluster_"];
+// Created lazily when the workflow engine boots (`SingleRunner.layer`), so absent in databases
+// where workflows have never run; `cluster_migrations` and `cluster_runner_migrations` stay intact.
+const OPTIONAL_CLEARED_TABLES: ReadonlyArray<string> = [
+  "cluster_messages",
+  "cluster_replies",
+  "cluster_runners",
+  "cluster_locks",
+];
+const CLEARED_TABLE_PREFIXES: ReadonlyArray<string> = ["workflow_"];
 
 const PROVIDER_SESSIONS_TABLE = "orchestration_v2_projection_provider_sessions";
 const FTS5_SHADOW_SUFFIXES = ["_data", "_idx", "_content", "_docsize", "_config"];
@@ -281,7 +289,7 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
       const references = yield* sql<{ name: string; parent: string }>`
         SELECT m.name, f."table" AS parent FROM src.sqlite_master m, pragma_foreign_key_list(m.name, 'src') f
         WHERE m.type = 'table'`;
-      const cleared = new Set(CLEARED_TABLES);
+      const cleared = new Set([...CLEARED_TABLES, ...OPTIONAL_CLEARED_TABLES]);
       for (const { name } of tables) {
         if (CLEARED_TABLE_PREFIXES.some((prefix) => name.startsWith(prefix))) {
           cleared.add(name);
@@ -463,8 +471,15 @@ const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigra
         WHERE EXISTS (
           SELECT 1 FROM json_each(scripts_json) AS script
           WHERE json_extract(script.value, '$.runOnSettle') IS NOT NULL)`;
-      for (const table of CLEARED_TABLES) {
-        yield* sql`DELETE FROM ${sql(table)}`;
+      const existingTables = new Set(
+        (yield* sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table'`).map(
+          (row) => row.name,
+        ),
+      );
+      for (const table of [...CLEARED_TABLES, ...OPTIONAL_CLEARED_TABLES]) {
+        if (existingTables.has(table)) {
+          yield* sql`DELETE FROM ${sql(table)}`;
+        }
       }
     }),
   );

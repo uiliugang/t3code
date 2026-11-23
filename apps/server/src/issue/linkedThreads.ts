@@ -48,6 +48,7 @@ export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
         END
       ORDER BY "updatedAt" DESC, id ASC
     `.pipe(NodeSqliteClient.readOnly);
+    const seenThreadIds = new Set<string>();
     const threads = rows
       .filter((row) =>
         threadIssueKeysEqual(
@@ -61,6 +62,11 @@ export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
           key,
         ),
       )
+      .filter((row) => {
+        if (seenThreadIds.has(row.id)) return false;
+        seenThreadIds.add(row.id);
+        return true;
+      })
       .map(({ id, projectId, title, archivedAt, settled }) => ({
         id,
         projectId,

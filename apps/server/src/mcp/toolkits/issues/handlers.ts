@@ -302,19 +302,34 @@ const make = Effect.gen(function* () {
           ...input,
           projectId: input.projectId ?? thread.projectId,
         });
-        const targetKey = {
+        const makeKey = (url: string | null) => ({
           tracker: target.tracker,
           host: target.host,
           scope: target.scope,
           key: target.key,
-          ...(target.url === null ? {} : { url: target.url }),
-        };
-        const existing = (thread.issues ?? []).find((link) =>
-          threadIssueKeysEqual(link, targetKey),
+          ...(url === null ? {} : { url }),
+        });
+        const baseKey = makeKey(target.url);
+        const candidates = (thread.issues ?? []).filter((link) =>
+          threadIssueKeysEqual(link, baseKey),
         );
+        if (candidates.length === 0) return { ...identityOf(target), wasLinked: false };
+        let resolvedUrl = target.url;
+        if (resolvedUrl === null && candidates.length > 1) {
+          resolvedUrl =
+            candidates.find((link) => link.projectId === target.projectId)?.url ??
+            (yield* issues.linkMetadata(refOf(target)).pipe(
+              Effect.map((meta) => meta.url),
+              Effect.orElseSucceed(() => null),
+            ));
+        }
+        const existing =
+          resolvedUrl === null
+            ? candidates[0]
+            : candidates.find((link) => threadIssueKeysEqual(link, makeKey(resolvedUrl)));
         if (existing === undefined) return { ...identityOf(target), wasLinked: false };
         const { wasLinked } = yield* threadIssues
-          .unlink({ threadId: thread.id, key: { ...targetKey, url: existing.url } })
+          .unlink({ threadId: thread.id, key: makeKey(existing.url) })
           .pipe(Effect.catchCause(linkFailure));
         return { ...identityOf(target), url: existing.url, wasLinked };
       }),

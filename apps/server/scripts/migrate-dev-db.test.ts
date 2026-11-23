@@ -1,7 +1,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import { SqlMessageStorage, SqlRunnerStorage } from "effect/cluster";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -193,8 +195,16 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             VALUES ('wf-run-1', 'deploy', 1, 'tag', 'key-1', 'Deploy', 'running', '2026-08-01', '2026-08-01')`;
           yield* sql`INSERT INTO workflow_hooks (hook_id, token) VALUES ('deploy:hook', 'secret-hook-token')`;
           yield* sql`INSERT INTO workflow_triggers (trigger_id, next_at) VALUES ('deploy:daily', '2026-08-02')`;
-          yield* sql`CREATE TABLE effect_cluster_messages (id TEXT PRIMARY KEY)`;
-          yield* sql`INSERT INTO effect_cluster_messages VALUES ('msg-1')`;
+          yield* Effect.provide(
+            Effect.void,
+            SqlMessageStorage.layerMigrations({}).pipe(
+              Layer.provideMerge(SqlRunnerStorage.layerMigrations({})),
+            ),
+          );
+          yield* sql`INSERT INTO cluster_messages
+            (id, shard_id, entity_type, entity_id, kind, tag, payload, headers, request_id)
+            VALUES (1, 'default:0', 'Workflow', 'wf-run-1', 0, 'Execute', '{}', '{}', 1)`;
+          yield* sql`INSERT INTO cluster_runners (address, runner, healthy) VALUES ('local:1', '{}', 1)`;
         }),
       );
 
@@ -256,7 +266,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
               (SELECT COUNT(*) FROM workflow_runs) +
                 (SELECT COUNT(*) FROM workflow_hooks) +
                 (SELECT COUNT(*) FROM workflow_triggers) +
-                (SELECT COUNT(*) FROM effect_cluster_messages) AS workflows`;
+                (SELECT COUNT(*) FROM cluster_messages) +
+                (SELECT COUNT(*) FROM cluster_runners) AS workflows`;
           return { threads, events, sessions, pullRequest, project, leftovers };
         }),
       );

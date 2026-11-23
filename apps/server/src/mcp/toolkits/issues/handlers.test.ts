@@ -151,6 +151,7 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
   issueLayer?: Layer.Layer<IssueService.IssueService>,
 ) {
   const links = yield* Ref.make<ReadonlyArray<ThreadIssueService.LinkThreadIssueInput>>([]);
+  const unlinks = yield* Ref.make<ReadonlyArray<ThreadIssueService.UnlinkThreadIssueInput>>([]);
   const layerDependencies = Layer.mergeAll(
     projectLayer,
     Layer.mock(Orchestrator.OrchestratorV2)({
@@ -182,7 +183,10 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
         Ref.update(links, (recorded) => [...recorded, input]).pipe(
           Effect.as({ alreadyLinked: false }),
         ),
-      unlink: () => Effect.succeed({ wasLinked: true }),
+      unlink: (input) =>
+        Ref.update(unlinks, (recorded) => [...recorded, input]).pipe(
+          Effect.as({ wasLinked: true }),
+        ),
     }),
     McpToolAccessTestkit.liveThreadsLayer,
   );
@@ -207,7 +211,7 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
       Effect.provide(layerDependencies),
     );
-  return { links, call };
+  return { links, unlinks, call };
 });
 
 describe("issue toolkit handlers", () => {
@@ -454,6 +458,86 @@ describe("issue toolkit handlers", () => {
       expect(result.issues).toMatchObject([{ key: "7", title: "Seven", displayKey: "#7" }]);
       const unlinked = yield* harness.call("unlink_issue", { url: detail.url });
       expect(unlinked.wasLinked).toBe(true);
+    }),
+  );
+
+  it.effect("unlinks the requested Linear workspace's issue when two workspaces share a key", () =>
+    Effect.gen(function* () {
+      const tracker = IssueTrackerKind.make("linear");
+      const globexProjectId = ProjectId.make("project-globex");
+      const acmeUrl = "https://linear.app/acme/issue/ENG-1/login";
+      const globexUrl = "https://linear.app/globex/issue/ENG-1/login";
+      const issueLayer = Layer.mock(IssueService.IssueService)({
+        projectScope: (projectId) =>
+          Effect.succeed({
+            projectId,
+            tracker,
+            host: "linear.app",
+            scope: "ENG",
+          }),
+        linkMetadata: (ref) =>
+          Effect.succeed({
+            projectId: ref.projectId,
+            tracker,
+            host: "linear.app",
+            scope: ref.scope,
+            key: ref.key,
+            displayKey: ref.key,
+            title: ref.projectId === globexProjectId ? "Globex" : "Acme",
+            url: ref.projectId === globexProjectId ? globexUrl : acmeUrl,
+          }),
+      });
+      const harness = yield* makeHarness(
+        [
+          {
+            tracker,
+            host: "linear.app",
+            scope: "ENG",
+            key: "ENG-1",
+            projectId: PROJECT_ID,
+            url: acmeUrl,
+            source: "manual",
+            linkedAt: "2026-08-10T00:00:00.000Z",
+            displayKey: "ENG-1",
+            title: "Acme",
+          },
+          {
+            tracker,
+            host: "linear.app",
+            scope: "ENG",
+            key: "ENG-1",
+            projectId: globexProjectId,
+            url: globexUrl,
+            source: "manual",
+            linkedAt: "2026-08-11T00:00:00.000Z",
+            displayKey: "ENG-1",
+            title: "Globex",
+          },
+        ],
+        issueLayer,
+      );
+      const unlinked = yield* harness.call("unlink_issue", {
+        projectId: globexProjectId,
+        key: "ENG-1",
+      });
+      expect(unlinked).toMatchObject({
+        projectId: globexProjectId,
+        key: "ENG-1",
+        url: globexUrl,
+        wasLinked: true,
+      });
+      expect(yield* Ref.get(harness.unlinks)).toEqual([
+        {
+          threadId: THREAD_ID,
+          key: {
+            tracker,
+            host: "linear.app",
+            scope: "ENG",
+            key: "ENG-1",
+            url: globexUrl,
+          },
+        },
+      ]);
     }),
   );
 });

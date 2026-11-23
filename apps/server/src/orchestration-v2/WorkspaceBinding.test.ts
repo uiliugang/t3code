@@ -225,7 +225,8 @@ it.effect(
           runId: preparingRun.id,
         });
 
-        // Stop run 1 and resume the queue so run 2 drains!
+        // Stop run 1, queue run 3 while on ws1, stop run 2, recover/rebind to ws2 at the same
+        // primary cwd, and verify run 3 drains with ws2!
         yield* orchestrator.dispatch({
           type: "thread.stop",
           commandId: CommandId.make("cmd:stop"),
@@ -237,13 +238,78 @@ it.effect(
           threadId,
         });
 
-        const afterDrain = yield* orchestrator.getThreadProjection(threadId);
-        const run2 = afterDrain.runs.find((r) => r.userMessageId === MessageId.make("msg:2"))!;
+        const afterFirstDrain = yield* orchestrator.getThreadProjection(threadId);
+        const run2 = afterFirstDrain.runs.find((r) => r.userMessageId === MessageId.make("msg:2"))!;
         assert.equal(run2.status, "starting");
         assert.equal(run2.workspaceRevisionId, ws1.id);
-        const rootNode = afterDrain.nodes.find((n) => n.id === run2.rootNodeId)!;
-        const scope = afterDrain.checkpointScopes.find((s) => s.id === rootNode.checkpointScopeId)!;
-        assert.equal(scope.workspace?.id, ws1.id);
+        const rootNode2 = afterFirstDrain.nodes.find((n) => n.id === run2.rootNodeId)!;
+        const scope2 = afterFirstDrain.checkpointScopes.find(
+          (s) => s.id === rootNode2.checkpointScopeId,
+        )!;
+        assert.equal(scope2.workspace?.id, ws1.id);
+
+        // Queue run 3 while thread is already bound to ws1 (so storedCheckpointScope has cwd=frontendDir & ws1).
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("cmd:send-3"),
+          threadId,
+          messageId: MessageId.make("msg:3"),
+          text: "third",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.stop",
+          commandId: CommandId.make("cmd:stop-2"),
+          threadId,
+        });
+        // Detach idle sessions and restore-rebind ws1 -> ws2 at the same checkout paths.
+        const beforeRecovery = yield* orchestrator.getThreadProjection(threadId);
+        for (const session of beforeRecovery.providerSessions) {
+          if (session.status !== "stopped") {
+            yield* orchestrator.dispatch({
+              type: "provider-session.detach",
+              commandId: CommandId.make(`cmd:detach:${session.id}`),
+              threadId,
+              providerSessionId: session.id,
+              reason: "Worktree recovery",
+            });
+          }
+        }
+        const ws2 = workspaceFixture({
+          ...ws1,
+          id: WorkspaceRevisionId.make("workspace:2"),
+          previousRevisionId: ws1.id,
+          bindings: structuredClone(ws1.bindings),
+          resources: structuredClone(ws1.resources),
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.workspace.bind",
+          commandId: CommandId.make("cmd:rebind-2"),
+          threadId,
+          expectedWorkspaceRevisionId: ws1.id,
+          workspace: ws2,
+          restoringFromCleanup: true,
+        });
+        yield* orchestrator.dispatch({
+          type: "queue.resume",
+          commandId: CommandId.make("cmd:resume-3"),
+          threadId,
+        });
+        const afterSecondDrain = yield* orchestrator.getThreadProjection(threadId);
+        const run3 = afterSecondDrain.runs.find(
+          (r) => r.userMessageId === MessageId.make("msg:3"),
+        )!;
+        assert.equal(run3.status, "starting");
+        assert.equal(run3.workspaceRevisionId, ws2.id);
+        const rootNode3 = afterSecondDrain.nodes.find((n) => n.id === run3.rootNodeId)!;
+        const scope3 = afterSecondDrain.checkpointScopes.find(
+          (s) => s.id === rootNode3.checkpointScopeId,
+        )!;
+        assert.equal(scope3.workspace?.id, ws2.id);
       }).pipe(Effect.provide(layer));
     }).pipe(Effect.provide(NodeServices.layer)),
 );

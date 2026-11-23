@@ -62,7 +62,10 @@ export function planWorkspaceBinding(input: {
       (run) =>
         ["queued", "preparing", "starting", "running", "waiting"].includes(run.status) &&
         !(run.id === command.preparingRunId && run.status === "preparing") &&
-        !(command.preparingRunId !== undefined && run.status === "queued"),
+        !(
+          (command.preparingRunId !== undefined || command.restoringFromCleanup === true) &&
+          run.status === "queued"
+        ),
     ) ||
     projection.providerSessions.some((session) => session.status !== "stopped") ||
     projection.runtimeRequests.some((request) => request.status === "pending")
