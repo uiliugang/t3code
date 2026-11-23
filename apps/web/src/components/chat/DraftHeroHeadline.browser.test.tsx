@@ -223,9 +223,13 @@ it("selects multiple repositories in the new-thread command palette before start
       ),
     ).toBe(true);
   });
-  await expect.element(page.getByRole("button", { name: /alpha \+ beta/ })).toBeVisible();
-  const trigger = document.querySelector<HTMLElement>("[data-draft-project-trigger]");
-  if (!trigger) throw new Error("The draft project picker did not render.");
+  const trigger = await vi.waitFor(() => {
+    const element = document.querySelector<HTMLElement>("[data-draft-project-trigger]");
+    if (!element?.textContent.includes("alpha + beta")) {
+      throw new Error("The grouped draft project picker did not render.");
+    }
+    return element;
+  });
   await userEvent.click(page.elementLocator(trigger));
   await page.getByRole("checkbox", { name: "Remove alpha from group", exact: true }).click();
   await expect.element(page.getByRole("radio", { name: "beta", exact: true })).toBeChecked();
