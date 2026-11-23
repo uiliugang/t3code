@@ -314,15 +314,11 @@ const make = Effect.gen(function* () {
           threadIssueKeysEqual(link, baseKey),
         );
         if (candidates.length === 0) return { ...identityOf(target), wasLinked: false };
-        let resolvedUrl = target.url;
-        if (resolvedUrl === null && candidates.length > 1) {
-          resolvedUrl =
-            candidates.find((link) => link.projectId === target.projectId)?.url ??
-            (yield* issues.linkMetadata(refOf(target)).pipe(
-              Effect.map((meta) => meta.url),
-              Effect.orElseSucceed(() => null),
-            ));
-        }
+        const needsWorkspaceResolution =
+          target.url === null && (target.tracker === "linear" || candidates.length > 1);
+        const resolvedUrl = needsWorkspaceResolution
+          ? (yield* issues.linkMetadata(refOf(target))).url
+          : target.url;
         const existing =
           resolvedUrl === null
             ? candidates[0]

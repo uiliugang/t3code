@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  IssueOperationError,
   IssueTrackerKind,
   ProjectId,
   ProviderInstanceId,
@@ -461,83 +462,123 @@ describe("issue toolkit handlers", () => {
     }),
   );
 
-  it.effect("unlinks the requested Linear workspace's issue when two workspaces share a key", () =>
-    Effect.gen(function* () {
-      const tracker = IssueTrackerKind.make("linear");
-      const globexProjectId = ProjectId.make("project-globex");
-      const acmeUrl = "https://linear.app/acme/issue/ENG-1/login";
-      const globexUrl = "https://linear.app/globex/issue/ENG-1/login";
-      const issueLayer = Layer.mock(IssueService.IssueService)({
-        projectScope: (projectId) =>
-          Effect.succeed({
-            projectId,
-            tracker,
-            host: "linear.app",
-            scope: "ENG",
-          }),
-        linkMetadata: (ref) =>
-          Effect.succeed({
-            projectId: ref.projectId,
-            tracker,
-            host: "linear.app",
-            scope: ref.scope,
-            key: ref.key,
-            displayKey: ref.key,
-            title: ref.projectId === globexProjectId ? "Globex" : "Acme",
-            url: ref.projectId === globexProjectId ? globexUrl : acmeUrl,
-          }),
-      });
-      const harness = yield* makeHarness(
-        [
+  it.effect(
+    "unlinks the current bound Linear workspace's issue by key even after a project rebind, and refuses when metadata lookup fails",
+    () =>
+      Effect.gen(function* () {
+        const tracker = IssueTrackerKind.make("linear");
+        const acmeUrl = "https://linear.app/acme/issue/ENG-1/login";
+        const globexUrl = "https://linear.app/globex/issue/ENG-1/login";
+        const failLookup = yield* Ref.make(false);
+        const issueLayer = Layer.mock(IssueService.IssueService)({
+          projectScope: (projectId) =>
+            Effect.succeed({
+              projectId,
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+            }),
+          linkMetadata: (ref) =>
+            Effect.gen(function* () {
+              if (yield* Ref.get(failLookup)) {
+                return yield* new IssueOperationError({
+                  operation: "linkMetadata",
+                  detail: "offline",
+                });
+              }
+              return {
+                projectId: ref.projectId,
+                tracker,
+                host: "linear.app",
+                scope: ref.scope,
+                key: ref.key,
+                displayKey: ref.key,
+                title: "Globex",
+                url: globexUrl,
+              };
+            }),
+        });
+        // Both links share PROJECT_ID (Acme linked earlier, then PROJECT_ID rebound to Globex).
+        const harness = yield* makeHarness(
+          [
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              projectId: PROJECT_ID,
+              url: acmeUrl,
+              source: "manual",
+              linkedAt: "2026-08-10T00:00:00.000Z",
+              displayKey: "ENG-1",
+              title: "Acme",
+            },
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              projectId: PROJECT_ID,
+              url: globexUrl,
+              source: "manual",
+              linkedAt: "2026-08-11T00:00:00.000Z",
+              displayKey: "ENG-1",
+              title: "Globex",
+            },
+          ],
+          issueLayer,
+        );
+        const unlinked = yield* harness.call("unlink_issue", { key: "ENG-1" });
+        expect(unlinked).toMatchObject({
+          projectId: PROJECT_ID,
+          key: "ENG-1",
+          url: globexUrl,
+          wasLinked: true,
+        });
+        expect(yield* Ref.get(harness.unlinks)).toEqual([
           {
-            tracker,
-            host: "linear.app",
-            scope: "ENG",
-            key: "ENG-1",
-            projectId: PROJECT_ID,
-            url: acmeUrl,
-            source: "manual",
-            linkedAt: "2026-08-10T00:00:00.000Z",
-            displayKey: "ENG-1",
-            title: "Acme",
+            threadId: THREAD_ID,
+            key: {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              url: globexUrl,
+            },
           },
-          {
-            tracker,
-            host: "linear.app",
-            scope: "ENG",
-            key: "ENG-1",
-            projectId: globexProjectId,
-            url: globexUrl,
-            source: "manual",
-            linkedAt: "2026-08-11T00:00:00.000Z",
-            displayKey: "ENG-1",
-            title: "Globex",
-          },
-        ],
-        issueLayer,
-      );
-      const unlinked = yield* harness.call("unlink_issue", {
-        projectId: globexProjectId,
-        key: "ENG-1",
-      });
-      expect(unlinked).toMatchObject({
-        projectId: globexProjectId,
-        key: "ENG-1",
-        url: globexUrl,
-        wasLinked: true,
-      });
-      expect(yield* Ref.get(harness.unlinks)).toEqual([
-        {
-          threadId: THREAD_ID,
-          key: {
-            tracker,
-            host: "linear.app",
-            scope: "ENG",
-            key: "ENG-1",
-            url: globexUrl,
-          },
-        },
-      ]);
-    }),
+        ]);
+
+        // When the thread holds only Acme's ENG-1, unlinking ENG-1 under Globex reports wasLinked: false.
+        const singleAcmeHarness = yield* makeHarness(
+          [
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              projectId: PROJECT_ID,
+              url: acmeUrl,
+              source: "manual",
+              linkedAt: "2026-08-10T00:00:00.000Z",
+              displayKey: "ENG-1",
+              title: "Acme",
+            },
+          ],
+          issueLayer,
+        );
+        const notLinkedInGlobex = yield* singleAcmeHarness.call("unlink_issue", { key: "ENG-1" });
+        expect(notLinkedInGlobex).toMatchObject({
+          projectId: PROJECT_ID,
+          key: "ENG-1",
+          wasLinked: false,
+        });
+        expect(yield* Ref.get(singleAcmeHarness.unlinks)).toEqual([]);
+
+        // When metadata lookup fails, leave links untouched instead of guessing.
+        yield* Ref.set(failLookup, true);
+        const failed = yield* harness.call("unlink_issue", { key: "ENG-1" }).pipe(Effect.flip);
+        expect(failed).toBeDefined();
+        expect(yield* Ref.get(harness.unlinks)).toHaveLength(1);
+      }),
   );
 });

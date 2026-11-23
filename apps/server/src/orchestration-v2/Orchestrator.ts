@@ -4553,6 +4553,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
     }
     if (
+      command.type === "thread.issue.unlink" &&
+      (thread.issues ?? []).filter((link) => threadIssueKeysEqual(link, command)).length > 1
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Multiple issues linked to thread ${command.threadId} match ${command.key}; unlink by URL instead.`,
+      });
+    }
+    if (
       command.type === "thread.metadata.update" &&
       command.expectedWorktreePath !== undefined &&
       command.expectedWorktreePath !== thread.worktreePath
