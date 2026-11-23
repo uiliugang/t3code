@@ -7,6 +7,8 @@ import {
 import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
 import {
   EnvironmentAuthInvalidError,
+  DesktopCloudSandboxConfigSchema,
+  DesktopCloudSandboxSaveInputSchema,
   DesktopDiscoveredSshHostSchema,
   DesktopSshBearerBootstrapInputSchema,
   DesktopSshBearerRequestInputSchema,
@@ -32,6 +34,7 @@ import * as Schema from "effect/Schema";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import * as DesktopSshEnvironment from "../../ssh/DesktopSshEnvironment.ts";
+import * as DesktopCloudSandbox from "../../ssh/DesktopCloudSandbox.ts";
 import * as DesktopSshPasswordPrompts from "../../ssh/DesktopSshPasswordPrompts.ts";
 
 const DesktopSshEnvironmentRequestOperation = Schema.Literals([
@@ -145,6 +148,36 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
         }),
       ),
     );
+  }),
+});
+
+export const getCloudSandboxConfig = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_CLOUD_SANDBOX_CONFIG_CHANNEL,
+  payload: Schema.Void,
+  result: DesktopCloudSandboxConfigSchema,
+  handler: Effect.fn("desktop.ipc.cloudSandbox.get")(function* () {
+    const sandbox = yield* DesktopCloudSandbox.DesktopCloudSandbox;
+    return yield* sandbox.get;
+  }),
+});
+
+export const saveCloudSandboxConfig = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SAVE_CLOUD_SANDBOX_CONFIG_CHANNEL,
+  payload: DesktopCloudSandboxSaveInputSchema,
+  result: DesktopCloudSandboxConfigSchema,
+  handler: Effect.fn("desktop.ipc.cloudSandbox.save")(function* (input) {
+    const sandbox = yield* DesktopCloudSandbox.DesktopCloudSandbox;
+    return yield* sandbox.save(input);
+  }),
+});
+
+export const clearCloudSandboxConfig = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CLEAR_CLOUD_SANDBOX_CONFIG_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.cloudSandbox.clear")(function* () {
+    const sandbox = yield* DesktopCloudSandbox.DesktopCloudSandbox;
+    yield* sandbox.clear;
   }),
 });
 

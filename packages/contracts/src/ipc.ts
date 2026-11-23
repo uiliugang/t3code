@@ -462,6 +462,17 @@ export const DesktopSshPasswordPromptCancelledResultSchema = Schema.Struct({
 export const DesktopSshEnvironmentEnsureOptionsSchema = Schema.Struct({
   issuePairingToken: Schema.optionalKey(Schema.Boolean),
   targetVersion: Schema.optionalKey(Schema.String),
+  password: Schema.optionalKey(Schema.RedactedFromValue(Schema.NonEmptyString)),
+});
+
+export const DesktopCloudSandboxConfigSchema = Schema.NullOr(
+  Schema.Struct({ hostname: Schema.String, port: Schema.Number }),
+);
+export type DesktopCloudSandboxConfig = typeof DesktopCloudSandboxConfigSchema.Type;
+
+export const DesktopCloudSandboxSaveInputSchema = Schema.Struct({
+  host: Schema.String,
+  password: Schema.optionalKey(Schema.RedactedFromValue(Schema.NonEmptyString)),
 });
 
 export const DesktopSshEnvironmentEnsureInputSchema = Schema.Struct({
@@ -1170,8 +1181,14 @@ export interface DesktopBridge {
   acknowledgeSnapShot: (id: string) => Promise<void>;
   ensureSshEnvironment: (
     target: DesktopSshEnvironmentTarget,
-    options?: { issuePairingToken?: boolean; targetVersion?: string },
+    options?: { issuePairingToken?: boolean; targetVersion?: string; password?: string },
   ) => Promise<DesktopSshEnvironmentBootstrap>;
+  getCloudSandboxConfig: () => Promise<DesktopCloudSandboxConfig>;
+  saveCloudSandboxConfig: (input: {
+    host: string;
+    password?: string;
+  }) => Promise<DesktopCloudSandboxConfig>;
+  clearCloudSandboxConfig: () => Promise<void>;
   disconnectSshEnvironment: (target: DesktopSshEnvironmentTarget) => Promise<void>;
   fetchSshEnvironmentDescriptor: (httpBaseUrl: string) => Promise<ExecutionEnvironmentDescriptor>;
   bootstrapSshBearerSession: (

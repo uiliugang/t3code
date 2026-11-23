@@ -113,11 +113,27 @@ export const buildSshHostSpecEffect = (
 
 export function baseSshArgs(
   target: DesktopSshEnvironmentTarget,
-  input?: { readonly batchMode?: "yes" | "no" },
+  input?: Pick<SshAuthOptions, "batchMode" | "passwordDestination">,
 ): string[] {
   return [
     "-o",
     `BatchMode=${input?.batchMode ?? "no"}`,
+    ...(input?.passwordDestination === undefined
+      ? []
+      : [
+          "-o",
+          `HostName=${input.passwordDestination}`,
+          "-o",
+          "CanonicalizeHostname=no",
+          "-o",
+          "StrictHostKeyChecking=yes",
+          "-o",
+          "PreferredAuthentications=password",
+          "-o",
+          "NumberOfPasswordPrompts=1",
+          "-o",
+          "ControlPath=none",
+        ]),
     "-o",
     "ConnectTimeout=10",
     // T3 always supplies its own remote command or only forwards ports, so a host
@@ -126,7 +142,9 @@ export function baseSshArgs(
     "RemoteCommand=none",
     "-o",
     "RequestTTY=no",
-    ...(target.port !== null ? ["-p", String(target.port)] : []),
+    ...(target.port !== null || input?.passwordDestination !== undefined
+      ? ["-p", String(target.port ?? 22)]
+      : []),
   ];
 }
 
@@ -287,6 +305,9 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   const args = [
     ...baseSshArgs(target, {
       batchMode: input.batchMode ?? (input.interactiveAuth ? "no" : "yes"),
+      ...(input.passwordDestination === undefined
+        ? {}
+        : { passwordDestination: input.passwordDestination }),
     }),
     // Cold installs need a long command budget; a lost connection must fail sooner.
     "-o",

@@ -1,12 +1,12 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
-import { pipe } from "effect/Function";
 import { ChevronsLeftRightEllipsisIcon, PlusIcon, TerminalIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useGT, useMessages } from "gt-react";
 import {
+  type DesktopCloudSandboxConfig,
   type DesktopDiscoveredSshHost,
   type DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
@@ -19,6 +19,8 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import { useNavigate } from "@tanstack/react-router";
 
 import { cn } from "../../lib/utils";
 import { formatDesktopSshTarget } from "./EnvironmentRow";
@@ -43,8 +45,9 @@ import {
 } from "../ui/dialog";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Alert, AlertDescription } from "../ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button } from "../ui/button";
+import { SshPasswordField } from "./SshPasswordField";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { environmentCatalog } from "~/connection/catalog";
 import {
@@ -99,6 +102,7 @@ export function AddEnvironmentDialog({
   readonly onErrorChange: (error: string | null) => void;
 }) {
   const t = useUiTranslation();
+  const navigate = useNavigate();
   const gt = useGT();
   const desktopBridge = window.desktopBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -133,6 +137,9 @@ export function AddEnvironmentDialog({
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
   const [savedBackendSshUsername, setSavedBackendSshUsername] = useState("");
   const [savedBackendSshPort, setSavedBackendSshPort] = useState("");
+  const [manualPassword, setManualPassword] = useState<string | null>(null);
+  const [sandboxConfig, setSandboxConfig] = useState<DesktopCloudSandboxConfig>(null);
+  const [resolvedSshHost, setResolvedSshHost] = useState<DesktopSshEnvironmentTarget | null>(null);
   const [sshHostSuggestionsOpen, setSshHostSuggestionsOpen] = useState(false);
   const highlightedSshHostRef = useRef<DesktopDiscoveredSshHost | undefined>(undefined);
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
@@ -149,6 +156,60 @@ export function AddEnvironmentDialog({
   useEffect(() => {
     if (isSshDiscoveryActive) refreshDesktopSshHosts();
   }, [isSshDiscoveryActive, refreshDesktopSshHosts]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads local credential metadata when SSH onboarding opens
+  useEffect(() => {
+    if (!isSshDiscoveryActive || !desktopBridge?.getCloudSandboxConfig) return;
+    let current = true;
+    void desktopBridge.getCloudSandboxConfig().then(
+      (config) => {
+        if (current) setSandboxConfig(config);
+      },
+      () => {
+        if (current) setSandboxConfig(null);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [desktopBridge, isSshDiscoveryActive]);
+  const sshHost = (() => {
+    try {
+      return parseManualDesktopSshTarget({ host: savedBackendSshHost, username: "", port: "" });
+    } catch {
+      return null;
+    }
+  })();
+  const sshAlias = sshHost?.alias;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces ssh -G while resolving aliases for credential matching
+  useEffect(() => {
+    if (!isSshDiscoveryActive || !sandboxConfig || !sshAlias || !desktopBridge?.resolveSshHost)
+      return;
+    let current = true;
+    const timer = window.setTimeout(() => {
+      void desktopBridge.resolveSshHost(sshAlias).then(
+        (resolved) => {
+          if (current) setResolvedSshHost(resolved);
+        },
+        () => {
+          if (current) setResolvedSshHost(null);
+        },
+      );
+    }, 240);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [desktopBridge, isSshDiscoveryActive, sandboxConfig, sshAlias]);
+  const detectedPort = savedBackendSshPort
+    ? Number(savedBackendSshPort)
+    : (sshHost?.port ?? resolvedSshHost?.port ?? 22);
+  const sandboxMatched =
+    manualPassword === null &&
+    sandboxConfig !== null &&
+    resolvedSshHost !== null &&
+    resolvedSshHost.alias === sshAlias &&
+    resolvedSshHost.hostname.toLowerCase() === sandboxConfig.hostname &&
+    detectedPort === sandboxConfig.port;
   const discoveredSshHosts = desktopSshHosts.data ?? EMPTY_DISCOVERED_SSH_HOSTS;
   const unsavedDiscoveredSshHosts = discoveredSshHosts.filter((target) => {
     const address = formatDesktopSshTarget(target);
@@ -175,6 +236,9 @@ export function AddEnvironmentDialog({
       setSavedBackendSshHost("");
       setSavedBackendSshUsername("");
       setSavedBackendSshPort("");
+      setManualPassword(null);
+      setSandboxConfig(null);
+      setResolvedSshHost(null);
     }
     onOpenChange(nextOpen);
   };
@@ -185,11 +249,21 @@ export function AddEnvironmentDialog({
     const result = await connectSshEnvironment({
       target,
       label: "",
+      ...(manualPassword ? { password: Redacted.make(manualPassword) } : {}),
       ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
     });
     if (result._tag === "Failure") {
       if (session === savedBackendSessionRef.current && !isAtomCommandInterrupted(result)) {
-        pipe(squashAtomCommandFailure(result), formatDesktopSshConnectionError, onErrorChange);
+        const message = formatDesktopSshConnectionError(squashAtomCommandFailure(result));
+        onErrorChange(
+          message.includes("[ssh_cloud_sandbox_password_rejected]")
+            ? t(
+                "Cloud Sandbox password was rejected. Enter a password manually or update the integration settings.",
+              )
+            : message.includes("[ssh_manual_password_rejected]")
+              ? t("SSH password was rejected.")
+              : message,
+        );
       }
       setIsAddingSavedBackend(false);
       return;
@@ -211,6 +285,7 @@ export function AddEnvironmentDialog({
 
   const handleAddSavedBackend = async () => {
     if (savedBackendMode === "ssh") {
+      if (isAddingSavedBackend || manualPassword === "") return;
       let target: DesktopSshEnvironmentTarget;
       try {
         target = parseManualDesktopSshTarget({
@@ -328,7 +403,12 @@ export function AddEnvironmentDialog({
     if (target.port !== null) resolved = { ...resolved, port: target.port };
     setSavedBackendSshUsername(resolved.username ?? "");
     setSavedBackendSshPort(resolved.port === null ? "" : String(resolved.port));
-    await connectSavedBackendSshTarget(resolved);
+    if (manualPassword === null) {
+      await connectSavedBackendSshTarget(resolved);
+    } else {
+      setManualPassword("");
+      setIsAddingSavedBackend(false);
+    }
   };
 
   const handleSavedBackendSshHostKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -397,6 +477,7 @@ export function AddEnvironmentDialog({
         disabled={isAddingSavedBackend}
         onClick={() => {
           if (!selected) onErrorChange(null);
+          if (input.mode === "remote") setManualPassword(null);
           setSavedBackendMode(input.mode);
         }}
       >
@@ -547,6 +628,7 @@ export function AddEnvironmentDialog({
             value={savedBackendSshHost}
             onValueChange={(value, eventDetails) => {
               setSavedBackendSshHost(value);
+              if (manualPassword !== null) setManualPassword("");
               if (eventDetails.reason !== "item-press") return;
 
               const target = filteredDiscoveredSshHosts.find(
@@ -615,7 +697,10 @@ export function AddEnvironmentDialog({
             </span>
             <Input
               value={savedBackendSshUsername}
-              onChange={(event) => setSavedBackendSshUsername(event.target.value)}
+              onChange={(event) => {
+                setSavedBackendSshUsername(event.target.value);
+                if (manualPassword !== null) setManualPassword("");
+              }}
               onKeyDown={handleSavedBackendSshFieldKeyDown}
               placeholder="root"
               disabled={isAddingSavedBackend}
@@ -626,7 +711,10 @@ export function AddEnvironmentDialog({
             <span className="mb-1.5 block text-xs font-medium text-foreground">{t("Port")}</span>
             <Input
               value={savedBackendSshPort}
-              onChange={(event) => setSavedBackendSshPort(event.target.value)}
+              onChange={(event) => {
+                setSavedBackendSshPort(event.target.value);
+                if (manualPassword !== null) setManualPassword("");
+              }}
               onKeyDown={handleSavedBackendSshFieldKeyDown}
               placeholder="22"
               inputMode="numeric"
@@ -635,20 +723,77 @@ export function AddEnvironmentDialog({
             />
           </label>
         </div>
+        {sandboxMatched ? (
+          <Alert variant="info">
+            <AlertTitle>{t("Cloud Sandbox matched")}</AlertTitle>
+            <AlertDescription>
+              {t("Connect using the SSH password saved in Meituan integration.")}
+            </AlertDescription>
+            <AlertAction>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={isAddingSavedBackend}
+                onClick={() => {
+                  handleOpenChange(false);
+                  void navigate({
+                    to: "/settings/meituan",
+                    search: { section: undefined },
+                    hash: "cloud-sandbox",
+                  });
+                }}
+              >
+                {t("Manage configuration")}
+              </Button>
+            </AlertAction>
+          </Alert>
+        ) : null}
+        {manualPassword !== null ? (
+          <SshPasswordField
+            value={manualPassword}
+            onChange={setManualPassword}
+            disabled={isAddingSavedBackend}
+            placeholder={t("Only for this connection")}
+            onKeyDown={handleSavedBackendSshFieldKeyDown}
+            autoFocus
+          />
+        ) : null}
         {error || discoveredSshHostsError ? (
           <Alert variant="error">
             <AlertDescription>{error ?? discoveredSshHostsError}</AlertDescription>
           </Alert>
         ) : null}
-        <Button
-          variant="outline"
-          className="w-full"
-          disabled={isAddingSavedBackend}
-          onClick={() => void handleAddSavedBackend()}
-        >
-          <PlusIcon className="size-3.5" />
-          {t(isAddingSavedBackend ? "Adding…" : routeTarget ? "Add route" : "Add environment")}
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isAddingSavedBackend}
+            onClick={() => {
+              setManualPassword(manualPassword === null ? "" : null);
+              onErrorChange(null);
+            }}
+          >
+            {t(
+              manualPassword === null ? "Enter password manually" : "Use automatic authentication",
+            )}
+          </Button>
+          <Button
+            disabled={isAddingSavedBackend || manualPassword === ""}
+            onClick={() => void handleAddSavedBackend()}
+          >
+            <PlusIcon className="size-3.5" />
+            {t(
+              isAddingSavedBackend
+                ? "Adding…"
+                : manualPassword !== null
+                  ? "Connect with password"
+                  : routeTarget
+                    ? "Add route"
+                    : "Add environment",
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

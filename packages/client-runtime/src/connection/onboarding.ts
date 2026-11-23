@@ -57,6 +57,7 @@ export interface SshConnectionInput {
   readonly target: DesktopSshEnvironmentTarget;
   readonly label?: string;
   readonly expectedEnvironmentId?: EnvironmentId;
+  readonly password?: import("effect/Redacted").Redacted<string>;
 }
 
 export interface BearerConnectionUpdateInput {
@@ -335,7 +336,11 @@ export const prepareSshRegistration = Effect.fn(
   "clientRuntime.connection.onboarding.prepareSshRegistration",
 )(function* (input: SshConnectionInput) {
   const gateway = yield* ClientCapabilities.SshEnvironmentGateway;
-  const provisioned = yield* gateway.provision(input.target, input.expectedEnvironmentId);
+  const provisioned = yield* gateway.provision(
+    input.target,
+    input.expectedEnvironmentId,
+    input.password,
+  );
   const connectionId = `ssh:${provisioned.environmentId}:${sshTargetKey(provisioned.bootstrap.target)}`;
   const label = input.label?.trim() || provisioned.label || provisioned.bootstrap.target.alias;
 

@@ -23,6 +23,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Result from "effect/Result";
 import * as Sink from "effect/Sink";
+import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
@@ -432,6 +433,71 @@ esac
       assert.equal(launches, 3);
     }).pipe(Effect.provide(layer), Effect.scoped);
   });
+
+  it.effect.each(["cloud-sandbox", "manual"] as const)(
+    "uses %s password only for a pinned, verified SSH destination",
+    (source) =>
+      Effect.gen(function* () {
+        const attempts: Array<ReadonlyArray<string>> = [];
+        const spawner = ChildProcessSpawner.make((command) =>
+          Effect.sync(() => {
+            const args = commandArgs(command);
+            if (args.includes("-G"))
+              return makeSuccessfulProcess("hostname sandbox.example.test\nport 2222\n");
+            attempts.push(args);
+            return {
+              ...makeSuccessfulProcess(""),
+              exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(255)),
+              stderr: Stream.make(new TextEncoder().encode("Permission denied (password).\n")),
+            };
+          }),
+        );
+        const layer = Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Layer.succeed(HttpClient.HttpClient, testHttpClient),
+          Layer.succeed(NetService.NetService, testNetService),
+          SshAuth.SshPasswordPrompt.disabledLayer,
+          SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
+        );
+        yield* Effect.gen(function* () {
+          const manager = yield* SshTunnel.SshEnvironmentManager;
+          const failure = yield* manager
+            .ensureEnvironment(
+              { alias: "sandbox", hostname: "sandbox", username: "root", port: 2022 },
+              {
+                passwordForTarget: (target) =>
+                  Effect.sync(() => {
+                    assert.equal(target.hostname, "sandbox.example.test");
+                    assert.equal(target.port, 2022);
+                    return { value: Redacted.make("fixture-password"), source };
+                  }),
+              },
+            )
+            .pipe(Effect.flip);
+          assert.instanceOf(failure, SshPasswordPromptError);
+          assert.include(
+            failure.message,
+            source === "manual"
+              ? "ssh_manual_password_rejected"
+              : "ssh_cloud_sandbox_password_rejected",
+          );
+          assert.lengthOf(attempts, 1);
+          assert.includeMembers(
+            [...attempts[0]!],
+            [
+              "HostName=sandbox.example.test",
+              "StrictHostKeyChecking=yes",
+              "PreferredAuthentications=password",
+              "ControlPath=none",
+              "2022",
+            ],
+          );
+          assert.notInclude(attempts[0]!, "fixture-password");
+        }).pipe(Effect.provide(layer), Effect.scoped);
+      }),
+  );
 
   it.effect.each([
     { version: ARCHIVE.archiveVersion, runner: ARCHIVE },
