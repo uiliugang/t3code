@@ -224,6 +224,7 @@ export function start(configuration: PreviewStreamConfiguration) {
         },
         onUnauthorized: () => post({ type: "unauthorized" }),
         onGone: () => post({ type: "gone" }),
+        onPopup: (tabId) => post({ type: "popup", tabId }),
         onHostSetup: (setup) => post({ type: "hostSetup", ...setup }),
       },
     );

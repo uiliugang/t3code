@@ -147,6 +147,14 @@ export function clientRpcRequiredScopes(
   if (method === WS_METHODS.wechatMutate)
     return [AuthAccessWriteScope, AuthOrchestrationOperateScope];
   if (
+    method === WS_METHODS.daxiangApprovalMutate &&
+    typeof input === "object" &&
+    input !== null &&
+    "type" in input &&
+    input.type === "open_browser_login"
+  )
+    return [AuthSettingsWriteScope, AuthOrchestrationReadScope, AuthPreviewOperateScope];
+  if (
     method === WS_METHODS.providerEndpointValidate &&
     typeof input === "object" &&
     input !== null &&

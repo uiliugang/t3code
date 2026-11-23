@@ -112,11 +112,20 @@ export type DaxiangApprovalState = typeof DaxiangApprovalState.Type;
 
 export const DaxiangApprovalMutation = Schema.Union([
   Schema.Struct({
-    type: Schema.Literals(["refresh", "restart", "clear_records"]),
+    type: Schema.Literals(["refresh", "restart", "clear_records", "open_browser_login"]),
   }),
   Schema.Struct({
     type: Schema.Literal("login"),
     port: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
   }),
+  Schema.Struct({
+    type: Schema.Literals(["finish_browser_login", "cancel_browser_login"]),
+    threadId: Schema.String,
+  }),
 ]);
 export type DaxiangApprovalMutation = typeof DaxiangApprovalMutation.Type;
+
+export const DaxiangApprovalMutationResult = Schema.UndefinedOr(
+  Schema.Struct({ threadId: Schema.String, tabId: Schema.String }),
+);
+export type DaxiangApprovalMutationResult = typeof DaxiangApprovalMutationResult.Type;

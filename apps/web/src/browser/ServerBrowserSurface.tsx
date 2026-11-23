@@ -157,6 +157,7 @@ export function ServerBrowserSurface(props: {
   readonly onViewport?: (viewport: PreviewStreamViewport) => void;
   readonly onControl?: (control: PreviewStreamControl | null) => void;
   readonly onPopup?: (tabId: string) => void;
+  readonly onGone?: () => void;
   readonly className?: string;
   readonly pdfUrl?: string | null;
   readonly ref?: Ref<ServerBrowserHandle>;
@@ -173,6 +174,7 @@ export function ServerBrowserSurface(props: {
     onViewport,
     onControl,
     onPopup,
+    onGone,
     className,
     pdfUrl = null,
     ref,
@@ -231,6 +233,7 @@ export function ServerBrowserSurface(props: {
   );
   const controlChanged = useEffectEvent((next: PreviewStreamControl | null) => onControl?.(next));
   const popupOpened = useEffectEvent((popupTabId: string) => onPopup?.(popupTabId));
+  const tabGone = useEffectEvent(() => onGone?.());
   const [cap, setCap] = useState<{ width: number; height: number } | null>(null);
 
   // Keep clearInput stable: a new identity reconnects the stream.
@@ -419,6 +422,7 @@ export function ServerBrowserSurface(props: {
         onClipboard: (text) => void copyPageText(text),
         onDownload: offerDownload,
         onPopup: popupOpened,
+        onGone: tabGone,
         onFileChooser: setFileChooser,
         onViewport: (viewport) => {
           viewportRef.current = viewport;

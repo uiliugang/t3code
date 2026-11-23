@@ -15,6 +15,7 @@ import * as ExternalLauncher from "../process/externalLauncher.ts";
 import * as Executor from "./DaxiangApprovalExecutor.ts";
 import * as Approval from "./DaxiangApprovalService.ts";
 import * as Messages from "./DaxiangMessageService.ts";
+import * as ServerBrowser from "../preview/ServerBrowser.ts";
 
 it.effect("uses current approval settings for every link in a message", () =>
   Effect.scoped(
@@ -46,6 +47,7 @@ it.effect("uses current approval settings for every link in a message", () =>
         text: "https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
       });
       const context = yield* Layer.build(Approval.layer).pipe(
+        Effect.provide(Layer.mock(ServerBrowser.ServerBrowser)({})),
         Effect.provideService(ServerSettings.ServerSettingsService, settings),
         Effect.provideService(Executor.DaxiangApprovalExecutor, {
           execute: (target) =>
@@ -71,7 +73,7 @@ it.effect("uses current approval settings for every link in a message", () =>
         Effect.provideService(ProcessRunner.ProcessRunner, {
           run: () =>
             Effect.succeed({
-              stdout: JSON.stringify({ loggedIn: true, uid: "owner" }),
+              stdout: JSON.stringify({ uid: "owner", fields: { u: true } }),
               stderr: "",
               code: ChildProcessSpawner.ExitCode(0),
               timedOut: false,
@@ -126,4 +128,83 @@ it.effect("uses current approval settings for every link in a message", () =>
       }
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("imports from the isolated browser only after sign-in and releases its session", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-browser-login-" });
+    yield* fs.writeFileString(`${baseDir}/dumbo-web`, "#!/bin/sh\n", { mode: 0o755 });
+    const tab = { threadId: "private-browser:login", tabId: "tab", port: 49152 };
+    let opens = 0;
+    let closes = 0;
+    let signedIn = false;
+    const ports: string[] = [];
+    const context = yield* Layer.build(Approval.layer).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(ServerBrowser.ServerBrowser)({
+            openPrivateTab: () =>
+              Effect.acquireRelease(
+                Effect.sync(() => {
+                  opens += 1;
+                  return tab;
+                }),
+                () =>
+                  Effect.sync(() => {
+                    closes += 1;
+                  }),
+              ),
+          }),
+          Layer.mock(Executor.DaxiangApprovalExecutor)({}),
+          Layer.mock(Messages.DaxiangMessageService)({}),
+          Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+          ServerSettings.ServerSettingsService.layerTest({}),
+          ServerConfig.ServerConfig.layerTest(baseDir, baseDir),
+        ),
+      ),
+      Effect.provideService(HostProcess.Environment, { PATH: baseDir }),
+      Effect.provideService(ProcessRunner.ProcessRunner, {
+        run: ({ args = [] }) =>
+          Effect.sync(() => {
+            const port = args.at(-1);
+            if (args.includes("login") && port !== undefined) ports.push(port);
+            return {
+              stdout: "",
+              stderr: signedIn ? "" : "not logged in",
+              code: ChildProcessSpawner.ExitCode(signedIn ? 0 : 1),
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            };
+          }),
+      }),
+    );
+    const service = Context.get(context, Approval.DaxiangApprovalService);
+    const open = (sessionId = "owner") => service.mutate({ type: "open_browser_login" }, sessionId);
+    const first = yield* open();
+    const second = yield* open();
+    assert.deepStrictEqual(first, { threadId: tab.threadId, tabId: tab.tabId });
+    assert.deepStrictEqual(first, second);
+    assert.strictEqual(opens, 1);
+
+    yield* Effect.flip(open("other"));
+    const finish = (threadId: string, sessionId = "owner") =>
+      service.mutate({ type: "finish_browser_login", threadId }, sessionId);
+    yield* Effect.flip(finish("private-browser:wrong"));
+    yield* Effect.flip(finish(tab.threadId, "other"));
+    assert.deepStrictEqual(ports, []);
+    yield* Effect.flip(finish(tab.threadId));
+    assert.strictEqual(closes, 0);
+    signedIn = true;
+    yield* finish(tab.threadId);
+    assert.strictEqual(closes, 1);
+    assert.deepStrictEqual(ports, ["49152", "49152"]);
+
+    yield* open();
+    yield* service.mutate({ type: "cancel_browser_login", threadId: tab.threadId }, "owner");
+    assert.strictEqual(closes, 2);
+  }).pipe(Effect.provide(NodeServices.layer)),
 );

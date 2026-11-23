@@ -69,6 +69,11 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
     async scratchPage() {
       return encoderPageOverride ?? (makeEncoderPage() as unknown as Page);
     }
+    async openDebugContext() {
+      const context = makeContext(this.onClose);
+      contexts.push(context);
+      return { context: context as unknown as BrowserContext, port: 49152 };
+    }
     async withContext<A>(
       profileId: string,
       isolationKey: string | undefined,
@@ -296,6 +301,7 @@ function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "
   };
   const context = {
     page,
+    pages: () => [page],
     sessions,
     cssViewport,
     newPage: async () => page as unknown as Page,
@@ -2034,6 +2040,42 @@ it.effect("closing a tab with an unsaved-changes guard still closes it", () =>
       expect(page.unloadEvents).toEqual(["beforeunload", "pagehide", "visibilitychange"]);
     }),
   ).pipe(Effect.provide(layer)),
+);
+
+it.effect.each(["committed", "pending"] as const)(
+  "recovers a %s private login page without using a regular profile",
+  (navigation) =>
+    Effect.gen(function* () {
+      const browser = yield* ServerBrowser.ServerBrowser;
+      const url = "https://example.com/sign-in";
+      const finishInitialNavigation = Promise.withResolvers<void>();
+      if (navigation === "pending") {
+        initialNavigation = () => {
+          const { page } = contexts[0]!;
+          page.emit("request", {
+            isNavigationRequest: () => true,
+            frame: () => page,
+            url: () => url,
+            method: () => "GET",
+          });
+          return finishInitialNavigation.promise;
+        };
+      }
+      yield* browser.openPrivateTab(url, "owner");
+      const context = contexts[0]!;
+      const { page } = context;
+      expect(page.url()).toBe(navigation === "pending" ? "about:blank" : url);
+      expect(page.goto).toHaveBeenCalledWith(url, expect.anything());
+      const replacementFixture = makeContext();
+      const replacement = replacementFixture.page;
+      replacement.context = () => context;
+      context.newCDPSession = replacementFixture.newCDPSession;
+      context.newPage = async () => replacement as unknown as Page;
+      yield* Effect.promise(() => page.emitAsync("crash"));
+      finishInitialNavigation.resolve();
+      expect(contextRequests).toEqual([]);
+      expect(replacement.url()).toBe(url);
+    }).pipe(Effect.provide(layer)),
 );
 
 it.effect("a tab whose renderer crashes stays open instead of vanishing", () =>

@@ -1,6 +1,7 @@
 import {
   DaxiangApprovalError,
   type DaxiangApprovalMutation,
+  type DaxiangApprovalMutationResult,
   type DaxiangApprovalRecord,
   type DaxiangApprovalState,
   type DaxiangApprovalStatus,
@@ -15,6 +16,9 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Scope from "effect/Scope";
+import * as Deferred from "effect/Deferred";
+import * as Exit from "effect/Exit";
+import * as ServerBrowser from "../preview/ServerBrowser.ts";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -60,7 +64,7 @@ const EMPTY_STATE: DaxiangApprovalState = {
   records: [],
 };
 const DumboStatus = Schema.Struct({
-  loggedIn: Schema.Boolean,
+  loggedIn: Schema.optional(Schema.Boolean),
   uid: Schema.optional(Schema.String),
   expiresAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -87,7 +91,10 @@ export class DaxiangApprovalService extends Context.Service<
   DaxiangApprovalService,
   {
     readonly subscribe: Stream.Stream<DaxiangApprovalState, DaxiangApprovalError>;
-    readonly mutate: (input: DaxiangApprovalMutation) => Effect.Effect<void, DaxiangApprovalError>;
+    readonly mutate: (
+      input: DaxiangApprovalMutation,
+      sessionId: string,
+    ) => Effect.Effect<DaxiangApprovalMutationResult, DaxiangApprovalError>;
     readonly start: Effect.Effect<void, DaxiangApprovalError>;
   }
 >()("t3/communication/DaxiangApprovalService") {}
@@ -112,6 +119,18 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const scope = yield* Scope.Scope;
+  const browser = yield* ServerBrowser.ServerBrowser;
+  const loginLock = yield* Semaphore.make(1);
+  let loginSession:
+    | {
+        threadId: string;
+        tabId: string;
+        port: number;
+        sessionId: string;
+        scope: Scope.Closeable;
+        done: Deferred.Deferred<void>;
+      }
+    | undefined;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const hostEnv = yield* HostProcess.Environment;
   const skillInstallerNode = yield* makeSkillInstallerNode;
@@ -491,12 +510,10 @@ const make = Effect.gen(function* () {
       const status = yield* decodeStatus(statusOutput).pipe(
         Effect.mapError(() => cliError("process_failed", "Could not read dumbo-web login status.")),
       );
-      yield* publishCredentials(status);
-      if (!status.loggedIn) {
-        return yield* publishStatus(
-          "unauthenticated",
-          "Import DaXiang web credentials from your logged-in Chrome session.",
-        );
+      const loggedIn = status.loggedIn ?? status.uid !== undefined;
+      yield* publishCredentials({ ...status, loggedIn });
+      if (!loggedIn) {
+        return yield* publishStatus("unauthenticated");
       }
       watchFiber = yield* startWatch(invocation, status.uid);
     },
@@ -520,10 +537,73 @@ const make = Effect.gen(function* () {
       ),
   );
 
+  const closeBrowserLogin = Effect.fn("DaxiangApprovalService.closeBrowserLogin")(function* () {
+    const session = loginSession;
+    if (!session) return;
+    loginSession = undefined;
+    yield* Scope.close(session.scope, Exit.void);
+    yield* Deferred.succeed(session.done, undefined);
+  }, Effect.uninterruptible);
+
   const mutate = Effect.fn("DaxiangApprovalService.mutate")(
-    function* (input: DaxiangApprovalMutation) {
+    function* (input: DaxiangApprovalMutation, sessionId: string) {
       if (input.type === "clear_records") {
         return yield* SubscriptionRef.update(state, (current) => ({ ...current, records: [] }));
+      }
+      if (input.type === "open_browser_login") {
+        if (loginSession && loginSession.sessionId !== sessionId) {
+          return yield* cliError("login_failed", "A DaXiang sign-in is already in progress.");
+        }
+        if (!loginSession) {
+          yield* resolveInvocation();
+          const child = yield* Scope.fork(scope);
+          const done = yield* Deferred.make<void>();
+          const tab = yield* browser.openPrivateTab("https://x.sankuai.com/", sessionId).pipe(
+            Scope.provide(child),
+            Effect.onExit((exit) =>
+              Exit.isFailure(exit) ? Scope.close(child, exit) : Effect.void,
+            ),
+            Effect.tapError((error) =>
+              Effect.logWarning("Could not start the DaXiang login browser", {
+                cause: error.cause,
+              }),
+            ),
+            Effect.mapError(() =>
+              cliError("login_failed", "Could not open the DaXiang login browser."),
+            ),
+          );
+          loginSession = { ...tab, sessionId, scope: child, done };
+          yield* Deferred.await(done).pipe(
+            Effect.timeoutOrElse({
+              duration: "10 minutes",
+              orElse: () =>
+                loginLock.withPermits(1)(
+                  Effect.suspend(() =>
+                    loginSession?.threadId === tab.threadId ? closeBrowserLogin() : Effect.void,
+                  ),
+                ),
+            }),
+            Effect.forkIn(scope),
+          );
+        }
+        return { threadId: loginSession.threadId, tabId: loginSession.tabId };
+      }
+      if (input.type === "cancel_browser_login") {
+        if (input.threadId === loginSession?.threadId && sessionId === loginSession.sessionId) {
+          yield* closeBrowserLogin();
+        }
+        return;
+      }
+      if (input.type === "finish_browser_login") {
+        if (input.threadId !== loginSession?.threadId || sessionId !== loginSession.sessionId) {
+          return yield* cliError("login_failed", "The DaXiang login session has expired.");
+        }
+        yield* runDumbo(["login", "--port", String(loginSession.port)], "45 seconds").pipe(
+          Effect.mapError(() =>
+            cliError("login_failed", "Could not import DaXiang login from the built-in browser."),
+          ),
+        );
+        yield* closeBrowserLogin();
       }
       if (input.type === "login") {
         const saved = yield* settings.getSettings.pipe(
@@ -538,6 +618,8 @@ const make = Effect.gen(function* () {
       }
       yield* reconcile();
     },
+    Effect.map((result) => result ?? undefined),
+    loginLock.withPermits(1),
     (effect) => effect.pipe(Effect.provideService(Scope.Scope, scope)),
   );
 

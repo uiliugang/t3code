@@ -428,6 +428,36 @@ export class ServerBrowserContexts {
     }
   }
 
+  async openDebugContext(directory: string) {
+    const { executable, ...options } = await this.launchOptions();
+    const { chromium } = loadPlaywright();
+    const context = await this.launch(executable, (executablePath) =>
+      chromium.launchPersistentContext(directory, {
+        ...options,
+        executablePath,
+        args: [
+          ...options.args,
+          "--remote-debugging-address=127.0.0.1",
+          "--remote-debugging-port=0",
+        ],
+      }),
+    );
+    try {
+      const port = Number(
+        (await NodeFSP.readFile(NodePath.join(directory, "DevToolsActivePort"), "utf8")).split(
+          "\n",
+        )[0],
+      );
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error("Chromium did not report a debugging port.");
+      }
+      return { context, port };
+    } catch (cause) {
+      await context.close().catch(constVoid);
+      throw cause;
+    }
+  }
+
   async connectDesktopPage(endpoint: string) {
     const { chromium } = loadPlaywright();
     // Only a same-machine desktop backend gets the browser channel, so uploads can pass file paths.

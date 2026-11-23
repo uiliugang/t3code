@@ -94,6 +94,7 @@ import * as Schema from "effect/Schema";
 import {
   DaxiangApprovalError,
   DaxiangApprovalMutation,
+  DaxiangApprovalMutationResult,
   DaxiangApprovalState,
   DaxiangSendError,
   DaxiangSendResult,
@@ -1616,7 +1617,7 @@ const WsDaxiangApprovalSubscribeRpc = Rpc.make(WS_METHODS.daxiangApprovalSubscri
 });
 const WsDaxiangApprovalMutateRpc = Rpc.make(WS_METHODS.daxiangApprovalMutate, {
   payload: DaxiangApprovalMutation,
-  success: Schema.Void,
+  success: DaxiangApprovalMutationResult,
   error: Schema.Union([DaxiangApprovalError, EnvironmentAuthorizationError]),
 });
 const WsPullRequestsSendReviewLinkRpc = Rpc.make(WS_METHODS.pullRequestsSendReviewLink, {
