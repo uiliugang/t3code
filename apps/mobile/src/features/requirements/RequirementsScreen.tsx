@@ -417,6 +417,7 @@ function UnifiedRequirementBoard({
         scope: entry.scope,
         host: entry.host,
         issueKey: entry.issue.id,
+        ...(entry.issue.url ? { url: entry.issue.url } : {}),
       });
     } else
       navigation.navigate("IssueDetail", {
@@ -1050,7 +1051,7 @@ function UnifiedRequirementBoard({
             setActionEnvironmentId(createdEnvId);
             showItem(item.id);
           }}
-          onTrackerCreated={(scope, id, environmentId) => {
+          onTrackerCreated={(scope, createdIssue, environmentId) => {
             setCreateSheetOpen(false);
             navigation.navigate("Issue", {
               environmentId,
@@ -1058,7 +1059,8 @@ function UnifiedRequirementBoard({
               scope: scope.scope,
               tracker: scope.provider,
               ...(scope.host ? { host: scope.host } : {}),
-              issueKey: id,
+              issueKey: createdIssue.key,
+              url: createdIssue.url,
             });
           }}
           onCreatedIssue={(target, id) => {
@@ -1101,7 +1103,11 @@ function RequirementCreateSheet({
   onClose: () => void;
   onCreatedLocal: (environmentId: EnvironmentId, item: { readonly id: WorkItemId }) => void;
   onCreatedIssue: (target: Target, id: string) => void;
-  onTrackerCreated: (scope: TrackerCreateTarget, key: string, env: EnvironmentId) => void;
+  onTrackerCreated: (
+    scope: TrackerCreateTarget,
+    created: { readonly key: string; readonly url: string },
+    env: EnvironmentId,
+  ) => void;
 }) {
   const t = useUiTranslation();
   const [selectedProjectKey, setSelectedProjectKey] = useState(
@@ -1224,7 +1230,9 @@ function RequirementCreateSheet({
             environmentId={project.environmentId}
             busy={submitting}
             setBusy={setSubmitting}
-            created={(id) => onTrackerCreated(trackerTarget, id, project.environmentId)}
+            created={(createdIssue) =>
+              onTrackerCreated(trackerTarget, createdIssue, project.environmentId)
+            }
           />
         ) : (
           <IssueCreateFormBody
@@ -1253,7 +1261,7 @@ function TrackerCreateForm({
   environmentId: EnvironmentId;
   busy: boolean;
   setBusy: (busy: boolean) => void;
-  created: (id: string) => void;
+  created: (created: { readonly key: string; readonly url: string }) => void;
 }) {
   const t = useUiTranslation();
   const [title, setTitle] = useState("");
@@ -1268,7 +1276,7 @@ function TrackerCreateForm({
       input: { ...scope, title: title.trim(), body, labels: [], assignees: [] },
     });
     setBusy(false);
-    if (result._tag === "Success") created(result.value.key);
+    if (result._tag === "Success") created(result.value);
   };
   return (
     <>

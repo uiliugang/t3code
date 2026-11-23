@@ -1,4 +1,5 @@
 import {
+  standaloneIssueWorkspace,
   WS_METHODS,
   type EnvironmentId,
   type IssueAssigneeCandidate,
@@ -176,30 +177,37 @@ export function createIssueEnvironmentAtoms<R, E>(
     tag: WS_METHODS.issuesDetail,
     staleTimeMs: 30_000,
   });
+  const normalizeDetailInput = ({
+    projectId,
+    tracker,
+    host,
+    scope,
+    key,
+    url,
+  }: IssueRef): IssueRef => {
+    const workspace = standaloneIssueWorkspace({
+      tracker,
+      ...(url === undefined ? {} : { url }),
+    });
+    return {
+      projectId,
+      tracker,
+      ...(host === undefined ? {} : { host }),
+      scope,
+      key,
+      ...(workspace === null ? {} : { url: `https://linear.app/${workspace}/issue/${key}` }),
+    };
+  };
   const detail = (
     {
       environmentId,
-      input: { projectId, tracker, host, scope, key, url },
+      input,
     }: {
       readonly environmentId: EnvironmentId;
       readonly input: IssueRef;
     },
     mountScope?: string,
-  ) =>
-    detailQuery(
-      {
-        environmentId,
-        input: {
-          projectId,
-          tracker,
-          ...(host === undefined ? {} : { host }),
-          scope,
-          key,
-          ...(url === undefined ? {} : { url }),
-        },
-      },
-      mountScope,
-    );
+  ) => detailQuery({ environmentId, input: normalizeDetailInput(input) }, mountScope);
   const refreshDetail = (
     target: Parameters<typeof detail>[0],
     registry: AtomRegistry.AtomRegistry,

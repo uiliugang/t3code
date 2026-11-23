@@ -66,6 +66,57 @@ it("refreshes the same issue detail regardless of how a surface orders the refer
     opened ===
       issues.detail({ environmentId, input: { projectId, tracker, host, scope: "another", key } }),
   ).toBe(false);
+  // Git-hosted issues share the same detail atom with or without a URL; Linear workspaces stay apart.
+  expect(
+    opened ===
+      issues.detail({
+        environmentId,
+        input: {
+          projectId,
+          tracker,
+          host,
+          scope,
+          key,
+          url: "https://github.com/acme/app/issues/23",
+        },
+      }),
+  ).toBe(true);
+  const linear = IssueTrackerKind.make("linear");
+  const acmeLinear = issues.detail({
+    environmentId,
+    input: {
+      projectId,
+      tracker: linear,
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/acme/issue/ENG-1/slug-one",
+    },
+  });
+  const acmeLinearSlugTwo = issues.detail({
+    environmentId,
+    input: {
+      projectId,
+      tracker: linear,
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/acme/issue/ENG-1/slug-two",
+    },
+  });
+  const globexLinear = issues.detail({
+    environmentId,
+    input: {
+      projectId,
+      tracker: linear,
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/globex/issue/ENG-1/slug-one",
+    },
+  });
+  expect(acmeLinear === acmeLinearSlugTwo).toBe(true);
+  expect(acmeLinear === globexLinear).toBe(false);
 });
 
 describe("mergeIssueListPage", () => {

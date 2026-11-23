@@ -40,6 +40,7 @@ export function requirementsSearchFromIssuesSearch(search: IssuesSearch): Requir
       issueTracker: search.tracker,
       issueScope: search.scope,
       issueId: search.key,
+      issueUrl: search.url,
     },
   );
 }
@@ -54,6 +55,7 @@ export function requirementSelection(surface: RightPanelSurface | null): Require
     issueTracker: undefined,
     issueScope: undefined,
     issueHost: undefined,
+    issueUrl: undefined,
     pullRequest: undefined,
   };
   const detailEnvironmentId =
@@ -82,6 +84,7 @@ export function requirementSelection(surface: RightPanelSurface | null): Require
         issueTracker: surface.tracker,
         issueScope: surface.scope,
         issueHost: surface.host,
+        issueUrl: surface.url,
       };
     case "pull-request":
       return {

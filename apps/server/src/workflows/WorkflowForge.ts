@@ -332,8 +332,28 @@ export const layer = Layer.effect(
       ...("title" in address && typeof address.title === "string" ? { title: address.title } : {}),
       ...("url" in address && typeof address.url === "string" ? { url: address.url } : {}),
     });
-    const issueTouched = (ref: IssueRef, address: IssueAddress) =>
-      noteReference({ ...issueReference(ref), ...seenOf(address) });
+    const issueTouched = Effect.fn("WorkflowForge.issueTouched")(function* (
+      ref: IssueRef,
+      address: IssueAddress,
+    ) {
+      const seen = seenOf(address);
+      const url =
+        seen.url ??
+        ref.url ??
+        (sourceControlDefinitions.definitions.some(
+          (definition) => definition.kind === String(ref.tracker),
+        )
+          ? undefined
+          : yield* issues.linkMetadata(ref).pipe(
+              Effect.map((meta) => meta.url),
+              Effect.orElseSucceed(() => undefined),
+            ));
+      yield* noteReference({
+        ...issueReference(url === undefined ? ref : { ...ref, url }),
+        ...seen,
+        ...(url === undefined ? {} : { url }),
+      });
+    });
     const pullRequestTouched = (ref: PullRequestRef, seen: PullRequestSeen) =>
       noteReference(pullRequestReferenceOf(ref, seen));
 

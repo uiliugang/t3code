@@ -580,6 +580,56 @@ describe("issue toolkit handlers", () => {
         const failed = yield* harness.call("unlink_issue", { key: "ENG-1" }).pipe(Effect.flip);
         expect(failed).toBeDefined();
         expect(yield* Ref.get(harness.unlinks)).toHaveLength(1);
+
+        // Unlinking by an explicit saved URL succeeds without any live tracker read (even when
+        // resolveUrl fails because the issue was deleted or the tracker account was disconnected).
+        const offlineLayer = Layer.mock(IssueService.IssueService)({
+          resolveUrl: () =>
+            Effect.fail(
+              new IssueOperationError({
+                operation: "resolveUrl",
+                reason: "not-found",
+                detail: "Issue deleted",
+              }),
+            ),
+        });
+        const offlineHarness = yield* makeHarness(
+          [
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              projectId: PROJECT_ID,
+              url: acmeUrl,
+              source: "manual",
+              linkedAt: "2026-08-10T00:00:00.000Z",
+              displayKey: "ENG-1",
+              title: "Acme",
+            },
+          ],
+          offlineLayer,
+        );
+        const unlinkedOffline = yield* offlineHarness.call("unlink_issue", { url: acmeUrl });
+        expect(unlinkedOffline).toMatchObject({
+          projectId: PROJECT_ID,
+          tracker: "linear",
+          key: "ENG-1",
+          url: acmeUrl,
+          wasLinked: true,
+        });
+        expect(yield* Ref.get(offlineHarness.unlinks)).toEqual([
+          {
+            threadId: THREAD_ID,
+            key: {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              url: acmeUrl,
+            },
+          },
+        ]);
       }),
   );
 });

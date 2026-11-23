@@ -128,6 +128,7 @@ function resolveStandaloneIssueLink<Project extends LinkProject>(
       host: link.host,
       scope: (own && boundScope(own)) ?? link.scope,
       key: link.key,
+      url,
     },
   };
 }

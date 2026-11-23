@@ -163,7 +163,7 @@ export function decodeThreadSurface(surface: object): ThreadSurface | null {
 }
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 16;
+const RIGHT_PANEL_STORAGE_VERSION = 17;
 
 export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
   EnvironmentId.make("pull-requests-panel"),
@@ -739,6 +739,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             .map(([threadKey, threadState]) => {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
+              const migratedSurfaceIds = new Map<string, string>();
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     if (!surface || typeof surface !== "object") return [];
@@ -803,12 +804,14 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         return [];
                       }
                       const { environmentId, ...rest } = surface;
-                      return [
-                        issueSurface({
-                          ...rest,
-                          ...(typeof environmentId === "string" ? { environmentId } : {}),
-                        }),
-                      ];
+                      const rebuilt = issueSurface({
+                        ...rest,
+                        ...(typeof environmentId === "string" ? { environmentId } : {}),
+                      });
+                      if (typeof surface.id === "string" && surface.id !== rebuilt.id) {
+                        migratedSurfaceIds.set(surface.id, rebuilt.id);
+                      }
+                      return [rebuilt];
                     }
                     if (surface.kind === "requirement-issue") {
                       if (
@@ -876,7 +879,9 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 typeof savedActiveSurfaceId === "string" &&
                 savedActiveSurfaceId.startsWith("side-chat:")
                   ? `thread:${savedActiveSurfaceId.slice("side-chat:".length)}`
-                  : savedActiveSurfaceId;
+                  : typeof savedActiveSurfaceId === "string"
+                    ? (migratedSurfaceIds.get(savedActiveSurfaceId) ?? savedActiveSurfaceId)
+                    : savedActiveSurfaceId;
               const persistedActiveSurfaceId = surfaces.some(
                 (surface) => surface.id === rawActiveSurfaceId,
               )

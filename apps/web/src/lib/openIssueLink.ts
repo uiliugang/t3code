@@ -101,6 +101,7 @@ export function useOpenIssueLink(
           tracker: target.ref.tracker,
           scope: target.ref.scope,
           key: target.ref.key,
+          url: targetUrl,
         }),
       });
       return true;

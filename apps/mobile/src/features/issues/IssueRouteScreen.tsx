@@ -433,6 +433,7 @@ function IssueEventRow({
           ...host,
           scope: target.repository,
           issueKey: String(target.number),
+          url: target.url,
         }),
       );
     } else if (sameHost) {

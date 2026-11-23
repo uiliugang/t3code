@@ -96,6 +96,7 @@ export interface IssuesSearch extends IssueListPreferences {
   readonly tracker?: string | undefined;
   readonly scope?: string | undefined;
   readonly key?: string | undefined;
+  readonly url?: string | undefined;
 }
 
 const STATE_TABS = [

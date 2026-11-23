@@ -96,9 +96,11 @@ const rowKey = (item: EnvironmentIssueEntry) =>
   issueParamsKey({
     environmentId: item.environmentId,
     projectId: item.projectId,
+    tracker: item.tracker,
     host: item.host,
     scope: item.scope,
     issueKey: item.key,
+    url: item.url,
   });
 
 export function IssuesScreen(
@@ -227,6 +229,7 @@ export function IssuesScreen(
         host: item.host,
         scope: item.scope,
         issueKey: item.key,
+        url: item.url,
         initialSummary: item,
       },
     });

@@ -1,4 +1,5 @@
 import {
+  standaloneIssueWorkspace,
   threadIssueKeysEqual,
   type IssueDetail,
   type IssueRef,
@@ -299,6 +300,45 @@ const make = Effect.gen(function* () {
     unlink_issue: writesThread((input) =>
       Effect.gen(function* () {
         const thread = yield* requireThread(input.threadId);
+        if (input.url !== undefined) {
+          const requestedUrl = input.url.trim();
+          const storedByUrl = (thread.issues ?? []).find((link) => {
+            if (link.url.trim() === requestedUrl) return true;
+            const linkWorkspace = standaloneIssueWorkspace(link);
+            const requestedWorkspace = standaloneIssueWorkspace({
+              tracker: link.tracker,
+              url: requestedUrl,
+            });
+            return (
+              linkWorkspace !== null &&
+              linkWorkspace === requestedWorkspace &&
+              requestedUrl.toLowerCase().includes(`/issue/${link.key.trim().toLowerCase()}`)
+            );
+          });
+          if (storedByUrl !== undefined) {
+            const { wasLinked } = yield* threadIssues
+              .unlink({
+                threadId: thread.id,
+                key: {
+                  tracker: storedByUrl.tracker,
+                  host: storedByUrl.host,
+                  scope: storedByUrl.scope,
+                  key: storedByUrl.key,
+                  url: storedByUrl.url,
+                },
+              })
+              .pipe(Effect.catchCause(linkFailure));
+            return {
+              projectId: storedByUrl.projectId,
+              tracker: storedByUrl.tracker,
+              host: storedByUrl.host,
+              scope: storedByUrl.scope,
+              key: storedByUrl.key,
+              url: storedByUrl.url,
+              wasLinked,
+            };
+          }
+        }
         const target = yield* resolveTarget({
           ...input,
           projectId: input.projectId ?? thread.projectId,

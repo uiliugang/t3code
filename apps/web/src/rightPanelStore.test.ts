@@ -102,6 +102,33 @@ describe("rightPanelStore", () => {
       refA,
     ).surfaces;
     expect(surfaces).toHaveLength(2);
+
+    // Migrating an older saved Linear tab (whose id lacked the workspace) alongside a second tab
+    // updates activeSurfaceId to the migrated Linear tab's new workspace-aware id.
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "issue:project-1:linear:linear.app:eng:ENG-1",
+          surfaces: [
+            { id: "diff", kind: "diff" },
+            {
+              id: "issue:project-1:linear:linear.app:eng:ENG-1",
+              kind: "issue",
+              projectId: "project-1",
+              tracker: "linear",
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              url: "https://linear.app/acme/issue/ENG-1",
+            },
+          ],
+        },
+      },
+    });
+    const migratedState = selectThreadRightPanelState(migrated.byThreadKey, refA);
+    expect(migratedState.activeSurfaceId).toBe(migratedState.surfaces[1]?.id);
+    expect(migratedState.activeSurfaceId).toContain("acme");
   });
 
   it("reopens the active tab first after a bulk close", () => {

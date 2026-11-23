@@ -33,6 +33,9 @@ const projectPairs = (raw: unknown): IssuesSearch["hideProjects"] => {
   return pairs.length === 0 ? undefined : pairs.slice(0, ISSUE_LIST_MAX_EXCLUDED_PROJECTS);
 };
 
+const boundedUrl = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() ? value.trim().slice(0, 2_048) : undefined;
+
 // Every optional key is an own key, even when undefined: the router lays these over the parent
 // route's unvalidated search, where a key left out would keep its raw value.
 export const issuesSearchFromUrl = (raw: Record<string, unknown>): IssuesSearch => ({
@@ -51,6 +54,7 @@ export const issuesSearchFromUrl = (raw: Record<string, unknown>): IssuesSearch 
   tracker: bounded(raw.tracker),
   scope: bounded(raw.scope),
   key: bounded(raw.key),
+  url: boundedUrl(raw.url),
 });
 
 /**

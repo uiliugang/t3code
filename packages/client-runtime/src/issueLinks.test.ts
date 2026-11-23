@@ -123,6 +123,7 @@ describe("resolveIssueLinkTarget", () => {
       host: "linear.app",
       scope: "WEB",
       key: "WEB-17",
+      url: "https://linear.app/acme/issue/WEB-17/fix-it",
     });
     expect(resolve("https://linear.app/acme/issue/DOCS-4")?.ref).toMatchObject({
       projectId: "p2",

@@ -115,6 +115,7 @@ export function useOpenReferencePage(
             tracker: issue.tracker,
             scope: issue.scope,
             key: issue.key,
+            ...(reference.url === null ? {} : { url: reference.url }),
           },
         });
       };

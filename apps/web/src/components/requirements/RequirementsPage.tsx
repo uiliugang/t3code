@@ -478,6 +478,7 @@ export function RequirementBoard({
         ...(search.issueHost ? { host: search.issueHost } : {}),
         scope: issueScope,
         key: issueId,
+        ...(search.issueUrl ? { url: search.issueUrl } : {}),
       });
     else if (issueId && issueProjectId)
       panels.openRequirementIssue(rightPanelRef, {
@@ -507,6 +508,7 @@ export function RequirementBoard({
     issueProjectId,
     issueScope,
     search.issueHost,
+    search.issueUrl,
     issueProvider,
     issueTracker,
     pullRequest,
