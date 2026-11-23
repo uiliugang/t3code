@@ -3,12 +3,21 @@ import {
   isMeituanServiceEnabled,
   MAX_WORK_ITEM_DISCOVERY_LIMIT,
   WorkItemDiscoveryLimit,
+  type IssueSource,
   type IssueSourcesResult,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
-import { RefreshCwIcon, Settings2Icon, Undo2Icon, SaveIcon } from "lucide-react";
+import {
+  GithubIcon,
+  RefreshCwIcon,
+  SaveIcon,
+  Settings2Icon,
+  SquarePenIcon,
+  Undo2Icon,
+  XIcon,
+} from "lucide-react";
 import { Fragment, useId, useState } from "react";
 import {
   meituanAssociationCountLabel,
@@ -22,9 +31,11 @@ import { serverEnvironment } from "../../state/server";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { MepIcon } from "../Icons";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -56,6 +67,27 @@ function SourceValue({ value }: { value: string | null | undefined }) {
 
 type Environment = ReturnType<typeof useSettingsScope>["connectedEnvironments"][number];
 type Group = { environment: Environment; projects: Project[] };
+type SourceProviderFilter = "all" | "github" | "meituan";
+type SourceModeFilter = "all" | "automatic" | "manual";
+
+function matchesProjectSourceFilters(
+  title: string,
+  automatic: readonly IssueSource[],
+  saved: readonly IssueSource[],
+  filters: { name: string; provider: SourceProviderFilter; mode: SourceModeFilter },
+) {
+  if (!title.toLocaleLowerCase().includes(filters.name.trim().toLocaleLowerCase())) return false;
+  if (filters.provider === "all" && filters.mode === "all") return true;
+  const overridden = new Set(saved.map((source) => source.provider));
+  return mergeProjectIssueSources(automatic, saved).some(
+    (source) =>
+      (filters.provider === "all" || source.provider === filters.provider) &&
+      (filters.mode === "all" ||
+        (filters.mode === "manual"
+          ? overridden.has(source.provider)
+          : !overridden.has(source.provider))),
+  );
+}
 
 const isDiscoveryLimit = Schema.is(WorkItemDiscoveryLimit);
 
@@ -257,8 +289,8 @@ function ProjectSourceRow({
   };
   const invalid = draft !== null && !parseMepSpaceIds(draft.text);
   return (
-    <tr className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-3 text-sm sm:table-row">
-      <td className="row-span-4 align-top sm:py-4 sm:pr-3">
+    <tr className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-3 text-sm lg:table-row">
+      <td className="row-span-4 align-top lg:py-4 lg:pr-3">
         <Checkbox
           id={`issue-source-${projectKey(project)}`}
           checked={checked}
@@ -267,12 +299,12 @@ function ProjectSourceRow({
           aria-label={t("Select {project}", { project: project.title })}
         />
       </td>
-      <td className="min-w-0 align-top sm:py-4 sm:pr-4">
+      <td className="min-w-0 align-top lg:py-4 lg:pr-4">
         <label htmlFor={`issue-source-${projectKey(project)}`} className="block font-medium">
           <SourceValue value={project.title} />
         </label>
       </td>
-      <td className="col-start-2 min-w-0 align-top text-xs text-muted-foreground sm:py-4 sm:pr-4">
+      <td className="col-start-2 min-w-0 align-top text-xs text-muted-foreground lg:py-4 lg:pr-4">
         <SourceValue value={result?.repository} />
         {loading && !result ? <p>{t("Loading...")}</p> : null}
         {error || result?.error ? (
@@ -281,30 +313,58 @@ function ProjectSourceRow({
           </p>
         ) : null}
       </td>
-      <td className="col-start-2 min-w-0 space-y-1 align-top sm:py-4 sm:pr-3">
+      <td className="col-start-2 min-w-0 space-y-1 align-top lg:py-4 lg:pr-3">
         {githubSources.map((github) => (
-          <p key={JSON.stringify([github.host, github.scope])} className="text-xs wrap-anywhere">
-            {t("GitHub Issues")}
-            {manualGithub || githubSources.length > 1 ? ` · ${github.host}/${github.scope}` : ""}
-            {manualGithub ? ` · ${t("Manual override")}` : ""}
+          <p
+            key={JSON.stringify([github.host, github.scope])}
+            className="flex min-w-0 items-center gap-1.5 text-xs wrap-anywhere"
+          >
+            <GithubIcon aria-hidden className="size-3.5 shrink-0" />
+            <span>
+              {t("GitHub Issues")}
+              {manualGithub || githubSources.length > 1 ? ` · ${github.host}/${github.scope}` : ""}
+              {manualGithub ? ` · ${t("Manual override")}` : ""}
+            </span>
           </p>
         ))}
-        {enabled ? (
+        {enabled && (spaces.length > 0 || manual || githubSources.length === 0) ? (
           <>
-            <p className="text-xs wrap-anywhere">{mepSpaceSummary(spaces, manual, discovery, t)}</p>
-            {draft === null ? (
+            <div className="group/mep-source flex min-w-0 items-center gap-1.5">
+              <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs wrap-anywhere">
+                <MepIcon aria-hidden className="size-3.5 shrink-0" />
+                <span>{mepSpaceSummary(spaces, manual, discovery, t)}</span>
+              </p>
+              {draft === null && spaces.length > 0 ? (
+                <span className="flex shrink-0 opacity-0 transition-opacity group-focus-within/mep-source:opacity-100 group-hover/mep-source:opacity-100 pointer-coarse:opacity-100">
+                  <Button
+                    variant="ghost-muted"
+                    size="icon-xs"
+                    disabled={disabled}
+                    aria-label={t("Edit MEP spaces for {project}", { project: project.title })}
+                    onClick={() => {
+                      setFailure(null);
+                      setDraft({ text: spaces.join(", "), saved });
+                    }}
+                  >
+                    <SquarePenIcon aria-hidden className="size-3.5" />
+                  </Button>
+                </span>
+              ) : null}
+            </div>
+            {draft === null && spaces.length === 0 ? (
               <Button
                 variant="ghost-muted"
                 size="xs"
                 disabled={disabled}
                 onClick={() => {
                   setFailure(null);
-                  setDraft({ text: spaces.join(", "), saved });
+                  setDraft({ text: "", saved });
                 }}
               >
-                {t(spaces.length || discovery !== "ready" ? "Edit spaces" : "Link spaces")}
+                {t(discovery === "ready" ? "Link spaces" : "Edit spaces")}
               </Button>
-            ) : (
+            ) : null}
+            {draft !== null ? (
               <form
                 className="grid gap-2 pt-1"
                 onSubmit={(event) => {
@@ -359,16 +419,16 @@ function ProjectSourceRow({
                       disabled={disabled || saving}
                       onClick={() => void submit([])}
                     >
-                      {t("Restore automatic")}
+                      {t("Restore MEP automatic")}
                     </Button>
                   ) : null}
                 </div>
               </form>
-            )}
+            ) : null}
           </>
         ) : null}
       </td>
-      <td className="col-start-2 align-top text-xs text-muted-foreground sm:py-4 sm:text-right">
+      <td className="col-start-2 align-top text-xs text-muted-foreground lg:py-4 lg:text-right">
         <SourceValue value={group.environment.label} />
         {!canEdit ? <p>{t("Read-only")}</p> : null}
       </td>
@@ -395,7 +455,7 @@ function EnvironmentProjectRows({
   const query = useProjectSources(group);
   const byId = new Map(query.data?.map((result) => [result.projectId, result]));
   return (
-    <tbody className="block sm:table-row-group">
+    <tbody className="block lg:table-row-group">
       {group.projects.map((project) => (
         <ProjectSourceRow
           key={JSON.stringify([projectKey(project), enabled])}
@@ -414,7 +474,7 @@ function EnvironmentProjectRows({
   );
 }
 
-function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups: Group[] }) {
+function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const t = useUiTranslation();
   const { connectedEnvironments } = useSettingsScope();
   const [selected, setSelected] = useState<string[]>([]);
@@ -423,6 +483,9 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
   const [host, setHost] = useState("github.com");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [providerFilter, setProviderFilter] = useState<SourceProviderFilter>("all");
+  const [modeFilter, setModeFilter] = useState<SourceModeFilter>("all");
   const permissions = useAtomValue(
     Atom.make(
       (get) =>
@@ -434,18 +497,72 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
         ),
     ),
   );
+  const sourceResults = useAtomValue(
+    Atom.make((get) =>
+      groups.map((group) => ({
+        environmentId: group.environment.environmentId,
+        result: group.projects.length
+          ? get(
+              sourceControlEnvironment.issueSources({
+                environmentId: group.environment.environmentId,
+                input: { projectIds: group.projects.map((project) => project.id) },
+              }),
+            )
+          : null,
+      })),
+    ),
+  );
+  const discoveredSources = new Map<string, readonly IssueSource[]>();
+  for (const entry of sourceResults) {
+    if (entry.result?._tag !== "Success") continue;
+    for (const source of entry.result.value) {
+      discoveredSources.set(`${entry.environmentId}/${source.projectId}`, source.sources);
+    }
+  }
+  const savedSources = new Map<string, readonly IssueSource[]>();
+  for (const group of groups) {
+    for (const project of group.projects) {
+      savedSources.set(
+        projectKey(project),
+        group.environment.serverConfig?.settings.issueProjectSources[project.id] ?? [],
+      );
+    }
+  }
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      projects: group.projects.filter((project) =>
+        matchesProjectSourceFilters(
+          project.title,
+          discoveredSources.get(projectKey(project)) ?? [],
+          savedSources.get(projectKey(project)) ?? [],
+          { name: nameFilter, provider: providerFilter, mode: modeFilter },
+        ),
+      ),
+    }))
+    .filter((group) => group.projects.length > 0);
+  const visibleProjects = visibleGroups.flatMap((group) => group.projects);
   const update = useAtomCommand(serverEnvironment.updateSettings);
   const refresh = useAtomCommand(sourceControlEnvironment.refreshIssueSources);
-  const writable = projects.filter((project) => permissions.get(project.environmentId));
+  const writable = visibleProjects.filter((project) => permissions.get(project.environmentId));
   const chosen = writable.filter((project) => selected.includes(projectKey(project)));
+  const githubChosen = chosen.filter((project) =>
+    matchesProjectSourceFilters(
+      project.title,
+      discoveredSources.get(projectKey(project)) ?? [],
+      savedSources.get(projectKey(project)) ?? [],
+      { name: "", provider: "github", mode: modeFilter },
+    ),
+  );
   const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && /^[\w.-]+$/u.test(host.trim());
   const run = async (action: "refresh" | "save" | "reset") => {
-    if (!chosen.length || busy || (action === "save" && !valid)) return;
+    const actionTargets = action === "refresh" ? chosen : githubChosen;
+    if (!actionTargets.length || busy || (action === "save" && !valid)) return;
     setBusy(true);
     setMessage("");
     const results = await Promise.all(
       connectedEnvironments.map(async (environment) => {
-        const targets = chosen.filter(
+        const targets = actionTargets.filter(
           (project) => project.environmentId === environment.environmentId,
         );
         if (!targets.length) return { success: 0, failed: 0 };
@@ -465,7 +582,7 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
           targets.map((project) => [
             project.id,
             action === "reset"
-              ? []
+              ? (saved[project.id] ?? []).filter((source) => source.provider !== "github")
               : [
                   ...(saved[project.id] ?? []).filter((source) => source.provider !== "github"),
                   { provider: "github" as const, scope: scope.trim(), host: host.trim() },
@@ -479,7 +596,7 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
             expectedIssueProjectSources: Object.fromEntries(
               targets.map((project) => [project.id, saved[project.id] ?? []]),
             ),
-            ...(action === "save" ? { issueSourceProvider: "github" as const } : {}),
+            issueSourceProvider: "github" as const,
           },
         });
         return {
@@ -499,7 +616,59 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
   };
   return (
     <section id="issue-project-sources" className="space-y-4">
-      <h2 className="text-base font-semibold">{t("Project issue sources")}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">{t("Project issue sources")}</h2>
+        <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
+          <div className="w-44 max-sm:flex-1">
+            <Input
+              size="compact"
+              type="search"
+              value={nameFilter}
+              aria-label={t("Project name")}
+              placeholder={t("Project name")}
+              onChange={(event) => setNameFilter(event.target.value)}
+            />
+          </div>
+          <Select
+            value={providerFilter}
+            onValueChange={(value) => setProviderFilter(value as SourceProviderFilter)}
+          >
+            <SelectTrigger size="compact" className="w-32" aria-label={t("Issue source")}>
+              <SelectValue>
+                {providerFilter === "all"
+                  ? t("All sources")
+                  : providerFilter === "github"
+                    ? t("GitHub Issues")
+                    : t("MEP ONES")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup alignItemWithTrigger={false}>
+              <SelectItem value="all">{t("All sources")}</SelectItem>
+              <SelectItem value="github">{t("GitHub Issues")}</SelectItem>
+              <SelectItem value="meituan">{t("MEP ONES")}</SelectItem>
+            </SelectPopup>
+          </Select>
+          <Select
+            value={modeFilter}
+            onValueChange={(value) => setModeFilter(value as SourceModeFilter)}
+          >
+            <SelectTrigger size="compact" className="w-28" aria-label={t("Source mode")}>
+              <SelectValue>
+                {modeFilter === "all"
+                  ? t("All modes")
+                  : modeFilter === "automatic"
+                    ? t("Automatic")
+                    : t("Manual")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup alignItemWithTrigger={false}>
+              <SelectItem value="all">{t("All modes")}</SelectItem>
+              <SelectItem value="automatic">{t("Automatic")}</SelectItem>
+              <SelectItem value="manual">{t("Manual")}</SelectItem>
+            </SelectPopup>
+          </Select>
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
@@ -523,36 +692,56 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
           <RefreshCwIcon />
           {t("Detect again")}
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy || !chosen.length}
-          onClick={() => {
-            setEditing(!editing);
-            setScope("");
-          }}
-        >
-          <Settings2Icon />
-          {t("Set override")}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy || !chosen.length}
-          onClick={() => void run("reset")}
-        >
-          <Undo2Icon />
-          {t("Restore automatic")}
-        </Button>
+        {githubChosen.length > 0 ? (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setEditing(!editing);
+                setScope("");
+              }}
+            >
+              <Settings2Icon />
+              {t("GitHub override")}
+              <span className="text-xs text-muted-foreground">{githubChosen.length}</span>
+            </Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void run("reset")}>
+              <Undo2Icon />
+              {t("Restore GitHub automatic")}
+              <span className="text-xs text-muted-foreground">{githubChosen.length}</span>
+            </Button>
+          </>
+        ) : null}
       </div>
-      {editing && chosen.length ? (
+      {editing && githubChosen.length ? (
         <form
-          className="grid grid-cols-1 gap-3 border-t border-border py-4 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted/20 p-4 sm:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
             void run("save");
           }}
         >
+          <div className="flex items-start justify-between gap-3 sm:col-span-2">
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium">{t("GitHub Issue repository override")}</h3>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Only changes the selected projects' GitHub Issue sources. MEP ONES spaces are not affected.",
+                )}
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-muted"
+              aria-label={t("Close")}
+              onClick={() => setEditing(false)}
+            >
+              <XIcon />
+            </Button>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="issue-source-scope">{t("GitHub repository")}</Label>
             <Input
@@ -575,7 +764,7 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
           <div className="flex justify-end sm:col-span-2">
             <Button size="sm" type="submit" disabled={busy || !valid}>
               <SaveIcon />
-              {t("Save override")}
+              {t("Save GitHub override")}
             </Button>
           </div>
         </form>
@@ -586,15 +775,15 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
         </p>
       ) : null}
       <div className="overflow-x-auto">
-        <table className="block w-full sm:table sm:table-fixed">
-          <colgroup className="hidden sm:table-column-group">
+        <table className="block w-full lg:table lg:table-fixed">
+          <colgroup className="hidden lg:table-column-group">
             <col className="w-7" />
             <col className="w-[28%]" />
             <col className="w-[30%]" />
             <col />
             <col className="w-20" />
           </colgroup>
-          <thead className="hidden sm:table-header-group border-b border-border text-left text-xs text-muted-foreground">
+          <thead className="hidden lg:table-header-group border-b border-border text-left text-xs text-muted-foreground">
             <tr>
               <th aria-label={t("Select all results")} />
               <th scope="col" className="pb-3 pr-4 font-normal">
@@ -611,7 +800,7 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
               </th>
             </tr>
           </thead>
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <EnvironmentProjectRows
               key={group.environment.environmentId}
               group={group}
@@ -629,7 +818,7 @@ function ProjectIssueSources({ projects, groups }: { projects: Project[]; groups
           ))}
         </table>
       </div>
-      {!projects.length ? (
+      {!visibleProjects.length ? (
         <p className="text-sm text-muted-foreground">{t("No matching projects.")}</p>
       ) : null}
     </section>
@@ -672,7 +861,6 @@ export function RequirementsSettings() {
       ))}
       <ProjectIssueSources
         key={`${JSON.stringify(search)}/${projects.map(projectKey).join(",")}`}
-        projects={projects}
         groups={groups}
       />
     </SettingsPageContainer>

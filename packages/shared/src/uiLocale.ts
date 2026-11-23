@@ -1061,8 +1061,18 @@ const zhCN: Readonly<Record<string, string>> = {
   "Select all results": "全选当前结果",
   "Detect again": "重新识别",
   "Set override": "设置覆盖",
+  "GitHub override": "GitHub 覆盖",
+  "Restore GitHub automatic": "恢复 GitHub 自动",
   "Restore automatic": "恢复自动",
+  "Restore MEP automatic": "恢复 MEP 自动关联",
   "Save override": "保存覆盖",
+  "Save GitHub override": "保存 GitHub 覆盖",
+  "GitHub Issue repository override": "GitHub Issue 仓库覆盖",
+  "Only changes the selected projects' GitHub Issue sources. MEP ONES spaces are not affected.":
+    "仅修改所选项目的 GitHub Issue 来源，不影响 MEP ONES 空间。",
+  "Source mode": "来源方式",
+  "All modes": "全部方式",
+  "Edit MEP spaces for {project}": "编辑 {project} 的 MEP 空间",
   "Completed: {success} succeeded, {failed} failed.":
     "操作完成：成功 {success} 项，失败 {failed} 项。",
   "GitHub repository": "GitHub 仓库",
