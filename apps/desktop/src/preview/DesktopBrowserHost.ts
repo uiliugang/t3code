@@ -80,6 +80,7 @@ interface AttachedTab {
    * turn's start can reach us after its first command, so this holds focus once it does.
    */
   agentUsed: boolean;
+  humanUsed: boolean;
   focusReleasing: boolean;
   /** The sessions sharing the guest's one Chromium screencast; it stops with the last of them. */
   readonly screencasts: Map<string | undefined, { started: boolean; pending: number }>;
@@ -103,6 +104,7 @@ export class DesktopBrowserHost extends Context.Service<
     readonly detach: (key: DesktopBrowserTabKey) => void;
     readonly loadFailed: (key: DesktopBrowserTabKey, failure: PreviewAutomationLoadError) => void;
     readonly setShown: (key: DesktopBrowserTabKey, shown: boolean | undefined) => void;
+    readonly noteHumanInput: (key: DesktopBrowserTabKey, source: Electron.WebContents) => void;
     /** Whether the client draws the guest at full detail while it is captured. */
     readonly setCaptureDrawn: (key: DesktopBrowserTabKey, drawn: boolean | undefined) => void;
     readonly humanStartedDownload: (source: Electron.WebContents) => boolean;
@@ -539,6 +541,7 @@ export const make = Effect.gen(function* () {
       capturing: new Set(),
       painting: false,
       agentUsed: false,
+      humanUsed: false,
       focusReleasing: false,
       screencasts: new Map(),
       onMessage: (_event, method, params, sessionId) => {
@@ -563,6 +566,7 @@ export const make = Effect.gen(function* () {
     debuggee.webContents.on("did-navigate", tab.onNewDocument);
     const announce = () => {
       emit({ type: "attached", ...key });
+      if (tab.humanUsed) emit({ type: "humanInput", ...key });
       const shown = shownTabs.get(id);
       if (shown !== undefined) emit({ type: "shown", ...key, shown });
     };
@@ -677,6 +681,11 @@ export const make = Effect.gen(function* () {
         const shown = shownTabs.get(keyOf(tab.key));
         return PubSub.publish(outbox, { type: "attached", ...tab.key }).pipe(
           Effect.andThen(
+            tab.humanUsed
+              ? PubSub.publish(outbox, { type: "humanInput", ...tab.key })
+              : Effect.void,
+          ),
+          Effect.andThen(
             shown !== undefined
               ? PubSub.publish(outbox, { type: "shown", ...tab.key, shown })
               : Effect.void,
@@ -703,6 +712,18 @@ export const make = Effect.gen(function* () {
     detach,
     loadFailed,
     setShown,
+    noteHumanInput: (key, source) => {
+      const tab = tabs.get(keyOf(key));
+      if (
+        !tab ||
+        tab.debuggee.webContents !== source ||
+        tab.humanUsed ||
+        performance.now() - tab.agentLedAt <= AGENT_INPUT_WINDOW_MS
+      )
+        return;
+      tab.humanUsed = true;
+      if (tab.stopWaiting === null) emit({ type: "humanInput", ...key });
+    },
     setCaptureDrawn,
     placeDownload,
     humanStartedDownload,

@@ -59,6 +59,7 @@ import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FiberMap from "effect/FiberMap";
 import * as FileSystem from "effect/FileSystem";
 import { constVoid } from "effect/Function";
 import * as Layer from "effect/Layer";
@@ -445,6 +446,7 @@ const READ_OPERATIONS: ReadonlySet<PreviewAutomationRequest["operation"]> = new 
 const AGENT_TAB_LIMIT = 8;
 const SERVER_TAB_LIMIT = 32;
 const AGENT_TAB_IDLE_MS = 30 * 60 * 1000;
+const AGENT_TAB_CLOSE_DELAY = "3 minutes";
 const IDLE_SWEEP_INTERVAL = "1 minute";
 
 const DOWNLOAD_LIMIT = 20;
@@ -594,7 +596,9 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const previewBrowser = yield* PreviewBrowser.PreviewBrowser;
   const desktopChannel = yield* DesktopBrowserChannel.DesktopBrowserChannel;
-  const agentTurns = yield* (yield* PreviewAgentActivity.PreviewAgentActivity).changes;
+  const agentActivity = yield* PreviewAgentActivity.PreviewAgentActivity;
+  const agentTurns = yield* agentActivity.changes;
+  const agentTabRetirements = yield* FiberMap.make<ThreadId>();
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const runSyncExit = Effect.runSyncExitWith(yield* Effect.context<never>());
@@ -616,6 +620,7 @@ const make = Effect.gen(function* () {
   const closedPendingTabs = new Set<string>();
   const adoptedPages = new Map<string, { readonly page: Page; readonly openerTabId?: string }>();
   const closedSessions = new Set<string>();
+  const humanTakenTabs = new Set<string>();
   const privateSessions = new Map<string, { sessionId: string; context: BrowserContext }>();
   let hostConnectionId: string | null = null;
   let viewerResizeOrder = 0;
@@ -1754,6 +1759,7 @@ const make = Effect.gen(function* () {
     const controller = [...opener.viewers].find(
       (viewer) => viewer.id === opener.control.controller,
     );
+    const automationOwner = controller ? null : opener.control.agentId;
     await runPromise(
       openTab({
         threadId: opener.threadId,
@@ -1761,9 +1767,7 @@ const make = Effect.gen(function* () {
         runtime: "server",
         ...(opener.profileId === undefined ? {} : { profileId: opener.profileId }),
         colorScheme: opener.colorScheme,
-        ...(opener.control.agentId === null
-          ? {}
-          : { automationOwner: opener.control.agentId, reveal: false }),
+        ...(automationOwner === null ? {} : { automationOwner, reveal: false }),
         beforePublish: (snapshot) =>
           adoptedPages.set(tabKey(snapshot.threadId, snapshot.tabId), {
             page: popup,
@@ -1772,7 +1776,7 @@ const make = Effect.gen(function* () {
       }),
     ).then(
       (tab) => {
-        if (opener.control.agentId === null) controller?.push({ _tag: "popup", tabId: tab.tabId });
+        if (automationOwner === null) controller?.push({ _tag: "popup", tabId: tab.tabId });
       },
       async () => {
         await popup.close().catch(constVoid);
@@ -1841,14 +1845,15 @@ const make = Effect.gen(function* () {
     tab.viewers.size > 0 || (tab.desktop !== null && desktopChannel.isShown(tab));
 
   const reclaimingTabs = new Set<ServerTab>();
+  const isHumanTab = (key: { readonly threadId: string; readonly tabId: string }) =>
+    humanTakenTabs.has(tabKey(key.threadId, key.tabId)) || desktopChannel.hasHumanInput(key);
+  const isRetirableAgentTab = (tab: ServerTab) =>
+    tab.control.agentId !== null && !isHumanTab(tab) && !reclaimingTabs.has(tab);
+
   const idleAgentTabs = () => {
     const cutoff = Date.now() - AGENT_TAB_IDLE_MS;
     return [...tabs.values()].filter(
-      (tab) =>
-        tab.control.agentId !== null &&
-        !reclaimingTabs.has(tab) &&
-        !isVisible(tab) &&
-        tab.usedAt < cutoff,
+      (tab) => isRetirableAgentTab(tab) && !isVisible(tab) && tab.usedAt < cutoff,
     );
   };
 
@@ -3042,7 +3047,11 @@ const make = Effect.gen(function* () {
       }
       const key = tabKey(event.threadId, event.tabId);
       const tab = tabs.get(key);
-      if (event.type === "closed" && !tab && pendingTabs.has(key)) closedPendingTabs.add(key);
+      if (event.type === "closed") {
+        humanTakenTabs.delete(key);
+        desktopChannel.clearHumanInput(event);
+        if (!tab && pendingTabs.has(key)) closedPendingTabs.add(key);
+      }
       if (!tab) return;
       if (event.type === "closed") {
         closedSessions.add(key);
@@ -3465,6 +3474,9 @@ const make = Effect.gen(function* () {
           try {
             if (message.type === "takeControl") {
               const taking = tab.control.take(viewer.id);
+              if (tab.control.agentId !== null && tab.control.controller === viewer.id) {
+                humanTakenTabs.add(tabKey(tab.threadId, tab.tabId));
+              }
               broadcastControl(tab);
               await taking;
               pushFileChooser(tab);
@@ -3555,7 +3567,35 @@ const make = Effect.gen(function* () {
   );
   // The desktop keeps the tabs an agent uses focused until its turn ends, not just per command.
   yield* Stream.fromSubscription(agentTurns).pipe(
-    Stream.runForEach((change) => desktopChannel.turn(change.threadId, change.active)),
+    Stream.runForEach(({ threadId, active }) =>
+      (active
+        ? FiberMap.remove(agentTabRetirements, threadId)
+        : FiberMap.run(
+            agentTabRetirements,
+            threadId,
+            Effect.sleep(AGENT_TAB_CLOSE_DELAY).pipe(
+              Effect.andThen(
+                Effect.gen(function* () {
+                  const { sessions } = yield* manager.list({ threadId });
+                  if (yield* agentActivity.active(threadId)) return;
+                  for (const session of sessions) {
+                    if (session.automationOwner === undefined || isHumanTab(session)) continue;
+                    const tab = tabs.get(tabKey(threadId, session.tabId));
+                    if (tab) {
+                      if (isRetirableAgentTab(tab)) dropTab(tab, true);
+                    } else {
+                      runFork(
+                        manager.close({ threadId, tabId: session.tabId }).pipe(Effect.ignore),
+                      );
+                    }
+                  }
+                }),
+              ),
+              Effect.ignore,
+            ),
+          )
+      ).pipe(Effect.andThen(desktopChannel.turn(threadId, active))),
+    ),
     Effect.forkScoped,
   );
   // Reconnect returned pages immediately so all clients keep receiving URL and title changes.

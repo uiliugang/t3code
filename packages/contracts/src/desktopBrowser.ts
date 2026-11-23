@@ -25,6 +25,7 @@ export const DesktopBrowserEvent = Schema.Union([
   }),
   /** Its `<webview>` started or stopped being on screen in a desktop window. */
   Schema.Struct({ type: Schema.Literal("shown"), ...TabKey, shown: Schema.Boolean }),
+  Schema.Struct({ type: Schema.Literal("humanInput"), ...TabKey }),
 ]);
 export type DesktopBrowserEvent = typeof DesktopBrowserEvent.Type;
 

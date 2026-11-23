@@ -423,6 +423,7 @@ const desktopDetaches = new NodeEvents.EventEmitter();
 let desktopDetachReady = Promise.withResolvers<void>();
 let desktopReleased = Promise.withResolvers<void>();
 const desktopTabs = new Set<string>();
+const desktopHumanTabs = new Set<string>();
 const desktopRenders = (tabId: string) => {
   if (desktopRendersNext) {
     desktopRendersNext = false;
@@ -527,6 +528,8 @@ const dependencies = Layer.mergeAll(
     ),
     isAttached: (key) => Effect.sync(() => desktopRenders(key.tabId)),
     isShown: (key) => shownDesktopTabs.has(key.tabId),
+    hasHumanInput: (key) => desktopHumanTabs.has(key.tabId),
+    clearHumanInput: (key) => void desktopHumanTabs.delete(key.tabId),
     awaitShown: (key, timeout) =>
       shownDesktopTabs.has(key.tabId)
         ? Effect.succeed(true)
@@ -658,6 +661,7 @@ beforeEach(() => {
   keyCopy = "";
   focusedFrame = null;
   desktopTabs.clear();
+  desktopHumanTabs.clear();
   shownDesktopTabs.clear();
   desktopLoadFailures.clear();
   desktopRendersNext = false;
@@ -692,6 +696,57 @@ it.effect("tells the desktop once per thread when its agent turns start and end"
     yield* endSecond;
     expect(yield* Queue.take(turns)).toEqual([threadId, false]);
     expect(yield* Queue.size(turns)).toBe(0);
+  }).pipe(Effect.scoped, Effect.provide(layer)),
+);
+
+it.effect("closes agent previews three minutes after the turn unless a user took over", () =>
+  Effect.gen(function* () {
+    const activity = yield* PreviewAgentActivity.PreviewAgentActivity;
+    const threadId = scope.thread.threadId;
+    const endFirst = yield* activity.begin(threadId);
+    const { browser, broker, tabId } = yield* ready;
+    const manager = yield* Manager.PreviewManager;
+    const open = () =>
+      broker.invoke<PreviewAutomationStatus>({
+        scope,
+        operation: "open",
+        input: { reuseExistingTab: false, show: false },
+      });
+    const taken = yield* open();
+    desktopRendersNext = true;
+    const native = yield* open();
+    desktopHumanTabs.add(native.tabId!);
+    const user = yield* manager.open({ threadId, runtime: "server" });
+    desktopRendersNext = true;
+    const nativeAgent = yield* open();
+    shownDesktopTabs.add(nativeAgent.tabId!);
+    desktopRendersNext = true;
+    const detached = yield* open();
+    yield* Effect.promise(() => desktopDetachReady.promise);
+    desktopDetaches.emit("detach", { threadId, tabId: detached.tabId });
+    yield* Effect.promise(() => desktopReleased.promise);
+    const listTabs = manager
+      .list({ threadId })
+      .pipe(Effect.map(({ sessions }) => sessions.map((session) => session.tabId)));
+
+    yield* endFirst;
+    yield* TestClock.adjust("2 minutes");
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const viewer = yield* browser.attachViewer(viewerInput(taken.tabId!, true));
+        yield* viewer.input({ type: "takeControl" });
+        yield* viewer.input({ type: "releaseControl" });
+      }),
+    );
+    const endNext = yield* activity.begin(threadId);
+    yield* TestClock.adjust("1 minute");
+    expect(yield* listTabs).toContain(tabId);
+
+    yield* endNext;
+    yield* TestClock.adjust("179 seconds");
+    expect(yield* listTabs).toContain(tabId);
+    yield* TestClock.adjust("1 second");
+    expect(yield* listTabs).toEqual([taken.tabId, native.tabId, user.tabId]);
   }).pipe(Effect.scoped, Effect.provide(layer)),
 );
 

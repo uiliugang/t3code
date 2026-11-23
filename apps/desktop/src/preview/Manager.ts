@@ -1451,6 +1451,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       });
       if (!result) return;
       const capture = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+      if (controller === "human" && result.state.serverTab && wc.isFocused()) {
+        browserHost.noteHumanInput(result.state.serverTab, wc);
+      }
       if (capture?.consumers.has("recording")) {
         yield* attempt({ operation: "recording.controller", tabId }, () => {
           if (!wc.isDestroyed()) wc.send(RECORDING_CONTROLLER_CHANNEL, controller, humanPoint);
