@@ -122,6 +122,17 @@ export const JujutsuIcon: Icon = (props) => {
   );
 };
 
+export const MepIcon: Icon = (props) => (
+  <svg {...props} viewBox="0 0 16 16" fill="none">
+    <rect width="16" height="16" rx="4" fill="#166FF7" />
+    <path
+      fill="#FFFFFF"
+      fillRule="evenodd"
+      d="M10.195 11.119V7.183l-1.064 1.456a.856.856 0 0 1-.455.382 1.036 1.036 0 0 1-1.026.018 1.192 1.192 0 0 1-.554-.367L5.805 7.025v5.016H3.9V5.173c0-.415.257-.741.257-.741a.96.96 0 0 1 1.342-.436c.408.109.668.42.668.42l1.916 2.464 1.725-2.36a.9.9 0 0 1 .664-.466 1.016 1.016 0 0 1 1.164.42c.264.329.264.75.264.75v6.817h-1.905Z"
+    />
+  </svg>
+);
+
 export const LinearIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 100 100" fill="none">
     <path

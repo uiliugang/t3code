@@ -1,8 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { mepAccountLabel, mepTrackerSummary } from "@t3tools/client-runtime/meituanSettings";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { ChevronDownIcon, ClipboardListIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
+import { MepIcon } from "../Icons";
 import { useEnvironmentQuery } from "../../state/query";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -37,7 +38,13 @@ export function MepIssueTrackerSettings({
   return (
     <details className="group/mep">
       <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 rounded-xl px-3 py-3 hover:bg-muted/20 focus-visible:outline-ring sm:px-4 [&::-webkit-details-marker]:hidden">
-        <ClipboardListIcon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
+        <span className="relative inline-flex size-5 shrink-0 items-center justify-center">
+          <MepIcon aria-hidden className="size-4.5" />
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -left-0.5 -top-0.5 size-2 rounded-full bg-success ring-2 ring-background"
+          />
+        </span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{t("MEP ONES")}</span>
