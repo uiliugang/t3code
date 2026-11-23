@@ -95,8 +95,7 @@ export function SourceControlToolControls({
           : DownloadIcon;
   const command = selected?.manualCommand ?? selected?.command;
   const confirm = async () => {
-    if (!selected?.command || pending || selected.id === "mtskills" || selected.id === "dumbo-web")
-      return;
+    if (!selected?.command || pending || selected.id === "mtskills") return;
     setPending(true);
     setError(null);
     const result = await start({
