@@ -7,11 +7,13 @@ import {
   ChevronsLeftRightEllipsisIcon,
   EllipsisIcon,
   RouteIcon,
+  XIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useEffectEvent, useState } from "react";
 import {
   AuthRelayWriteScope,
+  type DesktopSshInstallProgress,
   type EnvironmentId,
   connectReachabilityHelpUrl,
   formatConnectReachable,
@@ -23,6 +25,7 @@ import {
   connectionErrorText,
   connectionStatusText,
   environmentMcpUrl,
+  sshTargetKey,
 } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
 import { msg, useGT, useMessages } from "gt-react";
@@ -30,6 +33,7 @@ import { m, type MessageResolver } from "../../i18n/messages";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
+import { formatBytes } from "../../lib/formatBytes";
 import { SettingsRow } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
@@ -142,10 +146,47 @@ export function SavedBackendListRow({
   const [routesOpen, setRoutesOpen] = useState(initialRoutesOpen);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
+  const [sshProgress, setSshProgress] = useState<{
+    readonly targetKey: string;
+    readonly progress: Exclude<DesktopSshInstallProgress, { phase: "finished" }>;
+  } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribe to desktop IPC while this row is mounted.
+  useEffect(
+    () =>
+      window.desktopBridge?.onSshInstallProgress?.((target, progress) => {
+        const targetKey = sshTargetKey(target);
+        setSshProgress((current) => {
+          const matches = connectionRoutes(environment.entry).some(
+            ({ profile }) =>
+              Option.isSome(profile) &&
+              profile.value._tag === "SshConnectionProfile" &&
+              sshTargetKey(profile.value.target) === targetKey,
+          );
+          if (!matches) return current;
+          if (progress.phase === "finished")
+            return current?.targetKey === targetKey ? null : current;
+          return { targetKey, progress };
+        });
+      }),
+    [environment.entry],
+  );
   const environmentId = environment.environmentId;
   const unsupported = environment.connection.phase === "unsupported";
   const blocked = unsupported && !hasSavedBearerRoute(environment.entry);
   const enabled = environment.entry.enabled && !unsupported;
+  const installProgress = enabled ? sshProgress?.progress : undefined;
+  const installText =
+    installProgress === undefined
+      ? null
+      : installProgress.phase === "downloading"
+        ? gt("Downloading runtime on the SSH host: {size}", {
+            size: formatBytes(installProgress.bytes),
+          })
+        : installProgress.phase === "relay-download"
+          ? gt("Downloading runtime on this device")
+          : installProgress.phase === "relay-upload"
+            ? gt("Uploading runtime to the SSH host")
+            : gt("Verifying and installing runtime");
   const isConnected = environment.connection.phase === "connected";
   const isRemoving = removingEnvironmentId === environmentId;
   const errorTraceId = environment.connection.traceId;
@@ -240,7 +281,7 @@ export function SavedBackendListRow({
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget, messages),
     // The headline below names the failure in full.
-    diagnosis ? null : resumingServerUpdate ? gt("Restarting") : status.text,
+    installText ?? (diagnosis ? null : resumingServerUpdate ? gt("Restarting") : status.text),
     enabled && versionMismatch ? serverVersion : null,
   ]
     .filter((value): value is string => value !== null)
@@ -412,6 +453,24 @@ export function SavedBackendListRow({
           label={t(serverUpdateState.status === "failed" ? "Retry update" : "Update")}
           appearance="icon"
         />
+      ) : null}
+      {installProgress !== undefined && !isRemoving ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost-muted"
+                size="icon-xs"
+                aria-label={gt("Cancel installation")}
+                onClick={() => onSetEnabled(environmentId, false)}
+              />
+            }
+          >
+            <XIcon />
+          </TooltipTrigger>
+          <TooltipPopup side="top">{gt("Cancel installation")}</TooltipPopup>
+        </Tooltip>
       ) : null}
       <Tooltip>
         <TooltipTrigger

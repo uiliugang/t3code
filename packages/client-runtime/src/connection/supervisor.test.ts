@@ -1030,7 +1030,7 @@ describe("EnvironmentSupervisor", () => {
           lastFailure: null,
         });
         if (outcome === "preparation-timeout") {
-          yield* TestClock.adjust("33 minutes");
+          yield* TestClock.adjust("83 minutes");
         } else {
           yield* Deferred.succeed(installed, undefined);
           if (outcome === "synchronization-timeout") {
@@ -1124,7 +1124,7 @@ describe("EnvironmentSupervisor", () => {
       yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
       yield* TestClock.adjust("2 seconds");
       yield* Deferred.await(preparing);
-      yield* TestClock.adjust("7 minutes");
+      yield* TestClock.adjust("65 minutes");
       expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
         phase: "connecting",
         stage: "preparing",

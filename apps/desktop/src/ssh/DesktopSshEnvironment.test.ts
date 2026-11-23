@@ -40,6 +40,7 @@ describe("resolveDesktopSshCliRunner", () => {
 
       assert.deepStrictEqual(runner, {
         archiveVersion: "0.0.22",
+        relayCacheDirectory: environment.path.join(environment.stateDir, "ssh-downloads"),
         releaseBaseUrl: "https://mirror.example.com/t3code",
       });
     }),

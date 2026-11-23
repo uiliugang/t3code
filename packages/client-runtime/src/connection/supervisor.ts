@@ -54,7 +54,7 @@ const APPROVAL_PENDING_FAST_RETRIES = 150;
 // answer, and that is not a reason to drop a working connection.
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 // SSH may install a runtime, relay its archive, then retry the launch (900 + 480 + 900 seconds).
-const SSH_PREPARATION_TIMEOUT = "40 minutes";
+const SSH_PREPARATION_TIMEOUT = "90 minutes";
 const establishmentTimeout = Duration.fromInputUnsafe(CONNECTION_ESTABLISHMENT_TIMEOUT);
 const synchronizationTimeout = Duration.fromInputUnsafe("75 seconds");
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";

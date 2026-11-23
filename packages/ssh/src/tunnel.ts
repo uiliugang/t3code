@@ -5,6 +5,7 @@ import {
 import type {
   DesktopSshEnvironmentBootstrap,
   DesktopSshEnvironmentTarget,
+  DesktopSshInstallProgress,
 } from "@t3tools/contracts";
 import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/httpReadiness";
 import { cliReleaseAssetUrl, cliReleaseDownloadBaseUrl } from "@t3tools/shared/cliRelease";
@@ -16,6 +17,7 @@ import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -25,7 +27,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { HttpClient } from "effect/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as SshAuth from "./auth.ts";
@@ -72,9 +74,9 @@ const SSH_TUNNEL_FORWARD_PROBE_INTERVAL_MS = 100;
 // Lock waits must outlast both downloads and extraction; SSH must outlast install or wait plus readiness.
 // Leave slack for verification and extraction, which have no timeout.
 const REMOTE_ARCHIVE_CHECKSUMS_SECONDS = 30;
-const REMOTE_ARCHIVE_DOWNLOAD_SECONDS = 240;
-const REMOTE_ARCHIVE_LOCK_WAIT_SECONDS = 360;
-const REMOTE_ARCHIVE_LAUNCH_TIMEOUT_MS = 900_000;
+const REMOTE_ARCHIVE_DOWNLOAD_SECONDS = 1_200;
+const REMOTE_ARCHIVE_LOCK_WAIT_SECONDS = 1_500;
+const REMOTE_ARCHIVE_LAUNCH_TIMEOUT_MS = 3_000_000;
 const REMOTE_REUSE_READY_TIMEOUT_MS = 2_000;
 const REMOTE_PID_EXIT_WAIT_MS = 2_000;
 // The server answers HTTP before it writes server-runtime.json, which is how
@@ -115,6 +117,15 @@ export interface RemoteT3RunnerOptions {
   readonly nodeEngineRange?: string | null;
   readonly archiveVersion?: string | null;
   readonly releaseBaseUrl?: string | null;
+  readonly relayCacheDirectory?: string;
+}
+
+type ReportInstallProgress = (progress: DesktopSshInstallProgress) => void;
+
+export interface EnsureSshEnvironmentOptions {
+  readonly issuePairingToken?: boolean;
+  readonly targetVersion?: string;
+  readonly reportInstallProgress?: ReportInstallProgress;
 }
 
 export interface SshEnvironmentManagerOptions {
@@ -183,7 +194,7 @@ interface SshAuthAttemptInput<T> extends SshAuthOperationInput<T> {
 export interface SshEnvironmentManagerShape {
   readonly ensureEnvironment: (
     target: DesktopSshEnvironmentTarget,
-    options?: { readonly issuePairingToken?: boolean; readonly targetVersion?: string },
+    options?: EnsureSshEnvironmentOptions,
   ) => Effect.Effect<
     DesktopSshEnvironmentBootstrap,
     SshEnvironmentEffectError,
@@ -553,7 +564,16 @@ if ! t3_runtime_ready; then
     exit 1
   fi
   T3_STAGING="$(mktemp -d "$HOME/.t3/runtime/versions/.staging-XXXXXX")"
-  trap 'rm -rf "$T3_STAGING" "$T3_LOCK"' EXIT
+  T3_DOWNLOAD_PID=""
+  t3_cleanup() {
+    if [ -n "$T3_DOWNLOAD_PID" ]; then
+      kill "$T3_DOWNLOAD_PID" 2>/dev/null || true
+      wait "$T3_DOWNLOAD_PID" 2>/dev/null || true
+    fi
+    rm -rf "$T3_STAGING" "$T3_LOCK"
+  }
+  trap t3_cleanup EXIT
+  trap 'exit 1' HUP INT TERM PIPE
   t3_fetch() {
     T3_CACHED="$T3_DOWNLOAD_CACHE/\${2##*/}"
     if [ -n "$T3_DOWNLOAD_CACHE" ] && [ -f "$T3_CACHED" ]; then cp "$T3_CACHED" "$2"; return; fi
@@ -562,12 +582,48 @@ if ! t3_runtime_ready; then
     else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; return 1
     fi
   }
+  T3_PARTIAL="$HOME/.t3/runtime/versions/.$T3_ARCHIVE.partial"
+  t3_archive_download() {
+    T3_URL="$1"
+    if [ -n "$T3_DOWNLOAD_CACHE" ] && [ -f "$T3_DOWNLOAD_CACHE/$T3_ARCHIVE" ]; then
+      cp "$T3_DOWNLOAD_CACHE/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE"
+      return
+    fi
+    T3_RESUME=1
+    while :; do
+      if command -v curl >/dev/null 2>&1; then
+        if [ "$T3_RESUME" = 1 ]; then set -- -C -; else set --; fi
+        curl -fsSL "$@" --connect-timeout 30 --max-time @@T3_ARCHIVE_DOWNLOAD_SECONDS@@ "$T3_URL" -o "$T3_PARTIAL" &
+      elif command -v wget >/dev/null 2>&1; then
+        wget -qc --timeout=30 --tries=1 "$T3_URL" -O "$T3_PARTIAL" &
+      else
+        return 1
+      fi
+      T3_DOWNLOAD_PID=$!
+      while kill -0 "$T3_DOWNLOAD_PID" 2>/dev/null; do
+        T3_BYTES="$(stat -c %s "$T3_PARTIAL" 2>/dev/null || stat -f %z "$T3_PARTIAL" 2>/dev/null || printf 0)"
+        printf 'T3_INSTALL_PROGRESS:downloading:%s\\n' "$T3_BYTES" >&2 || exit 1
+        sleep 1
+      done
+      T3_STATUS=0
+      wait "$T3_DOWNLOAD_PID" || T3_STATUS=$?
+      T3_DOWNLOAD_PID=""
+      case "$T3_STATUS:$T3_RESUME" in
+        0:*) break ;;
+        33:1) rm -f "$T3_PARTIAL"; T3_RESUME=0 ;;
+        *) return 1 ;;
+      esac
+    done
+    ln "$T3_PARTIAL" "$T3_STAGING/$T3_ARCHIVE"
+  }
+  printf 'T3_INSTALL_PROGRESS:downloading:0\\n' >&2
   if ! t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@ ||
-     ! t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" @@T3_ARCHIVE_DOWNLOAD_SECONDS@@; then
+     ! t3_archive_download "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE"; then
     printf 'T3_DOWNLOAD_FAILED:%s\\n' "$T3_ARCHIVE" >&2
     printf 'Could not download t3 %s from %s. If this host cannot reach it, install t3 %s on it with https://t3.codes/install.sh (T3CODE_VERSION=%s; T3CODE_RELEASE_BASE_URL selects a mirror).\\n' "$T3_ARCHIVE_VERSION" "$T3_RELEASE_BASE_URL" "$T3_ARCHIVE_VERSION" "$T3_ARCHIVE_VERSION" >&2
     exit 1
   fi
+  printf 'T3_INSTALL_PROGRESS:installing\\n' >&2
   T3_EXPECTED="$(grep " \\*\\{0,1\\}$T3_ARCHIVE$" "$T3_STAGING/SHA256SUMS" | cut -d' ' -f1)"
   if command -v sha256sum >/dev/null 2>&1; then
     T3_ACTUAL="$(sha256sum < "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
@@ -575,7 +631,7 @@ if ! t3_runtime_ready; then
     T3_ACTUAL="$(shasum -a 256 < "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
   fi
   if [ -z "$T3_EXPECTED" ] || [ "$T3_ACTUAL" != "$T3_EXPECTED" ]; then
-    [ -z "$T3_DOWNLOAD_CACHE" ] || rm -rf "$T3_DOWNLOAD_CACHE"
+    if [ -n "$T3_DOWNLOAD_CACHE" ]; then rm -rf "$T3_DOWNLOAD_CACHE"; else rm -f "$T3_PARTIAL"; fi
     printf 'Checksum mismatch for %s.\\n' "$T3_ARCHIVE" >&2; exit 1
   fi
   if ! T3_TAR_ERROR="$(tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1 2>&1)"; then
@@ -594,6 +650,7 @@ if ! t3_runtime_ready; then
   printf '%s\\n' "$T3_ARCHIVE_VERSION" > "$T3_STAGING/.install-complete"
   rm -rf "$T3_RUNTIME_DIR"
   mv "$T3_STAGING" "$T3_RUNTIME_DIR"
+  rm -f "$T3_PARTIAL"
   [ -z "$T3_DOWNLOAD_CACHE" ] || rm -rf "$T3_DOWNLOAD_CACHE"
 fi
 if [ -n "\${T3_LOCK:-}" ]; then
@@ -1271,18 +1328,32 @@ const relayReleaseAssets = Effect.fn("ssh/tunnel.relayReleaseAssets")(function* 
   runner: RemoteT3RunnerOptions | undefined,
   version: string,
   archive: string,
+  reportInstallProgress?: ReportInstallProgress,
 ) {
   yield* Effect.logInfo("ssh.remoteServer.download.relay", sshTargetLogFields(target));
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const client = (yield* HttpClient.HttpClient).pipe(
-    HttpClient.followRedirects(),
-    HttpClient.filterStatusOk,
-  );
+  const client = (yield* HttpClient.HttpClient).pipe(HttpClient.followRedirects());
   return yield* Effect.gen(function* () {
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-download-" });
     const downloadId = path.basename(directory);
     const cacheDirectory = `.t3/runtime/downloads/${version}/${downloadId}`;
+    const archiveUrl = cliReleaseAssetUrl(version, archive, runner?.releaseBaseUrl ?? undefined);
+    const localArchive =
+      runner?.relayCacheDirectory === undefined
+        ? path.join(directory, archive)
+        : path.join(
+            runner.relayCacheDirectory,
+            Hex.encode(
+              yield* (yield* Digest.Digest).digest(
+                Digest.sha256,
+                new TextEncoder().encode(`${targetConnectionKey(target)}\0${archiveUrl}`),
+              ),
+            ) + ".partial",
+          );
+    if (runner?.relayCacheDirectory !== undefined) {
+      yield* fs.makeDirectory(runner.relayCacheDirectory, { recursive: true, mode: 0o700 });
+    }
     yield* Effect.addFinalizer(() =>
       runSshCommand(target, {
         ...auth,
@@ -1295,11 +1366,46 @@ const relayReleaseAssets = Effect.fn("ssh/tunnel.relayReleaseAssets")(function* 
       }).pipe(Effect.ignore),
     );
     for (const fileName of ["SHA256SUMS", archive]) {
-      const localPath = path.join(directory, fileName);
-      const response = yield* client.get(
-        cliReleaseAssetUrl(version, fileName, runner?.releaseBaseUrl ?? undefined),
+      const isArchive = fileName === archive;
+      const localPath = isArchive ? localArchive : path.join(directory, fileName);
+      if (isArchive) reportInstallProgress?.({ phase: "relay-download" });
+      const offset =
+        isArchive && (yield* fs.exists(localPath)) ? Number((yield* fs.stat(localPath)).size) : 0;
+      const url = cliReleaseAssetUrl(version, fileName, runner?.releaseBaseUrl ?? undefined);
+      let response = yield* client.get(
+        url,
+        offset > 0 ? { headers: { range: `bytes=${offset}-` } } : {},
       );
-      yield* Stream.run(response.stream, fs.sink(localPath));
+      if (response.status === 416 && response.headers["content-range"] !== `bytes */${offset}`) {
+        response = yield* client.get(url);
+      }
+      if (
+        !(
+          offset > 0 &&
+          response.status === 416 &&
+          response.headers["content-range"] === `bytes */${offset}`
+        )
+      ) {
+        const checked = yield* HttpClientResponse.filterStatusOk(response);
+        const range = /^bytes (\d+)-(\d+)\/(\d+)$/u.exec(checked.headers["content-range"] ?? "");
+        if (
+          checked.status === 206 &&
+          (offset === 0 ||
+            Number(range?.[1]) !== offset ||
+            Number(range?.[2]) + 1 !== Number(range?.[3]))
+        ) {
+          yield* fs.remove(localPath, { force: true });
+          return yield* new SshLaunchError({
+            message: "The release server returned an invalid download range.",
+            stdout: "",
+          });
+        }
+        yield* Stream.run(
+          checked.stream,
+          fs.sink(localPath, { flag: checked.status === 206 ? "a" : "w" }),
+        );
+      }
+      if (isArchive) reportInstallProgress?.({ phase: "relay-upload" });
       const destination = `${cacheDirectory}/${fileName}`;
       const script = `set -eu
 mkdir -p "$HOME/"${shellSingleQuote(cacheDirectory)}
@@ -1315,7 +1421,7 @@ mv "$TEMP" "$HOME/"${shellSingleQuote(destination)}
         timeoutMs: REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 1000,
       });
     }
-    return downloadId;
+    return { downloadId, localArchive };
   }).pipe(
     Effect.timeout(`${REMOTE_ARCHIVE_DOWNLOAD_SECONDS * 2} seconds`),
     Effect.mapError((cause) =>
@@ -1347,6 +1453,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     input?: SshAuth.SshAuthOptions,
     runner?: RemoteT3RunnerOptions,
     launcherId?: string | null,
+    reportInstallProgress?: ReportInstallProgress,
   ): Effect.fn.Return<
     { readonly remotePort: number; readonly remoteServerKind: "external" | "managed" | null },
     SshCommandError | SshInvalidTargetError | SshLaunchError,
@@ -1373,6 +1480,15 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       timeoutMs: isNodeScriptRunner(runner)
         ? REMOTE_LAUNCH_TIMEOUT_MS
         : REMOTE_ARCHIVE_LAUNCH_TIMEOUT_MS,
+      onStderrLine: (line: string) => {
+        if (line === "T3_INSTALL_PROGRESS:installing") {
+          reportInstallProgress?.({ phase: "installing" });
+        } else {
+          const match = /^T3_INSTALL_PROGRESS:downloading:(\d+)$/u.exec(line);
+          if (match !== null)
+            reportInstallProgress?.({ phase: "downloading", bytes: Number(match[1]) });
+        }
+      },
       ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
       ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
       ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
@@ -1398,11 +1514,28 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
           }
           return yield* Effect.scoped(
             Effect.gen(function* () {
-              const downloadId = yield* relayReleaseAssets(target, input, runner, version, archive);
+              const { downloadId, localArchive } = yield* relayReleaseAssets(
+                target,
+                input,
+                runner,
+                version,
+                archive,
+                reportInstallProgress,
+              );
+              const fs = yield* FileSystem.FileSystem;
+              const removeArchive = fs.remove(localArchive, { force: true }).pipe(Effect.ignore);
               return yield* runSshCommand(target, {
                 ...launchOptions,
                 stdin: `T3_DOWNLOAD_ID=${shellSingleQuote(downloadId)}\nexport T3_DOWNLOAD_ID\n${launchOptions.stdin}`,
-              });
+              }).pipe(
+                Effect.tap(() => removeArchive),
+                Effect.tapError((cause) =>
+                  cause._tag === "SshCommandError" &&
+                  cause.stderr.includes(`Checksum mismatch for ${archive}.`)
+                    ? removeArchive
+                    : Effect.void,
+                ),
+              );
             }),
           );
         }),
@@ -2098,6 +2231,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     readonly key: string;
     readonly resolvedTarget: DesktopSshEnvironmentTarget;
     readonly runner?: RemoteT3RunnerOptions;
+    readonly reportInstallProgress?: ReportInstallProgress;
   }): Effect.fn.Return<SshTunnelEntry, SshEnvironmentEffectError, SshEnvironmentEffectContext> {
     yield* Effect.logDebug("ssh.environment.tunnel.create.start", {
       ...sshTargetLogFields(input.resolvedTarget),
@@ -2110,7 +2244,13 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       key: input.key,
       target: input.resolvedTarget,
       operation: (authOptions) =>
-        launchOrReuseRemoteServer(input.resolvedTarget, authOptions, input.runner, launcherId),
+        launchOrReuseRemoteServer(
+          input.resolvedTarget,
+          authOptions,
+          input.runner,
+          launcherId,
+          input.reportInstallProgress,
+        ),
     });
     const remotePort = remoteLaunch.remotePort;
     yield* Effect.logDebug("ssh.environment.remotePort.ready", {
@@ -2230,6 +2370,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     key: string,
     resolvedTarget: DesktopSshEnvironmentTarget,
     runner?: RemoteT3RunnerOptions,
+    reportInstallProgress?: ReportInstallProgress,
   ): Effect.fn.Return<SshTunnelEntry, SshEnvironmentEffectError, SshEnvironmentEffectContext> {
     const entry = tunnels.get(key) ?? null;
 
@@ -2304,6 +2445,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       key,
       resolvedTarget,
       ...(runner === undefined ? {} : { runner }),
+      ...(reportInstallProgress === undefined ? {} : { reportInstallProgress }),
     }).pipe(
       Effect.tapError((cause) =>
         Effect.logWarning("ssh.environment.tunnel.create.failed", {
@@ -2317,7 +2459,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
 
   const ensureEnvironment = Effect.fn("ssh/tunnel.ensureEnvironment")(function* (
     target: DesktopSshEnvironmentTarget,
-    requestOptions?: { readonly issuePairingToken?: boolean; readonly targetVersion?: string },
+    requestOptions?: EnsureSshEnvironmentOptions,
   ): Effect.fn.Return<
     DesktopSshEnvironmentBootstrap,
     SshEnvironmentEffectError,
@@ -2362,6 +2504,9 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
                 archiveVersion: targetVersion,
                 releaseBaseUrl: defaultRunner?.releaseBaseUrl ?? null,
                 replaceExistingServer: true,
+                ...(defaultRunner?.relayCacheDirectory === undefined
+                  ? {}
+                  : { relayCacheDirectory: defaultRunner.relayCacheDirectory }),
               };
         if (targetVersion !== undefined) {
           const previous = tunnels.get(key);
@@ -2370,7 +2515,12 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
             yield* closeTunnelEntry(previous);
           }
         }
-        const entry = yield* ensureTunnelEntry(key, resolvedTarget, runner);
+        const entry = yield* ensureTunnelEntry(
+          key,
+          resolvedTarget,
+          runner,
+          requestOptions?.reportInstallProgress,
+        );
 
         const pairingResult = requestOptions?.issuePairingToken
           ? yield* runWithSshAuth({

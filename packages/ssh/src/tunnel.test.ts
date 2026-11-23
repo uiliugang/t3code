@@ -10,10 +10,13 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
+import { cliReleaseAssetUrl } from "@t3tools/shared/cliRelease";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -31,7 +34,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { captureLauncher, captureLauncherFor, runLauncher } from "./launcherTestHarness.ts";
 import * as SshAuth from "./auth.ts";
-import { remoteStateKey } from "./command.ts";
+import { remoteStateKey, targetConnectionKey } from "./command.ts";
 import { SshCommandError, SshPasswordPromptError, SshReadinessError } from "./errors.ts";
 import * as SshTunnel from "./tunnel.ts";
 
@@ -544,7 +547,23 @@ esac
           SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
         );
         yield* fs.makeDirectory(`${home}/bin`);
-        yield* fs.writeFileString(`${home}/bin/curl`, "#!/bin/sh\nexit 28\n");
+        yield* fs.writeFileString(
+          `${home}/bin/curl`,
+          `#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -C) resume="$2"; shift;;
+    -o) output="$2"; shift;;
+    */SHA256SUMS) checksums=1;;
+  esac
+  shift
+done
+if [ "\${checksums:-}" ]; then printf 'checksums\\n' > "$output"; exit 0; fi
+[ "\${resume:-}" = - ] || exit 28
+printf 'partial\\n' >> "$output"
+exit 28
+`,
+        );
         yield* fs.writeFileString(
           `${home}/bin/uname`,
           '#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n',
@@ -564,6 +583,10 @@ if T3_DOWNLOAD_ID=../outside sh runner.sh --version >out 2>err; then exit 1; fi
 grep -q 'Invalid t3 download ID' err
 if sh runner.sh --version >out 2>err; then exit 1; fi
 grep -q '^T3_DOWNLOAD_FAILED:' err
+PARTIAL="$HOME/.t3/runtime/versions/.t3-${ARCHIVE.archiveVersion}-linux-x64.tar.gz.partial"
+test "$(cat "$PARTIAL")" = partial
+if sh runner.sh --version >out 2>err; then exit 1; fi
+test "$(wc -l < "$PARTIAL" | tr -d ' ')" = 2
 echo 'Remote download failed; relay requested.'
 CACHE="$HOME/.t3/runtime/downloads/${ARCHIVE.archiveVersion}/attempt"
 export T3_DOWNLOAD_ID=attempt
@@ -588,6 +611,7 @@ grep -q '^fixture-runtime$' out
 test ! -e "$CACHE"
 test -d "$HOME/.t3/runtime/downloads/${ARCHIVE.archiveVersion}/other-attempt"
 echo 'Verified relay installed and executed.'
+test ! -e "$PARTIAL"
 `,
             ],
             { env: { HOME: home } },
@@ -616,6 +640,25 @@ echo 'Verified relay installed and executed.'
           const downloads: string[] = [];
           const fs = yield* FileSystem.FileSystem;
           const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-relay-test-" });
+          const target = { alias: "devbox", hostname: "devbox", username: null, port: null };
+          const relayCacheDirectory = `${home}/client-downloads`;
+          const archive = `t3-${ARCHIVE.archiveVersion}-linux-x64.tar.gz`;
+          const cacheKey = Hex.encode(
+            yield* Effect.service(Digest.Digest).pipe(
+              Effect.flatMap((digest) =>
+                digest.digest(
+                  Digest.sha256,
+                  new TextEncoder().encode(
+                    `${targetConnectionKey(target)}\0${cliReleaseAssetUrl(ARCHIVE.archiveVersion, archive)}`,
+                  ),
+                ),
+              ),
+              Effect.provide(NodeCrypto.layer),
+            ),
+          );
+          const partial = `${relayCacheDirectory}/${cacheKey}.partial`;
+          yield* fs.makeDirectory(relayCacheDirectory);
+          yield* fs.writeFile(partial, new Uint8Array([0, 255]));
           const nativeSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
           const spawner = ChildProcessSpawner.make((command) =>
             Effect.gen(function* () {
@@ -676,6 +719,18 @@ echo 'Verified relay installed and executed.'
               );
             }
             downloads.push(request.url);
+            if (request.url.endsWith(archive)) {
+              assert.equal(request.headers.range, "bytes=2-");
+              return Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  new Response(new Uint8Array([10, 13, 128]), {
+                    status: 206,
+                    headers: { "content-range": "bytes 2-4/5" },
+                  }),
+                ),
+              );
+            }
             return Effect.succeed(
               HttpClientResponse.fromWeb(
                 request,
@@ -684,11 +739,10 @@ echo 'Verified relay installed and executed.'
             );
           });
           return yield* Effect.gen(function* () {
-            const launch = SshTunnel.launchOrReuseRemoteServer(
-              { alias: "devbox", hostname: "devbox", username: null, port: null },
-              undefined,
-              ARCHIVE,
-            );
+            const launch = SshTunnel.launchOrReuseRemoteServer(target, undefined, {
+              ...ARCHIVE,
+              relayCacheDirectory,
+            });
             if (retryFails) {
               const error = yield* Effect.flip(launch);
               assert.instanceOf(error, SshCommandError);
@@ -697,6 +751,7 @@ echo 'Verified relay installed and executed.'
               assert.equal((yield* launch).remotePort, 3774);
             }
             assert.equal(commands.length, 5);
+            assert.equal(yield* fs.exists(partial), retryFails);
             assert.deepEqual(
               downloads.map((url) => url.split("/").at(-1)),
               ["SHA256SUMS", "t3-1.2.3-preview.20260911.4-linux-x64.tar.gz"],
@@ -960,7 +1015,19 @@ echo 'Verified relay installed and executed.'
       NodeChildProcess.execFileSync("sh", ["-c", `sha256sum ${archive} > SHA256SUMS`], {
         cwd: release,
       });
-      for (const tool of ["sh", "mkdir", "mktemp", "cat", "rm", "grep", "cut", checksum, "mv"]) {
+      for (const tool of [
+        "sh",
+        "mkdir",
+        "mktemp",
+        "cat",
+        "rm",
+        "grep",
+        "cut",
+        checksum,
+        "mv",
+        "ln",
+        "sleep",
+      ]) {
         NodeFS.symlinkSync(
           NodeChildProcess.execFileSync("sh", ["-c", `command -v ${tool}`], {
             encoding: "utf8",

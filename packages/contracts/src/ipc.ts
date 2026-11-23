@@ -464,6 +464,11 @@ export const DesktopSshEnvironmentEnsureOptionsSchema = Schema.Struct({
   targetVersion: Schema.optionalKey(Schema.String),
 });
 
+export type DesktopSshInstallProgress =
+  | { readonly phase: "downloading"; readonly bytes: number }
+  | { readonly phase: "relay-download" | "relay-upload" | "installing" }
+  | { readonly phase: "finished" };
+
 export const DesktopSshEnvironmentEnsureInputSchema = Schema.Struct({
   target: DesktopSshEnvironmentTargetSchema,
   options: Schema.optionalKey(DesktopSshEnvironmentEnsureOptionsSchema),
@@ -1172,6 +1177,9 @@ export interface DesktopBridge {
     target: DesktopSshEnvironmentTarget,
     options?: { issuePairingToken?: boolean; targetVersion?: string },
   ) => Promise<DesktopSshEnvironmentBootstrap>;
+  onSshInstallProgress?: (
+    listener: (target: DesktopSshEnvironmentTarget, progress: DesktopSshInstallProgress) => void,
+  ) => () => void;
   disconnectSshEnvironment: (target: DesktopSshEnvironmentTarget) => Promise<void>;
   fetchSshEnvironmentDescriptor: (httpBaseUrl: string) => Promise<ExecutionEnvironmentDescriptor>;
   bootstrapSshBearerSession: (
