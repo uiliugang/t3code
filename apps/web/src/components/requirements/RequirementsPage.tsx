@@ -1532,6 +1532,14 @@ export function RequirementBoard({
                     });
                     selectOpened();
                   }}
+                  onSelectIssue={({ host, ...reference }) => {
+                    useRightPanelStore.getState().openIssue(rightPanelRef, {
+                      ...reference,
+                      ...(host === undefined ? {} : { host }),
+                      environmentId: panelEnvironmentId,
+                    });
+                    selectOpened();
+                  }}
                 />
               ) : renderedSurface.kind === "pull-request" ? (
                 <PullRequestDetailPanel

@@ -446,7 +446,9 @@ To list Linear issues beside a project's, connect Linear with an API key under
 Settings → Issue management → Issue trackers, then pick one or more teams for that project there. Pick
 another team at any time to add it; uncheck every team to unbind the project. Each team's
 issues appear in the Linear group of the issue list, sorted with the rest by last update, and
-each can be loaded further on its own. Agents file new issues in the first team picked unless you name another bound team.
+each can be loaded further on its own. Agents file new issues in the first team picked unless you name another bound team. To
+connect another Linear workspace or user, add another account in the same place; each project
+reads its teams through the account you picked them under.
 
 With Meituan requirements enabled, expand MEP ONES in Issue management to see the environment’s ONES account and maintain its `ones2` and optional `mcm` tools. Under Project issue sources, edit a project’s MEP space IDs or restore automatic discovery. Use the ONES form to create a work item with its space's required fields. When two spaces share an issue number, use its full URL to identify the work item.
 

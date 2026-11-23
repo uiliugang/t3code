@@ -1,6 +1,6 @@
 import { ThreadRepositoryTarget } from "./workspace.ts";
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { GitRefName, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { GitCommandError } from "./git.ts";
 import { VcsError } from "./vcs.ts";
 
@@ -21,7 +21,7 @@ export type ReviewDiffChangeType = typeof ReviewDiffChangeType.Type;
 export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   repositoryTarget: Schema.optional(ThreadRepositoryTarget),
-  baseRef: Schema.optional(TrimmedNonEmptyString),
+  baseRef: Schema.optional(GitRefName),
   // A branch-range file read reuses its preview's merge base instead of resolving it again.
   mergeBase: Schema.optionalKey(ReviewMergeBase),
   commitSha: Schema.optional(TrimmedNonEmptyString),
@@ -46,7 +46,7 @@ export type ReviewDiffPreviewInput = typeof ReviewDiffPreviewInput.Type;
 export const ReviewBranchCommitsInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   repositoryTarget: Schema.optional(ThreadRepositoryTarget),
-  baseRef: Schema.optional(TrimmedNonEmptyString),
+  baseRef: Schema.optional(GitRefName),
 });
 export type ReviewBranchCommitsInput = typeof ReviewBranchCommitsInput.Type;
 
@@ -84,8 +84,8 @@ export const ReviewDiffPreviewSource = Schema.Struct({
   kind: ReviewDiffPreviewSourceKind,
   title: TrimmedNonEmptyString,
   commitSubject: Schema.optionalKey(TrimmedNonEmptyString),
-  baseRef: Schema.NullOr(TrimmedNonEmptyString),
-  headRef: Schema.NullOr(TrimmedNonEmptyString),
+  baseRef: Schema.NullOr(GitRefName),
+  headRef: Schema.NullOr(GitRefName),
   // Branch-range only; older servers omit it.
   mergeBase: Schema.optionalKey(ReviewMergeBase),
   diff: Schema.String,
@@ -101,8 +101,8 @@ export const ReviewDiffFileContentsInput = Schema.Struct({
   repositoryTarget: Schema.optional(ThreadRepositoryTarget),
   sourceKind: ReviewDiffPreviewSourceKind,
   changeType: ReviewDiffChangeType,
-  baseRef: Schema.NullOr(TrimmedNonEmptyString),
-  headRef: Schema.NullOr(TrimmedNonEmptyString),
+  baseRef: Schema.NullOr(GitRefName),
+  headRef: Schema.NullOr(GitRefName),
   oldPath: Schema.NonEmptyString,
   newPath: Schema.NonEmptyString,
 });

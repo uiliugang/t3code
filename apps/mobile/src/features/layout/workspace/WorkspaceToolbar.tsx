@@ -60,7 +60,9 @@ export function WorkspaceToolbar(props: {
   const tab = workspace.state.tabs[selectedTab];
   const searchLabel = m(
     SEARCH_LABELS[
-      selectedTab === "usage" || selectedTab === "requirements" ? "threads" : selectedTab
+      selectedTab === "usage" || selectedTab === "requirements" || selectedTab === "workflows"
+        ? "threads"
+        : selectedTab
     ],
   );
   const { isTabActive: isListTabActive } = workspace;

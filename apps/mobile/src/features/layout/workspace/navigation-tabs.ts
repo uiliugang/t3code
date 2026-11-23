@@ -29,7 +29,8 @@ export const NAVIGATION_TAB_ICONS = {
   requirements: "list.clipboard",
   pullRequests: PullRequestGlyph.pullRequest,
   issues: "git.issue",
-  usage: "chart.bar",
+  workflows: "point.3.connected.trianglepath.dotted",
+  usage: "chart.bar.xaxis",
 } as const satisfies Readonly<Record<NavigationTab, AppSymbolName>>;
 
 export function useNavigationTabOrder() {

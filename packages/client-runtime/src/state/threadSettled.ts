@@ -221,6 +221,7 @@ export interface SnoozePresetOptions {
   readonly presets?: ReadonlyArray<SnoozePresetSetting>;
   readonly formatTime?: (date: Date) => string;
   readonly t?: UiTranslator;
+  readonly locale?: string | undefined;
 }
 
 function snoozeTimeOfDayLabel(date: Date): string {
@@ -290,6 +291,7 @@ export function resolveSnoozePreset(
   now: Date,
   formatTime: (date: Date) => string = snoozeTimeOfDayLabel,
   t: UiTranslator = translateUi.bind(null, "en"),
+  locale?: string,
 ): SnoozePreset | null {
   let wake: Date;
   let daysAhead = 0;
@@ -312,7 +314,7 @@ export function resolveSnoozePreset(
     whenLabel:
       labelNamesDay || wake.toDateString() === now.toDateString()
         ? time
-        : `${wake.toLocaleDateString(undefined, { weekday: "short" })} ${time}`,
+        : `${wake.toLocaleDateString(locale, { weekday: "short" })} ${time}`,
     snoozedUntil: wake.toISOString(),
   };
 }
@@ -328,7 +330,10 @@ export function resolveSnoozePresets(
   const seen = new Set<number>();
   return (
     (options.presets ?? DEFAULT_SNOOZE_PRESETS)
-      .flatMap((setting) => resolveSnoozePreset(setting, now, options.formatTime, options.t) ?? [])
+      .flatMap(
+        (setting) =>
+          resolveSnoozePreset(setting, now, options.formatTime, options.t, options.locale) ?? [],
+      )
       // flatMap returned a new array; Hermes has no `toSorted`.
       .sort((a, b) => wakeMinute(a) - wakeMinute(b))
       .filter((preset) => {
@@ -350,6 +355,7 @@ export function pickSnoozePreset(input: {
   readonly presets?: ReadonlyArray<SnoozePresetSetting>;
   readonly formatTime?: (date: Date) => string;
   readonly t?: UiTranslator;
+  readonly locale?: string | undefined;
 }): SnoozePreset | undefined {
   const original = input.shown.find((preset) => preset.id === input.id);
   const ahead =
@@ -357,7 +363,10 @@ export function pickSnoozePreset(input: {
   const setting = (input.presets ?? DEFAULT_SNOOZE_PRESETS).find(
     (candidate) => candidate.kind === "after" && snoozePresetId(candidate) === input.id,
   );
-  return (setting && resolveSnoozePreset(setting, input.now, input.formatTime, input.t)) ?? ahead;
+  return (
+    (setting && resolveSnoozePreset(setting, input.now, input.formatTime, input.t, input.locale)) ??
+    ahead
+  );
 }
 
 export function snoozeWakeLabel(

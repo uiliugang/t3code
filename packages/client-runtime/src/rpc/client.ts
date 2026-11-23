@@ -77,6 +77,8 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeServerLifecycle
   | typeof WS_METHODS.workItemsSubscribe
   | typeof WS_METHODS.scheduledTasksSubscribe
+  | typeof WS_METHODS.workflowsSubscribe
+  | typeof WS_METHODS.workflowsCounts
   | typeof WS_METHODS.serverGetStorageCleanupReport
   | typeof WS_METHODS.serverGetDatabaseStorage
   | typeof WS_METHODS.subscribeTerminalMetadata
@@ -305,6 +307,7 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
   makeInput: (session: RpcSession) => Effect.Effect<EnvironmentRpcInput<TTag>>,
   mapStream: (
     session: RpcSession,
+    input: EnvironmentRpcInput<TTag>,
     stream: Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>,
   ) => Stream.Stream<A, EnvironmentRpcStreamFailure<TTag>>,
   options?: SubscriptionOptions<TTag> & { readonly retryValue?: A },
@@ -357,6 +360,7 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
                       });
                       const stream = mapStream(
                         session,
+                        input,
                         Stream.suspend(() => method(input)),
                       ).pipe(
                         Stream.onFirst(() =>
@@ -496,7 +500,7 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
   EnvironmentRpcStreamFailure<TTag>,
   EnvironmentSupervisor.EnvironmentSupervisor
 > {
-  return subscribeDynamicMapped(tag, makeInput, (_session, stream) => stream, options);
+  return subscribeDynamicMapped(tag, makeInput, (_session, _input, stream) => stream, options);
 }
 
 /** Tags each value before `switchMap` can buffer it across a session change. */
@@ -512,7 +516,29 @@ export function subscribeDynamicWithSession<TTag extends EnvironmentSubscription
   return subscribeDynamicMapped(
     tag,
     makeInput,
-    (session, stream) => stream.pipe(Stream.map((value) => [session, value] as const)),
+    (session, _input, stream) => stream.pipe(Stream.map((value) => [session, value] as const)),
+    options,
+  );
+}
+
+/**
+ * Tags each value with the input of the attempt that produced it. Every
+ * `makeInput` call starts an attempt, including a resubscribe on the same
+ * session; `makeInput` must return a fresh object so the input identifies it.
+ */
+export function subscribeDynamicWithInput<TTag extends EnvironmentSubscriptionRpcTag>(
+  tag: TTag,
+  makeInput: (session: RpcSession) => Effect.Effect<EnvironmentRpcInput<TTag>>,
+  options?: SubscriptionOptions<TTag>,
+): Stream.Stream<
+  readonly [input: EnvironmentRpcInput<TTag>, value: EnvironmentRpcStreamValue<TTag>],
+  EnvironmentRpcStreamFailure<TTag>,
+  EnvironmentSupervisor.EnvironmentSupervisor
+> {
+  return subscribeDynamicMapped(
+    tag,
+    makeInput,
+    (_session, input, stream) => stream.pipe(Stream.map((value) => [input, value] as const)),
     options,
   );
 }
@@ -542,7 +568,7 @@ const sessionCapabilities = (session: RpcSession) =>
 
 const toolStreamFor =
   (capability: "meituanTools" | "sourceControlToolMaintenance") =>
-  <Tool, E>(session: RpcSession, stream: Stream.Stream<readonly Tool[], E>) =>
+  <Tool, E>(session: RpcSession, _input: unknown, stream: Stream.Stream<readonly Tool[], E>) =>
     Stream.unwrap(
       sessionCapabilities(session).pipe(
         Effect.map((capabilities) =>
@@ -560,9 +586,10 @@ export const subscribeMeituanTools = (
   subscribeDynamicMapped(
     WS_METHODS.meituanToolsSubscribe,
     () => Effect.succeed(input),
-    (session, stream) =>
+    (session, _input, stream) =>
       toolStreamFor("meituanTools")(
         session,
+        _input,
         stream.pipe(
           Stream.map((tools) =>
             tools.map((tool) =>
@@ -598,7 +625,7 @@ export const subscribeDaxiangApproval = (
   subscribeDynamicMapped(
     WS_METHODS.daxiangApprovalSubscribe,
     () => Effect.succeed({ ...input, input: { includeKms: true } }),
-    (session, stream) =>
+    (session, _input, stream) =>
       Stream.unwrap(
         sessionCapabilities(session).pipe(
           Effect.map((capabilities) =>
@@ -617,7 +644,7 @@ export const subscribeVcsBranch = (
   subscribeDynamicMapped(
     WS_METHODS.subscribeVcsBranch,
     () => Effect.succeed(input),
-    (session, stream) =>
+    (session, _input, stream) =>
       Stream.unwrap(
         sessionCapabilities(session).pipe(
           Effect.map((capabilities) =>

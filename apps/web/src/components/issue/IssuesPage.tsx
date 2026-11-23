@@ -393,7 +393,7 @@ export function TrackerIssuesView({
     });
   };
 
-  const selectEntry = (entry: IssueRowTarget) => {
+  const selectEntry = (entry: Omit<IssueRowTarget, "host"> & { readonly host?: string }) => {
     const panels = useRightPanelStore.getState();
     panels.openIssue(panelRef, entry);
     updateSearch({

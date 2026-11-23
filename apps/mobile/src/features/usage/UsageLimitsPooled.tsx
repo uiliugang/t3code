@@ -213,14 +213,16 @@ function PoolWindowCard({
           {label !== null ? (
             <Text className="text-sm font-t3-medium text-foreground">{label ?? t(pool.label)}</Text>
           ) : null}
-          <Text className="text-sm leading-10 text-foreground-muted">
-            <T>
-              <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
-                <Var>{pool.remainingPercent}</Var>%
-              </Text>{" "}
-              left
-            </T>
-          </Text>
+          <View className="flex-row items-baseline gap-1.5">
+            <Text className="text-sm leading-(--text-3xl--line-height) text-foreground-muted">
+              <T>
+                <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+                  <Var>{pool.remainingPercent}</Var>%
+                </Text>{" "}
+                left
+              </T>
+            </Text>
+          </View>
         </View>
         {pool.pace ? (
           <Text className="text-xs text-foreground-tertiary">{m(PACE_LABEL[pool.pace])}</Text>

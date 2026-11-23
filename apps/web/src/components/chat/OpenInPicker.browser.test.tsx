@@ -286,6 +286,7 @@ it.each([null, "/work/project-worktree"])(
         openInShortcutEnabled
         gitCwd={cwd}
         isGitRepo={false}
+        offersWorkspaceModes={false}
         envLocked
         availableEnvironments={[]}
         onEnvModeChange={() => {}}

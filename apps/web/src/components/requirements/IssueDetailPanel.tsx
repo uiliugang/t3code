@@ -76,6 +76,14 @@ export function IssueDetailPanel(
           });
           props.onPullRequestOpened?.();
         }}
+        onSelectIssue={({ host, ...reference }) => {
+          useRightPanelStore.getState().openIssue(props.panelRef ?? REQUIREMENTS_PANEL_REF, {
+            ...reference,
+            ...(host === undefined ? {} : { host }),
+            environmentId: props.environmentId,
+          });
+          props.onPullRequestOpened?.();
+        }}
         renderSupplement={
           legacy
             ? (detail) => (

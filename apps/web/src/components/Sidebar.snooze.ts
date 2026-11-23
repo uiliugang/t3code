@@ -11,6 +11,7 @@ import {
 
 import { m, type MessageResolver } from "../i18n/messages";
 import { getClientSettings } from "../hooks/useSettings";
+import { getFormattingLocale } from "../i18n/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { serverEnvironment } from "../state/server";
 import { formatShortTimestamp } from "../timestampFormat";
@@ -54,11 +55,13 @@ export function pickSnoozePreset(
 }
 
 function snoozeOptions(timestampFormat: TimestampFormat, environmentId: EnvironmentId) {
+  const locale = getFormattingLocale();
   const presets = appAtomRegistry.get(
     serverEnvironment.settingsValueAtom(environmentId),
   )?.snoozePresets;
   return {
     ...(presets ? { presets } : {}),
-    formatTime: (date: Date) => formatShortTimestamp(date.toISOString(), timestampFormat),
+    formatTime: (date: Date) => formatShortTimestamp(date.toISOString(), timestampFormat, locale),
+    locale,
   };
 }
