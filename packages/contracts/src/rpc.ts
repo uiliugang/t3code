@@ -1610,7 +1610,7 @@ const WsWechatSendRpc = Rpc.make(WS_METHODS.wechatSend, {
   error: Schema.Union([WechatError, EnvironmentAuthorizationError]),
 });
 const WsDaxiangApprovalSubscribeRpc = Rpc.make(WS_METHODS.daxiangApprovalSubscribe, {
-  payload: Schema.Struct({}),
+  payload: Schema.Struct({ includeKms: Schema.optional(Schema.Boolean) }),
   success: DaxiangApprovalState,
   error: Schema.Union([DaxiangApprovalError, EnvironmentAuthorizationError]),
   stream: true,

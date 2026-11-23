@@ -28,6 +28,12 @@ export type ParsedApprovalTarget =
       readonly appKey: string | null;
     }
   | {
+      readonly kind: "kms";
+      readonly key: string;
+      readonly url: string;
+      readonly workflowId: string;
+    }
+  | {
       readonly kind: "rds";
       readonly key: string;
       readonly url: string;
@@ -185,6 +191,24 @@ export function parseApprovalLink(rawUrl: string): ParsedApprovalTarget | null {
   }
 
   if (
+    host === "kms.mws.sankuai.com" &&
+    url.protocol === "https:" &&
+    url.port === "" &&
+    url.pathname === "/workflow"
+  ) {
+    const workflowIds = url.searchParams.getAll("uid");
+    const [workflowId] = workflowIds;
+    if (workflowIds.length === 1 && workflowId && /^\d+$/u.test(workflowId)) {
+      return {
+        kind: "kms",
+        key: `kms:${host}:${workflowId}`,
+        url: `${url.origin}/workflow?uid=${workflowId}`,
+        workflowId,
+      };
+    }
+  }
+
+  if (
     host === "rds.mws.sankuai.com" ||
     host === "rds.mws-test.sankuai.com" ||
     host === "sqlaudit.mws.sankuai.com"
@@ -250,6 +274,8 @@ export function approvalTargetLabel(target: ParsedApprovalTarget): string {
         : `Lion #${target.auditId}`;
     case "rds":
       return `RDS ${target.flowId.slice(0, 12)}`;
+    case "kms":
+      return `KMS #${target.workflowId}`;
     case "dms":
       return target.dagId
         ? `DMS ${target.flowId.slice(0, 12)} (${target.dagId})`

@@ -7,6 +7,15 @@ it.effect("parses every supported approval link into a stable dedupe key", () =>
     const pr = parseApprovalLink(
       "https://dev.sankuai.com/code/repo-detail/group/repo/pr/123/diff?from=chat",
     );
+    assert.deepStrictEqual(
+      parseApprovalLink("https://kms.mws.sankuai.com/workflow?uid=42&from=daxiang#details"),
+      {
+        kind: "kms",
+        key: "kms:kms.mws.sankuai.com:42",
+        url: "https://kms.mws.sankuai.com/workflow?uid=42",
+        workflowId: "42",
+      },
+    );
     assert.deepStrictEqual(pr, {
       kind: "pr",
       key: "pr:group/repo#123",
@@ -51,6 +60,23 @@ it.effect("parses every supported approval link into a stable dedupe key", () =>
   }),
 );
 
+it.effect("rejects KMS links outside the confirmed workflow detail format", () =>
+  Effect.sync(() => {
+    for (const url of [
+      "http://kms.mws.sankuai.com/workflow?uid=42",
+      "https://kms.mws-test.sankuai.com/workflow?uid=42",
+      "https://kms.mws.sankuai.com.example.com/workflow?uid=42",
+      "https://kms.mws.sankuai.com:8443/workflow?uid=42",
+      "https://kms.mws.sankuai.com/selfCheck?uid=42",
+      "https://kms.mws.sankuai.com/workflow",
+      "https://kms.mws.sankuai.com/workflow?uid=abc",
+      "https://kms.mws.sankuai.com/workflow?uid=42&uid=43",
+    ]) {
+      assert.isNull(parseApprovalLink(url), url);
+    }
+  }),
+);
+
 it.effect("extracts approval links from text, cards and quoted messages without duplicates", () =>
   Effect.sync(() => {
     const event = {
@@ -60,19 +86,26 @@ it.effect("extracts approval links from text, cards and quoted messages without 
         contentTitle: "MCM 审批",
         content: "https://mcm.mws.sankuai.com/#/mine/plan/detail/456",
         link: "https://lion.mws.sankuai.com/transitions/audit?auditId=42&appKey=com.example.app",
+        actions: [{ url: "https://kms.mws.sankuai.com/workflow?uid=42" }],
       },
       extension: {
         quoted: [
           {
             text: "再次发送 https://dev.sankuai.com/code/repo-detail/group/repo/pr/123/diff",
           },
+          { text: "https://kms.mws.sankuai.com/workflow?from=daxiang&uid=42" },
         ],
       },
     };
     const targets = extractApprovalTargets(event);
     assert.deepStrictEqual(
       targets.map((target) => target.key),
-      ["pr:group/repo#123", "mcm-plan:mcm.mws.sankuai.com:456", "lion:lion.mws.sankuai.com:42"],
+      [
+        "pr:group/repo#123",
+        "mcm-plan:mcm.mws.sankuai.com:456",
+        "lion:lion.mws.sankuai.com:42",
+        "kms:kms.mws.sankuai.com:42",
+      ],
     );
   }),
 );
