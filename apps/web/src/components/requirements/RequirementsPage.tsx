@@ -20,6 +20,7 @@ import {
   type EnvironmentRequirementEntry,
 } from "@t3tools/client-runtime/state/requirement-board";
 import {
+  DEFAULT_COLLAPSED_REQUIREMENT_GROUPS,
   requirementGroups,
   type RequirementSource,
   type TrackerCreateTarget,
@@ -395,7 +396,7 @@ export function RequirementBoard({
   ];
   const [collapsed, setCollapsed] = useLocalStorage<ReadonlyArray<string>, ReadonlyArray<string>>(
     "requirements.collapsed",
-    ["done"],
+    DEFAULT_COLLAPSED_REQUIREMENT_GROUPS,
     CollapsedGroups,
   );
   const [creatingIssue, setCreatingIssue] = useState<IssueProvider | null>(null);

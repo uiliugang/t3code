@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { DEFAULT_COLLAPSED_REQUIREMENT_GROUPS } from "@t3tools/client-runtime/work-item";
 import { AsyncResult } from "effect/reactivity";
 import { useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
@@ -37,14 +38,16 @@ export function ProjectTag({ title }: { title: string }) {
 export function useRequirementGroups() {
   const preferences = useAtomValue(mobilePreferencesAtom);
   const update = useAtomCommand(saveMobilePreferences);
-  const collapsed = AsyncResult.getOrElse(preferences, (): Preferences => ({}))
-    .requirementCollapsedGroups ?? ["done", "local:done"];
+  const collapsed =
+    AsyncResult.getOrElse(preferences, (): Preferences => ({})).requirementCollapsedGroups ??
+    DEFAULT_COLLAPSED_REQUIREMENT_GROUPS;
   return {
     collapsed,
     toggle: (key: string) => {
       void update({
         transform: (current) => {
-          const previous = current.requirementCollapsedGroups ?? ["done", "local:done"];
+          const previous =
+            current.requirementCollapsedGroups ?? DEFAULT_COLLAPSED_REQUIREMENT_GROUPS;
           return {
             requirementCollapsedGroups: previous.includes(key)
               ? previous.filter((entry) => entry !== key)
