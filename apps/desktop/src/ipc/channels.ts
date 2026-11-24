@@ -69,6 +69,7 @@ export const ENSURE_SSH_ENVIRONMENT_CHANNEL = "desktop:ensure-ssh-environment";
 export const GET_CLOUD_SANDBOX_CONFIG_CHANNEL = "desktop:get-cloud-sandbox-config";
 export const SAVE_CLOUD_SANDBOX_CONFIG_CHANNEL = "desktop:save-cloud-sandbox-config";
 export const CLEAR_CLOUD_SANDBOX_CONFIG_CHANNEL = "desktop:clear-cloud-sandbox-config";
+export const RESET_CLOUD_SANDBOX_CONFIG_CHANNEL = "desktop:reset-cloud-sandbox-config";
 export const DISCONNECT_SSH_ENVIRONMENT_CHANNEL = "desktop:disconnect-ssh-environment";
 export const FETCH_SSH_ENVIRONMENT_DESCRIPTOR_CHANNEL = "desktop:fetch-ssh-environment-descriptor";
 export const BOOTSTRAP_SSH_BEARER_SESSION_CHANNEL = "desktop:bootstrap-ssh-bearer-session";

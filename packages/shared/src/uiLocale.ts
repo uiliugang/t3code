@@ -1963,7 +1963,16 @@ const zhCN: Readonly<Record<string, string>> = {
   "Meituan Skills": "美团 Skills",
   "Service configuration": "服务配置",
   "Cloud Sandbox": "Cloud Sandbox",
-  "SSH host and password": "SSH 主机与密码",
+  "SSH servers": "SSH 服务器",
+  "Add server": "添加服务器",
+  "Edit server": "编辑服务器",
+  "Remove server": "移除服务器",
+  "Remove Cloud Sandbox server?": "移除这台 Cloud Sandbox 服务器？",
+  "Reset credentials": "重置凭据",
+  "Reset Cloud Sandbox credentials?\nThis removes all saved Cloud Sandbox servers and passwords.":
+    "重置 Cloud Sandbox 凭据？\n此操作将移除所有已保存的 Cloud Sandbox 服务器和密码。",
+  "Could not reset the Cloud Sandbox credentials.": "无法重置 Cloud Sandbox 凭据。",
+  "Cancel editing": "取消编辑",
   "SSH host": "SSH 主机",
   "SSH password": "SSH 密码",
   "Show password": "显示密码",
@@ -1971,15 +1980,12 @@ const zhCN: Readonly<Record<string, string>> = {
   "Saved password is hidden": "已保存，不显示原密码",
   "Default port is 22. For another port, enter host:port. Leave the password blank to keep it for the same host.":
     "默认端口为 22。非默认端口请填写「主机:端口」。主机不变时，留空可保留已保存的密码。",
-  "Clear the saved Cloud Sandbox SSH host and password?":
-    "清除已保存的 Cloud Sandbox SSH 主机和密码？",
   "Enter a password for this SSH host.": "请输入此 SSH 主机的密码。",
   "Could not read the Cloud Sandbox credential.": "无法读取 Cloud Sandbox 凭据。",
   "Could not clear the Cloud Sandbox credential.": "无法清除 Cloud Sandbox 凭据。",
   "Could not save the Cloud Sandbox credential. Check the host, port, and access to secure credential storage.":
     "无法保存 Cloud Sandbox 凭据。请检查主机、端口和加密凭据存储的可用性。",
   "Configuration saved": "配置已保存",
-  "Clear configuration": "清除配置",
   "Save configuration": "保存配置",
   "Cloud Sandbox matched": "已匹配 Cloud Sandbox",
   "Connect using the SSH password saved in Meituan integration.":

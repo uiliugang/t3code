@@ -465,13 +465,28 @@ export const DesktopSshEnvironmentEnsureOptionsSchema = Schema.Struct({
   password: Schema.optionalKey(Schema.RedactedFromValue(Schema.NonEmptyString)),
 });
 
-export const DesktopCloudSandboxConfigSchema = Schema.NullOr(
-  Schema.Struct({ hostname: Schema.String, port: Schema.Number }),
-);
+export const DesktopCloudSandboxConfigSchema = Schema.Struct({
+  hostname: Schema.String,
+  port: Schema.Number,
+});
 export type DesktopCloudSandboxConfig = typeof DesktopCloudSandboxConfigSchema.Type;
+
+export function parseDesktopCloudSandboxEndpoint(host: string, defaultPort = 22) {
+  const match = /^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]*)(?::(\d+))?$/iu.exec(host.trim());
+  const port = match?.[2] === undefined ? defaultPort : Number(match[2]);
+  if (!match?.[1] || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const hostname = match[1].toLowerCase();
+  if (!hostname.startsWith("[")) return { hostname, port };
+  try {
+    return { hostname: new URL(`http://${hostname}`).hostname.slice(1, -1), port };
+  } catch {
+    return null;
+  }
+}
 
 export const DesktopCloudSandboxSaveInputSchema = Schema.Struct({
   host: Schema.String,
+  previous: Schema.optionalKey(DesktopCloudSandboxConfigSchema),
   password: Schema.optionalKey(Schema.RedactedFromValue(Schema.NonEmptyString)),
 });
 
@@ -1188,12 +1203,16 @@ export interface DesktopBridge {
     target: DesktopSshEnvironmentTarget,
     options?: { issuePairingToken?: boolean; targetVersion?: string; password?: string },
   ) => Promise<DesktopSshEnvironmentBootstrap>;
-  getCloudSandboxConfig: () => Promise<DesktopCloudSandboxConfig>;
+  getCloudSandboxConfig: () => Promise<readonly DesktopCloudSandboxConfig[]>;
   saveCloudSandboxConfig: (input: {
     host: string;
+    previous?: DesktopCloudSandboxConfig;
     password?: string;
-  }) => Promise<DesktopCloudSandboxConfig>;
-  clearCloudSandboxConfig: () => Promise<void>;
+  }) => Promise<readonly DesktopCloudSandboxConfig[]>;
+  clearCloudSandboxConfig: (
+    target: DesktopCloudSandboxConfig,
+  ) => Promise<readonly DesktopCloudSandboxConfig[]>;
+  resetCloudSandboxConfig: () => Promise<void>;
   onSshInstallProgress?: (
     listener: (target: DesktopSshEnvironmentTarget, progress: DesktopSshInstallProgress) => void,
   ) => () => void;

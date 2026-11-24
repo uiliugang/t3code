@@ -138,7 +138,7 @@ export function AddEnvironmentDialog({
   const [savedBackendSshUsername, setSavedBackendSshUsername] = useState("");
   const [savedBackendSshPort, setSavedBackendSshPort] = useState("");
   const [manualPassword, setManualPassword] = useState<string | null>(null);
-  const [sandboxConfig, setSandboxConfig] = useState<DesktopCloudSandboxConfig>(null);
+  const [sandboxConfigs, setSandboxConfigs] = useState<readonly DesktopCloudSandboxConfig[]>([]);
   const [resolvedSshHost, setResolvedSshHost] = useState<DesktopSshEnvironmentTarget | null>(null);
   const [sshHostSuggestionsOpen, setSshHostSuggestionsOpen] = useState(false);
   const highlightedSshHostRef = useRef<DesktopDiscoveredSshHost | undefined>(undefined);
@@ -161,11 +161,11 @@ export function AddEnvironmentDialog({
     if (!isSshDiscoveryActive || !desktopBridge?.getCloudSandboxConfig) return;
     let current = true;
     void desktopBridge.getCloudSandboxConfig().then(
-      (config) => {
-        if (current) setSandboxConfig(config);
+      (configs) => {
+        if (current) setSandboxConfigs(configs);
       },
       () => {
-        if (current) setSandboxConfig(null);
+        if (current) setSandboxConfigs([]);
       },
     );
     return () => {
@@ -180,9 +180,10 @@ export function AddEnvironmentDialog({
     }
   })();
   const sshAlias = sshHost?.alias;
+  const hasSandboxConfigs = sandboxConfigs.length > 0;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces ssh -G while resolving aliases for credential matching
   useEffect(() => {
-    if (!isSshDiscoveryActive || !sandboxConfig || !sshAlias || !desktopBridge?.resolveSshHost)
+    if (!isSshDiscoveryActive || !hasSandboxConfigs || !sshAlias || !desktopBridge?.resolveSshHost)
       return;
     let current = true;
     const timer = window.setTimeout(() => {
@@ -199,17 +200,18 @@ export function AddEnvironmentDialog({
       current = false;
       window.clearTimeout(timer);
     };
-  }, [desktopBridge, isSshDiscoveryActive, sandboxConfig, sshAlias]);
+  }, [desktopBridge, isSshDiscoveryActive, hasSandboxConfigs, sshAlias]);
   const detectedPort = savedBackendSshPort
     ? Number(savedBackendSshPort)
     : (sshHost?.port ?? resolvedSshHost?.port ?? 22);
   const sandboxMatched =
     manualPassword === null &&
-    sandboxConfig !== null &&
     resolvedSshHost !== null &&
     resolvedSshHost.alias === sshAlias &&
-    resolvedSshHost.hostname.toLowerCase() === sandboxConfig.hostname &&
-    detectedPort === sandboxConfig.port;
+    sandboxConfigs.some(
+      (config) =>
+        resolvedSshHost.hostname.toLowerCase() === config.hostname && detectedPort === config.port,
+    );
   const discoveredSshHosts = desktopSshHosts.data ?? EMPTY_DISCOVERED_SSH_HOSTS;
   const unsavedDiscoveredSshHosts = discoveredSshHosts.filter((target) => {
     const address = formatDesktopSshTarget(target);
@@ -237,7 +239,7 @@ export function AddEnvironmentDialog({
       setSavedBackendSshUsername("");
       setSavedBackendSshPort("");
       setManualPassword(null);
-      setSandboxConfig(null);
+      setSandboxConfigs([]);
       setResolvedSshHost(null);
     }
     onOpenChange(nextOpen);
