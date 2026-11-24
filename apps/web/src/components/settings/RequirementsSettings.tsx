@@ -10,6 +10,7 @@ import {
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 import {
+  ChevronRightIcon,
   GithubIcon,
   RefreshCwIcon,
   SaveIcon,
@@ -33,6 +34,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { MepIcon } from "../Icons";
 import { Checkbox } from "../ui/checkbox";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -135,42 +137,52 @@ function DiscoveredTasksSettings({
           onCheckedChange={(workItemDiscoveryEnabled) => void save({ workItemDiscoveryEnabled })}
         />
       </div>
-      <form
-        className="grid gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!disabled && valid && limit !== workItemDiscoveryLimit) {
-            void save({ workItemDiscoveryLimit: limit });
-          }
-        }}
-      >
-        <Label htmlFor={inputId}>{t("Maximum discovered tasks")}</Label>
-        <div className="flex items-center gap-2">
-          <div className="w-28">
-            <Input
-              id={inputId}
-              type="number"
-              min={1}
-              max={MAX_WORK_ITEM_DISCOVERY_LIMIT}
-              value={draft ?? workItemDiscoveryLimit}
-              disabled={disabled}
-              aria-invalid={!valid}
-              aria-describedby={`${inputId}-range`}
-              onChange={(event) => setDraft(event.target.value)}
-            />
-          </div>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={disabled || !valid || limit === workItemDiscoveryLimit}
+      <Collapsible>
+        <CollapsibleTrigger
+          id={`${inputId}-label`}
+          className="group flex min-h-7 items-center gap-1 text-sm font-medium pointer-coarse:min-h-11"
+        >
+          <ChevronRightIcon aria-hidden className="size-3.5 group-data-panel-open:rotate-90" />
+          {t("Maximum discovered tasks")}
+        </CollapsibleTrigger>
+        <CollapsiblePanel animate={false}>
+          <form
+            className="grid gap-2 p-1"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!disabled && valid && limit !== workItemDiscoveryLimit) {
+                void save({ workItemDiscoveryLimit: limit });
+              }
+            }}
           >
-            {t("Save")}
-          </Button>
-        </div>
-        <p id={`${inputId}-range`} className="text-xs text-muted-foreground">
-          {t("Enter a whole number from 1 to {max}.", { max: MAX_WORK_ITEM_DISCOVERY_LIMIT })}
-        </p>
-      </form>
+            <div className="flex items-center gap-2">
+              <div className="w-28">
+                <Input
+                  type="number"
+                  min={1}
+                  max={MAX_WORK_ITEM_DISCOVERY_LIMIT}
+                  value={draft ?? workItemDiscoveryLimit}
+                  disabled={disabled}
+                  aria-invalid={!valid}
+                  aria-labelledby={`${inputId}-label`}
+                  aria-describedby={`${inputId}-range`}
+                  onChange={(event) => setDraft(event.target.value)}
+                />
+              </div>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={disabled || !valid || limit === workItemDiscoveryLimit}
+              >
+                {t("Save")}
+              </Button>
+            </div>
+            <p id={`${inputId}-range`} className="text-xs text-muted-foreground">
+              {t("Enter a whole number from 1 to {max}.", { max: MAX_WORK_ITEM_DISCOVERY_LIMIT })}
+            </p>
+          </form>
+        </CollapsiblePanel>
+      </Collapsible>
     </section>
   );
 }
@@ -289,7 +301,7 @@ function ProjectSourceRow({
   };
   const invalid = draft !== null && !parseMepSpaceIds(draft.text);
   return (
-    <tr className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-3 text-sm lg:table-row">
+    <tr className="group/project-source grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-3 text-sm lg:table-row">
       <td className="row-span-4 align-top lg:py-4 lg:pr-3">
         <Checkbox
           id={`issue-source-${projectKey(project)}`}
@@ -329,13 +341,13 @@ function ProjectSourceRow({
         ))}
         {enabled && (spaces.length > 0 || manual || githubSources.length === 0) ? (
           <>
-            <div className="group/mep-source flex min-w-0 items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
               <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs wrap-anywhere">
                 <MepIcon aria-hidden className="size-3.5 shrink-0" />
                 <span>{mepSpaceSummary(spaces, manual, discovery, t)}</span>
               </p>
-              {draft === null && spaces.length > 0 ? (
-                <span className="flex shrink-0 opacity-0 transition-opacity group-focus-within/mep-source:opacity-100 group-hover/mep-source:opacity-100 pointer-coarse:opacity-100">
+              {draft === null ? (
+                <span className="flex shrink-0 opacity-0 group-focus-within/project-source:opacity-100 group-hover/project-source:opacity-100 any-pointer-coarse:opacity-100">
                   <Button
                     variant="ghost-muted"
                     size="icon-xs"
@@ -351,19 +363,6 @@ function ProjectSourceRow({
                 </span>
               ) : null}
             </div>
-            {draft === null && spaces.length === 0 ? (
-              <Button
-                variant="ghost-muted"
-                size="xs"
-                disabled={disabled}
-                onClick={() => {
-                  setFailure(null);
-                  setDraft({ text: "", saved });
-                }}
-              >
-                {t(discovery === "ready" ? "Link spaces" : "Edit spaces")}
-              </Button>
-            ) : null}
             {draft !== null ? (
               <form
                 className="grid gap-2 pt-1"
