@@ -1592,13 +1592,33 @@ describe("SkillManager", () => {
         yield* manager.tick;
         yield* manager.drain;
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        yield* fs.writeFileString(`${source}/script.sh`, "checked");
+        yield* manager.mutate({ type: "check", id: first.id });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).skills[0]?.availableDigest).not.toBeNull();
+        yield* Ref.set(busy, true);
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        yield* Ref.set(busy, false);
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
+        yield* fs.writeFileString(`${source}/script.sh`, "cancelled");
+        yield* manager.mutate({ type: "check", id: first.id });
+        yield* manager.drain;
+        yield* manager.mutate({ type: "cancel", id: first.id });
+        yield* manager.drain;
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         yield* manager.mutate({ type: "policy", id: first.id, policy: "notify" });
         yield* manager.drain;
         yield* fs.writeFileString(`${source}/script.sh`, "notify");
         yield* TestClock.adjust("1 day");
         yield* manager.tick;
         yield* manager.drain;
-        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         expect((yield* manager.snapshot).skills[0]?.availableDigest).not.toBeNull();
         const jobs = (yield* manager.snapshot).jobs?.length;
         yield* manager.tick;
@@ -1613,7 +1633,7 @@ describe("SkillManager", () => {
         yield* manager.drain;
         expect((yield* manager.snapshot).jobs?.length).toBe(stopped.jobs?.length);
         expect((yield* manager.snapshot).skills[0]?.checkedAt).toBe(stopped.skills[0]?.checkedAt);
-        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         yield* Ref.set(busy, true);
         yield* manager.mutate({ type: "policy", id: first.id, policy: "automatic" });
         yield* manager.drain;
@@ -1625,13 +1645,21 @@ describe("SkillManager", () => {
         yield* Ref.set(busy, false);
         yield* manager.tick;
         yield* manager.drain;
-        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         expect(
           (yield* manager.snapshot).jobs?.filter((job) => job.status === "waiting"),
         ).toHaveLength(0);
         yield* manager.mutate({ type: "update", id: first.id });
         yield* manager.drain;
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("do not update");
+        yield* fs.writeFileString(`${source}/script.sh`, "automatic again");
+        yield* manager.mutate({ type: "check", id: first.id });
+        yield* manager.drain;
+        yield* manager.mutate({ type: "policy", id: first.id, policy: "automatic" });
+        yield* manager.drain;
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("automatic again");
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
   it.effect("replays durable queued jobs once and exposes multiple skill choices", () =>
