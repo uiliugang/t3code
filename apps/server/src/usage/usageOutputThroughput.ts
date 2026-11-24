@@ -37,7 +37,10 @@ export const readUsageOutputThroughput = Effect.fn("UsageService.readOutputThrou
     readonly outputTokens: number;
     readonly durationMs: number;
   }>`
-      SELECT CASE attempt.provider WHEN 'claudeAgent' THEN 'claude' ELSE attempt.provider END AS provider,
+      SELECT CASE COALESCE(providerThread.driver, attempt.provider)
+        WHEN 'claudeAgent' THEN 'claude'
+        ELSE COALESCE(providerThread.driver, attempt.provider)
+        END AS provider,
         CASE
           WHEN json_array_length(turn.payload_json, '$.turnTokenUsage.models') > 1 THEN NULL
           WHEN json_array_length(turn.payload_json, '$.turnTokenUsage.models') = 1
@@ -55,6 +58,8 @@ export const readUsageOutputThroughput = Effect.fn("UsageService.readOutputThrou
       JOIN orchestration_v2_projection_run_attempts AS attempt
         ON attempt.attempt_id = turn.run_attempt_id AND attempt.root_node_id = turn.node_id
       JOIN orchestration_v2_projection_runs AS run ON run.run_id = attempt.run_id
+      LEFT JOIN orchestration_v2_projection_provider_threads AS providerThread
+        ON providerThread.provider_thread_id = turn.provider_thread_id
       WHERE turn.status = 'completed' AND run.status = 'completed'
         AND turn.completed_at >= ${DateTime.formatIso(from.value)}
         AND turn.completed_at < ${DateTime.formatIso(until.value)}
