@@ -2050,6 +2050,9 @@ const zhCN: Readonly<Record<string, string>> = {
     "通过 dumbo-web 监听。PR 和 MCM 使用官方 CLI；Lion、RDS 和 DMS 仍需人工处理。",
   "Monitoring disabled": "监听已停用",
   "dumbo-web is not installed": "未安装 dumbo-web",
+  "Enhanced dumbo-web card support": "增强 dumbo-web 卡片识别",
+  "Could not apply the dumbo-web card enhancement. Listening with the original CLI.":
+    "未能应用 dumbo-web 卡片增强，已使用原版 CLI 继续监听。",
   "DaXiang login required": "需要登录大象",
   "Connecting to DaXiang": "正在连接大象",
   "Listening for approval links": "正在监听审批链接",

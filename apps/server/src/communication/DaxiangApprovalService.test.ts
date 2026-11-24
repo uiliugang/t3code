@@ -33,19 +33,26 @@ it.effect("uses current approval settings for every link in a message", () =>
                 autoApprovePullRequest: true,
                 autoApproveMcm: true,
                 notifyUnsupportedLinks: false,
+                autoOpenUnsupportedInBrowser: true,
               },
             },
           }),
         ),
       );
       const approved: string[] = [];
+      const opened: string[] = [];
+      const kmsUrl = "https://kms.mws.sankuai.com/key-management/workflow?uid=42";
       const event = JSON.stringify({
         event: "message",
         msgId: "message-1",
         sessionType: "chat",
         sessionId: "chat-1",
         fromUid: "sender",
-        text: "https://kms.mws.sankuai.com/workflow?uid=42 https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
+        body: {
+          link: kmsUrl,
+          content:
+            "https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
+        },
       });
       const context = yield* Layer.build(Approval.layer).pipe(
         Effect.provide(Layer.mock(ServerBrowser.ServerBrowser)({})),
@@ -68,7 +75,10 @@ it.effect("uses current approval settings for every link in a message", () =>
         Effect.provideService(ExternalLauncher.ExternalLauncher, {
           resolveAvailableEditors: () => Effect.succeed([]),
           resolveFileManagerRevealKind: () => Effect.undefined,
-          launchBrowser: () => Effect.die("Unexpected browser launch"),
+          launchBrowser: (url) =>
+            Effect.sync(() => {
+              opened.push(url);
+            }),
           launchEditor: () => Effect.die("Unexpected editor launch"),
         }),
         Effect.provideService(ProcessRunner.ProcessRunner, {
@@ -120,17 +130,22 @@ it.effect("uses current approval settings for every link in a message", () =>
         Stream.runHead,
       );
       assert.deepStrictEqual(approved, ["pr:group/repo#1"]);
+      assert.deepStrictEqual(opened, [
+        kmsUrl,
+        "https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
+      ]);
       assert.strictEqual(snapshot._tag, "Some");
       if (snapshot._tag === "Some") {
+        assert.isTrue(snapshot.value.enhancementFailed);
         assert.deepStrictEqual(
           snapshot.value.records.map((record) => record.outcome),
-          ["skipped", "approved", "skipped"],
+          ["opened", "approved", "opened"],
         );
         assert.include(snapshot.value.records[2], {
           kind: "kms",
           title: "KMS #42",
-          url: "https://kms.mws.sankuai.com/workflow?uid=42",
-          outcome: "skipped",
+          url: kmsUrl,
+          outcome: "opened",
         });
         const legacy = yield* service.subscribe().pipe(Stream.runHead);
         assert.deepStrictEqual(

@@ -2555,6 +2555,8 @@
   "5e68e6ad5a924284": "Delivery unknown",
   "c9b64505d95731aa": "skipped",
   "3ba4cf953dd20f22": "failed",
+  "7cbc2b7e149feb13": "Could not apply the dumbo-web card enhancement. Listening with the original CLI.",
+  "7e404b0b69255767": "Enhanced dumbo-web card support",
   "a0e02b39c140831e": "Remove {route}?",
   "4cfab0d79eca5fb3": "{scope}: Allowed",
   "919442f2354730ba": "{scope}: Not granted",

@@ -155,6 +155,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadTerminalCleanup: Schema.optionalKey(Schema.Boolean),
   meituanIntegration: Schema.optionalKey(Schema.Boolean),
   daxiangApprovalMonitor: Schema.optionalKey(Schema.Boolean),
+  daxiangDumboWebEnhancement: Schema.optionalKey(Schema.Boolean),
   daxiangApprovalBrowserLogin: Schema.optionalKey(Schema.Boolean),
   /** Absent on older servers and on Windows hosts, which cannot stop a discovered server. */
   localServerStop: Schema.optionalKey(Schema.Boolean),

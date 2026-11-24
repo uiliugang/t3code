@@ -59,9 +59,10 @@ export function DaxiangApprovalSettingsSection({
   const canOpenBrowser = useAtomValue(
     serverEnvironment.mutateDaxiangApproval.permissionAtom(environmentId, openBrowserLogin),
   );
+  const capabilities = useAtomValue(environmentServerConfigsAtom).get(environmentId)?.environment
+    .capabilities;
   const browserLoginSupported =
-    useAtomValue(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .daxiangApprovalBrowserLogin === true && canOpenBrowser;
+    capabilities?.daxiangApprovalBrowserLogin === true && canOpenBrowser;
   const monitor = useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.daxiang
     .approvalMonitor;
   const allowed =
@@ -129,10 +130,10 @@ export function DaxiangApprovalSettingsSection({
     setBrowserLogin(undefined);
     void run({ type: "cancel_browser_login", threadId: browserLogin.threadId });
   };
-  const toggle = (key: keyof MonitorSettings, label: string, subtitle: string) => (
+  const toggle = (key: keyof MonitorSettings, label: string, subtitle?: string) => (
     <SettingsSwitchRow
       label={t(label)}
-      subtitle={t(subtitle)}
+      {...(subtitle ? { subtitle: t(subtitle) } : {})}
       value={Boolean(monitor[key])}
       disabled={!allowed || busy}
       onValueChange={(value) => void save({ [key]: value } as MonitorPatch)}
@@ -217,6 +218,15 @@ export function DaxiangApprovalSettingsSection({
               {state.error}
             </Text>
           ) : null}
+          {monitor.enhanceDumboWeb && state?.enhancementFailed ? (
+            <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
+              {t(
+                msg(
+                  "Could not apply the dumbo-web card enhancement. Listening with the original CLI.",
+                ),
+              )}
+            </Text>
+          ) : null}
         </View>
         {browserLogin && visibleTabId ? (
           <Modal onRequestClose={cancelBrowserLogin}>
@@ -264,6 +274,9 @@ export function DaxiangApprovalSettingsSection({
             </SafeAreaView>
           </Modal>
         ) : null}
+        {capabilities?.daxiangDumboWebEnhancement === true
+          ? toggle("enhanceDumboWeb", msg("Enhanced dumbo-web card support"))
+          : null}
         {toggle(
           "includeGroupChats",
           "Include group chats",

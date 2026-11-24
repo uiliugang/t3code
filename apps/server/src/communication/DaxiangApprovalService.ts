@@ -37,6 +37,7 @@ import { makeSkillInstallerNode } from "../skills/skillInstallerNode.ts";
 import { findModernNpm } from "../sourceControl/meituanNpm.ts";
 import * as DaxiangMessages from "./DaxiangMessageService.ts";
 import * as Executor from "./DaxiangApprovalExecutor.ts";
+import { prepareEnhancedDumboWeb } from "./dumboWebEnhancement.ts";
 import {
   approvalMessageKey,
   approvalWatchSettingsKey,
@@ -58,6 +59,7 @@ import {
 
 const EMPTY_STATE: DaxiangApprovalState = {
   status: "disabled",
+  enhancementFailed: false,
   loggedIn: false,
   uid: null,
   expiresAt: null,
@@ -500,10 +502,12 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const startWatch = (invocation: CliInvocation, ownUid?: string) => {
-    const loop: Effect.Effect<void, never> = Effect.gen(function* () {
+  const startWatch = (invocation: CliInvocation, enhance: boolean, ownUid?: string) => {
+    const attempt = Effect.fn("DaxiangApprovalService.watchAttempt")(function* (
+      watchInvocation: CliInvocation,
+    ) {
       yield* publishStatus("connecting");
-      const outcome = yield* watchOnce(invocation, ownUid).pipe(Effect.result);
+      const outcome = yield* watchOnce(watchInvocation, ownUid).pipe(Effect.result);
       if (outcome._tag === "Failure") {
         const error = outcome.failure;
         yield* publishCredentials({ loggedIn: error.reason !== "login_failed" });
@@ -513,8 +517,28 @@ const make = Effect.gen(function* () {
         );
       }
       yield* Effect.sleep("15 seconds");
-    }).pipe(Effect.forever, Effect.asVoid);
-    return Effect.forkScoped(loop);
+    });
+    return Effect.gen(function* () {
+      const enhanced = enhance
+        ? yield* prepareEnhancedDumboWeb(invocation.prefix[0]).pipe(
+            Effect.provideService(FileSystem.FileSystem, fs),
+            Effect.provideService(Path.Path, path),
+            Effect.catch((error) =>
+              Effect.logWarning("Could not apply dumbo-web card enhancement", error).pipe(
+                Effect.as(undefined),
+              ),
+            ),
+          )
+        : undefined;
+      yield* SubscriptionRef.update(state, (current) => ({
+        ...current,
+        enhancementFailed: enhance && enhanced === undefined,
+      }));
+      yield* attempt(enhanced ? { ...invocation, prefix: [enhanced] } : invocation).pipe(
+        Effect.forever,
+        Effect.asVoid,
+      );
+    }).pipe(Effect.scoped, Effect.forkScoped);
   };
 
   const reconcile = Effect.fn("DaxiangApprovalService.reconcile")(
@@ -523,6 +547,7 @@ const make = Effect.gen(function* () {
         yield* Fiber.interrupt(watchFiber);
         watchFiber = undefined;
       }
+      yield* SubscriptionRef.update(state, (current) => ({ ...current, enhancementFailed: false }));
       const saved = yield* settings.getSettings.pipe(
         Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
       );
@@ -540,7 +565,11 @@ const make = Effect.gen(function* () {
       if (!loggedIn) {
         return yield* publishStatus("unauthenticated");
       }
-      watchFiber = yield* startWatch(invocation, status.uid);
+      watchFiber = yield* startWatch(
+        invocation,
+        saved.daxiang.approvalMonitor.enhanceDumboWeb,
+        status.uid,
+      );
     },
     reconcileLock.withPermits(1),
     (effect) =>

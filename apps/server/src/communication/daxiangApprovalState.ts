@@ -85,6 +85,7 @@ export function approvalWatchSettingsKey(
   return JSON.stringify({
     meituanIntegrationEnabled: settings.meituanIntegrationEnabled,
     enabled: settings.daxiang.approvalMonitor.enabled,
+    enhanceDumboWeb: settings.daxiang.approvalMonitor.enhanceDumboWeb,
     chromeCdpPort: settings.daxiang.approvalMonitor.chromeCdpPort,
   });
 }
