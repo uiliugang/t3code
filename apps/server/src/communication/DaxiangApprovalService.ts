@@ -188,7 +188,12 @@ const make = Effect.gen(function* () {
       return {
         command: invocation?.command ?? executable,
         prefix: invocation?.args ?? [],
-        ...(invocation?.env ? { env: invocation.env } : {}),
+        env: {
+          ...invocation?.env,
+          NODE_OPTIONS: [hostEnv.NODE_OPTIONS, "--experimental-websocket"]
+            .filter(Boolean)
+            .join(" "),
+        },
       } satisfies CliInvocation;
     },
     (effect) =>

@@ -175,16 +175,25 @@ it.effect("imports from the isolated browser only after sign-in and releases its
           ServerConfig.ServerConfig.layerTest(baseDir, baseDir),
         ),
       ),
-      Effect.provideService(HostProcess.Environment, { PATH: baseDir }),
+      Effect.provideService(HostProcess.Environment, {
+        PATH: baseDir,
+        NVM_DIR: baseDir,
+        NODE_OPTIONS: "--no-warnings",
+      }),
       Effect.provideService(ProcessRunner.ProcessRunner, {
-        run: ({ args = [] }) =>
+        run: ({ args = [], env }) =>
           Effect.sync(() => {
             const port = args.at(-1);
             if (args.includes("login") && port !== undefined) ports.push(port);
+            const error = !signedIn
+              ? "not logged in"
+              : env?.NODE_OPTIONS !== "--no-warnings --experimental-websocket"
+                ? "WebSocket is not defined"
+                : "";
             return {
               stdout: "",
-              stderr: signedIn ? "" : "not logged in",
-              code: ChildProcessSpawner.ExitCode(signedIn ? 0 : 1),
+              stderr: error,
+              code: ChildProcessSpawner.ExitCode(error ? 1 : 0),
               timedOut: false,
               stdoutTruncated: false,
               stderrTruncated: false,
