@@ -76,10 +76,14 @@ it.effect("protects unknown desktop visibility until an explicit hidden report a
       expect(channel.isShown(key)).toBe(true);
 
       yield* send({ type: "shown", ...key, shown: false });
+      yield* send({ type: "humanInput", ...key });
       yield* send({ type: "detached", ...key });
       yield* send({ type: "attached", threadId: key.threadId, tabId: "sentinel-3" });
       yield* channel.awaitAttached({ threadId: key.threadId, tabId: "sentinel-3" }, "5 seconds");
       expect(channel.isShown(key)).toBe(true);
+      expect(channel.hasHumanInput(key)).toBe(true);
+      channel.clearHumanInput(key);
+      expect(channel.hasHumanInput(key)).toBe(false);
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(configLayer)),
 );

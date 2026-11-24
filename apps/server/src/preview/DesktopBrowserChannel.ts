@@ -48,6 +48,8 @@ export class DesktopBrowserChannel extends Context.Service<
     readonly isAttached: (key: DesktopTabKey) => Effect.Effect<boolean>;
     /** Whether a desktop window draws the tab on screen, which no streamed viewer counts. */
     readonly isShown: (key: DesktopTabKey) => boolean;
+    readonly hasHumanInput: (key: DesktopTabKey) => boolean;
+    readonly clearHumanInput: (key: DesktopTabKey) => void;
     /** Resolves true once the tab is shown, or false on timeout. */
     readonly awaitShown: (key: DesktopTabKey, timeout: Duration.Input) => Effect.Effect<boolean>;
     /** A load failure the desktop saw, possibly before the server connected to the tab. */
@@ -70,6 +72,7 @@ const make = Effect.gen(function* () {
   const attachedTabs = new Map<string, DesktopTabKey>();
   // Missing reports protect desktop tabs until the renderer explicitly marks them hidden.
   const shownTabs = new Map<string, boolean>();
+  const humanTabs = new Set<string>();
   const shownReports = yield* PubSub.unbounded<string>();
   const loadFailures = new Map<string, PreviewAutomationLoadError>();
   const inbound = new Map<string, Queue.Queue<string>>();
@@ -108,6 +111,8 @@ const make = Effect.gen(function* () {
       isAttached: Effect.fn("DesktopBrowserChannel.isAttached")(function () {
         return Effect.succeed(false);
       }),
+      hasHumanInput: () => false,
+      clearHumanInput: () => {},
       endpoint: Effect.fn("DesktopBrowserChannel.endpoint")(function () {
         return Effect.die("No desktop app is attached to this server.");
       }),
@@ -187,6 +192,9 @@ const make = Effect.gen(function* () {
         case "shown":
           shownTabs.set(id, event.shown);
           return event.shown ? PubSub.publish(shownReports, id) : Effect.void;
+        case "humanInput":
+          if (attachedTabs.has(id)) humanTabs.add(id);
+          return Effect.void;
       }
     }),
     Effect.catchCause((cause) => Effect.logWarning("desktop browser channel stopped", { cause })),
@@ -298,6 +306,10 @@ const make = Effect.gen(function* () {
       return Effect.sync(() => attachedTabs.has(keyOf(key)));
     }),
     isShown,
+    hasHumanInput: (key) => humanTabs.has(keyOf(key)),
+    clearHumanInput: (key) => {
+      humanTabs.delete(keyOf(key));
+    },
     awaitShown: Effect.fn("DesktopBrowserChannel.awaitShown")(function (key, timeout) {
       return Effect.scoped(
         Effect.gen(function* () {

@@ -31,6 +31,7 @@ import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts"
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as BrowserSession from "./BrowserSession.ts";
 import * as DesktopBrowserHost from "./DesktopBrowserHost.ts";
+import { HUMAN_INPUT_CHANNEL } from "./GuestProtocol.ts";
 import * as PreviewManager from "./Manager.ts";
 import * as PreviewPasskeys from "./Passkeys.ts";
 
@@ -692,6 +693,7 @@ describe("PreviewManager", () => {
                 attach: () => {},
                 detach: () => {},
                 setShown: () => {},
+                noteHumanInput: () => {},
                 setCaptureDrawn: () => {},
                 loadFailed: () => {},
                 humanStartedDownload: () => true,
@@ -2452,7 +2454,7 @@ describe("PreviewManager", () => {
     ),
   );
 
-  effectIt.effect("tells the server when a tab it renders natively closes", () =>
+  effectIt.effect("reports native tab attachment, human input and close to the server", () =>
     Effect.gen(function* () {
       const host = yield* DesktopBrowserHost.DesktopBrowserHost;
       const serverTab = { threadId: "thread-1", tabId: "server-tab-1" };
@@ -2469,16 +2471,22 @@ describe("PreviewManager", () => {
         toJPEG: () => Buffer.from("jpeg"),
         getSize: () => ({ width: 100, height: 80 }),
       }));
+      const preview = makeTestPreviewWebContents(capturePage, 42);
+      const inputs = new Map<string, (_event: unknown, signal: unknown) => void>();
       fromId.mockReturnValue(
-        Object.assign(makeTestPreviewWebContents(capturePage, 42), {
+        Object.assign(preview, {
           isDevToolsOpened: () => false,
           getUserAgent: () => "Electron",
+          isFocused: () => true,
+          ipc: { on: inputs.set.bind(inputs), off: inputs.delete.bind(inputs) },
         }),
       );
       const manager = yield* PreviewManager.PreviewManager;
       yield* manager.createTab("tab_1", { serverTab });
       yield* manager.registerWebview("tab_1", 42);
       expect(yield* nextType).toBe("attached");
+      inputs.get(HUMAN_INPUT_CHANNEL)!(null, { kind: "pointer", x: 10, y: 10, button: 0 });
+      expect(yield* nextType).toBe("humanInput");
       yield* manager.closeTab("tab_1");
       expect(yield* nextType).toBe("detached");
     }).pipe(Effect.provide(managerLayer())),

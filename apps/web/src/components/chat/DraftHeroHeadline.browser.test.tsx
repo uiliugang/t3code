@@ -210,6 +210,7 @@ it("selects multiple repositories in the new-thread command palette before start
   await expect.element(beta).toHaveAttribute("aria-checked", "false");
   await alpha.click();
   await page.getByRole("combobox").fill("beta");
+  await expect.element(alpha).not.toBeInTheDocument();
   await userEvent.keyboard("{Enter}");
   await expect.element(beta).toHaveAttribute("aria-checked", "true");
   await expect.element(page.getByRole("button", { name: "Start (2)", exact: true })).toBeEnabled();
