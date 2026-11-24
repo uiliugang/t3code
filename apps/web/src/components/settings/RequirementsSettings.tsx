@@ -10,7 +10,7 @@ import {
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 import {
-  ChevronRightIcon,
+  ChevronDownIcon,
   GithubIcon,
   RefreshCwIcon,
   SaveIcon,
@@ -122,32 +122,46 @@ function DiscoveredTasksSettings({
   };
 
   return (
-    <section className="space-y-3 border-t border-border py-4">
+    <section className="space-y-3">
       <h2 className="text-base font-semibold">
         {multiple
           ? t("Discovered tasks · {environment}", { environment: label })
           : t("Discovered tasks")}
       </h2>
-      <div className="flex items-center justify-between gap-4">
-        <Label htmlFor={`${inputId}-enabled`}>{t("Enable task discovery")}</Label>
-        <Switch
-          id={`${inputId}-enabled`}
-          checked={workItemDiscoveryEnabled}
-          disabled={disabled}
-          onCheckedChange={(workItemDiscoveryEnabled) => void save({ workItemDiscoveryEnabled })}
-        />
-      </div>
       <Collapsible>
-        <CollapsibleTrigger
-          id={`${inputId}-label`}
-          className="group flex min-h-7 items-center gap-1 text-sm font-medium pointer-coarse:min-h-11"
-        >
-          <ChevronRightIcon aria-hidden className="size-3.5 group-data-panel-open:rotate-90" />
-          {t("Maximum discovered tasks")}
-        </CollapsibleTrigger>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor={`${inputId}-enabled`}>{t("Enable task discovery")}</Label>
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <CollapsibleTrigger
+                    render={<Button variant="ghost-muted" size="icon-sm" />}
+                    className="group"
+                    aria-label={t("Maximum discovered tasks")}
+                  >
+                    <ChevronDownIcon
+                      aria-hidden
+                      className="size-3.5 group-data-panel-open:rotate-180"
+                    />
+                  </CollapsibleTrigger>
+                }
+              />
+              <TooltipPopup>{t("Maximum discovered tasks")}</TooltipPopup>
+            </Tooltip>
+            <Switch
+              id={`${inputId}-enabled`}
+              checked={workItemDiscoveryEnabled}
+              disabled={disabled}
+              onCheckedChange={(workItemDiscoveryEnabled) =>
+                void save({ workItemDiscoveryEnabled })
+              }
+            />
+          </div>
+        </div>
         <CollapsiblePanel animate={false}>
           <form
-            className="grid gap-2 p-1"
+            className="flex items-center gap-2 pt-3"
             onSubmit={(event) => {
               event.preventDefault();
               if (!disabled && valid && limit !== workItemDiscoveryLimit) {
@@ -155,31 +169,27 @@ function DiscoveredTasksSettings({
               }
             }}
           >
-            <div className="flex items-center gap-2">
-              <div className="w-28">
-                <Input
-                  type="number"
-                  min={1}
-                  max={MAX_WORK_ITEM_DISCOVERY_LIMIT}
-                  value={draft ?? workItemDiscoveryLimit}
-                  disabled={disabled}
-                  aria-invalid={!valid}
-                  aria-labelledby={`${inputId}-label`}
-                  aria-describedby={`${inputId}-range`}
-                  onChange={(event) => setDraft(event.target.value)}
-                />
-              </div>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={disabled || !valid || limit === workItemDiscoveryLimit}
-              >
-                {t("Save")}
-              </Button>
+            <Label htmlFor={inputId}>{t("Maximum discovered tasks")}</Label>
+            <div className="w-28 min-w-0">
+              <Input
+                id={inputId}
+                type="number"
+                min={1}
+                max={MAX_WORK_ITEM_DISCOVERY_LIMIT}
+                placeholder={`1-${MAX_WORK_ITEM_DISCOVERY_LIMIT}`}
+                value={draft ?? workItemDiscoveryLimit}
+                disabled={disabled}
+                aria-invalid={!valid}
+                onChange={(event) => setDraft(event.target.value)}
+              />
             </div>
-            <p id={`${inputId}-range`} className="text-xs text-muted-foreground">
-              {t("Enter a whole number from 1 to {max}.", { max: MAX_WORK_ITEM_DISCOVERY_LIMIT })}
-            </p>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={disabled || !valid || limit === workItemDiscoveryLimit}
+            >
+              {t("Save")}
+            </Button>
           </form>
         </CollapsiblePanel>
       </Collapsible>
