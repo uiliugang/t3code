@@ -214,7 +214,7 @@ const SETTINGS_SEARCH_TERMS = {
     "import export configuration backup sync",
     "cache",
     "legal",
-    "privacy",
+    "security policy",
     "terms",
     "open source licenses",
   ],

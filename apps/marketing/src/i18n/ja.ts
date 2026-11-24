@@ -15,7 +15,6 @@ export const ja: Messages = {
     iosApp: "iOS アプリ",
     androidApp: "Android アプリ",
     terms: "利用規約",
-    privacy: "プライバシー",
     security: "セキュリティ",
   },
   home: {

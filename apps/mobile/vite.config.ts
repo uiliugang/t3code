@@ -33,6 +33,7 @@ const reactTests = [
   "src/features/pull-requests/guide/useReviewGuide.test.tsx",
   "src/features/settings/SettingsServerControlsRouteScreen.test.tsx",
   "src/features/settings/SettingsClientStorageRouteScreen.test.tsx",
+  "src/features/settings/SettingsLegalRouteScreen.test.tsx",
   "src/features/settings/ClaudeByokProviderSettings.test.tsx",
   "src/features/settings/ClaudeInstallationControls.test.tsx",
   "src/features/settings/ProviderSwipeRow.test.tsx",

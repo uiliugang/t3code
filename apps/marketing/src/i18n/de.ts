@@ -15,7 +15,6 @@ export const de: Messages = {
     iosApp: "iOS-App",
     androidApp: "Android-App",
     terms: "Nutzungsbedingungen",
-    privacy: "Datenschutz",
     security: "Sicherheit",
   },
   home: {

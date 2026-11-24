@@ -15,7 +15,6 @@ export const ptBR: Messages = {
     iosApp: "App para iOS",
     androidApp: "App para Android",
     terms: "Termos",
-    privacy: "Privacidade",
     security: "Segurança",
   },
   home: {
