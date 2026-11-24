@@ -1229,10 +1229,27 @@ const make = Effect.gen(function* () {
               requestedSkill: input.skill,
               snapshotOnly: false,
               checkedAt: null,
+              availableDigest: null,
+              ...(skill.status === "pending" && { status: "ready", phase: "prepared" }),
               failure: null,
               failureReason: null,
               cancelledDigest: null,
             });
+            if (skill.status === "pending") {
+              const finishedAt = yield* now;
+              yield* saveJobs((jobs) =>
+                jobs.map((job) =>
+                  job.skillId === skill.id && job.status === "waiting"
+                    ? {
+                        ...job,
+                        status: "cancelled",
+                        finishedAt,
+                        afterDigest: job.beforeDigest ?? null,
+                      }
+                    : job,
+                ),
+              );
+            }
             break;
           }
           case "resolve": {
@@ -1278,17 +1295,23 @@ const make = Effect.gen(function* () {
               current.jobs?.find((job) => job.id === runningJobValue)?.origin === "schedule";
             if (
               scheduled &&
-              skill.status !== "pending" &&
-              (skill.policy !== "automatic" ||
-                (input.digest &&
-                  (skill.status !== "ready" ||
-                    input.digest !== skill.availableDigest ||
-                    input.digest === skill.cancelledDigest ||
-                    !current.sources.some(
-                      (source) => source.id === skill.sourceId && source.enabled,
-                    ))))
-            )
+              ((input.digest && input.digest !== skill.availableDigest) ||
+                (skill.status !== "pending" &&
+                  (skill.policy !== "automatic" ||
+                    (input.digest &&
+                      (skill.status !== "ready" ||
+                        input.digest === skill.cancelledDigest ||
+                        !current.sources.some(
+                          (source) => source.id === skill.sourceId && source.enabled,
+                        ))))))
+            ) {
+              yield* saveJobs((jobs) =>
+                jobs.map((job) =>
+                  job.id === runningJobValue ? { ...job, status: "cancelled" } : job,
+                ),
+              );
               break;
+            }
             if (skill.policy === "pinned")
               return yield* new SkillManagerError({ operation: "update", reason: "pinned" });
             if (input.digest && input.digest !== skill.availableDigest)
@@ -1503,9 +1526,13 @@ const make = Effect.gen(function* () {
                           : waiting
                             ? "waiting"
                             : "completed",
-                    reason: failed ? (resultingSkill?.failureReason ?? "io") : entry.reason,
+                    reason:
+                      failed && entry.status !== "cancelled"
+                        ? (resultingSkill?.failureReason ?? "io")
+                        : entry.reason,
                     finishedAt,
-                    afterDigest: after ?? null,
+                    afterDigest:
+                      (entry.status === "cancelled" ? entry.beforeDigest : after) ?? null,
                   }
                 : entry,
             ),
