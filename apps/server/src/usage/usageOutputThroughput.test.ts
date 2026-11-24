@@ -11,14 +11,22 @@ it.effect("aggregates only measured root turns in the selected window and models
     yield* sql`
       INSERT INTO orchestration_v2_projection_runs
         (run_id, thread_id, ordinal, provider, status, requested_at, payload_json)
-      VALUES ('run', 'thread', 1, 'codex', 'completed', '2026-11-01T06:59:00.000Z', '{}'),
-        ('opencode-run', 'thread', 2, 'opencode', 'completed', '2026-11-01T06:59:00.000Z', '{}')
+      VALUES ('run', 'thread', 1, 'codex_byok', 'completed', '2026-11-01T06:59:00.000Z', '{}'),
+        ('opencode-run', 'thread', 2, 'opencode', 'completed', '2026-11-01T06:59:00.000Z', '{}'),
+        ('claude-run', 'thread', 3, 'custom-claude', 'completed', '2026-11-01T06:59:00.000Z', '{}')
     `;
     yield* sql`
       INSERT INTO orchestration_v2_projection_run_attempts
         (attempt_id, thread_id, run_id, attempt_ordinal, root_node_id, provider, provider_thread_id, status, payload_json)
-      VALUES ('attempt', 'thread', 'run', 1, 'root', 'codex', 'provider-thread', 'completed', '{}'),
-        ('opencode-attempt', 'thread', 'opencode-run', 1, 'opencode-root', 'opencode', 'opencode-thread', 'completed', '{}')
+      VALUES ('attempt', 'thread', 'run', 1, 'root', 'codex_byok', 'provider-thread', 'completed', '{}'),
+        ('opencode-attempt', 'thread', 'opencode-run', 1, 'opencode-root', 'opencode', 'opencode-thread', 'completed', '{}'),
+        ('claude-attempt', 'thread', 'claude-run', 1, 'claude-root', 'custom-claude', 'claude-thread', 'completed', '{}')
+    `;
+    yield* sql`
+      INSERT INTO orchestration_v2_projection_provider_threads
+        (provider_thread_id, thread_id, provider, driver, provider_instance_id, status, updated_at, payload_json)
+      VALUES ('provider-thread', 'thread', 'codex_byok', 'codex', 'codex_byok', 'idle', '2026-11-01T06:59:00.000Z', '{}'),
+        ('claude-thread', 'thread', 'custom-claude', 'claudeAgent', 'custom-claude', 'idle', '2026-11-01T06:59:00.000Z', '{}')
     `;
     const complete = { usageStatus: "complete", outputTokens: 100 };
     const previous = "2026-11-01T06:59:59.999Z";
@@ -74,6 +82,21 @@ it.effect("aggregates only measured root turns in the selected window and models
         { provider: "codex", model: "slow-alias", outputTokens: 100, durationMs: 2000 },
       ],
     );
+    yield* sql`
+      INSERT INTO orchestration_v2_projection_provider_turns
+        (provider_turn_id, thread_id, provider_thread_id, node_id, run_attempt_id, ordinal,
+         status, started_at, completed_at, payload_json)
+      VALUES ('claude-turn', 'thread', 'claude-thread', 'claude-root', 'claude-attempt', 1,
+        'completed', '2026-11-01T06:59:59.000Z', ${opening},
+        ${JSON.stringify({ turnTokenUsage: { ...complete, models: ["custom-model"] } })})
+    `;
+    assert.deepStrictEqual(
+      yield* readUsageOutputThroughput(
+        { ...input, modelFilter: { include: [{ provider: "claude", model: "custom-model" }] } },
+        new Map(),
+      ),
+      [{ provider: "claude", model: "custom-model", outputTokens: 100, durationMs: 1000 }],
+    );
     for (const [index, models] of [
       ["openrouter/vendor/model"],
       ["openrouter/vendor/model", "anthropic/sonnet"],
@@ -128,6 +151,7 @@ it.effect("aggregates only measured root turns in the selected window and models
         aliases,
       ),
       [
+        { provider: "claude", model: "custom-model", outputTokens: 100, durationMs: 1000 },
         { provider: "codex", outputTokens: 100, durationMs: 1000 },
         { provider: "codex", model: "fast", outputTokens: 100, durationMs: 500 },
         { provider: "opencode", outputTokens: 100, durationMs: 1000 },
