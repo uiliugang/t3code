@@ -19,21 +19,28 @@ describe("web runtime tracing", () => {
     vi.stubEnv("VITE_RELAY_OTLP_TRACES_URL", "https://telemetry.example.test/v1/traces");
     vi.stubEnv("VITE_RELAY_OTLP_TRACES_DATASET", "relay-test");
     vi.stubEnv("VITE_RELAY_OTLP_TRACES_TOKEN", "test-token");
+    vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
     vi.stubGlobal("window", {});
-    const fetchFn = vi.fn<typeof fetch>(async () => new Response(null, { status: 202 }));
+    const listUrl = "https://relay.example.test/v1/environments";
+    const fetchFn = vi.fn<typeof fetch>(async (input) =>
+      String(input) === listUrl
+        ? Response.json({ environments: [] })
+        : new Response(null, { status: 202 }),
+    );
     vi.stubGlobal("fetch", fetchFn);
     const { runtime: freshRuntime } = await import("./runtime");
+    const { ManagedRelay } = await import("@t3tools/client-runtime/relay");
     const { setDelegate } = await import("../observability/clientTracer");
     const userSpans: Array<string> = [];
 
     try {
       expect(
         await freshRuntime.runPromise(
-          Effect.succeed("relay operation completed").pipe(
-            Effect.withSpan("relay.first-operation"),
+          ManagedRelay.ManagedRelayClient.pipe(
+            Effect.flatMap((client) => client.listEnvironments({ clerkToken: "test-token" })),
           ),
         ),
-      ).toBe("relay operation completed");
+      ).toEqual([]);
 
       setDelegate(
         Tracer.make({
@@ -50,6 +57,6 @@ describe("web runtime tracing", () => {
       await freshRuntime.dispose();
     }
 
-    expect(fetchFn).not.toHaveBeenCalled();
+    expect(fetchFn.mock.calls.map(([input]) => String(input))).toEqual([listUrl]);
   });
 });

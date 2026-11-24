@@ -9,6 +9,7 @@ import * as Planetscale from "@alchemy.run/planetscale";
 
 import { PublishClientConfig } from "./src/clientConfig.ts";
 import * as RelayDb from "./src/db.ts";
+import { legacyTelemetryState } from "./src/legacyTelemetryState.ts";
 import { isPreviewStage } from "./src/previewStages.ts";
 import { PreviewTunnelSweep, PreviewTunnelSweepProvider } from "./src/previewTunnelSweep.ts";
 import { ManagedEndpointZone, RelayApiZone, RelayDeploymentConfig } from "./src/zone.ts";
@@ -24,7 +25,7 @@ export default Alchemy.Stack(
       Planetscale.providers(),
       PreviewTunnelSweepProvider(),
     ),
-    state: Cloudflare.state(),
+    state: legacyTelemetryState.pipe(Layer.provide(Cloudflare.state())),
   },
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
