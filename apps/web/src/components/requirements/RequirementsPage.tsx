@@ -41,7 +41,11 @@ import {
   XIcon,
 } from "lucide-react";
 import { useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
-import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import {
+  useConnectedEnvironmentIds,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/server";
@@ -183,7 +187,9 @@ export function RequirementsPage() {
   const search = useSearch({ from: "/_chat/requirements" });
   const navigate = useNavigate({ from: "/requirements" });
   const primary = usePrimaryEnvironmentId();
-  const environmentId = search.environmentId ?? primary;
+  const connected = useConnectedEnvironmentIds();
+  const environmentId =
+    search.environmentId ?? primary ?? search.detailEnvironmentId ?? connected[0];
   return environmentId ? (
     <SidebarInset className="h-dvh overflow-hidden">
       <RequirementBoard

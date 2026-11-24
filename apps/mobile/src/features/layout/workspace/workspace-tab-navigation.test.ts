@@ -243,6 +243,20 @@ describe("opening a workspace tab", () => {
     ).toEqual(["Home", "Settings", "SettingsEnvironments"]);
   });
 
+  it("does not reopen a remembered Linear issue without its workspace URL", () => {
+    const { url: _url, ...legacyIssue } = linearIssue.params;
+    expect(
+      names(
+        workspaceTabNavigationState(
+          { routes: [home, thread] },
+          "issues",
+          { issues: { ...legacyIssue, key: linearIssue.key } },
+          columns,
+        ),
+      ),
+    ).toEqual(["Home"]);
+  });
+
   it("keeps an open sheet on top", () => {
     const sheet = { key: "sheet", name: "ConnectOnboarding" };
     const next = workspaceTabNavigationState(

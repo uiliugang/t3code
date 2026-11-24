@@ -741,16 +741,30 @@ describe("rightPanelStore", () => {
     });
   });
 
-  it("keeps requirement tabs and the active tracker selection during storage migration", () => {
+  it("restores pinned issue tabs but not legacy Linear tabs without a workspace URL", async () => {
     const store = useRightPanelStore.getState();
-    for (const [provider, scope, issueId] of [
-      ["gitlab", "acme/app", "42"],
-      ["linear", "ENG", "ENG-42"],
-    ] as const) {
-      store.openRequirementIssue(refA, { projectId: "project", provider, scope, issueId });
-    }
+    store.openRequirementIssue(refA, {
+      projectId: "project",
+      provider: "gitlab",
+      scope: "acme/app",
+      issueId: "42",
+    });
+    const linear = { projectId: "project", host: "linear.app", scope: "ENG" };
+    store.openRequirementIssue(refA, {
+      ...linear,
+      provider: "linear",
+      issueId: "ENG-42",
+      url: "https://linear.app/globex/issue/ENG-42",
+    });
     const { byThreadKey } = useRightPanelStore.getState();
     expect(migratePersistedRightPanelState({ byThreadKey }).byThreadKey).toEqual(byThreadKey);
+    store.openRequirementIssue(refA, { ...linear, provider: "linear", issueId: "ENG-42" });
+    store.openIssue(refA, { ...linear, tracker: "linear", key: "ENG-42" });
+
+    await reloadRightPanelStore();
+    const restored = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(restored.surfaces).toEqual(selectThreadRightPanelState(byThreadKey, refA).surfaces);
+    expect(restored.activeSurfaceId).toBe(restored.surfaces[0]?.id);
   });
 
   it("upgrades the legacy singleton pull request surface to a reference-keyed tab", () => {

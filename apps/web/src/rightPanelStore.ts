@@ -3,6 +3,7 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
+import { isStandaloneIssueLink } from "@t3tools/client-runtime/issue-links";
 import {
   EnvironmentId,
   IssueTrackerKind,
@@ -733,6 +734,12 @@ function normalizeRevealLine(line: number | undefined): number | null {
   return Math.max(1, Math.trunc(line));
 }
 
+export function isUnscopedLinearSurface(surface: RightPanelSurface): boolean {
+  if (surface.kind !== "issue" && surface.kind !== "requirement-issue") return false;
+  const tracker = surface.kind === "issue" ? surface.tracker : surface.provider;
+  return tracker === "linear" && (!surface.url || !isStandaloneIssueLink(surface.url));
+}
+
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
@@ -761,6 +768,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     }
                     // Also drops kinds this build does not know, such as one a newer build saved.
                     if (!(RIGHT_PANEL_KINDS as ReadonlyArray<unknown>).includes(kind)) return [];
+                    if (isUnscopedLinearSurface(surface)) return [];
                     if (surface.kind === "linked-thread") {
                       const decoded = decodeLinkedThreadSurface(surface);
                       return decoded === null ? [] : [decoded];
@@ -1613,6 +1621,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       }),
       migrate: migratePersistedRightPanelState,
+      merge: (persisted, current) =>
+        persisted === undefined
+          ? current
+          : { ...current, ...migratePersistedRightPanelState(persisted) },
     },
   ),
 );

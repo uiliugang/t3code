@@ -13,7 +13,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-const mocks = vi.hoisted(() => ({ command: vi.fn(), unifiedOnes: false }));
+const mocks = vi.hoisted(() => ({ command: vi.fn(), unifiedOnes: false, remoteOnly: false }));
 vi.mock(import("~/browser/useOpenLink"), () => ({ useOpenLink: () => vi.fn() }));
 vi.mock(import("~/hooks/useUiTranslation"), async () => {
   const { translateUi } = await import("@t3tools/shared/uiLocale");
@@ -24,11 +24,12 @@ vi.mock(import("~/state/use-atom-command"), () => ({
 }));
 vi.mock(import("~/state/environments"), async (original) => ({
   ...(await original()),
-  usePrimaryEnvironmentId: () => "local" as never,
+  usePrimaryEnvironmentId: () => (mocks.remoteOnly ? null : "local") as never,
+  useConnectedEnvironmentIds: () => (mocks.remoteOnly ? ["remote"] : ["local", "remote"]) as never,
   usePrimaryEnvironment: () => null,
   useEnvironments: () =>
     ({
-      environments: ["local", "remote"].map((environmentId) => ({
+      environments: (mocks.remoteOnly ? ["remote"] : ["local", "remote"]).map((environmentId) => ({
         environmentId,
         label: environmentId,
         connection: { phase: "connected" },
@@ -197,8 +198,18 @@ vi.mock(import("../issue/IssuesPage"), () => ({
   TrackerIssuesView: () => <div data-testid="tracker-issues-view">Tracker issues</div>,
 }));
 vi.mock(import("../issue/IssueDetailPanel"), () => ({
-  IssueDetailPanel: ({ reference }: { reference: { key: string; url?: string | undefined } }) => (
-    <div data-testid={`tracker-detail:${reference.key}`} data-issue-url={reference.url ?? ""}>
+  IssueDetailPanel: ({
+    environmentId,
+    reference,
+  }: {
+    environmentId: string;
+    reference: { key: string; url?: string | undefined };
+  }) => (
+    <div
+      data-testid={`tracker-detail:${reference.key}`}
+      data-issue-url={reference.url ?? ""}
+      data-environment={environmentId}
+    >
       Tracker issue {reference.key}
     </div>
   ),
@@ -246,6 +257,7 @@ import { getWorkspaceFocusRequestVersion, startWorkspaceFocus } from "~/lib/work
 function setup({ unifiedOnes = false } = {}) {
   useRightPanelStore.getState().closeAllSurfaces(REQUIREMENTS_PANEL_REF);
   mocks.unifiedOnes = unifiedOnes;
+  mocks.remoteOnly = false;
   mocks.command.mockReset().mockResolvedValue({ _tag: "Success", value: [] });
   const registry = AtomRegistry.make();
   return {
@@ -914,11 +926,13 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
   await expect
     .element(screen.getByRole("searchbox", { name: "Search title or number" }))
     .toHaveValue(query);
+  mocks.remoteOnly = true;
   await act(() =>
     router.navigate({
       to: "/requirements",
       search: {
         mode: "issues",
+        detailEnvironmentId: EnvironmentId.make("remote"),
         issueTracker: "linear",
         issueProjectId: ProjectId.make("project"),
         issueScope: "ENG",
@@ -930,6 +944,9 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
   await expect
     .element(screen.getByTestId("tracker-detail:ENG-1"))
     .toHaveAttribute("data-issue-url", "https://linear.app/acme/issue/ENG-1");
+  await expect
+    .element(screen.getByTestId("tracker-detail:ENG-1"))
+    .toHaveAttribute("data-environment", "remote");
   await screen.getByRole("button", { name: "Workflow", exact: true }).click();
   await expect
     .element(screen.getByTestId("tracker-detail:ENG-1"))

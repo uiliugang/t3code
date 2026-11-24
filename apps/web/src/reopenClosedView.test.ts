@@ -188,6 +188,42 @@ describe("reopenClosedView", () => {
     ).toEqual([]);
   });
 
+  it("skips a closed Linear issue without a workspace URL", async () => {
+    const stale = {
+      id: "stale",
+      kind: "panel-tab",
+      threadRef,
+      surface: {
+        kind: "issue",
+        id: "issue:project:linear:ENG:ENG-42",
+        projectId: "project",
+        tracker: "linear",
+        scope: "ENG",
+        key: "ENG-42",
+      },
+    } as const;
+    const pinned = {
+      ...stale,
+      id: "pinned",
+      surface: { ...stale.surface, url: "https://linear.app/globex/issue/ENG-42" },
+    } as const;
+    const owner = {
+      environmentKnown: true,
+      catalogReady: true,
+      ownerExists: true,
+      sideChatExists: true,
+      shellLive: true,
+      panel: { isOpen: false, activeSurfaceId: null, surfaces: [] },
+    };
+    expect(planNextReopen([stale, pinned], () => owner)).toEqual({
+      drop: [stale],
+      restore: pinned,
+    });
+    expect(await reopenClosedView(stale, { openPreview: vi.fn(), workspaceAvailable: true })).toBe(
+      false,
+    );
+  });
+
   it("recreates a server browser tab with its saved URL, viewport, profile, zoom and appearance, then selects its new ID", async () => {
     using _runtime = vi.spyOn(previewRuntime, "previewRuntimeFor").mockReturnValue("server");
     const openPreview = vi.fn(async () => AsyncResult.success({ ...snapshot, tabId: "new-tab" }));

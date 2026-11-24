@@ -5,6 +5,7 @@ import type { ClosedView, ClosedViewEntry } from "./closedViewStore";
 import type { PullRequestListPreferences } from "./components/pullRequest/pullRequestListPreferences";
 import { openPreviewSession } from "./components/preview/openPreviewSession";
 import {
+  isUnscopedLinearSurface,
   rightPanelHostRef,
   type RightPanelSurface,
   selectThreadRightPanelState,
@@ -28,6 +29,10 @@ export function planNextReopen(
 ): { drop: ClosedViewEntry[]; restore: ClosedViewEntry | null } {
   const drop: ClosedViewEntry[] = [];
   for (const entry of entries) {
+    if (entry.kind === "panel-tab" && isUnscopedLinearSurface(entry.surface)) {
+      drop.push(entry);
+      continue;
+    }
     const owner = ownerState(entry);
     if (!owner.environmentKnown) {
       if (!owner.catalogReady) break;
@@ -119,6 +124,7 @@ export async function reopenClosedView(
     return true;
   }
   const surface = view.surface;
+  if (isUnscopedLinearSurface(surface)) return false;
   if (
     !options.workspaceAvailable &&
     (surface.kind === "files" || (surface.kind === "file" && !surface.attachment))

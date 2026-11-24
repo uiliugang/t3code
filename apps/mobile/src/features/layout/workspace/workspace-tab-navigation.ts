@@ -1,4 +1,4 @@
-import { IssueTrackerKind, standaloneIssueWorkspace } from "@t3tools/contracts";
+import { isStandaloneIssueLink } from "@t3tools/client-runtime/issue-links";
 import type { WorkspaceSelections } from "../../../persistence/mobile-preferences";
 import {
   SETTINGS_PAGE_TARGETS,
@@ -103,23 +103,13 @@ function issueSelection(params: object | undefined): Omit<IssueSelection, "key">
   };
 }
 
-function issueWorkspace(selection: Pick<IssueSelection, "tracker" | "url">) {
-  return selection.url
-    ? standaloneIssueWorkspace({
-        tracker: IssueTrackerKind.make(selection.tracker),
-        url: selection.url,
-      })
-    : null;
-}
-
 function sameIssue(left: IssueSelection | undefined, right: Omit<IssueSelection, "key">) {
-  if (left === undefined) return false;
-  if (!ISSUE_IDENTITY.every((key) => left[key] === right[key]) || left.host !== right.host) {
-    return false;
-  }
-  const leftWorkspace = issueWorkspace(left);
-  const rightWorkspace = issueWorkspace(right);
-  return leftWorkspace === rightWorkspace && left.url === right.url;
+  return (
+    left !== undefined &&
+    ISSUE_IDENTITY.every((key) => left[key] === right[key]) &&
+    left.host === right.host &&
+    left.url === right.url
+  );
 }
 
 /**
@@ -235,7 +225,13 @@ function detailRoute(
   }
   if (tab === "issues") {
     const issue = selections.issues;
-    if (!issue || !check.issue(issue)) return undefined;
+    if (
+      !issue ||
+      (issue.tracker === "linear" && (!issue.url || !isStandaloneIssueLink(issue.url))) ||
+      !check.issue(issue)
+    ) {
+      return undefined;
+    }
     return (
       state.routes.find((route) => {
         const shown = route.name === "Issue" ? issueSelection(route.params) : undefined;
