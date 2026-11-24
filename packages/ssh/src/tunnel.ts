@@ -768,20 +768,23 @@ T3_ARCHIVE_MODE=@@T3_ARCHIVE_MODE@@
 @@T3_MANAGED_SERVER_RUNNING_SCRIPT@@
 select_saved_runner() {
   [ "@@T3_REPLACE_EXISTING_SERVER@@" != "1" ] || return 1
-  SAVED_RUNNER="$PINNED_RUNNER"
+  SAVED_STATE="$STATE_DIR"
+  if [ "$T3_ARCHIVE_MODE" = "1" ] && [ -n "$LAUNCHER_ID" ] &&
+     ! managed_server_running "$(cat "$PID_FILE" 2>/dev/null || true)"; then
+    for SAVED_DIR in "$DEFAULT_SERVER_HOME"/ssh-launch/*; do
+      [ "$SAVED_DIR" != "$STATE_DIR" ] && [ -x "$SAVED_DIR/run-t3.sh" ] &&
+        [ "$(cat "$SAVED_DIR/managed" 2>/dev/null || true)" = "managed" ] &&
+        [ "$(cat "$SAVED_DIR/launcher" 2>/dev/null || true)" = "$LAUNCHER_ID" ] &&
+        managed_server_running "$(cat "$SAVED_DIR/pid" 2>/dev/null || true)" &&
+        grep -Eq "^T3_ARCHIVE_VERSION='[0-9]" "$SAVED_DIR/run-t3.sh" || continue
+      SAVED_STATE="$SAVED_DIR"
+      break
+    done
+  fi
+  SAVED_RUNNER="$SAVED_STATE/pinned-runner.sh"
   if [ ! -x "$SAVED_RUNNER" ]; then
     [ "$T3_ARCHIVE_MODE" = "1" ] || return 1
-    SAVED_RUNNER="$RUNNER_FILE"
-    if [ ! -x "$SAVED_RUNNER" ] && [ -n "$LAUNCHER_ID" ]; then
-      for SAVED_DIR in "$DEFAULT_SERVER_HOME"/ssh-launch/*; do
-        [ -x "$SAVED_DIR/run-t3.sh" ] &&
-          [ "$(cat "$SAVED_DIR/managed" 2>/dev/null || true)" = "managed" ] &&
-          [ "$(cat "$SAVED_DIR/launcher" 2>/dev/null || true)" = "$LAUNCHER_ID" ] &&
-          managed_server_running "$(cat "$SAVED_DIR/pid" 2>/dev/null || true)" || continue
-        SAVED_RUNNER="$SAVED_DIR/run-t3.sh"
-        break
-      done
-    fi
+    SAVED_RUNNER="$SAVED_STATE/run-t3.sh"
   fi
   [ -x "$SAVED_RUNNER" ] || return 1
   if awk '
@@ -797,8 +800,8 @@ select_saved_runner() {
     { print }
   ' "$SAVED_RUNNER" "$RUNNER_NEXT" > "$PINNED_NEXT"; then
     :
-  elif [ "$SAVED_RUNNER" = "$PINNED_RUNNER" ]; then
-    cp "$PINNED_RUNNER" "$PINNED_NEXT"
+  elif [ "$SAVED_RUNNER" = "$SAVED_STATE/pinned-runner.sh" ]; then
+    cp "$SAVED_RUNNER" "$PINNED_NEXT"
   else
     return 1
   fi
@@ -869,13 +872,10 @@ RUNNER_CHANGED=0
 if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
   RUNNER_CHANGED=1
 fi
-mv "$RUNNER_NEXT" "$RUNNER_FILE"
-if [ -n "$LAUNCHER_ID" ]; then
-  printf '%s\\n' "$LAUNCHER_ID" >"$STATE_DIR/launcher"
-fi
+ACTIVE_RUNNER="$RUNNER_NEXT"
 pick_port() {
   if [ "$T3_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper pick-port "$PORT_FILE" "@@T3_DEFAULT_REMOTE_PORT@@" "@@T3_REMOTE_PORT_SCAN_WINDOW@@"
+    "$ACTIVE_RUNNER" __ssh-helper pick-port "$PORT_FILE" "@@T3_DEFAULT_REMOTE_PORT@@" "@@T3_REMOTE_PORT_SCAN_WINDOW@@"
     return
   fi
   node - "$PORT_FILE" "@@T3_DEFAULT_REMOTE_PORT@@" "@@T3_REMOTE_PORT_SCAN_WINDOW@@" <<'NODE'
@@ -884,7 +884,7 @@ NODE
 }
 wait_ready() {
   if [ "$T3_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper wait-ready "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@"
+    "$ACTIVE_RUNNER" __ssh-helper wait-ready "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@"
     return
   fi
   node - "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@" <<'NODE'
@@ -922,7 +922,7 @@ managed_server_stopping() {
 # it stops or idles behind another server.
 home_owned() {
   if [ "$T3_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper home-owned "$DEFAULT_SERVER_HOME" 2>/dev/null
+    "$ACTIVE_RUNNER" __ssh-helper home-owned "$DEFAULT_SERVER_HOME" 2>/dev/null
     return
   fi
   node - "$DEFAULT_SERVER_HOME" 2>/dev/null <<'NODE'
@@ -951,7 +951,7 @@ NODE
 }
 resolve_default_runtime_port() {
   if [ "$T3_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper runtime-port "$DEFAULT_RUNTIME_FILE"
+    "$ACTIVE_RUNNER" __ssh-helper runtime-port "$DEFAULT_RUNTIME_FILE"
     return
   fi
   node - "$DEFAULT_RUNTIME_FILE" <<'NODE'
@@ -978,7 +978,7 @@ NODE
 # This script ships with the SSH client; older clients do not honor this marker.
 update_remaining() {
   if [ "$T3_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper update-remaining "$DEFAULT_SERVER_HOME/runtime/@@T3_UPDATE_MARKER_FILE@@"
+    "$ACTIVE_RUNNER" __ssh-helper update-remaining "$DEFAULT_SERVER_HOME/runtime/@@T3_UPDATE_MARKER_FILE@@"
     return
   fi
   node - "$DEFAULT_SERVER_HOME/runtime/@@T3_UPDATE_MARKER_FILE@@" <<'NODE'
@@ -1064,11 +1064,13 @@ if adopt_default_server && [ -n "$ADOPTED_PID" ] && [ -n "$LAUNCHER_ID" ]; then
       chmod 700 "$PINNED_NEXT"
       mv "$PINNED_NEXT" "$PINNED_RUNNER"
       cp "$PINNED_RUNNER" "$RUNNER_NEXT"
-      mv "$RUNNER_NEXT" "$RUNNER_FILE"
       T3_ARCHIVE_MODE=1
+    elif [ "@@T3_REPLACE_EXISTING_SERVER@@" != "1" ] && [ "$T3_ARCHIVE_MODE" = "1" ] &&
+         [ "\${SAVED_STATE:-}" = "$SIBLING_DIR" ]; then
+      rm -f "$PINNED_RUNNER"
     fi
     RUNNER_CHANGED=1
-    if cmp -s "$RUNNER_FILE" "$SIBLING_DIR/run-t3.sh"; then
+    if cmp -s "$RUNNER_NEXT" "$SIBLING_DIR/run-t3.sh"; then
       RUNNER_CHANGED=0
     fi
     break
@@ -1080,9 +1082,14 @@ if [ "@@T3_REPLACE_EXISTING_SERVER@@" = "1" ]; then
     exit 1
   fi
   # Keep the verified selection even if the desktop cannot establish its next tunnel.
-  cp "$RUNNER_FILE" "$PINNED_NEXT"
+  cp "$RUNNER_NEXT" "$PINNED_NEXT"
   chmod 700 "$PINNED_NEXT"
   mv "$PINNED_NEXT" "$PINNED_RUNNER"
+fi
+mv "$RUNNER_NEXT" "$RUNNER_FILE"
+ACTIVE_RUNNER="$RUNNER_FILE"
+if [ -n "$LAUNCHER_ID" ]; then
+  printf '%s\\n' "$LAUNCHER_ID" >"$STATE_DIR/launcher"
 fi
 if [ "$REMOTE_MANAGED" = "external" ]; then
   # A server adopted above has just answered. While it is still alive, probing

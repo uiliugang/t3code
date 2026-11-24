@@ -320,6 +320,7 @@ esac
             Array.from(chunks, (chunk) => new TextDecoder().decode(chunk)).join(""),
             "outside SSH management",
           );
+          assert.equal(yield* fs.readFileString(`${state}/run-t3.sh`), "previous runner\n");
         }
         if (!rejected) {
           const installedPid = yield* fs.readFileString(`${state}/pid`);
@@ -2757,7 +2758,7 @@ const canBind = (port) =>
           launchedPids.add(pid);
           return pid;
         });
-      return { connect, readManagedPid, readServerVersion };
+      return { connect, home, fs, readManagedPid, readServerVersion };
     });
 
   it.live.skipIf(windowsHost)(
@@ -2803,7 +2804,7 @@ const canBind = (port) =>
 
   it.live.skipIf(windowsHost)("changes a managed archive version only on explicit update", () =>
     Effect.gen(function* () {
-      const { connect, readServerVersion } = yield* prepareLaunch(["0.1.5", "0.1.6"]);
+      const { connect, home, fs, readServerVersion } = yield* prepareLaunch(["0.1.5", "0.1.6"]);
       const olderPid = yield* connect("0.1.5");
 
       assert.equal(yield* connect("0.1.6"), olderPid);
@@ -2814,6 +2815,15 @@ const canBind = (port) =>
       const newerPid = yield* connect("0.1.6", true, "renamed-state");
       assert.notEqual(newerPid, olderPid);
       assert.isFalse(isAlive(olderPid));
+      assert.equal(yield* readServerVersion, "0.1.6");
+
+      const oldRunner = SshTunnel.buildRemoteT3RunnerScript({
+        archiveVersion: "0.1.5",
+        releaseBaseUrl: "http://127.0.0.1:9",
+      });
+      yield* fs.writeFileString(`${home}/.t3/ssh-launch/test-state/run-t3.sh`, oldRunner);
+      yield* fs.remove(`${home}/.t3/runtime/versions/0.1.5`, { recursive: true });
+      assert.equal(yield* connect("0.1.7"), newerPid);
       assert.equal(yield* readServerVersion, "0.1.6");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
