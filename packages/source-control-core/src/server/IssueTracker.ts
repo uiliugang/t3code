@@ -74,6 +74,7 @@ export interface IssueTarget extends IssueScopeTarget {
 /** An issue as the tracker sees it, before the service attaches project context. */
 export type TrackerIssueSummary = Omit<IssueSummary, "tracker" | "host" | "scope">;
 export type TrackerIssueLink = Pick<TrackerIssueSummary, "title" | "url" | "displayKey">;
+export type TrackerIssueWriteResult = Pick<TrackerIssueSummary, "key" | "title" | "url">;
 
 export interface TrackerIssuePage {
   readonly items: ReadonlyArray<TrackerIssueSummary>;
@@ -159,7 +160,7 @@ export interface IssueTrackerApi {
   /** Only called when `capabilities.comment` is true. */
   readonly comment?: (
     input: IssueTarget & { readonly body: string },
-  ) => Effect.Effect<TrackerIssueLink | void, IssueTrackerError>;
+  ) => Effect.Effect<TrackerIssueWriteResult | void, IssueTrackerError>;
 
   /**
    * Rewrites the present fields. Only called with a field the tracker declared it can write
@@ -180,7 +181,7 @@ export interface IssueTrackerApi {
    */
   readonly setState?: (
     input: IssueTarget & { readonly state: string },
-  ) => Effect.Effect<TrackerIssueLink | void, IssueTrackerError>;
+  ) => Effect.Effect<TrackerIssueWriteResult | void, IssueTrackerError>;
 
   /**
    * Adds a reaction or takes it back. `subjectId` is a comment id as the detail carried it;

@@ -104,7 +104,7 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
         const url = ref.url ?? boundUrl;
         written.push(url);
         boundUrl = globexUrl;
-        return { title: "Touched issue", displayKey: ref.key, url };
+        return { key: issue.key, title: "Touched issue", url };
       });
     const rebound = WorkflowForge.layer.pipe(
       Layer.provide(
@@ -121,7 +121,7 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
 
     yield* Effect.gen(function* () {
       const { issues } = yield* WorkflowForge.WorkflowForge;
-      yield* issues.comment(issue, "Comments stay with the issue.");
+      yield* issues.comment({ ...issue, key: "eng-42" }, "Comments stay with the issue.");
       boundUrl = acmeUrl;
       yield* issues.setState(issue, "Done");
       yield* issues.comment({ ...issue, url: acmeUrl }, "Still Acme.");

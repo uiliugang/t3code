@@ -43,6 +43,7 @@ import {
   type StandaloneIssueTrackerApi,
   type TrackerIssueDetail,
   type TrackerIssueLink,
+  type TrackerIssueWriteResult,
 } from "@t3tools/source-control-core/server/IssueTracker";
 import {
   asIssueTrackerAccount,
@@ -177,11 +178,11 @@ export class IssueService extends Context.Service<
     readonly create: (input: IssueCreateInput) => Effect.Effect<IssueCreateResult, IssueError>;
     readonly comment: (
       input: IssueCommentInput,
-    ) => Effect.Effect<TrackerIssueLink | void, IssueError>;
+    ) => Effect.Effect<TrackerIssueWriteResult | void, IssueError>;
     readonly update: (input: IssueUpdateInput) => Effect.Effect<void, IssueError>;
     readonly setState: (
       input: IssueSetStateInput,
-    ) => Effect.Effect<TrackerIssueLink | void, IssueError>;
+    ) => Effect.Effect<TrackerIssueWriteResult | void, IssueError>;
     readonly react: (input: IssueReactionInput) => Effect.Effect<void, IssueError>;
     /**
      * The tracker and container a project's own issues live in: the bound `scope` when named, else

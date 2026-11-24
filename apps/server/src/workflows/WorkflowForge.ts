@@ -15,7 +15,7 @@ import {
   type PullRequestRef,
   ProjectId,
 } from "@t3tools/contracts";
-import type { TrackerIssueLink } from "@t3tools/source-control-core/server/IssueTracker";
+import type { TrackerIssueWriteResult } from "@t3tools/source-control-core/server/IssueTracker";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -336,11 +336,13 @@ export const layer = Layer.effect(
     const issueTouched = (
       ref: IssueRef,
       address: IssueAddress,
-      written: TrackerIssueLink | void,
+      written: TrackerIssueWriteResult | void,
     ) => {
       const title = written?.title ?? seenOf(address).title;
       return noteReference({
-        ...issueReference(written === undefined ? ref : { ...ref, url: written.url }),
+        ...issueReference(
+          written === undefined ? ref : { ...ref, key: written.key, url: written.url },
+        ),
         ...(title === undefined ? {} : { title }),
       });
     };

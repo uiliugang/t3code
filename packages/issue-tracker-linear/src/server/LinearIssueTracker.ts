@@ -561,7 +561,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       comment: Effect.fn("LinearIssueTracker.comment")(function* (input) {
         const issue = yield* requireTeamIssue("comment", input);
         yield* linear.createComment({ issueId: issue.id, body: input.body });
-        return { title: issue.title, url: issue.url, displayKey: issue.identifier };
+        return { key: issue.identifier, title: issue.title, url: issue.url };
       }),
 
       update: Effect.fn("LinearIssueTracker.update")(function* (input) {
@@ -589,7 +589,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
         if (wanted === undefined)
           return yield* failed("setState", `This team's workflow has no "${input.state}" state.`);
         yield* linear.updateIssue(issue.id, { stateId: wanted.id });
-        return { title: issue.title, url: issue.url, displayKey: issue.identifier };
+        return { key: issue.identifier, title: issue.title, url: issue.url };
       }),
 
       setReaction: Effect.fn("LinearIssueTracker.setReaction")(function* (input) {
