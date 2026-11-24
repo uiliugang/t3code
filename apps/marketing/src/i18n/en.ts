@@ -15,7 +15,6 @@ export const en = {
     iosApp: "iOS app",
     androidApp: "Android app",
     terms: "Terms",
-    privacy: "Privacy",
     security: "Security",
   },
   home: {

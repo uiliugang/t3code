@@ -75,9 +75,10 @@ Administrative Templates > T3 Code. Set **Organization** whenever you set any ot
 Locks and provider fields go in the two JSON policies, as the same objects a policy file would hold.
 Machines pick up a change at the next Group Policy refresh; run `gpupdate /target:computer /force`
 to apply it now, then restart T3 Code.
-Setting **Allow T3 Connect**, **Allow webhook tasks**, **Allow importing browser cookies**, or
-**Allow usage data** to **Disabled** turns that feature off. Setting any other T3 Code policy to
-**Disabled** restricts nothing, the same as **Not Configured**.
+Setting **Allow T3 Connect**, **Allow webhook tasks**, or **Allow importing browser cookies** to
+**Disabled** turns that feature off. **Allow usage data** is accepted for compatibility; no value
+enables product usage reporting or T3 Connect client tracing in this fork. Setting any other T3 Code
+policy to **Disabled** restricts nothing, the same as **Not Configured**.
 
 **Windows registry value.** Instead of the template, set the `Policy` value (`REG_SZ`) to the whole policy as one line of JSON,
 from Group Policy Preferences or an Intune script. T3 Code reads it through the Windows registry
@@ -256,9 +257,7 @@ so restart T3 Code after that.
   Browser tabs stream from it instead, and port forwarding and **Open on this device** are
   unavailable. This wins over the user's
   [Preview tunnel setting](./remote-access.md#browser-on-a-remote-environment).
-- `telemetry: false`: the server and desktop app send no [product usage data](./telemetry.md) or
-  relay connection traces. A policy cannot turn them on. A browser that opens the server, such as
-  app.t3.codes, still sends its own relay traces.
+- `telemetry` is accepted for compatibility. This fork does not export product events or relay client traces.
 
 ### Providers
 

@@ -16,13 +16,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
-import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { crashReportingAvailable, setCrashReportsEnabled } from "../observability/observe";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { SettingsSection } from "../settings/components/SettingsSection";
-import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
 import {
   formatStartupCrashReport,
   parseStartupCrashRecords,
@@ -108,8 +104,6 @@ export function SettingsDiagnosticsRouteScreen() {
         contentContainerClassName="gap-6 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
-        {crashReportingAvailable ? <CrashReportsSetting /> : null}
-
         <SettingsSection title={t("Startup crashes")}>
           {state.status === "loading" ? (
             <View className="items-center gap-3 px-6 py-8">
@@ -154,56 +148,6 @@ export function SettingsDiagnosticsRouteScreen() {
         </View>
       </ScrollView>
     </SettingsScreen>
-  );
-}
-
-function CrashReportsSetting() {
-  const t = useUiTranslation();
-  const preferences = useAtomValue(mobilePreferencesAtom);
-  const savePreferences = useAtomCommand(saveMobilePreferences, { reportFailure: false });
-  // One change at a time, so a slow save never turns sending back on after a later opt-out.
-  const [saving, setSaving] = useState(false);
-
-  const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
-  const enabled = AsyncResult.isSuccess(preferences)
-    ? preferences.value.crashReportsEnabled !== false
-    : true;
-
-  const change = (value: boolean) => {
-    setSaving(true);
-    // Sending stops before the save and starts only after it.
-    if (!value) void setCrashReportsEnabled(false);
-    savePreferences({ crashReportsEnabled: value })
-      .then((result) => {
-        if (result._tag === "Failure") {
-          console.warn("[diagnostics] could not save the crash report setting", result.cause);
-          return value ? undefined : setCrashReportsEnabled(true);
-        }
-        return value ? setCrashReportsEnabled(true) : undefined;
-      })
-      .catch((error: unknown) => {
-        console.warn("[diagnostics] could not apply the crash report setting", error);
-      })
-      .finally(() => setSaving(false));
-  };
-
-  return (
-    <View className="gap-3">
-      <SettingsSection title={t("Crash reports")}>
-        <SettingsSwitchRow
-          icon="tray.and.arrow.up"
-          label={t("Send crash reports")}
-          disabled={!ready || saving}
-          value={enabled}
-          onValueChange={change}
-        />
-      </SettingsSection>
-      <Text className="px-2 text-sm leading-normal text-foreground-muted">
-        {t(
-          "When the app crashes or hits an error, it sends the error message, the stack trace, the app version, and the device model and OS version to the T3 Code team. Each launch also sends startup timings. Reports carry a random ID for this install.",
-        )}
-      </Text>
-    </View>
   );
 }
 

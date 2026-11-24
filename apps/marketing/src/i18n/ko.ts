@@ -15,7 +15,6 @@ export const ko: Messages = {
     iosApp: "iOS 앱",
     androidApp: "Android 앱",
     terms: "이용약관",
-    privacy: "개인정보처리방침",
     security: "보안",
   },
   home: {

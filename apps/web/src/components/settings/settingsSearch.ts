@@ -1120,12 +1120,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("onboarding setup first run getting started agents import projects")],
   },
   {
-    id: "privacy-policy",
-    title: msg("Privacy policy"),
-    to: "/settings/about",
-    searchTerms: [msg("telemetry analytics usage data tracking legal opt out")],
-  },
-  {
     id: "telemetry-export",
     title: msg("OpenTelemetry export"),
     to: "/settings/diagnostics",

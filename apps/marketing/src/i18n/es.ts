@@ -16,7 +16,6 @@ export const es: Messages = {
     iosApp: "App para iOS",
     androidApp: "App para Android",
     terms: "Términos",
-    privacy: "Privacidad",
     security: "Seguridad",
   },
   home: {

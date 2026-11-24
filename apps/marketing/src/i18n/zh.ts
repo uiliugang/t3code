@@ -15,7 +15,6 @@ export const zh: Messages = {
     iosApp: "iOS 应用",
     androidApp: "Android 应用",
     terms: "条款",
-    privacy: "隐私",
     security: "安全",
   },
   home: {
