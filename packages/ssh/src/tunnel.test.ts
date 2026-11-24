@@ -320,6 +320,7 @@ esac
             Array.from(chunks, (chunk) => new TextDecoder().decode(chunk)).join(""),
             "outside SSH management",
           );
+          assert.equal(yield* fs.readFileString(`${state}/run-t3.sh`), "previous runner\n");
         }
         if (!rejected) {
           const installedPid = yield* fs.readFileString(`${state}/pid`);
@@ -632,6 +633,65 @@ esac
         ),
       );
     },
+  );
+
+  it.live("uses the saved runtime for launch and pairing when the preview is unavailable", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const nativeSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-preview-test-" });
+      const target = { alias: "devbox", hostname: "devbox", username: null, port: null };
+      const stateKey = yield* remoteStateKey(target);
+      const state = `${home}/.t3/ssh-launch/${stateKey}`;
+      const runtime = `${home}/.t3/runtime/versions/1.2.2`;
+      yield* fs.makeDirectory(state, { recursive: true });
+      yield* fs.writeFileString(
+        `${state}/run-t3.sh`,
+        SshTunnel.buildRemoteT3RunnerScript({ archiveVersion: "1.2.2" }),
+      );
+      yield* fs.chmod(`${state}/run-t3.sh`, 0o700);
+      yield* fs.makeDirectory(runtime, { recursive: true });
+      yield* fs.writeFileString(`${runtime}/.install-complete`, "1.2.2\n");
+      yield* fs.writeFileString(
+        `${runtime}/t3`,
+        `#!/bin/sh
+case "$1 $2" in
+  '--version ') echo 't3 v1.2.2' ;;
+  '__ssh-helper runtime-port') echo '${process.pid} 3773' ;;
+  '__ssh-helper wait-ready') exit 0 ;;
+  'auth pairing') echo '{"credential":"fixture-token"}' ;;
+  *) exit 1 ;;
+esac
+`,
+      );
+      yield* fs.chmod(`${runtime}/t3`, 0o700);
+      const spawner = ChildProcessSpawner.make((command) => {
+        const isLaunch = launchStateKey(command) !== undefined;
+        if (command._tag !== "StandardCommand") return Effect.die("Expected a shell command");
+        const args = isLaunch ? ["-s", "--", stateKey] : ["-s"];
+        return typeof command.options.stdin === "object"
+          ? nativeSpawner.spawn(
+              ChildProcess.make("sh", args, {
+                env: { HOME: home },
+                stdin: command.options.stdin,
+              }),
+            )
+          : Effect.succeed(makeSuccessfulProcess(""));
+      });
+      const runner = { ...ARCHIVE, releaseBaseUrl: "http://127.0.0.1:9" };
+      const layer = Layer.mergeAll(
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Layer.succeed(HttpClient.HttpClient, noDownloadHttpClient),
+      );
+      const result = yield* SshTunnel.launchOrReuseRemoteServer(target, undefined, runner).pipe(
+        Effect.provide(layer),
+      );
+      assert.equal(result.remotePort, 3773);
+      const pairing = yield* SshTunnel.issueRemotePairingToken(target, undefined, runner).pipe(
+        Effect.provide(layer),
+      );
+      assert.equal(pairing.credential, "fixture-token");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.live("reinstalls a pinned runtime using its original version and mirror", () =>
@@ -2679,17 +2739,26 @@ const canBind = (port) =>
           }),
         ),
       );
-      const connect = (archiveVersion: string) =>
+      const connect = (
+        archiveVersion: string,
+        replaceExistingServer = false,
+        stateKey = "test-state",
+      ) =>
         Effect.gen(function* () {
           const launch = `${root}/launch-${archiveVersion}.sh`;
-          yield* fs.writeFileString(launch, SshTunnel.buildRemoteLaunchScript({ archiveVersion }));
-          const result = yield* runScript(home, [launch, "test-state"]);
+          yield* fs.writeFileString(
+            launch,
+            SshTunnel.buildRemoteLaunchScript({ archiveVersion, replaceExistingServer }),
+          );
+          const result = yield* runScript(home, [launch, stateKey, "a".repeat(32)]);
           assert.equal(result.exitCode, 0, result.stderr);
-          const pid = yield* readManagedPid;
+          const pid = Number(
+            (yield* fs.readFileString(`${home}/.t3/ssh-launch/${stateKey}/pid`)).trim(),
+          );
           launchedPids.add(pid);
           return pid;
         });
-      return { connect, readManagedPid, readServerVersion };
+      return { connect, home, fs, readManagedPid, readServerVersion };
     });
 
   it.live.skipIf(windowsHost)(
@@ -2733,14 +2802,28 @@ const canBind = (port) =>
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.live.skipIf(windowsHost)("a newer client still replaces an older managed server", () =>
+  it.live.skipIf(windowsHost)("changes a managed archive version only on explicit update", () =>
     Effect.gen(function* () {
-      const { connect, readServerVersion } = yield* prepareLaunch(["0.1.5", "0.1.6"]);
+      const { connect, home, fs, readServerVersion } = yield* prepareLaunch(["0.1.5", "0.1.6"]);
       const olderPid = yield* connect("0.1.5");
 
-      const newerPid = yield* connect("0.1.6");
+      assert.equal(yield* connect("0.1.6"), olderPid);
+      assert.equal(yield* connect("0.1.7"), olderPid);
+      assert.equal(yield* connect("0.1.7", false, "renamed-state"), olderPid);
+      assert.equal(yield* readServerVersion, "0.1.5");
+
+      const newerPid = yield* connect("0.1.6", true, "renamed-state");
       assert.notEqual(newerPid, olderPid);
       assert.isFalse(isAlive(olderPid));
+      assert.equal(yield* readServerVersion, "0.1.6");
+
+      const oldRunner = SshTunnel.buildRemoteT3RunnerScript({
+        archiveVersion: "0.1.5",
+        releaseBaseUrl: "http://127.0.0.1:9",
+      });
+      yield* fs.writeFileString(`${home}/.t3/ssh-launch/test-state/run-t3.sh`, oldRunner);
+      yield* fs.remove(`${home}/.t3/runtime/versions/0.1.5`, { recursive: true });
+      assert.equal(yield* connect("0.1.7"), newerPid);
       assert.equal(yield* readServerVersion, "0.1.6");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
