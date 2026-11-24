@@ -523,6 +523,25 @@ const make = Effect.gen(function* () {
         ? yield* prepareEnhancedDumboWeb(invocation.prefix[0]).pipe(
             Effect.provideService(FileSystem.FileSystem, fs),
             Effect.provideService(Path.Path, path),
+            Effect.tap((entry) =>
+              runner
+                .run({
+                  command: invocation.command,
+                  args: [entry, "--version"],
+                  cwd: config.cwd,
+                  timeout: "20 seconds",
+                  maxOutputBytes: 16_384,
+                  outputMode: "truncate",
+                  ...(invocation.env ? { env: invocation.env } : {}),
+                })
+                .pipe(
+                  Effect.flatMap((result) =>
+                    result.code === 0 && !result.timedOut
+                      ? Effect.void
+                      : Effect.fail("The enhanced dumbo-web CLI did not start."),
+                  ),
+                ),
+            ),
             Effect.catch((error) =>
               Effect.logWarning("Could not apply dumbo-web card enhancement", error).pipe(
                 Effect.as(undefined),

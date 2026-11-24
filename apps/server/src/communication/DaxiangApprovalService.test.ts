@@ -17,144 +17,180 @@ import * as Approval from "./DaxiangApprovalService.ts";
 import * as Messages from "./DaxiangMessageService.ts";
 import * as ServerBrowser from "../preview/ServerBrowser.ts";
 
-it.effect("uses current approval settings for every link in a message", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-settings-change-" });
-      yield* fs.writeFileString(`${baseDir}/dumbo-web`, "#!/bin/sh\n", { mode: 0o755 });
-      const settings = yield* ServerSettings.ServerSettingsService.pipe(
-        Effect.provide(
-          ServerSettings.ServerSettingsService.layerTest({
-            meituanIntegrationEnabled: true,
-            daxiang: {
-              approvalMonitor: {
-                enabled: true,
-                autoApprovePullRequest: true,
-                autoApproveMcm: true,
-                notifyUnsupportedLinks: false,
-                autoOpenUnsupportedInBrowser: true,
+it.effect.each(["unsupported launcher", "broken patched copy"])(
+  "uses current approval settings for every link after falling back from %s",
+  (failure) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-settings-change-" });
+        const launcher = `${baseDir}/dumbo-web`;
+        let entry: string | undefined;
+        if (failure === "broken patched copy") {
+          const cli = `${baseDir}/package/dumbo-web`;
+          yield* fs.makeDirectory(`${cli}/bin`, { recursive: true });
+          yield* fs.makeDirectory(`${cli}/lib`);
+          yield* fs.writeFileString(
+            `${baseDir}/package/package.json`,
+            '{"name":"@sailor/dumbo-cdp","version":"0.6.6"}',
+          );
+          yield* fs.writeFileString(
+            `${cli}/lib/service.mjs`,
+            `export function normalizeMessage(message, ownUid) {
+  return {
+    body: message.body ?? null,
+  };
+}`,
+          );
+          yield* fs.writeFileString(`${cli}/bin/dumbo-web.mjs`, "#!/usr/bin/env node\n", {
+            mode: 0o755,
+          });
+          yield* fs.symlink(`${cli}/bin/dumbo-web.mjs`, launcher);
+          entry = yield* fs.realPath(launcher);
+          yield* fs.writeFileString(`${baseDir}/node`, "#!/bin/sh\n", { mode: 0o755 });
+          yield* fs.symlink(`${cli}/bin/dumbo-web.mjs`, `${baseDir}/npm`);
+        } else {
+          yield* fs.writeFileString(launcher, "#!/bin/sh\n", { mode: 0o755 });
+        }
+        const settings = yield* ServerSettings.ServerSettingsService.pipe(
+          Effect.provide(
+            ServerSettings.ServerSettingsService.layerTest({
+              meituanIntegrationEnabled: true,
+              daxiang: {
+                approvalMonitor: {
+                  enabled: true,
+                  autoApprovePullRequest: true,
+                  autoApproveMcm: true,
+                  notifyUnsupportedLinks: false,
+                  autoOpenUnsupportedInBrowser: true,
+                },
               },
+            }),
+          ),
+        );
+        const approved: string[] = [];
+        const opened: string[] = [];
+        const watchArgs: ReadonlyArray<string>[] = [];
+        const kmsUrl = "https://kms.mws.sankuai.com/key-management/workflow?uid=42";
+        const event = JSON.stringify({
+          event: "message",
+          msgId: "message-1",
+          sessionType: "chat",
+          sessionId: "chat-1",
+          fromUid: "sender",
+          body: {
+            link: kmsUrl,
+            content:
+              "https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
+          },
+        });
+        const context = yield* Layer.build(Approval.layer).pipe(
+          Effect.provide(Layer.mock(ServerBrowser.ServerBrowser)({})),
+          Effect.provideService(ServerSettings.ServerSettingsService, settings),
+          Effect.provideService(Executor.DaxiangApprovalExecutor, {
+            execute: (target) =>
+              Effect.gen(function* () {
+                approved.push(target.key);
+                yield* settings
+                  .updateSettings({
+                    daxiang: { approvalMonitor: { autoApprovePullRequest: false } },
+                  })
+                  .pipe(Effect.orDie);
+                return { key: target.key, outcome: "approved" as const, detail: null };
+              }),
+          }),
+          Effect.provideService(Messages.DaxiangMessageService, {
+            sendLink: () => Effect.die("Unexpected message send"),
+          }),
+          Effect.provideService(ExternalLauncher.ExternalLauncher, {
+            resolveAvailableEditors: () => Effect.succeed([]),
+            resolveFileManagerRevealKind: () => Effect.undefined,
+            launchBrowser: (url) =>
+              Effect.sync(() => {
+                opened.push(url);
+              }),
+            launchEditor: () => Effect.die("Unexpected editor launch"),
+          }),
+          Effect.provideService(ProcessRunner.ProcessRunner, {
+            run: ({ args = [] }) => {
+              const version = args.at(-1) === "--version";
+              const patched = version && args.length > 1 && args[0] !== entry;
+              return Effect.succeed({
+                stdout: version ? "v22.0.0" : JSON.stringify({ uid: "owner", fields: { u: true } }),
+                stderr: patched ? "Cannot load the patched CLI" : "",
+                code: ChildProcessSpawner.ExitCode(patched ? 1 : 0),
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                stdoutInvalidUtf8: false,
+                stderrInvalidUtf8: false,
+              });
             },
           }),
-        ),
-      );
-      const approved: string[] = [];
-      const opened: string[] = [];
-      const kmsUrl = "https://kms.mws.sankuai.com/key-management/workflow?uid=42";
-      const event = JSON.stringify({
-        event: "message",
-        msgId: "message-1",
-        sessionType: "chat",
-        sessionId: "chat-1",
-        fromUid: "sender",
-        body: {
-          link: kmsUrl,
-          content:
-            "https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
-        },
-      });
-      const context = yield* Layer.build(Approval.layer).pipe(
-        Effect.provide(Layer.mock(ServerBrowser.ServerBrowser)({})),
-        Effect.provideService(ServerSettings.ServerSettingsService, settings),
-        Effect.provideService(Executor.DaxiangApprovalExecutor, {
-          execute: (target) =>
-            Effect.gen(function* () {
-              approved.push(target.key);
-              yield* settings
-                .updateSettings({
-                  daxiang: { approvalMonitor: { autoApprovePullRequest: false } },
-                })
-                .pipe(Effect.orDie);
-              return { key: target.key, outcome: "approved" as const, detail: null };
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) => {
+              if (command._tag !== "StandardCommand") return Effect.die("Unexpected pipeline");
+              return Effect.sync(() => {
+                watchArgs.push(command.args.map(String));
+                return ChildProcessSpawner.makeHandle({
+                  pid: ChildProcessSpawner.ProcessId(123),
+                  stdout: Stream.make(new TextEncoder().encode(`${event}\n`)),
+                  stderr: Stream.empty,
+                  all: Stream.empty,
+                  exitCode: Effect.never,
+                  isRunning: Effect.succeed(true),
+                  kill: () => Effect.void,
+                  stdin: Sink.drain,
+                  getInputFd: () => Sink.drain,
+                  getOutputFd: () => Stream.empty,
+                  unref: Effect.succeed(Effect.void),
+                });
+              });
             }),
-        }),
-        Effect.provideService(Messages.DaxiangMessageService, {
-          sendLink: () => Effect.die("Unexpected message send"),
-        }),
-        Effect.provideService(ExternalLauncher.ExternalLauncher, {
-          resolveAvailableEditors: () => Effect.succeed([]),
-          resolveFileManagerRevealKind: () => Effect.undefined,
-          launchBrowser: (url) =>
-            Effect.sync(() => {
-              opened.push(url);
-            }),
-          launchEditor: () => Effect.die("Unexpected editor launch"),
-        }),
-        Effect.provideService(ProcessRunner.ProcessRunner, {
-          run: () =>
-            Effect.succeed({
-              stdout: JSON.stringify({ uid: "owner", fields: { u: true } }),
-              stderr: "",
-              code: ChildProcessSpawner.ExitCode(0),
-              timedOut: false,
-              stdoutTruncated: false,
-              stderrTruncated: false,
-              stdoutInvalidUtf8: false,
-              stderrInvalidUtf8: false,
-            }),
-        }),
-        Effect.provideService(
-          ChildProcessSpawner.ChildProcessSpawner,
-          ChildProcessSpawner.make(() =>
-            Effect.succeed(
-              ChildProcessSpawner.makeHandle({
-                pid: ChildProcessSpawner.ProcessId(123),
-                stdout: Stream.make(new TextEncoder().encode(`${event}\n`)),
-                stderr: Stream.empty,
-                all: Stream.empty,
-                exitCode: Effect.never,
-                isRunning: Effect.succeed(true),
-                kill: () => Effect.void,
-                stdin: Sink.drain,
-                getInputFd: () => Sink.drain,
-                getOutputFd: () => Stream.empty,
-                unref: Effect.succeed(Effect.void),
-              }),
-            ),
           ),
-        ),
-        Effect.provideService(HostProcess.Environment, { PATH: baseDir }),
-        Effect.provide(ServerConfig.ServerConfig.layerTest(baseDir, baseDir)),
-      );
-      const service = Context.get(context, Approval.DaxiangApprovalService);
-      yield* service.start;
-      const snapshot = yield* service.subscribe(true).pipe(
-        Stream.filter(
-          (state) =>
-            state.records.some((record) => record.title === "group/repo #2") ||
-            state.status === "error" ||
-            state.status === "missing_cli" ||
-            state.status === "unauthenticated",
-        ),
-        Stream.runHead,
-      );
-      assert.deepStrictEqual(approved, ["pr:group/repo#1"]);
-      assert.deepStrictEqual(opened, [
-        kmsUrl,
-        "https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
-      ]);
-      assert.strictEqual(snapshot._tag, "Some");
-      if (snapshot._tag === "Some") {
-        assert.isTrue(snapshot.value.enhancementFailed);
-        assert.deepStrictEqual(
-          snapshot.value.records.map((record) => record.outcome),
-          ["opened", "approved", "opened"],
+          Effect.provideService(HostProcess.Environment, { PATH: baseDir, NVM_DIR: baseDir }),
+          Effect.provide(ServerConfig.ServerConfig.layerTest(baseDir, baseDir)),
         );
-        assert.include(snapshot.value.records[2], {
-          kind: "kms",
-          title: "KMS #42",
-          url: kmsUrl,
-          outcome: "opened",
-        });
-        const legacy = yield* service.subscribe().pipe(Stream.runHead);
-        assert.deepStrictEqual(
-          legacy._tag === "Some" ? legacy.value.records.map((record) => record.kind) : [],
-          ["pr", "pr"],
+        const service = Context.get(context, Approval.DaxiangApprovalService);
+        yield* service.start;
+        const snapshot = yield* service.subscribe(true).pipe(
+          Stream.filter(
+            (state) =>
+              state.records.some((record) => record.title === "group/repo #2") ||
+              state.status === "error" ||
+              state.status === "missing_cli" ||
+              state.status === "unauthenticated",
+          ),
+          Stream.runHead,
         );
-      }
-    }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+        assert.deepStrictEqual(watchArgs, [entry ? [entry, "watch"] : ["watch"]]);
+        assert.deepStrictEqual(approved, ["pr:group/repo#1"]);
+        assert.deepStrictEqual(opened, [
+          kmsUrl,
+          "https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
+        ]);
+        assert.strictEqual(snapshot._tag, "Some");
+        if (snapshot._tag === "Some") {
+          assert.isTrue(snapshot.value.enhancementFailed);
+          assert.deepStrictEqual(
+            snapshot.value.records.map((record) => record.outcome),
+            ["opened", "approved", "opened"],
+          );
+          assert.include(snapshot.value.records[2], {
+            kind: "kms",
+            title: "KMS #42",
+            url: kmsUrl,
+            outcome: "opened",
+          });
+          const legacy = yield* service.subscribe().pipe(Stream.runHead);
+          assert.deepStrictEqual(
+            legacy._tag === "Some" ? legacy.value.records.map((record) => record.kind) : [],
+            ["pr", "pr"],
+          );
+        }
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect.each([
