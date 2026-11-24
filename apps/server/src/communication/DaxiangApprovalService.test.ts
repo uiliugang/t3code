@@ -142,90 +142,114 @@ it.effect("uses current approval settings for every link in a message", () =>
   ).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("imports from the isolated browser only after sign-in and releases its session", () =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-browser-login-" });
-    yield* fs.writeFileString(`${baseDir}/dumbo-web`, "#!/bin/sh\n", { mode: 0o755 });
-    const tab = { threadId: "private-browser:login", tabId: "tab", port: 49152 };
-    let opens = 0;
-    let closes = 0;
-    let signedIn = false;
-    const ports: string[] = [];
-    const context = yield* Layer.build(Approval.layer).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          Layer.mock(ServerBrowser.ServerBrowser)({
-            openPrivateTab: () =>
-              Effect.acquireRelease(
-                Effect.sync(() => {
-                  opens += 1;
-                  return tab;
-                }),
-                () =>
+it.effect.each([
+  { version: "v20.9.0", npm: true, nodeOptions: "--no-warnings", canImport: false },
+  { version: "v20.10.0", npm: true, nodeOptions: "--no-warnings --experimental-websocket" },
+  { version: "v20.10.0", npm: false, nodeOptions: "--no-warnings --experimental-websocket" },
+  { version: "v22.0.0", npm: true, nodeOptions: "--no-warnings" },
+])(
+  "preserves status and sign-in on Node $version (npm: $npm)",
+  ({ version, npm, nodeOptions, canImport }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "daxiang-browser-login-" });
+      for (const executable of ["node", "dumbo-web.mjs"]) {
+        yield* fs.writeFileString(`${baseDir}/${executable}`, "#!/usr/bin/env node\n", {
+          mode: 0o755,
+        });
+      }
+      if (npm) yield* fs.symlink("dumbo-web.mjs", `${baseDir}/npm`);
+      yield* fs.symlink("dumbo-web.mjs", `${baseDir}/dumbo-web`);
+      const tab = { threadId: "private-browser:login", tabId: "tab", port: 49152 };
+      let opens = 0;
+      let closes = 0;
+      let signedIn = false;
+      const ports: string[] = [];
+      const context = yield* Layer.build(Approval.layer).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(ServerBrowser.ServerBrowser)({
+              openPrivateTab: () =>
+                Effect.acquireRelease(
                   Effect.sync(() => {
-                    closes += 1;
+                    opens += 1;
+                    return tab;
                   }),
-              ),
-          }),
-          Layer.mock(Executor.DaxiangApprovalExecutor)({}),
-          Layer.mock(Messages.DaxiangMessageService)({}),
-          Layer.mock(ExternalLauncher.ExternalLauncher)({}),
-          ServerSettings.ServerSettingsService.layerTest({}),
-          ServerConfig.ServerConfig.layerTest(baseDir, baseDir),
+                  () =>
+                    Effect.sync(() => {
+                      closes += 1;
+                    }),
+                ),
+            }),
+            Layer.mock(Executor.DaxiangApprovalExecutor)({}),
+            Layer.mock(Messages.DaxiangMessageService)({}),
+            Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+            ServerSettings.ServerSettingsService.layerTest({
+              meituanIntegrationEnabled: true,
+              daxiang: { approvalMonitor: { enabled: true } },
+            }),
+            ServerConfig.ServerConfig.layerTest(baseDir, baseDir),
+          ),
         ),
-      ),
-      Effect.provideService(HostProcess.Environment, {
-        PATH: baseDir,
-        NVM_DIR: baseDir,
-        NODE_OPTIONS: "--no-warnings",
-      }),
-      Effect.provideService(ProcessRunner.ProcessRunner, {
-        run: ({ args = [], env }) =>
-          Effect.sync(() => {
-            const port = args.at(-1);
-            if (args.includes("login") && port !== undefined) ports.push(port);
-            const error = !signedIn
-              ? "not logged in"
-              : env?.NODE_OPTIONS !== "--no-warnings --experimental-websocket"
-                ? "WebSocket is not defined"
-                : "";
-            return {
-              stdout: "",
-              stderr: error,
-              code: ChildProcessSpawner.ExitCode(error ? 1 : 0),
-              timedOut: false,
-              stdoutTruncated: false,
-              stderrTruncated: false,
-              stdoutInvalidUtf8: false,
-              stderrInvalidUtf8: false,
-            };
-          }),
-      }),
-    );
-    const service = Context.get(context, Approval.DaxiangApprovalService);
-    const open = (sessionId = "owner") => service.mutate({ type: "open_browser_login" }, sessionId);
-    const first = yield* open();
-    const second = yield* open();
-    assert.deepStrictEqual(first, { threadId: tab.threadId, tabId: tab.tabId });
-    assert.deepStrictEqual(first, second);
-    assert.strictEqual(opens, 1);
+        Effect.provideService(HostProcess.Environment, {
+          PATH: baseDir,
+          NVM_DIR: baseDir,
+          NODE_OPTIONS: "--no-warnings",
+        }),
+        Effect.provideService(ProcessRunner.ProcessRunner, {
+          run: ({ args = [], env }) =>
+            Effect.sync(() => {
+              const port = args.at(-1);
+              if (args.includes("login") && port !== undefined) ports.push(port);
+              const error = args.includes("--version")
+                ? ""
+                : env?.NODE_OPTIONS !== nodeOptions
+                  ? "Invalid Node.js startup options"
+                  : args.includes("login") && !signedIn
+                    ? "not logged in"
+                    : "";
+              return {
+                stdout: args.includes("--version") ? version : '{"loggedIn":false}',
+                stderr: error,
+                code: ChildProcessSpawner.ExitCode(error ? 1 : 0),
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                stdoutInvalidUtf8: false,
+                stderrInvalidUtf8: false,
+              };
+            }),
+        }),
+      );
+      const service = Context.get(context, Approval.DaxiangApprovalService);
+      yield* service.mutate({ type: "refresh" }, "owner");
+      const status = yield* service.subscribe().pipe(Stream.runHead);
+      assert.strictEqual(status._tag === "Some" && status.value.status, "unauthenticated");
+      const open = (sessionId = "owner") =>
+        service.mutate({ type: "open_browser_login" }, sessionId);
+      const first = yield* open();
+      const second = yield* open();
+      assert.deepStrictEqual(first, { threadId: tab.threadId, tabId: tab.tabId });
+      assert.deepStrictEqual(first, second);
+      assert.strictEqual(opens, 1);
 
-    yield* Effect.flip(open("other"));
-    const finish = (threadId: string, sessionId = "owner") =>
-      service.mutate({ type: "finish_browser_login", threadId }, sessionId);
-    yield* Effect.flip(finish("private-browser:wrong"));
-    yield* Effect.flip(finish(tab.threadId, "other"));
-    assert.deepStrictEqual(ports, []);
-    yield* Effect.flip(finish(tab.threadId));
-    assert.strictEqual(closes, 0);
-    signedIn = true;
-    yield* finish(tab.threadId);
-    assert.strictEqual(closes, 1);
-    assert.deepStrictEqual(ports, ["49152", "49152"]);
+      yield* Effect.flip(open("other"));
+      const finish = (threadId: string, sessionId = "owner") =>
+        service.mutate({ type: "finish_browser_login", threadId }, sessionId);
+      yield* Effect.flip(finish("private-browser:wrong"));
+      yield* Effect.flip(finish(tab.threadId, "other"));
+      assert.deepStrictEqual(ports, []);
+      yield* Effect.flip(finish(tab.threadId));
+      assert.strictEqual(closes, 0);
+      if (canImport !== false) {
+        signedIn = true;
+        yield* finish(tab.threadId);
+        assert.strictEqual(closes, 1);
+        assert.deepStrictEqual(ports, ["49152", "49152"]);
+      }
 
-    yield* open();
-    yield* service.mutate({ type: "cancel_browser_login", threadId: tab.threadId }, "owner");
-    assert.strictEqual(closes, 2);
-  }).pipe(Effect.provide(NodeServices.layer)),
+      yield* open();
+      yield* service.mutate({ type: "cancel_browser_login", threadId: tab.threadId }, "owner");
+      assert.strictEqual(closes, canImport === false ? 1 : 2);
+    }).pipe(Effect.provide(NodeServices.layer)),
 );

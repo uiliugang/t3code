@@ -8,6 +8,7 @@ import {
   type ServerSettings,
 } from "@t3tools/contracts";
 import { resolveCommandPath } from "@t3tools/shared/shell";
+import { parseSemver } from "@t3tools/shared/semver";
 import { readMis } from "@t3tools/source-control-meituan/shared/definition";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
@@ -159,14 +160,20 @@ const make = Effect.gen(function* () {
 
   const resolveInvocation = Effect.fn("DaxiangApprovalService.resolveInvocation")(
     function* () {
-      const npm = yield* findModernNpm(hostEnv, (node) =>
+      const nodeVersion = (node: string, env?: NodeJS.ProcessEnv) =>
         runner
-          .run({ command: node, args: ["--version"], cwd: config.cwd, timeout: "2 seconds" })
+          .run({
+            command: node,
+            args: ["--version"],
+            cwd: config.cwd,
+            timeout: "2 seconds",
+            ...(env ? { env } : {}),
+          })
           .pipe(
             Effect.map((result) => (result.code === 0 ? result.stdout.trim() : "")),
             Effect.orElseSucceed(() => ""),
-          ),
-      );
+          );
+      const npm = yield* findModernNpm(hostEnv, nodeVersion);
       const env = { ...hostEnv, ...npm?.env };
       const executable = yield* resolveCommandPath("dumbo-web", { env }).pipe(
         Effect.mapError(() =>
@@ -178,22 +185,33 @@ const make = Effect.gen(function* () {
       }
       const invocation = yield* Effect.gen(function* () {
         const script = yield* fs.realPath(executable);
-        if (npm && /\.[cm]?js$/u.test(script)) return { command: npm.node, args: [script], env };
-        return yield* skillInstallerNode(executable, [], env);
+        if (npm && /\.[cm]?js$/u.test(script)) {
+          return { command: npm.node, args: [script], env, version: npm.nodeVersion };
+        }
+        const fallback = yield* skillInstallerNode(executable, [], env);
+        if (fallback) {
+          return { ...fallback, version: yield* nodeVersion(fallback.node, fallback.env) };
+        }
       }).pipe(
         Effect.mapError(() =>
           cliError("missing_cli", "dumbo-web requires Node.js 20 or newer on this server."),
         ),
       );
+      const version = invocation ? parseSemver(invocation.version) : null;
+      const enableWebSocket =
+        version?.major === 21 || (version?.major === 20 && version.minor >= 10);
+      const invocationEnv = enableWebSocket
+        ? {
+            ...invocation?.env,
+            NODE_OPTIONS: [hostEnv.NODE_OPTIONS, "--experimental-websocket"]
+              .filter(Boolean)
+              .join(" "),
+          }
+        : invocation?.env;
       return {
         command: invocation?.command ?? executable,
         prefix: invocation?.args ?? [],
-        env: {
-          ...invocation?.env,
-          NODE_OPTIONS: [hostEnv.NODE_OPTIONS, "--experimental-websocket"]
-            .filter(Boolean)
-            .join(" "),
-        },
+        ...(invocationEnv ? { env: invocationEnv } : {}),
       } satisfies CliInvocation;
     },
     (effect) =>

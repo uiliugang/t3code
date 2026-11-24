@@ -22,7 +22,9 @@ export const makeResolveMCodeCommand = Effect.gen(function* () {
         const [executable] = yield* resolveCommandPaths(input.command, { env, until: () => true });
         if (!executable) return input;
         const invocation = yield* resolveCliNode(executable, input.args, env);
-        return invocation ? { ...input, ...invocation } : input;
+        return invocation
+          ? { ...input, command: invocation.command, args: invocation.args, env: invocation.env }
+          : input;
       }
       const executable = yield* resolveCommandPath(input.command, { env });
       if (executable === null) return input;

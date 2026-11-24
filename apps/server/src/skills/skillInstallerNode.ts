@@ -73,8 +73,8 @@ export const makeSkillInstallerNode = Effect.gen(function* () {
     if (direct) {
       const option = direct[1];
       const options = !option ? [] : platform === "darwin" ? option.split(/[ \t]+/u) : [option];
-      return { command: node, args: [...options, script, ...args], env };
+      return { node, command: node, args: [...options, script, ...args], env };
     }
-    return { command: path.resolve(executable), args, env };
+    return { node, command: path.resolve(executable), args, env };
   });
 });
