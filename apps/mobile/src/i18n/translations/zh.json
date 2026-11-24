@@ -3970,5 +3970,8 @@
   "f001fa7b329c8fbf": "隐藏成功项",
   "ad208e3e32c85029": "全部隐藏",
   "3328503592789bed": "专注模式",
-  "856812e7e1fc445e": "聊天中的工具调用"
+  "856812e7e1fc445e": "聊天中的工具调用",
+  "b39d1428ec8b23f5": "此地址现在运行的是另一个 T3 Code 安装（{actual}，而非 {expected}）。请移除此连接后重新添加。",
+  "1cbfbcad9f0d04fe": "正在恢复 {provider} 会话",
+  "892f08d21b8e48a9": "满足要求时使用{kind, select, squash {压缩合并} merge {合并} rebase {变基} fastForward {快进} other {{method}}}方式将 {layers} 合并到 {base}。这可能会立即发生。"
 }

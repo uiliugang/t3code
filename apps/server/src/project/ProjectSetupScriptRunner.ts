@@ -15,6 +15,7 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -429,7 +430,7 @@ export const make = Effect.gen(function* () {
             Effect.timeoutOption(SHELL_QUIET_FALLBACK),
           );
           if (Option.isSome(changed)) continue;
-          if (!busy) return "ready" as const;
+          if (!busy) return "quiet" as const;
           yield* input.onStartupPrompt;
         }
       });
@@ -524,6 +525,19 @@ export const make = Effect.gen(function* () {
       trigger === "settle"
         ? `settle-${script.id}-${(yield* random.uuidV4()).slice(0, 8)}`
         : `setup-${script.id}`;
+    // A surviving setup shell may still hold a deleted worktree directory.
+    if (trigger === "setup") {
+      yield* terminalManager.close({ threadId: input.threadId, terminalId }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProjectSetupScriptOperationError({
+              ...errorContext,
+              operation: "openTerminal",
+              cause,
+            }),
+        ),
+      );
+    }
     const target = thread?.workspace
       ? projectScriptTargets(script, thread.workspace).find(
           (entry) => entry.worktreePath === input.worktreePath,
@@ -617,7 +631,7 @@ export const make = Effect.gen(function* () {
 
     // Return once the terminal exists so callers can show it while a startup prompt waits.
     // PowerShell and cmd have no line-editor signal.
-    yield* (
+    const commandWriter = yield* (
       completionShell === "powershell" || completionShell === null
         ? Effect.succeed("ready" as const)
         : readiness.wait
@@ -628,7 +642,12 @@ export const make = Effect.gen(function* () {
           : terminalManager.write({
               threadId: input.threadId,
               terminalId,
-              data: projectScriptTerminalInput(commandLine),
+              // macOS zsh garbles long typed-ahead multiline input; a live line editor takes it as one paste.
+              data: projectScriptTerminalInput(
+                shell === "ready" && completionShell === "posix" && commandLine.includes("\r")
+                  ? `\x1b[200~${commandLine.replaceAll("\r", "\n")}\x1b[201~`
+                  : commandLine,
+              ),
             }),
       ),
       Effect.catchCause((cause) =>
@@ -643,6 +662,13 @@ export const make = Effect.gen(function* () {
     );
 
     const completion = observed?.completion.pipe(
+      Effect.onInterrupt(() =>
+        Fiber.interrupt(commandWriter).pipe(
+          Effect.andThen(Effect.sync(() => readiness.unsubscribe())),
+          Effect.andThen(terminalManager.close({ threadId: input.threadId, terminalId })),
+          Effect.ignore,
+        ),
+      ),
       Effect.tap(({ exitCode }) =>
         exitCode === 0
           ? terminalManager.closeIdle({ threadId: input.threadId, terminalId })

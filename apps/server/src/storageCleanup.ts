@@ -10,6 +10,7 @@ import {
   ManagedWorktreeError,
   OrchestrationV2AppThreadJson,
   OrchestrationV2ProviderSessionJson,
+  StorageCleanupReportEntry,
 } from "@t3tools/contracts";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Schema from "effect/Schema";
@@ -23,11 +24,11 @@ import type {
   WorktreeCleanupRules,
   WorkspaceRootBinding,
   StorageCleanupReport,
-  StorageCleanupReportEntry,
   ThreadId,
 } from "@t3tools/contracts";
 import { resolveProjectSettings, resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { isMainOrMasterBranch } from "@t3tools/shared/git";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
@@ -81,6 +82,11 @@ const decodeCleanupThread = Schema.decodeUnknownEffect(
 );
 const decodeCleanupSession = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2ProviderSessionJson),
+);
+const decodeWorktreeLeftovers = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Array(Schema.Struct({ adminDir: Schema.String, entry: StorageCleanupReportEntry })),
+  ),
 );
 // pnpm 11 writes this file as JSON, older versions as YAML.
 const decodePnpmModulesManifest = Schema.decodeUnknownEffect(
@@ -524,9 +530,19 @@ const make = Effect.gen(function* () {
       }
       return { bytes, reason: null };
     },
-    Effect.timeout("30 seconds"),
+    // No time limit: the entry cap bounds the walk, and a removal that timed out would
+    // repeat the whole walk on every sweep without ever deleting the worktree.
     Effect.orElseSucceed(() => ({ bytes: null, reason: "worktree could not be fully inspected" })),
   );
+  // For walks under a workspace lease, which provider startup waits on, or repeated under one.
+  const measureWorktreeBounded = (...args: Parameters<typeof measureWorktree>) =>
+    measureWorktree(...args).pipe(
+      Effect.timeoutOrElse({
+        duration: "30 seconds",
+        orElse: () =>
+          Effect.succeed({ bytes: null, reason: "worktree could not be fully inspected" }),
+      }),
+    );
 
   // Large snapshots take seconds; use the reader worker instead of blocking the event loop.
   const readThreads = Effect.fn("StorageCleanup.readThreads")(function* () {
@@ -718,9 +734,9 @@ const make = Effect.gen(function* () {
       if (orphanSizes.has(key)) continue;
       const remaining = measurementDeadline - (yield* Clock.currentTimeMillis);
       if (!firstMeasurement && remaining <= 0) break;
-      const measured = yield* measureWorktree(path).pipe(
-        firstMeasurement ? Effect.asSome : Effect.timeoutOption(remaining),
-      );
+      const measured = yield* firstMeasurement
+        ? measureWorktreeBounded(path).pipe(Effect.asSome)
+        : measureWorktree(path).pipe(Effect.timeoutOption(remaining));
       firstMeasurement = false;
       if (Option.isSome(measured)) orphanSizes.set(key, measured.value.bytes);
     }
@@ -1002,6 +1018,103 @@ const make = Effect.gen(function* () {
       });
   });
 
+  // Git deletes a checkout before its metadata under `<repository>/.git/worktrees`. When the
+  // metadata then cannot be deleted, no checkout is left for a sweep to find and Git may no longer
+  // list the worktree, so the leftover is written down here and retried until it is gone.
+  const leftoversPath = path.join(config.stateDir, "storage-cleanup-leftovers.json");
+  // Only a missing file is empty: an unreadable one may hold records a write would replace.
+  const readLeftovers = fs.readFileString(leftoversPath).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("[]")),
+    Effect.flatMap(decodeWorktreeLeftovers),
+  );
+  const writeLeftovers = (
+    leftovers: ReadonlyArray<{
+      readonly adminDir: string;
+      readonly entry: StorageCleanupReportEntry;
+    }>,
+  ) =>
+    leftovers.length === 0
+      ? fs.remove(leftoversPath, { force: true })
+      : writeFileStringAtomically({
+          filePath: leftoversPath,
+          contents: `${JSON.stringify(leftovers, null, 2)}\n`,
+        });
+  const worktreeAdminDir = Effect.fn("StorageCleanup.worktreeAdminDir")(function* (
+    worktreePath: string,
+  ) {
+    const gitDir = yield* git.execute({
+      operation: "StorageCleanup.worktreeAdminDir",
+      cwd: worktreePath,
+      args: ["rev-parse", "--absolute-git-dir"],
+    });
+    return gitDir.stdout.trim();
+  });
+  const noteLeftover = Effect.fn("StorageCleanup.noteLeftover")(
+    function* (adminDir: string, entry: StorageCleanupReportEntry) {
+      if (entry.path === null || path.basename(path.dirname(adminDir)) !== "worktrees") return;
+      // A removal Git refused keeps its checkout, and the next sweep looks at it again.
+      if (yield* fs.exists(entry.path).pipe(Effect.orElseSucceed(() => true))) return;
+      if (!(yield* fs.exists(adminDir).pipe(Effect.orElseSucceed(() => true)))) return;
+      const others = (yield* readLeftovers).filter((leftover) => leftover.adminDir !== adminDir);
+      yield* writeLeftovers([...others, { adminDir, entry }]);
+    },
+    Effect.catch((error) =>
+      Effect.logWarning("storage cleanup could not record leftover git metadata", { error }),
+    ),
+  );
+  const removeLeftover = Effect.fn("StorageCleanup.removeLeftover")(function* (adminDir: string) {
+    // Pruning by hand frees the name, and a worktree recreated since may have taken it.
+    const gitFile = yield* fs.readFileString(path.join(adminDir, "gitdir")).pipe(
+      Effect.map((gitdir) => path.resolve(adminDir, gitdir.trim())),
+      Effect.option,
+    );
+    if (Option.isSome(gitFile) && (yield* fs.exists(gitFile.value))) {
+      const current = yield* worktreeAdminDir(path.dirname(gitFile.value));
+      if ((yield* fs.realPath(current)) === (yield* fs.realPath(adminDir))) return false;
+    }
+    yield* fs.remove(adminDir, { recursive: true });
+    return true;
+  });
+  const retryLeftovers = Effect.fn("StorageCleanup.retryLeftovers")(function* (
+    entries: StorageCleanupReportEntry[],
+  ) {
+    const leftovers = yield* readLeftovers;
+    const remaining: Array<(typeof leftovers)[number]> = [];
+    for (const leftover of leftovers) {
+      const { adminDir, entry } = leftover;
+      if (!(yield* fs.exists(adminDir).pipe(Effect.orElseSucceed(() => true)))) continue;
+      const failure = yield* removeLeftover(adminDir).pipe(
+        Effect.map((removed) => {
+          if (removed)
+            entries.push({
+              ...entry,
+              outcome: "removed",
+              reason: "Deleted git metadata an earlier cleanup left behind",
+            });
+          return null;
+        }),
+        Effect.catch((error) => Effect.succeed(error)),
+      );
+      if (failure === null) continue;
+      remaining.push(leftover);
+      entries.push({
+        ...entry,
+        outcome: "failed",
+        reason: `Git metadata at ${adminDir} could not be deleted: ${cleanupFailureReason(failure)}`,
+      });
+      yield* Effect.logWarning("storage cleanup failed for leftover git metadata", {
+        threadId: entry.threadId,
+        error: failure,
+      });
+    }
+    if (remaining.length !== leftovers.length)
+      yield* writeLeftovers(remaining).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("storage cleanup could not update leftover git metadata", { error }),
+        ),
+      );
+  });
+
   const cleanWorktrees = Effect.fn("StorageCleanup.cleanWorktrees")(function* (
     serverSettings: ServerSettings,
     now: number,
@@ -1101,7 +1214,7 @@ const make = Effect.gen(function* () {
           ((yield* branchChanged(checkoutPath, branch)) ? "repository or branch changed" : null) ??
           (yield* localChangesReason(checkoutPath, rules));
         if (reason !== null) return { keep: reason, force: false, bytes: null };
-        const { bytes, reason: measureReason } = yield* measureWorktree(checkoutPath, true);
+        const { bytes, reason: measureReason } = yield* measureWorktreeBounded(checkoutPath, true);
         if (measureReason !== null) return { keep: measureReason, force: false, bytes };
         // Measuring takes time, and what follows deletes ignored files under these rules.
         if (yield* settingsChanged)
@@ -1147,6 +1260,7 @@ const make = Effect.gen(function* () {
       settings: WorktreeCleanupRules,
       unchangedApplies: boolean,
       notDueReason: string,
+      settledOwner: Pick<OrchestrationV2ThreadShell, "id" | "lineage" | "projectId"> | undefined,
     ) {
       const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
       const remotes = yield* git.execute({
@@ -1233,6 +1347,12 @@ const make = Effect.gen(function* () {
               ? "no commits beyond the project branch"
               : "no commits beyond the default branch",
         };
+      const finishedSubagent =
+        settings.worktreeOnMerge &&
+        remote !== null &&
+        settledOwner?.lineage.relationshipToParent === "subagent";
+      if (finishedSubagent && integrated)
+        return { eligible: true, reason: "work is on the default branch" };
       if (remote !== null && settings.worktreeOnMerge && branchName !== null) {
         const pullRequest = yield* gitManager.branchPullRequest(
           { cwd: worktreePath, branch: branchName },
@@ -1247,6 +1367,47 @@ const make = Effect.gen(function* () {
           })
         )
           return { eligible: true, reason: "pull request was merged" };
+      }
+      if (finishedSubagent) {
+        const seen = new Set<ThreadId>([settledOwner.id]);
+        let child: Pick<OrchestrationV2ThreadShell, "lineage"> = settledOwner;
+        while (
+          child.lineage.relationshipToParent === "subagent" &&
+          child.lineage.parentThreadId !== null
+        ) {
+          const parent = threadsById.get(child.lineage.parentThreadId);
+          if (
+            !parent ||
+            seen.has(parent.id) ||
+            parent.projectId !== settledOwner.projectId ||
+            parent.lineage.rootThreadId !== settledOwner.lineage.rootThreadId
+          )
+            break;
+          seen.add(parent.id);
+          child = parent;
+          if (parent.branch === null || parent.branch === branchName) continue;
+          const pullRequest = yield* gitManager.branchPullRequest(
+            { cwd: worktreePath, branch: parent.branch },
+            { refresh: true, includeHeadRepository: true },
+          );
+          const headSha = pullRequest?.headSha;
+          if (
+            pullRequest?.state !== "merged" ||
+            pullRequest.headRef !== parent.branch ||
+            pullRequest.baseRef !== branch ||
+            typeof headSha !== "string" ||
+            !/^[0-9a-f]{40,64}$/i.test(headSha)
+          )
+            continue;
+          const shipped = yield* git.execute({
+            operation: "StorageCleanup.shippedThroughParent",
+            cwd: worktreePath,
+            args: ["merge-base", "--is-ancestor", head.commitSha, headSha],
+            allowNonZeroExit: true,
+          });
+          if (shipped.exitCode === 0)
+            return { eligible: true, reason: "parent's pull request was merged" };
+        }
       }
       return {
         eligible: false,
@@ -1420,6 +1581,7 @@ const make = Effect.gen(function* () {
                     rules.worktreeUnchanged &&
                       (settlement !== undefined || member.archivedAt !== null),
                     "not settled",
+                    settlement === undefined ? undefined : member,
                   );
                   if (!integrated.eligible)
                     return (
@@ -1854,13 +2016,13 @@ const make = Effect.gen(function* () {
             (yield* scratchKeepReason(worktreePath, threadIds, retention)) ??
             (yield* blockedSinceCheck());
           if (blocked !== null) return keep(blocked);
-          const inspection = yield* measureWorktree(worktreePath, "plain-folder");
+          const inspection = yield* measureWorktreeBounded(worktreePath, "plain-folder");
           if (inspection.reason !== null) return keep(inspection.reason);
           return yield* withWorkspaceLease(
             worktreePath,
             Effect.gen(function* () {
               // Walked again under the lease: a repository deleted with the folder is gone for good.
-              const finalInspection = yield* measureWorktree(worktreePath, "plain-folder");
+              const finalInspection = yield* measureWorktreeBounded(worktreePath, "plain-folder");
               if (finalInspection.reason !== null) return keep(finalInspection.reason);
               // The walk takes time, so the cheap checks run last, right before removal.
               const blockedWhileMeasuring =
@@ -1895,18 +2057,25 @@ const make = Effect.gen(function* () {
               if (blockedSinceLease !== null) return keep(blockedSinceLease);
               if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
               const checkoutBytes = new Map<string, number | null>();
+              const adminDirs = new Map<string, string>();
               // Each checkout passes the checks a single worktree does, or it stays.
               const result = yield* taskFolders.remove({
                 root: taskFolder.root,
                 force: false,
                 forget: deleted,
+                projectCommands: TaskFolders.linkRunsProjectCommands(thread.linkOrigin),
                 inspect: (checkout) =>
-                  inspectCheckout(
-                    checkout.worktreePath,
-                    thread.branch,
-                    retention,
-                    settingsChangedSinceCheck,
-                  ).pipe(
+                  worktreeAdminDir(checkout.worktreePath).pipe(
+                    Effect.map((adminDir) => adminDirs.set(checkout.worktreePath, adminDir)),
+                    Effect.ignore,
+                    Effect.andThen(
+                      inspectCheckout(
+                        checkout.worktreePath,
+                        thread.branch,
+                        retention,
+                        settingsChangedSinceCheck,
+                      ),
+                    ),
                     Effect.tap(({ bytes }) =>
                       Effect.sync(() => checkoutBytes.set(checkout.worktreePath, bytes)),
                     ),
@@ -1922,12 +2091,16 @@ const make = Effect.gen(function* () {
                   reason: sentence(removalReason),
                   bytes: checkoutBytes.get(removedPath) ?? null,
                 });
-              for (const keptCheckout of result.kept)
+              for (const keptCheckout of result.kept) {
                 entries.push({
                   ...entry,
                   path: keptCheckout.path,
                   reason: sentence(keptCheckout.reason),
                 });
+                const adminDir = adminDirs.get(keptCheckout.path);
+                if (adminDir !== undefined)
+                  yield* noteLeftover(adminDir, { ...entry, path: keptCheckout.path });
+              }
               if (result.kept.length > 0 && deleted && settings.worktreeOnDelete)
                 kept.push(worktreePath);
               yield* gitManager.invalidateStatus(project.workspaceRoot);
@@ -1959,6 +2132,7 @@ const make = Effect.gen(function* () {
             settings,
             unchangedApplies,
             notDueReason,
+            settledThread === undefined ? undefined : thread,
           );
           eligible = integration.eligible;
           if (integration.reason !== null) {
@@ -2005,6 +2179,7 @@ const make = Effect.gen(function* () {
             // Forced removal already discards local files; do not widen its final-check window.
             if (retention.worktreeKeepWhen === "tracked-changes" && !submodules.force)
               yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
+            const adminDir = yield* worktreeAdminDir(worktreePath);
             yield* removeLinkedWorktree({
               operation: "StorageCleanup.cleanupGit",
               cwd: repository,
@@ -2013,7 +2188,7 @@ const make = Effect.gen(function* () {
               force: submodules.force,
               execute: git.execute,
               run: (args) => cleanupGit(repository, [...args], "git worktree remove"),
-            });
+            }).pipe(Effect.tapError(() => noteLeftover(adminDir, entry)));
             entries.push({ ...entry, outcome: "removed", reason: sentence(removalReason), bytes });
             yield* gitManager.invalidateStatus(project.workspaceRoot);
             // Preserve branch/path so ProviderTurnStartService can recreate the checkout on resume.
@@ -2592,6 +2767,26 @@ const make = Effect.gen(function* () {
     );
     yield* cleanCheckpointRefs().pipe(
       Effect.catch((cause) => Effect.logWarning("checkpoint ref cleanup failed", { cause })),
+    );
+    yield* retryLeftovers(entries).pipe(
+      Effect.catch((error) =>
+        Effect.gen(function* () {
+          entries.push({
+            kind: "worktree",
+            outcome: "failed",
+            reason: `Could not read the record of leftover git metadata: ${cleanupFailureReason(error)}`,
+            path: leftoversPath,
+            projectPath: null,
+            threadId: null,
+            threadTitle: null,
+            bytes: null,
+            files: null,
+          });
+          yield* Effect.logWarning("storage cleanup could not read leftover git metadata", {
+            error,
+          });
+        }),
+      ),
     );
     const deletedWorktrees = yield* cleanWorktrees(serverSettings, now, entries, trigger).pipe(
       Effect.catch((error) =>

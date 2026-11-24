@@ -125,10 +125,12 @@ export const withRuntimeModeCeiling = (
   scope: McpInvocationScope,
   ceiling: RuntimeMode | undefined,
 ): McpInvocationScope => {
-  if (ceiling === undefined || scope.client === undefined) return scope;
+  if (ceiling === undefined) return scope;
+  if (scope.client === undefined) return { ...scope, runtimeModeCeiling: ceiling };
   const asked = scope.client.narrowedTo;
   return {
     ...scope,
+    runtimeModeCeiling: ceiling,
     client: {
       ...scope.client,
       narrowedTo: {
@@ -152,6 +154,8 @@ export interface McpInvocationScope {
   readonly client: McpClientCaller | undefined;
   /** False while the Linked environments beta is off here; `/mcp` reads it per request. */
   readonly linkedEnvironments?: boolean;
+  /** The broadest runtime mode an administrator lets a thread run in here. Unset is full access. */
+  readonly runtimeModeCeiling?: RuntimeMode | undefined;
   /** True while Labs → Workflows is on here; `/mcp` reads it per request. Unset is off. */
   readonly workflows?: boolean;
   /**

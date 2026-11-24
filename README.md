@@ -83,7 +83,7 @@ cd t3code
 ./vp run dev
 ```
 
-使用终端输出的地址访问 Web 客户端，不要假定固定端口。开发环境使用隔离的数据目录，首次启动可能复制本机已有 T3 数据的裁剪副本，详见 [开发指南](./docs/operations/development.md)。
+使用终端输出的地址访问 Web 客户端，不要假定固定端口。开发环境使用隔离的数据目录，首次启动可能复制本机已有 T3 数据的裁剪副本，详见 [开发指南](./docs/operations/00_development.md)。
 
 启动桌面开发模式：
 
@@ -185,7 +185,7 @@ Codex 的 **API Key** 连接使用 Responses API。填写服务商基础 URL（�
 - [权限模式](./docs/user/permission-modes.md) · [外部代理与 MCP](./docs/user/outside-agents.md)
 - [主题与语言](./docs/user/appearance.md) · [快捷键](./docs/user/keybindings.md)
 - [项目设置、配置迁移与清理](./docs/user/project-settings.md)
-- [架构概览](./docs/internals/overview.md) · [开发指南](./docs/operations/development.md)
+- [架构概览](./docs/internals/01_architecture.md) · [开发指南](./docs/operations/00_development.md)
 
 修改代码前请阅读 [AGENTS.md](./AGENTS.md) 和 [CONTRIBUTING.md](./CONTRIBUTING.md)。提交前运行 `vp run check:changed`，检查本次变更涉及的文件。
 

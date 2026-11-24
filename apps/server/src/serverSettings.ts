@@ -636,7 +636,7 @@ function decodeSettingsFile(
   const settings: ServerSettings =
     Exit.isSuccess(decoded) && failure === undefined
       ? decoded.value
-      : // The file may hold an opt-out we can no longer read; never resume threads on a guess.
+      : // The file may hold choices we can no longer read, so opt-in behaviour stays off.
         {
           ...managed.defaults,
           continueThreadsAfterServerUpdate: false,
@@ -651,6 +651,10 @@ function decodeSettingsFile(
             browserArtifactsAfterDays: null,
             logsAfterDays: null,
           },
+          requireConnectDeviceApproval: true,
+          enablePreviewTunnel: false,
+          enableAgentBrowserAccess: false,
+          defaultRuntimeMode: "approval-required",
         };
   return {
     settings,

@@ -422,6 +422,7 @@ export class ProviderAdapterTurnStartError extends Schema.TaggedError<
   providerThreadId: ProviderThreadId,
   runId: RunId,
   cause: Schema.optional(Schema.Defect()),
+  refusedBeforePrompt: Schema.optional(Schema.Boolean),
 }) {
   override get message(): string {
     return `Failed to start run ${this.runId} on ${this.driver} provider thread ${this.providerThreadId}.`;

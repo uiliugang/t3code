@@ -71,7 +71,13 @@ const VERDICTS = [
 
 export function PullRequestReviewSheet({
   route,
-}: StaticScreenProps<PullRequestParams & { readonly mode: "review" | "comment" }>) {
+}: StaticScreenProps<
+  PullRequestParams & {
+    readonly mode: "review" | "comment";
+    /** The head the opening screen showed; this sheet's own read can run ahead of it. */
+    readonly reviewedHeadSha?: string | undefined;
+  }
+>) {
   const t = useUiTranslation();
   const params = route.params;
   const gt = useGT();
@@ -99,6 +105,7 @@ export function PullRequestReviewSheet({
     onChangeValue: setBody,
     support: result.data?.capabilities ?? null,
   });
+  const reviewedHeadSha = params.reviewedHeadSha ?? result.data?.headSha;
   const stale = store.draft.comments.some((comment) => comment.headSha !== result.data?.headSha);
   const [requestedVerdict, setRequestedVerdict] = useState<PullRequestReviewVerdict>("comment");
   const offered = VERDICTS.filter((option) => permissions.verdicts.includes(option.value));
@@ -132,6 +139,7 @@ export function PullRequestReviewSheet({
               ...target,
               input: {
                 ...target.input,
+                ...(reviewedHeadSha ? { expectedHeadSha: reviewedHeadSha } : {}),
                 verdict: verdict.value,
                 body,
                 comments: submitted.comments.map(
@@ -152,8 +160,8 @@ export function PullRequestReviewSheet({
     <SheetContent
       title={reviewing ? gt("Submit review") : gt("Add comment")}
       subtitle={`#${params.number} · ${
-        reviewing && result.data?.headSha
-          ? gt("reviewing {sha}", { sha: result.data.headSha.slice(0, 7) })
+        reviewing && reviewedHeadSha
+          ? gt("reviewing {sha}", { sha: reviewedHeadSha.slice(0, 7) })
           : params.repository
       }`}
       busy={submission.busy}

@@ -14,7 +14,11 @@ vi.mock("../../state/preferences", async () => {
   return { mobilePreferencesAtom: Atom.make(AsyncResult.success({ uiLanguage: "en" })) };
 });
 
-import { usePullRequestDiff, usePullRequestDiffEntry } from "./usePullRequestDiff";
+import {
+  pullRequestParams,
+  usePullRequestDiff,
+  usePullRequestDiffEntry,
+} from "./usePullRequestDiff";
 import * as reviewModel from "../review/reviewModel";
 import { getCachedNativeReviewDiffData } from "../review/nativeReviewDiffAdapter";
 
@@ -293,4 +297,18 @@ it("holds further pages back until a pull to refresh has reread page one", async
   await screen.succeed(1, patch("first.ts", "second", "pushed"));
   expect(screen.current.patch).toContain("+pushed");
   expect(screen.current.canLoadMore).toBe(true);
+});
+
+it("keeps only the pull request a route names", () => {
+  const pullRequest = {
+    environmentId: "environment",
+    projectId: "project",
+    repository: "owner/repo",
+    number: 1,
+    host: "git.example.com",
+    navigationUrl: "https://git.example.com/owner/repo/pull/1#discussion_r1",
+    navigationId: 2,
+  };
+  const routeParams = { ...pullRequest, commit: "abc1234", path: "src/index.ts" };
+  expect(pullRequestParams(routeParams)).toEqual(pullRequest);
 });

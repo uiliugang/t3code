@@ -213,6 +213,9 @@ export function getChangedUnifiedSettingLabels(
     !Equal.equals(settings.diffCustomColors, DEFAULT_UNIFIED_SETTINGS.diffCustomColors)
       ? [resolve(msg("Diff colors"))]
       : []),
+    ...(settings.htmlPreviewWidth !== DEFAULT_UNIFIED_SETTINGS.htmlPreviewWidth
+      ? [resolve(msg("HTML preview width"))]
+      : []),
     ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth
       ? [resolve(msg("Chat width"))]
       : []),

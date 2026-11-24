@@ -49,11 +49,14 @@ const makeHarness = Effect.fn(function* (options: {
   readonly command?: string;
   readonly history?: string;
   readonly opening?: Deferred.Deferred<void>;
+  readonly previousSession?: TerminalSessionSnapshot;
   readonly shell?: string | null;
   readonly settings?: Partial<ServerSettingsValue>;
 }) {
   const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
   const opens: TerminalOpenInput[] = [];
+  const openedSessions: TerminalSessionSnapshot[] = [];
+  let session = options.previousSession;
   const writes = yield* Queue.unbounded<string>();
   const outputLines = yield* Queue.unbounded<string>();
   const opened = yield* Queue.unbounded<Record<string, string> | undefined>();
@@ -66,7 +69,11 @@ const makeHarness = Effect.fn(function* (options: {
             : Effect.void,
         ),
         Effect.andThen(Queue.offer(opened, input.env)),
-        Effect.as(openSnapshot(options.history ?? "")),
+        Effect.map(() => {
+          session ??= openSnapshot(options.history ?? "");
+          openedSessions.push(session);
+          return session;
+        }),
       ),
     getShell: () =>
       options.shell === null
@@ -78,6 +85,16 @@ const makeHarness = Effect.fn(function* (options: {
         return () => listeners.delete(listener);
       }),
     write: (input) => Queue.offer(writes, input.data).pipe(Effect.asVoid),
+    close: () =>
+      Effect.sync(() => {
+        session = undefined;
+      }).pipe(
+        Effect.andThen(
+          Effect.forEach([...listeners], (listener) => listener({ ...event, type: "closed" }), {
+            discard: true,
+          }),
+        ),
+      ),
     closeIdle: () => Effect.void,
     closeOnSettle: () => Effect.void,
   });
@@ -118,13 +135,14 @@ const makeHarness = Effect.fn(function* (options: {
   });
   const emit = (terminalEvent: TerminalEvent) =>
     Effect.forEach([...listeners], (listener) => listener(terminalEvent), { discard: true });
-  return { start, listeners, writes, outputLines, opened, emit, opens };
+  return { start, listeners, writes, outputLines, opened, emit, openedSessions, opens };
 });
 
 const setup = Effect.fn(function* (
   options: {
     readonly command?: string;
     readonly history?: string;
+    readonly previousSession?: TerminalSessionSnapshot;
     readonly shell?: string | null;
   } = {},
 ) {
@@ -185,7 +203,9 @@ describe("ProjectSetupScriptRunner", () => {
       const { writes } = yield* setup({
         shell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
       });
-      expect(yield* Queue.take(writes)).toContain("$global:LASTEXITCODE");
+      const submitted = yield* Queue.take(writes);
+      expect(submitted).toContain("$global:LASTEXITCODE");
+      expect(submitted).not.toContain("\x1b[200~");
     }),
   );
 
@@ -215,10 +235,13 @@ describe("ProjectSetupScriptRunner", () => {
     }),
   );
 
-  it.effect("shows a startup prompt and types only once the line editor starts", () =>
+  it.effect("replaces a surviving setup shell and types only once the line editor starts", () =>
     Effect.gen(function* () {
-      const { result, writes, outputLines, emit } = yield* setup();
+      const { result, completion, openedSessions, writes, outputLines, emit } = yield* setup({
+        previousSession: openSnapshot("previous setup in the deleted checkout"),
+      });
       expect(result).toMatchObject({ status: "started", terminalId });
+      expect(openedSessions).toEqual([openSnapshot("")]);
 
       yield* emit({ ...event, type: "output", data: "Missing Node.\r\nInstall it? [y/N]: " });
       yield* emit({ ...event, type: "activity", hasRunningSubprocess: true, label: "fnm" });
@@ -228,7 +251,12 @@ describe("ProjectSetupScriptRunner", () => {
 
       yield* emit({ ...event, type: "activity", hasRunningSubprocess: false, label: "zsh" });
       yield* emit({ ...event, type: "output", data: "\r\n% \x1b[?2004h" });
-      expect(yield* Queue.take(writes)).toContain("vp i");
+      const command = yield* Queue.take(writes);
+      expect(command).toContain("vp i");
+      const sentinel = command.match(/__T3_SETUP_DONE___[a-f0-9]+:/)?.[0];
+      expect(sentinel).toBeDefined();
+      yield* emit({ ...event, type: "output", data: `${sentinel}0\r\n% ` });
+      expect(yield* completion).toMatchObject({ exitCode: 0 });
     }),
   );
 
@@ -290,6 +318,16 @@ describe("ProjectSetupScriptRunner", () => {
       }),
   );
 
+  it.effect("types into a quiet shell that has no line editor", () =>
+    Effect.gen(function* () {
+      const { writes } = yield* setup({ command: "printf '%s\\n' 'setup-ready'\n".repeat(120) });
+      yield* TestClock.adjust("3 seconds");
+      const submitted = yield* Queue.take(writes);
+      expect(submitted).toContain("setup-ready");
+      expect(submitted).not.toContain("\x1b[200~");
+    }),
+  );
+
   it.effect("ignores line editor state restored from an earlier shell", () =>
     Effect.gen(function* () {
       const { writes, emit } = yield* setup({ history: "old run\r\n% \x1b[?2004h" });
@@ -311,16 +349,32 @@ describe("ProjectSetupScriptRunner", () => {
     }),
   );
 
-  it.effect("drops its terminal listeners when cancelled while the terminal opens", () =>
-    Effect.gen(function* () {
-      const opening = yield* Deferred.make<void>();
-      const { start, listeners } = yield* makeHarness({ opening });
-      const fiber = yield* Effect.forkChild(start);
-      yield* Deferred.await(opening);
-      expect(listeners.size).toBe(2);
-      yield* Fiber.interrupt(fiber);
-      expect(listeners.size).toBe(0);
-    }),
+  it.effect.each(["opening", "completion"] as const)(
+    "stops pending setup when cancelled during %s",
+    (phase) =>
+      Effect.gen(function* () {
+        const opening = yield* Deferred.make<void>();
+        const { start, listeners, writes, emit } = yield* makeHarness(
+          phase === "opening" ? { opening } : {},
+        );
+        const pending =
+          phase === "opening"
+            ? start.pipe(Effect.asVoid)
+            : yield* start.pipe(
+                Effect.map((result) =>
+                  result.status === "started" && result.completion
+                    ? result.completion.pipe(Effect.asVoid)
+                    : Effect.die("setup did not start"),
+                ),
+              );
+        const fiber = yield* pending.pipe(Effect.forkChild({ startImmediately: true }));
+        if (phase === "opening") yield* Deferred.await(opening);
+        expect(listeners.size).toBe(2);
+        yield* Fiber.interrupt(fiber);
+        expect(listeners.size).toBe(0);
+        yield* emit({ ...event, type: "output", data: "\r\n% \x1b[?2004h" });
+        expect(yield* Queue.size(writes)).toBe(0);
+      }),
   );
 
   it.effect.each([false, true])(
@@ -371,12 +425,14 @@ const runObservedSetup = Effect.fnUntraced(function* (command: string) {
   yield* emit({ ...event, type: "output", data: "\x1b[?2004h" });
   const submitted = yield* Queue.take(writes);
   // Enter becomes a newline at the terminal boundary.
-  const child = yield* runTestBash(submitted.replaceAll("\r", "\n"));
+  const shellInput = submitted.replace("\x1b[200~", "").replace("\x1b[201~", "");
+  const child = yield* runTestBash(shellInput.replaceAll("\r", "\n"));
   yield* emit({ ...event, type: "output", data: submitted + "\n" });
   yield* emit({ ...event, type: "output", data: child.stdout + child.stderr });
   yield* emit({ ...event, type: "closed" });
   return {
     submitted,
+    shellInput,
     lines: yield* Queue.clear(outputLines),
     exitCode: (yield* completion).exitCode,
   };
@@ -422,9 +478,10 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("POSIX setup co
       assert.deepEqual(result.lines, expected);
       assert.equal(result.exitCode, 0);
       assert.equal(result.submitted.at(-1), "\r");
-      assert.notInclude(result.submitted, "\n");
-      // The runner can write before the shell switches the terminal out of canonical mode.
-      for (const line of result.submitted.slice(0, -1).split("\r")) {
+      assert.isTrue(result.submitted.startsWith(" \x1b[200~"));
+      assert.isTrue(result.submitted.endsWith("\x1b[201~\r"));
+      assert.notInclude(result.submitted.slice(0, -1), "\r");
+      for (const line of result.shellInput.slice(0, -1).split("\n")) {
         assert.isBelow(utf8.encode(line).byteLength, 1_024);
       }
     }),

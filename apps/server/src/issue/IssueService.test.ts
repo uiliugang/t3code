@@ -370,6 +370,60 @@ describe("IssueService", () => {
     }),
   );
 
+  it.effect(
+    "does not call a GitHub issue URL unbrowsable when no project is a GitHub checkout",
+    () =>
+      Effect.gen(function* () {
+        // A plain folder project, while GitHub itself is a supported tracker.
+        const service = yield* makeService({
+          projects: [project({ id: "folder" })],
+          trackers: [fakeTracker()],
+        });
+        const resolved = yield* service
+          .resolveUrl("https://github.com/acme/web/issues/1", "folder" as ProjectId)
+          .pipe(Effect.result);
+        if (resolved._tag === "Failure") {
+          expect(resolved.failure).not.toMatchObject({
+            _tag: "IssueUnavailableError",
+            reason: "tracker-unsupported",
+          });
+        }
+      }),
+  );
+
+  it.effect("resolves both legacy Azure work item URLs through the bound project", () =>
+    Effect.gen(function* () {
+      const tracker = IssueTrackerKind.make("azure-devops");
+      const host = "acme.visualstudio.com";
+      const service = yield* makeService({
+        projects: [
+          project({ id: "api", repository: "Api/_git/api", provider: tracker, host }),
+          project({
+            id: "web",
+            repository: "DefaultCollection/Web/_git/web",
+            provider: tracker,
+            host,
+          }),
+        ],
+        trackers: [fakeTracker({ kind: tracker })],
+      });
+      for (const path of ["Web", "DefaultCollection/Web"]) {
+        const ref = yield* service.resolveUrl(
+          `https://${host}/${path}/_workitems/edit/9`,
+          "api" as ProjectId,
+        );
+        expect(ref).toEqual({
+          projectId: "web",
+          tracker,
+          host,
+          scope: "DefaultCollection/Web",
+          key: "9",
+          writable: true,
+        });
+      }
+    }),
+  );
+
   it.effect("sends writes as interactive requests and reads as background ones", () =>
     Effect.gen(function* () {
       const interactive: Array<readonly [string, boolean]> = [];

@@ -2871,6 +2871,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         browserArtifactsAfterDays: null,
         logsAfterDays: null,
       });
+      assert.isTrue(settings.requireConnectDeviceApproval);
+      assert.isFalse(settings.enablePreviewTunnel);
+      assert.isFalse(settings.enableAgentBrowserAccess);
+      assert.equal(settings.defaultRuntimeMode, "approval-required");
       assert.deepEqual(settings.projectSettingsOverrides, {});
       const failure = yield* Effect.flip(
         serverSettings.withSettingsSnapshot(Effect.succeed, { tryTrusted: true }),

@@ -46,6 +46,7 @@ import { offHeadPullRequestCheckoutToast } from "./pullRequestCheckoutToast";
 import {
   checkoutFailureDescription,
   appendHandoff,
+  mergeHeadPin,
   readableFailure,
 } from "./pullRequestDetail.logic";
 import { pullRequestEntryKey, type EnvironmentPullRequestEntry } from "./pullRequestList.logic";
@@ -134,12 +135,17 @@ const actionFailureHints: Record<PullRequestAction, string> = {
 export function usePullRequestActionRunner({
   environmentId,
   reference,
+  headSha,
   terminology,
   onSuccess,
+  onFailure,
   resolveMergeMethod,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef | null;
+  /** The head on screen, which a merge is pinned to. */
+  headSha?: string | undefined;
+  onFailure?: (action: PullRequestAction) => void;
   terminology: ChangeRequestTerminology;
   onSuccess?: (action: PullRequestAction, reply: PullRequestSummary | undefined) => void;
   /** Resolve repository settings on click to avoid per-row reads. */
@@ -175,6 +181,7 @@ export function usePullRequestActionRunner({
       input: {
         ...reference,
         action,
+        ...mergeHeadPin(action, headSha),
         ...(method ? { mergeMethod: method } : resolveMergeMethod ? { resolveMergeMethod } : {}),
       },
     });
@@ -195,6 +202,7 @@ export function usePullRequestActionRunner({
           }),
         ),
       });
+      onFailure?.(action);
       return;
     }
     toastManager.add({

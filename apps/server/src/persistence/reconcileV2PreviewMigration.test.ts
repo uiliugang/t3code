@@ -106,6 +106,7 @@ describe("V2 preview upgrade", () => {
         [124, "IssueTrackerAccounts"],
         [125, "Workflows"],
         [126, "RemoveAgentFeedback"],
+        [127, "SupersededRunAttemptIndex"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(
@@ -260,6 +261,7 @@ describe("V2 preview upgrade", () => {
         [124, "IssueTrackerAccounts"],
         [125, "Workflows"],
         [126, "RemoveAgentFeedback"],
+        [127, "SupersededRunAttemptIndex"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

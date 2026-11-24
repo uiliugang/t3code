@@ -510,6 +510,9 @@ export const make = Effect.gen(function* () {
     refine?: (
       current: ProjectStore.ProjectRow | undefined,
     ) => Effect.Effect<ProjectCommand | null, ProjectServiceError>,
+    // Runs under the same lock only when this call commits, so retries skip it and writes keep
+    // the commit order.
+    onCommitted?: Effect.Effect<void, ProjectOperationError>,
   ) {
     const { projectId } = initial;
     const callerScopes = yield* ProjectMutationCallerScopes;
@@ -555,13 +558,14 @@ export const make = Effect.gen(function* () {
         now,
       });
       if (Result.isSuccess(planned)) {
-        const { receipt } = yield* eventSink.commitProjectCommand({
+        const { receipt, committed } = yield* eventSink.commitProjectCommand({
           commandId: command.commandId,
           projectId,
           commandType: command.type,
           acceptedAt: now,
           event: planned.success,
         });
+        if (committed && onCommitted !== undefined) yield* onCommitted;
         return { receipt };
       }
       const receipt = yield* eventSink.commitRejectedProjectCommand({
@@ -675,6 +679,33 @@ export const make = Effect.gen(function* () {
     return Option.isNone(row) ? Option.none() : Option.some(yield* hydrate(row.value));
   });
 
+  // Once project settings are folded, actions resolve from Settings only, where the app's editor saves them.
+  const saveScripts = (projectId: ProjectId, scripts: ProjectCreateInput["scripts"]) =>
+    scripts === undefined
+      ? Effect.void
+      : serverSettings.getSettings.pipe(
+          // A patch replaces the project's whole entry, so its other overrides are carried over.
+          Effect.flatMap(({ projectSettingsOverrides }) =>
+            serverSettings.updateSettings({
+              projectSettingsOverrides: {
+                [projectId]: {
+                  ...projectSettingsOverrides[projectId],
+                  defaultProjectScripts: scripts,
+                },
+              },
+            }),
+          ),
+          Effect.asVoid,
+          Effect.mapError(
+            (cause) =>
+              new ProjectOperationError({
+                operation: "dispatch-project-command",
+                projectId,
+                cause,
+              }),
+          ),
+        );
+
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
       const workspaceConfig =
@@ -701,16 +732,20 @@ export const make = Effect.gen(function* () {
         workspaceRoot,
         input.trackedFolders ?? [],
       );
-      yield* commit({
-        type: "project.create",
-        commandId: input.commandId,
-        projectId: input.projectId,
-        title: input.title,
-        workspaceRoot,
-        ...(workspaceConfig === undefined ? {} : { workspaceConfig }),
-        ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
-        trackedFolders,
-      });
+      yield* commit(
+        {
+          type: "project.create",
+          commandId: input.commandId,
+          projectId: input.projectId,
+          title: input.title,
+          workspaceRoot,
+          ...(workspaceConfig === undefined ? {} : { workspaceConfig }),
+          ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+          trackedFolders,
+        },
+        undefined,
+        saveScripts(input.projectId, input.scripts),
+      );
       yield* projectEnrichment.invalidate([workspaceRoot]);
       return yield* readCommitted(input.projectId);
     },
@@ -855,6 +890,7 @@ export const make = Effect.gen(function* () {
           );
           return { ...command, trackedFolders };
         }),
+        saveScripts(input.projectId, input.scripts),
       );
       if (workspaceRoot !== previousRoot || input.faviconPath !== undefined) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
