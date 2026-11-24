@@ -15,6 +15,8 @@ import {
   type PullRequestRef,
   ProjectId,
 } from "@t3tools/contracts";
+import { LINEAR_KIND, parseLinearIssueUrl } from "@t3tools/issue-tracker-linear/shared/issueUrl";
+import { parseUrl } from "@t3tools/shared/url";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -301,6 +303,28 @@ export const layer = Layer.effect(
       } satisfies IssueRef;
     });
 
+    const issueWriteRef = Effect.fn("WorkflowForge.issueWriteRef")(function* (issue: IssueAddress) {
+      const ref = yield* issueRef(issue);
+      if (ref.tracker !== LINEAR_KIND) return ref;
+      const url =
+        ref.url ??
+        (yield* issues
+          .linkMetadata(ref)
+          .pipe(Effect.mapError(failed("Could not identify the Linear issue to change")))).url;
+      const parsed = parseUrl(url);
+      const link = parsed === null ? null : parseLinearIssueUrl(parsed);
+      if (
+        link === null ||
+        link.key !== ref.key.trim().toUpperCase() ||
+        link.scope !== ref.scope.trim().toUpperCase()
+      ) {
+        return yield* new WorkflowForgeError({
+          reason: "A Linear write needs an issue URL matching its team and key.",
+        });
+      }
+      return { ...ref, url };
+    });
+
     const pullRequestRef = Effect.fn("WorkflowForge.pullRequestRef")(function* (
       pullRequest: PullRequestAddress,
     ) {
@@ -332,28 +356,10 @@ export const layer = Layer.effect(
       ...("title" in address && typeof address.title === "string" ? { title: address.title } : {}),
       ...("url" in address && typeof address.url === "string" ? { url: address.url } : {}),
     });
-    const issueTouched = Effect.fn("WorkflowForge.issueTouched")(function* (
-      ref: IssueRef,
-      address: IssueAddress,
-    ) {
-      const seen = seenOf(address);
-      const url =
-        seen.url ??
-        ref.url ??
-        (sourceControlDefinitions.definitions.some(
-          (definition) => definition.kind === String(ref.tracker),
-        )
-          ? undefined
-          : yield* issues.linkMetadata(ref).pipe(
-              Effect.map((meta) => meta.url),
-              Effect.orElseSucceed(() => undefined),
-            ));
-      yield* noteReference({
-        ...issueReference(url === undefined ? ref : { ...ref, url }),
-        ...seen,
-        ...(url === undefined ? {} : { url }),
-      });
-    });
+    const issueTouched = (ref: IssueRef, address: IssueAddress) => {
+      const { title } = seenOf(address);
+      return noteReference({ ...issueReference(ref), ...(title === undefined ? {} : { title }) });
+    };
     const pullRequestTouched = (ref: PullRequestRef, seen: PullRequestSeen) =>
       noteReference(pullRequestReferenceOf(ref, seen));
 
@@ -389,14 +395,14 @@ export const layer = Layer.effect(
           return detail;
         }),
         comment: Effect.fn("WorkflowForge.issues.comment")(function* (issue, body) {
-          const ref = yield* issueRef(issue);
+          const ref = yield* issueWriteRef(issue);
           yield* issues
             .comment({ ...ref, body })
             .pipe(Effect.mapError(failed("Could not comment on the issue")));
           yield* issueTouched(ref, issue);
         }),
         setState: Effect.fn("WorkflowForge.issues.setState")(function* (issue, state) {
-          const ref = yield* issueRef(issue);
+          const ref = yield* issueWriteRef(issue);
           yield* issues
             .setState({ ...ref, state })
             .pipe(Effect.mapError(failed("Could not change the issue's state")));

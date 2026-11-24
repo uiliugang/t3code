@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { IssueTrackerKind, ProjectId } from "@t3tools/contracts";
+import { type IssueRef, IssueTrackerKind, ProjectId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -83,6 +83,73 @@ it.effect("what a step does through the forge is kept against it, one key per th
       number: 7,
     });
   }).pipe(Effect.provide(forge)),
+);
+
+it.effect("keeps Linear writes and their history in the same workspace after rebinding", () =>
+  Effect.gen(function* () {
+    const issue = {
+      projectId,
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-42",
+    };
+    const acmeUrl = "https://linear.app/acme/issue/ENG-42";
+    const globexUrl = "https://linear.app/globex/issue/ENG-42";
+    const written: string[] = [];
+    const noted: ReferenceInput[] = [];
+    let boundUrl = acmeUrl;
+    const write = (ref: IssueRef) =>
+      Effect.sync(() => {
+        written.push(ref.url ?? boundUrl);
+        boundUrl = globexUrl;
+      });
+    const rebound = WorkflowForge.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(IssueService.IssueService)({
+            comment: write,
+            setState: write,
+            linkMetadata: () =>
+              Effect.sync(() => {
+                const url = boundUrl;
+                boundUrl = globexUrl;
+                return { title: "Same key", displayKey: issue.key, url };
+              }),
+          }),
+          Layer.mock(PullRequestService.PullRequestService)({}),
+          Layer.mock(ProjectService.ProjectService)({}),
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const { issues } = yield* WorkflowForge.WorkflowForge;
+      yield* issues.comment(issue, "Comments stay with the issue.");
+      boundUrl = acmeUrl;
+      yield* issues.setState(issue, "Done");
+      yield* issues.comment({ ...issue, url: acmeUrl }, "Still Acme.");
+      for (const url of ["https://linear.app/acme/issue", "https://linear.app/acme/issue/ENG-99"]) {
+        const invalid = yield* Effect.result(issues.setState({ ...issue, url }, "Done"));
+        assert.strictEqual(invalid._tag, "Failure");
+      }
+    }).pipe(
+      Effect.provide(rebound),
+      Effect.provideService(StepReferences, {
+        note: (reference) => Effect.sync(() => void noted.push(reference)),
+      }),
+    );
+
+    assert.deepStrictEqual(written, [acmeUrl, acmeUrl, acmeUrl]);
+    assert.deepStrictEqual(
+      noted.map(({ url, address }) => ({ url, address })),
+      [
+        { url: acmeUrl, address: { ...issue, url: acmeUrl } },
+        { url: acmeUrl, address: { ...issue, url: acmeUrl } },
+        { url: acmeUrl, address: { ...issue, url: acmeUrl } },
+      ],
+    );
+  }),
 );
 
 it("a step's pull requests are the ones its thread was linked to while it ran", () => {
