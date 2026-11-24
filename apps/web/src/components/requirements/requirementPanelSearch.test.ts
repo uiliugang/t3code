@@ -81,6 +81,7 @@ it("keeps standalone tracker selections distinct from requirement tracker select
       host: "jira.example.com",
       scope: "TEAM",
       key: "TEAM-42",
+      url: "https://jira.example.com/browse/TEAM-42",
     }),
   ).toMatchObject({
     detailEnvironmentId: "env",
@@ -89,6 +90,7 @@ it("keeps standalone tracker selections distinct from requirement tracker select
     issueHost: "jira.example.com",
     issueScope: "TEAM",
     issueId: "TEAM-42",
+    issueUrl: "https://jira.example.com/browse/TEAM-42",
   });
   expect(
     requirementSelection({

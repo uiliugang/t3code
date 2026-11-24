@@ -1,5 +1,4 @@
 import { Atom } from "effect/reactivity";
-import { page } from "vite-plus/test/browser";
 import { serverEnvironment } from "~/state/server";
 import { makeServerConfig } from "../../test/fakeEnvironment";
 import { act, render, type Screen } from "../../test/render";
@@ -7,6 +6,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { page, userEvent } from "vite-plus/test/browser";
 
 vi.mock(import("~/state/session"), async (original) => ({
   ...(await original()),
@@ -131,3 +131,16 @@ it.each([false, true])(
     );
   },
 );
+
+describe("project action editor dismissal", () => {
+  it("stays open when the user clicks outside the editor", async () => {
+    setup();
+    await using screen = await render(null);
+    await open(screen, { scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT });
+    await expect.element(page.getByRole("dialog")).toBeVisible();
+
+    await userEvent.click(document.body, { position: { x: 1, y: 1 } });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});

@@ -79,6 +79,58 @@ describe("rightPanelStore", () => {
     ).toEqual(["device", "diff", pr.id]);
   });
 
+  it("keeps Linear issue surfaces from different workspaces in distinct tabs", () => {
+    const store = useRightPanelStore.getState();
+    store.openIssue(refA, {
+      projectId: "project-1",
+      tracker: "linear",
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/acme/issue/ENG-1",
+    });
+    store.openIssue(refA, {
+      projectId: "project-1",
+      tracker: "linear",
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/globex/issue/ENG-1",
+    });
+    const surfaces = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      refA,
+    ).surfaces;
+    expect(surfaces).toHaveLength(2);
+
+    // Migrating an older saved Linear tab (whose id lacked the workspace) alongside a second tab
+    // updates activeSurfaceId to the migrated Linear tab's new workspace-aware id.
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "issue:project-1:linear:linear.app:eng:ENG-1",
+          surfaces: [
+            { id: "diff", kind: "diff" },
+            {
+              id: "issue:project-1:linear:linear.app:eng:ENG-1",
+              kind: "issue",
+              projectId: "project-1",
+              tracker: "linear",
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              url: "https://linear.app/acme/issue/ENG-1",
+            },
+          ],
+        },
+      },
+    });
+    const migratedState = selectThreadRightPanelState(migrated.byThreadKey, refA);
+    expect(migratedState.activeSurfaceId).toBe(migratedState.surfaces[1]?.id);
+    expect(migratedState.activeSurfaceId).toContain("acme");
+  });
+
   it("reopens the active tab first after a bulk close", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "files");
@@ -689,16 +741,30 @@ describe("rightPanelStore", () => {
     });
   });
 
-  it("keeps requirement tabs and the active tracker selection during storage migration", () => {
+  it("restores pinned issue tabs but not legacy Linear tabs without a workspace URL", async () => {
     const store = useRightPanelStore.getState();
-    for (const [provider, scope, issueId] of [
-      ["gitlab", "acme/app", "42"],
-      ["linear", "ENG", "ENG-42"],
-    ] as const) {
-      store.openRequirementIssue(refA, { projectId: "project", provider, scope, issueId });
-    }
+    store.openRequirementIssue(refA, {
+      projectId: "project",
+      provider: "gitlab",
+      scope: "acme/app",
+      issueId: "42",
+    });
+    const linear = { projectId: "project", host: "linear.app", scope: "ENG" };
+    store.openRequirementIssue(refA, {
+      ...linear,
+      provider: "linear",
+      issueId: "ENG-42",
+      url: "https://linear.app/globex/issue/ENG-42",
+    });
     const { byThreadKey } = useRightPanelStore.getState();
     expect(migratePersistedRightPanelState({ byThreadKey }).byThreadKey).toEqual(byThreadKey);
+    store.openRequirementIssue(refA, { ...linear, provider: "linear", issueId: "ENG-42" });
+    store.openIssue(refA, { ...linear, tracker: "linear", key: "ENG-42" });
+
+    await reloadRightPanelStore();
+    const restored = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(restored.surfaces).toEqual(selectThreadRightPanelState(byThreadKey, refA).surfaces);
+    expect(restored.activeSurfaceId).toBe(restored.surfaces[0]?.id);
   });
 
   it("upgrades the legacy singleton pull request surface to a reference-keyed tab", () => {

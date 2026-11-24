@@ -20,6 +20,19 @@ const pullRequest = {
   name: "PullRequest",
   params: { environmentId: "env", projectId: "project", repository: "o/r", number: 7 },
 };
+const linearIssue = {
+  key: "issue-acme",
+  name: "Issue",
+  params: {
+    environmentId: "env",
+    projectId: "project",
+    tracker: "linear",
+    host: "linear.app",
+    scope: "ENG",
+    issueKey: "ENG-1",
+    url: "https://linear.app/acme/issue/ENG-1/slug",
+  },
+};
 const settings = { key: "settings", name: "Settings" };
 const requireFromNative = NodeModule.createRequire(
   NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
@@ -40,13 +53,26 @@ describe("workspace tab selections", () => {
   it("remembers the chat, pull request and Settings page each tab showed", () => {
     const afterThread = workspaceSelectionsIn([home, thread], {});
     const afterPullRequest = workspaceSelectionsIn([home, pullRequest], afterThread);
-    expect(afterPullRequest).toMatchObject({
+    const afterIssue = workspaceSelectionsIn([home, linearIssue], afterPullRequest);
+    expect(afterIssue).toMatchObject({
       threads: thread.params,
       pullRequests: pullRequest.params,
+      issues: linearIssue.params,
+    });
+    const reopenedIssue = workspaceTabNavigationState(
+      { routes: [home, thread] },
+      "issues",
+      afterIssue,
+      { columns: true, check: available },
+    );
+    expect(reopenedIssue.routes.at(-1)).toMatchObject({
+      key: "issue-acme",
+      name: "Issue",
+      params: linearIssue.params,
     });
     const afterSettings = workspaceSelectionsIn(
       [home, settings, { key: "appearance", name: "SettingsAppearance" }],
-      afterPullRequest,
+      afterIssue,
     );
     expect(afterSettings.settings).toBe("SettingsAppearance");
     expect(workspaceSelectionsIn([home, thread], afterSettings)).toBe(afterSettings);
@@ -215,6 +241,20 @@ describe("opening a workspace tab", () => {
         ),
       ),
     ).toEqual(["Home", "Settings", "SettingsEnvironments"]);
+  });
+
+  it("does not reopen a remembered Linear issue without its workspace URL", () => {
+    const { url: _url, ...legacyIssue } = linearIssue.params;
+    expect(
+      names(
+        workspaceTabNavigationState(
+          { routes: [home, thread] },
+          "issues",
+          { issues: { ...legacyIssue, key: linearIssue.key } },
+          columns,
+        ),
+      ),
+    ).toEqual(["Home"]);
   });
 
   it("keeps an open sheet on top", () => {

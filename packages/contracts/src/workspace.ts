@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import {
   ExecutionResourceId,
+  GitRefName,
   IsoDateTime,
   NonNegativeInt,
   PositiveInt,
@@ -42,9 +43,9 @@ export const WorkspaceRootBinding = Schema.Struct({
   relativeSubpath: Schema.String,
   sourcePathAtBind: TrimmedNonEmptyString,
   executionPath: TrimmedNonEmptyString,
-  launchBaseRef: Schema.NullOr(TrimmedNonEmptyString),
+  launchBaseRef: Schema.NullOr(GitRefName),
   launchBaseCommit: Schema.NullOr(TrimmedNonEmptyString),
-  launchBranch: Schema.NullOr(TrimmedNonEmptyString),
+  launchBranch: Schema.NullOr(GitRefName),
 });
 export type WorkspaceRootBinding = typeof WorkspaceRootBinding.Type;
 
@@ -96,7 +97,7 @@ export const WorkspaceCheckoutInput = Schema.Struct({
 export type WorkspaceCheckoutInput = typeof WorkspaceCheckoutInput.Type;
 
 export const WorkspaceCheckoutResult = Schema.Struct({
-  branch: Schema.NullOr(TrimmedNonEmptyString),
+  branch: Schema.NullOr(GitRefName),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
 });
 export type WorkspaceCheckoutResult = typeof WorkspaceCheckoutResult.Type;

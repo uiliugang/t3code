@@ -295,16 +295,33 @@ export const make = Effect.gen(function* () {
     ),
     getRepositoryCloneUrls: Effect.fn("MCodeSourceControlProvider.getRepositoryCloneUrls")(
       function* (input) {
-        const repo = yield* repository(input);
-        return cloneUrls(
-          yield* cli.json(
-            {
-              cwd: input.cwd,
-              operation: "getRepository",
-              args: ["repo", "-R", repo, "view", "--json"],
-            },
-            Json.Repository,
+        const repo = yield* repository(input).pipe(
+          Effect.mapError((error) =>
+            error.reason === "invalid-repository"
+              ? new MCodeCli.MCodeError({ ...error, userFacingDetail: error.message })
+              : error,
           ),
+        );
+        return cloneUrls(
+          yield* cli
+            .json(
+              {
+                cwd: input.cwd,
+                operation: "getRepository",
+                args: ["repo", "-R", repo, "view", "--json"],
+              },
+              Json.Repository,
+            )
+            .pipe(
+              Effect.mapError((error) =>
+                error.reason === "not-found"
+                  ? new MCodeCli.MCodeError({
+                      ...error,
+                      userFacingDetail: SourceControlProvider.repositoryNotFoundDetail(repo),
+                    })
+                  : error,
+              ),
+            ),
         );
       },
       (effect, input) => effect.pipe(Effect.mapError(failure(input.cwd, "getRepositoryCloneUrls"))),

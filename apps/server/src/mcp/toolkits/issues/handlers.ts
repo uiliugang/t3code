@@ -6,6 +6,8 @@ import {
   type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
+import { parseLinearIssueUrl } from "@t3tools/issue-tracker-linear/shared/issueUrl";
+import { parseUrl } from "@t3tools/shared/url";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -28,7 +30,7 @@ import {
 } from "./tools.ts";
 
 /** A resolved reference, with the host the link stores and whether it may be written. */
-interface ResolvedTarget extends IssueRef {
+interface ResolvedTarget extends Omit<IssueRef, "url"> {
   readonly host: string;
   readonly url: string | null;
   readonly writable: boolean;
@@ -149,6 +151,7 @@ const make = Effect.gen(function* () {
     host: target.host,
     scope: target.scope,
     key: target.key,
+    ...(target.url === null ? {} : { url: target.url }),
   });
 
   const readIssue = (target: ResolvedTarget) =>
@@ -298,14 +301,76 @@ const make = Effect.gen(function* () {
     unlink_issue: writesThread((input) =>
       Effect.gen(function* () {
         const thread = yield* requireThread(input.threadId);
+        if (input.url !== undefined) {
+          const requestedUrl = input.url.trim();
+          const parsedUrl = parseUrl(requestedUrl);
+          const parsedLinear = parsedUrl === null ? null : parseLinearIssueUrl(parsedUrl);
+          const storedByUrl =
+            (thread.issues ?? []).find((link) => link.url.trim() === requestedUrl) ??
+            (parsedLinear === null
+              ? undefined
+              : (thread.issues ?? []).find((link) => {
+                  if (link.tracker !== "linear") return false;
+                  const linkUrl = parseUrl(link.url);
+                  const linkLinear = linkUrl === null ? null : parseLinearIssueUrl(linkUrl);
+                  return (
+                    linkLinear !== null &&
+                    linkLinear.workspace.toLowerCase() === parsedLinear.workspace.toLowerCase() &&
+                    linkLinear.key.toLowerCase() === parsedLinear.key.toLowerCase()
+                  );
+                }));
+          if (storedByUrl !== undefined) {
+            const { wasLinked } = yield* threadIssues
+              .unlink({
+                threadId: thread.id,
+                key: {
+                  tracker: storedByUrl.tracker,
+                  host: storedByUrl.host,
+                  scope: storedByUrl.scope,
+                  key: storedByUrl.key,
+                  url: storedByUrl.url,
+                },
+              })
+              .pipe(Effect.catchCause(linkFailure));
+            return {
+              projectId: storedByUrl.projectId,
+              tracker: storedByUrl.tracker,
+              host: storedByUrl.host,
+              scope: storedByUrl.scope,
+              key: storedByUrl.key,
+              url: storedByUrl.url,
+              wasLinked,
+            };
+          }
+        }
         const target = yield* resolveTarget({
           ...input,
           projectId: input.projectId ?? thread.projectId,
         });
-        const existing = (thread.issues ?? []).find((link) => threadIssueKeysEqual(link, target));
+        const makeKey = (url: string | null) => ({
+          tracker: target.tracker,
+          host: target.host,
+          scope: target.scope,
+          key: target.key,
+          ...(url === null ? {} : { url }),
+        });
+        const baseKey = makeKey(target.url);
+        const candidates = (thread.issues ?? []).filter((link) =>
+          threadIssueKeysEqual(link, baseKey),
+        );
+        if (candidates.length === 0) return { ...identityOf(target), wasLinked: false };
+        const needsWorkspaceResolution =
+          target.url === null && (target.tracker === "linear" || candidates.length > 1);
+        const resolvedUrl = needsWorkspaceResolution
+          ? (yield* issues.linkMetadata(refOf(target))).url
+          : target.url;
+        const existing =
+          resolvedUrl === null
+            ? candidates[0]
+            : candidates.find((link) => threadIssueKeysEqual(link, makeKey(resolvedUrl)));
         if (existing === undefined) return { ...identityOf(target), wasLinked: false };
         const { wasLinked } = yield* threadIssues
-          .unlink({ threadId: thread.id, key: target })
+          .unlink({ threadId: thread.id, key: makeKey(existing.url) })
           .pipe(Effect.catchCause(linkFailure));
         return { ...identityOf(target), url: existing.url, wasLinked };
       }),

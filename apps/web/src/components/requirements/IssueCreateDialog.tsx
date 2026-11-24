@@ -45,7 +45,7 @@ export function TrackerCreateDialog({
   environmentId: EnvironmentId;
   target: TrackerCreateTarget;
   close: () => void;
-  created: (key: string, title: string) => void;
+  created: (key: string, title: string, url: string) => void;
 }) {
   const t = useUiTranslation();
   const [title, setTitle] = useState("");
@@ -62,7 +62,7 @@ export function TrackerCreateDialog({
       input: { ...scope, title: title.trim(), body, labels: [], assignees: [] },
     });
     setBusy(false);
-    if (result._tag === "Success") created(result.value.key, title.trim());
+    if (result._tag === "Success") created(result.value.key, title.trim(), result.value.url);
   }
   return (
     <Dialog

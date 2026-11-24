@@ -46,11 +46,14 @@ type PanelProps = {
 };
 export function IssueDetailPanel(
   props: Omit<PanelProps, "target"> & {
-    target: Omit<IssueTarget, "provider"> & { provider: RequirementTracker };
+    target: Omit<IssueTarget, "provider"> & {
+      provider: RequirementTracker;
+      url?: string | undefined;
+    };
   },
 ) {
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
-  const { provider, scope, ...target } = props.target;
+  const { provider, scope, url, ...target } = props.target;
   const legacy =
     provider === "github" || provider === "meituan"
       ? ({ ...target, ...(scope ? { scope } : {}), provider } satisfies IssueTarget)
@@ -59,7 +62,13 @@ export function IssueDetailPanel(
     return (
       <TrackerDetailPanel
         environmentId={props.environmentId}
-        reference={{ ...target, scope, key: props.id, tracker: IssueTrackerKind.make(provider) }}
+        reference={{
+          ...target,
+          scope,
+          key: props.id,
+          tracker: IssueTrackerKind.make(provider),
+          ...(url ? { url } : {}),
+        }}
         threadRef={
           props.panelRef?.threadId === REQUIREMENTS_PANEL_REF.threadId
             ? null
@@ -72,6 +81,14 @@ export function IssueDetailPanel(
             repository: reference.repository,
             number: reference.number,
             ...(reference.host ? { host: reference.host } : {}),
+            environmentId: props.environmentId,
+          });
+          props.onPullRequestOpened?.();
+        }}
+        onSelectIssue={({ host, ...reference }) => {
+          useRightPanelStore.getState().openIssue(props.panelRef ?? REQUIREMENTS_PANEL_REF, {
+            ...reference,
+            ...(host === undefined ? {} : { host }),
             environmentId: props.environmentId,
           });
           props.onPullRequestOpened?.();

@@ -54,3 +54,65 @@ it.effect("finds every thread linked to exactly one issue, newest activity first
     ]);
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
+
+it.effect("keeps linked threads apart across Linear workspaces that share a team key", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const at = "2026-11-01T00:00:00.000Z";
+    const acme = {
+      tracker: "linear",
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/acme/issue/ENG-1/login",
+    };
+    const globex = { ...acme, url: "https://linear.app/globex/issue/ENG-1/login" };
+    for (const [id, issues] of [
+      ["acme-thread", [acme]],
+      ["globex-thread", [globex]],
+      ["both-thread", [acme, globex]],
+    ] as const) {
+      const payload = yield* encodePayload({ issues });
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+          created_at, updated_at, archived_at, deleted_at, payload_json
+        ) VALUES (
+          ${id}, 'project-1', ${id}, 'codex', 'full-access', 'default',
+          ${at}, ${at}, NULL, NULL, ${payload}
+        )
+      `;
+    }
+
+    const acmeThreads = yield* listLinkedIssueThreads({
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/acme/issue/ENG-1",
+    });
+    const globexThreads = yield* listLinkedIssueThreads({
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/globex/issue/ENG-1",
+    });
+    expect(acmeThreads.threads.map((thread) => thread.id)).toEqual(["acme-thread", "both-thread"]);
+    expect(globexThreads.threads.map((thread) => thread.id)).toEqual([
+      "both-thread",
+      "globex-thread",
+    ]);
+    const legacyNoUrl = yield* listLinkedIssueThreads({
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+    });
+    expect(legacyNoUrl.threads.map((thread) => thread.id)).toEqual([
+      "acme-thread",
+      "both-thread",
+      "globex-thread",
+    ]);
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);

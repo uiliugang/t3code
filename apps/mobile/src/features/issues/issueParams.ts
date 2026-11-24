@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   IssueTrackerKind,
   ProjectId,
+  standaloneIssueWorkspace,
   type IssueListEntry,
   type IssueRef,
 } from "@t3tools/contracts";
@@ -15,35 +16,51 @@ export type IssueParams = {
   readonly host?: string;
   readonly scope: string;
   readonly issueKey: string;
+  readonly url?: string;
   /** The list row the issue was opened from, shown until its detail arrives. */
   readonly initialSummary?: IssueListEntry;
 };
 
 export function issueTarget(params: IssueParams) {
+  const url = params.url ?? params.initialSummary?.url;
   const input: IssueRef = {
     projectId: ProjectId.make(params.projectId),
     tracker: IssueTrackerKind.make(params.tracker),
     ...(params.host ? { host: params.host } : {}),
     scope: params.scope,
     key: params.issueKey,
+    ...(url ? { url } : {}),
   };
   return { environmentId: EnvironmentId.make(params.environmentId), input };
 }
 
 /** The params without the list row, for the screens an issue opens. */
-export function issueIdentity({ initialSummary: _, ...identity }: IssueParams) {
-  return identity;
+export function issueIdentity({ initialSummary, ...identity }: IssueParams) {
+  const url = identity.url ?? initialSummary?.url;
+  return url ? { ...identity, url } : identity;
 }
 
 /** The identity the Issues tab remembers and the list marks as selected. */
 export function issueParamsKey(
-  params: Pick<IssueParams, "environmentId" | "projectId" | "host" | "scope" | "issueKey">,
+  params: Pick<IssueParams, "environmentId" | "projectId" | "host" | "scope" | "issueKey"> & {
+    readonly tracker?: string | undefined;
+    readonly url?: string | undefined;
+  },
 ) {
+  const workspace =
+    params.tracker && params.url
+      ? standaloneIssueWorkspace({
+          tracker: IssueTrackerKind.make(params.tracker),
+          url: params.url,
+        })
+      : null;
+  const scope =
+    workspace === null ? params.scope.toLowerCase() : `${workspace}/${params.scope.toLowerCase()}`;
   return [
     params.environmentId,
     params.projectId,
     (params.host ?? "").toLowerCase(),
-    params.scope.toLowerCase(),
+    scope,
     params.issueKey,
   ].join("\u0000");
 }
@@ -61,6 +78,8 @@ export function selectedIssueKeyOf(params: object | undefined) {
         scope: value.scope,
         issueKey: value.issueKey,
         ...(typeof value.host === "string" ? { host: value.host } : {}),
+        ...(typeof value.tracker === "string" ? { tracker: value.tracker } : {}),
+        ...(typeof value.url === "string" ? { url: value.url } : {}),
       })
     : null;
 }

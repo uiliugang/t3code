@@ -30,6 +30,16 @@ export const IssueTrackerKind = TrimmedNonEmptyString.check(
 ).pipe(Schema.brand("IssueTrackerKind"));
 export type IssueTrackerKind = typeof IssueTrackerKind.Type;
 
+/**
+ * One saved account of a standalone tracker. A tracker's first account has none: it predates
+ * accounts, and keeps its credential and bindings unchanged.
+ */
+export const IssueTrackerAccountId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/),
+).pipe(Schema.brand("IssueTrackerAccountId"));
+export type IssueTrackerAccountId = typeof IssueTrackerAccountId.Type;
+
 export const IssueActor = PullRequestActor;
 export type IssueActor = typeof IssueActor.Type;
 
@@ -82,6 +92,8 @@ export const IssueRef = Schema.Struct({
   host: Schema.optional(TrimmedNonEmptyString),
   scope: TrimmedNonEmptyString,
   key: TrimmedNonEmptyString,
+  /** Optional issue web URL; pins standalone tracker reads and writes to the saved workspace. */
+  url: Schema.optional(TrimmedNonEmptyString),
 });
 export type IssueRef = typeof IssueRef.Type;
 
@@ -91,6 +103,8 @@ export const IssueScopeRef = Schema.Struct({
   tracker: IssueTrackerKind,
   host: Schema.optional(TrimmedNonEmptyString),
   scope: TrimmedNonEmptyString,
+  /** Optional issue web URL; pins standalone tracker reads and writes to the saved workspace. */
+  url: Schema.optional(TrimmedNonEmptyString),
 });
 export type IssueScopeRef = typeof IssueScopeRef.Type;
 
@@ -152,6 +166,14 @@ export const IssueEventKind = Schema.Literals([
 ]);
 export type IssueEventKind = typeof IssueEventKind.Type;
 
+export const IssueEventReference = Schema.Struct({
+  repository: TrimmedNonEmptyString,
+  number: PositiveInt,
+  kind: Schema.Literals(["issue", "pull-request"]),
+  url: TrimmedNonEmptyString,
+});
+export type IssueEventReference = typeof IssueEventReference.Type;
+
 export const IssueEvent = Schema.Struct({
   id: TrimmedNonEmptyString,
   kind: IssueEventKind,
@@ -159,6 +181,8 @@ export const IssueEvent = Schema.Struct({
   createdAt: IsoDateTime,
   /** What the event was about, where it has a subject: a label name, a login, a new title. */
   detail: Schema.NullOr(TrimmedNonEmptyString),
+  /** The issue or change request a `referenced` event came from, so a surface can open it. */
+  reference: Schema.optional(IssueEventReference),
 });
 export type IssueEvent = typeof IssueEvent.Type;
 
@@ -514,6 +538,8 @@ export const ThreadIssueKey = Schema.Struct({
   host: TrimmedNonEmptyString,
   scope: TrimmedNonEmptyString,
   key: TrimmedNonEmptyString,
+  /** Optional issue web URL; distinguishes standalone tracker workspaces that share a team key. */
+  url: Schema.optional(TrimmedNonEmptyString),
 });
 export type ThreadIssueKey = typeof ThreadIssueKey.Type;
 
@@ -533,12 +559,41 @@ export const ThreadIssueLink = Schema.Struct({
 });
 export type ThreadIssueLink = typeof ThreadIssueLink.Type;
 
+export function standaloneIssueWorkspace(
+  key: Pick<ThreadIssueKey, "tracker" | "url">,
+): string | null {
+  if (key.url === undefined || key.tracker !== "linear") return null;
+  try {
+    const parsed = new URL(key.url.trim());
+    if (parsed.protocol !== "https:" || parsed.host.toLowerCase() !== "linear.app") return null;
+    const [, workspace, resource] = parsed.pathname.split("/");
+    return workspace && resource === "issue" ? workspace.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function threadIssueKeyOf(key: ThreadIssueKey): string {
-  return `${key.tracker}\u0000${key.host.trim().toLowerCase()}\u0000${key.scope.trim().toLowerCase()}\u0000${key.key.trim()}`;
+  const workspace = standaloneIssueWorkspace(key);
+  const scope =
+    workspace === null
+      ? key.scope.trim().toLowerCase()
+      : `${workspace}/${key.scope.trim().toLowerCase()}`;
+  return `${key.tracker}\u0000${key.host.trim().toLowerCase()}\u0000${scope}\u0000${key.key.trim()}`;
 }
 
 export function threadIssueKeysEqual(left: ThreadIssueKey, right: ThreadIssueKey): boolean {
-  return threadIssueKeyOf(left) === threadIssueKeyOf(right);
+  if (
+    left.tracker !== right.tracker ||
+    left.host.trim().toLowerCase() !== right.host.trim().toLowerCase() ||
+    left.scope.trim().toLowerCase() !== right.scope.trim().toLowerCase() ||
+    left.key.trim() !== right.key.trim()
+  ) {
+    return false;
+  }
+  const leftWorkspace = standaloneIssueWorkspace(left);
+  const rightWorkspace = standaloneIssueWorkspace(right);
+  return leftWorkspace === null || rightWorkspace === null || leftWorkspace === rightWorkspace;
 }
 
 /** The threads an issue is linked to, most recently active first. */
@@ -584,6 +639,8 @@ export const MAX_ISSUE_TRACKER_ADDITIONAL_SCOPES = 250;
  */
 export const IssueTrackerProjectBinding = Schema.Struct({
   tracker: IssueTrackerKind,
+  /** The account the scope is read with; absent for the tracker's first account. */
+  accountId: Schema.optional(IssueTrackerAccountId),
   scope: TrimmedNonEmptyString,
   additionalScopes: Schema.optionalKey(
     Schema.Array(TrimmedNonEmptyString).check(
@@ -611,6 +668,8 @@ export type IssueTrackerScope = typeof IssueTrackerScope.Type;
  */
 export const IssueTrackerConnection = Schema.Struct({
   ...StandaloneIssueTrackerDescriptor.fields,
+  /** Which of the tracker's accounts this is; absent for its first. */
+  accountId: Schema.optional(IssueTrackerAccountId),
   /** A credential is stored. It may still be rejected, which `account` being null reports. */
   connected: Schema.Boolean,
   /** Who the credential signs in as, or null when there is none or it was refused. */
@@ -624,15 +683,29 @@ export const IssueTrackerConnection = Schema.Struct({
 export type IssueTrackerConnection = typeof IssueTrackerConnection.Type;
 
 export const IssueTrackerConnectionList = Schema.Struct({
+  /** Each standalone tracker's first account. */
   trackers: Schema.Array(IssueTrackerConnection),
-  /** Which standalone tracker scopes each bound project reads; a project absent here reads none. */
+  /** The accounts added beside a tracker's first, oldest first. Absent from older servers. */
+  accounts: Schema.optional(Schema.Array(IssueTrackerConnection)),
+  /**
+   * Which standalone tracker scopes each project bound with a tracker's first account reads. A
+   * project bound with an added account is in `accountBindings` instead, so older clients never
+   * read another account's team as the first account's.
+   */
   bindings: Schema.Record(ProjectId, IssueTrackerProjectBinding),
+  /** Projects bound with an added account. Absent from older servers. */
+  accountBindings: Schema.optional(Schema.Record(ProjectId, IssueTrackerProjectBinding)),
 });
 export type IssueTrackerConnectionList = typeof IssueTrackerConnectionList.Type;
 
-/** A credential for one standalone tracker; `null` disconnects it and unbinds its projects. */
+/**
+ * A credential for one standalone tracker account; `null` disconnects it and unbinds its
+ * projects. `addAccount` saves the credential as a new account beside the existing ones.
+ */
 export const IssueTrackerConnectInput = Schema.Struct({
   tracker: IssueTrackerKind,
+  accountId: Schema.optional(IssueTrackerAccountId),
+  addAccount: Schema.optional(Schema.Boolean),
   token: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
 });
 export type IssueTrackerConnectInput = typeof IssueTrackerConnectInput.Type;
@@ -641,6 +714,8 @@ export const IssueTrackerBindProjectInput = Schema.Struct({
   projectId: ProjectId,
   /** Null unbinds. */
   binding: Schema.NullOr(IssueTrackerProjectBinding),
+  /** On an unbind, the account the binding was made with; absent for a tracker's first. */
+  accountId: Schema.optionalKey(IssueTrackerAccountId),
 });
 export type IssueTrackerBindProjectInput = typeof IssueTrackerBindProjectInput.Type;
 

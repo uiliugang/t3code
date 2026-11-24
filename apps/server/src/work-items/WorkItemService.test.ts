@@ -653,6 +653,7 @@ it.effect(
         runs: ready.runs.map((run) => ({
           ...run,
           status: "preparing",
+          startedAt: null,
           workspacePreparation: { type: "worktree", baseRef: "main" },
         })),
       });

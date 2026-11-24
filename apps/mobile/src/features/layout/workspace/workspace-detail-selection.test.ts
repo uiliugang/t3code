@@ -29,6 +29,7 @@ const options = {
     "ThreadFiles",
     "PullRequest",
     "PullRequestReviewers",
+    "Issue",
     "Settings",
     "SettingsAppearance",
     "GitOverview",
@@ -97,6 +98,32 @@ describe("selectWorkspaceDetail", () => {
     const selected = select(settings, pullRequest);
     expect(page(selected)).toEqual({ names: ["Home", "PullRequest"], index: 1 });
     expect(selected.routes[0]?.key).toBe(settings.routes[0]?.key);
+  });
+
+  it("distinguishes same-key Linear issues across workspaces when reusing routes", () => {
+    const acme = {
+      name: "Issue",
+      params: {
+        environmentId: "env",
+        projectId: "p",
+        tracker: "linear",
+        host: "linear.app",
+        scope: "ENG",
+        issueKey: "ENG-1",
+        url: "https://linear.app/acme/issue/ENG-1/slug",
+      },
+    } as const;
+    const globex = {
+      name: "Issue",
+      params: { ...acme.params, url: "https://linear.app/globex/issue/ENG-1/slug" },
+    } as const;
+    // Pushing `globex` on top of `acme` (e.g. from a cross-workspace link) and then selecting `acme`
+    // in the list must reuse `acme`'s route key rather than `globex`'s top route.
+    const first = select(home(), acme);
+    const stacked = push(first, "Issue", globex.params);
+    const backToAcme = select(stacked, acme);
+    expect(backToAcme.routes[1]?.key).toBe(first.routes[1]?.key);
+    expect(backToAcme.routes[1]?.params).toEqual(acme.params);
   });
 
   it("puts Home under a cold-linked page and a sheet over the selection", () => {

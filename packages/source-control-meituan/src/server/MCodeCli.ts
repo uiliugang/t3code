@@ -30,6 +30,7 @@ export class MCodeError extends Schema.TaggedError<MCodeError, { readonly brand:
       "self-review",
     ]),
     cause: Schema.optional(Schema.Defect()),
+    userFacingDetail: Schema.optional(Schema.String),
   },
 ) {
   override get message(): string {

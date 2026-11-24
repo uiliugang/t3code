@@ -65,6 +65,7 @@ export function IssueThreadLinks({
     host: reference.host,
     scope: reference.scope,
     key: reference.key,
+    url: issue.url,
   };
   const relationsAtom = issueEnvironment.linkedThreads({ environmentId, input: key });
   const relations = useEnvironmentQuery(listsThreads ? relationsAtom : null);

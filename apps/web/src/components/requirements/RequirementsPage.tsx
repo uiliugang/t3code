@@ -3,9 +3,10 @@ import { msg, useGT } from "gt-react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
+  IssueTrackerKind,
   parseBranchIssueUrl,
+  standaloneIssueWorkspace,
   type IssueProvider,
-  type IssueTrackerKind,
   type ProjectId,
   type EnvironmentId,
   type ScopedThreadRef,
@@ -40,7 +41,11 @@ import {
   XIcon,
 } from "lucide-react";
 import { useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
-import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import {
+  useConnectedEnvironmentIds,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/server";
@@ -85,6 +90,7 @@ import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindin
 import { isTerminalFocused } from "../../lib/terminalFocus";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import {
+  isUnscopedLinearIssue,
   REQUIREMENTS_PANEL_REF,
   selectActiveRightPanelSurface,
   selectSelectedRightPanelSurface,
@@ -182,7 +188,9 @@ export function RequirementsPage() {
   const search = useSearch({ from: "/_chat/requirements" });
   const navigate = useNavigate({ from: "/requirements" });
   const primary = usePrimaryEnvironmentId();
-  const environmentId = search.environmentId ?? primary;
+  const connected = useConnectedEnvironmentIds();
+  const environmentId =
+    search.environmentId ?? primary ?? search.detailEnvironmentId ?? connected[0];
   return environmentId ? (
     <SidebarInset className="h-dvh overflow-hidden">
       <RequirementBoard
@@ -350,18 +358,36 @@ export function RequirementBoard({
     )
       return undefined;
     const environment = surface.environmentId ?? fallbackEnvironmentId;
+    if (surface.kind === "work-item") {
+      return entries.find(
+        (entry) =>
+          entry.environmentId === environment &&
+          entry.kind === "local" &&
+          entry.item.id === surface.workItemId,
+      );
+    }
+    const surfaceTracker = surface.kind === "issue" ? surface.tracker : surface.provider;
+    const surfaceWorkspace = surface.url
+      ? standaloneIssueWorkspace({
+          tracker: IssueTrackerKind.make(surfaceTracker),
+          url: surface.url,
+        })
+      : null;
     let match: EnvironmentRequirementEntry | undefined;
     for (const entry of entries) {
       if (entry.environmentId !== environment) continue;
-      if (surface.kind === "work-item") {
-        if (entry.kind === "local" && entry.item.id === surface.workItemId) return entry;
-      } else if (
+      if (
         entry.kind === "issue" &&
         entry.projectId === surface.projectId &&
-        entry.provider === (surface.kind === "issue" ? surface.tracker : surface.provider) &&
+        entry.provider === surfaceTracker &&
         entry.issue.id === (surface.kind === "issue" ? surface.key : surface.issueId) &&
         (surface.host === undefined || entry.host === surface.host) &&
-        (surface.scope === undefined || entry.scope === surface.scope)
+        (surface.scope === undefined || entry.scope === surface.scope) &&
+        (surfaceWorkspace === null ||
+          standaloneIssueWorkspace({
+            tracker: IssueTrackerKind.make(entry.provider),
+            url: entry.issue.url,
+          }) === surfaceWorkspace)
       ) {
         if (surface.host && surface.scope) return entry;
         if (match) return undefined;
@@ -457,6 +483,7 @@ export function RequirementBoard({
         host: entry.host,
         ...(entry.scope ? { scope: entry.scope } : {}),
         issueId: entry.issue.id,
+        url: entry.issue.url,
         title: entry.title,
       });
     selectOpened();
@@ -470,25 +497,35 @@ export function RequirementBoard({
     const panels = useRightPanelStore.getState();
     if (workItemId)
       panels.openWorkItem(rightPanelRef, { environmentId: detailEnvironmentId, workItemId });
-    else if (issueId && issueProjectId && issueTracker && issueScope)
-      panels.openIssue(rightPanelRef, {
+    else if (
+      issueId &&
+      issueProjectId &&
+      !isUnscopedLinearIssue(
+        issueTracker && issueScope ? issueTracker : issueProvider,
+        search.issueUrl,
+      )
+    ) {
+      const target = {
         environmentId: detailEnvironmentId,
         projectId: issueProjectId,
-        tracker: issueTracker,
         ...(search.issueHost ? { host: search.issueHost } : {}),
-        scope: issueScope,
-        key: issueId,
-      });
-    else if (issueId && issueProjectId)
-      panels.openRequirementIssue(rightPanelRef, {
-        environmentId: detailEnvironmentId,
-        projectId: issueProjectId,
-        provider: issueProvider,
-        ...(search.issueHost ? { host: search.issueHost } : {}),
-        ...(issueScope ? { scope: issueScope } : {}),
-        issueId,
-      });
-    else if (pullRequest)
+        ...(search.issueUrl ? { url: search.issueUrl } : {}),
+      };
+      if (issueTracker && issueScope)
+        panels.openIssue(rightPanelRef, {
+          ...target,
+          tracker: issueTracker,
+          scope: issueScope,
+          key: issueId,
+        });
+      else
+        panels.openRequirementIssue(rightPanelRef, {
+          ...target,
+          provider: issueProvider,
+          ...(issueScope ? { scope: issueScope } : {}),
+          issueId,
+        });
+    } else if (pullRequest)
       panels.openPullRequest(rightPanelRef, {
         environmentId: detailEnvironmentId,
         projectId: pullRequest.projectId,
@@ -507,6 +544,7 @@ export function RequirementBoard({
     issueProjectId,
     issueScope,
     search.issueHost,
+    search.issueUrl,
     issueProvider,
     issueTracker,
     pullRequest,
@@ -1504,6 +1542,9 @@ export function RequirementBoard({
                     ...(renderedRequirementIssue.scope
                       ? { scope: renderedRequirementIssue.scope }
                       : {}),
+                    ...("url" in renderedRequirementIssue && renderedRequirementIssue.url
+                      ? { url: renderedRequirementIssue.url }
+                      : {}),
                   }}
                   id={renderedRequirementIssue.issueId}
                   cwd={renderedIssueProject?.workspaceRoot ?? ""}
@@ -1521,6 +1562,7 @@ export function RequirementBoard({
                     ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
                     scope: renderedSurface.scope,
                     key: renderedSurface.key,
+                    ...(renderedSurface.url ? { url: renderedSurface.url } : {}),
                   }}
                   onSelectPullRequest={(reference) => {
                     useRightPanelStore.getState().openPullRequest(rightPanelRef, {
@@ -1528,6 +1570,14 @@ export function RequirementBoard({
                       repository: reference.repository,
                       number: reference.number,
                       ...(reference.host ? { host: reference.host } : {}),
+                      environmentId: panelEnvironmentId,
+                    });
+                    selectOpened();
+                  }}
+                  onSelectIssue={({ host, ...reference }) => {
+                    useRightPanelStore.getState().openIssue(rightPanelRef, {
+                      ...reference,
+                      ...(host === undefined ? {} : { host }),
                       environmentId: panelEnvironmentId,
                     });
                     selectOpened();
@@ -1558,7 +1608,7 @@ export function RequirementBoard({
               setCreatingTracker(null);
               setCreatingEnvironmentId(null);
             }}
-            created={(issueId) => {
+            created={(issueId, _title, issueUrl) => {
               useRightPanelStore.getState().openIssue(rightPanelRef, {
                 environmentId,
                 projectId: creatingTracker.projectId,
@@ -1566,6 +1616,7 @@ export function RequirementBoard({
                 scope: creatingTracker.scope,
                 ...(creatingTracker.host ? { host: creatingTracker.host } : {}),
                 key: issueId,
+                url: issueUrl,
               });
               setCreatingTracker(null);
               setCreatingEnvironmentId(null);
@@ -1602,6 +1653,7 @@ export function RequirementBoard({
                 provider: creatingIssue,
                 ...(issueScope ? { scope: issueScope } : {}),
                 issueId: issue.id,
+                url: issue.url,
                 title: issue.title,
               });
               selectOpened({

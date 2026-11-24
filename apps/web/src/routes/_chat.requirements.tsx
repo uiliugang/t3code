@@ -58,6 +58,7 @@ const Search = Schema.Struct({
   issueId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   issueProjectId: Schema.optionalKey(ProjectId),
   issueScope: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  issueUrl: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_048))),
   local: Schema.optionalKey(Schema.Boolean),
 });
 export type RequirementsSearch = typeof Search.Type;
@@ -69,6 +70,7 @@ const STRING_KEYS = [
   "issueScope",
   "issueHost",
   "issueTracker",
+  "issueUrl",
   "host",
   "q",
   "trackerQuery",

@@ -2,6 +2,7 @@ import { useAndroidFloatingTabs } from "../../settings/appearance/AppearancePref
 import { WorkspaceNoTabs } from "./WorkspaceNoTabs";
 import { useEnabledNavigationTabs } from "./navigation-tabs";
 import { NAVIGATION_TAB_ORDER } from "./navigation-tab-order";
+import { workspaceUsesColumns } from "./workspace-tabs-state";
 import { useNavigationState } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAndroidControlSizing } from "../../../components/ui/useAndroidControlSizing";
@@ -31,11 +32,10 @@ export function AndroidWorkspaceSidebar() {
   const { revealPrimarySidebar, startNewTask } = useAdaptiveWorkspaceLayout();
   const selectedPullRequest = useNavigationState(selectedPullRequestKey);
   const selectedIssue = useNavigationState(selectedIssueKey);
-  // Single-page tabs cover the sidebar.
+  // Settings and the one-page tabs cover the sidebar.
   const coveredByPage =
     (useAndroidWorkspaceRoot()?.settingsOpen ?? false) ||
-    workspace.state.selectedTab === "usage" ||
-    workspace.state.selectedTab === "requirements";
+    !workspaceUsesColumns(workspace.state.selectedTab);
   const bottomClearance = floatingTabsEnabled
     ? insets.bottom + FLOATING_TABS.bottom + FLOATING_TABS.edge + fabSize
     : 16;
@@ -51,7 +51,7 @@ export function AndroidWorkspaceSidebar() {
             <AndroidHomeFabLayout sidebar disabled={coveredByPage} onStartNewTask={startNewTask}>
               <WorkspaceThreadSidebar />
             </AndroidHomeFabLayout>
-          ) : tab === "usage" || tab === "requirements" ? (
+          ) : !workspaceUsesColumns(tab) ? (
             <View className="flex-1 bg-screen" />
           ) : tab === "issues" ? (
             <WorkspaceTabsContext value={context}>

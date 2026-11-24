@@ -107,6 +107,39 @@ export function trackerCreateTargets(
       : [];
   });
 }
+
+export function trackerCreateTargetKey(target: TrackerCreateTarget): string {
+  return `${target.projectId}/${target.host ?? ""}/${target.scope}`;
+}
+
+export function trackerCreateTargetLabel(
+  target: TrackerCreateTarget,
+  targets: ReadonlyArray<TrackerCreateTarget>,
+  projects: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly title: string;
+    readonly cwd?: string | undefined;
+    readonly workspaceRoot?: string | undefined;
+  }>,
+): string {
+  const base = `${requirementTrackerLabel[target.provider]} · ${target.scope}`;
+  const matchingScope = targets.filter(
+    (other) =>
+      other.provider === target.provider &&
+      other.scope.toLowerCase() === target.scope.toLowerCase(),
+  );
+  if (matchingScope.length <= 1) return base;
+  const project = projects.find((entry) => entry.id === target.projectId);
+  if (!project) return `${base} (${target.projectId})`;
+  const titleShared = matchingScope.some((other) => {
+    if (other === target) return false;
+    const otherProject = projects.find((entry) => entry.id === other.projectId);
+    return otherProject?.title === project.title;
+  });
+  const location = project.cwd ?? project.workspaceRoot;
+  if (titleShared && location) return `${base} (${project.title} · ${location})`;
+  return `${base} (${project.title})`;
+}
 export type RequirementSource = "all" | RequirementTracker | "local";
 type LegacyPage = typeof RequirementIssueListResult.Type;
 type LegacyGroup = LegacyPage["groups"][number];

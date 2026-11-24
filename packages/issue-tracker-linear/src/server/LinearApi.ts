@@ -19,7 +19,10 @@ import {
 import { HttpClient } from "effect/http";
 import * as Headers from "effect/http/Headers";
 import { LINEAR_KIND } from "../shared/issueUrl.ts";
-import { IssueTrackerError } from "@t3tools/source-control-core/server/IssueTracker";
+import {
+  IssueTrackerError,
+  type IssueTrackerCredentialSnapshot,
+} from "@t3tools/source-control-core/server/IssueTracker";
 import * as IssueTrackerHost from "@t3tools/source-control-core/server/IssueTrackerHost";
 
 import type {
@@ -93,6 +96,9 @@ export interface LinearTeamScope {
 export class LinearApi extends Context.Service<
   LinearApi,
   {
+    readonly snapshotCredential: (
+      operation: string,
+    ) => Effect.Effect<IssueTrackerCredentialSnapshot, IssueTrackerError>;
     /** Who a credential is, and the teams it reaches. Takes the token so it can vet a new one. */
     readonly viewer: (token?: string) => Effect.Effect<
       {
@@ -271,6 +277,19 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+  const tokenFor = (operation: string) =>
+    Effect.flatMap(Effect.serviceOption(LinearToken), (pinned) =>
+      Option.isSome(pinned) ? Effect.succeed(pinned.value) : storedToken(operation),
+    );
+
+  const snapshotCredential: LinearApi["Service"]["snapshotCredential"] = (operation) =>
+    Effect.map(
+      tokenFor(operation),
+      (token): IssueTrackerCredentialSnapshot =>
+        (effect) =>
+          Effect.provideService(effect, LinearToken, token),
+    );
+
   const call = Effect.fn("LinearApi.call")(function* <A>(
     operation: string,
     run: (
@@ -279,7 +298,7 @@ export const make = Effect.gen(function* () {
     token?: string,
   ): Effect.fn.Return<A, IssueTrackerError> {
     yield* Effect.annotateCurrentSpan({ "linear.operation": operation });
-    const key = token ?? (yield* storedToken(operation));
+    const key = token ?? (yield* tokenFor(operation));
     return yield* run(client).pipe(
       Effect.catch((error) =>
         Effect.flatMap(Clock.currentTimeMillis, (now) =>
@@ -425,6 +444,7 @@ export const make = Effect.gen(function* () {
         );
 
   return LinearApi.of({
+    snapshotCredential,
     viewer,
     listIssues,
     getIssue,

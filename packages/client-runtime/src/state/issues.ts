@@ -1,4 +1,6 @@
 import {
+  IssueTrackerKind,
+  standaloneIssueWorkspace,
   WS_METHODS,
   type EnvironmentId,
   type IssueAssigneeCandidate,
@@ -13,6 +15,7 @@ import {
   type IssueRef,
   type IssueScopeRef,
 } from "@t3tools/contracts";
+import { parseLinearIssueUrl } from "@t3tools/issue-tracker-linear/shared/issueUrl";
 import type * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -33,9 +36,50 @@ import { request } from "../rpc/client.ts";
 
 /** One row's identity across list pages and detail reads; hosts compare case-insensitively. */
 export function issueEntryKey(
-  entry: Pick<IssueListEntry, "projectId" | "host" | "scope" | "key">,
+  entry: Pick<IssueListEntry, "projectId" | "host" | "scope" | "key"> & {
+    readonly tracker?: IssueTrackerKind | string | undefined;
+    readonly url?: string | undefined;
+  },
 ): string {
-  return `${entry.projectId}\u0000${entry.host.toLowerCase()}\u0000${entry.scope.toLowerCase()}\u0000${entry.key}`;
+  const workspace =
+    entry.tracker && entry.url
+      ? standaloneIssueWorkspace({
+          tracker: IssueTrackerKind.make(entry.tracker),
+          url: entry.url,
+        })
+      : null;
+  const scope =
+    workspace === null ? entry.scope.toLowerCase() : `${workspace}/${entry.scope.toLowerCase()}`;
+  return `${entry.projectId}\u0000${entry.host.toLowerCase()}\u0000${scope}\u0000${entry.key}`;
+}
+
+export function normalizeIssueDetailInput({
+  projectId,
+  tracker,
+  host,
+  scope,
+  key,
+  url,
+}: IssueRef): IssueRef {
+  let canonicalLinearUrl: string | null = null;
+  if (tracker === "linear" && url !== undefined) {
+    try {
+      const parsed = parseLinearIssueUrl(new URL(url.trim()));
+      if (parsed !== null) {
+        canonicalLinearUrl = `https://linear.app/${parsed.workspace.toLowerCase()}/issue/${parsed.key}`;
+      }
+    } catch {
+      canonicalLinearUrl = null;
+    }
+  }
+  return {
+    projectId,
+    tracker,
+    ...(host === undefined ? {} : { host }),
+    scope,
+    key,
+    ...(canonicalLinearUrl === null ? {} : { url: canonicalLinearUrl }),
+  };
 }
 
 /**
@@ -179,20 +223,13 @@ export function createIssueEnvironmentAtoms<R, E>(
   const detail = (
     {
       environmentId,
-      input: { projectId, tracker, host, scope, key },
+      input,
     }: {
       readonly environmentId: EnvironmentId;
       readonly input: IssueRef;
     },
     mountScope?: string,
-  ) =>
-    detailQuery(
-      {
-        environmentId,
-        input: { projectId, tracker, ...(host === undefined ? {} : { host }), scope, key },
-      },
-      mountScope,
-    );
+  ) => detailQuery({ environmentId, input: normalizeIssueDetailInput(input) }, mountScope);
   const refreshDetail = (
     target: Parameters<typeof detail>[0],
     registry: AtomRegistry.AtomRegistry,

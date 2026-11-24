@@ -3,7 +3,15 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, RunId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { isStandaloneIssueLink } from "@t3tools/client-runtime/issue-links";
+import {
+  EnvironmentId,
+  IssueTrackerKind,
+  RunId,
+  standaloneIssueWorkspace,
+  ThreadId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import {
   requirementTrackerLabel,
   type RequirementTracker,
@@ -120,6 +128,7 @@ export type RightPanelSurface =
       host?: string;
       scope?: string;
       issueId: string;
+      url?: string;
       title?: string;
     }
   | {
@@ -156,7 +165,7 @@ export function decodeThreadSurface(surface: object): ThreadSurface | null {
 }
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 16;
+const RIGHT_PANEL_STORAGE_VERSION = 17;
 
 export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
   EnvironmentId.make("pull-requests-panel"),
@@ -420,6 +429,7 @@ export interface RequirementIssueSurfaceTarget {
   host?: string;
   scope?: string;
   issueId: string;
+  url?: string;
   title?: string;
 }
 
@@ -428,7 +438,15 @@ function requirementIssueSurfaceId(
 ): RequirementIssueSurface["id"] {
   const environment =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
-  const scope = target.scope === undefined ? "" : `${encodeURIComponent(target.scope)}:`;
+  const workspace = standaloneIssueWorkspace({
+    tracker: IssueTrackerKind.make(target.provider),
+    ...(target.url === undefined ? {} : { url: target.url }),
+  });
+  const rawScope =
+    workspace === null
+      ? target.scope
+      : `${workspace}/${target.scope === undefined ? "" : target.scope}`;
+  const scope = rawScope === undefined ? "" : `${encodeURIComponent(rawScope)}:`;
   const host = target.host ? `${encodeURIComponent(target.host)}:` : "";
   return `requirement-issue:${environment}${encodeURIComponent(target.projectId)}:${target.provider}:${host}${scope}${encodeURIComponent(target.issueId)}`;
 }
@@ -443,6 +461,7 @@ function requirementIssueSurface(target: RequirementIssueSurfaceTarget): Require
     ...(target.host ? { host: target.host } : {}),
     ...(typeof target.scope === "string" ? { scope: target.scope } : {}),
     issueId: target.issueId,
+    ...(typeof target.url === "string" ? { url: target.url } : {}),
     ...(typeof target.title === "string" ? { title: target.title } : {}),
   };
 }
@@ -483,11 +502,17 @@ export interface IssueSurfaceTarget {
   url?: string;
 }
 
-function issueSurfaceId(target: Omit<IssueSurfaceTarget, "url">): IssueSurface["id"] {
+function issueSurfaceId(target: IssueSurfaceTarget): IssueSurface["id"] {
   const environment =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
   const host = target.host === undefined ? "" : `${encodeURIComponent(target.host.toLowerCase())}:`;
-  return `issue:${environment}${encodeURIComponent(target.projectId)}:${target.tracker}:${host}${encodeURIComponent(target.scope.toLowerCase())}:${encodeURIComponent(target.key)}`;
+  const workspace = standaloneIssueWorkspace({
+    tracker: IssueTrackerKind.make(target.tracker),
+    ...(target.url === undefined ? {} : { url: target.url }),
+  });
+  const scope =
+    workspace === null ? target.scope.toLowerCase() : `${workspace}/${target.scope.toLowerCase()}`;
+  return `issue:${environment}${encodeURIComponent(target.projectId)}:${target.tracker}:${host}${encodeURIComponent(scope)}:${encodeURIComponent(target.key)}`;
 }
 
 function issueSurface(target: IssueSurfaceTarget): IssueSurface {
@@ -502,6 +527,20 @@ function issueSurface(target: IssueSurfaceTarget): IssueSurface {
     key: target.key,
     ...(typeof target.url === "string" ? { url: target.url } : {}),
   };
+}
+
+export function hasOpenRightPanelSurface(
+  panel: ThreadRightPanelState,
+  surface: RightPanelSurface,
+): boolean {
+  if (!panel.isOpen) return false;
+  const id =
+    surface.kind === "issue"
+      ? issueSurfaceId(surface)
+      : surface.kind === "requirement-issue"
+        ? requirementIssueSurfaceId(surface)
+        : surface.id;
+  return panel.surfaces.some((current) => current.id === id);
 }
 
 export function pullRequestSurface(target: {
@@ -709,6 +748,16 @@ function normalizeRevealLine(line: number | undefined): number | null {
   return Math.max(1, Math.trunc(line));
 }
 
+export function isUnscopedLinearIssue(tracker: string, url: string | undefined): boolean {
+  return tracker === "linear" && (!url || !isStandaloneIssueLink(url));
+}
+
+export function isUnscopedLinearSurface(surface: RightPanelSurface): boolean {
+  if (surface.kind !== "issue" && surface.kind !== "requirement-issue") return false;
+  const tracker = surface.kind === "issue" ? surface.tracker : surface.provider;
+  return isUnscopedLinearIssue(tracker, surface.url);
+}
+
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
@@ -726,6 +775,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             .map(([threadKey, threadState]) => {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
+              const migratedSurfaceIds = new Map<string, string>();
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     if (!surface || typeof surface !== "object") return [];
@@ -736,6 +786,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     }
                     // Also drops kinds this build does not know, such as one a newer build saved.
                     if (!(RIGHT_PANEL_KINDS as ReadonlyArray<unknown>).includes(kind)) return [];
+                    if (isUnscopedLinearSurface(surface)) return [];
                     if (surface.kind === "linked-thread") {
                       const decoded = decodeLinkedThreadSurface(surface);
                       return decoded === null ? [] : [decoded];
@@ -790,12 +841,14 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         return [];
                       }
                       const { environmentId, ...rest } = surface;
-                      return [
-                        issueSurface({
-                          ...rest,
-                          ...(typeof environmentId === "string" ? { environmentId } : {}),
-                        }),
-                      ];
+                      const rebuilt = issueSurface({
+                        ...rest,
+                        ...(typeof environmentId === "string" ? { environmentId } : {}),
+                      });
+                      if (typeof surface.id === "string" && surface.id !== rebuilt.id) {
+                        migratedSurfaceIds.set(surface.id, rebuilt.id);
+                      }
+                      return [rebuilt];
                     }
                     if (surface.kind === "requirement-issue") {
                       if (
@@ -807,12 +860,14 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         return [];
                       }
                       const { environmentId, ...rest } = surface;
-                      return [
-                        requirementIssueSurface({
-                          ...rest,
-                          ...(typeof environmentId === "string" ? { environmentId } : {}),
-                        }),
-                      ];
+                      const rebuilt = requirementIssueSurface({
+                        ...rest,
+                        ...(typeof environmentId === "string" ? { environmentId } : {}),
+                      });
+                      if (typeof surface.id === "string" && surface.id !== rebuilt.id) {
+                        migratedSurfaceIds.set(surface.id, rebuilt.id);
+                      }
+                      return [rebuilt];
                     }
                     if (surface.kind === "work-item") {
                       if (typeof surface.workItemId !== "string") return [];
@@ -863,7 +918,9 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 typeof savedActiveSurfaceId === "string" &&
                 savedActiveSurfaceId.startsWith("side-chat:")
                   ? `thread:${savedActiveSurfaceId.slice("side-chat:".length)}`
-                  : savedActiveSurfaceId;
+                  : typeof savedActiveSurfaceId === "string"
+                    ? (migratedSurfaceIds.get(savedActiveSurfaceId) ?? savedActiveSurfaceId)
+                    : savedActiveSurfaceId;
               const persistedActiveSurfaceId = surfaces.some(
                 (surface) => surface.id === rawActiveSurfaceId,
               )
@@ -1582,6 +1639,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       }),
       migrate: migratePersistedRightPanelState,
+      merge: (persisted, current) =>
+        persisted === undefined
+          ? current
+          : { ...current, ...migratePersistedRightPanelState(persisted) },
     },
   ),
 );

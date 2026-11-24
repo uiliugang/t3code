@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  IssueOperationError,
   IssueTrackerKind,
   ProjectId,
   ProviderInstanceId,
@@ -151,6 +152,7 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
   issueLayer?: Layer.Layer<IssueService.IssueService>,
 ) {
   const links = yield* Ref.make<ReadonlyArray<ThreadIssueService.LinkThreadIssueInput>>([]);
+  const unlinks = yield* Ref.make<ReadonlyArray<ThreadIssueService.UnlinkThreadIssueInput>>([]);
   const layerDependencies = Layer.mergeAll(
     projectLayer,
     Layer.mock(Orchestrator.OrchestratorV2)({
@@ -182,7 +184,10 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
         Ref.update(links, (recorded) => [...recorded, input]).pipe(
           Effect.as({ alreadyLinked: false }),
         ),
-      unlink: () => Effect.succeed({ wasLinked: true }),
+      unlink: (input) =>
+        Ref.update(unlinks, (recorded) => [...recorded, input]).pipe(
+          Effect.as({ wasLinked: true }),
+        ),
     }),
     McpToolAccessTestkit.liveThreadsLayer,
   );
@@ -207,7 +212,7 @@ const makeHarness = Effect.fn("makeIssuesToolkitHarness")(function* (
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
       Effect.provide(layerDependencies),
     );
-  return { links, call };
+  return { links, unlinks, call };
 });
 
 describe("issue toolkit handlers", () => {
@@ -229,6 +234,7 @@ describe("issue toolkit handlers", () => {
         },
         parseIssueUrl: (link) =>
           link.href === url ? { host, workspace: "acme", scope: "ENG", key: "ENG-7" } : null,
+        snapshotCredential: () => Effect.succeed((effect) => effect),
         probeCredential: () => Effect.succeed({ account: "user", scopes: [] }),
         getViewer: () => Effect.succeed("user"),
         listIssues: () => Effect.succeed({ items: [], nextCursor: null }),
@@ -303,6 +309,7 @@ describe("issue toolkit handlers", () => {
           credential: { label: "Personal API key", helpUrl: null },
         },
         parseIssueUrl: () => null,
+        snapshotCredential: () => Effect.succeed((effect) => effect),
         probeCredential: () => Effect.succeed({ account: "user", scopes: [] }),
         getViewer: () => Effect.succeed("user"),
         listIssues: () => Effect.succeed({ items: [], nextCursor: null }),
@@ -410,6 +417,7 @@ describe("issue toolkit handlers", () => {
             host: "github.com",
             scope: "t3tools/t3code",
             key: "7",
+            url: "https://github.com/T3Tools/T3Code/issues/7",
           },
           url: "https://github.com/T3Tools/T3Code/issues/7",
           displayKey: detail.displayKey,
@@ -455,5 +463,208 @@ describe("issue toolkit handlers", () => {
       const unlinked = yield* harness.call("unlink_issue", { url: detail.url });
       expect(unlinked.wasLinked).toBe(true);
     }),
+  );
+
+  it.effect(
+    "unlinks the current bound Linear workspace's issue by key even after a project rebind, and refuses when metadata lookup fails",
+    () =>
+      Effect.gen(function* () {
+        const tracker = IssueTrackerKind.make("linear");
+        const acmeUrl = "https://linear.app/acme/issue/ENG-1/login";
+        const globexUrl = "https://linear.app/globex/issue/ENG-1/login";
+        const failLookup = yield* Ref.make(false);
+        const issueLayer = Layer.mock(IssueService.IssueService)({
+          projectScope: (projectId) =>
+            Effect.succeed({
+              projectId,
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+            }),
+          linkMetadata: (ref) =>
+            Effect.gen(function* () {
+              if (yield* Ref.get(failLookup)) {
+                return yield* new IssueOperationError({
+                  operation: "linkMetadata",
+                  detail: "offline",
+                });
+              }
+              return {
+                projectId: ref.projectId,
+                tracker,
+                host: "linear.app",
+                scope: ref.scope,
+                key: ref.key,
+                displayKey: ref.key,
+                title: "Globex",
+                url: globexUrl,
+              };
+            }),
+        });
+        // Both links share PROJECT_ID (Acme linked earlier, then PROJECT_ID rebound to Globex).
+        const harness = yield* makeHarness(
+          [
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              projectId: PROJECT_ID,
+              url: acmeUrl,
+              source: "manual",
+              linkedAt: "2026-08-10T00:00:00.000Z",
+              displayKey: "ENG-1",
+              title: "Acme",
+            },
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              projectId: PROJECT_ID,
+              url: globexUrl,
+              source: "manual",
+              linkedAt: "2026-08-11T00:00:00.000Z",
+              displayKey: "ENG-1",
+              title: "Globex",
+            },
+          ],
+          issueLayer,
+        );
+        const unlinked = yield* harness.call("unlink_issue", { key: "ENG-1" });
+        expect(unlinked).toMatchObject({
+          projectId: PROJECT_ID,
+          key: "ENG-1",
+          url: globexUrl,
+          wasLinked: true,
+        });
+        expect(yield* Ref.get(harness.unlinks)).toEqual([
+          {
+            threadId: THREAD_ID,
+            key: {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              url: globexUrl,
+            },
+          },
+        ]);
+
+        // When the thread holds only Acme's ENG-1, unlinking ENG-1 under Globex reports wasLinked: false.
+        const singleAcmeHarness = yield* makeHarness(
+          [
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              projectId: PROJECT_ID,
+              url: acmeUrl,
+              source: "manual",
+              linkedAt: "2026-08-10T00:00:00.000Z",
+              displayKey: "ENG-1",
+              title: "Acme",
+            },
+          ],
+          issueLayer,
+        );
+        const notLinkedInGlobex = yield* singleAcmeHarness.call("unlink_issue", { key: "ENG-1" });
+        expect(notLinkedInGlobex).toMatchObject({
+          projectId: PROJECT_ID,
+          key: "ENG-1",
+          wasLinked: false,
+        });
+        expect(yield* Ref.get(singleAcmeHarness.unlinks)).toEqual([]);
+
+        // When metadata lookup fails, leave links untouched instead of guessing.
+        yield* Ref.set(failLookup, true);
+        const failed = yield* harness.call("unlink_issue", { key: "ENG-1" }).pipe(Effect.flip);
+        expect(failed).toBeDefined();
+        expect(yield* Ref.get(harness.unlinks)).toHaveLength(1);
+
+        // Unlinking by an explicit saved URL succeeds without any live tracker read (even when
+        // resolveUrl fails because the issue was deleted or the tracker account was disconnected).
+        const offlineLayer = Layer.mock(IssueService.IssueService)({
+          resolveUrl: () =>
+            Effect.fail(
+              new IssueOperationError({
+                operation: "resolveUrl",
+                reason: "not-found",
+                detail: "Issue deleted",
+              }),
+            ),
+        });
+        const offlineHarness = yield* makeHarness(
+          [
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              projectId: PROJECT_ID,
+              url: acmeUrl,
+              source: "manual",
+              linkedAt: "2026-08-10T00:00:00.000Z",
+              displayKey: "ENG-1",
+              title: "Acme",
+            },
+            {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-10",
+              projectId: PROJECT_ID,
+              url: "https://linear.app/acme/issue/ENG-10/logout",
+              source: "manual",
+              linkedAt: "2026-08-11T00:00:00.000Z",
+              displayKey: "ENG-10",
+              title: "Acme Ten",
+            },
+          ],
+          offlineLayer,
+        );
+        // Unlinking ENG-10 must NOT match the earlier ENG-1 prefix!
+        const unlinkedTen = yield* offlineHarness.call("unlink_issue", {
+          url: "https://linear.app/acme/issue/ENG-10/different-slug",
+        });
+        expect(unlinkedTen).toMatchObject({
+          projectId: PROJECT_ID,
+          tracker: "linear",
+          key: "ENG-10",
+          url: "https://linear.app/acme/issue/ENG-10/logout",
+          wasLinked: true,
+        });
+        const unlinkedOffline = yield* offlineHarness.call("unlink_issue", { url: acmeUrl });
+        expect(unlinkedOffline).toMatchObject({
+          projectId: PROJECT_ID,
+          tracker: "linear",
+          key: "ENG-1",
+          url: acmeUrl,
+          wasLinked: true,
+        });
+        expect(yield* Ref.get(offlineHarness.unlinks)).toEqual([
+          {
+            threadId: THREAD_ID,
+            key: {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-10",
+              url: "https://linear.app/acme/issue/ENG-10/logout",
+            },
+          },
+          {
+            threadId: THREAD_ID,
+            key: {
+              tracker,
+              host: "linear.app",
+              scope: "ENG",
+              key: "ENG-1",
+              url: acmeUrl,
+            },
+          },
+        ]);
+      }),
   );
 });

@@ -188,6 +188,42 @@ describe("reopenClosedView", () => {
     ).toEqual([]);
   });
 
+  it("skips a closed Linear issue without a workspace URL", async () => {
+    const stale = {
+      id: "stale",
+      kind: "panel-tab",
+      threadRef,
+      surface: {
+        kind: "issue",
+        id: "issue:project:linear:ENG:ENG-42",
+        projectId: "project",
+        tracker: "linear",
+        scope: "ENG",
+        key: "ENG-42",
+      },
+    } as const;
+    const pinned = {
+      ...stale,
+      id: "pinned",
+      surface: { ...stale.surface, url: "https://linear.app/globex/issue/ENG-42" },
+    } as const;
+    const owner = {
+      environmentKnown: true,
+      catalogReady: true,
+      ownerExists: true,
+      sideChatExists: true,
+      shellLive: true,
+      panel: { isOpen: false, activeSurfaceId: null, surfaces: [] },
+    };
+    expect(planNextReopen([stale, pinned], () => owner)).toEqual({
+      drop: [stale],
+      restore: pinned,
+    });
+    expect(await reopenClosedView(stale, { openPreview: vi.fn(), workspaceAvailable: true })).toBe(
+      false,
+    );
+  });
+
   it("recreates a server browser tab with its saved URL, viewport, profile, zoom and appearance, then selects its new ID", async () => {
     using _runtime = vi.spyOn(previewRuntime, "previewRuntimeFor").mockReturnValue("server");
     const openPreview = vi.fn(async () => AsyncResult.success({ ...snapshot, tabId: "new-tab" }));
@@ -302,4 +338,49 @@ describe("planNextReopen", () => {
     expect(plan.drop.map((e) => e.id)).toEqual(dropped);
     expect(plan.restore?.id ?? null).toBe(restored);
   });
+
+  it.each(["issue", "requirement-issue"] as const)(
+    "skips a legacy Linear %s entry when its workspace-scoped tab is already open",
+    (kind) => {
+      const panels = useRightPanelStore.getState();
+      const target = {
+        projectId: "project",
+        scope: "ENG",
+        url: "https://linear.app/acme/issue/ENG-42",
+      };
+      const surface =
+        kind === "issue"
+          ? ({
+              ...target,
+              kind,
+              id: "issue:project:linear:eng:ENG-42",
+              tracker: "linear",
+              key: "ENG-42",
+            } as const)
+          : ({
+              ...target,
+              kind,
+              id: "requirement-issue:project:linear:ENG:ENG-42",
+              provider: "linear",
+              issueId: "ENG-42",
+            } as const);
+      if (surface.kind === "issue") panels.openIssue(threadRef, surface);
+      else panels.openRequirementIssue(threadRef, surface);
+      const panel = selectThreadRightPanelState(
+        useRightPanelStore.getState().byThreadKey,
+        threadRef,
+      );
+      const legacy: ClosedViewEntry = {
+        id: "legacy",
+        kind: "panel-tab",
+        threadRef,
+        surface,
+      };
+      const next = entries[1]!;
+      expect(planNextReopen([legacy, next], () => ({ ...known, panel }))).toEqual({
+        drop: [legacy],
+        restore: next,
+      });
+    },
+  );
 });

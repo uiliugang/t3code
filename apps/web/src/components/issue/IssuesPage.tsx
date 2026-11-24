@@ -9,15 +9,17 @@ import {
 } from "@t3tools/client-runtime/issue-list";
 import { issueTrackerDetailText } from "@t3tools/client-runtime/state/issue-trackers";
 import { issueEntryKey } from "@t3tools/client-runtime/state/issues";
-import type {
-  EnvironmentId,
-  IssueInvolvement,
-  IssueListInput,
-  IssueListSort,
-  IssueListState,
-  IssueTrackerSummary,
-  ProjectId,
-  ScopedThreadRef,
+import {
+  IssueTrackerKind,
+  standaloneIssueWorkspace,
+  type EnvironmentId,
+  type IssueInvolvement,
+  type IssueListInput,
+  type IssueListSort,
+  type IssueListState,
+  type IssueTrackerSummary,
+  type ProjectId,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
@@ -96,6 +98,7 @@ export interface IssuesSearch extends IssueListPreferences {
   readonly tracker?: string | undefined;
   readonly scope?: string | undefined;
   readonly key?: string | undefined;
+  readonly url?: string | undefined;
 }
 
 const STATE_TABS = [
@@ -170,6 +173,7 @@ function surfaceMatchesRow(
     readonly host: string;
     readonly scope: string;
     readonly key: string;
+    readonly url?: string | undefined;
   },
   fallbackEnvironmentId: EnvironmentId,
 ) {
@@ -180,21 +184,46 @@ function surfaceMatchesRow(
       : undefined) ?? fallbackEnvironmentId;
   if (surfaceEnvironmentId !== row.environmentId) return false;
   if (surface.kind === "issue") {
+    const surfaceWorkspace = surface.url
+      ? standaloneIssueWorkspace({
+          tracker: IssueTrackerKind.make(surface.tracker),
+          url: surface.url,
+        })
+      : null;
+    const rowWorkspace = row.url
+      ? standaloneIssueWorkspace({
+          tracker: IssueTrackerKind.make(row.tracker),
+          url: row.url,
+        })
+      : null;
     return (
-      issueEntryKey({
-        ...surface,
-        host: surface.host ?? "",
-        projectId: surface.projectId as ProjectId,
-      }) === issueEntryKey(row)
+      surface.projectId === row.projectId &&
+      surface.host?.toLowerCase() === row.host.toLowerCase() &&
+      surface.scope.toLowerCase() === row.scope.toLowerCase() &&
+      surface.key === row.key &&
+      (surfaceWorkspace === null || rowWorkspace === null || surfaceWorkspace === rowWorkspace)
     );
   }
   if (surface.kind === "requirement-issue") {
+    const surfaceWorkspace = surface.url
+      ? standaloneIssueWorkspace({
+          tracker: IssueTrackerKind.make(surface.provider),
+          url: surface.url,
+        })
+      : null;
+    const rowWorkspace = row.url
+      ? standaloneIssueWorkspace({
+          tracker: IssueTrackerKind.make(row.tracker),
+          url: row.url,
+        })
+      : null;
     return (
       surface.projectId === row.projectId &&
       surface.provider === row.tracker &&
       surface.issueId === row.key &&
       (surface.scope === undefined || surface.scope === row.scope) &&
-      (surface.host === undefined || surface.host === row.host)
+      (surface.host === undefined || surface.host === row.host) &&
+      (surfaceWorkspace === null || rowWorkspace === null || surfaceWorkspace === rowWorkspace)
     );
   }
   return false;
@@ -393,7 +422,7 @@ export function TrackerIssuesView({
     });
   };
 
-  const selectEntry = (entry: IssueRowTarget) => {
+  const selectEntry = (entry: Omit<IssueRowTarget, "host"> & { readonly host?: string }) => {
     const panels = useRightPanelStore.getState();
     panels.openIssue(panelRef, entry);
     updateSearch({

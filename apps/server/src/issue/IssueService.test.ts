@@ -2,8 +2,11 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import * as LinearDriver from "@t3tools/issue-tracker-linear/server/driver";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import {
+  IssueTrackerAccountId,
   IssueTrackerKind,
   type IssueTrackerProjectBinding,
   SourceControlProviderKind,
@@ -16,6 +19,10 @@ import {
   type StandaloneIssueTrackerApi,
   type TrackerIssueDetail,
 } from "@t3tools/source-control-core/server/IssueTracker";
+import {
+  IssueTrackerAccount,
+  IssueTrackerHost,
+} from "@t3tools/source-control-core/server/IssueTrackerHost";
 
 import { PersistenceSqlError } from "../persistence/Errors.ts";
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
@@ -23,6 +30,8 @@ import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
+import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import * as WorkflowForge from "../workflows/WorkflowForge.ts";
 import * as IssueService from "./IssueService.ts";
 import * as RequirementIssues from "../sourceControl/IssueService.ts";
 import { RequirementIssueError } from "@t3tools/contracts";
@@ -61,12 +70,14 @@ function fakeStandaloneTracker(
         ["https://linear.app/acme/issue/ENG-1/issue-title", "acme"],
         ["https://linear.app/acme/issue/ENG-1/canonical-title", "acme"],
         ["https://linear.app/other-workspace/issue/ENG-1/old-title", "other-workspace"],
+        ["https://linear.app/other-workspace/issue/ENG-1/canonical-title", "other-workspace"],
       ]);
       const workspace = links.get(url.href);
       return workspace === undefined
         ? null
         : { host: "linear.app", workspace, scope: "ENG", key: "ENG-1" };
     },
+    snapshotCredential: () => Effect.succeed((effect) => effect),
     probeCredential: () => Effect.succeed({ account: "julius", scopes: [] }),
   };
 }
@@ -543,6 +554,176 @@ describe("IssueService", () => {
 });
 
 describe("IssueService with a standalone tracker", () => {
+  it.effect("keeps a workflow's unqualified issue reference read-only across projects", () =>
+    Effect.gen(function* () {
+      const otherAccount = IssueTrackerAccountId.make("second");
+      const writers: Array<IssueTrackerAccountId | null> = [];
+      const service = yield* makeService({
+        projects: [project({ id: "ops" }), project({ id: "eng" })],
+        trackers: [
+          fakeStandaloneTracker({
+            comment: () => Effect.map(IssueTrackerAccount, (account) => void writers.push(account)),
+          }),
+        ],
+        bindings: {
+          ops: { tracker: LINEAR, scope: "OPS" },
+          eng: { tracker: LINEAR, accountId: otherAccount, scope: "ENG" },
+        },
+      });
+      const { issues } = yield* WorkflowForge.WorkflowForge.pipe(
+        Effect.provide(
+          WorkflowForge.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(IssueService.IssueService, service),
+                Layer.mock(PullRequestService.PullRequestService)({}),
+                Layer.mock(ProjectService.ProjectService)({}),
+              ),
+            ),
+          ),
+        ),
+      );
+      const ref = {
+        projectId: "ops" as ProjectId,
+        tracker: LINEAR,
+        host: "linear.app",
+        scope: "ENG",
+        key: "ENG-1",
+      };
+      const readable = yield* service.detail(ref);
+      expect(readable.writable).toBe(false);
+      expect(yield* issues.comment(ref, "Update").pipe(Effect.result)).toMatchObject({
+        _tag: "Failure",
+        failure: {
+          _tag: "WorkflowForgeError",
+          reason: expect.stringContaining("cannot be changed"),
+        },
+      });
+      expect(writers).toEqual([]);
+
+      for (const url of ["https://linear.app/acme/issue", "https://linear.app/acme/issue/ENG-99"]) {
+        expect(yield* issues.comment({ ...ref, url }, "Update").pipe(Effect.result)).toMatchObject({
+          _tag: "Failure",
+          failure: { reason: expect.stringContaining("does not match") },
+        });
+      }
+      expect(writers).toEqual([]);
+
+      yield* issues.comment({ ...ref, url: readable.url }, "Update");
+      expect(writers).toEqual([otherAccount]);
+    }),
+  );
+
+  it.effect("keeps the issue URL's workspace across writes and reads when credentials change", () =>
+    Effect.gen(function* () {
+      const accountId = IssueTrackerAccountId.make("rotating");
+      const updates: Array<[string | undefined, string]> = [];
+      let credential = "acme";
+      const credentials = Layer.succeed(IssueTrackerHost, {
+        credentials: {
+          get: () =>
+            Effect.map(IssueTrackerAccount, (account) =>
+              account === accountId ? Option.some(credential) : Option.none(),
+            ),
+        },
+      });
+      const http = HttpClient.make((request) =>
+        Effect.sync(() => {
+          if (request.body._tag !== "Uint8Array") throw new Error("Expected a GraphQL body");
+          const body = JSON.parse(new TextDecoder().decode(request.body.body)) as {
+            query: string;
+            variables: { id: string };
+          };
+          const workspace = request.headers.authorization;
+          let data: unknown;
+          if (body.query.startsWith("query T3Issue(")) {
+            credential = "other-workspace";
+            data = {
+              issue: {
+                id: `issue-${workspace}`,
+                identifier: "ENG-1",
+                number: 1,
+                title: "Old title",
+                url: `https://linear.app/${workspace}/issue/ENG-1/old-title`,
+                description: null,
+                createdAt: "2026-07-01T00:00:00Z",
+                updatedAt: "2026-07-01T00:00:00Z",
+                completedAt: null,
+                canceledAt: null,
+                state: { id: "todo", name: "Todo", type: "unstarted", position: 0 },
+                team: { key: "ENG", states: { nodes: [] } },
+                creator: null,
+                botActor: null,
+                assignee: null,
+                labels: { nodes: [] },
+                comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                reactions: [],
+                attachments: { nodes: [] },
+                history: { nodes: [] },
+              },
+            };
+          } else if (body.query.startsWith("query T3Viewer")) {
+            data = {
+              viewer: {
+                id: "viewer",
+                name: "User",
+                displayName: "User",
+                email: null,
+                avatarUrl: null,
+              },
+              organization: { urlKey: workspace },
+              teams: { nodes: [] },
+            };
+          } else if (body.query.startsWith("query T3Comments(")) {
+            data = {
+              issue: {
+                comments: { nodes: [], pageInfo: { hasNextPage: true, endCursor: workspace } },
+              },
+            };
+          } else if (body.query.startsWith("mutation T3IssueUpdate(")) {
+            updates.push([workspace, body.variables.id]);
+            data = { issueUpdate: { success: true } };
+          } else {
+            throw new Error(`Unexpected GraphQL query: ${body.query}`);
+          }
+          return HttpClientResponse.fromWeb(request, Response.json({ data }));
+        }),
+      );
+      const tracker = yield* LinearDriver.make.pipe(
+        Effect.provide(Layer.merge(credentials, Layer.succeed(HttpClient.HttpClient, http))),
+      );
+      const service = yield* makeService({
+        projects: [project({ id: "web" })],
+        trackers: [tracker],
+        bindings: { web: { tracker: LINEAR, accountId, scope: "ENG" } },
+      });
+      const input = {
+        projectId: "web" as ProjectId,
+        tracker: LINEAR,
+        scope: "ENG",
+        key: "ENG-1",
+        title: "New title",
+      };
+      const explicit = { ...input, url: "https://linear.app/acme/issue/ENG-1/old-title" };
+      yield* service.update(explicit);
+      expect(updates).toEqual([["acme", "issue-acme"]]);
+
+      yield* service.update(input);
+      expect(updates).toEqual([
+        ["acme", "issue-acme"],
+        ["other-workspace", "issue-other-workspace"],
+      ]);
+
+      credential = "acme";
+      const comments = yield* service.comments({ ...explicit, cursor: "first-page" });
+      expect(comments.nextCursor).toBe("acme");
+
+      credential = "acme";
+      const detail = yield* service.detail({ ...explicit, key: "eng-1" });
+      expect(detail.url).toBe(explicit.url);
+    }),
+  );
+
   it.effect("reads bindings once per listing and sees changes on the next listing", () =>
     Effect.gen(function* () {
       const web = project({ id: "web", repository: "acme/web" });
@@ -570,6 +751,146 @@ describe("IssueService with a standalone tracker", () => {
       const missing = yield* service.list({ state: "open", projectId: "missing" as ProjectId });
       expect(missing.scopes).toEqual([]);
       expect(reads).toBe(2);
+    }),
+  );
+
+  it.effect("reads each project's team as the account it is bound with", () =>
+    Effect.gen(function* () {
+      const asWhom = Effect.map(IssueTrackerAccount, (account) => account ?? "first");
+      const fail = (reason: IssueTrackerError["reason"], retryAt?: number) =>
+        new IssueTrackerError({
+          tracker: LINEAR,
+          operation: "read",
+          reason,
+          detail: reason,
+          ...(retryAt === undefined ? {} : { retryAt }),
+        });
+      const twoAccounts = (overrides: Partial<IssueTrackerApi>) =>
+        makeService({
+          projects: [project({ id: "work" }), project({ id: "home" })],
+          trackers: [fakeStandaloneTracker(overrides)],
+          bindings: {
+            work: { tracker: LINEAR, scope: "ENG" },
+            home: {
+              tracker: LINEAR,
+              accountId: IssueTrackerAccountId.make("second"),
+              scope: "ENG",
+            },
+          },
+        });
+      const calls: string[] = [];
+      const service = yield* twoAccounts({
+        getViewer: () => Effect.map(asWhom, (account) => `viewer-${account}`),
+        listIssues: (input) =>
+          Effect.map(asWhom, (account) => {
+            calls.push(`${account} ${input.cursor ?? ""}`);
+            return { items: [issue("ENG-1")], nextCursor: `${account}-next` };
+          }),
+        getIssue: (input) =>
+          Effect.map(asWhom, (account) => ({
+            ...issue(input.key),
+            title: account,
+            url: `https://linear.app/${account === "first" ? "acme" : "other-workspace"}/issue/${input.key}/canonical-title`,
+          })),
+      });
+
+      // The same team key on two accounts is two scopes, each with its own cursor and viewer.
+      const listed = yield* service.list({ state: "open", involvement: "assigned" });
+      expect(calls.sort()).toEqual(["first ", "second "]);
+      expect(listed).toMatchObject({
+        viewers: { "linear.app": "viewer-first", "linear.app second": "viewer-second" },
+        nextCursors: { "linear.app eng": "first-next", "linear.app second/eng": "second-next" },
+      });
+      calls.length = 0;
+      yield* service.list({ state: "open", cursors: { "linear.app second/eng": "second-next" } });
+      expect(calls).toEqual(["second second-next"]);
+      const ref = { tracker: LINEAR, scope: "ENG", key: "ENG-1", projectId: "home" as ProjectId };
+      expect(yield* service.detail(ref)).toMatchObject({ title: "second" });
+
+      // A link resolves through the account whose workspace it names, whichever is preferred.
+      expect(
+        yield* service.resolveUrl(
+          "https://linear.app/other-workspace/issue/ENG-1/old-title",
+          "work" as ProjectId,
+        ),
+      ).toMatchObject({ projectId: "home", issue: { title: "second" } });
+
+      // Saved thread/workflow references carrying `url` keep resolving to that workspace even when
+      // `projectId` names a project now bound to a different Linear workspace.
+      expect(
+        yield* service.detail({
+          projectId: "home" as ProjectId,
+          tracker: LINEAR,
+          host: "linear.app",
+          scope: "ENG",
+          key: "ENG-1",
+          url: "https://linear.app/acme/issue/ENG-1/old-title",
+        }),
+      ).toMatchObject({ projectId: "work", title: "first" });
+
+      // One refused key leaves the group usable, even on a continuation that skips the other.
+      const refusing = (refused: ReadonlyArray<string>) =>
+        twoAccounts({
+          listIssues: () =>
+            Effect.flatMap(asWhom, (account) =>
+              refused.includes(account)
+                ? Effect.fail(fail("unauthenticated"))
+                : Effect.succeed({ items: [], nextCursor: null }),
+            ),
+        });
+      const partly = yield* (yield* refusing(["second"])).list({ state: "open" });
+      expect(partly).toMatchObject({
+        trackers: [{ configured: true }],
+        errors: [{ projectId: "home" }],
+      });
+      const continued = yield* (yield* refusing(["second"])).list({
+        state: "open",
+        cursors: { "linear.app second/eng": "second-next" },
+      });
+      expect(continued.trackers).toMatchObject([{ configured: true }]);
+      const none = yield* (yield* refusing(["first", "second"])).list({ state: "open" });
+      expect(none.trackers).toMatchObject([{ configured: false }]);
+
+      // The preferred account missing the key does not hide why the link's own account failed.
+      const limited = yield* twoAccounts({
+        getIssue: () =>
+          Effect.flatMap(asWhom, (account) =>
+            Effect.fail(account === "first" ? fail("not-found") : fail("rate-limited", 60)),
+          ),
+      });
+      expect(
+        yield* Effect.flip(
+          limited.resolveUrl(
+            "https://linear.app/other-workspace/issue/ENG-1/old-title",
+            "work" as ProjectId,
+          ),
+        ),
+      ).toMatchObject({ reason: "rate-limited", retryAt: 60 });
+
+      // Two users of one workspace: the account bound to the link's exact team serves it.
+      const sameWorkspace = yield* makeService({
+        projects: [project({ id: "ops" }), project({ id: "eng" })],
+        trackers: [fakeStandaloneTracker()],
+        bindings: {
+          ops: { tracker: LINEAR, scope: "OPS" },
+          eng: {
+            tracker: LINEAR,
+            accountId: IssueTrackerAccountId.make("second"),
+            scope: "ENG",
+            additionalScopes: ["REL"],
+          },
+        },
+      });
+      expect(
+        yield* sameWorkspace.resolveUrl(
+          "https://linear.app/acme/issue/ENG-1/old-title",
+          "ops" as ProjectId,
+        ),
+      ).toMatchObject({ projectId: "eng", writable: true });
+      expect(yield* sameWorkspace.projectScope("eng" as ProjectId)).toMatchObject({ scope: "ENG" });
+      expect(yield* sameWorkspace.projectScope("eng" as ProjectId, { key: "REL-7" })).toMatchObject(
+        { scope: "REL" },
+      );
     }),
   );
 

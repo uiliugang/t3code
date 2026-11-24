@@ -591,6 +591,20 @@ const PersistedServerSettings = Schema.Struct({
 // Parse first and decode second, so a managed policy can fill its defaults in between.
 const decodeSettingsFileJsonExit = Schema.decodeUnknownExit(fromLenientJson(Schema.Unknown));
 const decodePersistedServerSettingsExit = Schema.decodeUnknownExit(PersistedServerSettings);
+
+/**
+ * The settings on disk with the managed policy laid over them, read without the service: no
+ * database, no write, no legacy migration. A missing or unreadable file reads as the defaults.
+ */
+export const readServerSettingsFromDisk = Effect.gen(function* () {
+  const { settingsPath } = yield* ServerConfig.ServerConfig;
+  const fs = yield* FileSystem.FileSystem;
+  const { settings: managed } = yield* ManagedPolicy.ManagedPolicy;
+  const raw = yield* fs.readFileString(settingsPath).pipe(Effect.option);
+  return managed.applyLocks(
+    Option.isNone(raw) ? managed.defaults : decodeSettingsFile(raw.value, managed).settings,
+  );
+}).pipe(Effect.withSpan("ServerSettings.readServerSettingsFromDisk"));
 const LegacyProviderSettingsJson = fromLenientJson(
   Schema.Struct({
     providers: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
@@ -599,6 +613,67 @@ const LegacyProviderSettingsJson = fromLenientJson(
   }),
 );
 const decodeLegacyProviderSettingsJsonExit = Schema.decodeUnknownExit(LegacyProviderSettingsJson);
+
+/**
+ * A settings file as the server reads it: its settings, or the defaults when the file or its
+ * legacy fields are rejected, with the cause. Pure, so the CLI reads files as the server does.
+ */
+function decodeSettingsFile(
+  raw: string,
+  managed: ManagedPolicy.ManagedPolicy["Service"]["settings"],
+) {
+  const parsed = decodeSettingsFileJsonExit(raw);
+  const parsedObject =
+    Exit.isSuccess(parsed) && typeof parsed.value === "object" && parsed.value !== null
+      ? parsed.value
+      : null;
+  const offered =
+    parsedObject !== null && "offeredSourceControlProviders" in parsedObject
+      ? parsedObject.offeredSourceControlProviders
+      : undefined;
+  const legacyMeituanOffered =
+    typeof offered === "object" &&
+    offered !== null &&
+    "meituan" in offered &&
+    offered.meituan === true;
+  const migrateMeituan =
+    parsedObject !== null && !Object.hasOwn(parsedObject, "meituanIntegrationEnabled");
+  const decoded = Exit.isFailure(parsed)
+    ? parsed
+    : decodePersistedServerSettingsExit(managed.withDefaults(parsed.value));
+  const legacy = decodeLegacyProviderSettingsJsonExit(raw);
+  const failure = Exit.isFailure(decoded)
+    ? decoded.cause
+    : Exit.isFailure(legacy)
+      ? legacy.cause
+      : undefined;
+  const settings: ServerSettings =
+    Exit.isSuccess(decoded) && failure === undefined
+      ? decoded.value
+      : // The file may hold an opt-out we can no longer read; never resume threads on a guess.
+        {
+          ...managed.defaults,
+          continueThreadsAfterServerUpdate: false,
+          usageHistoryRetentionDays: "unlimited",
+          storageCleanup: {
+            worktreeKeepWhen: "any-local-files",
+            worktreeAfterDays: null,
+            worktreeSettledAfterDays: null,
+            worktreeOnMerge: false,
+            worktreeOnDelete: false,
+            worktreeUnchanged: false,
+            browserArtifactsAfterDays: null,
+            logsAfterDays: null,
+          },
+        };
+  return {
+    settings,
+    legacy: Exit.isSuccess(legacy) ? legacy.value : undefined,
+    failure,
+    migrateMeituan,
+    legacyMeituanOffered,
+  };
+}
 
 const LEGACY_BITBUCKET_SECRET_NAMES: Readonly<Record<string, string>> = {
   accessToken: "bitbucket-access-token",
@@ -1015,65 +1090,21 @@ const make = Effect.gen(function* () {
     let legacyMeituanOffered = false;
 
     if (yield* readConfigExists) {
-      const raw = yield* readRawConfig;
-      const parsed = decodeSettingsFileJsonExit(raw);
-      if (
-        Exit.isSuccess(parsed) &&
-        typeof parsed.value === "object" &&
-        parsed.value !== null &&
-        "offeredSourceControlProviders" in parsed.value
-      ) {
-        const offered = parsed.value.offeredSourceControlProviders;
-        legacyMeituanOffered =
-          typeof offered === "object" &&
-          offered !== null &&
-          "meituan" in offered &&
-          offered.meituan === true;
+      const file = decodeSettingsFile(yield* readRawConfig, managed);
+      legacyMeituanOffered = file.legacyMeituanOffered;
+      migrateMeituan = file.migrateMeituan;
+      if (file.legacy !== undefined) {
+        legacyProviders = file.legacy.providers;
+        legacySourceControl = { bitbucket: file.legacy.bitbucket, github: file.legacy.github };
       }
-      migrateMeituan =
-        Exit.isSuccess(parsed) &&
-        typeof parsed.value === "object" &&
-        parsed.value !== null &&
-        !Object.hasOwn(parsed.value, "meituanIntegrationEnabled");
-      const decoded = Exit.isFailure(parsed)
-        ? parsed
-        : decodePersistedServerSettingsExit(managed.withDefaults(parsed.value));
-      const legacySettings = decodeLegacyProviderSettingsJsonExit(raw);
-      if (legacySettings._tag === "Success") {
-        legacyProviders = legacySettings.value.providers;
-        legacySourceControl = {
-          bitbucket: legacySettings.value.bitbucket,
-          github: legacySettings.value.github,
-        };
-      }
-      if (decoded._tag === "Failure" || legacySettings._tag === "Failure") {
-        const failure = decoded._tag === "Failure" ? decoded : legacySettings;
-        // The file may hold an opt-out we can no longer read.
-        settings = {
-          ...managed.defaults,
-          continueThreadsAfterServerUpdate: false,
-          usageHistoryRetentionDays: "unlimited",
-          storageCleanup: {
-            worktreeKeepWhen: "any-local-files",
-            worktreeAfterDays: null,
-            worktreeSettledAfterDays: null,
-            worktreeOnMerge: false,
-            worktreeOnDelete: false,
-            worktreeUnchanged: false,
-            browserArtifactsAfterDays: null,
-            logsAfterDays: null,
-          },
-        };
-        if (failure._tag === "Failure") {
-          parseFailure = Option.some(Cause.squash(failure.cause));
-          yield* Effect.logWarning("failed to parse settings.json, using defaults", {
-            path: settingsPath,
-            issues: Cause.pretty(failure.cause),
-            cause: failure.cause,
-          });
-        }
-      } else {
-        settings = decoded.value;
+      settings = file.settings;
+      if (file.failure !== undefined) {
+        parseFailure = Option.some(Cause.squash(file.failure));
+        yield* Effect.logWarning("failed to parse settings.json, using defaults", {
+          path: settingsPath,
+          issues: Cause.pretty(file.failure),
+          cause: file.failure,
+        });
       }
     }
     // Settings saved by a server that kept the mode in `compactIdleThreads` move

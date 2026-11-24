@@ -117,7 +117,11 @@ import {
   workspaceTabColumns,
   workspaceTabNavigationState,
 } from "./workspace/workspace-tab-navigation";
-import { workspaceTabOf, type WorkspaceTab } from "./workspace/workspace-tabs-state";
+import {
+  workspaceTabOf,
+  workspaceUsesColumns,
+  type WorkspaceTab,
+} from "./workspace/workspace-tabs-state";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { SettingsWorkspaceLayout } from "../settings/SettingsWorkspaceLayout";
 import { WorkspaceThreadSidebar } from "./workspace/WorkspaceThreadSidebar";
@@ -276,8 +280,9 @@ function AdaptiveWorkspaceLayoutContent(
   const workspacePage =
     Platform.OS === "android" &&
     (androidSettingsOpen ||
-      workspace?.state.selectedTab === "usage" ||
-      workspace?.state.selectedTab === "requirements");
+      (workspace !== null &&
+        workspace !== undefined &&
+        !workspaceUsesColumns(workspace.state.selectedTab)));
   const navigation = useNavigation();
   const [primarySidebarPreferredVisible, setPrimarySidebarPreferredVisible] = useState(true);
   const [fileInspectorPreferredVisible, setFileInspectorPreferredVisible] = useState(true);

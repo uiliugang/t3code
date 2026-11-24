@@ -131,7 +131,12 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
       }
       const workspaceLineage = workspaceThread.lineage;
       // The remote parent delegated the source thread, not its forks.
-      const { delegatedFrom: _delegatedFrom, ...inherited } = workspaceThread;
+      // Nor is a fork a step of the run its source was one of.
+      const {
+        delegatedFrom: _delegatedFrom,
+        workflowRun: _workflowRun,
+        ...inherited
+      } = workspaceThread;
       const modelSelection = input.modelSelection ?? inherited.modelSelection;
       const targetThread: OrchestrationV2AppThread = {
         ...inherited,

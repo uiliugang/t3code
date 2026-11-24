@@ -24,12 +24,13 @@ export const issueEnvironment = createIssueEnvironmentAtoms(
   sourceControlEnvironment.sourceChanges,
 );
 
-const linkedIssueRef = ({ projectId, tracker, host, scope, key }: ThreadIssueLink) => ({
+const linkedIssueRef = ({ projectId, tracker, host, scope, key, url }: ThreadIssueLink) => ({
   projectId,
   tracker,
   host,
   scope,
   key,
+  url,
 });
 
 export function useLinkedIssueDetail(

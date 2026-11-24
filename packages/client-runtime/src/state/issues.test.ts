@@ -27,6 +27,7 @@ import {
   createMergedIssueListAtoms,
   issueEntryKey,
   mergeIssueListPage,
+  normalizeIssueDetailInput,
   type IssueListTarget,
 } from "./issues.ts";
 
@@ -66,6 +67,69 @@ it("refreshes the same issue detail regardless of how a surface orders the refer
     opened ===
       issues.detail({ environmentId, input: { projectId, tracker, host, scope: "another", key } }),
   ).toBe(false);
+  // Git-hosted issues share the same detail atom with or without a URL; Linear workspaces stay apart.
+  expect(
+    opened ===
+      issues.detail({
+        environmentId,
+        input: {
+          projectId,
+          tracker,
+          host,
+          scope,
+          key,
+          url: "https://github.com/acme/app/issues/23",
+        },
+      }),
+  ).toBe(true);
+  const linear = IssueTrackerKind.make("linear");
+  const acmeLinear = issues.detail({
+    environmentId,
+    input: {
+      projectId,
+      tracker: linear,
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/acme/issue/ENG-1/slug-one",
+    },
+  });
+  const acmeLinearSlugTwo = issues.detail({
+    environmentId,
+    input: {
+      projectId,
+      tracker: linear,
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/acme/issue/ENG-1/slug-two",
+    },
+  });
+  const globexLinear = issues.detail({
+    environmentId,
+    input: {
+      projectId,
+      tracker: linear,
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-1",
+      url: "https://linear.app/globex/issue/ENG-1/slug-one",
+    },
+  });
+  expect(acmeLinear === acmeLinearSlugTwo).toBe(true);
+  // Even when `input.key` was typed in lowercase (`eng-1`), a valid uppercase `/issue/ENG-1` URL
+  // must stay uppercase (`https://linear.app/acme/issue/ENG-1`) so `parseLinearIssueUrl` accepts it.
+  expect(
+    normalizeIssueDetailInput({
+      projectId,
+      tracker: linear,
+      host: "linear.app",
+      scope: "ENG",
+      key: "eng-1",
+      url: "https://linear.app/acme/issue/ENG-1/slug-two",
+    }).url,
+  ).toBe("https://linear.app/acme/issue/ENG-1");
+  expect(acmeLinear === globexLinear).toBe(false);
 });
 
 describe("mergeIssueListPage", () => {
@@ -89,11 +153,33 @@ describe("mergeIssueListPage", () => {
     expect(merged[0]?.state.category).toBe("closed");
   });
 
-  it("keys rows case-insensitively by host and scope, exactly by key", () => {
+  it("keys rows case-insensitively by host and scope, exactly by key, and apart across Linear workspaces", () => {
     expect(issueEntryKey(entry({ key: "1", host: "GitHub.com", scope: "Acme/App" }))).toBe(
       issueEntryKey(entry({ key: "1" })),
     );
     expect(issueEntryKey(entry({ key: "ENG-1" }))).not.toBe(issueEntryKey(entry({ key: "eng-1" })));
+    const linear = IssueTrackerKind.make("linear");
+    expect(
+      issueEntryKey(
+        entry({
+          tracker: linear,
+          host: "linear.app",
+          scope: "ENG",
+          key: "ENG-1",
+          url: "https://linear.app/acme/issue/ENG-1/slug",
+        }),
+      ),
+    ).not.toBe(
+      issueEntryKey(
+        entry({
+          tracker: linear,
+          host: "linear.app",
+          scope: "ENG",
+          key: "ENG-1",
+          url: "https://linear.app/globex/issue/ENG-1/slug",
+        }),
+      ),
+    );
   });
 });
 

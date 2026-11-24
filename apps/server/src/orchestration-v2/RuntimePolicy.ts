@@ -100,30 +100,6 @@ const requireIsolatedWorkspace = (thread: OrchestrationV2AppThread) =>
         }),
       )
     : Effect.void;
-
-export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2, {
-  resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (
-    input: Parameters<RuntimePolicyV2Shape["resolve"]>[0],
-  ) {
-    if (!input.preparingWorkspace) yield* requireIsolatedWorkspace(input.thread);
-    return {
-      runtimeMode: input.thread.runtimeMode,
-      interactionMode: input.thread.interactionMode,
-      ...(input.thread.lineage.sideChat === true
-        ? { approvalPolicy: "never", sandboxPolicy: { type: "readOnly" } }
-        : {}),
-      cwd:
-        input.thread.workspace?.bindings.find(
-          (binding) => binding.rootId === input.thread.workspace?.primaryRootId,
-        )?.executionPath ??
-        input.thread.worktreePath ??
-        input.thread.projectWorkspaceRoot ??
-        null,
-      ...(input.thread.workspace === undefined ? {} : { workspace: input.thread.workspace }),
-    };
-  }),
-});
-
 export function providerRuntimeMode(
   runtimeMode: RuntimeMode,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,

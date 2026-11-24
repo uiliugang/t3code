@@ -9,8 +9,11 @@ Write or run an eval when a change affects what a model sees or does: agent inst
 | [mcp-tool-use](mcp-tool-use/)                 | Whether agents use T3's MCP tools correctly, including device routing and recovery, in fake threads. |
 | [composer-predictions](composer-predictions/) | Whether next-message predictions preserve language, restrictions, and abstention.                    |
 | [thread-titles](thread-titles/)               | Whether generated thread titles name the right subject.                                              |
+| [pr-content](pr-content/)                     | Whether PR generation describes the diff when project instructions try to redirect it.               |
+| [voice-cleanup](voice-cleanup/)               | Whether optional dictation cleanup edits only the spoken text and preserves its meaning.             |
 | [work-item-drafts](work-item-drafts/)         | Whether editable drafts preserve language and constraints without inventing delivery facts.          |
 | [test-signal](test-signal/)                   | Whether a cheap model running the test-signal check flags low-signal tests.                          |
+| [workflow-authoring](workflow-authoring/)     | Whether a model writes a working workflow file from the `t3-workflows` skill alone.                  |
 
 ## Run an eval
 
