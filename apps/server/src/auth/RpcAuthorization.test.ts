@@ -59,13 +59,6 @@ describe("RPC authorization scopes", () => {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthSourceControlWriteScope);
   });
 
-  it("lets only a session that operates threads approve sending a feedback report", () => {
-    // Guest links have no RPC session, and read-only sessions lack this scope.
-    expect(requiredScopeForRpcMethod(WS_METHODS.agentFeedbackAnswerRequest)).toBe(
-      AuthOrchestrationOperateScope,
-    );
-  });
-
   it("keeps triage, which seeds an agent that reads logs and the database, behind operate scope", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverPrepareTriage)).toBe(
       AuthOrchestrationOperateScope,

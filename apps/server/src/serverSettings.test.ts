@@ -1462,19 +1462,20 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("falls back to the defaults when only a legacy field is rejected", () =>
+  it.effect("ignores the retired feedback setting when reading existing settings", () =>
     Effect.gen(function* () {
       const serverConfig = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      const raw = '{"agentFeedback":{"mode":"auto"},"providers":1}';
-      yield* fileSystem.writeFileString(serverConfig.settingsPath, raw);
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"agentFeedback":{"mode":"auto"},"addProjectBaseDirectory":"/work"}',
+      );
 
       const settings = yield* serverSettings.getSettings;
 
-      assert.equal(settings.agentFeedback.mode, "off");
-      assert.isFalse(settings.continueThreadsAfterServerUpdate);
-      assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), raw);
+      assert.equal(settings.addProjectBaseDirectory, "/work");
+      assert.isFalse(Object.hasOwn(settings, "agentFeedback"));
     }).pipe(Effect.provide(layerServerSettings())),
   );
 

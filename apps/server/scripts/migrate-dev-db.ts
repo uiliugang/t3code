@@ -224,7 +224,6 @@ const CLEARED_TABLES: ReadonlyArray<string> = [
   "work_item_ignored",
   "work_item_delivery_actions",
   "work_item_issue_projects",
-  "agent_feedback",
   "workflow_runs",
   "workflow_steps",
   "workflow_waits",
