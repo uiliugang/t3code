@@ -23,6 +23,7 @@ import {
   OrchestrationV2ThreadShellJson,
   OrchestrationV2SubagentJson,
   OrchestrationV2ThreadHistoryPage,
+  OrchestrationV2ThreadTranscript,
   OrchestrationV2TurnItem,
   OrchestrationV2TurnItemJson,
   withMessageSenderNote,
@@ -92,12 +93,15 @@ describe("orchestration V2 contracts", () => {
     ).toThrow();
   });
 
-  it("skips turn item types from a newer server in snapshots and turn-item events", () => {
+  it("skips unknown turn item types in snapshots, history, transcripts, and events", () => {
     const decodeWireItems = Schema.decodeUnknownSync(
       Schema.toCodecJson(Schema.Array(OrchestrationV2RpcSchemas.subscribeThread.output)),
     );
     const decodeHistoryPage = Schema.decodeUnknownSync(
       Schema.toCodecJson(OrchestrationV2ThreadHistoryPage),
+    );
+    const decodeTranscript = Schema.decodeUnknownSync(
+      Schema.toCodecJson(OrchestrationV2ThreadTranscript),
     );
     const item = (id: string, type: string, extra: Record<string, unknown>) => ({
       id,
@@ -224,6 +228,16 @@ describe("orchestration V2 contracts", () => {
     ).toEqual(["item-known"]);
 
     const broken = item("item-broken", "system_notice", {});
+    const transcript = {
+      threadId: projection.thread.id,
+      title: projection.thread.title,
+      updatedAt: projection.updatedAt,
+      items: [projected(0, item("item-feedback", "feedback_request", {})), projected(1, known)],
+    };
+    expect(decodeTranscript(transcript).items).toMatchObject([
+      { position: 1, item: { id: "item-known", message: "Hello" } },
+    ]);
+    expect(() => decodeTranscript({ ...transcript, items: [projected(0, broken)] })).toThrow();
     expect(() => decodeWireItems([turnItemEvent(4, broken)])).toThrow();
     expect(() =>
       decodeWireItems([

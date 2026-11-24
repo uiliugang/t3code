@@ -9,11 +9,6 @@ import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import {
-  AgentFeedbackPreview,
-  AgentFeedbackRequestStatus,
-  AgentFeedbackTrace,
-} from "./agentFeedback.ts";
-import {
   GitRefName,
   CheckpointId,
   CheckpointRef,
@@ -1909,19 +1904,6 @@ const OrchestrationV2LinkRequestFields = {
   failure: Schema.optional(Schema.String),
 } as const;
 
-/**
- * A report the user asked the agent to send to the T3 team, shown for approval. Send stores and
- * sends exactly `preview`, with `conversationTrace` as its trace if the user included the
- * conversation. Once answered, the card keeps only what was sent.
- */
-const OrchestrationV2FeedbackRequestFields = {
-  type: Schema.Literal("feedback_request"),
-  preview: AgentFeedbackPreview,
-  /** The preview's trace with message text, sent instead if the user includes the conversation. */
-  conversationTrace: Schema.optionalKey(AgentFeedbackTrace),
-  feedbackStatus: AgentFeedbackRequestStatus,
-} as const;
-
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2129,10 +2111,6 @@ export const OrchestrationV2TurnItem = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
-    ...OrchestrationV2FeedbackRequestFields,
-  }),
-  Schema.Struct({
-    ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("subagent"),
     subagentId: NodeId,
     origin: Schema.Literals(["provider_native", "app_owned"]),
@@ -2191,6 +2169,14 @@ export const OrchestrationV2ProjectedTurnItem = Schema.Struct({
   item: OrchestrationV2TurnItem,
 });
 export type OrchestrationV2ProjectedTurnItem = typeof OrchestrationV2ProjectedTurnItem.Type;
+
+const OrchestrationV2ProjectedTurnItems = projectedTurnItemArray(
+  OrchestrationV2ProjectedTurnItem,
+  OrchestrationV2ProjectedTurnItem.mapFields((fields) => ({
+    ...fields,
+    item: ForwardCompatibleUnion(OrchestrationV2TurnItem.members, "type"),
+  })),
+);
 
 const OrchestrationV2EventBase = Schema.Struct({
   id: EventId,
@@ -2378,13 +2364,7 @@ export const OrchestrationV2ThreadProjection = Schema.Struct({
   checkpoints: Schema.Array(OrchestrationV2Checkpoint),
   contextHandoffs: Schema.Array(OrchestrationV2ContextHandoff),
   contextTransfers: Schema.Array(OrchestrationV2ContextTransfer),
-  visibleTurnItems: projectedTurnItemArray(
-    OrchestrationV2ProjectedTurnItem,
-    OrchestrationV2ProjectedTurnItem.mapFields((fields) => ({
-      ...fields,
-      item: ForwardCompatibleUnion(OrchestrationV2TurnItem.members, "type"),
-    })),
-  ),
+  visibleTurnItems: OrchestrationV2ProjectedTurnItems,
   updatedAt: Schema.DateTimeUtc,
 });
 export type OrchestrationV2ThreadProjection = typeof OrchestrationV2ThreadProjection.Type;
@@ -2393,7 +2373,7 @@ export const OrchestrationV2ThreadTranscript = Schema.Struct({
   threadId: ThreadId,
   title: Schema.String,
   updatedAt: Schema.DateTimeUtc,
-  items: Schema.Array(OrchestrationV2ProjectedTurnItem),
+  items: OrchestrationV2ProjectedTurnItems,
 });
 export type OrchestrationV2ThreadTranscript = typeof OrchestrationV2ThreadTranscript.Type;
 
@@ -3025,10 +3005,6 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
     ...OrchestrationV2LinkRequestFields,
-  }),
-  Schema.Struct({
-    ...OrchestrationV2TurnItemJsonBaseFields,
-    ...OrchestrationV2FeedbackRequestFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -4078,18 +4054,6 @@ const OrchestrationV2InternalCommand = Schema.Union([
     fields: Schema.optional(Schema.Array(OrchestrationV2SecretRequestField)),
     secretStatus: OrchestrationV2SecretRequestStatus,
   }),
-  /** Internal so no client can mark a report sent without it being stored and sent. */
-  Schema.Struct({
-    type: Schema.Literal("feedback_request.record"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    runId: RunId,
-    nodeId: NodeId,
-    turnItemId: TurnItemId,
-    preview: AgentFeedbackPreview,
-    conversationTrace: Schema.optionalKey(AgentFeedbackTrace),
-    feedbackStatus: AgentFeedbackRequestStatus,
-  }),
   /**
    * Records or updates a link an agent asked the user to make. Internal so no
    * client can mark a request linked without the link being made.
@@ -4426,13 +4390,7 @@ export type OrchestrationV2ThreadBoundedSnapshot = typeof OrchestrationV2ThreadB
 export const OrchestrationV2ThreadHistoryPage = withRecordIdTable(
   Schema.Struct({
     snapshotSequence: NonNegativeInt,
-    items: projectedTurnItemArray(
-      OrchestrationV2ProjectedTurnItem,
-      OrchestrationV2ProjectedTurnItem.mapFields((fields) => ({
-        ...fields,
-        item: ForwardCompatibleUnion(OrchestrationV2TurnItem.members, "type"),
-      })),
-    ),
+    items: OrchestrationV2ProjectedTurnItems,
     nextCursor: Schema.NullOr(TrimmedNonEmptyString),
     hasMoreHistory: Schema.Boolean,
     /** Records of the page's subagent items, which a bounded snapshot can omit. */

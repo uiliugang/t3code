@@ -468,7 +468,9 @@ it.effect("records only failed calls of tools that hand off no work", () => {
             AnalyticsService.AnalyticsService,
             AnalyticsService.AnalyticsService.of({
               record: (event, properties) =>
-                Deferred.succeed(recorded, { event, properties: properties ?? {} }),
+                Deferred.succeed(recorded, { event, properties: properties ?? {} }).pipe(
+                  Effect.asVoid,
+                ),
               flush: Effect.void,
               recordOwners: () => Effect.void,
             }),
@@ -592,7 +594,7 @@ it.effect("handoff analytics read only the caller's active run and its message",
           Layer.succeed(
             AnalyticsService.AnalyticsService,
             AnalyticsService.AnalyticsService.of({
-              record: () => Deferred.succeed(recorded, undefined).pipe(Effect.as(true)),
+              record: () => Deferred.succeed(recorded, undefined).pipe(Effect.asVoid),
               flush: Effect.void,
               recordOwners: () => Effect.void,
             }),

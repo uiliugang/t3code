@@ -72,7 +72,6 @@ const applicationServerSettingsTransferPolicy = {
   worktreesDirectory: "local",
   fastWorktreeCheckout: "portable",
   responseStreamingMode: "portable",
-  agentFeedback: "portable",
   enableProviderUpdateChecks: "portable",
   continueThreadsAfterServerUpdate: "portable",
   keepAwakeWhileAgentsWork: "portable",
