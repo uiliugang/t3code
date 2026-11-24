@@ -12,7 +12,6 @@ import type {
 import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/httpReadiness";
 import {
   cliReleaseAssetUrl,
-  cliReleaseChannelOf,
   cliReleaseDownloadBaseUrl,
   CLI_RELEASE_BASE_URL_ENV,
   parseChecksums,
@@ -36,7 +35,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as SshAuth from "./auth.ts";
@@ -766,17 +765,25 @@ cat >"$RUNNER_NEXT" <<'SH'
 @@T3_RUNNER_SCRIPT@@
 SH
 T3_ARCHIVE_MODE=@@T3_ARCHIVE_MODE@@
-if [ "@@T3_REUSE_INSTALLED_RUNNER@@" = "1" ]; then
-  PREVIOUS_VERSION="$(sed -n "s/^T3_ARCHIVE_VERSION='\\([0-9][0-9A-Za-z.-]*\\)'$/\\1/p" "$RUNNER_FILE" 2>/dev/null || true)"
-  PREVIOUS_RUNTIME="$HOME/.t3/runtime/versions/$PREVIOUS_VERSION"
-  if [ -z "$PREVIOUS_VERSION" ] || [ ! -x "$PREVIOUS_RUNTIME/t3" ] ||
-     [ "$(cat "$PREVIOUS_RUNTIME/.install-complete" 2>/dev/null)" != "$PREVIOUS_VERSION" ]; then
-    printf 'T3_NO_INSTALLED_RUNNER\\n' >&2
-    exit 1
+@@T3_MANAGED_SERVER_RUNNING_SCRIPT@@
+select_saved_runner() {
+  [ "@@T3_REPLACE_EXISTING_SERVER@@" != "1" ] || return 1
+  SAVED_RUNNER="$PINNED_RUNNER"
+  if [ ! -x "$SAVED_RUNNER" ]; then
+    [ "$T3_ARCHIVE_MODE" = "1" ] || return 1
+    SAVED_RUNNER="$RUNNER_FILE"
+    if [ ! -x "$SAVED_RUNNER" ] && [ -n "$LAUNCHER_ID" ]; then
+      for SAVED_DIR in "$DEFAULT_SERVER_HOME"/ssh-launch/*; do
+        [ -x "$SAVED_DIR/run-t3.sh" ] &&
+          [ "$(cat "$SAVED_DIR/managed" 2>/dev/null || true)" = "managed" ] &&
+          [ "$(cat "$SAVED_DIR/launcher" 2>/dev/null || true)" = "$LAUNCHER_ID" ] &&
+          managed_server_running "$(cat "$SAVED_DIR/pid" 2>/dev/null || true)" || continue
+        SAVED_RUNNER="$SAVED_DIR/run-t3.sh"
+        break
+      done
+    fi
   fi
-  cp "$RUNNER_FILE" "$RUNNER_NEXT"
-fi
-if [ "@@T3_REPLACE_EXISTING_SERVER@@" != "1" ] && [ -x "$PINNED_RUNNER" ]; then
+  [ -x "$SAVED_RUNNER" ] || return 1
   if awk '
     NR == FNR {
       if ($0 ~ /^T3_ARCHIVE_VERSION=\\047[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?\\047$/) version = $0
@@ -788,17 +795,19 @@ if [ "@@T3_REPLACE_EXISTING_SERVER@@" != "1" ] && [ -x "$PINNED_RUNNER" ]; then
     /^T3_ARCHIVE_VERSION=/ { print version; next }
     /^T3_RELEASE_BASE_URL=/ { print release; next }
     { print }
-  ' "$PINNED_RUNNER" "$RUNNER_NEXT" > "$PINNED_NEXT"; then
-    mv "$PINNED_NEXT" "$RUNNER_NEXT"
+  ' "$SAVED_RUNNER" "$RUNNER_NEXT" > "$PINNED_NEXT"; then
+    :
+  elif [ "$SAVED_RUNNER" = "$PINNED_RUNNER" ]; then
+    cp "$PINNED_RUNNER" "$PINNED_NEXT"
   else
-    cp "$PINNED_RUNNER" "$RUNNER_NEXT"
+    return 1
   fi
   T3_ARCHIVE_MODE=1
-fi
-RUNNER_CHANGED=0
-if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
-  RUNNER_CHANGED=1
-fi
+  cmp -s "$PINNED_NEXT" "$RUNNER_NEXT" && return 1
+  mv "$PINNED_NEXT" "$RUNNER_NEXT"
+  chmod 700 "$RUNNER_NEXT"
+}
+select_saved_runner || true
 chmod 700 "$RUNNER_NEXT"
 if [ "$T3_ARCHIVE_MODE" = "1" ]; then
   # The archive ships the helpers below inside the executable; the remote
@@ -853,6 +862,9 @@ while ! (set -C; printf '%s\\n' "$$" >"$LAUNCH_LOCK") 2>/dev/null; do
   sleep 1
   LAUNCH_LOCK_WAITED=$((LAUNCH_LOCK_WAITED + 1))
 done
+if select_saved_runner; then
+  "$RUNNER_NEXT" --version >/dev/null
+fi
 RUNNER_CHANGED=0
 if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
   RUNNER_CHANGED=1
@@ -895,12 +907,6 @@ server_running() {
     *Z*) return 1 ;;
   esac
 }
-# An older client replacing a same-or-newer server would run below the database's migrations.
-keeps_running_server() {
-  [ "$T3_ARCHIVE_MODE" = "1" ] &&
-    "$RUNNER_FILE" __ssh-helper keep-server "$DEFAULT_RUNTIME_FILE" "$REMOTE_PID" >/dev/null 2>&1
-}
-@@T3_MANAGED_SERVER_RUNNING_SCRIPT@@
 # The server publishes its runtime record only after it answers, so one that
 # has published and now refuses every connection has closed its listener to
 # shut down; a starting server has not published yet. Exit 2 means refused.
@@ -1089,9 +1095,7 @@ if [ "$REMOTE_MANAGED" = "external" ]; then
     REMOTE_MANAGED=""
   fi
 elif [ -n "$REMOTE_PORT" ] && managed_server_running "$REMOTE_PID"; then
-  # Reconnect owns the local tunnel, not the lifetime of an already running
-  # server. A changed runner is the update path and replaces an older server.
-  if [ "@@T3_REPLACE_EXISTING_SERVER@@" = "1" ] || { [ "$RUNNER_CHANGED" -eq 1 ] && ! keeps_running_server; }; then
+  if [ "@@T3_REPLACE_EXISTING_SERVER@@" = "1" ] || { [ "$T3_ARCHIVE_MODE" = "0" ] && [ "$RUNNER_CHANGED" -eq 1 ]; }; then
     kill "$REMOTE_PID" 2>/dev/null || true
     wait_for_pid_exit "$REMOTE_PID"
     if server_running "$REMOTE_PID"; then
@@ -1248,19 +1252,17 @@ RUNNER_FILE="$STATE_DIR/run-t3.sh"
 mkdir -p "$STATE_DIR"
 RUNNER_NEXT="$STATE_DIR/pairing-runner.next.$$"
 trap 'rm -f "$RUNNER_NEXT"' EXIT
-if [ -x "$STATE_DIR/pinned-runner.sh" ]; then
-  cp "$STATE_DIR/pinned-runner.sh" "$RUNNER_NEXT"
-elif [ "@@T3_PREVIEW_RUNNER@@" = "1" ] && [ -x "$RUNNER_FILE" ]; then
+if [ -x "$RUNNER_FILE" ]; then
   exec "$RUNNER_FILE" auth pairing create --base-dir "$DEFAULT_SERVER_HOME" --json
+elif [ -x "$STATE_DIR/pinned-runner.sh" ]; then
+  cp "$STATE_DIR/pinned-runner.sh" "$RUNNER_NEXT"
 else
 cat >"$RUNNER_NEXT" <<'SH'
 @@T3_RUNNER_SCRIPT@@
 SH
 fi
 chmod 700 "$RUNNER_NEXT"
-mv "$RUNNER_NEXT" "$RUNNER_FILE"
-PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"
-"$RUNNER_FILE" auth pairing create --base-dir "$PAIRING_BASE_DIR" --json
+"$RUNNER_NEXT" auth pairing create --base-dir "$DEFAULT_SERVER_HOME" --json
 `;
 
 const REMOTE_STOP_SCRIPT = `set -eu
@@ -1354,13 +1356,9 @@ export function buildRemoteNodeEnvScript(input?: RemoteT3RunnerOptions): string 
   );
 }
 
-export function buildRemoteLaunchScript(
-  input?: RemoteT3RunnerOptions,
-  reuseInstalledRunner = false,
-): string {
+export function buildRemoteLaunchScript(input?: RemoteT3RunnerOptions): string {
   return applyScriptPlaceholders(REMOTE_LAUNCH_SCRIPT, {
     T3_REPLACE_EXISTING_SERVER: input?.replaceExistingServer ? "1" : "0",
-    T3_REUSE_INSTALLED_RUNNER: reuseInstalledRunner ? "1" : "0",
     T3_UPDATE_MARKER_FILE: DESKTOP_UPDATE_IN_PROGRESS_MARKER_FILE,
     T3_UPDATE_TTL_MS: String(DESKTOP_UPDATE_IN_PROGRESS_TTL_MS),
     T3_UPDATE_TTL_SECONDS: String(DESKTOP_UPDATE_IN_PROGRESS_TTL_MS / 1000),
@@ -1386,8 +1384,6 @@ export function buildRemoteLaunchScript(
 function buildRemotePairingScript(stateKey: string, input?: RemoteT3RunnerOptions): string {
   return applyScriptPlaceholders(REMOTE_PAIRING_SCRIPT, {
     T3_STATE_KEY: stateKey,
-    T3_PREVIEW_RUNNER:
-      cliReleaseChannelOf(input?.archiveVersion?.trim() ?? "") === "preview" ? "1" : "0",
     T3_ENSURE_T3_HOME_SCRIPT: REMOTE_ENSURE_T3_HOME_SCRIPT,
     T3_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteT3RunnerScript(input)),
   });
@@ -1654,31 +1650,6 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
                     : Effect.void,
                 ),
               );
-            }),
-          ).pipe(
-            Effect.catchTags({
-              SshLaunchError: (relayError) => {
-                if (
-                  runner?.replaceExistingServer ||
-                  version !== runner?.archiveVersion?.trim() ||
-                  cliReleaseChannelOf(version) !== "preview" ||
-                  !HttpClientError.isHttpClientError(relayError.cause) ||
-                  relayError.cause.response?.status !== 404
-                ) {
-                  return Effect.fail(relayError);
-                }
-                return runSshCommand(target, {
-                  ...launchOptions,
-                  stdin: buildRemoteLaunchScript(runner, true),
-                }).pipe(
-                  Effect.mapError((cause) =>
-                    cause._tag === "SshCommandError" &&
-                    /^T3_NO_INSTALLED_RUNNER$/mu.test(cause.stderr)
-                      ? relayError
-                      : cause,
-                  ),
-                );
-              },
             }),
           );
         }),
