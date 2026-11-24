@@ -2170,6 +2170,14 @@ export const OrchestrationV2ProjectedTurnItem = Schema.Struct({
 });
 export type OrchestrationV2ProjectedTurnItem = typeof OrchestrationV2ProjectedTurnItem.Type;
 
+const OrchestrationV2ProjectedTurnItems = projectedTurnItemArray(
+  OrchestrationV2ProjectedTurnItem,
+  OrchestrationV2ProjectedTurnItem.mapFields((fields) => ({
+    ...fields,
+    item: ForwardCompatibleUnion(OrchestrationV2TurnItem.members, "type"),
+  })),
+);
+
 const OrchestrationV2EventBase = Schema.Struct({
   id: EventId,
   threadId: ThreadId,
@@ -2356,13 +2364,7 @@ export const OrchestrationV2ThreadProjection = Schema.Struct({
   checkpoints: Schema.Array(OrchestrationV2Checkpoint),
   contextHandoffs: Schema.Array(OrchestrationV2ContextHandoff),
   contextTransfers: Schema.Array(OrchestrationV2ContextTransfer),
-  visibleTurnItems: projectedTurnItemArray(
-    OrchestrationV2ProjectedTurnItem,
-    OrchestrationV2ProjectedTurnItem.mapFields((fields) => ({
-      ...fields,
-      item: ForwardCompatibleUnion(OrchestrationV2TurnItem.members, "type"),
-    })),
-  ),
+  visibleTurnItems: OrchestrationV2ProjectedTurnItems,
   updatedAt: Schema.DateTimeUtc,
 });
 export type OrchestrationV2ThreadProjection = typeof OrchestrationV2ThreadProjection.Type;
@@ -2371,7 +2373,7 @@ export const OrchestrationV2ThreadTranscript = Schema.Struct({
   threadId: ThreadId,
   title: Schema.String,
   updatedAt: Schema.DateTimeUtc,
-  items: Schema.Array(OrchestrationV2ProjectedTurnItem),
+  items: OrchestrationV2ProjectedTurnItems,
 });
 export type OrchestrationV2ThreadTranscript = typeof OrchestrationV2ThreadTranscript.Type;
 
@@ -4388,13 +4390,7 @@ export type OrchestrationV2ThreadBoundedSnapshot = typeof OrchestrationV2ThreadB
 export const OrchestrationV2ThreadHistoryPage = withRecordIdTable(
   Schema.Struct({
     snapshotSequence: NonNegativeInt,
-    items: projectedTurnItemArray(
-      OrchestrationV2ProjectedTurnItem,
-      OrchestrationV2ProjectedTurnItem.mapFields((fields) => ({
-        ...fields,
-        item: ForwardCompatibleUnion(OrchestrationV2TurnItem.members, "type"),
-      })),
-    ),
+    items: OrchestrationV2ProjectedTurnItems,
     nextCursor: Schema.NullOr(TrimmedNonEmptyString),
     hasMoreHistory: Schema.Boolean,
     /** Records of the page's subagent items, which a bounded snapshot can omit. */

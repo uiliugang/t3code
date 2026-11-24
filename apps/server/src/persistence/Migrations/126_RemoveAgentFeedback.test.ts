@@ -24,6 +24,16 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("126_RemoveAgentFeedb
           ('card-opened', 'thread', 'turn-item.updated', '2026-11-19', '{"type":"feedback_request"}'),
           ('message', 'thread', 'turn-item.updated', '2026-11-19', '{"type":"assistant_message"}'),
           ('card-answered', 'thread', 'turn-item.updated', '2026-11-19', '{"type":"feedback_request"}')`;
+      yield* sql`INSERT INTO orchestration_events
+        (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+         actor_kind, payload_json, metadata_json, application_event_version)
+        VALUES
+          ('card-opened', 'thread', 'thread', 0, 'turn-item.updated', '2026-11-19',
+           'server', '{"type":"feedback_request","preview":{"actual":"report text"}}', '{}', 2),
+          ('message', 'thread', 'thread', 1, 'turn-item.updated', '2026-11-19',
+           'provider', '{"type":"assistant_message"}', '{}', 2),
+          ('card-answered', 'thread', 'thread', 2, 'turn-item.updated', '2026-11-19',
+           'server', '{"type":"feedback_request"}', '{}', 2)`;
 
       yield* runMigrations();
 
@@ -36,6 +46,9 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("126_RemoveAgentFeedb
         [{ turn_item_id: "message" }],
       );
       assert.deepEqual(yield* sql`SELECT sequence, event_id FROM orchestration_v2_events`, [
+        { sequence: 2, event_id: "message" },
+      ]);
+      assert.deepEqual(yield* sql`SELECT sequence, event_id FROM orchestration_events`, [
         { sequence: 2, event_id: "message" },
       ]);
       assert.deepEqual(
