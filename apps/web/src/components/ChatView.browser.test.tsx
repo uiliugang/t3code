@@ -171,9 +171,14 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
   const liveTitle = "Add keyboard shortcuts to the sidebar";
   using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
     const isCompleted = input.key === completed.key;
-    expect(input).toEqual({ ...issueRef, key: isCompleted ? completed.key : issue.key });
+    const entry = isCompleted ? completed : issue;
+    expect(input).toEqual({
+      ...issueRef,
+      key: entry.key,
+      url: `https://linear.app/example/issue/${entry.key}`,
+    });
     return Effect.succeed({
-      ...(isCompleted ? completed : issue),
+      ...entry,
       title: isCompleted ? completed.title : liveTitle,
       author: { login: "sam", name: null, avatarUrl: null },
       state: isCompleted

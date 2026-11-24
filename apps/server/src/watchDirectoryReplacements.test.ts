@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - exercise a dropped native watch notification.
+import * as NodeFS from "node:fs";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import { assert, it } from "@effect/vitest";
@@ -6,8 +9,48 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vite-plus/test";
 
 import { watchDirectoryPath } from "./watchDirectoryReplacements.ts";
+
+vi.mock("node:fs", { spy: true });
+
+it.effect("follows a replacement of the configured directory without a native event", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const base = yield* fs.makeTempDirectoryScoped();
+    const entry = path.join(base, "themes");
+    const replacement = path.join(base, "replacement");
+    yield* fs.makeDirectory(entry);
+    yield* fs.makeDirectory(replacement);
+    yield* fs.writeFileString(path.join(entry, "original.json"), "");
+    yield* fs.writeFileString(path.join(replacement, "restored.json"), "");
+    const snapshots = yield* Queue.unbounded<Array<string>>();
+    vi.mocked(NodeFS.watch).mockImplementationOnce((directory) =>
+      NodeFS.watch(directory, () => {}),
+    );
+
+    yield* watchDirectoryPath(
+      entry,
+      Stream.fromEffect(
+        fs.readDirectory(entry).pipe(
+          Effect.orDie,
+          Effect.flatMap((files) => Queue.offer(snapshots, files)),
+          Effect.asVoid,
+        ),
+      ),
+      Effect.succeed(false),
+    ).pipe(Stream.runDrain, Effect.forkScoped);
+    assert.deepEqual(yield* Queue.take(snapshots), ["original.json"]);
+    yield* fs.rename(entry, path.join(base, "previous"));
+    yield* fs.rename(replacement, entry);
+
+    yield* TestClock.adjust("1 second");
+    assert.deepEqual(yield* Queue.take(snapshots), ["restored.json"]);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
 
 it.live.skipIf(!symlinksSupported)(
   "backs off stopped watches for an unchanged linked directory",

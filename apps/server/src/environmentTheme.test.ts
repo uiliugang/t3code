@@ -9,6 +9,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -62,6 +63,7 @@ const withEnvironmentThemes = <A, E>(
     /** Receives each theme and appearance the service makes the environment default. */
     selected?: Array<{ readonly theme?: string; readonly appearance?: string }>;
     wrapFileSystem?: (fs: FileSystem.FileSystem) => FileSystem.FileSystem;
+    linkedWatchReady?: Deferred.Deferred<void>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -73,6 +75,32 @@ const withEnvironmentThemes = <A, E>(
     for (const [filename, contents] of Object.entries(seeds)) {
       yield* fs.writeFileString(path.join(themesDir, filename), contents);
     }
+    const wrappedFs = options.wrapFileSystem?.(fs) ?? fs;
+    const { linkedWatchReady } = options;
+    let resolvedLink = false;
+    const watcherFs = linkedWatchReady
+      ? FileSystem.FileSystem.of({
+          ...wrappedFs,
+          readLink: (entry) =>
+            wrappedFs.readLink(entry).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  if (entry === themesDir) resolvedLink = true;
+                }),
+              ),
+            ),
+          watch: (directory, watchOptions) =>
+            directory === themesDir && resolvedLink
+              ? wrappedFs.watch(directory, {
+                  ...watchOptions,
+                  onReady: () => {
+                    watchOptions?.onReady?.();
+                    Deferred.doneUnsafe(linkedWatchReady, Exit.void);
+                  },
+                })
+              : wrappedFs.watch(directory, watchOptions),
+        })
+      : wrappedFs;
 
     return yield* body.pipe(
       Effect.provide(
@@ -99,7 +127,7 @@ const withEnvironmentThemes = <A, E>(
                     }),
             }),
           ),
-          Layer.provide(Layer.succeed(FileSystem.FileSystem, options.wrapFileSystem?.(fs) ?? fs)),
+          Layer.provide(Layer.succeed(FileSystem.FileSystem, watcherFs)),
         ),
       ),
     );
@@ -356,6 +384,7 @@ describe("environment theme", () => {
     "publishes themes when a linked theme tree vanishes after listing and returns between probes",
     () =>
       Effect.gen(function* () {
+        const linkedWatchReady = yield* Deferred.make<void>();
         const resumeProbes = yield* Deferred.make<void>();
         let linkedEntry: string | undefined;
         let moveAfterListing: Effect.Effect<void> | undefined;
@@ -393,6 +422,7 @@ describe("environment theme", () => {
               ["Shared Light"],
             );
 
+            yield* Deferred.await(linkedWatchReady);
             // The next listing succeeds, then the tree moves before its files are opened.
             moveAfterListing = Effect.orDie(fs.rename(active, previous));
             holdProbes = true;
@@ -406,6 +436,7 @@ describe("environment theme", () => {
             assert.deepEqual(yield* Queue.take(snapshots), ["Nightfall", "Shared Light"]);
           }),
           {
+            linkedWatchReady,
             wrapFileSystem: (fs) =>
               FileSystem.FileSystem.of({
                 ...fs,
@@ -434,6 +465,7 @@ describe("environment theme", () => {
     "publishes themes when a linked theme directory's original grandparent is restored between probes",
     () =>
       Effect.gen(function* () {
+        const linkedWatchReady = yield* Deferred.make<void>();
         const resumeProbes = yield* Deferred.make<void>();
         let linkedEntry: string | undefined;
         let holdProbes = false;
@@ -470,6 +502,7 @@ describe("environment theme", () => {
               ["Shared Light"],
             );
 
+            yield* Deferred.await(linkedWatchReady);
             holdProbes = true;
             yield* fs.rename(active, previous);
             yield* fs.writeFileString(
@@ -482,6 +515,7 @@ describe("environment theme", () => {
             assert.deepEqual(yield* Queue.take(snapshots), ["Nightfall", "Shared Light"]);
           }),
           {
+            linkedWatchReady,
             wrapFileSystem: (fs) =>
               FileSystem.FileSystem.of({
                 ...fs,

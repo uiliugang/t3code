@@ -35,16 +35,15 @@ export const watchDirectoryReplacements = <R>(
     }),
   );
 
-const entryIdentity = (path: string): string | null => {
-  try {
-    const info = NodeFS.lstatSync(path);
-    return `${info.dev}:${info.ino}:${info.birthtimeMs}`;
-  } catch {
-    return null;
-  }
-};
+const entryIdentity = (path: string) =>
+  Effect.promise(() =>
+    NodeFS.promises.lstat(path).then(
+      (info) => `${info.dev}:${info.ino}:${info.birthtimeMs}`,
+      () => null,
+    ),
+  );
 
-const watchDirectoryEntry = (path: string, ready: Deferred.Deferred<void>) => {
+const watchDirectoryEntry = (path: string, ready: Deferred.Deferred<void>, reconcile = false) => {
   const directory = NodePath.dirname(path);
   const name = NodePath.basename(path);
   const watchError = (cause: unknown) =>
@@ -55,21 +54,13 @@ const watchDirectoryEntry = (path: string, ready: Deferred.Deferred<void>) => {
       pathOrDescriptor: directory,
       cause,
     });
-  // Filter in the native callback to avoid queueing and statting unrelated entries.
-  // macOS FSEvents replays events that created `path` immediately before `NodeFS.watch` opened,
-  // so ignore callbacks until `path`'s own lstat identity actually changes.
-  return Stream.callback<void, PlatformError.PlatformError>(
+  const notifications = Stream.callback<void, PlatformError.PlatformError>(
     (events) =>
       Effect.acquireRelease(
         Effect.try({
           try: () => {
-            let current = entryIdentity(path);
             const watcher = NodeFS.watch(directory, (_, filename) => {
-              if (filename !== name && filename !== null) return;
-              const next = entryIdentity(path);
-              if (next === current) return;
-              current = next;
-              Queue.offerUnsafe(events, undefined);
+              if (filename === name || filename === null) Queue.offerUnsafe(events, undefined);
             });
             watcher.on("error", (error) =>
               Queue.failCauseUnsafe(events, Cause.fail(watchError(error))),
@@ -82,6 +73,26 @@ const watchDirectoryEntry = (path: string, ready: Deferred.Deferred<void>) => {
         (watcher) => Effect.sync(() => watcher.close()),
       ).pipe(Effect.tap(() => Deferred.succeed(ready, undefined))),
     { bufferSize: 1, strategy: "sliding" },
+  );
+  const checks = reconcile
+    ? notifications.pipe(Stream.merge(Stream.tick("1 second"), { haltStrategy: "left" }))
+    : notifications;
+  return Stream.unwrap(
+    Effect.map(entryIdentity(path), (initial) => {
+      let current = initial;
+      // FSEvents can replay creation of the entry after registration without replacing it.
+      return checks.pipe(
+        Stream.filterEffect(() =>
+          entryIdentity(path).pipe(
+            Effect.map((next) => {
+              if (next === current) return false;
+              current = next;
+              return true;
+            }),
+          ),
+        ),
+      );
+    }),
   );
 };
 
@@ -118,7 +129,7 @@ export const watchDirectoryPath = (
 ) => {
   const entry = NodePath.resolve(directory);
   return watchDirectoryReplacements(
-    (ready) => watchDirectoryEntry(entry, ready),
+    (ready) => watchDirectoryEntry(entry, ready, true),
     Stream.unwrap(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
