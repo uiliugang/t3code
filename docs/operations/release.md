@@ -163,8 +163,6 @@ and nightly releases read the relay URL and Clerk client configuration from the 
 `production` GitHub Actions environment before building desktop, CLI, or hosted web artifacts. That
 environment admits only `main` and `v*` tags, so preview releases, which may run from any branch,
 take the same public identifiers from `.env.example`; keep it in step with the `production` values.
-Every channel reads the relay client tracing config from Alchemy state with the repository-level
-`CLOUDFLARE_API_TOKEN`, so moving that token into `production` would break preview releases.
 
 Required repository variables shared by relay deployments:
 

@@ -18,6 +18,7 @@ export function SettingsLegalRouteScreen({
   if (document === "terms" || document === "security") {
     return (
       <SettingsLegalDocumentRouteScreen
+        key={document}
         documentName={document === "terms" ? terms : security}
         documentUrl={document === "terms" ? TERMS_OF_SERVICE_URL : SECURITY_POLICY_URL}
       />
