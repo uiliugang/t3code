@@ -529,6 +529,20 @@ function issueSurface(target: IssueSurfaceTarget): IssueSurface {
   };
 }
 
+export function hasOpenRightPanelSurface(
+  panel: ThreadRightPanelState,
+  surface: RightPanelSurface,
+): boolean {
+  if (!panel.isOpen) return false;
+  const id =
+    surface.kind === "issue"
+      ? issueSurfaceId(surface)
+      : surface.kind === "requirement-issue"
+        ? requirementIssueSurfaceId(surface)
+        : surface.id;
+  return panel.surfaces.some((current) => current.id === id);
+}
+
 export function pullRequestSurface(target: {
   environmentId?: string;
   projectId: string;
@@ -734,10 +748,14 @@ function normalizeRevealLine(line: number | undefined): number | null {
   return Math.max(1, Math.trunc(line));
 }
 
+export function isUnscopedLinearIssue(tracker: string, url: string | undefined): boolean {
+  return tracker === "linear" && (!url || !isStandaloneIssueLink(url));
+}
+
 export function isUnscopedLinearSurface(surface: RightPanelSurface): boolean {
   if (surface.kind !== "issue" && surface.kind !== "requirement-issue") return false;
   const tracker = surface.kind === "issue" ? surface.tracker : surface.provider;
-  return tracker === "linear" && (!surface.url || !isStandaloneIssueLink(surface.url));
+  return isUnscopedLinearIssue(tracker, surface.url);
 }
 
 export function migratePersistedRightPanelState(persistedState: unknown): {

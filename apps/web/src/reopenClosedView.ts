@@ -5,6 +5,7 @@ import type { ClosedView, ClosedViewEntry } from "./closedViewStore";
 import type { PullRequestListPreferences } from "./components/pullRequest/pullRequestListPreferences";
 import { openPreviewSession } from "./components/preview/openPreviewSession";
 import {
+  hasOpenRightPanelSurface,
   isUnscopedLinearSurface,
   rightPanelHostRef,
   type RightPanelSurface,
@@ -45,7 +46,7 @@ export function planNextReopen(
     }
     const alreadyOpen =
       entry.kind === "panel-tab"
-        ? owner.panel.isOpen && owner.panel.surfaces.some((s) => s.id === entry.surface.id)
+        ? hasOpenRightPanelSurface(owner.panel, entry.surface)
         : owner.panel.surfaces.some(
             (s) => s.kind === "preview" && s.resourceId === entry.snapshot.tabId,
           );

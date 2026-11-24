@@ -90,6 +90,7 @@ import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindin
 import { isTerminalFocused } from "../../lib/terminalFocus";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import {
+  isUnscopedLinearIssue,
   REQUIREMENTS_PANEL_REF,
   selectActiveRightPanelSurface,
   selectSelectedRightPanelSurface,
@@ -496,27 +497,35 @@ export function RequirementBoard({
     const panels = useRightPanelStore.getState();
     if (workItemId)
       panels.openWorkItem(rightPanelRef, { environmentId: detailEnvironmentId, workItemId });
-    else if (issueId && issueProjectId && issueTracker && issueScope)
-      panels.openIssue(rightPanelRef, {
+    else if (
+      issueId &&
+      issueProjectId &&
+      !isUnscopedLinearIssue(
+        issueTracker && issueScope ? issueTracker : issueProvider,
+        search.issueUrl,
+      )
+    ) {
+      const target = {
         environmentId: detailEnvironmentId,
         projectId: issueProjectId,
-        tracker: issueTracker,
         ...(search.issueHost ? { host: search.issueHost } : {}),
-        scope: issueScope,
-        key: issueId,
         ...(search.issueUrl ? { url: search.issueUrl } : {}),
-      });
-    else if (issueId && issueProjectId)
-      panels.openRequirementIssue(rightPanelRef, {
-        environmentId: detailEnvironmentId,
-        projectId: issueProjectId,
-        provider: issueProvider,
-        ...(search.issueHost ? { host: search.issueHost } : {}),
-        ...(issueScope ? { scope: issueScope } : {}),
-        issueId,
-        ...(search.issueUrl ? { url: search.issueUrl } : {}),
-      });
-    else if (pullRequest)
+      };
+      if (issueTracker && issueScope)
+        panels.openIssue(rightPanelRef, {
+          ...target,
+          tracker: issueTracker,
+          scope: issueScope,
+          key: issueId,
+        });
+      else
+        panels.openRequirementIssue(rightPanelRef, {
+          ...target,
+          provider: issueProvider,
+          ...(issueScope ? { scope: issueScope } : {}),
+          issueId,
+        });
+    } else if (pullRequest)
       panels.openPullRequest(rightPanelRef, {
         environmentId: detailEnvironmentId,
         projectId: pullRequest.projectId,

@@ -952,6 +952,32 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
     .element(screen.getByTestId("tracker-detail:ENG-1"))
     .toHaveAttribute("data-issue-url", "https://linear.app/acme/issue/ENG-1");
 });
+
+it.each([
+  { selection: { issueTracker: "linear", issueScope: "ENG" }, detail: "tracker-detail:ENG-1" },
+  { selection: { issueProvider: "linear", issueScope: "ENG" }, detail: "issue-detail:ENG-1" },
+] as const)(
+  "does not restore $detail without a Linear workspace URL",
+  async ({ selection, detail }) => {
+    using fixture = setup();
+    const search = {
+      ...selection,
+      issueProjectId: ProjectId.make("project"),
+      issueId: "ENG-1",
+    };
+    await using screen = await render(
+      fixture.board({ ...search, issueUrl: "https://linear.app/acme/issue/ENG-1" }),
+    );
+    await expect.element(screen.getByTestId(detail)).toBeVisible();
+
+    await screen.rerender(fixture.board(search));
+    await expect.element(screen.getByTestId(detail)).not.toBeInTheDocument();
+
+    await screen.rerender(fixture.board({ ...search, issueUrl: "https://linear.app/acme" }));
+    await expect.element(screen.getByTestId(detail)).not.toBeInTheDocument();
+  },
+);
+
 it("switches between workflow and tracker issue modes from the shared requirements page", async () => {
   using fixture = setup();
   const updateSearch = vi.fn();

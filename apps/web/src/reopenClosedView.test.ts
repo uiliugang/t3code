@@ -338,4 +338,49 @@ describe("planNextReopen", () => {
     expect(plan.drop.map((e) => e.id)).toEqual(dropped);
     expect(plan.restore?.id ?? null).toBe(restored);
   });
+
+  it.each(["issue", "requirement-issue"] as const)(
+    "skips a legacy Linear %s entry when its workspace-scoped tab is already open",
+    (kind) => {
+      const panels = useRightPanelStore.getState();
+      const target = {
+        projectId: "project",
+        scope: "ENG",
+        url: "https://linear.app/acme/issue/ENG-42",
+      };
+      const surface =
+        kind === "issue"
+          ? ({
+              ...target,
+              kind,
+              id: "issue:project:linear:eng:ENG-42",
+              tracker: "linear",
+              key: "ENG-42",
+            } as const)
+          : ({
+              ...target,
+              kind,
+              id: "requirement-issue:project:linear:ENG:ENG-42",
+              provider: "linear",
+              issueId: "ENG-42",
+            } as const);
+      if (surface.kind === "issue") panels.openIssue(threadRef, surface);
+      else panels.openRequirementIssue(threadRef, surface);
+      const panel = selectThreadRightPanelState(
+        useRightPanelStore.getState().byThreadKey,
+        threadRef,
+      );
+      const legacy: ClosedViewEntry = {
+        id: "legacy",
+        kind: "panel-tab",
+        threadRef,
+        surface,
+      };
+      const next = entries[1]!;
+      expect(planNextReopen([legacy, next], () => ({ ...known, panel }))).toEqual({
+        drop: [legacy],
+        restore: next,
+      });
+    },
+  );
 });
