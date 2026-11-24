@@ -23,11 +23,7 @@ import {
   useRemoteOpenState,
 } from "../../remoteOpen";
 import { useEnvironment } from "../../state/environments";
-import {
-  ChevronDownIcon,
-  SquareArrowOutUpRightIcon,
-  TerminalIcon,
-} from "lucide-react";
+import { ChevronDownIcon, SquareArrowOutUpRightIcon, TerminalIcon } from "lucide-react";
 
 import { Group, GroupSeparator } from "../ui/group";
 import {

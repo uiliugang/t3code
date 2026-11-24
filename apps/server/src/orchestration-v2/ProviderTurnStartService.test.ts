@@ -61,6 +61,7 @@ import {
   layerThreadWorktreeRestore,
   ThreadWorktreeRestore,
 } from "../workspace/restoreMissingWorktree.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
   layerNoTaskFolders,
@@ -370,6 +371,65 @@ effectIt.effect("restores a missing worktree before a send only under the worksp
     expect(yield* takeRecreated(threadId)).toBeUndefined();
   }).pipe(Effect.provide(layerRestoreLeaseTest)),
 );
+
+effectIt.effect("records task-folder recreation only when a checkout was missing", () => {
+  const worktreePath = `${managedWorktreesDir}/project/feature-restore`;
+  let missing = true;
+  const restoreTaskFolder = vi.fn(() =>
+    Effect.sync(() => {
+      const recreated = missing;
+      missing = false;
+      return recreated;
+    }),
+  );
+  return Effect.gen(function* () {
+    const { restore, takeRecreated } = yield* ThreadWorktreeRestore;
+    const threadId = ThreadId.make("thread_task_folder_restore");
+    const thread = {
+      id: threadId,
+      projectId: ProjectId.make("project_task_folder_restore"),
+      worktreePath,
+      branch: "feature/restore",
+    };
+    yield* restore(thread);
+    expect(yield* takeRecreated(threadId)).toMatchObject({ worktreePath });
+    yield* restore(thread);
+    expect(yield* takeRecreated(threadId)).toBeUndefined();
+    expect(restoreTaskFolder).toHaveBeenCalledTimes(2);
+  }).pipe(
+    Effect.provide(
+      layerThreadWorktreeRestore.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(TaskFolders.TaskFolders)({
+              find: () =>
+                Effect.succeed({
+                  root: `${managedWorktreesDir}/project`,
+                  projectId: ProjectId.make("project_task_folder_restore"),
+                  projectRoot: "/tmp/provider-turn-start-project",
+                  anchor: "/tmp",
+                  projectPath: worktreePath,
+                  projectIsWorktree: true,
+                  repositories: [],
+                }),
+              restore: restoreTaskFolder,
+            }),
+            FileSystem.layerNoop({
+              realPath: (target: string) => Effect.succeed(normalize(target)),
+            }),
+            layerWorktreeLocation(),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+            Layer.mock(GitWorkflow.GitWorkflowService)({}),
+            Layer.mock(ProjectService.ProjectService)({
+              getById: () =>
+                Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
+});
 
 effectIt.effect("restores into a leftover worktree folder that cannot itself be removed", () => {
   const worktreePath = `${managedWorktreesDir}/project/feature-restore`;

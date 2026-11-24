@@ -2619,7 +2619,9 @@ server.listen(Number(flag("--port") ?? 0), "127.0.0.1", () => {
           yield* isRunning(serverPid),
           "the second desktop's disconnect stopped the server the first desktop launched",
         );
-      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+      }).pipe(
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, FetchHttpClient.layer)),
+      ),
   );
 
   it.live.each(staleIds)("disconnecting does not signal %s named by the managed pid file", (kind) =>

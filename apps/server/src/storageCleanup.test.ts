@@ -4166,6 +4166,19 @@ describe("storage cleanup reports and local file policies", () => {
         expect((yield* fixture.service.runNow).entries).toEqual(later.entries);
         expect(yield* fixture.fs.exists(stuck)).toBe(true);
         yield* fixture.fs.chmod(stuck, 0o755);
+        const gitFile = `${adminDir}/gitdir`;
+        yield* fixture.fs.makeDirectory(gitFile);
+        expect((yield* fixture.service.runNow).entries).toContainEqual(
+          expect.objectContaining({ path: fixture.worktree, outcome: "failed" }),
+        );
+        expect(yield* fixture.fs.exists(stuck)).toBe(true);
+        yield* fixture.fs.remove(gitFile, { recursive: true });
+        yield* fixture.fs.writeFileString(`${adminDir}/locked`, "offline checkout");
+        expect((yield* fixture.service.runNow).entries).toContainEqual(
+          expect.objectContaining({ path: fixture.worktree, outcome: "kept" }),
+        );
+        expect(yield* fixture.fs.exists(stuck)).toBe(true);
+        yield* fixture.fs.remove(`${adminDir}/locked`);
         expect((yield* fixture.service.runNow).entries).toEqual([
           expect.objectContaining({ path: fixture.worktree, outcome: "removed" }),
         ]);

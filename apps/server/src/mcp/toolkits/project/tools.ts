@@ -205,7 +205,7 @@ export const ProjectToolkit = Toolkit.make(
   Tool.make("t3_branch_issues_list", {
     ...shared,
     description:
-      "List issues associated with a repository branch. GitHub links are stored in T3; Meituan Code includes MEP ONES branch associations.",
+      "List a branch's linked issues (T3 for GitHub; MEP ONES included on Meituan Code).",
     parameters: Schema.Struct({
       environmentId: OrchestratorMcpEnvironmentTarget,
       ...BranchIssuesInput.fields,
@@ -218,7 +218,7 @@ export const ProjectToolkit = Toolkit.make(
   Tool.make("t3_branch_issue_read", {
     ...shared,
     description:
-      "Read the title, state and description of a GitHub issue or MEP ONES work item for this repository's platform.",
+      "Read the title, state and body of a GitHub issue or MEP ONES work item for this repo.",
     parameters: Schema.Struct({
       environmentId: OrchestratorMcpEnvironmentTarget,
       ...BranchIssueDetailInput.fields,
@@ -231,7 +231,7 @@ export const ProjectToolkit = Toolkit.make(
   Tool.make("t3_branch_issues_update", {
     ...shared,
     description:
-      "Associate or disassociate an issue URL with a published repository branch. Each branch can link one issue; unlink it before linking another. GitHub stores branch links in T3 without closing issues. Meituan Code updates MEP ONES branch associations.",
+      "Link or unlink an issue URL on a pushed branch (1 per branch; unlink first). GitHub links stay in T3 without closing issues; Meituan Code updates MEP ONES.",
     parameters: Schema.Struct({
       environmentId: OrchestratorMcpEnvironmentTarget,
       ...BranchIssuesUpdateInput.fields,

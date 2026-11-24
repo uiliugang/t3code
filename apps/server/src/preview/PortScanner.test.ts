@@ -1132,9 +1132,11 @@ effectIt.effect(
 
       // After ProcessLauncher restarts with a new helper PID, new agent CLIs are still excluded.
       launcherPid = 9_001;
-      procFiles["/proc/4400/environ"] = `T3CODE_RESOURCE_OWNER=scanner-state\0${PortScanner.AGENT_THREAD_ENV}=thread-agy-2\0`;
+      procFiles["/proc/4400/environ"] =
+        `T3CODE_RESOURCE_OWNER=scanner-state\0${PortScanner.AGENT_THREAD_ENV}=thread-agy-2\0`;
       procFiles["/proc/4400/stat"] = `4400 (agy) S ${launcherPid} 4400 4400 0`;
-      procFiles["/proc/4401/environ"] = `T3CODE_RESOURCE_OWNER=scanner-state\0${PortScanner.AGENT_THREAD_ENV}=thread-agy-2\0`;
+      procFiles["/proc/4401/environ"] =
+        `T3CODE_RESOURCE_OWNER=scanner-state\0${PortScanner.AGENT_THREAD_ENV}=thread-agy-2\0`;
       procFiles["/proc/4401/stat"] = "4401 (node) S 4400 4401 4401 0";
       lsofStdout = `p4400\ncagy\nn127.0.0.1:43210\np4401\ncnode\nn127.0.0.1:${secondDevPort}\n`;
 

@@ -233,28 +233,57 @@ async function install(name, version, entry) {
     stopHub(hub);
     for (let attempt = 0; attempt < 5; attempt++) {
       const hubPort = await port();
-      // The hub prints the session token it generates, so its log is private and read from here on.
-      // It also records the token in its state folder, kept in this host's private folder.
+      // The hub writes its session token to server-<port>.json in EXPO_DEVICE_HUB_STATE_DIR and
+      // prints it in its startup link; read it from the state file and redact it from hub.log.
       const logFile = path.join(state, 'hub.log');
+      const hubStateFile = path.join(state, 'server-' + hubPort + '.json');
+      fs.rmSync(hubStateFile, { force: true });
       const log = fs.openSync(logFile, 'a', 0o600);
       fs.fchmodSync(log, 0o600);
       const logStart = fs.fstatSync(log).size;
-      const announcedToken = () => /\btoken=([\w.~-]+)/.exec(fs.readFileSync(logFile, 'utf8').slice(logStart))?.[1];
+      fs.closeSync(log);
+      let announcedToken;
+      const redactLog = () => {
+        let fd;
+        try { fd = fs.openSync(logFile, 'r+'); } catch { return; }
+        try {
+          const size = fs.fstatSync(fd).size;
+          if (size <= logStart) return;
+          const buf = Buffer.alloc(size - logStart);
+          const bytes = fs.readSync(fd, buf, 0, buf.length, logStart);
+          const text = buf.subarray(0, bytes).toString('utf8');
+          const match = /\btoken=([\w.~-]+)/.exec(text);
+          if (match) announcedToken = match[1];
+          const redacted = text.replace(/\btoken=[\w.~-]+/g, 'token=<redacted>');
+          if (redacted !== text) {
+            const out = Buffer.from(redacted, 'utf8');
+            fs.writeSync(fd, out, 0, out.length, logStart);
+            fs.ftruncateSync(fd, logStart + out.length);
+          }
+        } finally { fs.closeSync(fd); }
+      };
+      const readHubToken = () => {
+        redactLog();
+        const published = read(hubStateFile);
+        return (published && published.pid === child.pid && published.token) || announcedToken;
+      };
+      const logOut = fs.openSync(logFile, 'a', 0o600);
       const child = spawn(process.execPath, [hubEntry, '--port', String(hubPort), '--host', '127.0.0.1', '--require-token', '--hide-sidebar', '--hide-boot-device', ...(hubPlatform ? ['--platform', hubPlatform] : [])], {
-        cwd: state, detached: true, stdio: ['ignore', log, log], env: { ...process.env, EXPO_DEVICE_HUB_STATE_DIR: state, EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: emulatorExtraArgs, FORCE_COLOR: '0', NO_COLOR: '1' },
+        cwd: state, detached: true, stdio: ['ignore', logOut, logOut], env: { ...process.env, EXPO_DEVICE_HUB_STATE_DIR: state, EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: emulatorExtraArgs, FORCE_COLOR: '0', NO_COLOR: '1' },
       });
       try { await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); }); }
-      finally { fs.closeSync(log); }
+      finally { fs.closeSync(logOut); }
       child.unref();
       hub = { owner, pid: child.pid, port: hubPort, entryPath: hubEntry, platform: hubPlatform, emulatorExtraArgs };
       write(hubFile, hub);
       const deadline = Date.now() + 30000;
       let listening = false;
       while (child.exitCode === null && child.signalCode === null) {
-        if (await healthy(hub.port, '/readyz') && (hub.token = announcedToken())) { write(hubFile, hub); listening = true; break; }
-        if (Date.now() > deadline) { stopHub(hub); throw Error('Device hub did not become ready. See ' + path.join(state, 'hub.log')); }
+        if (await healthy(hub.port, '/readyz') && (hub.token = readHubToken())) { redactLog(); write(hubFile, hub); listening = true; break; }
+        if (Date.now() > deadline) { stopHub(hub); redactLog(); throw Error('Device hub did not become ready. See ' + path.join(state, 'hub.log')); }
         await sleep(200);
       }
+      redactLog();
       if (listening) break;
       // Port reservation and binding happen in different processes. Retry an early exit with a fresh port.
       fs.rmSync(hubFile, { force: true });

@@ -2754,9 +2754,7 @@ export const layerWithOptions = (
             ),
           startTurn: (input) =>
             busyTurn(input, () =>
-              runtime.startTurn(input).pipe(
-                turnMetrics("send", input.modelSelection.model),
-              ),
+              runtime.startTurn(input).pipe(turnMetrics("send", input.modelSelection.model)),
             ),
           ...(runtime.resumeTurn === undefined
             ? {}

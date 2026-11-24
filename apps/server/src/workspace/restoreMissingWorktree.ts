@@ -70,7 +70,9 @@ type WorktreeThread = Pick<
   OrchestrationV2ThreadShell,
   "id" | "projectId" | "worktreePath" | "branch" | "workspace"
 > &
-  Partial<Pick<OrchestrationV2ThreadShell, "lineage" | "delegatedFrom" | "forkedFrom" | "linkOrigin">>;
+  Partial<
+    Pick<OrchestrationV2ThreadShell, "lineage" | "delegatedFrom" | "forkedFrom" | "linkOrigin">
+  >;
 
 export const makeRestoreMissingWorktree = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -268,7 +270,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
     // A task folder can miss one repository's worktree while the thread's own folder is there.
     const taskFolder = yield* taskFolders.find(worktreePath).pipe(Effect.orElseSucceed(() => null));
     if (taskFolder !== null) {
-      return yield* taskFolders
+      const restored = yield* taskFolders
         .restore({
           taskFolder,
           branch,
@@ -300,6 +302,12 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
               : new WorktreeRecreateError({ worktreePath, branch, cause }),
           ),
         );
+      if (!restored) return;
+      const project = yield* projects.getById(thread.projectId).pipe(
+        Effect.map(Option.getOrUndefined),
+        Effect.orElseSucceed(() => undefined),
+      );
+      return project === undefined ? undefined : { project, worktreePath };
     }
     const exists = yield* fileSystem.exists(worktreePath).pipe(Effect.orElseSucceed(() => true));
     if (!(yield* isManagedWorktreePath(worktreePath))) return;

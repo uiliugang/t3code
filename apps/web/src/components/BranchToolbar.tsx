@@ -6,7 +6,6 @@ import {
   ClipboardApiUnavailableError,
   ClipboardWriteError,
 } from "../hooks/useCopyToClipboard";
-import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { readLocalApi } from "../localApi";

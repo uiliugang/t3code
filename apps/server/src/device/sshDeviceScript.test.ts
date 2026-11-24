@@ -356,6 +356,11 @@ it.effect("starts the hub requiring a session token and reports the one it print
         await NodeFSP.mkdir(NodePath.dirname(entry), { recursive: true });
         await NodeFSP.writeFile(NodePath.join(install, ".install-complete"), DEVICE_HUB_VERSION);
         // Stands in for the hub: it serves /readyz and prints its startup link.
+        await NodeFSP.mkdir(state, { recursive: true });
+        await NodeFSP.writeFile(
+          NodePath.join(state, "hub.log"),
+          "旧版设备管理中心已停止，正在重新启动以生成新的鉴权会话。\n".repeat(10),
+        );
         await NodeFSP.writeFile(
           entry,
           `import * as http from "node:http";
@@ -374,9 +379,10 @@ http.createServer((_request, response) => response.end("ok")).listen(Number(args
           JSON.parse(await NodeFSP.readFile(NodePath.join(state, "hub.json"), "utf8")).token,
         ).toBe("printed-token");
         expect((await NodeFSP.stat(NodePath.join(state, "hub.log"))).mode & 0o077).toBe(0);
-        expect(await NodeFSP.readFile(NodePath.join(state, "hub.log"), "utf8")).toContain(
-          `state-dir=${state}\n`,
-        );
+        const logText = await NodeFSP.readFile(NodePath.join(state, "hub.log"), "utf8");
+        expect(logText).toContain(`state-dir=${state}\n`);
+        expect(logText).toContain("token=<redacted>");
+        expect(logText).not.toContain("printed-token");
       } finally {
         run("stop");
         await NodeFSP.rm(home, { recursive: true, force: true });

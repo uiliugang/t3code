@@ -1019,27 +1019,27 @@ export function NewTaskDraftScreen(props: {
       <ThreadScreenFallback header={<AppBar title={t("New thread")} onBack={goBack} />}>
         <KeyboardStickyView pointerEvents="box-none" style={{ flex: 1 }}>
           <View pointerEvents="box-none" className="flex-1 justify-end gap-3 p-4">
-          {environmentControl}
-          <Text className="text-foreground-muted">
-            {environmentConnected && selectedEnvironmentServerConfig ? (
-              <T>
-                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has no
-                model available. Install or sign in to a provider there to choose one.
-              </T>
-            ) : (
-              t(
-                "Your draft is saved on this device. Connect to an environment to choose its first model.",
-              )
-            )}
-          </Text>
-          <ComposerEditor
-            draftKey={flow.draftKey}
-            value={flow.prompt}
-            onChangeText={flow.setPrompt}
-            placeholder={t("Ask anything")}
-            multiline
-            style={{ minHeight: 64 }}
-          />
+            {environmentControl}
+            <Text className="text-foreground-muted">
+              {environmentConnected && selectedEnvironmentServerConfig ? (
+                <T>
+                  Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has no
+                  model available. Install or sign in to a provider there to choose one.
+                </T>
+              ) : (
+                t(
+                  "Your draft is saved on this device. Connect to an environment to choose its first model.",
+                )
+              )}
+            </Text>
+            <ComposerEditor
+              draftKey={flow.draftKey}
+              value={flow.prompt}
+              onChangeText={flow.setPrompt}
+              placeholder={t("Ask anything")}
+              multiline
+              style={{ minHeight: 64 }}
+            />
           </View>
         </KeyboardStickyView>
       </ThreadScreenFallback>

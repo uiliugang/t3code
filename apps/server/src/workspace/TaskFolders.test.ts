@@ -323,6 +323,7 @@ it.live.each([false, true])(
         projectStart: { refName: "feature/base", baseRefName: "feature/base" },
         baseBranch: "feature/base",
         startFromOrigin: false,
+        projectCommands: true,
         childWorktree: true,
         ...(carry ? { carryChangesFromCwd: shop } : {}),
       });
@@ -348,6 +349,7 @@ it.live.each([false, true])(
           projectStart: { refName: "feature/task", baseRefName: "feature/task" },
           baseBranch: "feature/task",
           startFromOrigin: false,
+          projectCommands: true,
           childWorktree: true,
           carryChangesFromCwd: taskFolder.projectPath,
         });
@@ -625,6 +627,7 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
               projectStart: { refName: "main", baseRefName: "main" },
               baseBranch: "main",
               startFromOrigin: false,
+              projectCommands: true,
               carryChangesFromCwd: shop,
             })
             .pipe(Effect.flip);
@@ -642,6 +645,7 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
             projectStart: { refName: "main", baseRefName: "main" },
             baseBranch: "main",
             startFromOrigin: false,
+            projectCommands: true,
           });
           sourcePath = source.taskFolder.projectPath;
           const sourceApi = path.join(sourcePath, "api");
@@ -661,6 +665,7 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
           projectStart: { refName: "main", baseRefName: "main" },
           baseBranch: "main",
           startFromOrigin: false,
+          projectCommands: true,
           ...(carrySource === "none" ? {} : { carryChangesFromCwd: sourcePath }),
         });
         if (carrySource !== "none") {
@@ -745,13 +750,23 @@ it.live("leaves a project's layout commands out for a request that may not run t
       // A missing checkout comes back plain, and the folder goes without the project's teardown.
       yield* fileSystem.remove(path.join(taskFolder.root, "api"), { recursive: true });
       yield* run(api, "worktree", "prune");
-      yield* taskFolders.restore({
-        taskFolder,
-        branch: "feature",
-        projectCommands: false,
-        recreate: (checkout) =>
-          run(checkout.repositoryPath, "worktree", "add", "-q", checkout.worktreePath, "feature"),
-      });
+      assert.isTrue(
+        yield* taskFolders.restore({
+          taskFolder,
+          branch: "feature",
+          projectCommands: false,
+          recreate: (checkout) =>
+            run(checkout.repositoryPath, "worktree", "add", "-q", checkout.worktreePath, "feature"),
+        }),
+      );
+      assert.isFalse(
+        yield* taskFolders.restore({
+          taskFolder,
+          branch: "feature",
+          projectCommands: false,
+          recreate: () => Effect.void,
+        }),
+      );
       assert.equal(yield* worktreeCount(api), 2);
       assert.isTrue(
         yield* taskFolders.removeIfTaskFolder({

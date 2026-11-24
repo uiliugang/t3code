@@ -188,7 +188,8 @@ export class TaskFolders extends Context.Service<
     }) => Effect.Effect<{ readonly branch: string }, TaskFolderError>;
     /**
      * Puts back whatever is missing; `recreate` checks a branch out again at a path. Without
-     * `projectCommands` every missing checkout comes back plain.
+     * `projectCommands` every missing checkout comes back plain. Returns whether anything was
+     * missing and put back.
      */
     readonly restore: <E>(input: {
       readonly taskFolder: TaskFolder;
@@ -196,7 +197,7 @@ export class TaskFolders extends Context.Service<
       /** The thread's branch, for a project that lays its folder out with its own command. */
       readonly branch: string;
       readonly recreate: (checkout: TaskFolderCheckout) => Effect.Effect<void, E>;
-    }) => Effect.Effect<void, TaskFolderError | E>;
+    }) => Effect.Effect<boolean, TaskFolderError | E>;
   }
 >()("t3/workspace/TaskFolders") {}
 
@@ -1573,7 +1574,9 @@ const make = Effect.gen(function* () {
       [taskFolder.projectPath, ...repositories.map((entry) => entry.worktreePath)],
       exists,
     );
+    let restored = false;
     if (layout !== null && projectCommands && present.includes(false)) {
+      restored = true;
       yield* fileSystem
         .makeDirectory(taskFolder.root, { recursive: true })
         .pipe(Effect.mapError(restoreFailed));
@@ -1599,6 +1602,7 @@ const make = Effect.gen(function* () {
         .makeDirectory(path.dirname(checkout.worktreePath), { recursive: true })
         .pipe(Effect.mapError(restoreFailed));
       yield* recreate(checkout);
+      restored = true;
     });
     if (taskFolder.projectIsWorktree) {
       yield* recreateMissing({
@@ -1616,12 +1620,14 @@ const make = Effect.gen(function* () {
         ...tracked,
         ...repositories.map((repository) => repository.repositoryPath),
       ]).pipe(Effect.mapError(restoreFailed));
+      restored = true;
     }
     for (const repository of repositories.toSorted(
       (left, right) => depth(left.worktreePath) - depth(right.worktreePath),
     )) {
       yield* recreateMissing(repository);
     }
+    return restored;
   });
 
   return TaskFolders.of({

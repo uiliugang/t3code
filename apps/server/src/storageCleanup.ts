@@ -1063,17 +1063,18 @@ const make = Effect.gen(function* () {
     ),
   );
   const removeLeftover = Effect.fn("StorageCleanup.removeLeftover")(function* (adminDir: string) {
+    if (yield* fs.exists(path.join(adminDir, "locked"))) return "locked";
     // Pruning by hand frees the name, and a worktree recreated since may have taken it.
     const gitFile = yield* fs.readFileString(path.join(adminDir, "gitdir")).pipe(
       Effect.map((gitdir) => path.resolve(adminDir, gitdir.trim())),
-      Effect.option,
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null)),
     );
-    if (Option.isSome(gitFile) && (yield* fs.exists(gitFile.value))) {
-      const current = yield* worktreeAdminDir(path.dirname(gitFile.value));
-      if ((yield* fs.realPath(current)) === (yield* fs.realPath(adminDir))) return false;
+    if (gitFile !== null && (yield* fs.exists(gitFile))) {
+      const current = yield* worktreeAdminDir(path.dirname(gitFile));
+      if ((yield* fs.realPath(current)) === (yield* fs.realPath(adminDir))) return "reused";
     }
     yield* fs.remove(adminDir, { recursive: true });
-    return true;
+    return "removed";
   });
   const retryLeftovers = Effect.fn("StorageCleanup.retryLeftovers")(function* (
     entries: StorageCleanupReportEntry[],
@@ -1084,8 +1085,11 @@ const make = Effect.gen(function* () {
       const { adminDir, entry } = leftover;
       if (!(yield* fs.exists(adminDir).pipe(Effect.orElseSucceed(() => true)))) continue;
       const failure = yield* removeLeftover(adminDir).pipe(
-        Effect.map((removed) => {
-          if (removed)
+        Effect.map((outcome) => {
+          if (outcome === "locked") {
+            remaining.push(leftover);
+            entries.push({ ...entry, outcome: "kept", reason: "Worktree is locked" });
+          } else if (outcome === "removed")
             entries.push({
               ...entry,
               outcome: "removed",

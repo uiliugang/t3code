@@ -3380,7 +3380,11 @@ export const layerWsRpc = (
               workspaceAccess.run(
                 input,
                 taskFolders
-                  .removeIfTaskFolder({ path: input.path, force: input.force === true, projectCommands })
+                  .removeIfTaskFolder({
+                    path: input.path,
+                    force: input.force === true,
+                    projectCommands,
+                  })
                   .pipe(
                     Effect.mapError(
                       (cause) =>

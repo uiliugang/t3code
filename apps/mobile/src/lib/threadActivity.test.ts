@@ -15,7 +15,6 @@ import {
   type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import { summarizeToolGroup } from "@t3tools/client-runtime/work-log/presentation";
-import { getReviewSectionIdForCheckpoint } from "../features/review/reviewModel";
 import type { MessageResolver } from "../i18n/messages";
 import englishCatalog from "../i18n/translations/en.json";
 import chineseCatalog from "../i18n/translations/zh.json";

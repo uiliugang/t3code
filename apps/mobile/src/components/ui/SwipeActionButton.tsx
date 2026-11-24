@@ -50,12 +50,14 @@ export function SwipeActionButton(props: {
   };
   readonly onPress: () => void;
   readonly rowHeight: number;
+  readonly slidesUnderStretch?: boolean;
   readonly stretchesOnFullSwipe?: boolean;
   readonly translation: SharedValue<number>;
 }) {
   const {
     actionsWidth,
     entryRange: [entryRangeStart, entryRangeEnd],
+    slidesUnderStretch,
     stretchesOnFullSwipe,
     translation,
   } = props;
@@ -136,12 +138,21 @@ export function SwipeActionButton(props: {
     };
   });
   const labelStyle = useAnimatedStyle(() => {
-    if (!stretchesOnFullSwipe) {
-      return { opacity: 1 };
-    }
-
     const reveal = Math.max(-translation.value, 0);
     const stretch = Math.max(reveal - actionsWidth, 0);
+    if (!stretchesOnFullSwipe) {
+      return {
+        opacity: slidesUnderStretch
+          ? interpolate(
+              stretch,
+              [0, SWIPE_ACTION_ITEM_WIDTH - circleSize],
+              [1, 0],
+              Extrapolation.CLAMP,
+            )
+          : 1,
+      };
+    }
+
     return {
       opacity: interpolate(
         reveal,

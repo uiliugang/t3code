@@ -1196,7 +1196,10 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => true),
     );
 
-  const addressedProject: PullRequestService["Service"]["addressedProject"] = (projectId, workspaceRoot) =>
+  const addressedProject: PullRequestService["Service"]["addressedProject"] = (
+    projectId,
+    workspaceRoot,
+  ) =>
     listWorkspaceProjects({ projectId }, workspaceRoot).pipe(
       Effect.map(({ projects, supported }) => {
         const own = supported[0];

@@ -7,7 +7,7 @@ import type {
   PullRequestRef,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import { msg, T, useGT, useMessages } from "gt-react";
+import { T, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
@@ -166,8 +166,7 @@ export function PullRequestChecksPopover({
   const resolve = useMessages();
   const presentation = pullRequestChecksStatePresentation(checksState, resolve);
   const countLabel = checks === undefined ? null : pullRequestChecksCountLabel(checks, resolve);
-  const summary =
-    checks === undefined || stale ? null : summarizePullRequestChecks(checks, t);
+  const summary = checks === undefined || stale ? null : summarizePullRequestChecks(checks, t);
   return (
     <Popover>
       <PopoverTrigger

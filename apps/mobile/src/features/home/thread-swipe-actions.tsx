@@ -646,6 +646,7 @@ function ThreadSwipeActions(props: {
           icon={middleAction.icon}
           label={middleAction.label ? t(middleAction.label) : undefined}
           onPress={middleAction.onPress}
+          slidesUnderStretch={fullSwipeIsPrimary}
           rowHeight={props.rowHeight}
           stretchesOnFullSwipe={false}
           translation={props.translation}

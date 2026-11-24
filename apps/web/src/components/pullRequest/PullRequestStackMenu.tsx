@@ -31,7 +31,11 @@ import { PullRequestStackLayers } from "./PullRequestStackLayers";
 import { PullRequestStackHeader } from "./PullRequestStackHeader";
 import { PullRequestStackLayerContent } from "./PullRequestStackLayerContent";
 import { PullRequestGlyph } from "./pullRequestIcons";
-import { mergeHeadPin, PULL_REQUEST_MERGE_METHOD_LABELS, readableFailure } from "./pullRequestDetail.logic";
+import {
+  mergeHeadPin,
+  PULL_REQUEST_MERGE_METHOD_LABELS,
+  readableFailure,
+} from "./pullRequestDetail.logic";
 
 import { changeRequestTermKind } from "./changeRequestTerm";
 

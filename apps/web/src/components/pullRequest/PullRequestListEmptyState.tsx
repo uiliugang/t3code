@@ -1,7 +1,7 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { splitsSurrogatePair } from "@t3tools/shared/assistantCitations";
-import { T, useGT, Var } from "gt-react";
+import { useGT } from "gt-react";
 import { PlusIcon, SearchIcon } from "lucide-react";
 
 import { openCommandPalette } from "../../commandPaletteBus";

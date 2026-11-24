@@ -490,7 +490,7 @@ it.effect.each(
             layerNoTaskFolders,
             Layer.mock(TaskFolders.TaskFolders)({
               find: () => Effect.succeed(taskFolder),
-              restore: () => Effect.void,
+              restore: () => Effect.succeed(false),
             }),
             Layer.mock(GitWorkflow.GitWorkflowService)({}),
             Layer.mock(CheckpointService.CheckpointServiceV2)({

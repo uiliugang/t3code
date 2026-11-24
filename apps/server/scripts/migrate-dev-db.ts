@@ -35,7 +35,7 @@ export class MigrateDevDbSharedHomeError extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("MigrateDevDbSharedHomeError", {}) {
   override get message(): string {
-    return "Refusing to rebuild the shared ~/.t3 database. Use an isolated --base-dir.";
+    return "Refusing to modify a live T3 Code database (such as ~/.t3, T3CODE_HOME, or an installed service home). Use an isolated dev copy.";
   }
 }
 
@@ -125,7 +125,31 @@ export interface RunMigrateDevDbInput {
 export interface RunMigrateDevDbOptions {
   /** Test override for the directory writes must never target. */
   readonly sharedHome?: string | undefined;
+  /** Test override for ambient T3CODE_HOME. */
+  readonly ambientHome?: string | undefined;
 }
+
+const LIVE_HOME_MARKERS = ["secrets", "settings.json", "service-state.json", "boot-service.log"];
+
+// A custom T3CODE_HOME or installed service home holds secrets or settings beside userdata/statev2.sqlite.
+const looksLikeLiveDatabase = Effect.fn("looksLikeLiveDatabase")(function* (databasePath: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const stateDir = path.dirname(databasePath);
+  if (path.basename(stateDir).toLowerCase() !== "userdata") return false;
+  const baseDir = path.dirname(stateDir);
+  if (
+    yield* fs
+      .exists(path.join(baseDir, "runtime", "versions"))
+      .pipe(Effect.orElseSucceed(() => false))
+  ) {
+    return true;
+  }
+  const present = yield* Effect.forEach(LIVE_HOME_MARKERS, (name) =>
+    fs.exists(path.join(stateDir, name)).pipe(Effect.orElseSucceed(() => false)),
+  );
+  return present.some(Boolean);
+});
 
 interface KeptProject {
   readonly title: string;
@@ -429,20 +453,27 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
       Effect.map((info) => Option.map(info.ino, (ino) => `${info.dev}:${ino}`)),
       Effect.orElseSucceed(() => Option.none<string>()),
     );
+  const env = yield* HostProcess.Environment;
   const sharedHome = path.resolve(options.sharedHome ?? path.join(NodeOS.homedir(), ".t3"));
-  const liveDatabase = path.join(sharedHome, "userdata", "statev2.sqlite");
-  const [target, live] = yield* Effect.all([resolve(databasePath), resolve(liveDatabase)]);
+  const ambientHome = (options.ambientHome ?? env.T3CODE_HOME)?.trim();
+  const protectedHomes = [sharedHome, ...(ambientHome ? [path.resolve(ambientHome)] : [])];
+  const liveDatabases = protectedHomes.map((home) => path.join(home, "userdata", "statev2.sqlite"));
+  const [target, resolvedLives] = yield* Effect.all([
+    resolve(databasePath),
+    Effect.forEach(liveDatabases, resolve),
+  ]);
   const targetIdentity = yield* identity(target);
   const liveIdentities = yield* Effect.forEach(
-    [liveDatabase, `${liveDatabase}-wal`, `${liveDatabase}-shm`],
+    liveDatabases.flatMap((live) => [live, `${live}-wal`, `${live}-shm`]),
     identity,
   );
   if (
-    comparable(target) === comparable(live) ||
+    resolvedLives.some((live) => comparable(target) === comparable(live)) ||
     (Option.isSome(targetIdentity) &&
       liveIdentities.some(
         (candidate) => Option.isSome(candidate) && candidate.value === targetIdentity.value,
-      ))
+      )) ||
+    (yield* looksLikeLiveDatabase(target))
   ) {
     return yield* new MigrateDevDbSharedHomeError();
   }
@@ -658,7 +689,9 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
+  const env = yield* HostProcess.Environment;
   const sharedHome = path.resolve(options.sharedHome ?? path.join(NodeOS.homedir(), ".t3"));
+  const ambientHome = (options.ambientHome ?? env.T3CODE_HOME)?.trim();
   const sourcePath = path.resolve(
     input.source ?? path.join(sharedHome, "userdata", "statev2.sqlite"),
   );
@@ -677,11 +710,14 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   if (!(yield* fs.exists(sourcePath))) {
     return yield* new MigrateDevDbSourceMissingError({ sourcePath });
   }
-  const [canonicalBaseDir, canonicalSharedHome] = yield* Effect.all([
+  const protectedHomes = [sharedHome, ...(ambientHome ? [path.resolve(ambientHome)] : [])];
+  const [canonicalBaseDir, canonicalProtectedHomes] = yield* Effect.all([
     fs.realPath(baseDir).pipe(Effect.orElseSucceed(() => baseDir)),
-    fs.realPath(sharedHome).pipe(Effect.orElseSucceed(() => sharedHome)),
+    Effect.forEach(protectedHomes, (home) =>
+      fs.realPath(home).pipe(Effect.orElseSucceed(() => home)),
+    ),
   ]);
-  if (canonicalBaseDir === canonicalSharedHome) {
+  if (canonicalProtectedHomes.includes(canonicalBaseDir)) {
     return yield* new MigrateDevDbSharedHomeError();
   }
   // Both destination and snapshot are deleted below; reject sources resolving to either.

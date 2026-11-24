@@ -394,6 +394,38 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
     }),
   );
 
+  it.effect("refuses to drop from a custom T3CODE_HOME or installed home database", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sharedHome = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-shared-" });
+      const customHome = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-custom-" });
+      const installedHome = yield* fs.makeTempDirectoryScoped({
+        prefix: "migrate-dev-db-installed-",
+      });
+
+      const customFixture = yield* createFixtureSource(customHome);
+      const customDb = path.join(customHome, "userdata", "statev2.sqlite");
+      yield* fs.makeDirectory(path.dirname(customDb), { recursive: true });
+      yield* fs.rename(customFixture, customDb);
+
+      const installedFixture = yield* createFixtureSource(installedHome);
+      const installedDb = path.join(installedHome, "userdata", "statev2.sqlite");
+      yield* fs.makeDirectory(path.join(installedHome, "userdata", "secrets"), { recursive: true });
+      yield* fs.rename(installedFixture, installedDb);
+
+      const refusedAmbient = yield* Effect.flip(
+        dropResumableFamilies(customDb, { sharedHome, ambientHome: customHome }),
+      );
+      assert.equal(refusedAmbient._tag, "MigrateDevDbSharedHomeError");
+
+      const refusedInstalled = yield* Effect.flip(
+        dropResumableFamilies(installedDb, { sharedHome }),
+      );
+      assert.equal(refusedInstalled._tag, "MigrateDevDbSharedHomeError");
+    }),
+  );
+
   it.effect("never copies an archived thread, and new events append after the source's", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -161,7 +161,6 @@ Read the matching doc before changing code in that area; code review enforces th
 | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Give each GitHub release page, including its response body, and the `/latest` fallback an independent 15-second timeout. | [`npmRelease.test.ts`](apps/server/src/cloud/npmRelease.test.ts): `gives each GitHub request its own timeout` and `bounds GitHub request ... with one timeout`, run by `vp test run apps/server/src/cloud/npmRelease.test.ts` and CI's `test_server` job. |
 
-
 ## Enforced correction rules
 
 | Rule                                                                                                                                                                                                  | Enforcement                                                                                                                                          |

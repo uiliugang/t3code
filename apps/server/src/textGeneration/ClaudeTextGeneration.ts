@@ -290,7 +290,11 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         ? investigationSettings(
             claudeSettings.customModelsOnly
               ? undefined
-              : yield* readClaudeUserSettings(claudeSettings, workingDirectory, claudeEnvironment).pipe(
+              : yield* readClaudeUserSettings(
+                  claudeSettings,
+                  workingDirectory,
+                  claudeEnvironment,
+                ).pipe(
                   Effect.provideService(FileSystem.FileSystem, fileSystem),
                   Effect.provideService(Path.Path, path),
                 ),

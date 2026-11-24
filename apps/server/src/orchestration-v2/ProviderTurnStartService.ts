@@ -2423,7 +2423,8 @@ export const layer: Layer.Layer<
                 roots,
                 start(input, captureStartingRun),
               );
-              if (providerTurn !== undefined && "worktreeSetup" in providerTurn) return providerTurn;
+              if (providerTurn !== undefined && "worktreeSetup" in providerTurn)
+                return providerTurn;
               if (providerTurn !== undefined)
                 yield* providerTurn.pipe(
                   Effect.catchCauseIf(

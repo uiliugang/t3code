@@ -126,7 +126,9 @@ export function retryFailedUpdateRunServers(
         targetVersion,
       )
     ) {
-      settleUpdateRunMachine(environmentId, providerFailure, { serverOutcome: { status: "updated" } });
+      settleUpdateRunMachine(environmentId, providerFailure, {
+        serverOutcome: { status: "updated" },
+      });
     } else if (target !== "current") {
       pending.push({ target, providerFailure });
     }

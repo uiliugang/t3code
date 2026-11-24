@@ -2,7 +2,6 @@ import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import type { ReactNode } from "react";
 import type {
   EnvironmentId,
-  ModelSelection,
   OrchestrationV2ThreadLaunchWorkspaceStrategy,
   ScheduledTask,
   ScheduledTaskUpsertInput,

@@ -3787,7 +3787,6 @@ export default function ChatView(props: ChatViewProps) {
                   {...(embedded
                     ? {}
                     : {
-                        onOpenTurnDiff: onOpenTurnDiffStable,
                         ...(canOperateThread ? { onForkFromRun: onForkFromRunStable } : {}),
                         forkDestinationMenu:
                           canOperateThread &&

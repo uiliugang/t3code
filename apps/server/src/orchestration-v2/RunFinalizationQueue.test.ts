@@ -142,7 +142,11 @@ it.effect.each([
     assert.deepEqual(calls, captureFails ? ["capture"] : ["capture", "refresh", "start"]);
     if (captureFails) assert.include(captured.lastError ?? "", "checkpoint storage unavailable");
     else assert.equal(captured.lastError, null);
-  }).pipe(Effect.provide(makeWorker(calls, captureFails ? checkpointFailure : Effect.void, refreshPending)));
+  }).pipe(
+    Effect.provide(
+      makeWorker(calls, captureFails ? checkpointFailure : Effect.void, refreshPending),
+    ),
+  );
 });
 
 // A run completes before its capture, so the next turn's start is enqueued while capture runs.

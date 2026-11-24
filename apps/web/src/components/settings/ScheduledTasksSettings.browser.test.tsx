@@ -138,7 +138,6 @@ vi.mock(import("./SettingsScopeContext"), async (original) => {
 vi.mock(import("../../state/server"), async (original) => {
   const actual = await original();
   const { AsyncResult, Atom } = await import("effect/reactivity");
-  const providers = Atom.make([]);
 
   return {
     ...actual,
@@ -146,7 +145,6 @@ vi.mock(import("../../state/server"), async (original) => {
       ...actual.serverEnvironment,
       scheduledTasksLive: (() =>
         Atom.make(AsyncResult.success({ tasks: state.tasksLoaded ? [task] : [] }))) as never,
-      providersValueAtom: (() => providers) as never,
       deleteScheduledTask: {
         ...actual.serverEnvironment.deleteScheduledTask,
         run: state.remove,
