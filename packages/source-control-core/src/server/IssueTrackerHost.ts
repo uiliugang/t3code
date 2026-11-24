@@ -7,7 +7,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 
-import type { IssueTrackerApi, IssueTrackerError } from "./IssueTracker.ts";
+import type {
+  IssueTrackerApi,
+  IssueTrackerCredentialSnapshot,
+  IssueTrackerError,
+} from "./IssueTracker.ts";
 
 export class IssueTrackerHost extends Context.Service<
   IssueTrackerHost,
@@ -34,10 +38,13 @@ export const IssueTrackerAccount = Context.Reference<IssueTrackerAccountId | nul
 export function asIssueTrackerAccount(
   api: IssueTrackerApi,
   accountId: IssueTrackerAccountId | null,
+  credential?: IssueTrackerCredentialSnapshot,
 ): IssueTrackerApi {
-  if (accountId === null) return api;
-  const as = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    Effect.provideService(effect, IssueTrackerAccount, accountId);
+  if (accountId === null && credential === undefined) return api;
+  const as = <A, E, R>(effect: Effect.Effect<A, E, R>) => {
+    const bound = Effect.provideService(effect, IssueTrackerAccount, accountId);
+    return credential === undefined ? bound : credential(bound);
+  };
   const {
     getIssueLink,
     create,

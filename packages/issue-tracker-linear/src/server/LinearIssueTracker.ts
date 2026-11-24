@@ -421,6 +421,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       capabilities: CAPABILITIES,
       standalone: DESCRIPTOR,
       parseIssueUrl: parseLinearIssueUrl,
+      snapshotCredential: linear.snapshotCredential,
 
       probeCredential: (token) =>
         linear.viewer(token).pipe(
@@ -560,15 +561,16 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       comment: Effect.fn("LinearIssueTracker.comment")(function* (input) {
         const issue = yield* requireTeamIssue("comment", input);
         yield* linear.createComment({ issueId: issue.id, body: input.body });
+        return { title: issue.title, url: issue.url, displayKey: issue.identifier };
       }),
 
       update: Effect.fn("LinearIssueTracker.update")(function* (input) {
-        const { identifier } = yield* requireTeamIssue("update", input);
+        const issue = yield* requireTeamIssue("update", input);
         const scope =
           input.labels !== undefined || input.assignees !== undefined
             ? yield* requireTeam("update", input.scope)
             : null;
-        yield* linear.updateIssue(identifier, {
+        yield* linear.updateIssue(issue.id, {
           ...(input.title === undefined ? {} : { title: input.title }),
           ...(input.body === undefined ? {} : { description: input.body }),
           ...(scope === null || input.labels === undefined
@@ -581,12 +583,13 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       }),
 
       setState: Effect.fn("LinearIssueTracker.setState")(function* (input) {
-        const { identifier } = yield* requireTeamIssue("setState", input);
+        const issue = yield* requireTeamIssue("setState", input);
         const scope = yield* requireTeam("setState", input.scope);
         const wanted = scope.team.states.nodes.find((state) => state.name === input.state);
         if (wanted === undefined)
           return yield* failed("setState", `This team's workflow has no "${input.state}" state.`);
-        yield* linear.updateIssue(identifier, { stateId: wanted.id });
+        yield* linear.updateIssue(issue.id, { stateId: wanted.id });
+        return { title: issue.title, url: issue.url, displayKey: issue.identifier };
       }),
 
       setReaction: Effect.fn("LinearIssueTracker.setReaction")(function* (input) {

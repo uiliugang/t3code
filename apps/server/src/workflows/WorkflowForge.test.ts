@@ -101,8 +101,10 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
     let boundUrl = acmeUrl;
     const write = (ref: IssueRef) =>
       Effect.sync(() => {
-        written.push(ref.url ?? boundUrl);
+        const url = ref.url ?? boundUrl;
+        written.push(url);
         boundUrl = globexUrl;
+        return { title: "Touched issue", displayKey: ref.key, url };
       });
     const rebound = WorkflowForge.layer.pipe(
       Layer.provide(
@@ -110,12 +112,6 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
           Layer.mock(IssueService.IssueService)({
             comment: write,
             setState: write,
-            linkMetadata: () =>
-              Effect.sync(() => {
-                const url = boundUrl;
-                boundUrl = globexUrl;
-                return { title: "Same key", displayKey: issue.key, url };
-              }),
           }),
           Layer.mock(PullRequestService.PullRequestService)({}),
           Layer.mock(ProjectService.ProjectService)({}),
@@ -129,10 +125,6 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
       boundUrl = acmeUrl;
       yield* issues.setState(issue, "Done");
       yield* issues.comment({ ...issue, url: acmeUrl }, "Still Acme.");
-      for (const url of ["https://linear.app/acme/issue", "https://linear.app/acme/issue/ENG-99"]) {
-        const invalid = yield* Effect.result(issues.setState({ ...issue, url }, "Done"));
-        assert.strictEqual(invalid._tag, "Failure");
-      }
     }).pipe(
       Effect.provide(rebound),
       Effect.provideService(StepReferences, {
@@ -142,11 +134,11 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
 
     assert.deepStrictEqual(written, [acmeUrl, acmeUrl, acmeUrl]);
     assert.deepStrictEqual(
-      noted.map(({ url, address }) => ({ url, address })),
+      noted.map(({ title, url, address }) => ({ title, url, address })),
       [
-        { url: acmeUrl, address: { ...issue, url: acmeUrl } },
-        { url: acmeUrl, address: { ...issue, url: acmeUrl } },
-        { url: acmeUrl, address: { ...issue, url: acmeUrl } },
+        { title: "Touched issue", url: acmeUrl, address: { ...issue, url: acmeUrl } },
+        { title: "Touched issue", url: acmeUrl, address: { ...issue, url: acmeUrl } },
+        { title: "Touched issue", url: acmeUrl, address: { ...issue, url: acmeUrl } },
       ],
     );
   }),

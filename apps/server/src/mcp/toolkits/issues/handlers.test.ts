@@ -234,6 +234,7 @@ describe("issue toolkit handlers", () => {
         },
         parseIssueUrl: (link) =>
           link.href === url ? { host, workspace: "acme", scope: "ENG", key: "ENG-7" } : null,
+        snapshotCredential: () => Effect.succeed((effect) => effect),
         probeCredential: () => Effect.succeed({ account: "user", scopes: [] }),
         getViewer: () => Effect.succeed("user"),
         listIssues: () => Effect.succeed({ items: [], nextCursor: null }),
@@ -308,6 +309,7 @@ describe("issue toolkit handlers", () => {
           credential: { label: "Personal API key", helpUrl: null },
         },
         parseIssueUrl: () => null,
+        snapshotCredential: () => Effect.succeed((effect) => effect),
         probeCredential: () => Effect.succeed({ account: "user", scopes: [] }),
         getViewer: () => Effect.succeed("user"),
         listIssues: () => Effect.succeed({ items: [], nextCursor: null }),

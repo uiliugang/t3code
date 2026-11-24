@@ -2,6 +2,8 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import * as LinearDriver from "@t3tools/issue-tracker-linear/server/driver";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import {
   IssueTrackerAccountId,
@@ -17,7 +19,10 @@ import {
   type StandaloneIssueTrackerApi,
   type TrackerIssueDetail,
 } from "@t3tools/source-control-core/server/IssueTracker";
-import { IssueTrackerAccount } from "@t3tools/source-control-core/server/IssueTrackerHost";
+import {
+  IssueTrackerAccount,
+  IssueTrackerHost,
+} from "@t3tools/source-control-core/server/IssueTrackerHost";
 
 import { PersistenceSqlError } from "../persistence/Errors.ts";
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
@@ -25,6 +30,8 @@ import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
+import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import * as WorkflowForge from "../workflows/WorkflowForge.ts";
 import * as IssueService from "./IssueService.ts";
 import * as RequirementIssues from "../sourceControl/IssueService.ts";
 import { RequirementIssueError } from "@t3tools/contracts";
@@ -70,6 +77,7 @@ function fakeStandaloneTracker(
         ? null
         : { host: "linear.app", workspace, scope: "ENG", key: "ENG-1" };
     },
+    snapshotCredential: () => Effect.succeed((effect) => effect),
     probeCredential: () => Effect.succeed({ account: "julius", scopes: [] }),
   };
 }
@@ -546,6 +554,161 @@ describe("IssueService", () => {
 });
 
 describe("IssueService with a standalone tracker", () => {
+  it.effect("keeps a workflow's unqualified issue reference read-only across projects", () =>
+    Effect.gen(function* () {
+      const otherAccount = IssueTrackerAccountId.make("second");
+      const writers: Array<IssueTrackerAccountId | null> = [];
+      const service = yield* makeService({
+        projects: [project({ id: "ops" }), project({ id: "eng" })],
+        trackers: [
+          fakeStandaloneTracker({
+            comment: () => Effect.map(IssueTrackerAccount, (account) => void writers.push(account)),
+          }),
+        ],
+        bindings: {
+          ops: { tracker: LINEAR, scope: "OPS" },
+          eng: { tracker: LINEAR, accountId: otherAccount, scope: "ENG" },
+        },
+      });
+      const { issues } = yield* WorkflowForge.WorkflowForge.pipe(
+        Effect.provide(
+          WorkflowForge.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(IssueService.IssueService, service),
+                Layer.mock(PullRequestService.PullRequestService)({}),
+                Layer.mock(ProjectService.ProjectService)({}),
+              ),
+            ),
+          ),
+        ),
+      );
+      const ref = {
+        projectId: "ops" as ProjectId,
+        tracker: LINEAR,
+        host: "linear.app",
+        scope: "ENG",
+        key: "ENG-1",
+      };
+      const readable = yield* service.detail(ref);
+      expect(readable.writable).toBe(false);
+      expect(yield* issues.comment(ref, "Update").pipe(Effect.result)).toMatchObject({
+        _tag: "Failure",
+        failure: {
+          _tag: "WorkflowForgeError",
+          reason: expect.stringContaining("cannot be changed"),
+        },
+      });
+      expect(writers).toEqual([]);
+
+      for (const url of ["https://linear.app/acme/issue", "https://linear.app/acme/issue/ENG-99"]) {
+        expect(yield* issues.comment({ ...ref, url }, "Update").pipe(Effect.result)).toMatchObject({
+          _tag: "Failure",
+          failure: { reason: expect.stringContaining("does not match") },
+        });
+      }
+      expect(writers).toEqual([]);
+
+      yield* issues.comment({ ...ref, url: readable.url }, "Update");
+      expect(writers).toEqual([otherAccount]);
+    }),
+  );
+
+  it.effect("uses the credential that verified the issue URL for the entire write", () =>
+    Effect.gen(function* () {
+      const accountId = IssueTrackerAccountId.make("rotating");
+      const updates: Array<[string | undefined, string]> = [];
+      let credential = "acme";
+      const credentials = Layer.succeed(IssueTrackerHost, {
+        credentials: {
+          get: () =>
+            Effect.map(IssueTrackerAccount, (account) =>
+              account === accountId ? Option.some(credential) : Option.none(),
+            ),
+        },
+      });
+      const http = HttpClient.make((request) =>
+        Effect.sync(() => {
+          if (request.body._tag !== "Uint8Array") throw new Error("Expected a GraphQL body");
+          const body = JSON.parse(new TextDecoder().decode(request.body.body)) as {
+            query: string;
+            variables: { id: string };
+          };
+          const workspace = request.headers.authorization;
+          let data: unknown;
+          if (body.query.startsWith("query T3Issue(")) {
+            credential = "other-workspace";
+            data = {
+              issue: {
+                id: `issue-${workspace}`,
+                identifier: "ENG-1",
+                number: 1,
+                title: "Old title",
+                url: `https://linear.app/${workspace}/issue/ENG-1/old-title`,
+                description: null,
+                createdAt: "2026-07-01T00:00:00Z",
+                updatedAt: "2026-07-01T00:00:00Z",
+                completedAt: null,
+                canceledAt: null,
+                state: { id: "todo", name: "Todo", type: "unstarted", position: 0 },
+                team: { key: "ENG", states: { nodes: [] } },
+                creator: null,
+                botActor: null,
+                assignee: null,
+                labels: { nodes: [] },
+                comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                reactions: [],
+                attachments: { nodes: [] },
+                history: { nodes: [] },
+              },
+            };
+          } else if (body.query.startsWith("query T3Viewer")) {
+            data = {
+              viewer: {
+                id: "viewer",
+                name: "User",
+                displayName: "User",
+                email: null,
+                avatarUrl: null,
+              },
+              organization: { urlKey: workspace },
+              teams: { nodes: [] },
+            };
+          } else if (body.query.startsWith("mutation T3IssueUpdate(")) {
+            updates.push([workspace, body.variables.id]);
+            data = { issueUpdate: { success: true } };
+          } else {
+            throw new Error(`Unexpected GraphQL query: ${body.query}`);
+          }
+          return HttpClientResponse.fromWeb(request, Response.json({ data }));
+        }),
+      );
+      const tracker = yield* LinearDriver.make.pipe(
+        Effect.provide(Layer.merge(credentials, Layer.succeed(HttpClient.HttpClient, http))),
+      );
+      const service = yield* makeService({
+        projects: [project({ id: "web" })],
+        trackers: [tracker],
+        bindings: { web: { tracker: LINEAR, accountId, scope: "ENG" } },
+      });
+      const input = {
+        projectId: "web" as ProjectId,
+        tracker: LINEAR,
+        scope: "ENG",
+        key: "ENG-1",
+        title: "New title",
+      };
+      yield* service.update({ ...input, url: "https://linear.app/acme/issue/ENG-1/old-title" });
+      expect(updates).toEqual([["acme", "issue-acme"]]);
+
+      yield* service.update(input);
+      expect(updates).toEqual([
+        ["acme", "issue-acme"],
+        ["other-workspace", "issue-other-workspace"],
+      ]);
+    }),
+  );
+
   it.effect("reads bindings once per listing and sees changes on the next listing", () =>
     Effect.gen(function* () {
       const web = project({ id: "web", repository: "acme/web" });

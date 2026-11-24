@@ -159,7 +159,7 @@ export interface IssueTrackerApi {
   /** Only called when `capabilities.comment` is true. */
   readonly comment?: (
     input: IssueTarget & { readonly body: string },
-  ) => Effect.Effect<void, IssueTrackerError>;
+  ) => Effect.Effect<TrackerIssueLink | void, IssueTrackerError>;
 
   /**
    * Rewrites the present fields. Only called with a field the tracker declared it can write
@@ -180,7 +180,7 @@ export interface IssueTrackerApi {
    */
   readonly setState?: (
     input: IssueTarget & { readonly state: string },
-  ) => Effect.Effect<void, IssueTrackerError>;
+  ) => Effect.Effect<TrackerIssueLink | void, IssueTrackerError>;
 
   /**
    * Adds a reaction or takes it back. `subjectId` is a comment id as the detail carried it;
@@ -213,6 +213,9 @@ export interface IssueTrackerApi {
  */
 export interface StandaloneIssueTrackerApi extends IssueTrackerApi {
   readonly standalone: StandaloneIssueTrackerDescriptor;
+  readonly snapshotCredential: (
+    operation: string,
+  ) => Effect.Effect<IssueTrackerCredentialSnapshot, IssueTrackerError>;
   /** Retains the workspace identity so canonical URLs can disambiguate repeated scope keys. */
   readonly parseIssueUrl: (url: URL) => (IssueLink & { readonly workspace: string }) | null;
   /**
@@ -229,6 +232,10 @@ export interface StandaloneIssueTrackerApi extends IssueTrackerApi {
     IssueTrackerError
   >;
 }
+
+export type IssueTrackerCredentialSnapshot = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+) => Effect.Effect<A, E, R>;
 
 export function isStandaloneIssueTracker(api: IssueTrackerApi): api is StandaloneIssueTrackerApi {
   return "standalone" in api;

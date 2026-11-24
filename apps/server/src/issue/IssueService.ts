@@ -44,7 +44,10 @@ import {
   type TrackerIssueDetail,
   type TrackerIssueLink,
 } from "@t3tools/source-control-core/server/IssueTracker";
-import { asIssueTrackerAccount } from "@t3tools/source-control-core/server/IssueTrackerHost";
+import {
+  asIssueTrackerAccount,
+  IssueTrackerAccount,
+} from "@t3tools/source-control-core/server/IssueTrackerHost";
 import { parseUrl } from "@t3tools/shared/url";
 
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
@@ -172,9 +175,13 @@ export class IssueService extends Context.Service<
     readonly templates: (input: IssueScopeRef) => Effect.Effect<IssueTemplateList, IssueError>;
     readonly candidates: (input: IssueScopeRef) => Effect.Effect<IssueCandidates, IssueError>;
     readonly create: (input: IssueCreateInput) => Effect.Effect<IssueCreateResult, IssueError>;
-    readonly comment: (input: IssueCommentInput) => Effect.Effect<void, IssueError>;
+    readonly comment: (
+      input: IssueCommentInput,
+    ) => Effect.Effect<TrackerIssueLink | void, IssueError>;
     readonly update: (input: IssueUpdateInput) => Effect.Effect<void, IssueError>;
-    readonly setState: (input: IssueSetStateInput) => Effect.Effect<void, IssueError>;
+    readonly setState: (
+      input: IssueSetStateInput,
+    ) => Effect.Effect<TrackerIssueLink | void, IssueError>;
     readonly react: (input: IssueReactionInput) => Effect.Effect<void, IssueError>;
     /**
      * The tracker and container a project's own issues live in: the bound `scope` when named, else
@@ -340,6 +347,20 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const pinCredential = Effect.fn("IssueService.pinCredential")(function* <
+    P extends SupportedProject,
+  >(project: P, operation: string) {
+    const tracker = registry.standalone.find((api) => api.kind === project.tracker);
+    if (tracker === undefined) return project;
+    const credential = yield* tracker
+      .snapshotCredential(operation)
+      .pipe(
+        Effect.provideService(IssueTrackerAccount, project.accountId),
+        Effect.mapError(toIssueError(operation)),
+      );
+    return { ...project, api: asIssueTrackerAccount(tracker, project.accountId, credential) };
+  });
+
   /**
    * The project whose checkout and credentials serve a reference, and whether the reference is
    * one of the project's own scopes. A reference naming another scope on the same tracker and
@@ -347,9 +368,26 @@ const make = Effect.gen(function* () {
    * one the reference names.
    */
   const requireProject = Effect.fn("IssueService.requireProject")(function* (
-    ref: IssueScopeRef,
+    ref: IssueScopeRef & { readonly key?: string },
+    writeOperation?: string,
   ): Effect.fn.Return<SupportedProject & { readonly writable: boolean }, IssueError> {
     const standalone = ref.url ? findStandaloneIssueUrl(registry.standalone, ref.url) : null;
+    if (
+      writeOperation !== undefined &&
+      ref.url !== undefined &&
+      ref.key !== undefined &&
+      registry.standalone.some((api) => api.kind === ref.tracker) &&
+      (standalone === null ||
+        standalone.tracker !== ref.tracker ||
+        standalone.link.key.toLowerCase() !== ref.key.trim().toLowerCase() ||
+        standalone.link.scope.toLowerCase() !== ref.scope.trim().toLowerCase())
+    ) {
+      return yield* new IssueOperationError({
+        operation: writeOperation,
+        reason: "not-found",
+        detail: "The issue URL does not match the selected issue's team and key.",
+      });
+    }
     if (standalone !== null && standalone.tracker === ref.tracker) {
       const authority = new URL(ref.url!).host.toLowerCase();
       const { supported } = yield* listProjects({ host: standalone.link.host, authority });
@@ -386,23 +424,30 @@ const make = Effect.gen(function* () {
       for (const accountId of accounts) {
         const found = serve(onTracker.filter((project) => project.accountId === accountId));
         if (found === null) continue;
-        const read = yield* (found.api.getIssueLink ?? found.api.getIssue)({
-          cwd: found.project.workspaceRoot,
-          host: found.host,
-          scope: standalone.link.scope,
-          key: standalone.link.key,
-        }).pipe(Effect.mapError(toIssueError("resolveUrl")), Effect.result);
+        const read = yield* Effect.gen(function* () {
+          const project =
+            writeOperation === undefined || !found.writable
+              ? found
+              : yield* pinCredential(found, writeOperation);
+          const issue = yield* (project.api.getIssueLink ?? project.api.getIssue)({
+            cwd: project.project.workspaceRoot,
+            host: project.host,
+            scope: standalone.link.scope,
+            key: standalone.link.key,
+          }).pipe(Effect.mapError(toIssueError("resolveUrl")));
+          return { project, issue };
+        }).pipe(Effect.result);
         if (read._tag === "Failure") {
           if (failure === null || isNotFound(failure)) failure = read.failure;
           continue;
         }
-        const canonicalUrl = parseUrl(read.success.url);
+        const canonicalUrl = parseUrl(read.success.issue.url);
         const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
         if (
           canonical !== null &&
           canonical.workspace.toLowerCase() === standalone.link.workspace.toLowerCase()
         ) {
-          return found;
+          return read.success.project;
         }
       }
       return yield* (
@@ -429,11 +474,14 @@ const make = Effect.gen(function* () {
     if (lender === undefined || (!own && ref.tracker === "meituan")) {
       return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
     }
-    return { ...lender, scope, writable: own !== undefined };
+    const found = { ...lender, scope, writable: own !== undefined };
+    return writeOperation === undefined || !found.writable
+      ? found
+      : yield* pinCredential(found, writeOperation);
   });
 
-  const requireWritable = (ref: IssueScopeRef, operation: string) =>
-    requireProject(ref).pipe(
+  const requireWritable = (ref: IssueScopeRef & { readonly key?: string }, operation: string) =>
+    requireProject(ref, operation).pipe(
       Effect.filterOrFail(
         (project) => project.writable,
         () => readOnly(operation),
