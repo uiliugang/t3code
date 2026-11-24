@@ -347,7 +347,7 @@ function ProjectSourceRow({
                 <span>{mepSpaceSummary(spaces, manual, discovery, t)}</span>
               </p>
               {draft === null ? (
-                <span className="flex shrink-0 opacity-0 group-focus-within/project-source:opacity-100 group-hover/project-source:opacity-100 pointer-coarse:opacity-100">
+                <span className="flex shrink-0 opacity-0 group-focus-within/project-source:opacity-100 group-hover/project-source:opacity-100 any-pointer-coarse:opacity-100">
                   <Button
                     variant="ghost-muted"
                     size="icon-xs"
