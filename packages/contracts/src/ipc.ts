@@ -471,6 +471,19 @@ export const DesktopCloudSandboxConfigSchema = Schema.Struct({
 });
 export type DesktopCloudSandboxConfig = typeof DesktopCloudSandboxConfigSchema.Type;
 
+export function parseDesktopCloudSandboxEndpoint(host: string, defaultPort = 22) {
+  const match = /^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]*)(?::(\d+))?$/iu.exec(host.trim());
+  const port = match?.[2] === undefined ? defaultPort : Number(match[2]);
+  if (!match?.[1] || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const hostname = match[1].toLowerCase();
+  if (!hostname.startsWith("[")) return { hostname, port };
+  try {
+    return { hostname: new URL(`http://${hostname}`).hostname.slice(1, -1), port };
+  } catch {
+    return null;
+  }
+}
+
 export const DesktopCloudSandboxSaveInputSchema = Schema.Struct({
   host: Schema.String,
   previous: Schema.optionalKey(DesktopCloudSandboxConfigSchema),
@@ -1199,6 +1212,7 @@ export interface DesktopBridge {
   clearCloudSandboxConfig: (
     target: DesktopCloudSandboxConfig,
   ) => Promise<readonly DesktopCloudSandboxConfig[]>;
+  resetCloudSandboxConfig: () => Promise<void>;
   onSshInstallProgress?: (
     listener: (target: DesktopSshEnvironmentTarget, progress: DesktopSshInstallProgress) => void,
   ) => () => void;

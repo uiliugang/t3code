@@ -109,3 +109,21 @@ it.effect("refuses to write credentials using Electron's plaintext backend", () 
     assert.isFalse(yield* fs.exists(path.join(dir, "cloud-sandbox-ssh")));
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, storage("basic_text")))),
 );
+
+it.effect("resets an unreadable credential file so new servers can be saved", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const dir = yield* fs.makeTempDirectoryScoped();
+    const file = path.join(dir, "cloud-sandbox-ssh");
+    yield* fs.writeFileString(file, "unreadable credential file");
+    const sandbox = yield* make(dir);
+    yield* sandbox.get.pipe(Effect.flip);
+    yield* sandbox.reset;
+    assert.isFalse(yield* fs.exists(file));
+    assert.deepEqual(
+      yield* sandbox.save({ host: "new.example.test", password: Redacted.make("new-password") }),
+      [{ hostname: "new.example.test", port: 22 }],
+    );
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, storage("keychain")))),
+);

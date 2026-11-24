@@ -1968,6 +1968,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Edit server": "编辑服务器",
   "Remove server": "移除服务器",
   "Remove Cloud Sandbox server?": "移除这台 Cloud Sandbox 服务器？",
+  "Reset credentials": "重置凭据",
+  "Reset Cloud Sandbox credentials?\nThis removes all saved Cloud Sandbox servers and passwords.":
+    "重置 Cloud Sandbox 凭据？\n此操作将移除所有已保存的 Cloud Sandbox 服务器和密码。",
+  "Could not reset the Cloud Sandbox credentials.": "无法重置 Cloud Sandbox 凭据。",
   "Cancel editing": "取消编辑",
   "SSH host": "SSH 主机",
   "SSH password": "SSH 密码",

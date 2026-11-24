@@ -1,4 +1,8 @@
-import type { DesktopCloudSandboxConfig, DesktopSshEnvironmentTarget } from "@t3tools/contracts";
+import {
+  parseDesktopCloudSandboxEndpoint,
+  type DesktopCloudSandboxConfig,
+  type DesktopSshEnvironmentTarget,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -31,19 +35,6 @@ class CloudSandboxError extends Schema.TaggedError<
 }) {}
 const isCloudSandboxError = Schema.is(CloudSandboxError);
 
-function endpoint(host: string, defaultPort = 22) {
-  const match = /^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]*)(?::(\d+))?$/iu.exec(host.trim());
-  const port = match?.[2] === undefined ? defaultPort : Number(match[2]);
-  if (!match?.[1] || !Number.isInteger(port) || port < 1 || port > 65535) return null;
-  const hostname = match[1].toLowerCase();
-  if (!hostname.startsWith("[")) return { hostname, port };
-  try {
-    return { hostname: new URL(`http://${hostname}`).hostname.slice(1, -1), port };
-  } catch {
-    return null;
-  }
-}
-
 function sameEndpoint(left: DesktopCloudSandboxConfig, right: DesktopCloudSandboxConfig) {
   return left.hostname === right.hostname && left.port === right.port;
 }
@@ -63,6 +54,7 @@ export class DesktopCloudSandbox extends Context.Service<
     readonly clear: (
       target: DesktopCloudSandboxConfig,
     ) => Effect.Effect<readonly DesktopCloudSandboxConfig[], CloudSandboxError>;
+    readonly reset: Effect.Effect<void, CloudSandboxError>;
     readonly passwordFor: (
       target: DesktopSshEnvironmentTarget,
     ) => Effect.Effect<Redacted.Redacted<string> | undefined, CloudSandboxError>;
@@ -125,7 +117,7 @@ export const make = Effect.fn("desktop.cloudSandbox.make")(function* (stateDir: 
     get: read().pipe(Effect.map(metadata)),
     save: Effect.fn("desktop.cloudSandbox.save")(
       function* (input) {
-        const next = endpoint(input.host);
+        const next = parseDesktopCloudSandboxEndpoint(input.host);
         if (next === null)
           return yield* new CloudSandboxError({ message: "Enter a valid SSH host and port." });
         const stored = yield* read();
@@ -173,10 +165,18 @@ export const make = Effect.fn("desktop.cloudSandbox.make")(function* (stateDir: 
             ),
           ),
     ),
+    reset: lock
+      .withPermit(fs.remove(file, { force: true }))
+      .pipe(
+        Effect.mapError(
+          () =>
+            new CloudSandboxError({ message: "Could not reset the Cloud Sandbox credentials." }),
+        ),
+      ),
     passwordFor: Effect.fn("desktop.cloudSandbox.passwordFor")(function* (target) {
       const stored = yield* read();
       const host = target.hostname.includes(":") ? `[${target.hostname}]` : target.hostname;
-      const resolved = endpoint(host, target.port ?? 22);
+      const resolved = parseDesktopCloudSandboxEndpoint(host, target.port ?? 22);
       return resolved ? stored.find((entry) => sameEndpoint(entry, resolved))?.password : undefined;
     }),
   });

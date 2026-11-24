@@ -1,4 +1,8 @@
-import type { DesktopBridge, DesktopCloudSandboxConfig } from "@t3tools/contracts";
+import {
+  parseDesktopCloudSandboxEndpoint,
+  type DesktopBridge,
+  type DesktopCloudSandboxConfig,
+} from "@t3tools/contracts";
 import { ChevronRightIcon, CloudIcon, PlusIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -17,7 +21,13 @@ export function CloudSandboxSettings({
   bridge,
   initiallyOpen,
 }: {
-  bridge: DesktopBridge;
+  bridge: Pick<
+    DesktopBridge,
+    | "getCloudSandboxConfig"
+    | "saveCloudSandboxConfig"
+    | "clearCloudSandboxConfig"
+    | "resetCloudSandboxConfig"
+  >;
   initiallyOpen: boolean;
 }) {
   const t = useUiTranslation();
@@ -27,9 +37,15 @@ export function CloudSandboxSettings({
   const [editor, setEditor] = useState<{ previous?: DesktopCloudSandboxConfig } | null>(null);
   const [host, setHost] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<"load" | "save" | "clear" | "password" | null>(null);
+  const [error, setError] = useState<"load" | "save" | "clear" | "reset" | "password" | null>(null);
   const [pending, setPending] = useState(true);
   const [saved, setSaved] = useState(false);
+  const cannotRead = error === "load" || error === "reset";
+  const endpoint = editor ? parseDesktopCloudSandboxEndpoint(host) : null;
+  const retainsPassword =
+    endpoint !== null &&
+    editor?.previous?.hostname === endpoint.hostname &&
+    editor.previous.port === endpoint.port;
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads this desktop's credential metadata through IPC
   useEffect(() => {
@@ -63,7 +79,7 @@ export function CloudSandboxSettings({
 
   const save = async () => {
     if (!editor) return;
-    if (!password && !editor.previous) {
+    if (!password && !retainsPassword) {
       setError("password");
       return;
     }
@@ -86,20 +102,29 @@ export function CloudSandboxSettings({
     setPending(false);
   };
 
-  const clear = async (target: DesktopCloudSandboxConfig) => {
+  const clear = async (target?: DesktopCloudSandboxConfig) => {
     setPending(true);
     try {
       const confirmed = await requestConfirmDialog(
-        `${t("Remove Cloud Sandbox server?")} ${formatEndpoint(target)}`,
+        target
+          ? `${t("Remove Cloud Sandbox server?")} ${formatEndpoint(target)}`
+          : t(
+              "Reset Cloud Sandbox credentials?\nThis removes all saved Cloud Sandbox servers and passwords.",
+            ),
         { variant: "destructive" },
       );
       if (confirmed) {
-        setError(null);
         setSaved(false);
-        setConfigs(await bridge.clearCloudSandboxConfig(target));
+        if (target) {
+          setConfigs(await bridge.clearCloudSandboxConfig(target));
+        } else {
+          await bridge.resetCloudSandboxConfig();
+          setConfigs([]);
+        }
+        setError(null);
       }
     } catch {
-      setError("clear");
+      setError(target ? "clear" : "reset");
     }
     setPending(false);
   };
@@ -116,7 +141,7 @@ export function CloudSandboxSettings({
           if (open) {
             setEditor(null);
             setPassword("");
-            if (error !== "load") setError(null);
+            if (!cannotRead) setError(null);
           }
         }}
       >
@@ -208,11 +233,7 @@ export function CloudSandboxSettings({
                     setPassword(value);
                     setSaved(false);
                   }}
-                  placeholder={
-                    editor.previous && host.trim().toLowerCase() === formatEndpoint(editor.previous)
-                      ? t("Saved password is hidden")
-                      : undefined
-                  }
+                  placeholder={retainsPassword ? t("Saved password is hidden") : undefined}
                   disabled={pending}
                 />
               </div>
@@ -247,10 +268,21 @@ export function CloudSandboxSettings({
                   {t("Configuration saved")}
                 </span>
               ) : null}
+              {cannotRead ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => void clear()}
+                >
+                  {t("Reset credentials")}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
-                disabled={pending || error === "load"}
+                disabled={pending || cannotRead}
                 onClick={() => edit()}
               >
                 <PlusIcon />
@@ -267,9 +299,11 @@ export function CloudSandboxSettings({
                     ? t("Could not read the Cloud Sandbox credential.")
                     : error === "clear"
                       ? t("Could not clear the Cloud Sandbox credential.")
-                      : t(
-                          "Could not save the Cloud Sandbox credential. Check the host, port, and access to secure credential storage.",
-                        )}
+                      : error === "reset"
+                        ? t("Could not reset the Cloud Sandbox credentials.")
+                        : t(
+                            "Could not save the Cloud Sandbox credential. Check the host, port, and access to secure credential storage.",
+                          )}
               </AlertDescription>
             </Alert>
           ) : null}

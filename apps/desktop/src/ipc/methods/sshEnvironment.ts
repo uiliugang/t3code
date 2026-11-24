@@ -223,6 +223,16 @@ export const clearCloudSandboxConfig = DesktopIpc.makeIpcMethod({
   }),
 });
 
+export const resetCloudSandboxConfig = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.RESET_CLOUD_SANDBOX_CONFIG_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.cloudSandbox.reset")(function* () {
+    const sandbox = yield* DesktopCloudSandbox.DesktopCloudSandbox;
+    yield* sandbox.reset;
+  }),
+});
+
 export const disconnectSshEnvironment = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DISCONNECT_SSH_ENVIRONMENT_CHANNEL,
   payload: DesktopSshEnvironmentTargetSchema,
