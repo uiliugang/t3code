@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { type IssueRef, IssueTrackerKind, ProjectId } from "@t3tools/contracts";
+import { type IssueDetail, type IssueRef, IssueTrackerKind, ProjectId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -112,6 +112,13 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
           Layer.mock(IssueService.IssueService)({
             comment: write,
             setState: write,
+            detail: () =>
+              Effect.succeed({
+                ...issue,
+                title: "Touched issue",
+                url: acmeUrl,
+                state: { category: "open", name: "Todo" },
+              } as IssueDetail),
           }),
           Layer.mock(PullRequestService.PullRequestService)({}),
           Layer.mock(ProjectService.ProjectService)({}),
@@ -121,6 +128,7 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
 
     yield* Effect.gen(function* () {
       const { issues } = yield* WorkflowForge.WorkflowForge;
+      yield* issues.read({ ...issue, key: "eng-42" });
       yield* issues.comment({ ...issue, key: "eng-42" }, "Comments stay with the issue.");
       boundUrl = acmeUrl;
       yield* issues.setState(issue, "Done");
@@ -133,9 +141,11 @@ it.effect("keeps Linear writes and their history in the same workspace after reb
     );
 
     assert.deepStrictEqual(written, [acmeUrl, acmeUrl, acmeUrl]);
+    assert.strictEqual(new Set(noted.map(({ key }) => key)).size, 1);
     assert.deepStrictEqual(
       noted.map(({ title, url, address }) => ({ title, url, address })),
       [
+        { title: "Touched issue", url: acmeUrl, address: { ...issue, url: acmeUrl } },
         { title: "Touched issue", url: acmeUrl, address: { ...issue, url: acmeUrl } },
         { title: "Touched issue", url: acmeUrl, address: { ...issue, url: acmeUrl } },
         { title: "Touched issue", url: acmeUrl, address: { ...issue, url: acmeUrl } },

@@ -7,10 +7,12 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 
-import type {
-  IssueTrackerApi,
-  IssueTrackerCredentialSnapshot,
-  IssueTrackerError,
+import {
+  isStandaloneIssueTracker,
+  type IssueTrackerApi,
+  type IssueTrackerCredentialSnapshot,
+  type IssueTrackerError,
+  type StandaloneIssueTrackerApi,
 } from "./IssueTracker.ts";
 
 export class IssueTrackerHost extends Context.Service<
@@ -73,7 +75,16 @@ export function asIssueTrackerAccount(
     listTemplates: listTemplates && ((input) => as(listTemplates(input))),
     listCandidates: listCandidates && ((input) => as(listCandidates(input))),
   };
-  return Object.fromEntries(
+  const accountApi = Object.fromEntries(
     Object.entries(wrapped).filter(([, value]) => value !== undefined),
   ) as unknown as IssueTrackerApi;
+  if (!isStandaloneIssueTracker(api)) return accountApi;
+  const standalone: StandaloneIssueTrackerApi = {
+    ...accountApi,
+    standalone: api.standalone,
+    parseIssueUrl: api.parseIssueUrl,
+    probeCredential: (token) => as(api.probeCredential(token)),
+    snapshotCredential: (operation) => as(api.snapshotCredential(operation)),
+  };
+  return standalone;
 }

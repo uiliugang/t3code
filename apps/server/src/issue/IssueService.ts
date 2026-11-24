@@ -426,10 +426,7 @@ const make = Effect.gen(function* () {
         const found = serve(onTracker.filter((project) => project.accountId === accountId));
         if (found === null) continue;
         const read = yield* Effect.gen(function* () {
-          const project =
-            writeOperation === undefined || !found.writable
-              ? found
-              : yield* pinCredential(found, writeOperation);
+          const project = yield* pinCredential(found, writeOperation ?? "resolveUrl");
           const issue = yield* (project.api.getIssueLink ?? project.api.getIssue)({
             cwd: project.project.workspaceRoot,
             host: project.host,
@@ -677,7 +674,10 @@ const make = Effect.gen(function* () {
       const standalone = input.url ? findStandaloneIssueUrl(registry.standalone, input.url) : null;
       if (standalone !== null && standalone.tracker === input.tracker) {
         const resolved = yield* resolveUrl(input.url!, input.projectId);
-        if (resolved.issue !== undefined && resolved.key === input.key) {
+        if (
+          resolved.issue !== undefined &&
+          resolved.key.toLowerCase() === input.key.trim().toLowerCase()
+        ) {
           return resolved.issue;
         }
         const project = yield* requireProject({ ...input, projectId: resolved.projectId });
@@ -1007,14 +1007,17 @@ const make = Effect.gen(function* () {
       for (const accountId of accounts) {
         const found = serve(onTracker.filter((project) => project.accountId === accountId));
         if (found === null) continue;
-        const read = yield* found.lender.api
-          .getIssue({
-            cwd: found.lender.project.workspaceRoot,
-            host: found.lender.host,
-            scope: link.scope,
-            key: link.key,
-          })
-          .pipe(Effect.mapError(toIssueError("resolveUrl")), Effect.result);
+        const read = yield* Effect.gen(function* () {
+          const project = yield* pinCredential(found.lender, "resolveUrl");
+          return yield* project.api
+            .getIssue({
+              cwd: project.project.workspaceRoot,
+              host: project.host,
+              scope: link.scope,
+              key: link.key,
+            })
+            .pipe(Effect.mapError(toIssueError("resolveUrl")));
+        }).pipe(Effect.result);
         if (read._tag === "Failure") {
           // Another workspace's account not having the key is a miss, not why the link failed.
           if (failure === null || isNotFound(failure)) failure = read.failure;

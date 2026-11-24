@@ -377,7 +377,7 @@ export const layer = Layer.effect(
           const detail = yield* issues
             .detail(ref)
             .pipe(Effect.mapError(failed("Could not read the issue")));
-          yield* noteReference(issueReference(ref, detail));
+          yield* noteReference(issueReference({ ...ref, key: detail.key }, detail));
           return detail;
         }),
         comment: Effect.fn("WorkflowForge.issues.comment")(function* (issue, body) {

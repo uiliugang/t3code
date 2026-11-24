@@ -614,7 +614,7 @@ describe("IssueService with a standalone tracker", () => {
     }),
   );
 
-  it.effect("uses the credential that verified the issue URL for the entire write", () =>
+  it.effect("keeps the issue URL's workspace across writes and reads when credentials change", () =>
     Effect.gen(function* () {
       const accountId = IssueTrackerAccountId.make("rotating");
       const updates: Array<[string | undefined, string]> = [];
@@ -674,6 +674,12 @@ describe("IssueService with a standalone tracker", () => {
               organization: { urlKey: workspace },
               teams: { nodes: [] },
             };
+          } else if (body.query.startsWith("query T3Comments(")) {
+            data = {
+              issue: {
+                comments: { nodes: [], pageInfo: { hasNextPage: true, endCursor: workspace } },
+              },
+            };
           } else if (body.query.startsWith("mutation T3IssueUpdate(")) {
             updates.push([workspace, body.variables.id]);
             data = { issueUpdate: { success: true } };
@@ -698,7 +704,8 @@ describe("IssueService with a standalone tracker", () => {
         key: "ENG-1",
         title: "New title",
       };
-      yield* service.update({ ...input, url: "https://linear.app/acme/issue/ENG-1/old-title" });
+      const explicit = { ...input, url: "https://linear.app/acme/issue/ENG-1/old-title" };
+      yield* service.update(explicit);
       expect(updates).toEqual([["acme", "issue-acme"]]);
 
       yield* service.update(input);
@@ -706,6 +713,14 @@ describe("IssueService with a standalone tracker", () => {
         ["acme", "issue-acme"],
         ["other-workspace", "issue-other-workspace"],
       ]);
+
+      credential = "acme";
+      const comments = yield* service.comments({ ...explicit, cursor: "first-page" });
+      expect(comments.nextCursor).toBe("acme");
+
+      credential = "acme";
+      const detail = yield* service.detail({ ...explicit, key: "eng-1" });
+      expect(detail.url).toBe(explicit.url);
     }),
   );
 
@@ -858,7 +873,12 @@ describe("IssueService with a standalone tracker", () => {
         trackers: [fakeStandaloneTracker()],
         bindings: {
           ops: { tracker: LINEAR, scope: "OPS" },
-          eng: { tracker: LINEAR, accountId: IssueTrackerAccountId.make("second"), scope: "ENG" },
+          eng: {
+            tracker: LINEAR,
+            accountId: IssueTrackerAccountId.make("second"),
+            scope: "ENG",
+            additionalScopes: ["REL"],
+          },
         },
       });
       expect(
@@ -867,6 +887,10 @@ describe("IssueService with a standalone tracker", () => {
           "ops" as ProjectId,
         ),
       ).toMatchObject({ projectId: "eng", writable: true });
+      expect(yield* sameWorkspace.projectScope("eng" as ProjectId)).toMatchObject({ scope: "ENG" });
+      expect(yield* sameWorkspace.projectScope("eng" as ProjectId, { key: "REL-7" })).toMatchObject(
+        { scope: "REL" },
+      );
     }),
   );
 
