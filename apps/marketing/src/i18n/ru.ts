@@ -15,7 +15,6 @@ export const ru: Messages = {
     iosApp: "Приложение для iOS",
     androidApp: "Приложение для Android",
     terms: "Условия",
-    privacy: "Конфиденциальность",
     security: "Безопасность",
   },
   home: {

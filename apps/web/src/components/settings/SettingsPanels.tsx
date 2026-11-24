@@ -11,7 +11,6 @@ import { m as resolveMessage } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
 import { DiffColorsSettings } from "./DiffColorsSettings";
 import { NotificationSettings } from "./NotificationSettings";
-import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -2478,18 +2477,6 @@ export function AboutSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="legal" title={t("Legal")}>
-        <SettingsRow
-          {...setting("privacy-policy")}
-          control={
-            <Button
-              render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}
-              size="sm"
-              variant="outline"
-            >
-              {t("View policy")}
-            </Button>
-          }
-        />
         <SettingsRow
           {...setting("open-source-licenses")}
           description={gt("Notices for dependencies, assets, and optional tools used by T3 Code.")}

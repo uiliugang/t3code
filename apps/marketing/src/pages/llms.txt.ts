@@ -26,7 +26,6 @@ This site distributes the ${GITHUB_REPOSITORY} fork. Desktop and CLI builds come
 ## Policies
 
 - [Security policy](${absoluteUrl("/security-policy")})
-- [Privacy policy](${absoluteUrl("/privacy-policy")})
 - [Terms of service](${absoluteUrl("/terms-of-service")})
 `;
   return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
