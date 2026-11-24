@@ -516,7 +516,13 @@ const make = Effect.gen(function* () {
   ) {
     if (!skill.activeDigest) return;
     const actual = yield* packages.inspect(activePath(skill.id));
-    if (actual.digest !== skill.activeDigest)
+    if (actual.digest === skill.activeDigest) return;
+    const baseline = yield* packagePath(skill.id, skill.activeDigest);
+    const original = yield* packages.inspect(baseline);
+    if (
+      actual.digest !== original.digest ||
+      (yield* packages.inspect(baseline, undefined, true)).digest !== skill.activeDigest
+    )
       return yield* new SkillManagerError({ operation: "activate", reason: "local-changes" });
   });
   const activate = Effect.fn("SkillManager.activate")(function* (
@@ -539,7 +545,10 @@ const make = Effect.gen(function* () {
     }
     if (!allowModified) yield* assertUnmodified(skill);
     const candidate = yield* packages.inspect(yield* packagePath(skill.id, digest));
-    if (candidate.digest !== digest)
+    if (
+      candidate.digest !== digest &&
+      (yield* packages.inspect(candidate.directory, undefined, true)).digest !== digest
+    )
       return yield* new SkillManagerError({ operation: "activate", reason: "candidate-changed" });
     if (yield* host.busy) {
       yield* replace({
@@ -1288,7 +1297,7 @@ const make = Effect.gen(function* () {
             yield* unmanage(skill, input.restore);
             break;
           case "check":
-            yield* fetchVersion(skill, false);
+            yield* fetchVersion(skill, skill.policy === "automatic");
             break;
           case "update": {
             const scheduled =

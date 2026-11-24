@@ -57,6 +57,7 @@ export class SkillPackages extends Context.Service<
     readonly inspect: (
       directory: string,
       destination?: string,
+      includePythonCache?: boolean,
     ) => Effect.Effect<PackageContents, SkillManagerError>;
     readonly diagnose: (source: SkillSource) => Effect.Effect<void, SkillManagerError>;
     readonly fetch: (input: PackageInput) => Effect.Effect<PackageContents, SkillManagerError>;
@@ -196,6 +197,7 @@ const make = Effect.gen(function* () {
   const inspect = Effect.fn("SkillPackages.inspect")(function* (
     directory: string,
     destination?: string,
+    includePythonCache = false,
   ) {
     const sourceRoot = yield* fs.realPath(directory);
     const selected = yield* readMetadata(sourceRoot);
@@ -216,7 +218,12 @@ const make = Effect.gen(function* () {
         return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
       const next = new Set([...ancestors, real]);
       for (const name of (yield* fs.readDirectory(directory)).toSorted()) {
-        if (name === ".git" || name === "node_modules") continue;
+        if (
+          name === ".git" ||
+          name === "node_modules" ||
+          (!includePythonCache && name === "__pycache__")
+        )
+          continue;
         const file = path.join(directory, name);
         const target = destination ? path.join(destination, relative, name) : undefined;
         if (!inside(sourceRoot, yield* fs.realPath(file)))

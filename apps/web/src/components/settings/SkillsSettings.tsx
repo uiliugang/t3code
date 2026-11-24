@@ -1150,7 +1150,8 @@ function SkillRow({
             )}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            {(skill.availableDigest || skill.failureReason === "local-changes") && (
+            {((skill.availableDigest && skill.status !== "pending") ||
+              skill.failureReason === "local-changes") && (
               <Button
                 size="sm"
                 variant="outline"
@@ -2199,24 +2200,6 @@ function EnvironmentSkills({
                       }
                     >
                       {t("Check updates")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!canManage || selectedSourceDisabled}
-                      onClick={() =>
-                        void batch(
-                          selectedManaged
-                            .filter((skill) => skill.availableDigest && skill.policy !== "pinned")
-                            .map((skill) => ({
-                              type: "update",
-                              id: skill.id,
-                              digest: skill.availableDigest!,
-                            })),
-                        )
-                      }
-                    >
-                      {t("Update skills")}
                     </Button>
                     <div className="w-36">
                       <PolicySelect
