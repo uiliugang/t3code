@@ -35,15 +35,14 @@ export const watchDirectoryReplacements = <R>(
     }),
   );
 
-const entryIdentity = (path: string) =>
-  Effect.promise(() =>
-    NodeFS.promises.lstat(path).then(
-      (info) => `${info.dev}:${info.ino}:${info.birthtimeMs}`,
-      () => null,
-    ),
-  );
+const entryIdentity = (info: NodeFS.Stats | null) =>
+  info === null ? null : `${info.dev}:${info.ino}:${info.birthtimeMs}`;
 
-const watchDirectoryEntry = (path: string, ready: Deferred.Deferred<void>, reconcile = false) => {
+const watchDirectoryEntry = (
+  path: string,
+  ready: Deferred.Deferred<void>,
+  consumeMissingObservation?: Effect.Effect<boolean>,
+) => {
   const directory = NodePath.dirname(path);
   const name = NodePath.basename(path);
   const watchError = (cause: unknown) =>
@@ -74,20 +73,24 @@ const watchDirectoryEntry = (path: string, ready: Deferred.Deferred<void>, recon
       ).pipe(Effect.tap(() => Deferred.succeed(ready, undefined))),
     { bufferSize: 1, strategy: "sliding" },
   );
-  const checks = reconcile
+  const checks = consumeMissingObservation
     ? notifications.pipe(Stream.merge(Stream.tick("1 second"), { haltStrategy: "left" }))
     : notifications;
+  const statEntry = Effect.promise(() => NodeFS.promises.lstat(path).catch(() => null));
   return Stream.unwrap(
-    Effect.map(entryIdentity(path), (initial) => {
-      let current = initial;
+    Effect.map(statEntry, (initial) => {
+      let current = entryIdentity(initial);
       // FSEvents can replay creation of the entry after registration without replacing it.
       return checks.pipe(
         Stream.filterEffect(() =>
-          entryIdentity(path).pipe(
-            Effect.map((next) => {
-              if (next === current) return false;
+          statEntry.pipe(
+            Effect.flatMap((info) => {
+              const next = entryIdentity(info);
+              const replaced = next !== current;
               current = next;
-              return true;
+              return info?.isDirectory() && consumeMissingObservation
+                ? Effect.map(consumeMissingObservation, (sawMissing) => replaced || sawMissing)
+                : Effect.succeed(replaced);
             }),
           ),
         ),
@@ -129,7 +132,7 @@ export const watchDirectoryPath = (
 ) => {
   const entry = NodePath.resolve(directory);
   return watchDirectoryReplacements(
-    (ready) => watchDirectoryEntry(entry, ready, true),
+    (ready) => watchDirectoryEntry(entry, ready, consumeMissingObservation),
     Stream.unwrap(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
