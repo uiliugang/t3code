@@ -1229,10 +1229,27 @@ const make = Effect.gen(function* () {
               requestedSkill: input.skill,
               snapshotOnly: false,
               checkedAt: null,
+              availableDigest: null,
+              ...(skill.status === "pending" && { status: "ready", phase: "prepared" }),
               failure: null,
               failureReason: null,
               cancelledDigest: null,
             });
+            if (skill.status === "pending") {
+              const finishedAt = yield* now;
+              yield* saveJobs((jobs) =>
+                jobs.map((job) =>
+                  job.skillId === skill.id && job.status === "waiting"
+                    ? {
+                        ...job,
+                        status: "cancelled",
+                        finishedAt,
+                        afterDigest: job.beforeDigest ?? null,
+                      }
+                    : job,
+                ),
+              );
+            }
             break;
           }
           case "resolve": {
@@ -1273,7 +1290,28 @@ const make = Effect.gen(function* () {
           case "check":
             yield* fetchVersion(skill, false);
             break;
-          case "update":
+          case "update": {
+            const scheduled =
+              current.jobs?.find((job) => job.id === runningJobValue)?.origin === "schedule";
+            if (
+              scheduled &&
+              ((input.digest && input.digest !== skill.availableDigest) ||
+                (skill.status !== "pending" &&
+                  (skill.policy !== "automatic" ||
+                    (input.digest &&
+                      (skill.status !== "ready" ||
+                        input.digest === skill.cancelledDigest ||
+                        !current.sources.some(
+                          (source) => source.id === skill.sourceId && source.enabled,
+                        ))))))
+            ) {
+              yield* saveJobs((jobs) =>
+                jobs.map((job) =>
+                  job.id === runningJobValue ? { ...job, status: "cancelled" } : job,
+                ),
+              );
+              break;
+            }
             if (skill.policy === "pinned")
               return yield* new SkillManagerError({ operation: "update", reason: "pinned" });
             if (input.digest && input.digest !== skill.availableDigest)
@@ -1281,18 +1319,18 @@ const make = Effect.gen(function* () {
                 operation: "update",
                 reason: "candidate-changed",
               });
-            if (
-              (yield* Ref.get(state)).jobs?.find((job) => job.id === runningJobValue)?.origin ===
-                "schedule" &&
-              skill.status !== "pending"
-            )
+            if (scheduled && !input.digest && skill.status !== "pending")
               yield* fetchVersion(skill, true);
             else if (skill.availableDigest)
-              yield* activate({ ...skill, cancelledDigest: null }, skill.availableDigest);
+              yield* activate(
+                scheduled ? skill : { ...skill, cancelledDigest: null },
+                skill.availableDigest,
+              );
             else if (skill.status === "pending" && skill.activeDigest)
               yield* activate(skill, skill.activeDigest);
             else yield* fetchVersion(skill, true);
             break;
+          }
           case "rollback": {
             if (!skill.versions.some((version) => version.digest === input.digest))
               return yield* new SkillManagerError({ operation: "rollback", reason: "not-found" });
@@ -1488,9 +1526,13 @@ const make = Effect.gen(function* () {
                           : waiting
                             ? "waiting"
                             : "completed",
-                    reason: failed ? (resultingSkill?.failureReason ?? "io") : entry.reason,
+                    reason:
+                      failed && entry.status !== "cancelled"
+                        ? (resultingSkill?.failureReason ?? "io")
+                        : entry.reason,
                     finishedAt,
-                    afterDigest: after ?? null,
+                    afterDigest:
+                      (entry.status === "cancelled" ? entry.beforeDigest : after) ?? null,
                   }
                 : entry,
             ),
@@ -1725,16 +1767,13 @@ const make = Effect.gen(function* () {
     const time = yield* Clock.currentTimeMillis;
     const meituanEnabled = (yield* settings.getSettings).meituanIntegrationEnabled;
     for (const skill of current.skills) {
+      const source = current.sources.find((entry) => entry.id === skill.sourceId);
       if (
-        current.sources.some(
-          (source) =>
-            source.id === skill.sourceId &&
-            source.kind === "mtskills" &&
-            (!meituanEnabled || !source.enabled),
-        )
+        skill.snapshotOnly ||
+        (source?.kind === "mtskills" && (!meituanEnabled || !source.enabled))
       )
         continue;
-      if (skill.status === "pending" && skill.availableDigest && !skill.snapshotOnly) {
+      if (skill.status === "pending" && skill.availableDigest) {
         if (!(yield* host.busy))
           yield* enqueue(
             skill.policy === "pinned"
@@ -1745,8 +1784,7 @@ const make = Effect.gen(function* () {
       } else if (
         (skill.policy === "automatic" || skill.policy === "notify") &&
         skill.status !== "fetching" &&
-        !skill.snapshotOnly &&
-        current.sources.some((source) => source.id === skill.sourceId && source.enabled) &&
+        source?.enabled &&
         time -
           Math.max(
             skill.checkedAt ? Date.parse(skill.checkedAt) : 0,
@@ -1758,6 +1796,15 @@ const make = Effect.gen(function* () {
           { type: skill.policy === "automatic" ? "update" : "check", id: skill.id },
           "schedule",
         );
+      } else if (
+        skill.policy === "automatic" &&
+        skill.status === "ready" &&
+        skill.availableDigest &&
+        skill.availableDigest !== skill.cancelledDigest &&
+        source?.enabled &&
+        !(yield* host.busy)
+      ) {
+        yield* enqueue({ type: "update", id: skill.id, digest: skill.availableDigest }, "schedule");
       }
     }
   }).pipe(Effect.catch((cause) => Effect.logWarning("Skill update scheduling failed", cause)));

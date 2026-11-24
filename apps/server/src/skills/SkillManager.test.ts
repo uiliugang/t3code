@@ -1592,13 +1592,33 @@ describe("SkillManager", () => {
         yield* manager.tick;
         yield* manager.drain;
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        yield* fs.writeFileString(`${source}/script.sh`, "checked");
+        yield* manager.mutate({ type: "check", id: first.id });
+        yield* manager.drain;
+        expect((yield* manager.snapshot).skills[0]?.availableDigest).not.toBeNull();
+        yield* Ref.set(busy, true);
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        yield* Ref.set(busy, false);
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
+        yield* fs.writeFileString(`${source}/script.sh`, "cancelled");
+        yield* manager.mutate({ type: "check", id: first.id });
+        yield* manager.drain;
+        yield* manager.mutate({ type: "cancel", id: first.id });
+        yield* manager.drain;
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         yield* manager.mutate({ type: "policy", id: first.id, policy: "notify" });
         yield* manager.drain;
         yield* fs.writeFileString(`${source}/script.sh`, "notify");
         yield* TestClock.adjust("1 day");
         yield* manager.tick;
         yield* manager.drain;
-        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         expect((yield* manager.snapshot).skills[0]?.availableDigest).not.toBeNull();
         const jobs = (yield* manager.snapshot).jobs?.length;
         yield* manager.tick;
@@ -1613,7 +1633,7 @@ describe("SkillManager", () => {
         yield* manager.drain;
         expect((yield* manager.snapshot).jobs?.length).toBe(stopped.jobs?.length);
         expect((yield* manager.snapshot).skills[0]?.checkedAt).toBe(stopped.skills[0]?.checkedAt);
-        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         yield* Ref.set(busy, true);
         yield* manager.mutate({ type: "policy", id: first.id, policy: "automatic" });
         yield* manager.drain;
@@ -1625,15 +1645,104 @@ describe("SkillManager", () => {
         yield* Ref.set(busy, false);
         yield* manager.tick;
         yield* manager.drain;
-        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         expect(
           (yield* manager.snapshot).jobs?.filter((job) => job.status === "waiting"),
         ).toHaveLength(0);
         yield* manager.mutate({ type: "update", id: first.id });
         yield* manager.drain;
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("do not update");
+        yield* fs.writeFileString(`${source}/script.sh`, "automatic again");
+        yield* manager.mutate({ type: "check", id: first.id });
+        yield* manager.drain;
+        yield* manager.mutate({ type: "policy", id: first.id, policy: "automatic" });
+        yield* manager.drain;
+        yield* manager.tick;
+        yield* manager.drain;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("automatic again");
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
+  it.effect.each(["origin", "pending origin", "policy"] as const)(
+    "cancels a queued automatic update after an intervening %s change",
+    (change) =>
+      Effect.gen(function* () {
+        const { fs, directory, source, target, manager, install, restart, sql, busy } =
+          yield* harness;
+        yield* install;
+        const installed = (yield* manager.snapshot).skills[0]!;
+        yield* fs.writeFileString(`${source}/script.sh`, "old source candidate");
+        yield* manager.mutate({ type: "check", id: installed.id });
+        yield* manager.drain;
+        if (change === "pending origin") {
+          yield* Ref.set(busy, true);
+          yield* manager.mutate({ type: "update", id: installed.id });
+          yield* manager.drain;
+          yield* Ref.set(busy, false);
+        }
+        const snapshot = yield* manager.snapshot;
+        const candidate = snapshot.skills[0]!.availableDigest!;
+        const waiting = snapshot.jobs?.find((job) => job.status === "waiting");
+        if (change === "pending origin") expect(waiting).toBeDefined();
+        const newSource = `${directory}/new-source`;
+        yield* fs.copy(source, newSource);
+        yield* fs.writeFileString(`${newSource}/script.sh`, "new source candidate");
+        const queued = {
+          status: "queued",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          finishedAt: null,
+          reason: null,
+        } as const;
+        const payload = yield* encodeCatalog({
+          ...snapshot,
+          jobs: [
+            ...(snapshot.jobs ?? []),
+            {
+              ...queued,
+              id: "change",
+              origin: "user",
+              input:
+                change !== "policy"
+                  ? {
+                      type: "origin",
+                      id: installed.id,
+                      sourceId: "local",
+                      locator: newSource,
+                      skill: "",
+                    }
+                  : { type: "policy", id: installed.id, policy: "notify" },
+            },
+            {
+              ...queued,
+              id: "automatic-update",
+              origin: "schedule",
+              input: { type: "update", id: installed.id, digest: candidate },
+            },
+          ],
+        });
+        yield* sql`UPDATE skill_catalog SET payload = ${payload} WHERE id = 1`;
+        const recovered = yield* restart;
+        yield* recovered.drain;
+        const result = yield* recovered.snapshot;
+        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+        expect(result.skills[0]).toMatchObject({
+          status: "ready",
+          availableDigest: change === "policy" ? candidate : null,
+        });
+        expect(result.jobs?.find((job) => job.id === "automatic-update")).toMatchObject({
+          status: "cancelled",
+          beforeDigest: installed.activeDigest,
+          afterDigest: installed.activeDigest,
+          reason: null,
+        });
+        if (waiting) {
+          expect(result.jobs?.find((job) => job.id === waiting.id)).toMatchObject({
+            status: "cancelled",
+            afterDigest: installed.activeDigest,
+          });
+        }
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect("replays durable queued jobs once and exposes multiple skill choices", () =>
     Effect.gen(function* () {
       const { fs, directory, source, manager, restart, sql } = yield* harness;
