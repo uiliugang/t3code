@@ -634,6 +634,105 @@ esac
     },
   );
 
+  it.live.each([
+    { version: ARCHIVE.archiveVersion, status: 404, explicit: false, retry: true, installed: true },
+    {
+      version: ARCHIVE.archiveVersion,
+      status: 404,
+      explicit: false,
+      retry: true,
+      installed: false,
+    },
+    { version: ARCHIVE.archiveVersion, status: 404, explicit: true, retry: false },
+    { version: ARCHIVE.archiveVersion, status: 503, explicit: false, retry: false },
+    { version: "1.2.3", status: 404, explicit: false, retry: false },
+  ])(
+    "reuses an installed runtime only after a preview reconnect gets 404 ($version, $status, explicit=$explicit, installed=$installed)",
+    ({ version, status, explicit, retry, installed }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const nativeSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssh-preview-test-" });
+        const target = { alias: "devbox", hostname: "devbox", username: null, port: null };
+        const stateKey = yield* remoteStateKey(target);
+        const state = `${home}/.t3/ssh-launch/${stateKey}`;
+        const runtime = `${home}/.t3/runtime/versions/1.2.2`;
+        yield* fs.makeDirectory(state, { recursive: true });
+        yield* fs.writeFileString(
+          `${state}/run-t3.sh`,
+          SshTunnel.buildRemoteT3RunnerScript({ archiveVersion: "1.2.2" }),
+        );
+        if (installed) {
+          yield* fs.makeDirectory(runtime, { recursive: true });
+          yield* fs.writeFileString(`${runtime}/.install-complete`, "1.2.2\n");
+          yield* fs.writeFileString(
+            `${runtime}/t3`,
+            `#!/bin/sh
+case "$1 $2" in
+  '--version ') echo 't3 v1.2.2' ;;
+  '__ssh-helper runtime-port') echo '${process.pid} 3773' ;;
+  '__ssh-helper wait-ready') exit 0 ;;
+  'auth pairing') echo '{"credential":"fixture-token"}' ;;
+  *) exit 1 ;;
+esac
+`,
+          );
+          yield* fs.chmod(`${runtime}/t3`, 0o700);
+        }
+        let launches = 0;
+        const spawner = ChildProcessSpawner.make((command) => {
+          const isLaunch = launchStateKey(command) !== undefined;
+          if (isLaunch && ++launches === 1) {
+            return Effect.succeed({
+              ...makeSuccessfulProcess(""),
+              stderr: Stream.make(
+                new TextEncoder().encode(`T3_DOWNLOAD_FAILED:t3-${version}-linux-x64.tar.gz\n`),
+              ),
+              exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
+            });
+          }
+          if (command._tag !== "StandardCommand") return Effect.die("Expected a shell command");
+          const args = isLaunch ? ["-s", "--", stateKey] : ["-s"];
+          return typeof command.options.stdin === "object"
+            ? nativeSpawner.spawn(
+                ChildProcess.make("sh", args, {
+                  env: { HOME: home },
+                  stdin: command.options.stdin,
+                }),
+              )
+            : Effect.succeed(makeSuccessfulProcess(""));
+        });
+        const runner = { archiveVersion: version, replaceExistingServer: explicit };
+        const layer = Layer.mergeAll(
+          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Layer.succeed(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status }))),
+            ),
+          ),
+        );
+        const result = yield* Effect.result(
+          SshTunnel.launchOrReuseRemoteServer(target, undefined, runner).pipe(
+            Effect.provide(layer),
+          ),
+        );
+        assert.equal(launches, retry ? 2 : 1);
+        if (installed) {
+          assert.isTrue(
+            result._tag === "Success",
+            result._tag === "Failure" ? result.failure.message : undefined,
+          );
+          const pairing = yield* SshTunnel.issueRemotePairingToken(target, undefined, runner).pipe(
+            Effect.provide(layer),
+          );
+          assert.equal(pairing.credential, "fixture-token");
+        } else {
+          assert.instanceOf(result._tag === "Failure" ? result.failure : undefined, SshLaunchError);
+        }
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.live("reinstalls a pinned runtime using its original version and mirror", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -12,6 +12,7 @@ import type {
 import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/httpReadiness";
 import {
   cliReleaseAssetUrl,
+  cliReleaseChannelOf,
   cliReleaseDownloadBaseUrl,
   CLI_RELEASE_BASE_URL_ENV,
   parseChecksums,
@@ -35,7 +36,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as SshAuth from "./auth.ts";
@@ -765,6 +766,16 @@ cat >"$RUNNER_NEXT" <<'SH'
 @@T3_RUNNER_SCRIPT@@
 SH
 T3_ARCHIVE_MODE=@@T3_ARCHIVE_MODE@@
+if [ "@@T3_REUSE_INSTALLED_RUNNER@@" = "1" ]; then
+  PREVIOUS_VERSION="$(sed -n "s/^T3_ARCHIVE_VERSION='\\([0-9][0-9A-Za-z.-]*\\)'$/\\1/p" "$RUNNER_FILE" 2>/dev/null || true)"
+  PREVIOUS_RUNTIME="$HOME/.t3/runtime/versions/$PREVIOUS_VERSION"
+  if [ -z "$PREVIOUS_VERSION" ] || [ ! -x "$PREVIOUS_RUNTIME/t3" ] ||
+     [ "$(cat "$PREVIOUS_RUNTIME/.install-complete" 2>/dev/null)" != "$PREVIOUS_VERSION" ]; then
+    printf 'T3_NO_INSTALLED_RUNNER\\n' >&2
+    exit 1
+  fi
+  cp "$RUNNER_FILE" "$RUNNER_NEXT"
+fi
 if [ "@@T3_REPLACE_EXISTING_SERVER@@" != "1" ] && [ -x "$PINNED_RUNNER" ]; then
   if awk '
     NR == FNR {
@@ -1239,6 +1250,8 @@ RUNNER_NEXT="$STATE_DIR/pairing-runner.next.$$"
 trap 'rm -f "$RUNNER_NEXT"' EXIT
 if [ -x "$STATE_DIR/pinned-runner.sh" ]; then
   cp "$STATE_DIR/pinned-runner.sh" "$RUNNER_NEXT"
+elif [ "@@T3_PREVIEW_RUNNER@@" = "1" ] && [ -x "$RUNNER_FILE" ]; then
+  exec "$RUNNER_FILE" auth pairing create --base-dir "$DEFAULT_SERVER_HOME" --json
 else
 cat >"$RUNNER_NEXT" <<'SH'
 @@T3_RUNNER_SCRIPT@@
@@ -1341,9 +1354,13 @@ export function buildRemoteNodeEnvScript(input?: RemoteT3RunnerOptions): string 
   );
 }
 
-export function buildRemoteLaunchScript(input?: RemoteT3RunnerOptions): string {
+export function buildRemoteLaunchScript(
+  input?: RemoteT3RunnerOptions,
+  reuseInstalledRunner = false,
+): string {
   return applyScriptPlaceholders(REMOTE_LAUNCH_SCRIPT, {
     T3_REPLACE_EXISTING_SERVER: input?.replaceExistingServer ? "1" : "0",
+    T3_REUSE_INSTALLED_RUNNER: reuseInstalledRunner ? "1" : "0",
     T3_UPDATE_MARKER_FILE: DESKTOP_UPDATE_IN_PROGRESS_MARKER_FILE,
     T3_UPDATE_TTL_MS: String(DESKTOP_UPDATE_IN_PROGRESS_TTL_MS),
     T3_UPDATE_TTL_SECONDS: String(DESKTOP_UPDATE_IN_PROGRESS_TTL_MS / 1000),
@@ -1369,6 +1386,8 @@ export function buildRemoteLaunchScript(input?: RemoteT3RunnerOptions): string {
 function buildRemotePairingScript(stateKey: string, input?: RemoteT3RunnerOptions): string {
   return applyScriptPlaceholders(REMOTE_PAIRING_SCRIPT, {
     T3_STATE_KEY: stateKey,
+    T3_PREVIEW_RUNNER:
+      cliReleaseChannelOf(input?.archiveVersion?.trim() ?? "") === "preview" ? "1" : "0",
     T3_ENSURE_T3_HOME_SCRIPT: REMOTE_ENSURE_T3_HOME_SCRIPT,
     T3_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteT3RunnerScript(input)),
   });
@@ -1635,6 +1654,31 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
                     : Effect.void,
                 ),
               );
+            }),
+          ).pipe(
+            Effect.catchTags({
+              SshLaunchError: (relayError) => {
+                if (
+                  runner?.replaceExistingServer ||
+                  version !== runner?.archiveVersion?.trim() ||
+                  cliReleaseChannelOf(version) !== "preview" ||
+                  !HttpClientError.isHttpClientError(relayError.cause) ||
+                  relayError.cause.response?.status !== 404
+                ) {
+                  return Effect.fail(relayError);
+                }
+                return runSshCommand(target, {
+                  ...launchOptions,
+                  stdin: buildRemoteLaunchScript(runner, true),
+                }).pipe(
+                  Effect.mapError((cause) =>
+                    cause._tag === "SshCommandError" &&
+                    /^T3_NO_INSTALLED_RUNNER$/mu.test(cause.stderr)
+                      ? relayError
+                      : cause,
+                  ),
+                );
+              },
             }),
           );
         }),
