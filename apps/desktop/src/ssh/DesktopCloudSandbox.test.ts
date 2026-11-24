@@ -39,18 +39,60 @@ it.effect("stores only encrypted credentials and matches the resolved endpoint e
       "fixture-password",
     );
     const restarted = yield* make(dir);
-    assert.deepEqual(yield* restarted.get, { hostname: target.hostname, port: 2222 });
+    assert.deepEqual(yield* restarted.get, [{ hostname: target.hostname, port: 2222 }]);
     assert.equal(Redacted.value((yield* restarted.passwordFor(target))!), "fixture-password");
     assert.isUndefined(
       yield* restarted.passwordFor({ ...target, hostname: "other.sandbox.example.test" }),
     );
     assert.isUndefined(yield* restarted.passwordFor({ ...target, port: 22 }));
-    yield* restarted.save({ host: "sandbox.example.test:2222" });
+    yield* restarted.save({ host: "sandbox.example.test:2222", previous: target });
     yield* restarted.save({ host: "sandbox.example.test" }).pipe(Effect.flip);
-    yield* restarted.clear;
-    yield* restarted.clear;
-    assert.isNull(yield* restarted.get);
+    yield* restarted.clear(target);
+    yield* restarted.clear(target);
+    assert.deepEqual(yield* restarted.get, []);
     assert.isUndefined(yield* restarted.passwordFor(target));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, storage("keychain")))),
+);
+
+it.effect("reads legacy credentials and updates or removes only the selected endpoint", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const dir = yield* fs.makeTempDirectoryScoped();
+    const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
+    const legacy = { hostname: "sandbox.example.test", port: 22 };
+    const second = { hostname: legacy.hostname, port: 2222 };
+    const target = { ...legacy, alias: "sandbox", username: "root" };
+    const encrypted = yield* safeStorage.encryptString(
+      JSON.stringify({ ...legacy, password: "legacy-password" }),
+    );
+    yield* fs.writeFile(path.join(dir, "cloud-sandbox-ssh"), encrypted);
+    const sandbox = yield* make(dir);
+    assert.deepEqual(yield* sandbox.get, [legacy]);
+    yield* sandbox.save({ host: "sandbox.example.test:2222", password: Redacted.make("second") });
+    const restarted = yield* make(dir);
+    assert.deepEqual(yield* restarted.get, [legacy, second]);
+    assert.equal(Redacted.value((yield* restarted.passwordFor(target))!), "legacy-password");
+    assert.equal(
+      Redacted.value((yield* restarted.passwordFor({ ...target, ...second }))!),
+      "second",
+    );
+    yield* restarted
+      .save({
+        host: "sandbox.example.test:2222",
+        previous: legacy,
+        password: Redacted.make("duplicate"),
+      })
+      .pipe(Effect.flip);
+    yield* restarted.save({ host: "other.example.test", previous: legacy }).pipe(Effect.flip);
+    yield* restarted.save({
+      host: "other.example.test",
+      previous: legacy,
+      password: Redacted.make("replacement"),
+    });
+    assert.isUndefined(yield* restarted.passwordFor(target));
+    yield* restarted.clear(second);
+    assert.deepEqual(yield* restarted.get, [{ hostname: "other.example.test", port: 22 }]);
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, storage("keychain")))),
 );
 

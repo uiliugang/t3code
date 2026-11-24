@@ -465,13 +465,15 @@ export const DesktopSshEnvironmentEnsureOptionsSchema = Schema.Struct({
   password: Schema.optionalKey(Schema.RedactedFromValue(Schema.NonEmptyString)),
 });
 
-export const DesktopCloudSandboxConfigSchema = Schema.NullOr(
-  Schema.Struct({ hostname: Schema.String, port: Schema.Number }),
-);
+export const DesktopCloudSandboxConfigSchema = Schema.Struct({
+  hostname: Schema.String,
+  port: Schema.Number,
+});
 export type DesktopCloudSandboxConfig = typeof DesktopCloudSandboxConfigSchema.Type;
 
 export const DesktopCloudSandboxSaveInputSchema = Schema.Struct({
   host: Schema.String,
+  previous: Schema.optionalKey(DesktopCloudSandboxConfigSchema),
   password: Schema.optionalKey(Schema.RedactedFromValue(Schema.NonEmptyString)),
 });
 
@@ -1188,12 +1190,15 @@ export interface DesktopBridge {
     target: DesktopSshEnvironmentTarget,
     options?: { issuePairingToken?: boolean; targetVersion?: string; password?: string },
   ) => Promise<DesktopSshEnvironmentBootstrap>;
-  getCloudSandboxConfig: () => Promise<DesktopCloudSandboxConfig>;
+  getCloudSandboxConfig: () => Promise<readonly DesktopCloudSandboxConfig[]>;
   saveCloudSandboxConfig: (input: {
     host: string;
+    previous?: DesktopCloudSandboxConfig;
     password?: string;
-  }) => Promise<DesktopCloudSandboxConfig>;
-  clearCloudSandboxConfig: () => Promise<void>;
+  }) => Promise<readonly DesktopCloudSandboxConfig[]>;
+  clearCloudSandboxConfig: (
+    target: DesktopCloudSandboxConfig,
+  ) => Promise<readonly DesktopCloudSandboxConfig[]>;
   onSshInstallProgress?: (
     listener: (target: DesktopSshEnvironmentTarget, progress: DesktopSshInstallProgress) => void,
   ) => () => void;

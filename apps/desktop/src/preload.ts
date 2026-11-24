@@ -190,7 +190,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getCloudSandboxConfig: () => ipcRenderer.invoke(IpcChannels.GET_CLOUD_SANDBOX_CONFIG_CHANNEL),
   saveCloudSandboxConfig: (input) =>
     ipcRenderer.invoke(IpcChannels.SAVE_CLOUD_SANDBOX_CONFIG_CHANNEL, input),
-  clearCloudSandboxConfig: () => ipcRenderer.invoke(IpcChannels.CLEAR_CLOUD_SANDBOX_CONFIG_CHANNEL),
+  clearCloudSandboxConfig: (target) =>
+    ipcRenderer.invoke(IpcChannels.CLEAR_CLOUD_SANDBOX_CONFIG_CHANNEL, target),
   ensureSshEnvironment: async (target, options) =>
     unwrapEnsureSshEnvironmentResult(
       await ipcRenderer.invoke(IpcChannels.ENSURE_SSH_ENVIRONMENT_CHANNEL, {

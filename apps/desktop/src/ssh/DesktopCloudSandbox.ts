@@ -12,16 +12,16 @@ import * as Semaphore from "effect/Semaphore";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 
-const StoredConfig = Schema.fromJsonString(
-  Schema.Struct({
-    hostname: Schema.NonEmptyString,
-    port: Schema.Int,
-    password: Schema.RedactedFromValue(Schema.NonEmptyString),
-  }),
+const StoredCredential = Schema.Struct({
+  hostname: Schema.NonEmptyString,
+  port: Schema.Int,
+  password: Schema.RedactedFromValue(Schema.NonEmptyString),
+});
+const StoredConfigs = Schema.Array(StoredCredential);
+const decodeStoredConfig = Schema.decodeEffect(
+  Schema.fromJsonString(Schema.Union([StoredConfigs, StoredCredential])),
 );
-
-const decodeStoredConfig = Schema.decodeEffect(StoredConfig);
-const encodeStoredConfig = Schema.encodeEffect(StoredConfig);
+const encodeStoredConfig = Schema.encodeEffect(Schema.fromJsonString(StoredConfigs));
 
 class CloudSandboxError extends Schema.TaggedError<
   CloudSandboxError,
@@ -29,6 +29,7 @@ class CloudSandboxError extends Schema.TaggedError<
 >()("CloudSandboxError", {
   message: Schema.String,
 }) {}
+const isCloudSandboxError = Schema.is(CloudSandboxError);
 
 function endpoint(host: string, defaultPort = 22) {
   const match = /^(\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9._-]*)(?::(\d+))?$/iu.exec(host.trim());
@@ -44,20 +45,24 @@ function endpoint(host: string, defaultPort = 22) {
 }
 
 function sameEndpoint(left: DesktopCloudSandboxConfig, right: DesktopCloudSandboxConfig) {
-  return (
-    left !== null && right !== null && left.hostname === right.hostname && left.port === right.port
-  );
+  return left.hostname === right.hostname && left.port === right.port;
 }
+
+const metadata = (stored: typeof StoredConfigs.Type) =>
+  stored.map(({ hostname, port }) => ({ hostname, port }));
 
 export class DesktopCloudSandbox extends Context.Service<
   DesktopCloudSandbox,
   {
-    readonly get: Effect.Effect<DesktopCloudSandboxConfig, CloudSandboxError>;
+    readonly get: Effect.Effect<readonly DesktopCloudSandboxConfig[], CloudSandboxError>;
     readonly save: (input: {
       readonly host: string;
+      readonly previous?: DesktopCloudSandboxConfig;
       readonly password?: Redacted.Redacted<string>;
-    }) => Effect.Effect<DesktopCloudSandboxConfig, CloudSandboxError>;
-    readonly clear: Effect.Effect<void, CloudSandboxError>;
+    }) => Effect.Effect<readonly DesktopCloudSandboxConfig[], CloudSandboxError>;
+    readonly clear: (
+      target: DesktopCloudSandboxConfig,
+    ) => Effect.Effect<readonly DesktopCloudSandboxConfig[], CloudSandboxError>;
     readonly passwordFor: (
       target: DesktopSshEnvironmentTarget,
     ) => Effect.Effect<Redacted.Redacted<string> | undefined, CloudSandboxError>;
@@ -78,7 +83,7 @@ export const make = Effect.fn("desktop.cloudSandbox.make")(function* (stateDir: 
     }
   });
   const read = Effect.fn("desktop.cloudSandbox.read")(
-    function* () {
+    function* (): Effect.fn.Return<typeof StoredConfigs.Type, unknown> {
       const bytes = yield* fs.readFile(file).pipe(
         Effect.asSome,
         Effect.catchIf(
@@ -86,68 +91,93 @@ export const make = Effect.fn("desktop.cloudSandbox.make")(function* (stateDir: 
           () => Effect.succeedNone,
         ),
       );
-      if (Option.isNone(bytes)) return null;
+      if (Option.isNone(bytes)) return [];
       yield* protect;
       const contents = yield* storage.decryptString(bytes.value);
-      return yield* decodeStoredConfig(contents);
+      const stored = yield* decodeStoredConfig(contents);
+      return "hostname" in stored ? [stored] : stored;
     },
     Effect.mapError(
       () => new CloudSandboxError({ message: "Could not read the Cloud Sandbox credential." }),
     ),
   );
 
+  const write = Effect.fn("desktop.cloudSandbox.write")(function* (
+    stored: typeof StoredConfigs.Type,
+  ) {
+    if (stored.length === 0) {
+      yield* fs.remove(file, { force: true });
+      return;
+    }
+    yield* protect;
+    const contents = yield* encodeStoredConfig(stored);
+    const encrypted = yield* storage.encryptString(contents);
+    yield* fs.makeDirectory(stateDir, { recursive: true });
+    const temp = yield* fs.makeTempFileScoped({
+      directory: stateDir,
+      prefix: "cloud-sandbox-ssh-",
+    });
+    yield* fs.writeFile(temp, encrypted, { mode: 0o600 });
+    yield* fs.rename(temp, file);
+  }, Effect.scoped);
+
   return DesktopCloudSandbox.of({
-    get: read().pipe(
-      Effect.map((stored) =>
-        stored === null ? null : { hostname: stored.hostname, port: stored.port },
-      ),
-    ),
+    get: read().pipe(Effect.map(metadata)),
     save: Effect.fn("desktop.cloudSandbox.save")(
       function* (input) {
         const next = endpoint(input.host);
         if (next === null)
           return yield* new CloudSandboxError({ message: "Enter a valid SSH host and port." });
-        let password = input.password;
-        if (password === undefined) {
-          const previous = yield* read();
-          if (previous === null || !sameEndpoint(previous, next)) {
-            return yield* new CloudSandboxError({ message: "Enter a password for this SSH host." });
-          }
-          password = previous.password;
-        }
-        yield* protect;
-        yield* Effect.gen(function* () {
-          const contents = yield* encodeStoredConfig({ ...next, password });
-          const encrypted = yield* storage.encryptString(contents);
-          yield* fs.makeDirectory(stateDir, { recursive: true });
-          const temp = yield* fs.makeTempFileScoped({
-            directory: stateDir,
-            prefix: "cloud-sandbox-ssh-",
+        const stored = yield* read();
+        const existing = stored.find((entry) => sameEndpoint(entry, next));
+        const previous = input.previous ?? next;
+        const unchanged = sameEndpoint(previous, next);
+        if (existing && (!input.previous || !unchanged)) {
+          return yield* new CloudSandboxError({
+            message: "This SSH endpoint is already configured.",
           });
-          yield* fs.writeFile(temp, encrypted, { mode: 0o600 });
-          yield* fs.rename(temp, file);
-        }).pipe(
-          Effect.scoped,
-          Effect.mapError(
-            () =>
-              new CloudSandboxError({ message: "Could not save the Cloud Sandbox credential." }),
+        }
+        const password = input.password ?? (unchanged ? existing?.password : undefined);
+        if (password === undefined) {
+          return yield* new CloudSandboxError({ message: "Enter a password for this SSH host." });
+        }
+        const entry = { ...next, password };
+        const updated = stored.some((candidate) => sameEndpoint(candidate, previous))
+          ? stored.map((candidate) => (sameEndpoint(candidate, previous) ? entry : candidate))
+          : [...stored, entry];
+        yield* write(updated).pipe(
+          Effect.mapError((error) =>
+            isCloudSandboxError(error)
+              ? error
+              : new CloudSandboxError({ message: "Could not save the Cloud Sandbox credential." }),
           ),
         );
-        return next;
+        return metadata(updated);
       },
       (effect) => lock.withPermit(effect),
     ),
-    clear: lock
-      .withPermit(fs.remove(file, { force: true }))
-      .pipe(
-        Effect.mapError(
-          () => new CloudSandboxError({ message: "Could not clear the Cloud Sandbox credential." }),
-        ),
-      ),
+    clear: Effect.fn("desktop.cloudSandbox.clear")(
+      function* (target) {
+        const stored = yield* read();
+        const updated = stored.filter((entry) => !sameEndpoint(entry, target));
+        if (updated.length !== stored.length) yield* write(updated);
+        return metadata(updated);
+      },
+      (effect) =>
+        lock
+          .withPermit(effect)
+          .pipe(
+            Effect.mapError(
+              () =>
+                new CloudSandboxError({ message: "Could not clear the Cloud Sandbox credential." }),
+            ),
+          ),
+    ),
     passwordFor: Effect.fn("desktop.cloudSandbox.passwordFor")(function* (target) {
       const stored = yield* read();
       const host = target.hostname.includes(":") ? `[${target.hostname}]` : target.hostname;
-      return sameEndpoint(stored, endpoint(host, target.port ?? 22)) ? stored?.password : undefined;
+      const resolved = endpoint(host, target.port ?? 22);
+      return resolved ? stored.find((entry) => sameEndpoint(entry, resolved))?.password : undefined;
     }),
   });
 });

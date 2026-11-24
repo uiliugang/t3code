@@ -196,7 +196,7 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
 export const getCloudSandboxConfig = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_CLOUD_SANDBOX_CONFIG_CHANNEL,
   payload: Schema.Void,
-  result: DesktopCloudSandboxConfigSchema,
+  result: Schema.Array(DesktopCloudSandboxConfigSchema),
   handler: Effect.fn("desktop.ipc.cloudSandbox.get")(function* () {
     const sandbox = yield* DesktopCloudSandbox.DesktopCloudSandbox;
     return yield* sandbox.get;
@@ -206,7 +206,7 @@ export const getCloudSandboxConfig = DesktopIpc.makeIpcMethod({
 export const saveCloudSandboxConfig = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.SAVE_CLOUD_SANDBOX_CONFIG_CHANNEL,
   payload: DesktopCloudSandboxSaveInputSchema,
-  result: DesktopCloudSandboxConfigSchema,
+  result: Schema.Array(DesktopCloudSandboxConfigSchema),
   handler: Effect.fn("desktop.ipc.cloudSandbox.save")(function* (input) {
     const sandbox = yield* DesktopCloudSandbox.DesktopCloudSandbox;
     return yield* sandbox.save(input);
@@ -215,11 +215,11 @@ export const saveCloudSandboxConfig = DesktopIpc.makeIpcMethod({
 
 export const clearCloudSandboxConfig = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.CLEAR_CLOUD_SANDBOX_CONFIG_CHANNEL,
-  payload: Schema.Void,
-  result: Schema.Void,
-  handler: Effect.fn("desktop.ipc.cloudSandbox.clear")(function* () {
+  payload: DesktopCloudSandboxConfigSchema,
+  result: Schema.Array(DesktopCloudSandboxConfigSchema),
+  handler: Effect.fn("desktop.ipc.cloudSandbox.clear")(function* (target) {
     const sandbox = yield* DesktopCloudSandbox.DesktopCloudSandbox;
-    yield* sandbox.clear;
+    return yield* sandbox.clear(target);
   }),
 });
 
