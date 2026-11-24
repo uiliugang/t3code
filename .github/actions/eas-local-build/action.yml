@@ -20,9 +20,6 @@ inputs:
   cache:
     description: "false for untrusted code: no build cache and no EAS cache, so nothing it writes reaches trusted builds"
     default: "true"
-  sourcemaps-r2:
-    description: R2 credentials for the eas-build-on-success source map upload; EAS secrets don't reach local builds
-    default: ""
 
 runs:
   using: composite
@@ -171,7 +168,6 @@ runs:
       working-directory: apps/mobile
       env:
         EXPO_TOKEN: ${{ inputs.expo-token }}
-        MOBILE_SOURCEMAPS_R2: ${{ inputs.sourcemaps-r2 }}
         PLATFORM: ${{ inputs.platform }}
         PROFILE: ${{ inputs.profile }}
         OUTPUT: ${{ inputs.output }}

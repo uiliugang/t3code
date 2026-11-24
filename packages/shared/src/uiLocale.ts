@@ -715,8 +715,6 @@ const zhCN: Readonly<Record<string, string>> = {
   "Turn on": "启用",
   "{action}: {name}": "{action}：{name}",
   "Claude Code, Codex, and Pi": "Claude Code、Codex 和 Pi",
-  "T3 Code collects anonymous usage data to improve the app.":
-    "T3 Code 会收集匿名使用数据以改进应用。",
   "To opt out, see the": "如需退出，请参阅",
   "See the": "请参阅",
   "privacy policy": "隐私政策",
@@ -2918,8 +2916,6 @@ const zhCN: Readonly<Record<string, string>> = {
     "无法检查更新，请查看最新版本或重试。",
   "Latest: v{version}": "最新版本：v{version}",
   Legal: "法律信息",
-  "How we handle your data, including the anonymous usage data T3 Code collects.":
-    "了解我们如何处理你的数据，包括 T3 Code 收集的匿名使用数据。",
   "View policy": "查看政策",
   "Notices for dependencies, assets, and optional tools used by T3 Code.":
     "T3 Code 所用依赖、资源和可选工具的许可证声明。",
