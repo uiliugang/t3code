@@ -30,10 +30,17 @@ export const findModernNpm = Effect.fn("meituanNpm.findModernNpm")(function* (
       env: { ...env, PATH: bin },
       until: () => true,
     });
-    if (!node || nodeMajor(yield* version(node)) < 20) continue;
+    if (!node) continue;
+    const nodeVersion = yield* version(node);
+    if (nodeMajor(nodeVersion) < 20) continue;
     const script = yield* fs.realPath(npm).pipe(Effect.orElseSucceed(() => null));
     if (script?.endsWith(".js")) {
-      return { node, script, env: { PATH: [bin, env.PATH].filter(Boolean).join(":") } };
+      return {
+        node,
+        nodeVersion,
+        script,
+        env: { PATH: [bin, env.PATH].filter(Boolean).join(":") },
+      };
     }
   }
   return null;
