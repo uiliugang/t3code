@@ -161,7 +161,7 @@ function DiscoveredTasksSettings({
         </div>
         <CollapsiblePanel animate={false}>
           <form
-            className="grid gap-2 pt-3"
+            className="flex items-center gap-2 pt-3"
             onSubmit={(event) => {
               event.preventDefault();
               if (!disabled && valid && limit !== workItemDiscoveryLimit) {
@@ -170,31 +170,26 @@ function DiscoveredTasksSettings({
             }}
           >
             <Label htmlFor={inputId}>{t("Maximum discovered tasks")}</Label>
-            <div className="flex items-center gap-2">
-              <div className="w-28">
-                <Input
-                  id={inputId}
-                  type="number"
-                  min={1}
-                  max={MAX_WORK_ITEM_DISCOVERY_LIMIT}
-                  value={draft ?? workItemDiscoveryLimit}
-                  disabled={disabled}
-                  aria-invalid={!valid}
-                  aria-describedby={`${inputId}-range`}
-                  onChange={(event) => setDraft(event.target.value)}
-                />
-              </div>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={disabled || !valid || limit === workItemDiscoveryLimit}
-              >
-                {t("Save")}
-              </Button>
+            <div className="w-28 min-w-0">
+              <Input
+                id={inputId}
+                type="number"
+                min={1}
+                max={MAX_WORK_ITEM_DISCOVERY_LIMIT}
+                placeholder={`1-${MAX_WORK_ITEM_DISCOVERY_LIMIT}`}
+                value={draft ?? workItemDiscoveryLimit}
+                disabled={disabled}
+                aria-invalid={!valid}
+                onChange={(event) => setDraft(event.target.value)}
+              />
             </div>
-            <p id={`${inputId}-range`} className="text-xs text-muted-foreground">
-              {t("Enter a whole number from 1 to {max}.", { max: MAX_WORK_ITEM_DISCOVERY_LIMIT })}
-            </p>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={disabled || !valid || limit === workItemDiscoveryLimit}
+            >
+              {t("Save")}
+            </Button>
           </form>
         </CollapsiblePanel>
       </Collapsible>
