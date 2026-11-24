@@ -80,6 +80,8 @@ const harness = Effect.gen(function* () {
     reported,
     restart,
     restartWithFileSystem,
+    packages: Context.get(dependencies, SkillPackages.SkillPackages),
+    stateDir: Context.get(dependencies, ServerConfig.ServerConfig).stateDir,
     sql,
   };
 });
@@ -111,7 +113,7 @@ describe("SkillManager", () => {
     "copies complete skill packages, replaces directories and links, and records durable results",
     () =>
       Effect.gen(function* () {
-        const { fs, source, manager, install, restart, restartWithFileSystem, busy } =
+        const { fs, source, manager, install, restart, restartWithFileSystem, busy, packages } =
           yield* harness;
         const destination = yield* fs.makeTempDirectoryScoped({ prefix: "t3-copy-destination-" });
         yield* fs.writeFile(`${source}/asset.bin`, new Uint8Array([0, 255, 42]));
@@ -133,8 +135,21 @@ describe("SkillManager", () => {
           (yield* manager.previewCopy({ directory: destination, names: [pkg.name] })).entries[0]
             ?.status,
         ).toBe("directory");
+        const cachePath = "__pycache__/helper.cpython-312.pyc";
+        yield* fs.makeDirectory(`${source}/__pycache__`);
+        yield* fs.writeFileString(`${source}/${cachePath}`, "cache");
+        yield* fs.chmod(`${source}/${cachePath}`, 0o644);
+        const legacy = yield* packages.inspect(source, undefined, true);
+        expect(legacy.digest).not.toBe(pkg.digest);
         yield* Ref.set(busy, true);
-        yield* manager.copy({ directory: destination, package: pkg });
+        yield* manager.copy({
+          directory: destination,
+          package: {
+            ...pkg,
+            digest: legacy.digest,
+            files: [...pkg.files, { path: cachePath, contents: "Y2FjaGU=", mode: 0o644 }],
+          },
+        });
         yield* manager.drain;
         expect((yield* manager.snapshot).jobs?.at(-1)?.status).toBe("waiting");
         expect(yield* fs.exists(`${destination}/review/old.txt`)).toBe(true);
@@ -704,11 +719,9 @@ describe("SkillManager", () => {
         yield* manager.mutate({ type: "check", id: first.id });
         yield* manager.drain;
         const checked = (yield* manager.snapshot).skills[0]!;
-        expect(checked.availableDigest).not.toBe(first.activeDigest);
+        expect(checked.activeDigest).not.toBe(first.activeDigest);
+        expect(checked.availableDigest).toBeNull();
         expect(checked.versions).toHaveLength(2);
-        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
-        yield* manager.mutate({ type: "update", id: first.id });
-        yield* manager.drain;
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("second");
         yield* manager.mutate({ type: "rollback", id: first.id, digest: first.activeDigest! });
         yield* manager.drain;
@@ -851,6 +864,7 @@ describe("SkillManager", () => {
         yield* install;
         yield* fs.writeFileString(`${source}/script.sh`, "second");
         const first = (yield* manager.snapshot).skills[0]!;
+        yield* manager.mutate({ type: "policy", id: first.id, policy: "notify" });
         yield* manager.mutate({ type: "check", id: first.id });
         yield* manager.drain;
         const catalog = yield* manager.snapshot;
@@ -1340,10 +1354,10 @@ describe("SkillManager", () => {
       yield* install;
       const first = (yield* manager.snapshot).skills[0]!;
       yield* fs.writeFileString(`${source}/script.sh`, "upstream");
-      yield* manager.mutate({ type: "check", id: first.id });
-      yield* manager.drain;
+      yield* fs.makeDirectory(`${target}/review/__pycache__`);
+      yield* fs.writeFileString(`${target}/review/__pycache__/notes.txt`, "user notes");
       yield* fs.writeFileString(`${target}/review/script.sh`, "user edit");
-      yield* manager.mutate({ type: "update", id: first.id });
+      yield* manager.mutate({ type: "check", id: first.id });
       yield* manager.drain;
       expect((yield* manager.snapshot).skills[0]?.failureReason).toBe("local-changes");
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("user edit");
@@ -1362,6 +1376,9 @@ describe("SkillManager", () => {
       expect(configured.jobs?.at(-1)?.status).toBe("completed");
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("user edit");
       const diff = yield* manager.inspect({ type: "diff", id: first.id });
+      expect(diff.files).toContainEqual(
+        expect.objectContaining({ path: "__pycache__/notes.txt", status: "removed" }),
+      );
       expect(diff.files.find((file) => file.path === "script.sh")).toMatchObject({
         status: "changed",
         before: "user edit",
@@ -1581,6 +1598,8 @@ describe("SkillManager", () => {
         const { fs, source, target, manager, install, busy } = yield* harness;
         yield* install;
         const first = (yield* manager.snapshot).skills[0]!;
+        yield* fs.makeDirectory(`${target}/review/__pycache__`);
+        yield* fs.writeFileString(`${target}/review/__pycache__/helper.cpython-312.pyc`, "cache");
         yield* fs.writeFileString(`${source}/script.sh`, "daily");
         yield* Ref.set(busy, true);
         yield* TestClock.adjust("1 day");
@@ -1595,20 +1614,15 @@ describe("SkillManager", () => {
         yield* fs.writeFileString(`${source}/script.sh`, "checked");
         yield* manager.mutate({ type: "check", id: first.id });
         yield* manager.drain;
-        expect((yield* manager.snapshot).skills[0]?.availableDigest).not.toBeNull();
-        yield* Ref.set(busy, true);
-        yield* manager.tick;
-        yield* manager.drain;
-        expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("daily");
-        yield* Ref.set(busy, false);
-        yield* manager.tick;
-        yield* manager.drain;
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
         yield* fs.writeFileString(`${source}/script.sh`, "cancelled");
+        yield* Ref.set(busy, true);
         yield* manager.mutate({ type: "check", id: first.id });
         yield* manager.drain;
+        expect((yield* manager.snapshot).skills[0]?.status).toBe("pending");
         yield* manager.mutate({ type: "cancel", id: first.id });
         yield* manager.drain;
+        yield* Ref.set(busy, false);
         yield* manager.tick;
         yield* manager.drain;
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("checked");
@@ -1662,6 +1676,47 @@ describe("SkillManager", () => {
         expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("automatic again");
       }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
+  it.effect("updates and rolls back versions whose stored digest included Python caches", () =>
+    Effect.gen(function* () {
+      const { fs, stateDir, source, target, manager, install, restart, packages, sql } =
+        yield* harness;
+      yield* install;
+      const catalog = yield* manager.snapshot;
+      const skill = catalog.skills[0]!;
+      const baselines = `${stateDir}/skills/baselines/${skill.id}`;
+      const baseline = `${baselines}/${skill.activeDigest}`;
+      yield* fs.makeDirectory(`${baseline}/__pycache__`);
+      yield* fs.writeFileString(`${baseline}/__pycache__/helper.cpython-312.pyc`, "shipped cache");
+      const legacy = yield* packages.inspect(baseline, undefined, true);
+      expect(legacy.digest).not.toBe(skill.activeDigest);
+      yield* fs.rename(baseline, `${baselines}/${legacy.digest}`);
+      const payload = yield* encodeCatalog({
+        ...catalog,
+        skills: [
+          {
+            ...skill,
+            activeDigest: legacy.digest,
+            versions: [{ ...skill.versions[0]!, digest: legacy.digest }],
+          },
+        ],
+      });
+      yield* sql`UPDATE skill_catalog SET payload = ${payload} WHERE id = 1`;
+      yield* fs.makeDirectory(`${target}/review/__pycache__`);
+      yield* fs.writeFileString(`${target}/review/__pycache__/helper.cpython-312.pyc`, "new cache");
+      yield* fs.writeFileString(`${source}/script.sh`, "second");
+      const recovered = yield* restart;
+      yield* recovered.mutate({ type: "check", id: skill.id });
+      yield* recovered.drain;
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("second");
+      yield* recovered.mutate({ type: "rollback", id: skill.id, digest: legacy.digest });
+      yield* recovered.drain;
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+      expect(yield* fs.exists(`${target}/review/__pycache__/helper.cpython-312.pyc`)).toBe(false);
+      yield* recovered.mutate({ type: "check", id: skill.id });
+      yield* recovered.drain;
+      expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
   it.effect.each(["origin", "pending origin", "policy"] as const)(
     "cancels a queued automatic update after an intervening %s change",
     (change) =>
@@ -1671,14 +1726,13 @@ describe("SkillManager", () => {
         yield* install;
         const installed = (yield* manager.snapshot).skills[0]!;
         yield* fs.writeFileString(`${source}/script.sh`, "old source candidate");
+        if (change === "pending origin") yield* Ref.set(busy, true);
+        else yield* manager.mutate({ type: "policy", id: installed.id, policy: "notify" });
         yield* manager.mutate({ type: "check", id: installed.id });
+        if (change !== "pending origin")
+          yield* manager.mutate({ type: "policy", id: installed.id, policy: "automatic" });
         yield* manager.drain;
-        if (change === "pending origin") {
-          yield* Ref.set(busy, true);
-          yield* manager.mutate({ type: "update", id: installed.id });
-          yield* manager.drain;
-          yield* Ref.set(busy, false);
-        }
+        yield* Ref.set(busy, false);
         const snapshot = yield* manager.snapshot;
         const candidate = snapshot.skills[0]!.availableDigest!;
         const waiting = snapshot.jobs?.find((job) => job.status === "waiting");

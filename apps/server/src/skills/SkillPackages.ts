@@ -57,7 +57,12 @@ export class SkillPackages extends Context.Service<
     readonly inspect: (
       directory: string,
       destination?: string,
+      includePythonCache?: boolean,
     ) => Effect.Effect<PackageContents, SkillManagerError>;
+    readonly matchesDigest: (
+      pkg: PackageContents,
+      digest: string,
+    ) => Effect.Effect<boolean, SkillManagerError>;
     readonly diagnose: (source: SkillSource) => Effect.Effect<void, SkillManagerError>;
     readonly fetch: (input: PackageInput) => Effect.Effect<PackageContents, SkillManagerError>;
   }
@@ -196,6 +201,7 @@ const make = Effect.gen(function* () {
   const inspect = Effect.fn("SkillPackages.inspect")(function* (
     directory: string,
     destination?: string,
+    includePythonCache = false,
   ) {
     const sourceRoot = yield* fs.realPath(directory);
     const selected = yield* readMetadata(sourceRoot);
@@ -228,6 +234,12 @@ const make = Effect.gen(function* () {
           if (target) yield* fs.makeDirectory(target, { recursive: true });
           yield* copy(file, path.join(relative, name), next);
         } else if (info.type === "File") {
+          if (
+            !includePythonCache &&
+            path.basename(relative) === "__pycache__" &&
+            name.endsWith(".pyc")
+          )
+            continue;
           bytes += Number(info.size);
           if (++files > 1000 || bytes > 25 * 1024 * 1024)
             return yield* new SkillManagerError({ operation: "copy", reason: "invalid-package" });
@@ -389,7 +401,15 @@ const make = Effect.gen(function* () {
         : new SkillManagerError({ operation: "fetch", reason: "io", cause }),
     ),
   );
-  return SkillPackages.of({ fetch, prepare, inspect, metadata, diagnose });
+  const matchesDigest = Effect.fn("SkillPackages.matchesDigest")(function* (
+    pkg: PackageContents,
+    digest: string,
+  ) {
+    return (
+      pkg.digest === digest || (yield* inspect(pkg.directory, undefined, true)).digest === digest
+    );
+  });
+  return SkillPackages.of({ fetch, prepare, inspect, matchesDigest, metadata, diagnose });
 });
 
 export const layer = Layer.effect(SkillPackages, make);
