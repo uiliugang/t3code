@@ -521,7 +521,7 @@ const make = Effect.gen(function* () {
     const original = yield* packages.inspect(baseline);
     if (
       actual.digest !== original.digest ||
-      (yield* packages.inspect(baseline, undefined, true)).digest !== skill.activeDigest
+      !(yield* packages.matchesDigest(original, skill.activeDigest))
     )
       return yield* new SkillManagerError({ operation: "activate", reason: "local-changes" });
   });
@@ -545,10 +545,7 @@ const make = Effect.gen(function* () {
     }
     if (!allowModified) yield* assertUnmodified(skill);
     const candidate = yield* packages.inspect(yield* packagePath(skill.id, digest));
-    if (
-      candidate.digest !== digest &&
-      (yield* packages.inspect(candidate.directory, undefined, true)).digest !== digest
-    )
+    if (!(yield* packages.matchesDigest(candidate, digest)))
       return yield* new SkillManagerError({ operation: "activate", reason: "candidate-changed" });
     if (yield* host.busy) {
       yield* replace({
@@ -1736,9 +1733,11 @@ const make = Effect.gen(function* () {
     const target = path.join(input.directory, input.name);
     const stat = yield* fs.lstat(target).pipe(Effect.option);
     if (stat._tag === "None" || stat.value.type !== "Directory") continue;
-    const actual = yield* packages.inspect(target).pipe(Effect.option);
-    if (actual._tag === "Some" && actual.value.digest === input.digest)
-      yield* commitCopiedOrigin(input, input.directory);
+    const matches = yield* packages.inspect(target).pipe(
+      Effect.flatMap((pkg) => packages.matchesDigest(pkg, input.digest)),
+      Effect.orElseSucceed(() => false),
+    );
+    if (matches) yield* commitCopiedOrigin(input, input.directory);
   }
   const recoveredAt = yield* now;
   yield* saveJobs((jobs) =>

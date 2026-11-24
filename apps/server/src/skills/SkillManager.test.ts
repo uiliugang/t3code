@@ -113,7 +113,7 @@ describe("SkillManager", () => {
     "copies complete skill packages, replaces directories and links, and records durable results",
     () =>
       Effect.gen(function* () {
-        const { fs, source, manager, install, restart, restartWithFileSystem, busy } =
+        const { fs, source, manager, install, restart, restartWithFileSystem, busy, packages } =
           yield* harness;
         const destination = yield* fs.makeTempDirectoryScoped({ prefix: "t3-copy-destination-" });
         yield* fs.writeFile(`${source}/asset.bin`, new Uint8Array([0, 255, 42]));
@@ -135,8 +135,21 @@ describe("SkillManager", () => {
           (yield* manager.previewCopy({ directory: destination, names: [pkg.name] })).entries[0]
             ?.status,
         ).toBe("directory");
+        const cachePath = "__pycache__/helper.cpython-312.pyc";
+        yield* fs.makeDirectory(`${source}/__pycache__`);
+        yield* fs.writeFileString(`${source}/${cachePath}`, "cache");
+        yield* fs.chmod(`${source}/${cachePath}`, 0o644);
+        const legacy = yield* packages.inspect(source, undefined, true);
+        expect(legacy.digest).not.toBe(pkg.digest);
         yield* Ref.set(busy, true);
-        yield* manager.copy({ directory: destination, package: pkg });
+        yield* manager.copy({
+          directory: destination,
+          package: {
+            ...pkg,
+            digest: legacy.digest,
+            files: [...pkg.files, { path: cachePath, contents: "Y2FjaGU=", mode: 0o644 }],
+          },
+        });
         yield* manager.drain;
         expect((yield* manager.snapshot).jobs?.at(-1)?.status).toBe("waiting");
         expect(yield* fs.exists(`${destination}/review/old.txt`)).toBe(true);
@@ -1341,6 +1354,8 @@ describe("SkillManager", () => {
       yield* install;
       const first = (yield* manager.snapshot).skills[0]!;
       yield* fs.writeFileString(`${source}/script.sh`, "upstream");
+      yield* fs.makeDirectory(`${target}/review/__pycache__`);
+      yield* fs.writeFileString(`${target}/review/__pycache__/notes.txt`, "user notes");
       yield* fs.writeFileString(`${target}/review/script.sh`, "user edit");
       yield* manager.mutate({ type: "check", id: first.id });
       yield* manager.drain;
@@ -1361,6 +1376,9 @@ describe("SkillManager", () => {
       expect(configured.jobs?.at(-1)?.status).toBe("completed");
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("user edit");
       const diff = yield* manager.inspect({ type: "diff", id: first.id });
+      expect(diff.files).toContainEqual(
+        expect.objectContaining({ path: "__pycache__/notes.txt", status: "removed" }),
+      );
       expect(diff.files.find((file) => file.path === "script.sh")).toMatchObject({
         status: "changed",
         before: "user edit",
@@ -1693,7 +1711,7 @@ describe("SkillManager", () => {
       yield* recovered.mutate({ type: "rollback", id: skill.id, digest: legacy.digest });
       yield* recovered.drain;
       expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
-      expect(yield* fs.exists(`${target}/review/__pycache__`)).toBe(false);
+      expect(yield* fs.exists(`${target}/review/__pycache__/helper.cpython-312.pyc`)).toBe(false);
       yield* recovered.mutate({ type: "check", id: skill.id });
       yield* recovered.drain;
       expect((yield* recovered.snapshot).skills[0]?.failureReason).toBeNull();

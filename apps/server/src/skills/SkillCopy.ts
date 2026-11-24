@@ -94,7 +94,8 @@ export const makeSkillCopy = Effect.gen(function* () {
         yield* fs.chmod(target, file.mode);
       }
       const actual = yield* packages.inspect(directory);
-      if (actual.name !== pkg.name || actual.digest !== pkg.digest) return yield* invalid();
+      if (actual.name !== pkg.name || !(yield* packages.matchesDigest(actual, pkg.digest)))
+        return yield* invalid();
       return directory;
     },
     (effect, _pkg, workKey) =>
@@ -107,7 +108,8 @@ export const makeSkillCopy = Effect.gen(function* () {
     const directory = yield* destination(input.directory);
     const source = path.join(root, input.workKey);
     const pkg = yield* packages.inspect(source);
-    if (pkg.name !== input.name || pkg.digest !== input.digest) return yield* invalid();
+    if (pkg.name !== input.name || !(yield* packages.matchesDigest(pkg, input.digest)))
+      return yield* invalid();
     yield* fs.makeDirectory(directory, { recursive: true });
     const staging = yield* Effect.acquireRelease(
       fs.makeTempDirectory({ directory, prefix: ".t3-copy-" }),
@@ -120,7 +122,7 @@ export const makeSkillCopy = Effect.gen(function* () {
         ),
     );
     const prepared = path.join(staging, "prepared");
-    yield* packages.inspect(source, prepared);
+    yield* packages.inspect(source, prepared, pkg.digest !== input.digest);
     const target = path.join(directory, input.name);
     const backup = path.join(staging, "previous");
     const existing = yield* fs.lstat(target).pipe(Effect.option);
