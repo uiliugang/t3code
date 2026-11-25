@@ -20,6 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
@@ -823,5 +824,61 @@ class AgentNotificationsCompletionTest : AgentNotificationsFixture() {
     shadowOf(manager).setNotificationsEnabled(false)
     AgentNotifications.receive(context, update("revoked-permission", true))
     assertEquals(5, manager.activeNotifications.size)
+  }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
+class ActivityWakeTest : AgentNotificationsFixture() {
+  @Test
+  fun serviceDropsLegacyAndNotificationPayloadsBeforeFirebasePresentation() {
+    val wake = mapOf(
+      "t3_kind" to "agent_activity_wake",
+      "user_id" to "user",
+      "device_id" to "device",
+      "environment_id" to "env"
+    )
+    assertTrue(ActivityWake.isWake(wake))
+    assertFalse(ActivityWake.isWake(wake + ("alert_body" to "untrusted")))
+    assertFalse(ActivityWake.isWake(wake - "user_id"))
+    assertFalse(ActivityWake.isWake(wake + ("environment_id" to "")))
+    assertTrue(AgentNotifications.wakeRegistration(context, "other", "device") == null)
+    val service = Robolectric.buildService(AgentMessagingService::class.java).get()
+    listOf(
+      wake + ("t3_kind" to "agent_activity") + update("legacy", true),
+      wake + mapOf("gcm.n.e" to "1", "gcm.n.title" to "untrusted"),
+    ).forEach { payload ->
+      service.handleIntent(
+        Intent("com.google.android.c2dm.intent.RECEIVE").apply {
+          payload.forEach { (field, value) -> putExtra(field, value) }
+        }
+      )
+    }
+    assertTrue(manager.activeNotifications.isEmpty())
+  }
+
+  @Test
+  fun scopedActivityClearsOnlyItsHostAndCannotReturnAfterSignOut() {
+    val registration =
+      requireNotNull(AgentNotifications.wakeRegistration(context, "user", "device"))
+    fun render(environment: String, card: Map<String, String>) {
+      AgentNotifications.displayWake(
+        context,
+        environment,
+        registration,
+        card,
+        emptyList()
+      )
+    }
+    val card = update("attention", true)
+    render("home", card)
+    render("work", card)
+    assertEquals(2, manager.activeNotifications.size)
+    render("home", mapOf("active" to "false", "activity_expires_at" to "0"))
+    assertEquals(1, manager.activeNotifications.size)
+    AgentNotifications.clear(context)
+    AgentNotifications.configure(context, "device", "user", "t3code-dev", true)
+    render("work", card)
+    assertTrue(manager.activeNotifications.isEmpty())
   }
 }

@@ -22,6 +22,7 @@ import * as RpcClient from "effect/rpc/RpcClient";
 import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Socket from "effect/socket/Socket";
 
+import { assertOrdinaryConnectionAllowed } from "../platform/capabilities.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import { makeWsRpcProtocolClient, PING_TIMEOUT } from "../rpc/protocol.ts";
 import {
@@ -58,6 +59,7 @@ export type OutdatedHostUpdateStage = "downloading" | "installing" | "resuming";
 const reachOutdatedHost = Effect.fn("clientRuntime.connection.reachOutdatedHost")(function* (
   environmentId: EnvironmentId,
 ) {
+  yield* assertOrdinaryConnectionAllowed(environmentId);
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const resolver = yield* ConnectionResolver.ConnectionResolver;
   const entry = (yield* SubscriptionRef.get(registry.entries)).get(environmentId);

@@ -20,6 +20,7 @@ import { msg } from "gt-react";
 
 import { m } from "~/i18n/messages";
 
+import { guestFetch, observeGuestEvents } from "./guestTransport";
 import type { TurnItemSource } from "../chat/timelineRowContext";
 
 /** What an expanded guest row says when it cannot read the item. */
@@ -43,7 +44,7 @@ async function fetchGuestItemDetail(
   shareId: string,
   itemId: string,
 ): Promise<OrchestrationV2GetTurnItemResult> {
-  const response = await fetch(itemUrl(GUEST_ITEM_ROUTE, shareId, itemId));
+  const response = await guestFetch(itemUrl(GUEST_ITEM_ROUTE, shareId, itemId));
   if (response.status === 403) return { item: null };
   if (!response.ok) throw new Error(`Guest item request failed with ${response.status}.`);
   return decodeDetail(await response.json());
@@ -66,30 +67,29 @@ const guestCommandOutputAtom = Atom.family((key: string) => {
   const frames = Stream.callback<OrchestrationV2CommandOutputFrame, GuestItemReadError>((queue) =>
     Effect.acquireRelease(
       Effect.sync(() => {
-        const source = new EventSource(itemUrl(GUEST_COMMAND_OUTPUT_ROUTE, shareId, itemId));
-        source.addEventListener("message", (message) => {
-          const frame = decodeFrame(message.data);
-          if (Option.isNone(frame)) return;
-          Queue.offerUnsafe(queue, frame.value);
-          if (!frame.value.running) {
-            source.close();
-            Queue.endUnsafe(queue);
-          }
-        });
-        // A non-200 response closes the source for good: the share ended or the item is gone.
-        source.addEventListener("error", () => {
-          if (source.readyState === EventSource.CLOSED) {
+        const close = observeGuestEvents(
+          itemUrl(GUEST_COMMAND_OUTPUT_ROUTE, shareId, itemId),
+          (data) => {
+            const frame = decodeFrame(data);
+            if (Option.isNone(frame)) return;
+            Queue.offerUnsafe(queue, frame.value);
+            if (!frame.value.running) {
+              close();
+              Queue.endUnsafe(queue);
+            }
+          },
+          () => {
             Queue.failCauseUnsafe(
               queue,
               Cause.fail(
                 new GuestItemReadError({ message: m(msg("Output is no longer available.")) }),
               ),
             );
-          }
-        });
-        return source;
+          },
+        );
+        return close;
       }),
-      (source) => Effect.sync(() => source.close()),
+      (close) => Effect.sync(close),
     ),
   );
   // `scan` emits its seed first; skipping it keeps the row "loading" until the first frame.

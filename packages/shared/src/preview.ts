@@ -6,6 +6,7 @@ import { isLocalLoopbackHost } from "./hostClassification.ts";
 const TAB_ID_PREFIX = "tab_";
 let nextPreviewTabSequence = 0;
 
+export const NOISE_PREVIEW_ORIGIN = "https://noise-preview.invalid";
 export function previewPdfAssetUrl(rawUrl: string, httpBaseUrl: string | null): string | null {
   if (httpBaseUrl === null) return null;
   try {
@@ -22,6 +23,7 @@ export function previewPdfAssetUrl(rawUrl: string, httpBaseUrl: string | null): 
     // own browser instead of the preview's. Only this environment's assets are loaded here.
     if (
       url.origin !== baseUrl.origin &&
+      !(baseUrl.protocol === "t3noise:" && url.origin === NOISE_PREVIEW_ORIGIN) &&
       !isLocalLoopbackHost(url.hostname) &&
       url.hostname !== "0.0.0.0"
     ) {

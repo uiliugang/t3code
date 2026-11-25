@@ -18,6 +18,7 @@ import {
   newPreviewTabId,
   normalizePreviewUrl,
 } from "@t3tools/shared/preview";
+import type { NoisePreviewDocument } from "./NoisePreviewDocument.ts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
@@ -36,9 +37,14 @@ export class PreviewManager extends Context.Service<
       input: PreviewOpenInput & {
         readonly automationOwner?: string;
         /** Runs before the `opened` event publishes, so subscribers find state keyed by the tab. */
+        readonly noiseDocument?: NoisePreviewDocument;
         readonly beforePublish?: (snapshot: PreviewSessionSnapshot) => void;
       },
     ) => Effect.Effect<PreviewSessionSnapshot, PreviewError>;
+    readonly noiseDocumentFor: (
+      threadId: string,
+      tabId: string,
+    ) => Effect.Effect<NoisePreviewDocument | undefined>;
     readonly reportStatus: (
       input: PreviewReportStatusInput & { readonly serverControlled?: boolean },
     ) => Effect.Effect<void, PreviewError>;
@@ -71,6 +77,7 @@ export class PreviewManager extends Context.Service<
 >()("t3/preview/Manager/PreviewManager") {}
 
 interface PreviewSessionState {
+  readonly noiseDocument?: NoisePreviewDocument;
   readonly threadId: string;
   readonly tabId: string;
   readonly snapshot: PreviewSessionSnapshot;
@@ -221,6 +228,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
             threadId: input.threadId,
             tabId,
             snapshot,
+            ...(input.noiseDocument && { noiseDocument: input.noiseDocument }),
           });
           input.beforePublish?.(snapshot);
           yield* PubSub.publish(eventsPubSub, {
@@ -496,6 +504,12 @@ export const make = Effect.gen(function* PreviewManagerMake() {
 
   return PreviewManager.of({
     open,
+    noiseDocumentFor: Effect.fn("PreviewManager.noiseDocumentFor")((threadId, tabId) =>
+      Effect.map(
+        SynchronizedRef.get(stateRef),
+        (state) => state.sessions.get(compositeKey(threadId, tabId))?.noiseDocument,
+      ),
+    ),
     requestReveal,
     reportStatus,
     markHeadless,

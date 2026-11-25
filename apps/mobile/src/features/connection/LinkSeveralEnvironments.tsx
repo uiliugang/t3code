@@ -128,7 +128,7 @@ function LinkSeveralSheet(props: {
     const results = await runLinkBatch({
       machines: chosen,
       access,
-      mint: mintPairingCodeOn,
+      mint: (targetId, access) => mintPairingCodeOn(targetId, access, props.environmentId),
       link: async (input) => {
         const result = await link({ environmentId: props.environmentId, input });
         return result._tag === "Success"

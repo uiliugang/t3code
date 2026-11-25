@@ -1,4 +1,5 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { ATTACHMENT_TRANSFER_CHUNK_BYTES, EnvironmentId, ProjectId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -14,6 +15,7 @@ import {
 const mocks = vi.hoisted(() => ({
   connectionStateAtom: vi.fn(),
   createAssetUrl: vi.fn(),
+  openNoiseTransfer: vi.fn(),
   createUploadUrl: Symbol("create-upload-url"),
   executeAtomQuery: vi.fn(),
   removeUpload: Symbol("remove-upload"),
@@ -56,13 +58,14 @@ vi.mock("../connection/catalog", () => ({
 }));
 
 vi.mock("../state/assets", () => ({
-  assetEnvironment: { createUrl: mocks.createAssetUrl },
+  assetEnvironment: { verifyUrl: mocks.createAssetUrl },
 }));
 
 vi.mock("../state/attachments", async () => {
   const Effect = await import("effect/Effect");
   return {
     attachmentEnvironment: {
+      openNoiseTransfer: { run: mocks.openNoiseTransfer },
       createUploadUrl: {
         run: (registry: unknown, input: unknown) =>
           mocks.settledEffect(Effect, () =>
@@ -235,6 +238,45 @@ describe("attachmentUploadQueue", () => {
       releaseAttachmentUpload(imageId);
     }
     vi.unstubAllGlobals();
+  });
+
+  it("uploads encrypted file chunks on the approved session and cleans up a failed upload", async () => {
+    mocks.readPreparedConnection.mockReturnValue({
+      transport: "noise",
+      httpBaseUrl: "t3noise://environment",
+    });
+    const offsets: number[] = [];
+    const removed: string[] = [];
+    let fail = false;
+    mocks.openNoiseTransfer.mockReturnValue(
+      Effect.succeed({
+        beginUpload: () => Effect.succeed({ attachmentId: "upload" }),
+        writeChunk: ({ offset, data }: { offset: number; data: Uint8Array }) => {
+          offsets.push(offset);
+          expect(data.length).toBe(offset === 0 ? ATTACHMENT_TRANSFER_CHUNK_BYTES : 1);
+          return fail ? Effect.fail({ _tag: "Disconnected" as const }) : Effect.void;
+        },
+        remove: ({ attachmentId }: { attachmentId: string }) =>
+          Effect.sync(() => {
+            removed.push(attachmentId);
+          }),
+      }),
+    );
+    const file = new File([new Uint8Array(ATTACHMENT_TRANSFER_CHUNK_BYTES + 1)], "data.txt", {
+      type: "text/plain",
+    });
+    for (const id of ["noise-complete", "noise-incomplete"]) {
+      startAttachmentUpload({
+        environmentId: firstEnvironment,
+        image: { ...makeFile(id), file, sizeBytes: file.size, mimeType: file.type },
+      });
+      await awaitAttachmentUploads([id]);
+      expect(readAttachmentUpload(id)?.status).toBe(fail ? "failed" : "ready");
+      fail = true;
+    }
+    expect(offsets).toEqual([0, ATTACHMENT_TRANSFER_CHUNK_BYTES, 0]);
+    expect(removed).toEqual(["upload"]);
+    expect(TestXmlHttpRequest.requests).toHaveLength(0);
   });
 
   it("reuploads an expired image while retaining other ready images", async () => {

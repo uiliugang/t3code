@@ -40,6 +40,8 @@ export function resolveMarkdownMediaPreview(
     readonly threadId: ThreadId | undefined;
     readonly workspaceRoot: string | null | undefined;
     readonly captured?: boolean;
+    readonly workspaceSvgAsSource?: boolean;
+    readonly draftWorkspaceRoot?: string;
     readonly imageEmbed?: boolean;
   },
 ):
@@ -64,7 +66,10 @@ export function resolveMarkdownMediaPreview(
     if (
       name &&
       isFile &&
-      mediaMimeTypeFromExtension(extension) === null &&
+      (mediaMimeTypeFromExtension(extension) === null ||
+        (input.workspaceSvgAsSource &&
+          classified._tag === "WorkspaceFile" &&
+          extension === ".svg")) &&
       (classified._tag !== "Direct" ||
         Object.hasOwn(DOCUMENT_MIME_TYPES, extension) ||
         audioMimeTypeFromExtension(extension) !== null)
@@ -106,7 +111,11 @@ export function resolveMarkdownMediaPreview(
       const resource = input.threadId
         ? { _tag: "media-file" as const, threadId: input.threadId, path }
         : input.workspaceRoot
-          ? { _tag: "draft-workspace-file" as const, cwd: input.workspaceRoot, path }
+          ? {
+              _tag: "draft-workspace-file" as const,
+              cwd: input.draftWorkspaceRoot ?? input.workspaceRoot,
+              path,
+            }
           : null;
       if (!resource) return null;
       return {

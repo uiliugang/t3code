@@ -2,13 +2,14 @@ import { msg } from "gt-react-native";
 import { AuthAccessWriteScope, type AuthPairingLink, type EnvironmentId } from "@t3tools/contracts";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useEffect, useEffectEvent } from "react";
+import { Platform } from "react-native";
 
 import * as Dialog from "../../components/ui/Dialog";
 import { m } from "../../i18n/messages";
 import { authEnvironment } from "../../state/auth";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
-import { useEnvironmentsWithScope } from "../../state/session";
+import { useEnvironmentsWithScope, usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import {
@@ -23,7 +24,8 @@ export function ConnectDeviceApprovalCoordinator() {
   const requiring = environments.filter(
     (environment) =>
       environment.connection.phase === "connected" &&
-      environment.serverConfig?.settings.requireConnectDeviceApproval === true,
+      (Platform.OS === "android" ||
+        environment.serverConfig?.settings.requireConnectDeviceApproval === true),
   );
   const managed = useEnvironmentsWithScope(requiring, AuthAccessWriteScope);
   return (
@@ -31,14 +33,28 @@ export function ConnectDeviceApprovalCoordinator() {
       {requiring
         .filter((environment) => managed.has(environment.environmentId))
         .map((environment) => (
-          <EnvironmentApprovalWatcher
+          <EnvironmentApproval
             key={environment.environmentId}
             environmentId={environment.environmentId}
             environmentLabel={environment.label}
+            requireApproval={
+              environment.serverConfig?.settings.requireConnectDeviceApproval === true
+            }
           />
         ))}
     </>
   );
+}
+
+function EnvironmentApproval(props: {
+  readonly environmentId: EnvironmentId;
+  readonly environmentLabel: string;
+  readonly requireApproval: boolean;
+}) {
+  const prepared = usePreparedConnection(props.environmentId);
+  if (!props.requireApproval && (prepared._tag === "None" || prepared.value.transport !== "noise"))
+    return null;
+  return <EnvironmentApprovalWatcher {...props} />;
 }
 
 /** "gone": the request expired or was answered elsewhere before this answer arrived. */

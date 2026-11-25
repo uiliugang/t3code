@@ -15,11 +15,36 @@ import expo.modules.kotlin.Promise
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.modules.ModuleDefinitionBuilder
 import java.io.File
 import java.net.URI
 
 class T3NativeControlsModule : Module() {
   private var filePreviewPromise: Promise? = null
+
+  private fun ModuleDefinitionBuilder.defineNoisePeer() {
+    Class(NoiseMediaListener::class) {
+      Constructor { NoiseMediaListener(appContext) }
+      Property("origins") { listener: NoiseMediaListener -> listener.origins }
+      AsyncFunction("accept") { listener: NoiseMediaListener, promise: Promise ->
+        listener.run(promise) { listener.accept() }
+      }
+      AsyncFunction("read") { listener: NoiseMediaListener, id: Int, promise: Promise ->
+        listener.run(promise) { listener.read(id) }
+      }
+      AsyncFunction("write") { listener: NoiseMediaListener, id: Int, bytes: ByteArray, promise: Promise ->
+        listener.run(promise) { listener.write(id, bytes); null }
+      }
+      Function("close") { listener: NoiseMediaListener, id: Int -> listener.close(id) }
+    }
+    Class(ConnectNoisePeer::class) {
+      Constructor { environment: String, pin: ByteArray ->
+        ConnectNoisePeer(appContext, environment, pin)
+      }
+      Function("write") { peer: ConnectNoisePeer, bytes: ByteArray -> peer.write(bytes) }
+      Function("read") { peer: ConnectNoisePeer, bytes: ByteArray -> peer.read(bytes) }
+    }
+  }
 
   @Suppress("TooGenericExceptionCaught") // Clear the pending promise before rethrowing.
   override fun definition() = ModuleDefinition {
@@ -33,6 +58,8 @@ class T3NativeControlsModule : Module() {
       val controller = WindowCompat.getInsetsController(window, window.decorView)
       controller.isAppearanceLightNavigationBars = light
     }.runOnQueue(Queues.MAIN)
+
+    defineNoisePeer()
 
     Function("is24HourFormat") {
       val context = appContext.reactContext ?: error("The app is not active.")

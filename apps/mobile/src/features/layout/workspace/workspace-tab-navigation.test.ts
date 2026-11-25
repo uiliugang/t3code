@@ -2,6 +2,7 @@ import * as NodeModule from "node:module";
 import { describe, expect, it } from "vite-plus/test";
 
 import { restoreSettingsLinkState, settingsLinkAction } from "../../settings/settings-navigation";
+import { workspaceFileLinking } from "../../../lib/appLinking";
 import {
   workspaceSelectionsIn,
   workspaceTabColumns,
@@ -37,7 +38,8 @@ const settings = { key: "settings", name: "Settings" };
 const requireFromNative = NodeModule.createRequire(
   NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
 );
-const { getStateFromPath } = requireFromNative("@react-navigation/core") as {
+const { getStateFromPath, getPathFromState } = requireFromNative("@react-navigation/core") as {
+  readonly getPathFromState: typeof import("@react-navigation/native").getPathFromState;
   readonly getStateFromPath: typeof import("@react-navigation/native").getStateFromPath;
 };
 const { StackRouter } = NodeModule.createRequire(
@@ -48,6 +50,21 @@ const { StackRouter } = NodeModule.createRequire(
 const available = { thread: () => true, pullRequest: () => true, issue: () => true };
 const names = (state: { routes: readonly { name: string }[] }) =>
   state.routes.map((route) => route.name);
+
+it("opens a nested workspace file from a link and preserves its path when sharing the route", () => {
+  const options = {
+    screens: { ThreadFile: workspaceFileLinking("threads/:environmentId/:threadId") },
+  };
+  const path = "src/my file#1.ts";
+  const target = { name: "ThreadFile", params: { environmentId: "env", threadId: "thread", path } };
+  const incoming = "threads/env/thread/files/src/my%20file%231.ts";
+  expect(getStateFromPath(incoming, options)?.routes[0]).toMatchObject(target);
+  const link = getPathFromState(
+    { routes: [{ ...target, params: { ...target.params, path: path.split("/") } }] },
+    options,
+  );
+  expect(getStateFromPath(link, options)?.routes[0]).toMatchObject(target);
+});
 
 describe("workspace tab selections", () => {
   it("remembers the chat, pull request and Settings page each tab showed", () => {

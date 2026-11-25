@@ -125,6 +125,7 @@ export function createBrowserVoiceInputPlatform(input: {
       status.supportsTranslation && recordingOptions.speechTranslateToEnglish ? "en" : language;
     const batch = { locale: batchLocale, transcribe: transcribeRecording };
     if (
+      input.prepared.transport === "noise" ||
       !canStream() ||
       (status.supportsStreaming ? !nativeStreaming : !status.supportsBufferedStreaming)
     ) {

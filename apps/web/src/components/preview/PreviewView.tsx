@@ -1,3 +1,4 @@
+import { previewPdfUrlAtom } from "~/state/assets";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -23,7 +24,6 @@ import {
   normalizePreviewUrl,
   isPreviewUrlNormalizationError,
   resolveAddressBarInput,
-  previewPdfAssetUrl,
   resolveSearchUrlTemplate,
 } from "@t3tools/shared/preview";
 import { useGT, useMessages } from "gt-react";
@@ -46,11 +46,7 @@ import {
   resolveExternalServerUrl,
 } from "~/browser/browserTargetResolver";
 import { useEnvironmentSupportsServerBrowser } from "~/state/entities";
-import {
-  useEnvironment,
-  useEnvironmentHttpBaseUrl,
-  usePrimaryEnvironmentId,
-} from "~/state/environments";
+import { useEnvironment, usePrimaryEnvironmentId } from "~/state/environments";
 import { previewEnvironment } from "~/state/preview";
 import { usePreviewStreamAccess } from "~/state/previewStream";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -141,6 +137,7 @@ function ServerTabFileNotShown(props: {
     <PreviewFileNotShown
       url={props.url}
       fileName={props.download.fileName}
+      transport={access?.transport}
       downloadUrl={
         access
           ? previewStreamDownloadUrl(
@@ -197,7 +194,6 @@ export function PreviewView({
   );
   const addPreviewAnnotation = useComposerDraftStore((store) => store.addPreviewAnnotation);
   const addImage = useComposerDraftStore((store) => store.addImage);
-  const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
   const open = useAtomCommand(previewEnvironment.open);
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
   const environmentLabel = useEnvironment(threadRef.environmentId)?.label ?? null;
@@ -252,6 +248,11 @@ export function PreviewView({
       : undefined;
   const navStatus = desktopNavStatus ?? snapshot?.navStatus ?? { _tag: "Idle" as const };
   const url = navStatus._tag === "Idle" ? "" : navStatus.url;
+  const pdfUrl = useAtomValue(
+    previewPdfUrlAtom(threadRef.environmentId)(
+      isServerTab && navStatus._tag === "Success" ? url : null,
+    ),
+  );
   const loading = desktopOverlay?.loading ?? navStatus._tag === "Loading";
   const canGoBack = desktopOverlay?.canGoBack ?? snapshot?.canGoBack ?? false;
   const canGoForward = desktopOverlay?.canGoForward ?? snapshot?.canGoForward ?? false;
@@ -1103,11 +1104,7 @@ export function PreviewView({
                 environmentId={threadRef.environmentId}
                 threadId={threadRef.threadId}
                 tabId={snapshot.tabId}
-                pdfUrl={
-                  navStatus._tag === "Success"
-                    ? previewPdfAssetUrl(url, environmentHttpBaseUrl)
-                    : null
-                }
+                pdfUrl={pdfUrl}
                 visible={visible}
                 onFirstFrame={() => setServerStreamSettledTabId(runtimeTabId)}
                 onNoFrames={() => setServerStreamSettledTabId(runtimeTabId)}

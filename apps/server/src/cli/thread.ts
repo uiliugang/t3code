@@ -261,9 +261,11 @@ export const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function*
     readonly json: boolean;
   },
   run: (tools: ThreadTools) => Effect.Effect<A, E, R>,
+  resolvedConfig?: ServerConfig.ServerConfig["Service"],
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
-  const config = yield* resolveCliAuthConfig(flags, logLevel, { quietLogs: flags.json });
+  const config =
+    resolvedConfig ?? (yield* resolveCliAuthConfig(flags, logLevel, { quietLogs: flags.json }));
   const minimumLogLevel = flags.json ? "Error" : config.logLevel;
   return yield* Effect.gen(function* () {
     const runtimeState = yield* readLiveServerRuntimeState(config.serverRuntimeStatePath);

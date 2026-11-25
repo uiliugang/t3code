@@ -1,3 +1,4 @@
+import { noiseGuestSession } from "../auth/noiseGuestContext.ts";
 import {
   GUEST_ATTACHMENT_ROUTE,
   GUEST_COMMAND_OUTPUT_ROUTE,
@@ -76,8 +77,15 @@ const badRequest = HttpServerResponse.json(
   { status: 400, headers: NO_STORE },
 );
 
-const sessionFor = (request: HttpServerRequest.HttpServerRequest, shareId: string | null) =>
-  shareId === null ? "" : (request.cookies[guestSessionCookieName(shareId)] ?? "");
+const sessionFor = (request: HttpServerRequest.HttpServerRequest, shareId: string | null) => {
+  if (shareId === null) return "";
+  const guest = noiseGuestSession(request);
+  return guest
+    ? guest.shareId === shareId
+      ? guest.token
+      : ""
+    : (request.cookies[guestSessionCookieName(shareId)] ?? "");
+};
 
 const requestedShareId = (request: HttpServerRequest.HttpServerRequest) =>
   new URLSearchParams(request.url.split("?", 2)[1] ?? "").get(GUEST_SHARE_PARAM);

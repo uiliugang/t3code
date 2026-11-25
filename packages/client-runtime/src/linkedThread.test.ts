@@ -268,6 +268,7 @@ describe("connectLinkedEnvironment", () => {
   ) => {
     const pairs: Array<{ host: string; pairingCode: string }> = [];
     return connectLinkedEnvironment({
+      expectedEnvironmentId: target.environmentId,
       label: "vm (saved name)",
       requestPairing: async () => pairing,
       reaches:
@@ -278,6 +279,28 @@ describe("connectLinkedEnvironment", () => {
       },
     }).then((outcome) => ({ outcome, pairs }));
   };
+
+  it("opens device approval for a matching host pin without probing supplied URLs", async () => {
+    const hostPin = `t3noise://pair#env=${target.environmentId}&pin=${"A".repeat(43)}`;
+    const pairing = { ...target, type: "noise" as const, hostPin };
+    const probes: string[] = [];
+    const reaches = async (host: string) => {
+      probes.push(host);
+      return true;
+    };
+    expect(await connect(pairing, reaches)).toEqual({
+      outcome: { type: "manual", label: "VM", host: null, noisePin: hostPin },
+      pairs: [],
+    });
+    for (const changed of [
+      { ...pairing, hostPin: hostPin.replace(target.environmentId, "other") },
+      { ...pairing, environmentId: EnvironmentId.make("other") },
+      { ...pairing, hostPin: "https://bad.example" },
+    ]) {
+      expect((await connect(changed, reaches)).outcome.type).toBe("unreachable");
+    }
+    expect(probes).toEqual([]);
+  });
 
   it("redeems the pairing at the first address this device reaches", async () => {
     expect(await connect(credential, [tailnet])).toEqual({

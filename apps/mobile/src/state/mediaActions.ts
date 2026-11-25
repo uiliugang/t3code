@@ -19,6 +19,7 @@ import { normalizeNativeMarkdownUrl } from "../lib/markdownLinks";
 import { AsyncResult } from "effect/reactivity";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
+import { ToastAndroid } from "react-native";
 
 import { useRefreshAssetUrl } from "./assets";
 import { appAtomRegistry } from "./atom-registry";
@@ -32,6 +33,7 @@ import {
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
 import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
 import { canSaveImageToLibrary, saveImageToLibrary } from "../lib/saveImageToLibrary";
+import { saveWorkspaceFile } from "../lib/saveWorkspaceFile";
 import { useUiTranslation } from "../lib/useUiTranslation";
 
 function allowsHostMedia(session: SessionGrantInput | null) {
@@ -55,7 +57,9 @@ export function useMediaActions(
   const hostEnvironmentId =
     source &&
     "resource" in source &&
-    (source.resource._tag === "workspace-file" || source.resource._tag === "media-file")
+    (source.resource._tag === "workspace-file" ||
+      source.resource._tag === "media-file" ||
+      source.resource._tag === "draft-workspace-file")
       ? source.environmentId
       : null;
   const fileSession = useEnvironmentQuery(
@@ -69,12 +73,12 @@ export function useMediaActions(
     source && "resource" in source ? source.resource : null,
   );
   const controller = useRef<AbortController | null>(null);
-  const [busy, setBusy] = useState<"share" | "save-image" | null>(null);
+  const [busy, setBusy] = useState<"share" | "save-image" | "save-file" | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels page-owned work and stops updating busy state on unmount
   useEffect(() => () => controller.current?.abort(), []);
 
   const run = (
-    kind: "share" | "save-image",
+    kind: "share" | "save-image" | "save-file",
     task: (source: MediaActionsSource, signal: AbortSignal) => Promise<void>,
   ) => {
     if (!source || controller.current || !canReadHostMedia(hostEnvironmentId)) return;
@@ -87,7 +91,11 @@ export function useMediaActions(
         if (!signal.aborted) {
           const message = errorDisplayMessage(error, m);
           Dialog.alert(
-            kind === "share" ? m(msg("Could not share file")) : m(msg("Could not save image")),
+            kind === "share"
+              ? m(msg("Could not share file"))
+              : kind === "save-file"
+                ? m(msg("Could not save file"))
+                : m(msg("Could not save image")),
             message === null
               ? m(msg("Try again."))
               : errorI18nMessage(error) === undefined
@@ -105,7 +113,7 @@ export function useMediaActions(
   };
 
   const hostUri = async (source: MediaActionsSource, signal: AbortSignal) => {
-    const uri = "uri" in source ? normalizeNativeMarkdownUrl(source.uri) : await refresh();
+    const uri = "uri" in source ? normalizeNativeMarkdownUrl(source.uri) : await refresh(signal);
     if (signal.aborted || !canReadHostMedia(hostEnvironmentId)) return null;
     if (uri === null) {
       throw new Error(m(msg("The file could not be loaded. Reconnect and try again.")));
@@ -132,6 +140,18 @@ export function useMediaActions(
       };
       if (/^(file|content):/i.test(uri)) await shareLocalAttachment({ ...input, uri });
       else await downloadAndShareAttachment({ ...input, url: uri });
+    });
+
+  const saveToDevice = () =>
+    run("save-file", async (source, signal) => {
+      if (!("resource" in source)) return;
+      const saved = await saveWorkspaceFile({
+        name: source.name,
+        mimeType: source.mimeType,
+        signal,
+        resolveUri: () => hostUri(source, signal),
+      });
+      if (saved) ToastAndroid.show(gt("Saved to device"), ToastAndroid.SHORT);
     });
 
   const localImageFile = async (source: MediaActionsSource, signal: AbortSignal) => {
@@ -237,6 +257,9 @@ export function useMediaActions(
   return {
     title: reference?.kind === "file" ? reference.path : reference?.url,
     actions,
+    saveToDevice,
+    saveToDeviceDisabled: busy !== null || !canReadMedia,
+    savingToDevice: busy === "save-file",
     sharing: busy === "share",
     share,
   };

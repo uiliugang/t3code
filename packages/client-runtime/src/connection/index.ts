@@ -22,3 +22,6 @@ export * as Wakeups from "./wakeups.ts";
 export { orchestrationProtocolCompatibilityError } from "./compatibility.ts";
 // Flat so consumers' inferred command types can name it.
 export { OutdatedHostUpdateError } from "./outdatedHostUpdate.ts";
+
+export { makeEncryptedRelay } from "./encryptedRelay.ts";
+export { openLocalMediaOrigins } from "./noiseMedia.ts";

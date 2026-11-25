@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
 import {
+  ChatAttachmentId,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
@@ -26,7 +27,7 @@ export const NativeAppIconReference = Schema.Union([
 ]);
 export type NativeAppIconReference = typeof NativeAppIconReference.Type;
 
-export const AssetResource = Schema.Union([
+export const WorkspaceFileResource = Schema.Union([
   Schema.TaggedStruct("workspace-file", {
     threadId: ThreadId,
     path: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
@@ -43,6 +44,11 @@ export const AssetResource = Schema.Union([
     path: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
     disposition: Schema.optionalKey(Schema.Literal("attachment")),
   }),
+]);
+export type WorkspaceFileResource = typeof WorkspaceFileResource.Type;
+
+export const AssetResource = Schema.Union([
+  ...WorkspaceFileResource.members,
   Schema.TaggedStruct("attachment", {
     attachmentId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
     fileName: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(255))),
@@ -147,6 +153,54 @@ export const AttachmentDeleteInput = Schema.Struct({
   attachmentId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
 });
 export type AttachmentDeleteInput = typeof AttachmentDeleteInput.Type;
+
+export const ATTACHMENT_TRANSFER_CHUNK_BYTES = 192 * 1024;
+const attachmentChunk = Schema.String.check(
+  Schema.isMaxLength(4 * Math.ceil(ATTACHMENT_TRANSFER_CHUNK_BYTES / 3)),
+).pipe(Schema.decodeTo(Schema.Uint8ArrayFromBase64));
+
+export const AttachmentWriteChunkInput = Schema.Struct({
+  attachmentId: ChatAttachmentId,
+  offset: NonNegativeInt,
+  data: attachmentChunk.check(Schema.isMinLength(1)),
+});
+export type AttachmentWriteChunkInput = typeof AttachmentWriteChunkInput.Type;
+
+export const AttachmentReadChunkInput = Schema.Struct({
+  attachmentId: ChatAttachmentId,
+  offset: NonNegativeInt,
+  length: Schema.optionalKey(
+    NonNegativeInt.check(Schema.isLessThanOrEqualTo(ATTACHMENT_TRANSFER_CHUNK_BYTES)),
+  ),
+});
+export type AttachmentReadChunkInput = typeof AttachmentReadChunkInput.Type;
+
+export const AttachmentReadChunkResult = Schema.Struct({
+  data: attachmentChunk,
+  totalBytes: NonNegativeInt,
+});
+export type AttachmentReadChunkResult = typeof AttachmentReadChunkResult.Type;
+
+const fileRevision = TrimmedNonEmptyString.check(Schema.isMaxLength(256));
+
+export const WorkspaceFileReadChunkInput = Schema.Struct({
+  resource: WorkspaceFileResource,
+  offset: NonNegativeInt,
+  length: AttachmentReadChunkInput.fields.length,
+  revision: Schema.optionalKey(fileRevision),
+});
+export type WorkspaceFileReadChunkInput = typeof WorkspaceFileReadChunkInput.Type;
+
+export const WorkspaceFileReadChunkResult = Schema.Struct({
+  ...AttachmentReadChunkResult.fields,
+  revision: fileRevision,
+});
+export type WorkspaceFileReadChunkResult = typeof WorkspaceFileReadChunkResult.Type;
+
+export class AttachmentTransferError extends Schema.TaggedError<
+  AttachmentTransferError,
+  { readonly brand: unique symbol }
+>()("AttachmentTransferError", { message: Schema.String }) {}
 
 export class AttachmentUploadSigningKeyError extends Schema.TaggedError<
   AttachmentUploadSigningKeyError,

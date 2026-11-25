@@ -17,7 +17,7 @@ import * as DateTime from "effect/DateTime";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { commands, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
@@ -218,6 +218,62 @@ function visit(path: string): Disposable {
 }
 
 describe("GuestPage", () => {
+  it("redeems a pinned invite, reads the thread and sends an attachment through a loopback Noise relay", async () => {
+    const hash = await commands.startGuestRelay(
+      opening([run("run-1", 1, "completed")], items).map((event) =>
+        encodeEvent(
+          event.type === "view"
+            ? {
+                ...event,
+                view: { ...event.view, shareId: GuestShareId.make("noise-guest-fixture") },
+              }
+            : event,
+        ),
+      ),
+    );
+    let wire;
+    try {
+      using _page = visit("/guest" + hash);
+      using plain = vi.spyOn(window, "fetch");
+      using events = vi.spyOn(window, "EventSource");
+      await using screen = await render(<GuestPage />);
+      await userEvent.type(screen.getByRole("textbox", { name: "Your name" }), "Sam");
+      await userEvent.click(screen.getByRole("button", { name: "Join" }));
+      await expect.element(screen.getByText("All checks pass.")).toBeVisible();
+      await userEvent.click(screen.getByRole("button", { name: /Worked for/ }));
+      await userEvent.click(screen.getByText("vp run check:changed"));
+      await expect.element(screen.getByText("encrypted output")).toBeVisible();
+      await expect
+        .element(screen.getByTitle("Chart"))
+        .toHaveAttribute("src", expect.stringMatching(/^data:text\/html;base64,/));
+      const file = new File(["private attachment"], "private.txt", { type: "text/plain" });
+      await userEvent.upload(screen.getByLabelText("Files to attach"), file);
+      await userEvent.click(screen.getByRole("button", { name: "Send" }));
+      await expect.element(screen.getByText("private.txt")).not.toBeInTheDocument();
+      expect(window.location.hash).toBe("");
+      expect(window.location.search).toBe("?share=noise-guest-fixture&noise=1");
+      expect(plain.mock.calls.some(([url]) => String(url).includes("/api/guest/"))).toBe(false);
+      expect(events).not.toHaveBeenCalled();
+    } finally {
+      wire = await commands.stopGuestRelay();
+      sessionStorage.removeItem("t3code:noise-guest:noise-guest-fixture");
+    }
+    expect(wire.plaintext).toBe(false);
+    expect(wire.posts.join("")).toContain("private attachment");
+  });
+
+  it("clears a malformed encrypted invite without sending it to an ordinary endpoint", async () => {
+    using _page = visit("/guest#noise=1&invite=invalid.secret");
+    using plain = vi.spyOn(window, "fetch");
+    using sse = vi.spyOn(window, "EventSource");
+    await using screen = await render(<GuestPage />);
+    await expect.element(screen.getByText("This link has ended or is not valid")).toBeVisible();
+    expect(window.location.hash).toBe("");
+    expect(window.location.search).toBe("?noise=1");
+    expect(plain.mock.calls.some(([url]) => String(url).includes("/api/guest"))).toBe(false);
+    expect(sse).not.toHaveBeenCalled();
+  });
+
   it("shows the shared thread in the real timeline without opening an environment connection", async () => {
     __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
     using _page = visit(`/guest?share=${SHARE_ID}`);

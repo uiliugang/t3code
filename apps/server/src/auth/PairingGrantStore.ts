@@ -232,6 +232,7 @@ export interface IssuedBootstrapCredential {
 }
 
 export type BootstrapCredentialChange =
+  | { readonly type: "noiseRequestPending"; readonly id: string }
   | {
       readonly type: "pairingLinkUpserted";
       readonly pairingLink: AuthPairingLink;
@@ -262,6 +263,7 @@ export class PairingGrantStore extends Context.Service<
     /** A device's open or denied request, reused so retries keep one request and one code. */
     readonly findPendingConnect: (
       proofKeyThumbprint: string,
+      noiseOnly?: boolean,
     ) => Effect.Effect<Option.Option<IssuedBootstrapCredential>, BootstrapCredentialInternalError>;
     /** Shows approvers what a waiting device says it is. Only its first description sticks. */
     readonly recordConnectRequestClient: (
@@ -271,6 +273,16 @@ export class PairingGrantStore extends Context.Service<
     /** Trusts the device key behind a waiting request. False when it is gone or not a request. */
     readonly approveConnectRequest: (
       pairingLinkId: string,
+    ) => Effect.Effect<boolean, BootstrapCredentialInternalError>;
+    readonly exchangeNoise: (
+      credential: string,
+      thumbprint: string,
+    ) => Effect.Effect<
+      { readonly scopes: ReadonlyArray<AuthEnvironmentScope> } | "pending" | "rejected",
+      BootstrapCredentialInternalError
+    >;
+    readonly approveNoiseRequest: (
+      id: string,
     ) => Effect.Effect<boolean, BootstrapCredentialInternalError>;
     readonly isConnectDeviceTrusted: (
       proofKeyThumbprint: string,
@@ -681,7 +693,10 @@ const make = Effect.gen(function* () {
         return yield* new UnknownBootstrapCredentialError({});
       }
 
-      if (matching.value.revokedAt !== null) {
+      if (
+        matching.value.revokedAt !== null ||
+        matching.value.subject === AuthPairingLinks.NOISE_APPROVAL_SUBJECT
+      ) {
         return yield* new UnavailableBootstrapCredentialError({});
       }
 
@@ -726,9 +741,9 @@ const make = Effect.gen(function* () {
   const findPendingConnect: PairingGrantStore["Service"]["findPendingConnect"] = Effect.fn(
     "PairingGrantStore.findPendingConnect",
   )(
-    function* (proofKeyThumbprint) {
+    function* (proofKeyThumbprint, noiseOnly = false) {
       const now = yield* DateTime.now;
-      const row = yield* pairingLinks.findPendingConnect({ proofKeyThumbprint, now });
+      const row = yield* pairingLinks.findPendingConnect({ proofKeyThumbprint, now, noiseOnly });
       return Option.map(row, (link): IssuedBootstrapCredential => ({
         id: link.id,
         credential: link.credential,
@@ -754,7 +769,8 @@ const make = Effect.gen(function* () {
       const row = yield* pairingLinks
         .getActiveById({ id: pairingLinkId, now })
         .pipe(Effect.mapError((cause) => new BootstrapCredentialLookupError({ cause })));
-      if (Option.isSome(row)) yield* emitUpsert(toPairingLink(row.value));
+      if (Option.isSome(row) && row.value.subject === AuthPairingLinks.CLOUD_CONNECT_SUBJECT)
+        yield* emitUpsert(toPairingLink(row.value));
     });
 
   const trustConnectDevice: PairingGrantStore["Service"]["trustConnectDevice"] = Effect.fn(
@@ -767,31 +783,25 @@ const make = Effect.gen(function* () {
     yield* emitConnectDevicesChanged;
   });
 
-  const approveConnectRequest: PairingGrantStore["Service"]["approveConnectRequest"] = Effect.fn(
-    "PairingGrantStore.approveConnectRequest",
-  )(function* (pairingLinkId) {
-    const now = yield* DateTime.now;
-    const row = yield* pairingLinks
-      .getActiveById({ id: pairingLinkId, now })
-      .pipe(Effect.mapError((cause) => new BootstrapCredentialLookupError({ cause })));
-    if (
-      Option.isNone(row) ||
-      row.value.requiresConnectApproval !== 1 ||
-      row.value.proofKeyThumbprint === null
-    ) {
-      return false;
-    }
-    yield* connectDevices
-      .trust({
-        proofKeyThumbprint: row.value.proofKeyThumbprint,
-        client: row.value.requestedClient,
-        approvedAt: now,
-      })
-      .pipe(Effect.mapError((cause) => new ConnectDevicesError({ operation: "trust", cause })));
-    yield* emitRemoved(pairingLinkId);
-    yield* emitConnectDevicesChanged;
-    return true;
-  });
+  const approveRequest = (
+    subject:
+      | typeof AuthPairingLinks.CLOUD_CONNECT_SUBJECT
+      | typeof AuthPairingLinks.NOISE_APPROVAL_SUBJECT,
+  ) =>
+    Effect.fn(
+      subject === AuthPairingLinks.NOISE_APPROVAL_SUBJECT
+        ? "PairingGrantStore.approveNoiseRequest"
+        : "PairingGrantStore.approveConnectRequest",
+    )(function* (id: string) {
+      const approved = yield* pairingLinks
+        .approveConnectRequest(id, subject, yield* DateTime.now)
+        .pipe(Effect.mapError((cause) => new ConnectDevicesError({ operation: "trust", cause })));
+      if (approved) {
+        yield* emitRemoved(id);
+        yield* emitConnectDevicesChanged;
+      }
+      return approved;
+    });
 
   const isConnectDeviceTrusted: PairingGrantStore["Service"]["isConnectDeviceTrusted"] = (
     proofKeyThumbprint,
@@ -859,7 +869,21 @@ const make = Effect.gen(function* () {
     issueOneTimeToken,
     findPendingConnect,
     recordConnectRequestClient,
-    approveConnectRequest,
+    approveConnectRequest: approveRequest(AuthPairingLinks.CLOUD_CONNECT_SUBJECT),
+    approveNoiseRequest: approveRequest(AuthPairingLinks.NOISE_APPROVAL_SUBJECT),
+    exchangeNoise: Effect.fn("PairingGrantStore.exchangeNoise")(function* (credential, thumbprint) {
+      const row = yield* pairingLinks
+        .exchangeNoise(credential, thumbprint, yield* DateTime.now)
+        .pipe(Effect.mapError((cause) => new BootstrapCredentialLookupError({ cause })));
+      if (Option.isNone(row)) return "rejected" as const;
+      if (row.value.approved === 0) {
+        yield* PubSub.publish(changesPubSub, { type: "noiseRequestPending", id: row.value.id });
+        return "pending" as const;
+      }
+      yield* emitRemoved(row.value.id);
+      yield* emitConnectDevicesChanged;
+      return { scopes: row.value.scopes };
+    }),
     isConnectDeviceTrusted,
     trustConnectDevice,
     listConnectDevices,

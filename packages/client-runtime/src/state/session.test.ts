@@ -50,14 +50,21 @@ const rpcSession = (): RpcSession => ({ closed: Effect.never }) as unknown as Rp
 
 const makeHarness = Effect.fn("TestSessionState.makeHarness")(function* (
   reply: (requestNumber: number) => Promise<Response>,
+  noise?: AuthSessionState,
 ) {
   let requestCount = 0;
-  const transport = yield* SubscriptionRef.make(Option.some(rpcSession()));
+  const initial =
+    noise === undefined
+      ? rpcSession()
+      : { ...rpcSession(), transport: "noise" as const, authSessionState: noise };
+  const transport = yield* SubscriptionRef.make(Option.some(initial));
   const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
     target: TARGET,
     state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
     session: transport,
-    prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
+    prepared: yield* SubscriptionRef.make(
+      Option.some(noise === undefined ? PREPARED : { ...PREPARED, transport: "noise" as const }),
+    ),
     connect: Effect.void,
     disconnect: Effect.void,
     retryNow: Effect.void,
@@ -100,6 +107,24 @@ const makeHarness = Effect.fn("TestSessionState.makeHarness")(function* (
 const unreachable = () => Promise.reject(new TypeError("Network request failed"));
 
 describe("environment session state", () => {
+  it.effect("uses the grants from each authenticated Noise session", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(unreachable, SESSION);
+      expect(yield* harness.nextSettled()).toMatchObject({ _tag: "Success", value: SESSION });
+      const restricted = { ...SESSION, scopes: [] };
+      yield* SubscriptionRef.set(
+        harness.transport,
+        Option.some({
+          ...rpcSession(),
+          transport: "noise",
+          authSessionState: restricted,
+        }),
+      );
+      expect(sessionDeniesScope(yield* harness.nextSettled(), "orchestration:read")).toBe(true);
+      yield* SubscriptionRef.set(harness.transport, Option.some(rpcSession()));
+      expect((yield* harness.nextSettled())._tag).toBe("Failure");
+    }),
+  );
   it.effect("fetches permissions again when the connection is re-established", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness((requestNumber) =>

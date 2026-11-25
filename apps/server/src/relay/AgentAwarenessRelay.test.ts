@@ -15,7 +15,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
-import { RelayAgentActivityState } from "@t3tools/contracts/relay";
+import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -24,10 +24,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Schema from "effect/Schema";
+
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as EnvironmentKeys from "../cloud/environmentKeys.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -119,8 +119,6 @@ function waitingChild(
   });
 }
 
-const PublishPayload = Schema.Struct({ state: Schema.NullOr(RelayAgentActivityState) });
-const decodePublishPayload = Schema.decodeUnknownSync(Schema.fromJsonString(PublishPayload));
 const unused = () => Effect.die("Unexpected test dependency call");
 
 describe("startup agent activity", () => {
@@ -275,32 +273,42 @@ const makeTestRelay = Effect.fnUntraced(function* (
     readonly authorization: string | null;
     readonly state: RelayAgentActivityState | null;
   }> = [];
-  const fetch: typeof globalThis.fetch = Object.assign(
-    (
-      input: Parameters<typeof globalThis.fetch>[0],
-      init?: Parameters<typeof globalThis.fetch>[1],
-    ) => {
-      const body = init?.body;
-      if (typeof body !== "string" && !(body instanceof Uint8Array)) {
-        return Promise.reject(new Error("Expected a serialized activity publish payload"));
-      }
-      const payload = decodePublishPayload(
-        typeof body === "string" ? body : new TextDecoder().decode(body),
+  let loadDetails: AgentAwarenessRelay.AgentAwarenessRelay["Service"]["readActivity"];
+  const http = HttpClient.make((request) =>
+    Effect.gen(function* () {
+      if (request.body._tag !== "Uint8Array")
+        return yield* Effect.die("Expected a serialized wake");
+      const payload = JSON.parse(new TextDecoder().decode(request.body.body));
+      assert.equal(
+        new URL(request.url).pathname,
+        "/v1/environments/relay-environment/agent-activity/wake",
       );
+      assert.deepEqual(Object.keys(payload), ["proof"]);
+      const [header, claims] = payload.proof.split(".");
+      assert.equal(
+        JSON.parse(Buffer.from(header, "base64url").toString()).typ,
+        "t3-env-activity-wake+jwt",
+      );
+      assert.sameMembers(Object.keys(JSON.parse(Buffer.from(claims, "base64url").toString())), [
+        "iss",
+        "aud",
+        "sub",
+        "jti",
+        "iat",
+        "exp",
+        "environmentId",
+      ]);
+      const states = yield* loadDetails().pipe(Effect.orDie);
       publications.push({
-        url: String(input),
-        authorization: new Headers(init?.headers).get("authorization"),
-        state: payload.state,
+        url: request.url,
+        authorization: request.headers.authorization ?? null,
+        state: states.find((state) => state.threadId === THREAD_ID) ?? null,
       });
-      try {
-        return Promise.resolve(
-          options.respond?.(publications.length) ?? Response.json({ ok: true, deliveries: [] }),
-        );
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    },
-    { preconnect: () => {} },
+      return HttpClientResponse.fromWeb(
+        request,
+        options.respond?.(publications.length) ?? Response.json({ ok: true, deliveries: [] }),
+      );
+    }),
   );
   const project = {
     id: PROJECT_ID,
@@ -335,13 +343,65 @@ const makeTestRelay = Effect.fnUntraced(function* (
       listShells: unused,
       getById: () => Effect.succeedSome(project),
     }),
-    Effect.provideService(FetchHttpClient.Fetch, fetch),
+    Effect.provideService(HttpClient.HttpClient, http),
     Effect.provide(NodeCrypto.layer),
   );
+  loadDetails = relay.readActivity;
   return { relay, secrets, secretReads, currentShell, shellReads, publications, catchUp };
 });
 
 describe("AgentAwarenessRelay", () => {
+  it.effect(
+    "reads private details from projections before the first wake and expires old completions",
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(DateTime.makeUnsafe(NOW).epochMilliseconds);
+        const recent = shell({ id: SECOND_THREAD_ID, status: "completed" });
+        const parent = shell({ title: "confidential ".repeat(32) });
+        const archived = shell({
+          id: ThreadId.make("archived"),
+          archivedAt: DateTime.makeUnsafe(NOW),
+        });
+        const child = waitingChild();
+        const { relay, publications, secrets } = yield* makeTestRelay({
+          catchUpThreads: [parent, recent, child, archived],
+          readShell: (id) => Effect.succeed(id === CHILD_THREAD_ID ? child : parent),
+        });
+        const initial = yield* relay.readActivity();
+        assert.deepEqual(
+          initial.map(({ threadId, phase }) => [threadId, phase]),
+          [
+            [THREAD_ID, "waiting_for_approval"],
+            [SECOND_THREAD_ID, "completed"],
+          ],
+        );
+        assert.isAtMost(initial[0]!.threadTitle.length, 120);
+        yield* TestClock.adjust("16 minutes");
+        assert.deepEqual(
+          (yield* relay.readActivity()).map((row) => row.threadId),
+          [THREAD_ID],
+        );
+        yield* secrets.set(PUBLISH_AGENT_ACTIVITY_SECRET, new TextEncoder().encode("false"));
+        assert.deepEqual(yield* relay.readActivity(), []);
+        assert.deepEqual(publications, []);
+
+        const busy = yield* makeTestRelay({
+          catchUpThreads: [
+            ...Array.from({ length: 40 }, (_, index) =>
+              shell({ id: ThreadId.make("active-" + index) }),
+            ),
+            parent,
+            child,
+          ],
+          readShell: (id) => Effect.succeed(id === CHILD_THREAD_ID ? child : parent),
+        });
+        const limited = yield* busy.relay.readActivity();
+        assert.lengthOf(limited, 32);
+        assert.equal(limited[0]!.threadId, THREAD_ID);
+        assert.deepEqual(busy.publications, []);
+      }),
+  );
+
   it.effect("publishes the parent as needing approval while its subagent waits", () =>
     Effect.gen(function* () {
       const shells = yield* Ref.make(
@@ -361,7 +421,6 @@ describe("AgentAwarenessRelay", () => {
       yield* setShell(waitingChild());
       yield* relay.publishThread(CHILD_THREAD_ID);
       assert.equal(publications.length, 2);
-      assert.isTrue(publications[1]?.url.includes(`/threads/${THREAD_ID}/`) ?? false);
       assert.equal(publications[1]?.state?.phase, "waiting_for_approval");
 
       // A rename keeps the same request's alert time, so the phone doesn't re-alert.
@@ -441,7 +500,6 @@ describe("AgentAwarenessRelay", () => {
       yield* Queue.take(pulls);
       yield* relay.drain;
       assert.equal(publications.length, 1);
-      assert.isTrue(publications[0]?.url.includes(`/threads/${THREAD_ID}/`) ?? false);
       assert.equal(publications[0]?.state?.phase, "waiting_for_input");
     }),
   );
@@ -647,6 +705,28 @@ describe("AgentAwarenessRelay", () => {
         { threadId: THREAD_ID, revision: 2 },
       ]);
     }),
+  );
+
+  it.effect(
+    "wakes again when an uncertain delivery is followed by a return to the last confirmed state",
+    () =>
+      Effect.gen(function* () {
+        const { relay, currentShell, publications } = yield* makeTestRelay({
+          respond: (attempt) =>
+            attempt === 2
+              ? new Response(null, { status: 503 })
+              : Response.json({ ok: true, deliveries: [] }),
+        });
+        yield* relay.publishThread(THREAD_ID);
+        yield* Ref.set(currentShell, shell({ title: "Intermediate" }));
+        yield* relay.publishThread(THREAD_ID);
+        yield* Ref.set(currentShell, shell());
+        yield* relay.publishThread(THREAD_ID);
+        assert.deepEqual(
+          publications.map(({ state }) => state?.threadTitle),
+          ["Thread", "Intermediate", "Thread"],
+        );
+      }),
   );
 
   it.effect("deduplicates state and republishes title changes", () =>

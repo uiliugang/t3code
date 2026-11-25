@@ -4,6 +4,8 @@ import type {
   UserInputAttachments,
 } from "@t3tools/contracts";
 import { Image } from "expo-image";
+import { useNavigation } from "@react-navigation/native";
+import { usePreparedConnection } from "../../state/session";
 import { Pressable, View } from "react-native";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { getQuestionAnswerText } from "@t3tools/client-runtime/work-log/user-input";
@@ -16,14 +18,29 @@ function AnswerFile(props: {
   attachment: UserInputAttachments[string][number];
 }) {
   const resource = { _tag: "attachment", attachmentId: props.attachment.id } as const;
-  const url = useAssetUrl(props.environmentId, resource);
+  const navigation = useNavigation();
+  const connection = usePreparedConnection(props.environmentId);
+  const noise = connection._tag === "Some" && connection.value.transport === "noise";
+  const url = useAssetUrl(
+    props.environmentId,
+    !noise || props.attachment.type === "image" ? resource : null,
+  );
+
   return (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={props.attachment.name}
-      disabled={!url}
+      disabled={!noise && !url}
       onPress={() => {
-        if (url) void tryOpenExternalUrl(url);
+        if (noise) {
+          navigation.navigate("ThreadAttachment", {
+            environmentId: String(props.environmentId),
+            attachmentId: props.attachment.id,
+            name: props.attachment.name,
+            mimeType: props.attachment.mimeType,
+            sizeBytes: String(props.attachment.sizeBytes),
+          });
+        } else if (url) void tryOpenExternalUrl(url);
       }}
       className="gap-1"
     >

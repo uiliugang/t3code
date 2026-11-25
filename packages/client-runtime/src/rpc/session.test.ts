@@ -291,6 +291,43 @@ const publishConfigEvents = Effect.fn("TestRpcSessionFactory.publishConfigEvents
 });
 
 describe("RpcSessionFactory", () => {
+  it.effect("synchronizes an approved Noise session on its supplied socket", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const prepared = {
+        ...PREPARED,
+        transport: "noise" as const,
+        socketUrl: "t3noise://environment",
+      };
+      const missing = yield* factory.connect(prepared).pipe(Effect.flip);
+      expect(missing.reason).toBe("configuration");
+      const wire = new TestWebSocket("wss://fixture.invalid", yield* Queue.unbounded<void>());
+      wire.open();
+      const socket = yield* Socket.fromWebSocket(
+        Effect.succeed(wire as unknown as globalThis.WebSocket),
+      );
+      const session = yield* factory.connect(prepared, {
+        socket,
+        authSessionState: {
+          authenticated: true,
+          auth: {
+            policy: "remote-reachable",
+            bootstrapMethods: [],
+            sessionMethods: [],
+            sessionCookieName: "fixture_session",
+          },
+          permissions: ["orchestration:read"],
+        },
+      });
+      yield* completeInitialConfig(wire);
+      yield* session.ready;
+      expect(session.transport).toBe("noise");
+      expect(session.authSessionState?.permissions).toEqual(["orchestration:read"]);
+      expect(yield* session.inboundFrames).toBeGreaterThan(0);
+      expect(sockets).toHaveLength(0);
+    }),
+  );
+
   it.effect.each([
     { established: false, closedWith: { _tag: "ConnectionBlockedError", reason: "unsupported" } },
     {

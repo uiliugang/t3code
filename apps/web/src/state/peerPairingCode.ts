@@ -24,11 +24,12 @@ const mintMcpApprovalCode = createMcpApprovalCodeCommand(connectionAtomRuntime);
 export async function mintPairingCodeOn(
   environmentId: EnvironmentId,
   access: AuthMcpClientAccess,
+  recipientId: EnvironmentId,
 ): Promise<Result.Result<string, unknown>> {
   const result = await runAtomCommand(
     appAtomRegistry,
     mintPairingCode,
-    { environmentId, input: access },
+    { environmentId, input: { access, recipientId } },
     { reportFailure: false },
   );
   return result._tag === "Success"

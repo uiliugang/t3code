@@ -50,6 +50,13 @@ export function isHostCredentialRefusal(error: ConnectionAttemptError): boolean 
   );
 }
 
+export function encryptedConnectionRequiredError(): ConnectionBlockedError {
+  return new ConnectionBlockedError({
+    reason: "configuration",
+    ...translatableDetail(msg("This environment requires an end-to-end encrypted connection.")),
+  });
+}
+
 export function environmentMismatchError(input: {
   readonly expected: EnvironmentId;
   readonly actual: EnvironmentId;

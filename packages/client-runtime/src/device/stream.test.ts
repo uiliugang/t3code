@@ -605,7 +605,7 @@ describe("Android WebRTC device streams", () => {
     vi.unstubAllGlobals();
   });
 
-  function setup() {
+  function setup(encrypted = false) {
     vi.useFakeTimers();
     const sockets: Socket[] = [];
     class Socket {
@@ -686,6 +686,7 @@ describe("Android WebRTC device streams", () => {
         platform: "android",
         deviceId: "session-1",
         access: {
+          encrypted,
           httpBase: "https://test/api/device-hub",
           wsBase: "wss://test/api/device-hub",
           credentials: true,
@@ -697,6 +698,31 @@ describe("Android WebRTC device streams", () => {
     );
     return { client, events, fetch, peers, videos, sockets, present };
   }
+
+  it("uses scoped screenshots and the input socket on encrypted WebRTC-only hosts", async () => {
+    const { client, fetch, sockets, present } = setup(true);
+    const image = { width: 10, height: 20, close: vi.fn() };
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => image),
+    );
+    fetch.mockImplementation(async (url) =>
+      url.includes("/screenshot?")
+        ? new Response(
+            Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0, 73, 69, 78, 68, 0, 0, 0, 0),
+          )
+        : Response.json({ serial: "emulator-5554", stream: { transport: "webrtc" } }),
+    );
+    client.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(present).toHaveBeenCalledWith(image, 10, 20);
+    expect(sockets[0]?.url).toContain("video=0");
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://test/api/device-hub/vendor/serve-emu/api?device=session-1&hostId=eas",
+      "https://test/api/device-hub/vendor/serve-emu/api/screenshot?device=session-1&hostId=eas",
+    ]);
+    client.stop();
+  });
 
   it("streams over WebRTC when serve-emu advertises it, with input that reconnects on its own", async () => {
     const { client, events, fetch, peers, videos, sockets, present } = setup();

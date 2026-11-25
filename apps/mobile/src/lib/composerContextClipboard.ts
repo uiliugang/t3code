@@ -19,12 +19,8 @@ import {
   threadContextsOutsideEnvironment,
   threadLinkContextReferences,
 } from "@t3tools/shared/composerContextReferences";
-import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
-import * as Option from "effect/Option";
 import { appAtomRegistry } from "../state/atom-registry";
-import { assetEnvironment } from "../state/assets";
-import { environmentSession } from "../state/session";
+import { refreshAssetUrl } from "../state/assets";
 import { environmentThreadShells } from "../state/threads";
 import { workspaceConnections } from "../state/workspace";
 import { downloadAttachmentForPreview } from "./attachmentDownload";
@@ -199,34 +195,36 @@ async function importAttachment(
       }
     }
   }
-  const connection = appAtomRegistry.get(
-    environmentSession.preparedConnectionValueAtom(environmentId),
-  );
-  if (Option.isNone(connection)) throw new Error(m(msg("Reconnect to the source environment")));
-  const result = await executeAtomQuery(
-    appAtomRegistry,
-    assetEnvironment.createUrl({
-      environmentId,
-      input: {
-        resource: { _tag: "attachment", attachmentId: record.attachmentId, fileName: record.name },
-      },
-    }),
-    { refresh: true, reportFailure: false },
-  );
-  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-  checkAborted(signal);
-  const url = resolveAssetUrl(connection.value.httpBaseUrl, result.value.relativeUrl);
-  if (!url) throw new Error(m(msg("Attachment URL unavailable")));
-  const temporary = await downloadAttachmentForPreview({
-    attachment: { name: record.name, mimeType: record.mimeType },
-    url,
-    signal,
-  });
-  if (!temporary) throw new Error("Attachment import cancelled");
+  let releaseFile: (() => void) | undefined;
   try {
-    return await persistImportedAttachment(record, temporary.uri, signal);
+    const url = await refreshAssetUrl(
+      environmentId,
+      {
+        _tag: "attachment",
+        attachmentId: record.attachmentId,
+        fileName: record.name,
+      },
+      signal,
+      (release) => {
+        releaseFile = release;
+      },
+    );
+    checkAborted(signal);
+    if (!url) throw new Error(m(msg("Attachment URL unavailable")));
+    if (url.startsWith("file:")) return await persistImportedAttachment(record, url, signal);
+    const temporary = await downloadAttachmentForPreview({
+      attachment: { name: record.name, mimeType: record.mimeType },
+      url,
+      signal,
+    });
+    if (!temporary) throw new Error("Attachment import cancelled");
+    try {
+      return await persistImportedAttachment(record, temporary.uri, signal);
+    } finally {
+      temporary.dispose();
+    }
   } finally {
-    temporary.dispose();
+    releaseFile?.();
   }
 }
 

@@ -22,6 +22,14 @@ class T3AgentNotificationsModule : Module() {
       }
     }
 
+    Function("finishActivityWake") {
+        task: String,
+        card: Map<String, String>?,
+        alerts: List<Map<String, String>>
+      ->
+      ActivityWake.complete(task, card, alerts)
+    }
+
     Function("clear") {
       appContext.reactContext?.let { AgentNotifications.clear(it) }
     }

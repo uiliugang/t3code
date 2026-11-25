@@ -201,6 +201,10 @@ const browserTestProject = {
       commands: {
         // Playwright's mouse outlives each test, so whatever mounts under its last
         // position starts hovered. test/browserSetup.ts parks it off the page before each test.
+        startGuestRelay: async ({ page }, events: string[]) =>
+          (await import("./test/noiseGuestRelay.ts")).startGuestRelay(page, events),
+        stopGuestRelay: async ({ page }) =>
+          (await import("./test/noiseGuestRelay.ts")).stopGuestRelay(page),
         resetPointer: async ({ page }) => {
           await page.mouse.move(-1, -1);
         },

@@ -15,6 +15,7 @@ export const PersistedServerRuntimeState = Schema.Struct({
   ownerId: Schema.optional(Schema.String),
   host: Schema.optional(Schema.String),
   privateNetworkOnly: Schema.optional(Schema.Boolean),
+  noiseOnly: Schema.optional(Schema.Boolean),
   port: Schema.Int,
   origin: Schema.String,
   // Dev is single-origin: browsers must pair through this URL, not `origin`.
@@ -68,6 +69,7 @@ export const makePersistedServerRuntimeState = (input: {
   >;
   readonly port: number;
   readonly serviceManaged?: boolean;
+  readonly noiseOnly?: boolean;
   readonly managedPolicy?: PersistedServerRuntimeState["managedPolicy"];
 }): Effect.Effect<PersistedServerRuntimeState> =>
   Effect.map(DateTime.now, (now) => ({
@@ -79,6 +81,7 @@ export const makePersistedServerRuntimeState = (input: {
     origin: runtimeOriginForConfig(input.config, input.port),
     ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
     startedAt: DateTime.formatIso(now),
+    ...(input.noiseOnly ? { noiseOnly: true } : {}),
     ...(input.serviceManaged ? { serviceManaged: true } : {}),
     serverVersion: packageJson.version,
     ...(input.managedPolicy === undefined ? {} : { managedPolicy: input.managedPolicy }),

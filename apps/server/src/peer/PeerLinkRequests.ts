@@ -330,6 +330,9 @@ const make = Effect.gen(function* () {
             url,
             ...(alternateUrls.length === 0 ? {} : { alternateUrls }),
             pairingCode: answer.pairingCode,
+            ...(answer.expectedNoisePin === undefined
+              ? {}
+              : { expectedNoisePin: answer.expectedNoisePin }),
             access: answer.access,
             ...(answer.environmentId === undefined
               ? {}

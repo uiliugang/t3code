@@ -41,24 +41,37 @@ async function readAttachmentText(key: AttachmentTextKey, signal: AbortSignal) {
   if (isLocalUri(key.uri)) {
     return readFilePreviewResponse({ ok: true, body: new File(key.uri).readableStream() }, signal);
   }
-  // Reauthorize before source reads; the opening URL may have expired.
-  let target = key.uri;
-  if (key.authorizedAt === null || Date.now() - key.authorizedAt > STALE_URL_MS) {
-    const refreshed =
-      key.environmentId === null
-        ? null
-        : await refreshAssetUrl(key.environmentId, key.resource, signal).catch(() => null);
-    if (!refreshed) throw new Error(m(msg("Reconnect to this environment and try again.")));
-    target = refreshed;
+  let releaseFile: (() => void) | undefined;
+  try {
+    // Reauthorize before source reads; the opening URL may have expired.
+    let target = key.uri;
+    if (key.authorizedAt === null || Date.now() - key.authorizedAt > STALE_URL_MS) {
+      const refreshed =
+        key.environmentId === null
+          ? null
+          : await refreshAssetUrl(key.environmentId, key.resource, signal, (release) => {
+              releaseFile = release;
+            }).catch(() => null);
+      if (!refreshed) throw new Error(m(msg("Reconnect to this environment and try again.")));
+      target = refreshed;
+    }
+    if (isLocalUri(target)) {
+      return await readFilePreviewResponse(
+        { ok: true, body: new File(target).readableStream() },
+        signal,
+      );
+    }
+    const response = await fetch(target, {
+      signal,
+      headers: {
+        ...(key.sizeBytes > 0 ? { Range: `bytes=0-${FILE_TEXT_PREVIEW_MAX_BYTES}` } : {}),
+        ...(key.revision > 0 ? { "Cache-Control": "no-cache" } : {}),
+      },
+    });
+    return await readFilePreviewResponse(response, signal);
+  } finally {
+    releaseFile?.();
   }
-  const response = await fetch(target, {
-    signal,
-    headers: {
-      ...(key.sizeBytes > 0 ? { Range: `bytes=0-${FILE_TEXT_PREVIEW_MAX_BYTES}` } : {}),
-      ...(key.revision > 0 ? { "Cache-Control": "no-cache" } : {}),
-    },
-  });
-  return readFilePreviewResponse(response, signal);
 }
 
 class AttachmentTextReadError extends Schema.TaggedError<
@@ -98,7 +111,7 @@ export function useAttachmentDocument(input: {
   readonly attachment: FileBackedComposerAttachment | null;
 }) {
   const resolve = useMessages();
-  const kind = filePreviewKind(input, { richDocuments: false });
+  const fileKind = filePreviewKind(input, { richDocuments: false });
   const delimiter = filePreviewDelimiter(input);
   const shareController = useRef<AbortController | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight attachment share download when the component unmounts
@@ -122,6 +135,15 @@ export function useAttachmentDocument(input: {
   const remote = useFreshAssetUrl(environmentId, attachment ? null : resource, revision);
   const remoteUrl = AsyncResult.isSuccess(remote) && !remote.waiting ? remote.value : null;
   const uri = attachment ? localPreview.uri : (remoteUrl?.url ?? null);
+  // The signed HTML response supplies the sandbox CSP; decrypted bytes open as source.
+  const kind =
+    remoteUrl &&
+    isLocalUri(remoteUrl.url) &&
+    (fileKind === "html" ||
+      input.mimeType.split(";")[0]?.trim().toLowerCase() === "image/svg+xml" ||
+      /\.svg$/i.test(input.name))
+      ? "text"
+      : fileKind;
   const needsText = kind === "text" || kind === "markdown" || (kind === "html" && !rendered);
   const text = useAtomValue(
     uri && needsText
@@ -164,8 +186,13 @@ export function useAttachmentDocument(input: {
       signal: controller.signal,
     };
     const result = await settlePromise(async () => {
-      if (isLocalUri(uri)) await shareLocalAttachment({ ...request, uri });
-      else await downloadAndShareAttachment({ ...request, url: (await refresh()) ?? uri });
+      if (attachment) return shareLocalAttachment({ ...request, uri });
+      const refreshed = await refresh(controller.signal);
+      if (isLocalUri(uri)) {
+        if (!refreshed) throw new Error(m(msg("The attachment is unavailable.")));
+        return shareLocalAttachment({ ...request, uri: refreshed });
+      }
+      await downloadAndShareAttachment({ ...request, url: refreshed ?? uri });
     });
     if (shareController.current === controller) shareController.current = null;
     if (controller.signal.aborted) return;

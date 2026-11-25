@@ -11,36 +11,59 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
+import android.util.Base64
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.google.firebase.messaging.RemoteMessage
 import expo.modules.notifications.service.ExpoFirebaseMessagingService
+import java.security.MessageDigest
+import java.util.UUID
 
 class AgentMessagingService : ExpoFirebaseMessagingService() {
+  override fun handleIntent(intent: Intent) {
+    // Firebase otherwise displays notification payloads before onMessageReceived runs.
+    if (intent.action == "com.google.android.c2dm.intent.RECEIVE" ||
+      intent.action == "com.google.firebase.messaging.RECEIVE_DIRECT_BOOT"
+    ) {
+      val type = intent.getStringExtra("message_type")
+      if (type == null || type == "gcm") {
+        val message = RemoteMessage(intent.extras ?: return)
+        if (message.notification != null || !ActivityWake.isWake(message.data)) return
+      }
+    }
+    super.handleIntent(intent)
+  }
+
   override fun onMessageReceived(remoteMessage: RemoteMessage) {
-    if (remoteMessage.data["t3_kind"] == "agent_activity") {
-      AgentNotifications.receive(this, remoteMessage.data)
-    } else {
-      super.onMessageReceived(remoteMessage)
+    if (remoteMessage.notification == null) ActivityWake.enqueue(this, remoteMessage.data)
+  }
+}
+
+class NotificationUpgradeReceiver : BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent) {
+    if (intent.action ==
+      Intent.ACTION_MY_PACKAGE_REPLACED
+    ) {
+      AgentNotifications.disableDelegation(context)
     }
   }
 }
 
 class AgentActivityDismissReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    AgentNotifications.dismiss(context)
+    AgentNotifications.dismiss(context, intent.data?.lastPathSegment)
   }
 }
 
 class AgentActivityExpiryReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    AgentNotifications.expire(context)
+    AgentNotifications.expire(context, scope = intent.data?.lastPathSegment)
   }
 }
 
-/** Handles data pushes natively so delivery does not depend on a running JS bridge. */
+/** Owns local presentation, registration and dismissal across app restarts. */
 object AgentNotifications {
   private const val STORE = "t3-agent-notifications"
   private const val ACTIVITY_CHANNEL = "agent-activity"
@@ -52,6 +75,18 @@ object AgentNotifications {
   private const val RUNNING_LIFETIME_MS = 2 * 60 * 60 * 1000L
   private const val MAX_LIFETIME_MS = 24 * 60 * 60 * 1000L
 
+  // Existing installations may still have a delegated presenter from an older Firebase build.
+  fun disableDelegation(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      val manager = manager(context)
+      if (manager.notificationDelegate ==
+        "com.google.android.gms"
+      ) {
+        manager.notificationDelegate = null
+      }
+    }
+  }
+
   @Synchronized
   fun configure(
     context: Context,
@@ -60,6 +95,7 @@ object AgentNotifications {
     scheme: String,
     ongoingEnabled: Boolean
   ) {
+    disableDelegation(context)
     val prefs = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
     // JS identity is empty on a cold start. Compare the durable identity here
     // so reopening preserves cards, dismissal and replay history for this user.
@@ -75,6 +111,17 @@ object AgentNotifications {
     ).putString("userId", userId).putString("scheme", scheme)
       .putBoolean("enabled", true).putBoolean("ongoing", ongoingEnabled).apply()
     if (ongoingEnabled && !wasEnabled) prefs.edit().putBoolean("dismissed", false).apply()
+    if (!prefs.contains("registration")) {
+      prefs.edit().putString("registration", UUID.randomUUID().toString()).apply()
+    }
+    prefs.getStringSet("wakeScopes", emptySet()).orEmpty().forEach { scope ->
+      if (!ongoingEnabled) cancelActivity(context, scope)
+      if (ongoingEnabled &&
+        !wasEnabled
+      ) {
+        state(context, scope).edit().putBoolean("dismissed", false).apply()
+      }
+    }
     if (!ongoingEnabled) cancelActivity(context)
     channels(context)
   }
@@ -82,7 +129,12 @@ object AgentNotifications {
   @Synchronized
   fun clear(context: Context) {
     cancelActivity(context)
-    context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().clear().apply()
+    val prefs = state(context, null)
+    prefs.getStringSet("wakeScopes", emptySet()).orEmpty().forEach { scope ->
+      cancelActivity(context, scope)
+      state(context, scope).edit().clear().apply()
+    }
+    prefs.edit().clear().apply()
     val manager = manager(context)
     manager.activeNotifications.filter {
       it.tag == ACTIVITY_TAG || it.tag == ALERT_TAG ||
@@ -98,22 +150,63 @@ object AgentNotifications {
   }
 
   @Synchronized
-  fun dismiss(context: Context) {
-    context.getSharedPreferences(
-      STORE,
-      Context.MODE_PRIVATE
-    ).edit().putBoolean("dismissed", true).apply()
-    cancelActivity(context)
+  fun dismiss(context: Context, scope: String? = null) {
+    state(context, scope).edit().putBoolean("dismissed", true).apply()
+    cancelActivity(context, scope)
   }
 
   @Synchronized
-  fun expire(context: Context, now: Long = System.currentTimeMillis()) {
-    val expiresAt = context.getSharedPreferences(
-      STORE,
-      Context.MODE_PRIVATE
-    ).getLong("expiresAt", 0)
+  fun expire(context: Context, now: Long = System.currentTimeMillis(), scope: String? = null) {
+    val expiresAt = state(context, scope).getLong("expiresAt", 0)
     // An already-dispatched alarm must not remove a newer run's card.
-    if (expiresAt > 0 && expiresAt <= now) cancelActivity(context)
+    if (expiresAt > 0 && expiresAt <= now) cancelActivity(context, scope)
+  }
+
+  private fun state(context: Context, scope: String?): SharedPreferences =
+    context.getSharedPreferences(scope?.let { "$STORE.$it" } ?: STORE, Context.MODE_PRIVATE)
+
+  @Synchronized
+  fun wakeRegistration(context: Context, userId: String, deviceId: String): String? {
+    val prefs = state(context, null)
+    val matches =
+      prefs.getString("deviceId", null) == deviceId && prefs.getString("userId", null) == userId
+    if (!matches || !prefs.getBoolean("enabled", false) ||
+      !NotificationManagerCompat.from(context).areNotificationsEnabled()
+    ) {
+      return null
+    }
+    return prefs.getString("registration", null)
+  }
+
+  @Synchronized
+  fun displayWake(
+    context: Context,
+    environmentId: String,
+    registrationId: String,
+    card: Map<String, String>,
+    alerts: List<Map<String, String>>
+  ) {
+    val registration = state(context, null)
+    if (registration.getString("registration", null) != registrationId ||
+      !NotificationManagerCompat.from(context).areNotificationsEnabled()
+    ) {
+      return
+    }
+    val scope = Base64.encodeToString(
+      MessageDigest.getInstance("SHA-256").digest(environmentId.toByteArray()),
+      Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+    )
+    val scopes = registration.getStringSet("wakeScopes", emptySet()).orEmpty()
+    if (scope !in scopes) registration.edit().putStringSet("wakeScopes", scopes + scope).apply()
+    val prefs = state(context, scope)
+    val scheme = registration.getString("scheme", "t3code") ?: "t3code"
+    channels(context)
+    var covered: String? = null
+    for (alert in alerts) {
+      if (showAlert(context, prefs, scheme, alert)) covered = alert["alert_path"]
+    }
+    val data = if (covered == null) card else card + ("alert_path" to covered)
+    updateActivity(context, data, System.currentTimeMillis(), covered != null, scope)
   }
 
   @Synchronized
@@ -128,7 +221,7 @@ object AgentNotifications {
       channels(context)
       val scheme = prefs.getString("scheme", "t3code") ?: "t3code"
       val alerted = showAlert(context, prefs, scheme, data)
-      updateActivity(context, prefs, data, updatedAt, alerted)
+      updateActivity(context, data, updatedAt, alerted)
     }
   }
 
@@ -216,16 +309,17 @@ object AgentNotifications {
   fun showcase(context: Context, scheme: String, data: Map<String, String>) {
     channels(context)
     data["alert_id"]?.let { postAlert(context, scheme, data, it) }
-    showActivity(context, scheme, data, data["active"] == "true", RUNNING_LIFETIME_MS)
+    showActivity(context, scheme, data, RUNNING_LIFETIME_MS)
   }
 
   private fun updateActivity(
     context: Context,
-    prefs: SharedPreferences,
     data: Map<String, String>,
     updatedAt: Long,
-    alerted: Boolean
+    alerted: Boolean,
+    scope: String? = null
   ) {
+    val prefs = state(context, scope)
     val terminal = singleTerminal(data)
     // Only a one-row card on the alert's own thread is known to show nothing more
     // than the alert. Grouped alerts and cards with other rows stay visible.
@@ -233,7 +327,7 @@ object AgentNotifications {
     if (covered != null) coverTerminal(prefs, covered, updatedAt)
     if (updatedAt < prefs.getLong("lastUpdate", 0)) {
       // A newer replay of this same finish may already show the card.
-      if (isCovered(prefs, prefs.getString("lastTerminal", null))) cancelActivity(context)
+      if (isCovered(prefs, prefs.getString("lastTerminal", null))) cancelActivity(context, scope)
       return
     }
     prefs.edit().putLong("lastUpdate", updatedAt).putString("lastTerminal", terminal).apply()
@@ -245,8 +339,8 @@ object AgentNotifications {
     val remainingMs = (expiresAt - System.currentTimeMillis()).coerceAtMost(MAX_LIFETIME_MS)
     val wasActive = prefs.getBoolean("lastActive", false)
     prefs.edit().putBoolean("lastActive", active).apply()
-    if (remainingMs <= 0 || !prefs.getBoolean("ongoing", false)) {
-      cancelActivity(context)
+    if (remainingMs <= 0 || !state(context, null).getBoolean("ongoing", false)) {
+      cancelActivity(context, scope)
       prefs.edit().putBoolean("dismissed", false).apply()
       return
     }
@@ -254,10 +348,10 @@ object AgentNotifications {
     // activity off/on, arms it again; terminal replays stay dismissed.
     if (active && !wasActive) prefs.edit().putBoolean("dismissed", false).apply()
     if (prefs.getBoolean("dismissed", false) || isCovered(prefs, terminal)) {
-      cancelActivity(context)
+      cancelActivity(context, scope)
     } else {
-      val scheme = prefs.getString("scheme", "t3code") ?: "t3code"
-      showActivity(context, scheme, data, active, remainingMs)
+      val scheme = state(context, null).getString("scheme", "t3code") ?: "t3code"
+      showActivity(context, scheme, data, remainingMs, scope)
     }
   }
 
@@ -286,17 +380,23 @@ object AgentNotifications {
     context: Context,
     scheme: String,
     data: Map<String, String>,
-    active: Boolean,
-    remainingMs: Long
+    remainingMs: Long,
+    scope: String? = null
   ) {
     val dismissIntent = PendingIntent.getBroadcast(
       context,
       ACTIVITY_ID,
-      Intent(context, AgentActivityDismissReceiver::class.java),
+      scopedIntent(context, AgentActivityDismissReceiver::class.java, scope),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
+    val active = data["active"] == "true"
     val presentation = ActivityPresentation(data, active)
-    val openThread = contentIntent(context, scheme, data["activity_path"], ACTIVITY_ID)
+    val openThread = contentIntent(
+      context,
+      scheme,
+      data["activity_path"],
+      scope?.hashCode() ?: ACTIVITY_ID
+    )
     // Retained results still need Android's ongoing flag to remain promoted.
     val ongoing = active || Build.VERSION.SDK_INT >= 36
     val builder = base(context, ACTIVITY_CHANNEL)
@@ -312,32 +412,39 @@ object AgentNotifications {
     val action = presentation.action
     if (action != null && openThread != null) builder.addAction(0, action, openThread)
     if (ongoing) builder.addAction(0, "Dismiss", dismissIntent)
-    manager(context).notify(ACTIVITY_TAG, ACTIVITY_ID, builder.build())
+    manager(context).notify(activityTag(scope), ACTIVITY_ID, builder.build())
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
       // Notification timeouts were added in API 26. One inexact alarm also
       // expires cards on Android 7, including when the app process has exited.
       // No exact-alarm permission, foreground service or periodic work needed.
       val expiresAt = System.currentTimeMillis() + remainingMs
-      context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit()
-        .putLong("expiresAt", expiresAt).apply()
+      state(context, scope).edit().putLong("expiresAt", expiresAt).apply()
       context.getSystemService(
         AlarmManager::class.java
-      ).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expiresAt, expiryIntent(context))
+      ).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, expiresAt, expiryIntent(context, scope))
     }
   }
 
-  private fun expiryIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
-    context,
-    ACTIVITY_ID,
-    Intent(context, AgentActivityExpiryReceiver::class.java),
-    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-  )
+  private fun activityTag(scope: String?) = scope?.let { "$ACTIVITY_TAG:$it" } ?: ACTIVITY_TAG
 
-  private fun cancelActivity(context: Context) {
-    manager(context).cancel(ACTIVITY_TAG, ACTIVITY_ID)
+  private fun scopedIntent(context: Context, target: Class<*>, scope: String?) =
+    Intent(context, target).apply {
+      scope?.let { data = Uri.parse("t3-notification://activity/$it") }
+    }
+
+  private fun expiryIntent(context: Context, scope: String?): PendingIntent =
+    PendingIntent.getBroadcast(
+      context,
+      ACTIVITY_ID,
+      scopedIntent(context, AgentActivityExpiryReceiver::class.java, scope),
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+  private fun cancelActivity(context: Context, scope: String? = null) {
+    manager(context).cancel(activityTag(scope), ACTIVITY_ID)
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-      context.getSystemService(AlarmManager::class.java).cancel(expiryIntent(context))
-      context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().remove("expiresAt").apply()
+      context.getSystemService(AlarmManager::class.java).cancel(expiryIntent(context, scope))
+      state(context, scope).edit().remove("expiresAt").apply()
     }
   }
 

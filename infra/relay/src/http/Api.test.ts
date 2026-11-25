@@ -64,6 +64,7 @@ import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "../environments/ManagedEndpointAllocations.ts";
 import * as ManagedEndpointProvider from "../environments/ManagedEndpointProvider.ts";
 import * as ManagedTunnelLimits from "../environments/ManagedTunnelLimits.ts";
+import * as FcmDeliveries from "../agentActivity/FcmDeliveries.ts";
 import * as AgentActivityPublisher from "../agentActivity/AgentActivityPublisher.ts";
 import * as EnvironmentPublishSignatures from "../environments/EnvironmentPublishSignatures.ts";
 import * as T3ChatAccounts from "../t3chat/T3ChatAccounts.ts";
@@ -1402,6 +1403,14 @@ describe("relay routing fallback", () => {
           EnvironmentPublishSignatures.EnvironmentPublishSignatures["Service"]["verify"]
         >[0]
       > = [];
+      const wakes: string[] = [];
+      const layerWakes = Layer.mock(FcmDeliveries.FcmDeliveries, {
+        wake: ({ environmentId }) =>
+          Effect.sync(() => {
+            wakes.push(environmentId);
+            return { ok: true as const, deliveries: [] };
+          }),
+      });
       const layerPublisher = Layer.succeed(AgentActivityPublisher.AgentActivityPublisher, {
         publish: (input) =>
           Effect.sync(() => {
@@ -1442,7 +1451,12 @@ describe("relay routing fallback", () => {
                 Layer.mock(ManagedEndpointProvider.ManagedEndpointProvider, {}),
               ),
             ),
-            Layer.provide([layerPublisher, layerSignatures, Layer.mock(HeldHooks.HeldHooks, {})]),
+            Layer.provide([
+              layerPublisher,
+              layerSignatures,
+              layerWakes,
+              Layer.mock(HeldHooks.HeldHooks, {}),
+            ]),
           ),
         ),
         Layer.provide(layerAuth),
@@ -1484,6 +1498,26 @@ describe("relay routing fallback", () => {
         })),
       );
       expect(verified.map((input) => input.threadId)).toEqual(threadIds);
+      for (const id of [environmentId, "another-environment"]) {
+        const response = yield* sendRelayRequest(
+          httpEffect,
+          new Request(`https://relay.test/v1/environments/${id}/agent-activity/wake`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: "Bearer environment-credential",
+            },
+            body: JSON.stringify({ proof: "wake-proof" }),
+          }),
+        );
+        expect(response.status).toBe(id === environmentId ? 200 : 401);
+      }
+      expect(wakes).toEqual([environmentId]);
+      expect(verified.at(-1)).toEqual({
+        environmentId,
+        environmentPublicKey,
+        request: { proof: "wake-proof" },
+      });
     }).pipe(Effect.scoped, Effect.provide(NodeCryptoLayer.layerSignature)),
   );
 });

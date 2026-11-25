@@ -26,6 +26,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { Toolkit } from "effect/ai";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { NoiseCaller } from "../auth/noiseTrust.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
@@ -118,6 +119,15 @@ it.effect(
         ];
         const phone = yield* a.client(held);
 
+        const protectedResult = yield* a.pairing
+          .request({ environmentId: box.environmentId }, phone)
+          .pipe(Effect.provideService(NoiseCaller, true));
+        expect(protectedResult).toMatchObject({
+          type: "unsupported",
+          reason: "unreachable",
+          urls: [],
+        });
+        expect(yield* b.auth.listPairingLinks()).toEqual([]);
         const result = yield* a.pairing.request({ environmentId: box.environmentId }, phone);
         if (result.type !== "credential") return yield* Effect.die(result);
         expect(result).toMatchObject({

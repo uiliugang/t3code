@@ -27,14 +27,14 @@ export const PullRequestMediaVisibleContext = createContext(true);
 
 export const PullRequestMediaContext = createContext<PullRequestMediaLocation | null>(null);
 
-export function usePullRequestMediaUrl(url: string) {
+export function usePullRequestMediaUrl(url: string, kind: "image" | "video" | "unknown") {
   const context = useContext(PullRequestMediaContext);
-  const source = pullRequestMediaSource(url, context);
+  const source = pullRequestMediaSource(url, context, kind);
   const resource = "resource" in source ? (source.resource ?? null) : null;
   const asset = useAssetUrlState(context?.environmentId ?? null, resource);
   const refresh = useRefreshAssetUrl(context?.environmentId ?? null, resource);
   return {
-    uri: asset._tag === "Success" ? asset.url : resource ? null : url,
+    uri: source.uri ?? (asset._tag === "Success" ? asset.url : null),
     cacheKey: context && resource ? assetImageCacheKey(context.environmentId, resource) : undefined,
     unavailable: resource !== null && asset._tag === "Failure",
     source,
@@ -48,7 +48,7 @@ export function PullRequestMedia(props: {
   readonly caption?: string;
   readonly compact?: boolean;
 }) {
-  const media = usePullRequestMediaUrl(props.url);
+  const media = usePullRequestMediaUrl(props.url, props.kind);
   const gt = useGT();
   const visible = useContext(PullRequestMediaVisibleContext);
   const context = useContext(PullRequestMediaContext);
@@ -120,7 +120,7 @@ export function PullRequestImageAttachment(props: {
   readonly gallery: readonly FilePreviewItem[];
 }) {
   const t = useUiTranslation();
-  const media = usePullRequestMediaUrl(props.url);
+  const media = usePullRequestMediaUrl(props.url, "image");
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
   return (
     <>

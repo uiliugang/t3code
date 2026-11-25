@@ -13,6 +13,15 @@ import {
   type ThreadGuestMessage,
   type ThreadGuestMessageStatus,
 } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
+import { isNoiseGuest, readNoiseGuestEntry } from "~/guest/noiseGuest";
+import {
+  guestFetch,
+  guestMediaSource,
+  downloadGuestFile,
+  observeGuestEvents,
+} from "./guestTransport";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
@@ -48,6 +57,7 @@ import { getDisplayModelName, getTriggerDisplayModelName } from "../chat/provide
 import type { TimelineRow } from "../chat/timelineRowContext";
 import { GuestHtmlRender } from "./GuestHtmlRender";
 import { Button } from "../ui/button";
+import { toastManager } from "../ui/toast";
 import { Input } from "../ui/input";
 import {
   applyGuestStreamEvent,
@@ -101,25 +111,35 @@ function writeAwaitingRowIds(ids: ReadonlySet<GuestMessageId>) {
  * only submitting a name does, so a reload before that leaves the link usable.
  */
 function takeGuestEntry(): GuestEntry {
-  if (capturedEntry === null) {
+  const query = new URLSearchParams(window.location.search);
+  const existing = query.get(GUEST_SHARE_PARAM);
+  if (
+    capturedEntry === null ||
+    window.location.hash ||
+    capturedEntry.shareId !== existing ||
+    (!isNoiseGuest() && query.has("noise"))
+  ) {
     // A malformed fragment is an invalid link, not a crash.
     let credential = "";
     try {
       credential = decodeURIComponent(window.location.hash.slice(1)).trim();
     } catch {}
-    const shareId =
-      credential !== ""
+    const noise = readNoiseGuestEntry(window.location.hash, existing);
+    const shareId = noise
+      ? noise.shareId
+      : credential !== ""
         ? inviteShareId(credential)
-        : new URLSearchParams(window.location.search).get(GUEST_SHARE_PARAM);
+        : existing;
     // The share stays in the URL, so a reload or bookmark finds this browser's session for it.
+    const retained = new URLSearchParams();
+    if (shareId) retained.set(GUEST_SHARE_PARAM, shareId);
+    if (isNoiseGuest()) retained.set("noise", "1");
     window.history.replaceState(
       window.history.state,
       "",
-      shareId === null
-        ? window.location.pathname
-        : `${window.location.pathname}?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}`,
+      window.location.pathname + (retained.size ? "?" + retained : ""),
     );
-    capturedEntry = { credential: credential === "" ? null : credential, shareId };
+    capturedEntry = noise ?? { credential: credential === "" ? null : credential, shareId };
   }
   return capturedEntry;
 }
@@ -136,7 +156,7 @@ async function fetchGuestHistoryPage(
 ): Promise<OrchestrationV2ThreadHistoryPage | string> {
   const failed = m(msg("Could not load earlier turns. Try again."));
   try {
-    const response = await fetch(
+    const response = await guestFetch(
       `${GUEST_HISTORY_ROUTE}?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}&cursor=${encodeURIComponent(cursor)}`,
     );
     const json: unknown = await response.json().catch(() => null);
@@ -158,7 +178,7 @@ async function postGuest(
   body: typeof GuestRedeemRequest.Encoded | FormData,
 ): Promise<string | null> {
   try {
-    const response = await fetch(
+    const response = await guestFetch(
       `${GUEST_ROUTE_PREFIX}/${path}`,
       body instanceof FormData
         ? { method: "POST", body }
@@ -200,7 +220,9 @@ export function GuestPage() {
   useEffect(() => {
     if (shareId === null) return;
     let live = true;
-    void fetch(`${GUEST_ROUTE_PREFIX}/session?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}`)
+    void guestFetch(
+      `${GUEST_ROUTE_PREFIX}/session?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}`,
+    )
       .then(
         (response): GuestAccess =>
           response.ok ? "session" : credential !== null ? "name" : "none",
@@ -296,19 +318,17 @@ function GuestSession({ shareId }: { readonly shareId: string }) {
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the guest EventSource stream and closes it on cleanup
   useEffect(() => {
-    const source = new EventSource(
+    const close = observeGuestEvents(
       `${GUEST_ROUTE_PREFIX}/stream?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}`,
+      (data) => {
+        const event = parseGuestStreamEvent(data);
+        if (!event) return;
+        dispatch(event);
+        if (event.type === "ended") close();
+      },
+      () => setRejected(true),
     );
-    source.addEventListener("message", (message) => {
-      const event = parseGuestStreamEvent(message.data);
-      if (event === null) return;
-      dispatch(event);
-      if (event.type === "ended") source.close();
-    });
-    source.addEventListener("error", () => {
-      if (source.readyState === EventSource.CLOSED) setRejected(true);
-    });
-    return () => source.close();
+    return close;
   }, [shareId]);
 
   if (stream.ended || (rejected && stream.view !== null)) {
@@ -400,6 +420,19 @@ function NameForm({
   );
 }
 
+const noGuestImages = Atom.make<ReadonlyMap<string, string>>(new Map());
+const encryptedGuestImages = Atom.family((shareId: string) =>
+  Atom.family((ids: string) =>
+    Atom.make((get) => {
+      const urls = new Map<string, string>();
+      for (const id of JSON.parse(ids) as string[]) {
+        const url = get(guestMediaSource(guestAttachmentUrl(shareId, id)));
+        if (url) urls.set(id, url);
+      }
+      return urls;
+    }),
+  ),
+);
 /** The owner's timeline, read-only, with the guest's own messages and composer below it. */
 function GuestThread({
   view: { shareId, title, expiresAt, messages, model },
@@ -413,13 +446,40 @@ function GuestThread({
   readonly historyControls: MessagesTimelineHistoryControls | undefined;
 }) {
   // Files load through the guest route.
-  const [attachmentUrls] = useState(() => createGuestAttachmentUrls(shareId));
+  const gt = useGT();
+  const [ordinaryAttachments] = useState(() => createGuestAttachmentUrls(shareId));
+  const encrypted = isNoiseGuest();
+  const imageIds = (() => {
+    if (!encrypted) return null;
+    const rows = projection.visibleTurnItems.flatMap(({ item }) =>
+      item.type === "user_message" ? item.attachments : [],
+    );
+    const waiting = messages.flatMap((message) =>
+      message.status === "dismissed" ? [] : (message.attachments ?? []),
+    );
+    return JSON.stringify([
+      ...new Set(
+        [...rows, ...waiting]
+          .filter((attachment) => attachment.type === "image")
+          .map((attachment) => attachment.id),
+      ),
+    ]);
+  })();
+  const decryptedImages = useAtomValue(
+    imageIds === null ? noGuestImages : encryptedGuestImages(shareId)(imageIds),
+  );
+  const attachmentUrls = encrypted ? () => decryptedImages : ordinaryAttachments;
   // Expanded rows read detail and command output through the guest routes.
   const [turnItemSource] = useState(() => guestTurnItemSource(shareId));
-  const openFile = useStableCallback((file: { readonly id: string }) =>
-    openInNewTab(guestAttachmentUrl(shareId, file.id)),
+  const openFile = useStableCallback(
+    (file: { readonly id: string; readonly name: string }) =>
+      void downloadGuestFile(guestAttachmentUrl(shareId, file.id), file.name).catch(() => {
+        toastManager.add({ type: "error", title: gt("Could not save file") });
+      }),
   );
-  const hostImageUrl = useStableCallback((path: string) => guestMediaUrl(shareId, path));
+  const hostImageUrl = useStableCallback((path: string) =>
+    guestMediaSource(guestMediaUrl(shareId, path)),
+  );
   const renderHtmlRender = useStableCallback(
     (row: Extract<TimelineRow, { kind: "html-render" }>) => (
       <GuestHtmlRender itemId={row.id} reference={row.htmlRender} shareId={shareId} />
@@ -448,7 +508,12 @@ function GuestThread({
               <ol className="chat-content-lane flex flex-col gap-4 pb-4">
                 {unplaced.map((message) => (
                   <li key={message.id}>
-                    <UnplacedGuestMessage shareId={shareId} message={message} />
+                    <UnplacedGuestMessage
+                      shareId={shareId}
+                      message={message}
+                      images={encrypted ? decryptedImages : undefined}
+                      onOpenFile={openFile}
+                    />
                   </li>
                 ))}
               </ol>
@@ -491,7 +556,11 @@ const openExpandedImage = (preview: ExpandedImagePreview) => {
 function UnplacedGuestMessage({
   shareId,
   message,
+  images,
+  onOpenFile,
 }: {
+  readonly images: ReadonlyMap<string, string> | undefined;
+  readonly onOpenFile: (file: { id: string; name: string }) => void;
   readonly shareId: GuestShareView["shareId"];
   readonly message: ThreadGuestMessage;
 }) {
@@ -512,9 +581,14 @@ function UnplacedGuestMessage({
       >
         <GuestMessageAttachments
           attachments={message.attachments ?? []}
-          imageUrl={(attachment) => (served ? url(attachment) : undefined)}
-          onOpenImage={(attachment) => openInNewTab(url(attachment))}
-          {...(served ? { fileHref: url } : {})}
+          imageUrl={(attachment) =>
+            served ? (images ? images.get(attachment.id) : url(attachment)) : undefined
+          }
+          onOpenImage={(attachment) => {
+            const src = images ? images.get(attachment.id) : url(attachment);
+            if (src) openInNewTab(src);
+          }}
+          {...(served ? (images ? { onOpenFile } : { fileHref: url }) : {})}
         />
         {message.text ? <span>{message.text}</span> : null}
       </div>

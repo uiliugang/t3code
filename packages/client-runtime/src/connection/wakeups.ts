@@ -8,7 +8,8 @@ export type ConnectionWakeup =
   | "application-active-long"
   | "application-focused"
   | "credentials-changed"
-  | "network-changed";
+  | "network-changed"
+  | { readonly type: "host-key-changed"; readonly environmentId: string };
 
 function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
   return (
@@ -19,7 +20,9 @@ function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
 }
 
 export function resetsRetryBackoff(reason: ConnectionWakeup): boolean {
-  return isApplicationActiveWakeup(reason) || reason === "network-changed";
+  return (
+    isApplicationActiveWakeup(reason) || reason === "network-changed" || typeof reason === "object"
+  );
 }
 
 export function shouldResubscribeAfterWakeup(reason: ConnectionWakeup): boolean {

@@ -85,6 +85,12 @@ describe("file chip downloads", () => {
       const target = resolveFileChipTarget(href, "/repo")!;
       expect(fileChipShareSource(target, threadId)).toBeNull();
       expect(fileChipMenu(target).actions.some(({ id }) => id === "save")).toBe(false);
+      expect(fileChipMenu(target, true).actions.some(({ id }) => id === "save")).toBe(
+        href === "src/app.ts",
+      );
+      expect(fileChipShareSource(target, threadId, true)?.resource.disposition).toBe(
+        href === "src/app.ts" ? "attachment" : undefined,
+      );
     }
   });
 });

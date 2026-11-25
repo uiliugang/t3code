@@ -1104,6 +1104,16 @@ export function createEnvironmentRpcSubscriptionAtomFamily<
   });
 }
 
+export function withEnvironmentRpcPermissions<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
+  registry: AtomRegistry.AtomRegistry,
+) {
+  return Effect.provideService(RpcPermissionGuard, {
+    authorize: (id, method, payload) =>
+      createCommandPermissions(runtime, method).authorize(registry, id, payload),
+  });
+}
+
 export function createEnvironmentRpcCommand<
   R,
   ER,
@@ -1176,10 +1186,7 @@ export function createEnvironmentRpcCommand<
             options.execute?.(input, registry, environmentId) ?? requestGuarded(options.tag, input)
           );
         }),
-        Effect.provideService(RpcPermissionGuard, {
-          authorize: (id, method, payload) =>
-            createCommandPermissions(runtime, method).authorize(registry, id, payload),
-        }),
+        withEnvironmentRpcPermissions(runtime, registry),
         Effect.tap(
           (result) => options.onSuccess?.(target, registry, result, started) ?? Effect.void,
         ),

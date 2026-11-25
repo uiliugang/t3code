@@ -9,7 +9,12 @@ import android.text.style.StyleSpan
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
-internal data class ActivityRow(val status: String, val title: String, val project: String)
+internal data class ActivityRow(
+  val status: String,
+  val title: String,
+  val project: String,
+  val phase: ActivityPhase?
+)
 
 internal enum class ActivityPhase(
   val status: String,
@@ -60,6 +65,17 @@ internal enum class ActivityPhase(
   val finished get() = this == COMPLETED || this == FAILED
 
   companion object {
+    fun fromWire(value: String?) = when (value) {
+      "starting" -> STARTING
+      "running" -> RUNNING
+      "waiting_for_approval" -> APPROVAL
+      "waiting_for_input" -> INPUT
+      "stale" -> STALE
+      "completed" -> COMPLETED
+      "failed" -> FAILED
+      else -> null
+    }
+
     fun forStatus(status: String) = entries.firstOrNull { it.status == status }
   }
 }
@@ -70,33 +86,29 @@ internal fun activityRows(data: Map<String, String>) = (0..4).mapNotNull {
   if (parts.size != 3 || parts[1].isBlank()) {
     null
   } else {
-    ActivityRow(parts[0].take(40), parts[1].take(120), parts[2].take(120))
+    ActivityRow(
+      parts[0].take(40),
+      parts[1].take(120),
+      parts[2].take(120),
+      ActivityPhase.fromWire(data["activity_phase_$it"]) ?: ActivityPhase.forStatus(parts[0])
+    )
   }
 }
 
 internal fun activityPhase(data: Map<String, String>, rows: List<ActivityRow>): ActivityPhase? =
-  when (data["activity_phase"]?.takeIf { it.isNotBlank() }) {
-    "starting" -> ActivityPhase.STARTING
-    "running" -> ActivityPhase.RUNNING
-    "waiting_for_approval" -> ActivityPhase.APPROVAL
-    "waiting_for_input" -> ActivityPhase.INPUT
-    "stale" -> ActivityPhase.STALE
-    "completed" -> ActivityPhase.COMPLETED
-    "failed" -> ActivityPhase.FAILED
-    else -> rows.firstOrNull()?.let { ActivityPhase.forStatus(it.status) }
-  }
+  ActivityPhase.fromWire(data["activity_phase"]) ?: rows.firstOrNull()?.phase
 
 internal class ActivityPresentation(data: Map<String, String>, private val active: Boolean) {
   private val rows = activityRows(data)
   private val hero = rows.firstOrNull()
   val phase = activityPhase(data, rows)
   private val activeCount = data["activity_active_count"]?.toIntOrNull()?.coerceAtLeast(0)
-    ?: rows.count { ActivityPhase.forStatus(it.status)?.finished != true }
+    ?: rows.count { it.phase?.finished != true }
   private val attentionCount = data["activity_attention_count"]?.toIntOrNull()?.coerceAtLeast(0)
-    ?: rows.count { ActivityPhase.forStatus(it.status)?.needsUser == true }
-  private val failedCount = rows.count { it.status == ActivityPhase.FAILED.status }
+    ?: rows.count { it.phase?.needsUser == true }
+  private val failedCount = rows.count { it.phase == ActivityPhase.FAILED }
   val threadCount =
-    activeCount + rows.count { ActivityPhase.forStatus(it.status)?.finished == true }
+    activeCount + rows.count { it.phase?.finished == true }
   private val singleProject = rows.map { it.project }.distinct().size == 1
   private val legacyBody = (0..4).mapNotNull { data["activity_line_$it"]?.take(300) }
     .takeIf { it.isNotEmpty() }?.joinToString("\n")
@@ -162,7 +174,7 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
 
   private fun statusLine(context: Context, row: ActivityRow, trailing: String): CharSequence =
     SpannableStringBuilder().apply {
-      val status = ActivityPhase.forStatus(row.status)
+      val status = row.phase
       val color = ContextCompat.getColor(context, status?.color ?: R.color.agent_activity_waiting)
       append(tinted(row.status, color, bold = true))
       append(" ").append(row.title)

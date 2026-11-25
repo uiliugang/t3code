@@ -1,5 +1,7 @@
 import { msg } from "gt-react";
 import {
+  ATTACHMENT_TRANSFER_CHUNK_BYTES,
+  type AttachmentCreateUploadUrlInput,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
@@ -17,10 +19,12 @@ import {
   deletePendingAttachmentUpload,
   runAttachmentUploadCycle,
   verifyPersistedAttachmentUpload,
+  type AttachmentUploadCycleResult,
   type PersistedAttachmentVerification,
 } from "@t3tools/client-runtime/state/attachments";
 import { create } from "zustand";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
@@ -195,6 +199,48 @@ const failUpload = (job: UploadJob, reasonMessage: string, attachmentId?: string
     }),
   ).pipe(Effect.andThen(Effect.fail(attachmentUploadError(new Error(m(reasonMessage))))));
 
+const uploadNoiseFile = Effect.fn("WebAttachmentUploads.uploadNoiseFile")(
+  function* (
+    environmentId: EnvironmentId,
+    upload: AttachmentCreateUploadUrlInput,
+    file: File,
+    onProgress: (progress: number) => void,
+  ) {
+    const transfer = yield* attachmentEnvironment.openNoiseTransfer.run(appAtomRegistry, {
+      environmentId,
+      input: undefined,
+    });
+    return yield* Effect.acquireUseRelease(
+      transfer.beginUpload(upload),
+      ({ attachmentId }) =>
+        Effect.gen(function* () {
+          for (let offset = 0; offset < file.size; offset += ATTACHMENT_TRANSFER_CHUNK_BYTES) {
+            const end = Math.min(file.size, offset + ATTACHMENT_TRANSFER_CHUNK_BYTES);
+            const chunk = yield* Effect.tryPromise({
+              try: () => file.slice(offset, end).arrayBuffer(),
+              catch: attachmentUploadError,
+            });
+            if (chunk.byteLength !== end - offset)
+              return yield* attachmentUploadError(new Error("Incomplete file read"));
+            yield* transfer.writeChunk({ attachmentId, offset, data: new Uint8Array(chunk) });
+            onProgress(end / file.size);
+          }
+          return { status: "uploaded", attachmentId } as const;
+        }),
+      ({ attachmentId }, exit) =>
+        Exit.isFailure(exit) ? transfer.remove({ attachmentId }).pipe(Effect.ignore) : Effect.void,
+    );
+  },
+  Effect.catch((error): Effect.Effect<AttachmentUploadCycleResult> =>
+    Effect.succeed({
+      status: "failed",
+      step: "transfer",
+      attachmentId: null,
+      error,
+    }),
+  ),
+);
+
 /** Uploads one composer attachment, writing the state its composer shows as it goes. */
 const uploadJob = Effect.fn("WebAttachmentUploads.upload")(function* (job: UploadJob) {
   if (!canOperate(job.environmentId)) {
@@ -203,7 +249,7 @@ const uploadJob = Effect.fn("WebAttachmentUploads.upload")(function* (job: Uploa
   if (job.persistedAttachmentId) {
     const verification = yield* verifyPersistedAttachmentUpload({
       registry: appAtomRegistry,
-      createAssetUrl: assetEnvironment.createUrl,
+      createAssetUrl: assetEnvironment.verifyUrl,
       environmentId: job.environmentId,
       attachmentId: job.persistedAttachmentId,
     });
@@ -259,45 +305,51 @@ const uploadJob = Effect.fn("WebAttachmentUploads.upload")(function* (job: Uploa
   }
 
   let lastStep = -1;
-  const result = yield* runAttachmentUploadCycle({
-    registry: appAtomRegistry,
-    createUploadUrl: attachmentEnvironment.createUploadUrl,
-    remove: attachmentEnvironment.remove,
-    environmentId: job.environmentId,
-    upload: {
-      ...(job.image.type === "file" ? { type: "file" as const } : {}),
-      name: job.image.name,
-      mimeType,
-      sizeBytes: file.size,
-    },
-    resolveUploadUrl: (relativeUrl) => {
-      if (!canOperate(job.environmentId)) return null;
-      const connection = readPreparedConnection(job.environmentId);
-      return connection ? resolveAssetUrl(connection.httpBaseUrl, relativeUrl) : null;
-    },
-    transport: (url) =>
-      Effect.tryPromise({
-        try: (signal) =>
-          uploadBytes({
-            url,
-            file,
-            mimeType,
-            signal,
-            onProgress: (progress) => {
-              const step = Math.floor(progress * 20);
-              if (step === lastStep || signal.aborted) return;
-              lastStep = step;
-              setUploadState(job.image.id, {
-                status: "uploading",
-                environmentId: job.environmentId,
-                progress,
-                ...(job.previous ? { previous: job.previous } : {}),
-              });
-            },
+  const upload: AttachmentCreateUploadUrlInput = {
+    ...(job.image.type === "file" ? { type: "file" as const } : {}),
+    name: job.image.name,
+    mimeType,
+    sizeBytes: file.size,
+  };
+  const onProgress = (progress: number) => {
+    const step = Math.floor(progress * 20);
+    if (step === lastStep) return;
+    lastStep = step;
+    setUploadState(job.image.id, {
+      status: "uploading",
+      environmentId: job.environmentId,
+      progress,
+      ...(job.previous ? { previous: job.previous } : {}),
+    });
+  };
+  const result = yield* readPreparedConnection(job.environmentId)?.transport === "noise"
+    ? uploadNoiseFile(job.environmentId, upload, file, onProgress)
+    : runAttachmentUploadCycle({
+        registry: appAtomRegistry,
+        createUploadUrl: attachmentEnvironment.createUploadUrl,
+        remove: attachmentEnvironment.remove,
+        environmentId: job.environmentId,
+        upload,
+        resolveUploadUrl: (relativeUrl) => {
+          if (!canOperate(job.environmentId)) return null;
+          const connection = readPreparedConnection(job.environmentId);
+          return connection && connection.transport !== "noise"
+            ? resolveAssetUrl(connection.httpBaseUrl, relativeUrl)
+            : null;
+        },
+        transport: (url) =>
+          Effect.tryPromise({
+            try: (signal) =>
+              uploadBytes({
+                url,
+                file,
+                mimeType,
+                signal,
+                onProgress,
+              }),
+            catch: attachmentUploadError,
           }),
-        catch: attachmentUploadError,
-      }),
-  });
+      });
   if (result.status === "uploaded") {
     setUploadState(job.image.id, {
       status: "ready",
@@ -538,7 +590,7 @@ export function verifyStashedAttachmentUpload(input: {
   return Effect.runPromise(
     verifyPersistedAttachmentUpload({
       registry: appAtomRegistry,
-      createAssetUrl: assetEnvironment.createUrl,
+      createAssetUrl: assetEnvironment.verifyUrl,
       environmentId: input.environmentId,
       attachmentId: input.attachmentId,
     }),

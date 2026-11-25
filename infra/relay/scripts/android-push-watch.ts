@@ -2,18 +2,9 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeWS from "@effect/platform-node/NodeWS";
-import {
-  ORCHESTRATION_V2_WS_METHODS,
-  WS_METHODS,
-  WsRpcGroup,
-  type OrchestrationProjectShell,
-  type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
-import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
-import { projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
+import { ORCHESTRATION_V2_WS_METHODS, WS_METHODS, WsRpcGroup } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
-import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -25,18 +16,16 @@ import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Socket from "effect/socket/Socket";
 
 import * as RelayConfiguration from "../src/Config.ts";
-import { androidActivityData, fitFcmData } from "../src/agentActivity/fcmPayloads.ts";
 import * as WebCrypto from "../src/WebCrypto.ts";
 import * as FcmAssertionSigner from "../src/agentActivity/FcmAssertionSigner.ts";
 import * as FcmClient from "../src/agentActivity/FcmClient.ts";
-import * as FcmDeliveries from "../src/agentActivity/FcmDeliveries.ts";
-import { makeAggregateState } from "../src/agentActivity/agentActivityAggregate.ts";
 
 const Device = Schema.Struct({
   token: Schema.NonEmptyString,
   deviceId: Schema.NonEmptyString,
   userId: Schema.NonEmptyString,
   packageName: Schema.NonEmptyString,
+  environmentId: Schema.NonEmptyString,
 });
 const Connection = Schema.Struct({
   wsUrl: Schema.NonEmptyString,
@@ -58,13 +47,21 @@ const readFile = (path: string) =>
     try: () => NodeFSP.readFile(path, "utf8"),
     catch: (cause) => new WatchReadFileError({ path, cause }),
   });
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 class WatchUnregisteredDeviceError extends Schema.TaggedError<
   WatchUnregisteredDeviceError,
   { readonly brand: unique symbol }
 >()("WatchUnregisteredDeviceError", {}) {
   override get message() {
     return "Device token is no longer registered";
+  }
+}
+
+class WatchEnvironmentMismatchError extends Schema.TaggedError<
+  WatchEnvironmentMismatchError,
+  { readonly brand: unique symbol }
+>()("WatchEnvironmentMismatchError", {}) {
+  override get message() {
+    return "The device file's environmentId must match the paired host.";
   }
 }
 
@@ -79,16 +76,9 @@ class WatchStoppedError extends Schema.TaggedError<
   }
 }
 
-const isWatchUnregisteredDeviceError = Schema.is(WatchUnregisteredDeviceError);
-
-const preferences = {
-  notificationsEnabled: true,
-  liveActivitiesEnabled: true,
-  notifyOnApproval: true,
-  notifyOnInput: true,
-  notifyOnCompletion: true,
-  notifyOnFailure: true,
-};
+const isWatchConfigurationError = Schema.is(
+  Schema.Union([WatchUnregisteredDeviceError, WatchEnvironmentMismatchError]),
+);
 
 const main = Effect.gen(function* () {
   const [credentialsPath, devicePath, connectionPath] = process.argv.slice(2);
@@ -146,82 +136,22 @@ const main = Effect.gen(function* () {
     const rpc = yield* RpcClient.make(WsRpcGroup);
     const sender = yield* FcmClient.FcmClient;
     const config = yield* rpc[WS_METHODS.serverGetConfig]({});
-    const projects = new Map<string, OrchestrationProjectShell>();
-    const threads = new Map<string, OrchestrationV2ThreadShell>();
-    let states = new Map<string, RelayAgentActivityState>();
-    let previouslyActive = false;
-    yield* Effect.logInfo("Watching this paired environment for Android push verification.");
+    if (config.environment.environmentId !== device.environmentId) {
+      return yield* new WatchEnvironmentMismatchError({});
+    }
+    yield* Effect.logInfo("Watching the paired environment for Android activity wakes.");
     yield* rpc[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({}).pipe(
-      Stream.runForEach(
-        Effect.fnUntraced(function* (item) {
-          switch (item.kind) {
-            case "synchronized":
-              return;
-            case "snapshot":
-              projects.clear();
-              threads.clear();
-              for (const project of item.snapshot.projects) projects.set(project.id, project);
-              for (const thread of item.snapshot.threads) threads.set(thread.id, thread);
-              break;
-            case "project.updated":
-              projects.set(item.project.id, item.project);
-              break;
-            case "project.removed":
-              projects.delete(item.projectId);
-              break;
-            case "thread.updated":
-              threads.set(item.thread.id, item.thread);
-              break;
-            case "thread.removed":
-              threads.delete(item.threadId);
-              break;
-          }
-          const next = new Map<string, RelayAgentActivityState>();
-          for (const thread of threads.values()) {
-            const project = projects.get(thread.projectId);
-            if (!project || thread.archivedAt) continue;
-            const state = projectThreadAwarenessV2({
-              environmentId: config.environment.environmentId,
-              project,
-              thread,
-            });
-            if (state) next.set(thread.id, state);
-          }
-          const state = item.kind === "thread.updated" ? next.get(item.thread.id) : undefined;
-          const previous = state ? states.get(state.threadId) : undefined;
-          const now = yield* Clock.currentTimeMillis;
-          const alert =
-            state && state.phase !== previous?.phase && item.kind !== "snapshot"
-              ? FcmDeliveries.androidAlertForState(state, preferences, now)
-              : null;
-          const aggregate = makeAggregateState({
-            activeStates: [...next.values()],
-            terminalState: null,
-            nowMs: now,
-          });
-          const active = (aggregate?.activeCount ?? 0) > 0;
-          const same = encodeJson([...next.values()]) === encodeJson([...states.values()]);
-          states = next;
-          if ((!active && !previouslyActive && !alert) || (same && !alert)) return;
-          const result = yield* sender.send({
-            token: device.token,
-            packageName: device.packageName,
-            alert: alert !== null,
-            data: fitFcmData({
-              t3_kind: "agent_activity",
-              device_id: device.deviceId,
-              user_id: device.userId,
-              updated_at: String(now),
-              ...androidActivityData(aggregate),
-              ...alert,
-            }),
-          });
-          if (result.unregistered) return yield* new WatchUnregisteredDeviceError({});
-          previouslyActive = active;
-          yield* Effect.logInfo(
-            `Android push accepted: ${state?.phase ?? (active ? "active" : "ended")}`,
-          );
-        }),
+      Stream.filter((item) => item.kind !== "synchronized"),
+      Stream.map(() => undefined),
+      Stream.groupedWithin(256, "2 seconds"),
+      Stream.runForEach(() =>
+        sender
+          .sendWake(device)
+          .pipe(
+            Effect.flatMap((result) =>
+              result.unregistered ? Effect.fail(new WatchUnregisteredDeviceError({})) : Effect.void,
+            ),
+          ),
       ),
     );
   }).pipe(Effect.provide(Layer.mergeAll(layerProtocol, layerFcm)));
@@ -233,7 +163,7 @@ NodeRuntime.runMain(
     Effect.catchCause((cause) => {
       const failure = Cause.findErrorOption(cause);
       return Effect.fail(
-        Option.isSome(failure) && isWatchUnregisteredDeviceError(failure.value)
+        Option.isSome(failure) && isWatchConfigurationError(failure.value)
           ? failure.value
           : new WatchStoppedError({ cause }),
       );

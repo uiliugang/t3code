@@ -43,7 +43,10 @@ export class AgentActivityPublisher extends Context.Service<
     readonly replayForLiveActivityRegistration: (input: {
       readonly userId: string;
       readonly deviceId: string;
-    }) => Effect.Effect<RelayDeliveryResult | null, AgentActivityPublishError>;
+    }) => Effect.Effect<
+      RelayDeliveryResult | null,
+      AgentActivityPublishError | FcmDeliveries.FcmReplayError
+    >;
     readonly endIdleLiveActivities: Effect.Effect<
       void,
       LiveActivities.LiveActivityIdleTargetListPersistenceError
@@ -60,6 +63,8 @@ const make = Effect.gen(function* () {
 
   const publishForDeliveryUser = Effect.fnUntraced(function* (input: {
     readonly deliveryUser: EnvironmentLinks.AgentAwarenessDeliveryUserRecord;
+    readonly environmentId: string;
+    readonly environmentPublicKey: string;
     readonly state: RelayAgentActivityState | null;
     readonly nowMs: number;
   }) {
@@ -79,7 +84,11 @@ const make = Effect.gen(function* () {
       targets,
       Effect.fnUntraced(function* (target) {
         if (target.platform === "android") {
-          return yield* fcmDeliveries.enqueue({ target, state: input.state });
+          return yield* fcmDeliveries.enqueue({
+            target,
+            environmentId: input.environmentId,
+            environmentPublicKey: input.environmentPublicKey,
+          });
         }
         return yield* apnsDeliveries.sendForTarget({
           target,
@@ -100,23 +109,18 @@ const make = Effect.gen(function* () {
         "relay.mobile.device_id": input.deviceId,
         "relay.operation": "replayForLiveActivityRegistration",
       });
-      const { activeStates, targets } = yield* Effect.all(
-        {
-          activeStates: rows.listForUser({ userId: input.userId }),
-          targets: liveActivities.listTargets({ userId: input.userId }),
-        },
-        { concurrency: 2 },
-      );
+      const targets = yield* liveActivities.listTargets({ userId: input.userId });
       const target = targets.find((row) => row.device_id === input.deviceId) ?? null;
       if (target === null) {
         return null;
       }
       if (target.platform === "android") {
-        return yield* fcmDeliveries.enqueue({ target, state: null, replay: true });
+        yield* fcmDeliveries.replayForDevice(target);
+        return null;
       }
       const now = yield* DateTime.now;
       const aggregate = makeAggregateState({
-        activeStates,
+        activeStates: yield* rows.listForUser({ userId: input.userId }),
         terminalState: null,
         nowMs: now.epochMilliseconds,
       });
@@ -150,7 +154,9 @@ const make = Effect.gen(function* () {
             const targets = yield* liveActivities.listTargets({ userId });
             const idleDeviceIds = new Set(candidates.map((target) => target.device_id));
             yield* Effect.forEach(
-              targets.filter((target) => idleDeviceIds.has(target.device_id)),
+              targets.filter(
+                (target) => target.platform !== "android" && idleDeviceIds.has(target.device_id),
+              ),
               (target) =>
                 apnsDeliveries
                   .sendForTarget({
@@ -210,6 +216,8 @@ const make = Effect.gen(function* () {
         (deliveryUser) =>
           publishForDeliveryUser({
             deliveryUser,
+            environmentId: input.environmentId,
+            environmentPublicKey: input.environmentPublicKey,
             state: input.state,
             nowMs: now.epochMilliseconds,
           }),

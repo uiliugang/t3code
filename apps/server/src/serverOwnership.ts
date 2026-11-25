@@ -304,6 +304,7 @@ export const acquireServerOwnership = Effect.fn("acquireServerOwnership")(functi
   }).pipe(Effect.forkScoped);
 
   return {
+    ownerId,
     publish: (state: PersistedServerRuntimeState) =>
       persistServerRuntimeState({ path: statePath, state: { ...state, ownerId } }),
   };

@@ -1,5 +1,14 @@
 import type { NavigationState, PartialState } from "@react-navigation/native";
 
+export function workspaceFileLinking(prefix: string) {
+  return {
+    path: `${prefix}/files/:path(.+)`,
+    stringify: {
+      path: (value: string | string[]) => (Array.isArray(value) ? value.join("/") : value),
+    },
+  };
+}
+
 /**
  * The Expo dev client launches the app via
  * <scheme>://expo-development-client/?url=<packager> — that URL addresses

@@ -9,6 +9,7 @@ import {
   type ViewProps,
 } from "react-native";
 
+import { useNoiseMediaPorts } from "../connection/noiseMedia";
 import { readPreviewTunnelUrl } from "../../state/previewTunnel";
 
 export interface TunnelNavigation {
@@ -39,6 +40,7 @@ const NativeTunnelWebView = requireNativeView<
   ViewProps & {
     readonly ref?: Ref<TunnelWebViewRef>;
     readonly environmentId: string;
+    readonly localMediaPorts?: readonly number[];
     readonly url: string;
     readonly topInset?: number;
     readonly onAccessRequest: (event: NativeSyntheticEvent<{ requestId: string }>) => void;
@@ -96,6 +98,7 @@ export function TunnelWebView({
   readonly onScrollDirection?: (direction: "up" | "down") => void;
 }) {
   const scrollY = useRef(0);
+  const mediaPorts = useNoiseMediaPorts();
   // Styling goes on a plain View: a native view from `requireNativeView` ignores className.
   return (
     <View {...props}>
@@ -103,6 +106,7 @@ export function TunnelWebView({
         style={StyleSheet.absoluteFill}
         ref={ref}
         environmentId={environmentId}
+        {...(Platform.OS === "android" ? { localMediaPorts: mediaPorts } : {})}
         url={url}
         {...(Platform.OS === "ios" ? { topInset: topInset ?? 0 } : {})}
         onAccessRequest={({ nativeEvent }) => {

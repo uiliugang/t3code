@@ -41,6 +41,7 @@ class T3TunnelWebView(context: Context, appContext: AppContext) : ExpoView(conte
   private var webView: WebView? = null
   private var listener: SocksListener? = null
   private var proxied = false
+  private var localMediaPorts: List<Int> = emptyList()
   private var pendingUrl: String? = null
   private var loading = false
   private var environmentId: String? = null
@@ -133,6 +134,17 @@ class T3TunnelWebView(context: Context, appContext: AppContext) : ExpoView(conte
       }
     }
     this.listener = listener
+    configureProxy(listener)
+  }
+
+  fun setLocalMediaPorts(ports: List<Int>) {
+    val valid = ports.filter { it in 1..65535 }.distinct()
+    if (valid == localMediaPorts) return
+    localMediaPorts = valid
+    listener?.let { configureProxy(it) }
+  }
+
+  private fun configureProxy(listener: SocksListener) {
     val onSet = Runnable {
       main.post {
         // Detached before the override applied; onDetachedFromWindow already cleared it.
@@ -149,6 +161,7 @@ class T3TunnelWebView(context: Context, appContext: AppContext) : ExpoView(conte
         .addProxyRule("$scheme://127.0.0.1:${listener.port}")
         .addBypassRule("*")
         .removeImplicitRules()
+        .apply { localMediaPorts.forEach { addBypassRule("127.0.0.1:$it") } }
         .build()
       val set = runCatching {
         ProxyController.getInstance().setProxyOverride(config, { it.run() }, onSet)

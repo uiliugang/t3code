@@ -1,10 +1,24 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, type EnvironmentSpeechModel } from "@t3tools/contracts";
+import {
+  DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+  EnvironmentId,
+  WS_METHODS,
+  type EnvironmentSpeechModel,
+  type NoiseHttpRequest,
+} from "@t3tools/contracts";
+import { decodeSpeechPcmRequest } from "@t3tools/shared/speech";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import { BearerConnectionTarget, type PreparedConnection } from "../connection/model.ts";
-import { installEnvironmentSpeechModel } from "./environment.ts";
+import { makeNoiseHttpClient } from "../rpc/noiseHttp.ts";
+import {
+  installEnvironmentSpeechModel,
+  setCloudSpeechKey,
+  transcribeCloudPcm,
+  transcribeEnvironmentPcm,
+} from "./environment.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const PREPARED: PreparedConnection = {
@@ -102,3 +116,55 @@ describe("installEnvironmentSpeechModel", () => {
     }),
   );
 });
+
+it.effect("sends PCM, cloud model selection and key edits through the pinned environment", () =>
+  Effect.gen(function* () {
+    const requests: Array<typeof NoiseHttpRequest.Type> = [];
+    const prepared: PreparedConnection = {
+      ...PREPARED,
+      transport: "noise",
+      noiseHttpClient: makeNoiseHttpClient({
+        [WS_METHODS.serverNoiseHttpUpload]: () => Effect.die("Unexpected upload"),
+        [WS_METHODS.serverNoiseHttp]: (request) => {
+          requests.push(request);
+          if (request.path.endsWith("/key")) return Stream.make({ status: 204, contentType: "" });
+          return Stream.make(
+            { status: 200, contentType: "application/json" },
+            { data: new TextEncoder().encode(JSON.stringify({ text: "transcribed" })) },
+          );
+        },
+      }),
+    };
+    const pcm = Uint8Array.of(0, 12, 34, 255);
+    const options = DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS;
+    const direct = HttpClient.make(() => Effect.die("Unexpected direct voice request"));
+    yield* Effect.gen(function* () {
+      expect((yield* transcribeEnvironmentPcm(prepared, pcm, options, () => true)).text).toBe(
+        "transcribed",
+      );
+      expect(
+        (yield* transcribeCloudPcm(
+          prepared,
+          "openrouter",
+          pcm,
+          options,
+          () => true,
+          "author/model",
+        )).text,
+      ).toBe("transcribed");
+      yield* setCloudSpeechKey(prepared, "openai", "private-api-key");
+    }).pipe(Effect.provideService(HttpClient.HttpClient, direct));
+    expect(requests.map((r) => r.path)).toEqual([
+      "/api/voice/transcribe",
+      "/api/voice/cloud/openrouter/transcribe?model=author%2Fmodel",
+      "/api/voice/cloud/openai/key",
+    ]);
+    for (const audio of requests.slice(0, 2)) {
+      expect(audio.contentType).toBe("application/octet-stream");
+      expect(decodeSpeechPcmRequest(audio.body!)).toEqual({ pcm, options });
+    }
+    expect(JSON.parse(new TextDecoder().decode(requests[2]?.body))).toEqual({
+      key: "private-api-key",
+    });
+  }),
+);

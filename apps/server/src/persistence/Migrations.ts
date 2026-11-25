@@ -133,6 +133,8 @@ import Migration0122 from "./Migrations/122_DeferredSlashCommandIndex.ts";
 import Migration0123 from "./Migrations/123_AgentFeedback.ts";
 import Migration0124 from "./Migrations/124_IssueTrackerAccounts.ts";
 import Migration0125 from "./Migrations/125_Workflows.ts";
+import Migration0127 from "./Migrations/127_ConnectNoiseApproval.ts";
+import Migration0128 from "./Migrations/128_PeerNoisePin.ts";
 import Migration0126 from "./Migrations/126_RemoveAgentFeedback.ts";
 
 const migrationEntries = [
@@ -263,6 +265,8 @@ const migrationEntries = [
   [124, "IssueTrackerAccounts", Migration0124],
   [125, "Workflows", Migration0125],
   [126, "RemoveAgentFeedback", Migration0126],
+  [127, "ConnectNoiseApproval", Migration0127],
+  [128, "PeerNoisePin", Migration0128],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

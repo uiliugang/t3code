@@ -59,6 +59,7 @@ import {
   verifyRelayJwt,
 } from "@t3tools/shared/relayJwt";
 
+import * as FcmDeliveries from "../agentActivity/FcmDeliveries.ts";
 import * as DeliveryAttempts from "../agentActivity/DeliveryAttempts.ts";
 import * as AgentActivityRows from "../agentActivity/AgentActivityRows.ts";
 import * as Devices from "../agentActivity/Devices.ts";
@@ -1204,6 +1205,7 @@ export const layerServerApi = HttpApiBuilder.group(
   "server",
   Effect.fnUntraced(function* (handlers) {
     const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
+    const fcm = yield* FcmDeliveries.FcmDeliveries;
     const publishSignatures = yield* EnvironmentPublishSignatures.EnvironmentPublishSignatures;
     const heldHooks = yield* HeldHooks.HeldHooks;
     const requireOwnEnvironment =
@@ -1213,47 +1215,55 @@ export const layerServerApi = HttpApiBuilder.group(
         if (principal.environmentId !== environmentId) {
           return yield* new HttpApiError.Unauthorized({});
         }
+        return principal;
       });
+    const verifyActivity = Effect.fnUntraced(function* (
+      input: EnvironmentPublishSignatures.ActivityPublication,
+    ) {
+      const principal = yield* requireOwnEnvironment(input.environmentId);
+      yield* publishSignatures
+        .verify({ ...input, environmentPublicKey: principal.environmentPublicKey })
+        .pipe(
+          mapErrorTags({
+            EnvironmentPublishSignatureExpired: (_error, traceId) =>
+              new RelayAgentActivityPublishProofExpiredError({
+                code: "agent_activity_publish_proof_expired",
+                traceId,
+              }),
+            EnvironmentPublishSignatureInvalid: (_error, traceId) =>
+              new RelayAgentActivityPublishProofInvalidError({
+                code: "agent_activity_publish_proof_invalid",
+                reason: "invalid_signature_or_payload",
+                traceId,
+              }),
+            DpopProofReplayPersistenceError: (_error, traceId) =>
+              new RelayInternalError({
+                code: "internal_error",
+                reason: "persistence_failed",
+                traceId,
+              }),
+          }),
+        );
+      return principal.environmentPublicKey;
+    });
     const activityHandlers = handlers.handle(
       "publishAgentActivity",
       Effect.fn("relay.api.server.publishAgentActivity")(
         function* (args) {
           const { params, payload } = args;
-          const principal = yield* RelayEnvironmentPrincipal;
-          if (principal.environmentId !== params.environmentId) {
-            return yield* new HttpApiError.Unauthorized({});
-          }
-          yield* publishSignatures.verify({
+          const environmentPublicKey = yield* verifyActivity({
             environmentId: params.environmentId,
-            environmentPublicKey: principal.environmentPublicKey,
             threadId: params.threadId,
             request: payload,
           });
           return yield* publisher.publish({
             environmentId: params.environmentId,
-            environmentPublicKey: principal.environmentPublicKey,
+            environmentPublicKey,
             threadId: params.threadId,
             state: payload.state,
           });
         },
         mapErrorTags({
-          EnvironmentPublishSignatureExpired: (_error, traceId) =>
-            new RelayAgentActivityPublishProofExpiredError({
-              code: "agent_activity_publish_proof_expired",
-              traceId,
-            }),
-          EnvironmentPublishSignatureInvalid: (_error, traceId) =>
-            new RelayAgentActivityPublishProofInvalidError({
-              code: "agent_activity_publish_proof_invalid",
-              reason: "invalid_signature_or_payload",
-              traceId,
-            }),
-          DpopProofReplayPersistenceError: (_error, traceId) =>
-            new RelayInternalError({
-              code: "internal_error",
-              reason: "persistence_failed",
-              traceId,
-            }),
           ApnsDeliveryJobQueuePayloadInvalid: (_error, traceId) =>
             new RelayInternalError({
               code: "internal_error",
@@ -1344,6 +1354,33 @@ export const layerServerApi = HttpApiBuilder.group(
     );
 
     return activityHandlers
+      .handle(
+        "wakeAgentActivity",
+        Effect.fn("relay.api.server.wakeAgentActivity")(
+          function* ({ params, payload }) {
+            const environmentPublicKey = yield* verifyActivity({
+              environmentId: params.environmentId,
+              request: payload,
+            });
+            return yield* fcm.wake({ environmentId: params.environmentId, environmentPublicKey });
+          },
+          mapErrorTags({
+            FcmClientError: (_error, traceId) =>
+              new RelayInternalError({
+                code: "internal_error",
+                reason: "upstream_unavailable",
+                traceId,
+              }),
+            FcmDeliveryError: (_error, traceId) =>
+              new RelayInternalError({
+                code: "internal_error",
+                reason: "persistence_failed",
+                traceId,
+              }),
+          }),
+          mapRelayCommonApiErrors("not_authorized"),
+        ),
+      )
       .handle(
         "registerManagedEndpointRecovery",
         Effect.fn("relay.api.server.registerManagedEndpointRecovery")(

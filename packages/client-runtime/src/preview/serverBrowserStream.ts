@@ -1,5 +1,10 @@
 // @effect-diagnostics globalTimers:off globalFetch:off - This browser and WebView transport runs without an Effect runtime.
-import { type DeviceHubAccess, withDeviceHubQuery } from "../device/hubAccess.ts";
+import {
+  type DeviceHubAccess,
+  type DeviceMediaSocket,
+  openDeviceMediaSocket,
+  withDeviceHubQuery,
+} from "../device/hubAccess.ts";
 import {
   PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE,
   type PreviewStreamHostSetup,
@@ -101,6 +106,7 @@ export type PreviewStreamInput =
   | { readonly type: "probe"; readonly x: number; readonly y: number };
 
 export interface PreviewStreamDownload {
+  readonly transport?: DeviceHubAccess["transport"];
   readonly fileName: string;
   readonly sizeBytes: number;
   /** Authenticated with the stream's own access; cookie sessions must send credentials. */
@@ -108,6 +114,7 @@ export interface PreviewStreamDownload {
 }
 
 export interface PreviewStreamFileChooser {
+  readonly transport?: DeviceHubAccess["transport"];
   readonly multiple: boolean;
   readonly accept: string;
   /** POST multipart `file` parts here; an empty form cancels the page's picker. */
@@ -134,7 +141,7 @@ export async function uploadPreviewStreamFiles(
 ): Promise<void> {
   const body = new FormData();
   for (const file of files) body.append("file", file, file.name ?? "file");
-  const response = await fetch(chooser.uploadUrl, {
+  const response = await (chooser.transport?.fetch ?? fetch)(chooser.uploadUrl, {
     method: "POST",
     body,
     credentials: chooser.credentials ? "include" : "omit",
@@ -226,7 +233,7 @@ export function createPreviewStreamClient(
   if (target.interactive === false) query.set("interactive", "false");
   const url = withDeviceHubQuery(`${target.access.wsBase}/ws?${query.toString()}`, target.access);
   let stopped = false;
-  let socket: WebSocket | null = null;
+  let socket: DeviceMediaSocket | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let failures = 0;
   let control: PreviewStreamControl | null = null;
@@ -241,7 +248,7 @@ export function createPreviewStreamClient(
 
   const connect = () => {
     if (stopped) return;
-    const ws = new WebSocket(url);
+    const ws = openDeviceMediaSocket(target.access, url);
     ws.binaryType = "arraybuffer";
     socket = ws;
     let opened = false;
@@ -297,6 +304,7 @@ export function createPreviewStreamClient(
         events.onFileChooser?.({
           multiple,
           accept,
+          ...(target.access.transport ? { transport: target.access.transport } : {}),
           uploadUrl: previewStreamUploadUrl(target, id),
           credentials: target.access.credentials,
         });
@@ -325,6 +333,7 @@ export function createPreviewStreamClient(
         events.onDownload?.({
           fileName,
           sizeBytes,
+          ...(target.access.transport ? { transport: target.access.transport } : {}),
           url: previewStreamDownloadUrl(target, id),
         });
       } else if (type === "viewport" && typeof width === "number" && typeof height === "number") {

@@ -133,7 +133,11 @@ const tunnelEndpoint = (tunnelUrl: string) => {
 
 const isTunnelEndpoint = (tunnelUrl: string, port: number) => {
   const endpoint = tunnelEndpoint(tunnelUrl);
-  return isLoopbackName(endpoint.host) && endpoint.port === port;
+  return (
+    new URL(tunnelUrl).pathname === "/api/preview/tunnel" &&
+    isLoopbackName(endpoint.host) &&
+    endpoint.port === port
+  );
 };
 
 /** Opens a connection to the destination; `ws` pauses its socket, so a slow page slows the tunnel. */

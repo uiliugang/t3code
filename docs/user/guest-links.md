@@ -7,8 +7,23 @@ until you send or dismiss it.
 ## Share a thread
 
 Guest links are a beta. Turn on **Settings → Labs → Guest links** for the machine that runs the
-thread. They also need [T3 Connect](./remote-access.md): sign in and link that machine, because the
-link points at its T3 Connect address. The machine must stay online while the guest uses it.
+thread. A regular guest link uses the machine's T3 Connect address. The machine must stay online
+while the guest uses it.
+
+For encrypted links, serve the fork's web client from an HTTPS origin you control and set
+`T3CODE_NOISE_GUEST_APP_ORIGIN` on the host to that origin. Restart the host. The guest opens
+the fork's `/guest` page, which connects to the host through its active T3 Connect tunnel. To
+use another publicly reachable HTTPS endpoint that forwards WebSocket upgrades, set
+`T3CODE_NOISE_GUEST_RELAY_ORIGIN`. The app and relay must have different origins. Send the
+entire generated link privately, including the fragment containing the host key and invitation.
+The trusted page redeems it over Noise and keeps its thread-scoped session in that browser tab.
+These links also work with `T3CODE_NOISE_ONLY=true`.
+
+On a host that accepts regular HTTPS guest sessions, you can instead set
+`T3CODE_NOISE_GUEST_ORIGIN` to a private HTTPS origin serving the host directly, for example
+`https://workstation.example.ts.net`. The guest must trust its certificate and reach it over
+your LAN or tailnet.
+
 While the setting is off, every guest link on that machine stops working; links that have not
 expired work again when you turn it back on.
 
@@ -21,7 +36,7 @@ expired work again when you turn it back on.
    message, and **Send** includes them.
 
 Choose **Stop sharing** to end the link at once. Archiving the thread, creating a new link, or
-unlinking the machine from T3 Connect also ends it. The mobile app can send, dismiss, and stop
+removing the origin serving the link also ends it. The mobile app can send, dismiss, and stop
 sharing too.
 
 ## What the guest sees

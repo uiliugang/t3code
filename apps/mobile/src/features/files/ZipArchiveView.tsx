@@ -201,20 +201,19 @@ function useZipArchive(input: {
   const refresh = useEffectEvent(input.refresh);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Load archive bytes and cancel the stream on cleanup.
   useEffect(() => {
-    if (!uri) return;
+    if (!uri || sizeBytes > ARCHIVE_MAX_BYTES) return;
     const abort = new AbortController();
     controller.current = abort;
     const startedAt = Date.now();
     // oxlint-disable-next-line react/set-state-in-effect -- A new archive load resets its progress.
     setState({ status: "loading", receivedBytes: 0, timeLeft: null });
     void (async () => {
-      if (sizeBytes > ARCHIVE_MAX_BYTES) throw new ZipFailureError({ failure: TOO_LARGE });
-      if (isLocal) {
-        const file = new File(uri);
+      const url = isLocal ? uri : ((await refresh()) ?? uri);
+      if (isLocal || url.startsWith("file:")) {
+        const file = new File(url);
         if ((file.size ?? 0) > ARCHIVE_MAX_BYTES) throw new ZipFailureError({ failure: TOO_LARGE });
         return openArchive(await file.arrayBuffer());
       }
-      const url = (await refresh()) ?? uri;
       const response = await fetch(url, { signal: abort.signal });
       if (!response.ok || !response.body) throw new ZipFailureError({ failure: NETWORK });
       const bytes = await readArchiveBody(response.body, (receivedBytes) =>
@@ -245,7 +244,8 @@ function useZipArchive(input: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reload the archive.
   }, [uri, isLocal, sizeBytes, revision]);
   return {
-    state,
+    state:
+      sizeBytes > ARCHIVE_MAX_BYTES ? { status: "failed" as const, failure: TOO_LARGE } : state,
     retry: () => setRevision((value) => value + 1),
     cancel: () => {
       controller.current?.abort();
@@ -311,14 +311,22 @@ function ZipTreeRowView(props: {
   );
 }
 
+type DeviceSaveAction = {
+  readonly title: string;
+  readonly onPress: () => void;
+  readonly disabled: boolean;
+};
+
 function ZipArchiveHeader(props: {
   readonly name: string;
   readonly subtitle: string;
   readonly onSave: () => void;
   readonly onRemove: (() => void) | null;
+  readonly deviceSave?: DeviceSaveAction | null | undefined;
 }) {
   const t = useUiTranslation();
   const navigation = useNavigation();
+  const gt = useGT();
   return (
     <AppBar
       title={props.name}
@@ -327,7 +335,23 @@ function ZipArchiveHeader(props: {
         if (navigation.canGoBack()) navigation.goBack();
       }}
       actions={[
-        { accessibilityLabel: t("Save ZIP"), icon: "square.and.arrow.up", onPress: props.onSave },
+        {
+          accessibilityLabel: props.deviceSave
+            ? gt("Share", { $context: "verb, opens the system share sheet" })
+            : t("Save ZIP"),
+          icon: "square.and.arrow.up",
+          onPress: props.onSave,
+        },
+        ...(props.deviceSave
+          ? [
+              {
+                accessibilityLabel: props.deviceSave.title,
+                icon: "tray.and.arrow.down" as const,
+                disabled: props.deviceSave.disabled,
+                onPress: props.deviceSave.onPress,
+              },
+            ]
+          : []),
         ...(props.onRemove
           ? [
               {
@@ -388,6 +412,7 @@ function ZipArchiveFailure(props: {
   readonly failure: ZipFailure;
   readonly onRetry: () => void;
   readonly onSave: () => void;
+  readonly deviceSave?: DeviceSaveAction | null | undefined;
 }) {
   const gt = useGT();
   const resolveMessage = useMessages();
@@ -404,8 +429,9 @@ function ZipArchiveFailure(props: {
             ) : null}
             <Button
               tone={props.failure.retry ? "secondary" : "primary"}
-              label={gt("Save ZIP")}
-              onPress={props.onSave}
+              label={props.deviceSave?.title ?? gt("Save ZIP")}
+              disabled={props.deviceSave?.disabled}
+              onPress={props.deviceSave?.onPress ?? props.onSave}
             />
           </View>
         }
@@ -519,12 +545,14 @@ export function ZipArchiveView(props: {
   readonly sizeBytes: number;
   readonly uri: string | null;
   readonly isLocal: boolean;
+  readonly svgAsSource?: boolean;
   readonly refresh: () => Promise<string | null>;
   readonly environmentId: EnvironmentId | null;
   readonly draftKey: string | null;
   readonly maxAttachmentBytes: number | undefined;
   readonly onSave: () => void;
   readonly onRemove: (() => void) | null;
+  readonly deviceSave?: DeviceSaveAction | null | undefined;
 }) {
   const t = useUiTranslation();
   const { state, retry, cancel } = useZipArchive(props);
@@ -560,6 +588,7 @@ export function ZipArchiveView(props: {
               : props.subtitle
           }
           onSave={props.onSave}
+          deviceSave={props.deviceSave}
           onRemove={props.onRemove}
         />
       )}
@@ -586,7 +615,12 @@ export function ZipArchiveView(props: {
               />
             )
           ) : (
-            <ZipArchiveFailure failure={state.failure} onRetry={retry} onSave={props.onSave} />
+            <ZipArchiveFailure
+              failure={state.failure}
+              onRetry={retry}
+              onSave={props.onSave}
+              deviceSave={props.deviceSave}
+            />
           )}
         </View>
       )}
@@ -597,6 +631,7 @@ export function ZipArchiveView(props: {
             archiveName={props.name}
             entry={selected}
             environmentId={props.environmentId}
+            svgAsSource={props.svgAsSource === true}
             draftKey={props.draftKey}
             maxAttachmentBytes={props.maxAttachmentBytes}
             onBack={() => setSelection(null)}
@@ -651,6 +686,7 @@ type EntryContent =
 
 function ZipEntryView(props: {
   readonly archiveName: string;
+  readonly svgAsSource: boolean;
   readonly entry: ZipEntry;
   readonly environmentId: EnvironmentId | null;
   readonly draftKey: string | null;
@@ -663,9 +699,12 @@ function ZipEntryView(props: {
   const messages = useMessages();
   const { mimeType } = entry;
   const previewKind = filePreviewKind({ name: entry.name, mimeType });
-  const isText = previewKind === "text" || previewKind === "markdown" || previewKind === "html";
-  // Archive HTML is shown as source: a rendered page could load its sibling files.
-  const kind = previewKind === "html" ? "text" : previewKind;
+  // Local active content can load sibling files or remote subresources.
+  const kind =
+    previewKind === "html" || (props.svgAsSource && mimeType === "image/svg+xml")
+      ? "text"
+      : previewKind;
+  const isText = kind === "text" || kind === "markdown";
   const viewerKind = isText || kind === "audio" ? null : (nativeViewerKind(kind) ?? "document");
   const tooBig = entry.sizeBytes > ARCHIVE_ENTRY_MAX_BYTES;
   const [content, setContent] = useState<EntryContent>(

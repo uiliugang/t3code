@@ -18,6 +18,11 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
+  [WS_METHODS.serverGetAgentActivity]: AuthOrchestrationReadScope,
+  [WS_METHODS.assetsReadWorkspaceChunk]: AuthFilesystemReadScope,
+  [WS_METHODS.attachmentsBeginUpload]: AuthOrchestrationOperateScope,
+  [WS_METHODS.attachmentsWriteChunk]: AuthOrchestrationOperateScope,
+  [WS_METHODS.attachmentsReadChunk]: AuthOrchestrationReadScope,
   [WS_METHODS.wechatSubscribe]: AuthAccessWriteScope,
   [WS_METHODS.wechatMutate]: AuthAccessWriteScope,
   [WS_METHODS.wechatSend]: AuthOrchestrationOperateScope,
