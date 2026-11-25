@@ -49,6 +49,7 @@ import {
   listedProjectIssueSources,
   projectIssueSourceCleanup,
   projectIssueSourceEdit,
+  replaceProjectIssueSources,
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -332,12 +333,8 @@ function ProjectSourceRow({
   const submit = (ids: string[] | null) => {
     if (ids && draft && showMepEditor)
       return persist(
-        projectIssueSourceEdit(
-          project.id,
-          singleProvider ? "meituan" : undefined,
-          saved,
-          draft.saved,
-          () => withMepSpaceOverrides(ids),
+        projectIssueSourceEdit(project.id, singleProvider, "meituan", saved, draft.saved, () =>
+          withMepSpaceOverrides(ids),
         ),
       );
   };
@@ -661,13 +658,17 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               : targets.length;
           return { success: targets.length - failed, failed };
         }
-        const saved = environment.serverConfig!.settings.issueProjectSources;
+        const { settings, environment: descriptor } = environment.serverConfig!;
+        const saved = settings.issueProjectSources;
+        const scoped = descriptor.capabilities.singleProjectIssueProvider === true;
+        const replacement =
+          action === "reset"
+            ? []
+            : [{ provider: "github" as const, scope: scope.trim(), host: host.trim() }];
         const entries = Object.fromEntries(
           targets.map((project) => [
             project.id,
-            action === "reset"
-              ? []
-              : [{ provider: "github" as const, scope: scope.trim(), host: host.trim() }],
+            replaceProjectIssueSources(scoped, "github", saved[project.id] ?? [], replacement),
           ]),
         );
         const result = await update({
@@ -677,9 +678,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
             expectedIssueProjectSources: Object.fromEntries(
               targets.map((project) => [project.id, saved[project.id] ?? []]),
             ),
-            ...(environment.serverConfig!.environment.capabilities.singleProjectIssueProvider
-              ? { issueSourceProvider: "github" as const }
-              : {}),
+            ...(scoped ? { issueSourceProvider: "github" as const } : {}),
           },
         });
         return {
@@ -811,11 +810,15 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
           <div className="flex items-start justify-between gap-3 sm:col-span-2">
             <div className="space-y-1">
               <h3 className="text-sm font-medium">{t("GitHub Issue repository override")}</h3>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Saving or restoring GitHub sources removes previously saved MEP spaces from the selected projects.",
-                )}
-              </p>
+              {githubChosen.some((project) =>
+                singleProviderEnvironments.has(project.environmentId),
+              ) ? (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Saving or restoring GitHub sources removes previously saved MEP spaces from projects on servers that support only one requirement provider.",
+                  )}
+                </p>
+              ) : null}
             </div>
             <Button
               type="button"

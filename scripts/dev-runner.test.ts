@@ -890,10 +890,36 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         }).pipe(Effect.scoped),
       );
 
-      it.effect("starts implicit dev state when the default home is explicitly selected", () =>
+      it.effect("validates an explicit worktree home from another checkout", () =>
+        Effect.gen(function* () {
+          const root = yield* makeWorktree;
+          const other = yield* makeWorktree;
+          const main = NodePath.join(root, "main");
+          const alias = NodePath.join(root, "alias");
+          const stopped = NodePath.join(root, "stopped-server");
+          NodeFS.mkdirSync(NodePath.join(main, ".git"), { recursive: true });
+          NodeFS.mkdirSync(NodePath.join(stopped, "userdata"), { recursive: true });
+          NodeFS.symlinkSync(other, alias, "junction");
+          const t3Home = NodePath.join(alias, ".t3");
+          for (const cwd of [main, root]) {
+            const input = { t3Home, cwd, ambientHome: undefined, seed: false };
+            assert.equal(yield* spawnedHome(input), NodePath.join(other, ".t3"));
+            NodeFS.symlinkSync(stopped, NodePath.join(other, ".t3"), "junction");
+            const error = yield* spawnedHome(input).pipe(Effect.flip);
+            assert.match(error.message, /Refusing to modify a live T3 Code database/);
+            NodeFS.unlinkSync(NodePath.join(other, ".t3"));
+          }
+        }).pipe(Effect.scoped),
+      );
+
+      it.effect("starts implicit dev state even after relocating the default home", () =>
         Effect.gen(function* () {
           const root = yield* makeWorktree;
           const defaultHome = NodePath.join(root, "home", ".t3");
+          const relocatedHome = NodePath.join(root, "relocated-home");
+          NodeFS.mkdirSync(NodePath.dirname(defaultHome));
+          NodeFS.mkdirSync(relocatedHome);
+          NodeFS.symlinkSync(relocatedHome, defaultHome, "junction");
           const userdata = NodePath.join(defaultHome, "userdata");
           NodeFS.mkdirSync(userdata, { recursive: true });
           const db = NodePath.join(userdata, "statev2.sqlite");
@@ -1145,13 +1171,16 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       it.effect("falls back to an ambient T3CODE_HOME outside a worktree", () =>
         Effect.gen(function* () {
           const path = yield* Path.Path;
+          const fs = yield* FileSystem.FileSystem;
+          const cwd = yield* fs.makeTempDirectoryScoped();
+          const ambientHome = path.join(yield* fs.realPath(cwd), "standalone", ".t3");
           const home = yield* spawnedHome({
             t3Home: undefined,
-            cwd: NodeOS.tmpdir(),
-            ambientHome: "/home/user/.t3",
+            cwd,
+            ambientHome,
           });
-          assert.equal(home, path.resolve("/home/user/.t3"));
-        }),
+          assert.equal(home, ambientHome);
+        }).pipe(Effect.scoped),
       );
     });
   });

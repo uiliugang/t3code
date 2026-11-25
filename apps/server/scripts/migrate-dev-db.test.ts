@@ -1079,19 +1079,30 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       const sharedHome = yield* fs.makeTempDirectoryScoped();
       const stoppedHome = yield* fs.makeTempDirectoryScoped();
       const aliasParent = yield* fs.makeTempDirectoryScoped();
+      const mainCheckout = yield* fs.makeTempDirectoryScoped();
+      const otherWorktree = yield* fs.makeTempDirectoryScoped();
       const source = yield* createFixtureSource(sharedHome);
       const stoppedDb = yield* createFixtureSource(stoppedHome);
       yield* fs.writeFileString(path.join(root, ".git"), "gitdir: /repo/.git/worktrees/feature\n");
+      yield* fs.makeDirectory(path.join(mainCheckout, ".git"));
+      yield* fs.writeFileString(
+        path.join(otherWorktree, ".git"),
+        "gitdir: /repo/.git/worktrees/other\n",
+      );
       yield* fs.symlink(stoppedHome, path.join(root, ".t3"));
       yield* fs.symlink(root, path.join(aliasParent, "worktree"));
 
-      for (const baseDir of [path.join(root, ".t3"), path.join(aliasParent, "worktree", ".t3")]) {
-        const error = yield* runMigrateDevDb(
-          { baseDir, source, projects: 1, threadsPerProject: 1 },
-          { cwd: root, sharedHome },
-        ).pipe(Effect.flip);
-        assert.equal(error._tag, "MigrateDevDbSharedHomeError");
-        assert.isFalse(yield* fs.exists(path.join(path.dirname(stoppedDb), "server-owner.sqlite")));
+      for (const cwd of [root, mainCheckout, otherWorktree]) {
+        for (const baseDir of [path.join(root, ".t3"), path.join(aliasParent, "worktree", ".t3")]) {
+          const error = yield* runMigrateDevDb(
+            { baseDir, source, projects: 1, threadsPerProject: 1 },
+            { cwd, sharedHome },
+          ).pipe(Effect.flip);
+          assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+          assert.isFalse(
+            yield* fs.exists(path.join(path.dirname(stoppedDb), "server-owner.sqlite")),
+          );
+        }
       }
     }),
   );

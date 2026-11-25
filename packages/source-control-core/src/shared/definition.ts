@@ -814,7 +814,7 @@ export function makeSourceControlDefinitionRegistry(
   ): string | Kind =>
     (kind === undefined ? undefined : byKind.get(kind)?.changeRequestHost?.(identity)) ??
     projectChangeRequestHost(identity, kind);
-  const issueBindings = (identity: RepositoryIdentity | null | undefined) => {
+  const repositoryIssueBindings = (identity: RepositoryIdentity | null | undefined) => {
     const tracker = identity?.provider;
     if (!identity || tracker === undefined || tracker === "unknown") return [];
     const scope = issueScope(identity);
@@ -844,6 +844,22 @@ export function makeSourceControlDefinitionRegistry(
     });
     if (originScope === null || originScope.toLowerCase() === scope.toLowerCase()) return [primary];
     return [primary, { tracker, host, scope: originScope }];
+  };
+  const issueBindings = (identity: RepositoryIdentity | null | undefined) => {
+    const selected = identity?.issueRepository;
+    if (selected === undefined) return repositoryIssueBindings(identity);
+    if (selected && identity?.origin && selected.provider === identity.provider) {
+      const fork = repositoryIssueBindings({
+        ...identity,
+        origin: {
+          canonicalKey: selected.canonicalKey,
+          remoteUrl: selected.locator.remoteUrl,
+          ...(selected.displayName ? { displayName: selected.displayName } : {}),
+        },
+      });
+      if (fork.length > 1) return fork;
+    }
+    return repositoryIssueBindings(selected);
   };
   return {
     definitions,

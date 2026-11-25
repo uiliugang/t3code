@@ -32,7 +32,6 @@ import {
   looksLikeLiveDatabase,
   MigrateDevDbSharedHomeError,
   resolveFilesystemPath,
-  selectWorktreeDevHome,
 } from "../../../scripts/lib/dev-db-safety.ts";
 
 export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<
@@ -691,7 +690,6 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const { base: baseDirStat, state: stateDirStat } = yield* inspectIsolatedDevDirectory(
     rawBaseDir,
     "userdata",
-    yield* selectWorktreeDevHome(rawBaseDir, worktreeBaseDir),
   );
   const canonicalBaseDir = baseDirStat.canonical;
   const lexicalBaseDir = path.resolve(rawBaseDir);

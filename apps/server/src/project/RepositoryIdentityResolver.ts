@@ -487,10 +487,23 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
       fetchRemotes.delete(name);
   }
   const selected = selectRequirementRemote(
-    Array.from(fetchRemotes, ([name, url]) => ({ name, url })),
+    Array.from(fetchRemotes, ([name, url]) => {
+      const configured = remotes.get(name);
+      const proxy =
+        /^https?:\/\//iu.test(url) &&
+        (sourceControlDefinitions.recognizeRemote(url)?.kind ?? "unknown") === "unknown";
+      return { name, url: proxy && configured ? configured : url };
+    }),
   );
   if (!selected) return { identity, issueIdentity: null };
-  if (selected.remoteUrl === remote.remoteUrl) return { identity };
+  if (
+    identity.origin === undefined &&
+    selected.remoteName === remote.remoteName &&
+    selected.remoteUrl === remote.remoteUrl &&
+    (selected.remoteName === "origin" ||
+      selected.remoteUrl === fetchRemotes.get(selected.remoteName))
+  )
+    return { identity };
   const issueIdentity = buildRepositoryIdentity({
     remoteName: selected.remoteName,
     remoteUrl: selected.remoteUrl,

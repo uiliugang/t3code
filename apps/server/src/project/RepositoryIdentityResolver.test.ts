@@ -198,6 +198,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         remoteName: "origin",
         remoteUrl: "https://github.com/T3Tools/t3code.git",
       });
+      expect(identity?.issueRepository).toBeUndefined();
 
       yield* git(cwd, ["config", "--unset", "url.https://proxy.example/.insteadOf"]);
       yield* git(cwd, ["config", "url.file:///srv/mirror/.insteadOf", "https://github.com/"]);
@@ -220,6 +221,27 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(shorthandIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
       expect(shorthandIdentity?.provider).toBe("github");
       expect(shorthandIdentity?.locator.remoteUrl).toBe("https://github.com/T3Tools/t3code.git");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("keeps the rewritten issue origin even when it fetches the grouping repository", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const cwd = yield* fs.makeTempDirectoryScoped();
+      const rewritten = "https://github.com/org/upstream.git";
+      const configured = "https://github.com/me/old-fork.git";
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "upstream", rewritten]);
+      yield* git(cwd, ["remote", "add", "origin", configured]);
+      yield* git(cwd, ["config", `url.${rewritten}.insteadOf`, configured]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd, { refresh: true });
+      expect(identity?.origin?.remoteUrl).toBe(configured);
+      expect(identity?.issueRepository?.locator).toMatchObject({
+        remoteName: "origin",
+        remoteUrl: rewritten,
+      });
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 

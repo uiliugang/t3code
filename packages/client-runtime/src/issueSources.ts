@@ -58,21 +58,33 @@ export function listedProjectIssueSources(
 
 export function projectIssueSourceEdit(
   projectId: ProjectId,
-  provider: IssueProvider | undefined,
+  singleProvider: boolean,
+  provider: IssueProvider,
   current: readonly IssueSource[],
   expected: readonly IssueSource[],
   edit: (saved: readonly IssueSource[]) => readonly IssueSource[],
 ) {
   if (!issueSourcesMatch(current, expected)) return null;
   return {
-    ...(provider ? { issueSourceProvider: provider } : {}),
+    ...(singleProvider ? { issueSourceProvider: provider } : {}),
     expectedIssueProjectSources: { [projectId]: expected },
     patch: {
       issueProjectSources: {
-        [projectId]: edit(current),
+        [projectId]: replaceProjectIssueSources(singleProvider, provider, current, edit(current)),
       },
     },
   };
+}
+
+export function replaceProjectIssueSources(
+  singleProvider: boolean,
+  provider: IssueProvider,
+  saved: readonly IssueSource[],
+  replacement: readonly IssueSource[],
+) {
+  return singleProvider
+    ? replacement
+    : [...saved.filter((source) => source.provider !== provider), ...replacement];
 }
 
 export function projectIssueSourceCleanup(

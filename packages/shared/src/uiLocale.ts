@@ -1067,8 +1067,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Save override": "保存覆盖",
   "Save GitHub override": "保存 GitHub 覆盖",
   "GitHub Issue repository override": "GitHub Issue 仓库覆盖",
-  "Saving or restoring GitHub sources removes previously saved MEP spaces from the selected projects.":
-    "保存或恢复 GitHub 来源会移除所选项目以前保存的 MEP 空间。",
+  "Saving or restoring GitHub sources removes previously saved MEP spaces from projects on servers that support only one requirement provider.":
+    "保存或恢复 GitHub 来源时，仅支持单一需求平台的服务端会移除相关项目以前保存的 MEP 空间。",
   "Source mode": "来源方式",
   "All modes": "全部方式",
   "Edit MEP spaces for {project}": "编辑 {project} 的 MEP 空间",

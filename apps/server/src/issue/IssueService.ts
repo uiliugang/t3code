@@ -100,15 +100,7 @@ interface SupportedProject extends ProjectTrackerBinding {
 function resolveGitHostBindings(
   project: OrchestrationProjectShell,
 ): ReadonlyArray<ProjectTrackerBinding> {
-  const identity = project.repositoryIdentity;
-  const selected = identity?.issueRepository;
-  const grouped = sourceControlDefinitions.issueBindings(identity);
-  const bindings =
-    selected === undefined ||
-    (grouped.length > 1 && selected && selected.provider === identity?.provider)
-      ? grouped
-      : sourceControlDefinitions.issueBindings(selected);
-  return bindings.map((binding) => ({
+  return sourceControlDefinitions.issueBindings(project.repositoryIdentity).map((binding) => ({
     ...binding,
     tracker: IssueTrackerKind.make(binding.tracker),
     accountId: null,

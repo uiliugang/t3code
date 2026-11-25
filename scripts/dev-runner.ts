@@ -21,6 +21,7 @@ import { ChildProcess } from "effect/process";
 import {
   assertIsolatedDevStartup,
   expectedDevHomePath,
+  isDotT3Home,
   resolveFilesystemPath,
   selectWorktreeDevHome,
 } from "./lib/dev-db-safety.ts";
@@ -853,13 +854,15 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
       ? undefined
       : resolvedAmbientHome;
   const defaultHome = yield* DEFAULT_T3_HOME;
+  const platform = yield* HostProcess.Platform;
+  const startupAmbientHome =
+    worktreeHome === undefined && !input.t3Home?.trim() ? undefined : ambientSharedHome;
   const verifyStartupHome =
-    worktreeHome !== undefined && input.mode !== "dev:web"
+    input.mode !== "dev:web" && (worktreeHome !== undefined || isDotT3Home(baseDir, platform))
       ? assertIsolatedDevStartup({
           baseDir,
           stateSubdir: env.T3CODE_HOME === undefined ? "dev" : "userdata",
-          protectedHomes: [...new Set([defaultHome, ambientSharedHome ?? defaultHome])],
-          defaultWorktreeHome: selectedWorktreeHome,
+          protectedHomes: [...new Set([defaultHome, startupAmbientHome ?? defaultHome])],
         })
       : Effect.succeed(baseDir);
   yield* verifyStartupHome;

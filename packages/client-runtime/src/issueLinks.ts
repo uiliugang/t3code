@@ -53,9 +53,9 @@ function parseIssueLink(
   const hostname = new URL(url).hostname.toLowerCase();
   for (const project of projects) {
     const bindings = projectIssueBindings(project);
-    if (!bindings.some((binding) => binding.host === hostname || binding.host === authority))
-      continue;
-    const known = sourceControlClients.parseIssueUrl(url, project.repositoryIdentity?.provider);
+    const binding = bindings.find((entry) => entry.host === hostname || entry.host === authority);
+    if (!binding) continue;
+    const known = sourceControlClients.parseIssueUrl(url, binding.tracker);
     if (known !== null) return known;
   }
   return null;

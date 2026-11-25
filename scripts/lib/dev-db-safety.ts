@@ -245,6 +245,17 @@ export const expectedDevHomePath = Effect.fn("expectedDevHomePath")(function* (h
   return path.join(parent.canonical, path.basename(home));
 });
 
+const devHomePathParts = (candidate: string, platform: NodeJS.Platform) => {
+  let split = splitPathParentAndLeaf(candidate, platform);
+  while (split?.leaf === ".") split = splitPathParentAndLeaf(split.parent, platform);
+  return split;
+};
+
+export const isDotT3Home = (candidate: string, platform: NodeJS.Platform) => {
+  const parts = devHomePathParts(candidate, platform);
+  return parts !== undefined && comparableDevDbPath(parts.leaf, platform) === ".t3";
+};
+
 export const selectWorktreeDevHome = Effect.fn("selectWorktreeDevHome")(function* (
   candidate: string,
   worktreeHome: string | undefined,
@@ -254,8 +265,7 @@ export const selectWorktreeDevHome = Effect.fn("selectWorktreeDevHome")(function
   const platform = yield* HostProcess.Platform;
   const comparable = (file: string) => comparableDevDbPath(file, platform);
   if (comparable(path.resolve(candidate)) === comparable(worktreeHome)) return worktreeHome;
-  let split = splitPathParentAndLeaf(candidate, platform);
-  while (split?.leaf === ".") split = splitPathParentAndLeaf(split.parent, platform);
+  const split = devHomePathParts(candidate, platform);
   if (split === undefined || comparable(split.leaf) !== comparable(path.basename(worktreeHome))) {
     return undefined;
   }
@@ -269,16 +279,20 @@ export const selectWorktreeDevHome = Effect.fn("selectWorktreeDevHome")(function
 export const inspectIsolatedDevDirectory = Effect.fn("inspectIsolatedDevDirectory")(function* (
   baseDir: string,
   stateSubdir: "userdata" | "dev",
-  expectedHome?: string,
 ) {
   const path = yield* Path.Path;
   const base = yield* inspectPath(baseDir);
+  const platform = yield* HostProcess.Platform;
+  const parts = devHomePathParts(baseDir, platform);
+  if (stateSubdir === "userdata" && parts && isDotT3Home(baseDir, platform)) {
+    const parent = yield* inspectPath(parts.parent);
+    if (base.canonical !== path.join(parent.canonical, parts.leaf)) {
+      return yield* new MigrateDevDbSharedHomeError();
+    }
+  }
   const stateDir = path.join(base.canonical, stateSubdir);
   const state = yield* inspectPath(stateDir);
   if (state.canonical !== stateDir) return yield* new MigrateDevDbSharedHomeError();
-  if (expectedHome !== undefined && base.canonical !== (yield* expectedDevHomePath(expectedHome))) {
-    return yield* new MigrateDevDbSharedHomeError();
-  }
   return { base, state };
 });
 
@@ -286,15 +300,10 @@ export const assertIsolatedDevStartup = Effect.fn("assertIsolatedDevStartup")(fu
   readonly baseDir: string;
   readonly stateSubdir: "userdata" | "dev";
   readonly protectedHomes: readonly string[];
-  readonly defaultWorktreeHome: string | undefined;
 }) {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
-  const { base, state } = yield* inspectIsolatedDevDirectory(
-    input.baseDir,
-    input.stateSubdir,
-    input.stateSubdir === "dev" ? input.baseDir : input.defaultWorktreeHome,
-  );
+  const { base, state } = yield* inspectIsolatedDevDirectory(input.baseDir, input.stateSubdir);
   const protectedPaths = yield* inspectProtectedHomes(
     input.protectedHomes,
     input.stateSubdir === "dev" ? base.canonical : undefined,

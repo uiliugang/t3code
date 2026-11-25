@@ -235,6 +235,38 @@ function makeService(input: {
 }
 
 describe("IssueService", () => {
+  it.effect("rejects writes to an origin replaced by the selected issue remote", () =>
+    Effect.gen(function* () {
+      const upstream = project({ id: "rewritten", repository: "acme/upstream" });
+      const identity = upstream.repositoryIdentity!;
+      const writes: string[] = [];
+      const service = yield* makeService({
+        projects: [
+          {
+            ...upstream,
+            repositoryIdentity: {
+              ...identity,
+              origin: { canonicalKey: "github.com/me/old-fork" },
+              issueRepository: identity,
+            },
+          },
+        ],
+        trackers: [
+          fakeTracker({
+            setState: ({ scope }) =>
+              Effect.sync(() => {
+                writes.push(scope);
+              }),
+          }),
+        ],
+      });
+      const close = { projectId: upstream.id, tracker: GITHUB, key: "1", state: "closed" } as const;
+      yield* Effect.flip(service.setState({ ...close, scope: "me/old-fork" }));
+      yield* service.setState({ ...close, scope: "acme/upstream" });
+      expect(writes).toEqual(["acme/upstream"]);
+    }),
+  );
+
   it.effect("places a project where its host keeps its issues", () =>
     Effect.gen(function* () {
       const ones = IssueTrackerKind.make("meituan");

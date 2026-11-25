@@ -158,6 +158,23 @@ it("keeps MEP spaces readable without offering a GitHub binding", () => {
   expect(details.querySelector("button, input")).toBeNull();
 });
 
+it("restores automatic GitHub sources on a legacy server without removing MEP", async () => {
+  update.mockReset().mockResolvedValue({ _tag: "Success" });
+  using screen = setup();
+  const legacy = [first, space];
+  screen.render(true, legacy, false);
+  act(() => screen.button("Edit server").click());
+  act(() => screen.button("acme/app github.com").click());
+  await act(async () => screen.button("Restore automatic").click());
+  expect(update).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      expectedIssueProjectSources: { [projectId]: legacy },
+      patch: { issueProjectSources: { [projectId]: [space] } },
+    },
+  });
+});
+
 it("removes a legacy binding without losing either same-platform repository", async () => {
   update.mockReset().mockResolvedValue({ _tag: "Success" });
   using screen = setup();

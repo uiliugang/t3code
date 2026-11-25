@@ -129,7 +129,8 @@ export function ProjectSourcesRow({
       return;
     const input = projectIssueSourceEdit(
       projectId,
-      singleProvider ? editing.provider : undefined,
+      singleProvider,
+      editing.provider,
       saved,
       editing.saved,
       (latest) =>
