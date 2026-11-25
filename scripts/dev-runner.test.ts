@@ -855,15 +855,20 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           NodeFS.mkdirSync(path.join(home, ".t3", "userdata"), { recursive: true });
           NodeFS.writeFileSync(path.join(home, ".t3", "userdata", "statev2.sqlite"), "");
 
-          const spawnedArgs = (seed: boolean | undefined) =>
+          const spawnedCalls = (seed: boolean | undefined, ambientHome?: string) =>
             Effect.gen(function* () {
-              const spawned: Array<ReadonlyArray<string>> = [];
+              const spawned: Array<{
+                readonly args: ReadonlyArray<string>;
+                readonly env: NodeJS.ProcessEnv | undefined;
+              }> = [];
               const spawnerLayer = Layer.succeed(
                 ChildProcessSpawner.ChildProcessSpawner,
                 ChildProcessSpawner.make((command) => {
-                  spawned.push(
-                    (command as unknown as { readonly args: ReadonlyArray<string> }).args,
-                  );
+                  const raw = command as unknown as {
+                    readonly args: ReadonlyArray<string>;
+                    readonly options?: { readonly env?: NodeJS.ProcessEnv };
+                  };
+                  spawned.push({ args: raw.args, env: raw.options?.env });
                   return Effect.succeed(mockProcess(0));
                 }),
               );
@@ -872,23 +877,32 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
                 Effect.provideService(HostProcess.Platform, "linux"),
                 Effect.provideService(HostProcess.WorkingDirectory, root),
                 Effect.provideService(HostProcess.HomeDirectory, home),
-                Effect.provideService(HostProcess.Environment, {}),
+                Effect.provideService(
+                  HostProcess.Environment,
+                  ambientHome === undefined ? {} : { T3CODE_HOME: ambientHome },
+                ),
               );
-              return spawned.filter((args) =>
+              return spawned.filter(({ args }) =>
                 args.some((arg) => arg.endsWith("migrate-dev-db.ts")),
               );
             });
 
-          assert.deepStrictEqual(yield* spawnedArgs(false), []);
-          const [seedArgs] = yield* spawnedArgs(undefined);
-          assert.includeMembers([...(seedArgs ?? [])], ["--base-dir", path.join(root, ".t3")]);
+          assert.deepStrictEqual(yield* spawnedCalls(false), []);
+          const [seedCall] = yield* spawnedCalls(undefined);
+          assert.includeMembers(
+            [...(seedCall?.args ?? [])],
+            ["--base-dir", path.join(root, ".t3")],
+          );
+          assert.equal(seedCall?.env?.T3CODE_HOME, undefined);
+          const [ambientSeedCall] = yield* spawnedCalls(undefined, "/opt/live-t3");
+          assert.equal(ambientSeedCall?.env?.T3CODE_HOME, "/opt/live-t3");
 
           // Either database means the worktree already has data.
           for (const name of ["state.sqlite", "statev2.sqlite"]) {
             const file = path.join(root, ".t3", "userdata", name);
             NodeFS.mkdirSync(path.dirname(file), { recursive: true });
             NodeFS.writeFileSync(file, "");
-            assert.deepStrictEqual(yield* spawnedArgs(undefined), []);
+            assert.deepStrictEqual(yield* spawnedCalls(undefined), []);
             NodeFS.rmSync(file);
           }
         }).pipe(Effect.scoped),

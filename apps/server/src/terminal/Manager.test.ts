@@ -52,7 +52,10 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
-import { makePrepareTerminalLaunch } from "../workspace/restoreMissingWorktree.ts";
+import {
+  makePrepareTerminalLaunch,
+  ThreadWorktreeRestore,
+} from "../workspace/restoreMissingWorktree.ts";
 import { layerNoTaskFolders } from "../orchestration-v2/ProviderTurnStartService.testkit.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
@@ -673,6 +676,11 @@ it.layer(
         const cwd = location === "subdirectory" ? path.join(worktreePath, "src") : worktreePath;
         const cleanupQueued = yield* Deferred.make<Fiber.Fiber<void>>();
         let creations = 0;
+        const recordedRecreations: Array<{
+          readonly threadId: ThreadId;
+          readonly projectId: ProjectId;
+          readonly worktreePath: string;
+        }> = [];
         const prepareLaunch = yield* makePrepareTerminalLaunch(() =>
           Effect.succeed({
             id: ThreadId.make("thread-1"),
@@ -695,6 +703,12 @@ it.layer(
                 getById: () => Effect.succeedSome({ workspaceRoot: baseDir } as never),
               }),
               Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+              Layer.mock(ThreadWorktreeRestore)({
+                recordRecreated: (entry) =>
+                  Effect.sync(() => {
+                    recordedRecreations.push(entry);
+                  }),
+              }),
               layerNoTaskFolders,
               Layer.mock(GitWorkflowService.GitWorkflowService)({
                 pruneWorktrees: () => Effect.void,
@@ -738,6 +752,13 @@ it.layer(
         yield* launch;
         yield* Fiber.join(yield* Deferred.await(cleanupQueued));
         assert.equal(creations, 1);
+        assert.deepEqual(recordedRecreations, [
+          {
+            threadId: ThreadId.make("thread-1"),
+            projectId: ProjectId.make("project-1"),
+            worktreePath,
+          },
+        ]);
         assert.equal(ptyAdapter.spawnInputs.length, 1);
         assert.isTrue(yield* fs.exists(cwd));
         expect(ptyAdapter.spawnInputs[0]?.env.PNPM_CONFIG_VIRTUAL_STORE_TYPE).toBe(

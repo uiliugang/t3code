@@ -129,24 +129,24 @@ export interface RunMigrateDevDbOptions {
   readonly ambientHome?: string | undefined;
 }
 
-const LIVE_HOME_MARKERS = ["secrets", "settings.json", "service-state.json", "boot-service.log"];
+const LIVE_HOME_MARKERS = [
+  ["userdata", "secrets"],
+  ["userdata", "settings.json"],
+  ["runtime", "service-state.json"],
+  ["runtime", "versions"],
+  ["userdata", "logs", "boot-service.log"],
+] as const;
 
-// A custom T3CODE_HOME or installed service home holds secrets or settings beside userdata/statev2.sqlite.
+// A custom T3CODE_HOME or installed service home holds secrets, settings, or service state beside userdata/statev2.sqlite.
+// Unreadable markers count as present so a permission or I/O error never lets a live database pass as a dev copy.
 const looksLikeLiveDatabase = Effect.fn("looksLikeLiveDatabase")(function* (databasePath: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const stateDir = path.dirname(databasePath);
+  const stateDir = path.dirname(path.resolve(databasePath));
   if (path.basename(stateDir).toLowerCase() !== "userdata") return false;
   const baseDir = path.dirname(stateDir);
-  if (
-    yield* fs
-      .exists(path.join(baseDir, "runtime", "versions"))
-      .pipe(Effect.orElseSucceed(() => false))
-  ) {
-    return true;
-  }
-  const present = yield* Effect.forEach(LIVE_HOME_MARKERS, (name) =>
-    fs.exists(path.join(stateDir, name)).pipe(Effect.orElseSucceed(() => false)),
+  const present = yield* Effect.forEach(LIVE_HOME_MARKERS, (segments) =>
+    fs.exists(path.join(baseDir, ...segments)).pipe(Effect.orElseSucceed(() => true)),
   );
   return present.some(Boolean);
 });
@@ -462,17 +462,26 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
     resolve(databasePath),
     Effect.forEach(liveDatabases, resolve),
   ]);
-  const targetIdentity = yield* identity(target);
+  const targetStat = yield* fs.stat(target).pipe(Effect.option);
+  const targetHasExtraLinks = Option.exists(
+    targetStat,
+    (info) => Option.getOrElse(info.nlink, () => 1n) > 1n,
+  );
+  const targetIdentity = Option.flatMap(targetStat, (info) =>
+    Option.map(info.ino, (ino) => `${info.dev}:${ino}`),
+  );
   const liveIdentities = yield* Effect.forEach(
     liveDatabases.flatMap((live) => [live, `${live}-wal`, `${live}-shm`]),
     identity,
   );
   if (
+    targetHasExtraLinks ||
     resolvedLives.some((live) => comparable(target) === comparable(live)) ||
     (Option.isSome(targetIdentity) &&
       liveIdentities.some(
         (candidate) => Option.isSome(candidate) && candidate.value === targetIdentity.value,
       )) ||
+    (yield* looksLikeLiveDatabase(databasePath)) ||
     (yield* looksLikeLiveDatabase(target))
   ) {
     return yield* new MigrateDevDbSharedHomeError();

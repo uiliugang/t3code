@@ -31,6 +31,7 @@ import * as Layer from "effect/Layer";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import { withTurnStartReservation, withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -238,6 +239,13 @@ it.effect.each([
           ThreadCommandExecutor.layer,
           NodeServices.layer,
           layerNoTaskFolders,
+          Layer.mock(ThreadWorktreeRestore)({
+            recordRecreated: (entry) =>
+              Effect.sync(() => {
+                assert.deepEqual(entry, { threadId, projectId, worktreePath });
+                calls.push("recreated");
+              }),
+          }),
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),
           ServerSettings.layerTest(),
           Layer.mock(ProjectStore.ProjectStoreV2)({
@@ -394,7 +402,7 @@ it.effect.each([
       assert.deepEqual(
         calls,
         order === "cleanup-first"
-          ? ["cleanup", ...(recreates ? ["prune", "create"] : []), ...rollbackCalls]
+          ? ["cleanup", ...(recreates ? ["prune", "create", "recreated"] : []), ...rollbackCalls]
           : [...rollbackCalls, "cleanup"],
       );
       if (!recreates) {

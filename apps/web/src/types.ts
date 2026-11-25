@@ -99,7 +99,6 @@ export interface ProposedPlan {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
-export type TurnDiffFileChange = ThreadCheckpointSummary["files"][number];
 export type TurnDiffSummary = ThreadCheckpointSummary;
 
 export type Project = EnvironmentProject;

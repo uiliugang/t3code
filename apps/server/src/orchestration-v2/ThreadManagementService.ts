@@ -2045,14 +2045,17 @@ const make = Effect.gen(function* () {
   });
 });
 
-const layerThreadWorktreeRestoreNoop = Layer.succeed(ThreadWorktreeRestore, {
-  restore: Effect.fn("ThreadWorktreeRestore.restore")(function () {
-    return Effect.void;
+const layerThreadWorktreeRestoreNoop = Layer.effect(
+  ThreadWorktreeRestore,
+  Effect.succeed({
+    restore: Effect.fn("ThreadWorktreeRestore.restore")(function () {
+      return Effect.void;
+    }),
+    takeRecreated: Effect.fn("ThreadWorktreeRestore.takeRecreated")(function () {
+      return Effect.undefined;
+    }),
   }),
-  takeRecreated: Effect.fn("ThreadWorktreeRestore.takeRecreated")(function () {
-    return Effect.undefined;
-  }),
-});
+);
 
 const layerLegacyV1ThreadImporterNoop = Layer.succeed(
   LegacyV1ThreadImporter.LegacyV1ThreadImporter,

@@ -249,6 +249,7 @@ const layerCheckpointRollbackServiceProvided = CheckpointRollbackService.layer.p
       layerProviderSessionManagerProvided,
       ThreadCommandExecutor.layer,
       layerRuntimePolicyProvided,
+      layerThreadWorktreeRestoreProvided,
     ),
   ),
 );
@@ -499,6 +500,7 @@ export const layer = Layer.mergeAll(
 
 export const layerProduction = Layer.mergeAll(
   layerManagedWorktreesProvided,
+  layerThreadWorktreeRestoreProvided,
   layerWorkspaceCheckoutProvided,
   WorkspaceRecovery.layer.pipe(
     Layer.provide(

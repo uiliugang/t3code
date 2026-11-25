@@ -252,13 +252,13 @@ async function install(name, version, entry) {
           const buf = Buffer.alloc(size - logStart);
           const bytes = fs.readSync(fd, buf, 0, buf.length, logStart);
           const text = buf.subarray(0, bytes).toString('utf8');
-          const match = /\btoken=([\w.~-]+)/.exec(text);
-          if (match) announcedToken = match[1];
-          const redacted = text.replace(/\btoken=[\w.~-]+/g, 'token=<redacted>');
-          if (redacted !== text) {
-            const out = Buffer.from(redacted, 'utf8');
-            fs.writeSync(fd, out, 0, out.length, logStart);
-            fs.ftruncateSync(fd, logStart + out.length);
+          for (const match of text.matchAll(/\btoken=([\w.~-]+)/g)) {
+            const secret = match[1];
+            if (!announcedToken) announcedToken = secret;
+            if (/^\*+$/.test(secret)) continue;
+            const offset = logStart + Buffer.byteLength(text.slice(0, match.index), 'utf8') + 6;
+            const mask = Buffer.alloc(Buffer.byteLength(secret, 'utf8'), 0x2a);
+            fs.writeSync(fd, mask, 0, mask.length, offset);
           }
         } finally { fs.closeSync(fd); }
       };

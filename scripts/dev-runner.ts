@@ -627,6 +627,7 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
   readonly seed: boolean;
   readonly worktreeHome: string | undefined;
   readonly env: NodeJS.ProcessEnv;
+  readonly seedEnv: NodeJS.ProcessEnv;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -664,7 +665,7 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
           yield* runRepoScript(
             "apps/server/scripts/migrate-dev-db.ts",
             ["--base-dir", input.worktreeHome, "--source", source],
-            input.env,
+            input.seedEnv,
           );
         }
       }
@@ -901,12 +902,20 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     }
   }
 
+  const ambientHome = hostEnvironment.T3CODE_HOME?.trim() || undefined;
+  const seedEnv: NodeJS.ProcessEnv = { ...env };
+  if (ambientHome === undefined) {
+    delete seedEnv.T3CODE_HOME;
+  } else {
+    seedEnv.T3CODE_HOME = ambientHome;
+  }
   // After sharing, so the warm step sees the same bundled-dev env as Vite.
   yield* prepareFirstStart({
     mode: input.mode,
     seed: input.seed !== false,
     worktreeHome: baseDir === worktreeHome ? worktreeHome : undefined,
     env,
+    seedEnv,
   });
 
   const args = [...(built ? BUILT_DEV_ARGS : MODE_ARGS[input.mode]), ...input.runArgs];

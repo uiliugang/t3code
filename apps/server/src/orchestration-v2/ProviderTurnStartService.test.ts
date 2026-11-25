@@ -375,29 +375,18 @@ effectIt.effect("restores a missing worktree before a send only under the worksp
 effectIt.effect("records task-folder recreation only when a checkout was missing", () => {
   const worktreePath = `${managedWorktreesDir}/project/feature-restore`;
   let missing = true;
+  let failProjectLookupOnce = true;
   const restoreTaskFolder = vi.fn(() =>
     Effect.sync(() => {
-      const recreated = missing;
+      if (!missing) return false;
       missing = false;
-      return recreated;
+      return true;
     }),
   );
   return Effect.gen(function* () {
-    const { restore, takeRecreated } = yield* ThreadWorktreeRestore;
-    const threadId = ThreadId.make("thread_task_folder_restore");
-    const thread = {
-      id: threadId,
-      projectId: ProjectId.make("project_task_folder_restore"),
-      worktreePath,
-      branch: "feature/restore",
-    };
-    yield* restore(thread);
-    expect(yield* takeRecreated(threadId)).toMatchObject({ worktreePath });
-    yield* restore(thread);
-    expect(yield* takeRecreated(threadId)).toBeUndefined();
-    expect(restoreTaskFolder).toHaveBeenCalledTimes(2);
-  }).pipe(
-    Effect.provide(
+    const fileSystem = yield* FileSystem.FileSystem;
+    const stateDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-restore-state-" });
+    const buildRestoreLayer = () =>
       layerThreadWorktreeRestore.pipe(
         Layer.provide(
           Layer.mergeAll(
@@ -414,21 +403,60 @@ effectIt.effect("records task-folder recreation only when a checkout was missing
                 }),
               restore: restoreTaskFolder,
             }),
-            FileSystem.layerNoop({
-              realPath: (target: string) => Effect.succeed(normalize(target)),
-            }),
-            layerWorktreeLocation(),
+            Path.layer,
+            Layer.mock(ServerConfig.ServerConfig)({
+              worktreesDir: managedWorktreesDir,
+              stateDir,
+            } as ServerConfig.ServerConfig["Service"]),
+            ServerSettings.layerTest(),
             Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
             Layer.mock(GitWorkflow.GitWorkflowService)({}),
             Layer.mock(ProjectService.ProjectService)({
               getById: () =>
-                Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
+                Effect.suspend(() => {
+                  if (failProjectLookupOnce) {
+                    failProjectLookupOnce = false;
+                    return Effect.fail(new Error("transient project read error") as never);
+                  }
+                  return Effect.succeedSome({
+                    workspaceRoot: "/tmp/provider-turn-start-project",
+                  } as never);
+                }),
             }),
           ),
         ),
-      ),
-    ),
-  );
+      );
+    const threadId = ThreadId.make("thread_task_folder_restore");
+    const thread = {
+      id: threadId,
+      projectId: ProjectId.make("project_task_folder_restore"),
+      worktreePath,
+      branch: "feature/restore",
+    };
+
+    // A project read failure surfaces instead of silently dropping setup.
+    const failed = yield* Effect.gen(function* () {
+      const { restore } = yield* ThreadWorktreeRestore;
+      return yield* restore(thread).pipe(Effect.flip);
+    }).pipe(Effect.provide(buildRestoreLayer()));
+    expect(failed._tag).toBe("WorktreeRecreateError");
+
+    // Resetting missing=true exercises successful recreation + durable persistence across restarts.
+    missing = true;
+    yield* Effect.gen(function* () {
+      const { restore } = yield* ThreadWorktreeRestore;
+      yield* restore(thread);
+    }).pipe(Effect.provide(buildRestoreLayer()));
+
+    // A fresh service instance (simulating server restart) still recovers the pending setup record.
+    yield* Effect.gen(function* () {
+      const { takeRecreated, restore } = yield* ThreadWorktreeRestore;
+      expect(yield* takeRecreated(threadId)).toMatchObject({ worktreePath });
+      expect(yield* takeRecreated(threadId)).toBeUndefined();
+      yield* restore(thread);
+      expect(yield* takeRecreated(threadId)).toBeUndefined();
+    }).pipe(Effect.provide(buildRestoreLayer()));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 });
 
 effectIt.effect("restores into a leftover worktree folder that cannot itself be removed", () => {

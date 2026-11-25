@@ -24,6 +24,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import type * as ServerConfig from "../config.ts";
 import type * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
+import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as WorkspaceFolders from "../workspace/WorkspaceFolders.ts";
 import {
@@ -150,6 +151,7 @@ export const layer: Layer.Layer<
     const path = yield* Path.Path;
     const taskFolders = yield* TaskFolders.TaskFolders;
     const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
+    const worktreeRestore = yield* Effect.serviceOption(ThreadWorktreeRestore);
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
@@ -262,9 +264,18 @@ export const layer: Layer.Layer<
           checkpointId: input.checkpointId,
         });
 
+      const recordRecreatedWorktree = (recreatedPath: string) =>
+        Option.isNone(worktreeRestore) || worktreeRestore.value.recordRecreated === undefined
+          ? Effect.void
+          : worktreeRestore.value.recordRecreated({
+              threadId: input.threadId,
+              projectId: context.thread.projectId,
+              worktreePath: recreatedPath,
+            });
+
       if (context.thread.workspace === undefined && taskFolder !== null && branch != null) {
         // Cleanup can remove any of the folder's checkouts; the linked project folder has none.
-        yield* taskFolders.restore({
+        const restored = yield* taskFolders.restore({
           taskFolder,
           branch,
           projectCommands: TaskFolders.linkRunsProjectCommands(context.thread.linkOrigin),
@@ -279,6 +290,9 @@ export const layer: Layer.Layer<
               ),
             ),
         });
+        if (restored && worktreePath !== null) {
+          yield* recordRecreatedWorktree(worktreePath);
+        }
       } else if (context.thread.workspace === undefined && worktreePath != null && branch != null) {
         // Recreated only where the server would have made it, as turn start does.
         // A failed removal can leave the folder without its checkout; only a file restore replaces it.
@@ -338,6 +352,7 @@ export const layer: Layer.Layer<
             } else {
               yield* recreate;
             }
+            yield* recordRecreatedWorktree(worktreePath);
           }
         }
       }

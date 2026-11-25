@@ -394,36 +394,52 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
     }),
   );
 
-  it.effect("refuses to drop from a custom T3CODE_HOME or installed home database", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const sharedHome = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-shared-" });
-      const customHome = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-custom-" });
-      const installedHome = yield* fs.makeTempDirectoryScoped({
-        prefix: "migrate-dev-db-installed-",
-      });
+  it.effect(
+    "refuses to drop from a custom T3CODE_HOME, installed home, symlinked live db, or hard link",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-shared-" });
+        const customHome = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-custom-" });
+        const installedHome = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-installed-",
+        });
+        const externalDisk = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-disk-" });
+        const stagingDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-stage-" });
 
-      const customFixture = yield* createFixtureSource(customHome);
-      const customDb = path.join(customHome, "userdata", "statev2.sqlite");
-      yield* fs.makeDirectory(path.dirname(customDb), { recursive: true });
-      yield* fs.rename(customFixture, customDb);
+        const customFixture = yield* createFixtureSource(customHome);
+        const customDb = path.join(customHome, "userdata", "statev2.sqlite");
+        yield* fs.makeDirectory(path.dirname(customDb), { recursive: true });
+        yield* fs.rename(customFixture, customDb);
 
-      const installedFixture = yield* createFixtureSource(installedHome);
-      const installedDb = path.join(installedHome, "userdata", "statev2.sqlite");
-      yield* fs.makeDirectory(path.join(installedHome, "userdata", "secrets"), { recursive: true });
-      yield* fs.rename(installedFixture, installedDb);
+        const installedFixture = yield* createFixtureSource(installedHome);
+        const realDiskDb = path.join(externalDisk, "statev2.sqlite");
+        yield* fs.rename(installedFixture, realDiskDb);
+        const installedDb = path.join(installedHome, "userdata", "statev2.sqlite");
+        yield* fs.makeDirectory(path.join(installedHome, "runtime"), { recursive: true });
+        yield* fs.writeFileString(path.join(installedHome, "runtime", "service-state.json"), "{}");
+        yield* fs.makeDirectory(path.dirname(installedDb), { recursive: true });
+        yield* fs.symlink(realDiskDb, installedDb);
 
-      const refusedAmbient = yield* Effect.flip(
-        dropResumableFamilies(customDb, { sharedHome, ambientHome: customHome }),
-      );
-      assert.equal(refusedAmbient._tag, "MigrateDevDbSharedHomeError");
+        const hardLinkedDb = path.join(stagingDir, "hardlinked.sqlite");
+        yield* fs.link(customDb, hardLinkedDb);
 
-      const refusedInstalled = yield* Effect.flip(
-        dropResumableFamilies(installedDb, { sharedHome }),
-      );
-      assert.equal(refusedInstalled._tag, "MigrateDevDbSharedHomeError");
-    }),
+        const refusedAmbient = yield* Effect.flip(
+          dropResumableFamilies(customDb, { sharedHome, ambientHome: customHome }),
+        );
+        assert.equal(refusedAmbient._tag, "MigrateDevDbSharedHomeError");
+
+        const refusedSymlinkedInstalled = yield* Effect.flip(
+          dropResumableFamilies(installedDb, { sharedHome }),
+        );
+        assert.equal(refusedSymlinkedInstalled._tag, "MigrateDevDbSharedHomeError");
+
+        const refusedHardLink = yield* Effect.flip(
+          dropResumableFamilies(hardLinkedDb, { sharedHome }),
+        );
+        assert.equal(refusedHardLink._tag, "MigrateDevDbSharedHomeError");
+      }),
   );
 
   it.effect("never copies an archived thread, and new events append after the source's", () =>

@@ -381,7 +381,7 @@ http.createServer((_request, response) => response.end("ok")).listen(Number(args
         expect((await NodeFSP.stat(NodePath.join(state, "hub.log"))).mode & 0o077).toBe(0);
         const logText = await NodeFSP.readFile(NodePath.join(state, "hub.log"), "utf8");
         expect(logText).toContain(`state-dir=${state}\n`);
-        expect(logText).toContain("token=<redacted>");
+        expect(logText).toContain(`token=${"*".repeat("printed-token".length)}`);
         expect(logText).not.toContain("printed-token");
       } finally {
         run("stop");
