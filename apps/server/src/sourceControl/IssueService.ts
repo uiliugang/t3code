@@ -140,24 +140,23 @@ export const make = Effect.gen(function* () {
       sourceControlDefinitions.recognizeRemote(
         key && isSshRemoteUrl(remote.remoteUrl) ? `https://${key}` : remote.remoteUrl,
       );
-    const handle =
-      identity?.hasLocalOrigin || (remote && !host)
-        ? undefined
-        : yield* providers
-            .resolveHandle({
-              cwd,
-              refresh: refreshRepository,
-              ...(remote && host
-                ? {
-                    context: {
-                      remoteName: remote.remoteName,
-                      remoteUrl: remote.remoteUrl,
-                      provider: host,
-                    },
-                  }
-                : {}),
-            })
-            .pipe(Effect.result);
+    const context =
+      remote && host
+        ? {
+            remoteName: remote.remoteName,
+            remoteUrl: remote.remoteUrl,
+            provider: host,
+          }
+        : null;
+    const handle = identity?.hasLocalOrigin
+      ? undefined
+      : yield* providers
+          .resolveHandle({
+            cwd,
+            refresh: refreshRepository,
+            ...(context?.remoteName === "origin" ? { context } : { issueRemoteHint: context }),
+          })
+          .pipe(Effect.result);
     let repository: string | null = null;
     let failure: RequirementIssueError | undefined;
     if (handle?._tag === "Success" && handle.success.context) {

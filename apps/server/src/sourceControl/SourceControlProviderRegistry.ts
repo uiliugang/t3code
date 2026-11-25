@@ -65,6 +65,7 @@ export class SourceControlProviderRegistry extends Context.Service<
     readonly resolveHandle: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProvider.SourceControlProviderContext;
+      readonly issueRemoteHint?: SourceControlProvider.SourceControlProviderContext | null;
       readonly refresh?: boolean;
     }) => Effect.Effect<SourceControlProviderHandle, SourceControlProviderError>;
     readonly resolve: (input: {
@@ -359,7 +360,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
             ),
           );
 
-    const detectProviderContext = Effect.fn("SourceControlProviderRegistry.detectProviderContext")(
+    const readProviderRemotes = Effect.fn("SourceControlProviderRegistry.readProviderRemotes")(
       function* (cwd: string) {
         const handle = yield* vcsRegistry.resolve({ cwd }).pipe(
           Effect.mapError(
@@ -385,7 +386,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               }),
           ),
         );
-        const targets = yield* Effect.filter(
+        return yield* Effect.filter(
           remotes.remotes,
           (remote) =>
             sourceControlDefinitions.recognizeRemote(remote.url)?.kind === "tanstack-source"
@@ -406,7 +407,41 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               : Effect.succeed(true),
           { concurrency: "unbounded" },
         );
-        return yield* refineContext(cwd, selectProviderContext(targets));
+      },
+    );
+
+    const issueRemotes = yield* Cache.makeWith(readProviderRemotes, {
+      capacity: PROVIDER_DETECTION_CACHE_CAPACITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? PROVIDER_DETECTION_CACHE_TTL : Duration.zero),
+    });
+    const detectIssueContext = Effect.fn("SourceControlProviderRegistry.detectIssueContext")(
+      function* (
+        cwd: string,
+        hint: SourceControlProvider.SourceControlProviderContext | null,
+        refresh = false,
+      ) {
+        if (refresh) yield* Cache.invalidate(issueRemotes, cwd);
+        const remotes = yield* Cache.get(issueRemotes, cwd);
+        const origin = remotes.find((remote) => remote.name === "origin");
+        const selected = selectProviderContext(origin ? [origin] : remotes);
+        if (!selected || /^file:/iu.test(selected.remoteUrl)) return null;
+        if (
+          !origin &&
+          remotes.length > 1 &&
+          (selected.remoteName === "upstream" ||
+            remotes.filter((remote) => remote.name !== "upstream").length !== 1)
+        )
+          return null;
+        const context =
+          hint?.remoteUrl === selected.remoteUrl
+            ? { ...selected, provider: hint.provider }
+            : selected;
+        return yield* refineContext(cwd, context);
+      },
+    );
+    const detectProviderContext = Effect.fn("SourceControlProviderRegistry.detectProviderContext")(
+      function* (cwd: string) {
+        return yield* refineContext(cwd, selectProviderContext(yield* readProviderRemotes(cwd)));
       },
     );
 
@@ -420,11 +455,13 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
     });
 
     const resolveHandle: SourceControlProviderRegistry["Service"]["resolveHandle"] = (input) =>
-      (input.context === undefined
-        ? (input.refresh ? Cache.invalidate(providerContextCache, input.cwd) : Effect.void).pipe(
-            Effect.andThen(Cache.get(providerContextCache, input.cwd)),
-          )
-        : refineContext(input.cwd, input.context)
+      (input.issueRemoteHint !== undefined
+        ? detectIssueContext(input.cwd, input.issueRemoteHint, input.refresh)
+        : input.context === undefined
+          ? (input.refresh ? Cache.invalidate(providerContextCache, input.cwd) : Effect.void).pipe(
+              Effect.andThen(Cache.get(providerContextCache, input.cwd)),
+            )
+          : refineContext(input.cwd, input.context)
       ).pipe(
         Effect.flatMap((context) => {
           const kind = context?.provider.kind ?? SourceControlProviderKind.make("unknown");

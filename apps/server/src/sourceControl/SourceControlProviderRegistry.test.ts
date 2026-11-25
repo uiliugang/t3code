@@ -1,5 +1,5 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -356,6 +356,29 @@ it.effect("falls back to a non-origin remote when origin is not configured", () 
     const provider = yield* registry.resolve({ cwd: "/repo" });
 
     assert.strictEqual(provider.kind, "gitlab");
+  }),
+);
+
+it.effect("uses a grouping hint only for the selected issue remote", () =>
+  Effect.gen(function* () {
+    const upstream = { name: "upstream", url: "git@work.alias:vendor/product.git" };
+    const issueRemoteHint = {
+      remoteName: upstream.name,
+      remoteUrl: upstream.url,
+      provider: { kind: kind("github"), name: "GitHub", baseUrl: "https://github.com" },
+    };
+    const fork = { name: "work", url: "https://gitlab.com/team/fork.git" };
+    const remotes = [upstream, fork];
+    const registry = yield* makeRegistry({ remotes });
+    const lookup = registry.resolveHandle({ cwd: "/repo", issueRemoteHint, refresh: true });
+    expect((yield* lookup).context).toMatchObject({
+      remoteUrl: fork.url,
+      provider: { kind: "gitlab" },
+    });
+    remotes.push({ name: "backup", url: "https://github.com/other/repo.git" });
+    expect((yield* lookup).context).toBeNull();
+    remotes.splice(1);
+    expect((yield* lookup).context).toEqual(issueRemoteHint);
   }),
 );
 
