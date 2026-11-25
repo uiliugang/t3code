@@ -529,6 +529,21 @@ it.effect("asks again after a check that could not answer", () =>
     yield* resolveUnknown(registry, "b");
     assert.strictEqual(asks, 2);
     assert.strictEqual(managedAsks, 2);
+    const strict = yield* registry
+      .resolveRepositoryContext({
+        cwd: "/repo",
+        context: {
+          provider: {
+            kind: kind("unknown"),
+            name: "forge.example.test",
+            baseUrl: "https://forge.example.test",
+          },
+          remoteName: "origin",
+          remoteUrl: "https://forge.example.test/team/web.git",
+        },
+      })
+      .pipe(Effect.result);
+    assert.strictEqual(strict._tag, "Failure");
   }),
 );
 

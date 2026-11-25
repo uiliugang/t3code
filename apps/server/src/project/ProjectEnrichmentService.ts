@@ -59,7 +59,7 @@ export class ProjectEnrichmentService extends Context.Service<
     readonly getAvailable: (workspaceRoot: string) => Effect.Effect<ProjectEnrichment>;
     readonly readRepositoryIdentity: (
       workspaceRoot: string,
-    ) => Effect.Effect<RepositoryIdentity | null>;
+    ) => Effect.Effect<RepositoryIdentity | null, RepositoryInspectionError>;
     readonly invalidate: (workspaceRoots: Iterable<string>) => Effect.Effect<void>;
     /** Re-resolves past both identity caches and publishes a found identity, leaving the favicon alone. */
     readonly refreshRepositoryIdentity: (
@@ -335,7 +335,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   const readRepositoryIdentity: ProjectEnrichmentService["Service"]["readRepositoryIdentity"] =
     Effect.fn("ProjectEnrichmentService.readRepositoryIdentity")(function* (workspaceRoot) {
       const resolved = yield* Cache.get(repositoryIdentityCache, workspaceRoot);
-      return Exit.isSuccess(resolved) ? resolved.value : null;
+      return yield* resolved;
     });
 
   const invalidate: ProjectEnrichmentService["Service"]["invalidate"] = Effect.fn(

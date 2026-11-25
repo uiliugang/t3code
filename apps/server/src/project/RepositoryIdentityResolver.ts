@@ -142,10 +142,10 @@ const SSH_HOST_NAME = /^[a-z0-9][a-z0-9.-]*$/u;
 const IPV4 = /^[\d.]+$/u;
 
 // Keys an SSH remote by the host its ssh config alias (`Host github.com-personal`) points at.
-// A dotted host may be a forge whose SSH endpoint has another name, so only a public forge
-// replaces it. `ssh -G` prints the configuration it would use and opens no connection.
+// A dotted host may have a separate SSH endpoint; only a public forge or another configured
+// remote's web host confirms the replacement. `ssh -G` opens no connection.
 const sshResolvedRemoteUrl = Effect.fn("RepositoryIdentityResolver.sshResolvedRemoteUrl")(
-  function* (remoteUrl: string) {
+  function* (remoteUrl: string, remotes: ReadonlyMap<string, string>) {
     const match = isSshRemoteUrl(remoteUrl) ? SSH_REMOTE.exec(remoteUrl.trim()) : null;
     if (!match) return remoteUrl;
     const [, scheme = "", user = "", host = "", rest = ""] = match;
@@ -173,7 +173,11 @@ const sshResolvedRemoteUrl = Effect.fn("RepositoryIdentityResolver.sshResolvedRe
       !SSH_HOST_NAME.test(hostName) ||
       IPV4.test(hostName) ||
       hostName === host.toLowerCase() ||
-      (host.includes(".") && !sourceControlDefinitions.findByPublicHost(hostName))
+      (host.includes(".") &&
+        !sourceControlDefinitions.findByPublicHost(hostName) &&
+        !Array.from(remotes.values()).some(
+          (url) => /^https?:\/\//iu.test(url) && parseGitRemoteHost(url)?.host === hostName,
+        ))
     ) {
       return remoteUrl;
     }
@@ -277,6 +281,12 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         let directory = physical.value;
         for (let depth = 0; depth < levels; depth++) {
           if (yield* hasEntry(path.join(directory, ".git"))) return true;
+          if (
+            (yield* hasEntry(path.join(directory, "objects"))) &&
+            (yield* hasEntry(path.join(directory, "refs"))) &&
+            (yield* hasEntry(path.join(directory, "config")))
+          )
+            return true;
           const parent = path.dirname(directory);
           if (parent === directory) return false;
           directory = parent;
@@ -377,11 +387,11 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   const remote = pickPrimaryRemote(remotes, resolved);
   if (!remote) return null;
   const originUrl = remotes.get("origin");
-  const keyUrl = yield* sshResolvedRemoteUrl(remote.remoteUrl);
+  const keyUrl = yield* sshResolvedRemoteUrl(remote.remoteUrl, remotes);
   const originKeyUrl =
     originUrl === undefined || originUrl === remote.remoteUrl
       ? keyUrl
-      : yield* sshResolvedRemoteUrl(originUrl);
+      : yield* sshResolvedRemoteUrl(originUrl, remotes);
   return buildRepositoryIdentity({
     ...remote,
     keyUrl,
@@ -390,6 +400,8 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     rootPath: cacheKey.rootPath,
   });
 });
+
+class UnconfirmedProvider extends Data.Class<{ readonly identity: RepositoryIdentity }> {}
 
 export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   options: RepositoryIdentityResolverOptions = {},
@@ -402,7 +414,11 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const timeToLive = (exit: Exit.Exit<unknown>) =>
     Exit.match(exit, {
       onSuccess: (value) =>
-        value == null ? DEFAULT_NEGATIVE_CACHE_TTL : DEFAULT_POSITIVE_CACHE_TTL,
+        value instanceof UnconfirmedProvider
+          ? Duration.zero
+          : value == null
+            ? DEFAULT_NEGATIVE_CACHE_TTL
+            : DEFAULT_POSITIVE_CACHE_TTL,
       onFailure: () => Duration.zero,
     });
 
@@ -421,14 +437,17 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 
   const repositoryIdentityCache = yield* Cache.makeWith<
     RepositoryIdentityCacheKey,
-    RepositoryIdentity | null | undefined
+    RepositoryIdentity | UnconfirmedProvider | null | undefined
   >(
     (cacheKey) =>
       resolveRepositoryIdentityFromCacheKey(cacheKey).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
         Effect.filterOrElse(
           (identity): identity is null | undefined => identity == null,
-          (identity) => refine(identity).pipe(Effect.orElseSucceed(() => identity)),
+          (identity) =>
+            refine(identity).pipe(
+              Effect.orElseSucceed(() => new UnconfirmedProvider({ identity })),
+            ),
         ),
       ),
     { capacity: cacheCapacity, timeToLive },
@@ -442,6 +461,8 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
         if (cacheKey === null) return null;
         if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
         const identity = yield* Cache.get(repositoryIdentityCache, cacheKey);
+        if (identity instanceof UnconfirmedProvider)
+          return yield* options?.onUnavailable ?? Effect.succeed(identity.identity);
         if (identity !== undefined) return identity;
       }
       return yield* options?.onUnavailable ?? Effect.succeed(null);

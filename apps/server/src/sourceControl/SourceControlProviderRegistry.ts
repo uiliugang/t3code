@@ -49,6 +49,13 @@ export class SourceControlProviderRegistry extends Context.Service<
   SourceControlProviderRegistry,
   {
     readonly resolveLink: SourceControlProvider.ResolveSourceControlLink;
+    readonly resolveRepositoryContext: (input: {
+      readonly cwd: string;
+      readonly context: SourceControlProvider.SourceControlProviderContext;
+    }) => Effect.Effect<
+      SourceControlProvider.SourceControlProviderContext | null,
+      SourceControlProviderError
+    >;
     readonly get: (
       kind: SourceControlProviderKind,
     ) => Effect.Effect<
@@ -324,7 +331,11 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
     const refineContext = (
       cwd: string,
       context: SourceControlProvider.SourceControlProviderContext | null,
-    ): Effect.Effect<SourceControlProvider.SourceControlProviderContext | null> =>
+      requireSettled = false,
+    ): Effect.Effect<
+      SourceControlProvider.SourceControlProviderContext | null,
+      SourceControlProviderError
+    > =>
       context === null || context.provider.kind !== "unknown"
         ? Effect.succeed(context)
         : Cache.get(
@@ -333,7 +344,20 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               context,
               refineUnknownRemoteProvider({ specs: discoverySpecs, process, cwd, context }),
             ),
-          ).pipe(Effect.map(({ provider }) => (provider ? { ...context, provider } : context)));
+          ).pipe(
+            Effect.flatMap(({ provider, settled }) =>
+              requireSettled && !settled
+                ? Effect.fail(
+                    new SourceControlProviderError({
+                      provider: context.provider.kind,
+                      operation: "detectProvider",
+                      cwd,
+                      detail: "Could not confirm the repository provider.",
+                    }),
+                  )
+                : Effect.succeed(provider ? { ...context, provider } : context),
+            ),
+          );
 
     const detectProviderContext = Effect.fn("SourceControlProviderRegistry.detectProviderContext")(
       function* (cwd: string) {
@@ -417,6 +441,9 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       );
 
     return SourceControlProviderRegistry.of({
+      resolveRepositoryContext: Effect.fn("SourceControlProviderRegistry.resolveRepositoryContext")(
+        ({ cwd, context }) => refineContext(cwd, context, true),
+      ),
       resolveLink: (input) => {
         if (input.url.protocol !== "https:" || input.url.username || input.url.password) {
           return undefined;

@@ -213,6 +213,10 @@ it.effect("keeps the last identity on inspection failure but publishes a confirm
       assert.deepEqual(yield* service.readRepositoryIdentity(root), identity(root));
       const changes = yield* service.subscribeChanges;
       state = "offline";
+      assert.equal(
+        (yield* service.readRepositoryIdentity("/cold").pipe(Effect.result))._tag,
+        "Failure",
+      );
       const refresh = yield* service.refreshRepositoryIdentity(root).pipe(Effect.result);
       assert.equal(refresh._tag, "Failure");
       assert.deepEqual((yield* service.peek(root)).repositoryIdentity, identity(root));

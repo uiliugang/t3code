@@ -1019,15 +1019,18 @@ export const make = Effect.gen(function* () {
       if (!repositoryLookup && root === shell.value.workspaceRoot) {
         return Option.some(yield* enrichShell(shell.value));
       }
-      if (repositoryLookup === "refresh")
-        yield* projectEnrichment
-          .refreshRepositoryIdentity(root)
-          .pipe(
-            Effect.mapError(
-              (cause) => new ProjectOperationError({ operation: "read-project", projectId, cause }),
-            ),
-          );
-      const repositoryIdentity = yield* projectEnrichment.readRepositoryIdentity(root);
+      const readIdentity = projectEnrichment.readRepositoryIdentity(root);
+      const repositoryIdentity = yield* (
+        repositoryLookup === "refresh"
+          ? projectEnrichment.refreshRepositoryIdentity(root).pipe(Effect.andThen(readIdentity))
+          : repositoryLookup === "resolve"
+            ? readIdentity
+            : readIdentity.pipe(Effect.orElseSucceed(() => null))
+      ).pipe(
+        Effect.mapError(
+          (cause) => new ProjectOperationError({ operation: "read-project", projectId, cause }),
+        ),
+      );
       return Option.some({ ...shell.value, workspaceRoot: root, repositoryIdentity });
     },
   );
@@ -1070,9 +1073,10 @@ export const make = Effect.gen(function* () {
             Effect.filterOrElse(
               (project) => project.repositoryIdentity !== null,
               (project) =>
-                projectEnrichment
-                  .readRepositoryIdentity(project.workspaceRoot)
-                  .pipe(Effect.map((repositoryIdentity) => ({ ...project, repositoryIdentity }))),
+                projectEnrichment.readRepositoryIdentity(project.workspaceRoot).pipe(
+                  Effect.orElseSucceed(() => null),
+                  Effect.map((repositoryIdentity) => ({ ...project, repositoryIdentity })),
+                ),
             ),
           ),
         { concurrency: 8 },
@@ -1096,7 +1100,9 @@ export const make = Effect.gen(function* () {
       (row) =>
         Effect.all({
           root: physicalRoot(row.workspaceRoot),
-          identity: projectEnrichment.readRepositoryIdentity(row.workspaceRoot),
+          identity: projectEnrichment
+            .readRepositoryIdentity(row.workspaceRoot)
+            .pipe(Effect.orElseSucceed(() => null)),
           id: Effect.succeed(row.projectId),
         }),
       { concurrency: 4 },
@@ -1120,7 +1126,9 @@ export const make = Effect.gen(function* () {
           if (Result.isFailure(normalized)) return { ...base, error: normalized.failure.message };
           const root = yield* physicalRoot(normalized.success);
           const existing = known.find((entry) => entry.root === root);
-          const identity = yield* projectEnrichment.readRepositoryIdentity(normalized.success);
+          const identity = yield* projectEnrichment
+            .readRepositoryIdentity(normalized.success)
+            .pipe(Effect.orElseSucceed(() => null));
           const key = identity ? repositoryGroupingKeyOf(identity) : null;
           const sameRepository = key
             ? known.find(

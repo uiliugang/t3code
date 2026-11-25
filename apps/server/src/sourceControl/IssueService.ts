@@ -251,7 +251,7 @@ export const make = Effect.gen(function* () {
       .pipe(
         Effect.mapError(
           (cause) =>
-            new RequirementIssueError({ operation: "project", reason: "invalid-target", cause }),
+            new RequirementIssueError({ operation: "repository", reason: "unavailable", cause }),
         ),
       );
     if (Option.isNone(project))
