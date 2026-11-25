@@ -287,13 +287,18 @@ function ProjectSourceRow({
     .filter((entry) => entry.provider === "meituan")
     .map((entry) => entry.scope);
   const manual = saved.some((entry) => entry.provider === "meituan");
+  const showMepEditor =
+    enabled &&
+    project.repositoryIdentity?.provider !== "github" &&
+    githubSources.length === 0 &&
+    (result !== undefined || manual || project.repositoryIdentity?.provider === "meituan");
   const [draft, setDraft] = useState<{ text: string; saved: typeof saved } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const inputId = `mep-spaces-${projectKey(project)}`;
   const submit = async (ids: string[] | null) => {
-    if (!ids || !draft || saving || disabled || !enabled) return;
+    if (!ids || !draft || saving || disabled || !showMepEditor) return;
     const input = projectIssueSourceEdit(project.id, "meituan", saved, draft.saved, (latest) =>
       withMepSpaceOverrides(latest, ids),
     );
@@ -349,15 +354,13 @@ function ProjectSourceRow({
             </span>
           </p>
         ))}
-        {enabled ? (
+        {showMepEditor ? (
           <>
             <div className="flex min-w-0 items-center gap-1.5">
-              {spaces.length > 0 || manual || githubSources.length === 0 ? (
-                <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs wrap-anywhere">
-                  <MepIcon aria-hidden className="size-3.5 shrink-0" />
-                  <span>{mepSpaceSummary(spaces, manual, discovery, t)}</span>
-                </p>
-              ) : null}
+              <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs wrap-anywhere">
+                <MepIcon aria-hidden className="size-3.5 shrink-0" />
+                <span>{mepSpaceSummary(spaces, manual, discovery, t)}</span>
+              </p>
               {draft === null ? (
                 <span className="flex shrink-0 opacity-0 group-focus-within/project-source:opacity-100 group-hover/project-source:opacity-100 any-pointer-coarse:opacity-100">
                   <Button

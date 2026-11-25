@@ -1,0 +1,79 @@
+import { expect } from "e2e";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+
+import { T3_HOME } from "../e2e.config.ts";
+import { run } from "./shell.ts";
+import { rpcClient, runPromise, test, WEB } from "./t3.ts";
+
+test("GitHub issue sources do not offer the MEP space editor", WEB, async ({ t3, app, screen }) => {
+  const automatic = await t3.project("automatic-github");
+  const manual = await t3.project("manual-github");
+  const mep = await t3.project("manual-mep");
+  await runPromise(
+    run("git", ["remote", "add", "origin", "https://github.com/acme/automatic.git"], {
+      cwd: automatic,
+    }),
+  );
+  const exercise = async () => {
+    await t3.open("/settings/requirements");
+    const mepRow = screen.getByRole("row", /manual-mep/);
+    await expect(mepRow.getByText(/MEP.*4101/)).toBeVisible();
+    await expect(mepRow.getByRole("button", /MEP/)).toBeEnabled();
+    for (const [title, github] of [
+      ["automatic-github", /^GitHub (Issues|议题)$/],
+      [
+        "manual-github",
+        /GitHub (Issues|议题) · github\.com\/acme\/manual · (Manual override|手动覆盖)/,
+      ],
+    ] as const) {
+      const row = screen.getByRole("row", new RegExp(title));
+      await expect(row.getByText(github)).toBeVisible();
+      await expect(row.getByRole("button", /MEP/)).toHaveCount(0);
+    }
+    await app.screenshot("project-issue-sources");
+  };
+  const { before, after } = await runPromise(
+    Effect.gen(function* () {
+      const client = yield* rpcClient(T3_HOME, app.baseUrl ?? "");
+      const { snapshot } = yield* client["orchestration.subscribeShell"]({}).pipe(
+        Stream.filter((event) => event.kind === "snapshot"),
+        Stream.runHead,
+        Effect.map(Option.getOrThrow),
+      );
+      const manualProject = snapshot.projects.find((project) => project.workspaceRoot === manual);
+      const mepProject = snapshot.projects.find((project) => project.workspaceRoot === mep);
+      if (!manualProject || !mepProject) throw new Error("Scenario projects missing");
+      const readFlags = client["server.getSettings"]({}).pipe(
+        Effect.map(({ meituanIntegrationEnabled, meituanRequirementsEnabled }) => ({
+          meituanIntegrationEnabled,
+          meituanRequirementsEnabled,
+        })),
+      );
+      const before = yield* readFlags;
+      yield* client["server.updateSettings"]({
+        patch: {
+          meituanIntegrationEnabled: true,
+          meituanRequirementsEnabled: true,
+          issueProjectSources: {
+            [manualProject.id]: [{ provider: "github", host: "github.com", scope: "acme/manual" }],
+            [mepProject.id]: [{ provider: "meituan", host: "mep.sankuai.com", scope: "4101" }],
+          },
+        },
+      }).pipe(
+        Effect.andThen(Effect.promise(exercise)),
+        Effect.ensuring(
+          client["server.updateSettings"]({
+            patch: {
+              ...before,
+              issueProjectSources: { [manualProject.id]: [], [mepProject.id]: [] },
+            },
+          }).pipe(Effect.orDie),
+        ),
+      );
+      return { before, after: yield* readFlags };
+    }).pipe(Effect.scoped),
+  );
+  await expect(after).toEqual(before);
+});
