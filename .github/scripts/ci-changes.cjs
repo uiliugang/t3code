@@ -6,6 +6,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "../..");
 
 const INERT = [
+  /^native\/connect-noise\//,
   /^docs\//,
   /^\.(agents|cursor|vscode|devcontainer|macroscope|repos)\//,
   /^[^/]+\.md$/,
@@ -20,6 +21,7 @@ const RUNS_EVERYTHING = [
 
 // Includes cross-package reads absent from package.json dependencies.
 const EXTRA_OWNERS = [
+  [/^native\/connect-noise\//, ["t3", "@t3tools/mobile", "@t3tools/web"]],
   // Vite configs and tsconfigs of these apps import scripts/lib directly.
   [/^scripts\/lib\//, ["@t3tools/desktop", "@t3tools/mobile", "@t3tools/web", "t3"]],
   // scripts/build-desktop-artifact.ts reads the GNOME extension manifest.
@@ -30,7 +32,9 @@ const EXTRA_OWNERS = [
   // apps/server/src/cloud/ConnectReachability.test.ts checks the guide's headings.
   [/^docs\/user\/t3-connect-troubleshooting\.md$/, ["t3"]],
 ];
-const RUST = /^native\/(resource-monitor|kde-snap-shot|hyprland-snap-shot)\//;
+const RUST = /^native\/(resource-monitor|kde-snap-shot|hyprland-snap-shot|connect-noise)\//;
+const NOISE_BINDINGS =
+  /^packages\/shared\/src\/_generated\/noise\.|^apps\/mobile\/modules\/t3-native-controls\/android\/src\/main\/jniLibs\/[^/]+\/libt3_connect_noise\.so$/;
 
 // These tests read other packages without declaring dependencies.
 const TEST_ONLY_DEPS = {
@@ -131,7 +135,7 @@ function decide(files, packages, full) {
   let rust = false;
 
   for (const file of files ?? []) {
-    if (RUST.test(file)) rust = true;
+    if (RUST.test(file) || NOISE_BINDINGS.test(file)) rust = true;
     const owners = ownersOf(file, packages);
     if (owners === null) {
       everything = true;

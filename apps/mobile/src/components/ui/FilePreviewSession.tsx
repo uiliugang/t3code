@@ -75,18 +75,22 @@ async function resolvePreviewUri(
     });
   }
   // Refresh expired URLs before handing them to Quick Look or ACTION_VIEW, which retain them.
-  const url = await refreshAssetUrl(item.environmentId, item.resource, signal)
+  let dispose: (() => void) | undefined;
+  const url = await refreshAssetUrl(item.environmentId, item.resource, signal, (release) => {
+    dispose = release;
+  })
     .then((value) => {
       if (!value) throw new Error(m(msg("Reconnect to this environment and try again.")));
       return value;
     })
     .catch((error: unknown) => {
+      dispose?.();
       throw new PreviewResolutionError({
         cause: error,
         fallbackMessage: remotePreviewFailureMessage(error),
       });
     });
-  return { uri: url + (item.srcFragment ?? "") };
+  return { uri: url + (item.srcFragment ?? ""), ...(dispose ? { dispose } : {}) };
 }
 
 // Shares from the unresolved item so remote URLs refresh and draft files take their own lease.

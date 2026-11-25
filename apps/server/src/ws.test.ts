@@ -1,3 +1,4 @@
+import { noiseHttpSession } from "./auth/noiseHttp.ts";
 import * as WorkItems from "./work-items/WorkItemService.ts";
 import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
 import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
@@ -17,14 +18,21 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  ATTACHMENT_TRANSFER_CHUNK_BYTES,
   AuthAccessReadScope,
   type AuthEnvironmentScope,
   AuthOrchestrationOperateScope,
+  AuthFilesystemReadScope,
   AuthOrchestrationReadScope,
   type WorkflowRun,
   type WorkflowStep,
   AuthSessionId,
   AuthSourceControlWriteScope,
+  AuthTerminalReadScope,
+  CONNECT_NOISE_PATH,
+  decodeNoiseMediaFrame,
+  encodeNoiseMediaControl,
+  encodeNoiseMediaData,
   CommandId,
   GitCommandError,
   ORCHESTRATION_V2_WS_METHODS,
@@ -72,13 +80,20 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { Headers, HttpRouter, HttpServer } from "effect/http";
+import {
+  Headers,
+  HttpRouter,
+  HttpServer,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 import * as Context from "effect/Context";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as ProviderInstallationGate from "./provider/ProviderInstallationGate.ts";
 import * as Ws from "./ws.ts";
-import { RpcGroup, RpcMessage, RpcServer } from "effect/rpc";
+import * as Socket from "effect/socket/Socket";
+import { RpcClient, RpcSerialization, RpcGroup, RpcMessage, RpcServer } from "effect/rpc";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
@@ -105,9 +120,13 @@ import * as ClaudeInstallation from "./provider/ClaudeInstallation.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
 import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
+import { createNoisePin } from "./auth/connectNoise.ts";
+import { connectNoiseClient } from "./auth/connectNoise.testkit.ts";
+import { makeDpopKey } from "./auth/dpop.testkit.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import { AgentAwarenessRelay } from "./relay/AgentAwarenessRelay.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
@@ -183,6 +202,7 @@ import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as TextGenerators from "./textGeneration/TextGenerators.ts";
+import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as SecretCheck from "./secrets/SecretCheck.ts";
@@ -887,6 +907,7 @@ it.effect("shell snapshots omit idle children and older settled threads only on 
 
 // Build the production RPC layer; unrelated capabilities fail if this test calls them.
 const layerUnusedConfigRpcServices = Layer.mergeAll(
+  Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
   Layer.mock(DocumentText.DocumentText)({}),
   Layer.mock(ServerSecretStore.ServerSecretStore)({}),
@@ -913,6 +934,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(DeviceService.DeviceService)({}),
   Layer.mock(EnvironmentTheme.EnvironmentThemeService)({}),
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+  Layer.mock(AgentAwarenessRelay)({ readActivity: () => Effect.succeed([]) }),
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
   Layer.mock(McpSignIn.McpSignIn)({}),
@@ -1094,6 +1116,32 @@ it.effect("preserves workspace rejection details in the thread launch RPC error"
   ),
 );
 
+const layerSocketTestServices = Layer.mergeAll(
+  Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+    namedProjectsRoot: process.cwd(),
+  }),
+  Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+  Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+  Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+  Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+  Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+  Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+  Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+  Layer.mock(VcsProcess.VcsProcess)({
+    run: (input) =>
+      Effect.fail(
+        new VcsProcessSpawnError({
+          operation: input.operation,
+          command: input.command,
+          cwd: input.cwd,
+          cause: "No VCS commands in the compression fixture",
+        }),
+      ),
+  }),
+  ProviderInstallationGate.layer,
+  FetchHttpClient.layer,
+);
+
 it.live.each([
   { subject: "desktop-bootstrap", extensions: "", framed: false },
   { subject: "desktop-bootstrap", extensions: "", framed: true },
@@ -1124,29 +1172,9 @@ it.live.each([
           markDisconnected: () => Effect.void,
           awaitInvalidation: () => Effect.never,
         }),
-        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-          namedProjectsRoot: process.cwd(),
-        }),
-        Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
-        Layer.mock(ProviderRegistry.ProviderRegistry)({}),
-        Layer.mock(UsageLimitSources.UsageLimitSources)({}),
-        Layer.mock(ExternalLauncher.ExternalLauncher)({}),
-        Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
-        Layer.mock(DirectEndpoints.DirectEndpoints)({}),
-        Layer.mock(ServerEnvironment.ServerEnvironment)({}),
-        Layer.mock(VcsProcess.VcsProcess)({
-          run: (input) =>
-            Effect.fail(
-              new VcsProcessSpawnError({
-                operation: input.operation,
-                command: input.command,
-                cwd: input.cwd,
-                cause: "No VCS commands in the compression fixture",
-              }),
-            ),
-        }),
-        ProviderInstallationGate.layer,
-        FetchHttpClient.layer,
+        ManagedPolicy.layerTest(),
+        Layer.mock(ServerEnvironment.ServerEnvironmentIdentity)({}),
+        layerSocketTestServices,
       );
       const context = yield* Layer.build(
         HttpRouter.serve(Ws.layer, { disableListenLog: true }).pipe(
@@ -1184,6 +1212,304 @@ it.live.each([
       );
       assert.equal(socket.extensions, extensions);
     }).pipe(Effect.scoped),
+);
+
+it.live("serves scoped RPC on the approved Noise socket until the device is revoked", () =>
+  Effect.gen(function* () {
+    const auth = yield* EnvironmentAuth.EnvironmentAuth;
+    const grants = yield* PairingGrantStore.PairingGrantStore;
+    const pin = new URL(yield* createNoisePin());
+    const device = makeDpopKey();
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.realPath(
+      yield* fs.makeTempDirectoryScoped({ prefix: "noise-workspace-" }),
+    );
+    yield* fs.writeFile(path.join(root, "source.bin"), Uint8Array.of(0, 255, 13));
+    const scopes = [
+      AuthFilesystemReadScope,
+      AuthOrchestrationReadScope,
+      AuthOrchestrationOperateScope,
+      AuthTerminalReadScope,
+    ] as const;
+    const unsubscribed = Promise.withResolvers<void>();
+    const grant = yield* grants.issueOneTimeToken({
+      subject: "cloud-connect",
+      proofKeyThumbprint: device.thumbprint,
+      scopes,
+    });
+    const server = yield* Layer.build(
+      HttpRouter.serve(
+        Layer.mergeAll(
+          Ws.layer,
+          HttpRouter.add(
+            "GET",
+            "/api/preview-stream/ws",
+            Effect.gen(function* () {
+              const remote = yield* (yield* HttpServerRequest.HttpServerRequest).upgrade;
+              const input = yield* remote.reader;
+              const output = yield* remote.writer;
+              yield* output.writeAll(yield* input.pull);
+              return HttpServerResponse.empty();
+            }),
+          ),
+          HttpRouter.add(
+            "POST",
+            "/api/preview-stream/upload",
+            Effect.gen(function* () {
+              const request = yield* HttpServerRequest.HttpServerRequest;
+              return HttpServerResponse.uint8Array(new Uint8Array(yield* request.arrayBuffer));
+            }),
+          ),
+          HttpRouter.add(
+            "GET",
+            "/api/preview-stream/download",
+            Effect.gen(function* () {
+              const request = yield* HttpServerRequest.HttpServerRequest;
+              return HttpServerResponse.text(
+                noiseHttpSession(request)?.proofKeyThumbprint ?? "ordinary",
+              );
+            }),
+          ),
+        ),
+        { disableListenLog: true },
+      ).pipe(
+        Layer.provideMerge(
+          NodeHttpServer.layer(NodeHttp.createServer, { host: "127.0.0.1", port: 0 }),
+        ),
+        Layer.provide(layerSocketTestServices),
+        Layer.provide(
+          Layer.mock(ServerBrowser.ServerBrowser)({
+            profileReporter: Effect.succeed(() => Effect.void),
+          }),
+        ),
+        Layer.provide(
+          Layer.mergeAll(
+            layerUnusedConfigRpcServices,
+            WorkspacePaths.layer,
+            Layer.mock(KnownWorkspaces.KnownWorkspaces)({
+              contains: (candidate) => Effect.succeed(candidate === root),
+            }),
+            Layer.mock(DocumentText.DocumentText)({ ensure: () => Effect.undefined }),
+            Layer.mock(TerminalManager.TerminalManager)({
+              subscribeMetadata: (listener) =>
+                listener({ type: "snapshot", terminals: [], managerId: "noise-fixture" }).pipe(
+                  Effect.as(unsubscribed.resolve),
+                ),
+            }),
+            Layer.succeed(PairingGrantStore.PairingGrantStore, grants),
+            Layer.succeed(SessionStore.SessionStore, yield* SessionStore.SessionStore),
+            Layer.succeed(
+              ServerSecretStore.ServerSecretStore,
+              yield* ServerSecretStore.ServerSecretStore,
+            ),
+          ),
+        ),
+      ),
+    );
+    const url =
+      HttpServer.formatAddress(Context.get(server, HttpServer.HttpServer).address).replace(
+        /^http/,
+        "ws",
+      ) + CONNECT_NOISE_PATH;
+    const connect = () =>
+      connectNoiseClient(url, pin, device, grant.credential, {
+        mode: "rpc",
+        orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
+      });
+    assert.equal((yield* connect()).reply.status, "pending");
+    assert.isTrue(yield* grants.approveNoiseRequest(grant.id));
+    const { reply, socket, ws } = yield* connect();
+    const openMedia = Effect.gen(function* () {
+      const streamGrant = yield* grants.issueOneTimeToken({
+        subject: "cloud-connect",
+        proofKeyThumbprint: device.thumbprint,
+        scopes,
+      });
+      const media = yield* connectNoiseClient(url, pin, device, streamGrant.credential, {
+        mode: "media",
+        orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
+      });
+      assert.equal(media.reply.status, "connected");
+      return media;
+    });
+    for (const [path, expected] of [
+      ["/api/preview-stream/download", device.thumbprint],
+      ["/api/auth/session", "403 Forbidden"],
+      ["/api/preview-stream/ws", "panel-frame"],
+    ] as const) {
+      const media = yield* openMedia;
+      const writer = yield* media.socket.writer;
+      const upgrade = path.endsWith("/ws");
+      const headers = upgrade
+        ? "Connection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: MTIzNDU2Nzg5MDEyMzQ1Ng=="
+        : "Connection: close";
+      yield* writer.write(
+        new TextEncoder().encode(`GET ${path} HTTP/1.1\r\nHost: localhost\r\n${headers}\r\n\r\n`),
+      );
+      const reader = yield* media.socket.reader;
+      let response = "";
+      if (upgrade) {
+        while (!response.includes("\r\n\r\n"))
+          for (const part of yield* reader.pull) response += Buffer.from(part).toString();
+        assert.include(response, "101 Switching Protocols");
+        const payload = Buffer.from(expected);
+        const mask = Buffer.from([1, 2, 3, 4]);
+        yield* writer.write(
+          Buffer.concat([
+            Buffer.from([0x82, 0x80 | payload.length]),
+            mask,
+            payload.map((value, index) => value ^ mask[index % 4]!),
+          ]),
+        );
+      }
+      while (!response.includes(expected)) {
+        for (const part of yield* reader.pull) response += Buffer.from(part).toString();
+      }
+      assert.include(response, expected);
+      media.ws.close();
+    }
+    const largeFrame = Uint8Array.from({ length: 70 * 1024 }, (_, i) => i % 256);
+    for (const method of ["GET", "POST"] as const) {
+      const media = yield* openMedia;
+      const writer = yield* media.socket.writer;
+      const reader = yield* media.socket.reader;
+      yield* writer.write(
+        encodeNoiseMediaControl({
+          op: "http",
+          method,
+          path: method === "GET" ? "/api/preview-stream/download" : "/api/preview-stream/upload",
+          ...(method === "POST" && { headers: { "content-length": String(largeFrame.length) } }),
+        }),
+      );
+      if (method === "POST") {
+        yield* writer.write(encodeNoiseMediaData(largeFrame.subarray(0, 30_000)));
+        yield* writer.write(encodeNoiseMediaData(largeFrame.subarray(30_000)));
+        yield* writer.write(encodeNoiseMediaControl({ op: "end" }));
+      }
+      const chunks = [];
+      let status,
+        done = false;
+      while (!done) {
+        for (const value of yield* reader.pull) {
+          const frame = typeof value === "string" ? null : decodeNoiseMediaFrame(value);
+          if (frame?.kind === "binary") chunks.push(frame.bytes);
+          else if (frame?.kind === "control" && frame.control.op === "response")
+            status = frame.control.status;
+          else if (frame?.kind === "control" && frame.control.op === "end") done = true;
+          else assert.fail("Unexpected Noise HTTP frame");
+        }
+      }
+      assert.equal(status, 200);
+      assert.deepEqual(
+        Buffer.concat(chunks),
+        Buffer.from(method === "GET" ? device.thumbprint : largeFrame),
+      );
+      media.ws.close();
+    }
+    for (const message of [largeFrame, "panel text"] as const) {
+      const media = yield* openMedia;
+      const writer = yield* media.socket.writer;
+      const reader = yield* media.socket.reader;
+      yield* writer.write(encodeNoiseMediaControl({ op: "ws", path: "/api/preview-stream/ws" }));
+      const receive = Effect.map(reader.pull, ([value]) =>
+        typeof value === "string" ? null : decodeNoiseMediaFrame(value),
+      );
+      assert.deepEqual(yield* receive, { kind: "control", control: { op: "open" } });
+      yield* writer.write(encodeNoiseMediaData(message));
+      assert.deepEqual(
+        yield* receive,
+        typeof message === "string"
+          ? { kind: "text", text: message }
+          : { kind: "binary", bytes: message },
+      );
+      media.ws.close();
+    }
+    assert.equal(reply.status, "connected");
+    assert.deepEqual(reply.status === "connected" && reply.scopes, scopes);
+    const protocol = yield* Layer.build(
+      RpcClient.layerProtocolSocket().pipe(
+        Layer.provide(Layer.succeed(Socket.Socket, socket)),
+        Layer.provide(RpcSerialization.layerJson),
+      ),
+    );
+    const client = yield* RpcClient.make(WsRpcGroup).pipe(Effect.provide(protocol));
+    assert.deepEqual(yield* client[WS_METHODS.serverGetAgentActivity]({}), []);
+    const denied = yield* client[WS_METHODS.terminalWrite]({
+      threadId: "t",
+      terminalId: "t",
+      data: "hello",
+    }).pipe(Effect.flip);
+    assert.equal(denied._tag, "EnvironmentAuthorizationError");
+    assert.equal(
+      denied._tag === "EnvironmentAuthorizationError" && denied.requiredPermission,
+      "terminal:operate",
+    );
+    const media = yield* client[WS_METHODS.assetsCreateUrl]({
+      resource: { _tag: "attachment", attachmentId: "image" },
+    }).pipe(Effect.flip);
+    assert.equal(media._tag, "AssetAttachmentNotFoundError");
+    const resource = { _tag: "draft-workspace-file", cwd: root, path: "source.bin" } as const;
+    const first = yield* client[WS_METHODS.assetsReadWorkspaceChunk]({
+      resource,
+      offset: 0,
+      length: 2,
+    });
+    assert.deepEqual(first.data, Uint8Array.of(0, 255));
+    const next = yield* client[WS_METHODS.assetsReadWorkspaceChunk]({
+      resource,
+      offset: 2,
+      revision: first.revision,
+    });
+    assert.deepEqual(next.data, Uint8Array.of(13));
+    const data = Uint8Array.from({ length: ATTACHMENT_TRANSFER_CHUNK_BYTES }, (_, i) => i % 256);
+    const attachment = yield* client[WS_METHODS.attachmentsBeginUpload]({
+      name: "camera.png",
+      mimeType: "image/png",
+      sizeBytes: data.length + 2,
+    });
+    yield* client[WS_METHODS.attachmentsWriteChunk]({ ...attachment, offset: 0, data });
+    yield* client[WS_METHODS.attachmentsWriteChunk]({
+      ...attachment,
+      offset: data.length,
+      data: Uint8Array.of(255, 17),
+    });
+    const chunk = yield* client[WS_METHODS.attachmentsReadChunk]({ ...attachment, offset: 0 });
+    assert.equal(chunk.totalBytes, data.length + 2);
+    assert.isTrue(Buffer.from(chunk.data).equals(data));
+    assert.deepEqual(
+      (yield* client[WS_METHODS.attachmentsReadChunk]({ ...attachment, offset: data.length })).data,
+      Uint8Array.of(255, 17),
+    );
+    assert.isString((yield* client[WS_METHODS.serverProbe]({})).serverTime);
+    const received = yield* Deferred.make<void>();
+    yield* client[WS_METHODS.subscribeTerminalMetadata]({}).pipe(
+      Stream.runForEach((event) =>
+        Effect.gen(function* () {
+          assert.deepEqual(event, { type: "snapshot", terminals: [], managerId: "noise-fixture" });
+          yield* Deferred.succeed(received, undefined);
+        }),
+      ),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+    yield* Deferred.await(received);
+    const closed = new Promise((resolve) => ws.addEventListener("close", resolve, { once: true }));
+    assert.isTrue(yield* auth.revokeConnectDevice(device.thumbprint));
+    yield* Effect.promise(() => closed);
+    yield* Effect.promise(() => unsubscribed.promise);
+    assert.equal((yield* connect()).reply.status, "rejected");
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      EnvironmentAuth.layer.pipe(
+        Layer.provideMerge(ServerSecretStore.layer),
+        Layer.provideMerge(ServerEnvironment.layerIdentity),
+        Layer.provideMerge(ManagedPolicy.layerTest()),
+        Layer.provideMerge(layerConfigSources),
+      ),
+    ),
+  ),
 );
 
 it.effect.each([

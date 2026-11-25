@@ -1180,6 +1180,7 @@ describe("environment shell cold start", () => {
     // that applies its answer, which an interrupt has to wait for.
     early?: {
       readonly serverResumes: boolean;
+      readonly transport?: "noise";
       readonly holdLoads?: boolean | "uninterruptible";
     },
   ) {
@@ -1219,7 +1220,15 @@ describe("environment shell cold start", () => {
       early === undefined ? Option.some(session(client)) : Option.none<RpcSession.RpcSession>(),
     );
     const prepared = yield* SubscriptionRef.make(
-      Option.some(early === undefined ? PREPARED : { ...PREPARED, descriptor: FAMILY_DESCRIPTOR }),
+      Option.some(
+        early === undefined
+          ? PREPARED
+          : {
+              ...PREPARED,
+              ...(early.transport === undefined ? {} : { transport: early.transport }),
+              descriptor: FAMILY_DESCRIPTOR,
+            },
+      ),
     );
     const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
       target: TARGET,
@@ -1297,6 +1306,7 @@ describe("environment shell cold start", () => {
           activeSession,
           Option.some({
             ...session(client),
+            ...(early?.transport === undefined ? {} : { transport: early.transport }),
             initialConfig: (configRead === undefined
               ? Effect.void
               : Deferred.succeed(configRead, undefined)
@@ -1324,6 +1334,23 @@ describe("environment shell cold start", () => {
         ),
     };
   });
+
+  it.effect.each([false, true])(
+    "keeps shell snapshots inside Noise when cached rows can resume: %s",
+    (resumes) =>
+      Effect.gen(function* () {
+        const origin = resumes ? { ...RECENT_ORIGIN, ...FAMILY_FLAGS } : undefined;
+        const h = yield* makeColdStart(origin, { serverResumes: false, transport: "noise" });
+        yield* h.connect(FAMILY_CONFIG);
+        const subscription = yield* Queue.take(h.subscriptions);
+        expect(subscription.input).toEqual({
+          ...FAMILY_FLAGS,
+          requestCompletionMarker: true,
+          ...(resumes ? { afterSequence: CACHED_SEQUENCE } : {}),
+        });
+        expect(yield* Ref.get(h.httpLoads)).toBe(0);
+      }),
+  );
 
   it.effect.each([
     { label: "a recent matching origin", origin: RECENT_ORIGIN, resumes: true },

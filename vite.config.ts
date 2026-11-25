@@ -226,6 +226,7 @@ export default defineConfig({
       "**/*.graphql.ts",
       "packages/source-control-github/schema/**",
       "apps/server/schema/**",
+      "packages/shared/src/_generated/noise.js",
       "apps/mobile/android/**",
       "apps/mobile/ios/**",
       "apps/mobile/uniwind-types.d.ts",

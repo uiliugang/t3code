@@ -1,3 +1,4 @@
+import { readNoisePin } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
@@ -66,7 +67,12 @@ export type LinkedEnvironmentConnection =
   /** No address the linking environment knows answers from this device. */
   | { readonly type: "unreachable"; readonly label: string }
   /** The user pairs with a code of their own, in the add-environment flow, with this filled in. */
-  | { readonly type: "manual"; readonly label: string; readonly host: string | null };
+  | {
+      readonly type: "manual";
+      readonly label: string;
+      readonly host: string | null;
+      readonly noisePin?: string;
+    };
 
 /**
  * Connects this client to a linked environment. The linking environment asks it for a one-time
@@ -74,6 +80,7 @@ export type LinkedEnvironmentConnection =
  * Anything short of that leaves the user to pair by hand.
  */
 export async function connectLinkedEnvironment(options: {
+  readonly expectedEnvironmentId: EnvironmentId;
   readonly label: string;
   /** Asks the linking environment for a pairing; null when it could not answer. */
   readonly requestPairing: () => Promise<PeerLinkClientPairingResult | null>;
@@ -88,6 +95,15 @@ export async function connectLinkedEnvironment(options: {
   const pairing = await options.requestPairing();
   if (pairing === null) return { type: "manual", label: options.label, host: null };
   const { label, urls } = pairing;
+  if (pairing.environmentId !== options.expectedEnvironmentId) {
+    return { type: "unreachable", label: options.label };
+  }
+  if (pairing.type === "noise-link") return { type: "unreachable", label };
+  if (pairing.type === "noise") {
+    return readNoisePin(pairing.hostPin)?.environmentId === pairing.environmentId
+      ? { type: "manual", label, host: null, noisePin: pairing.hostPin }
+      : { type: "unreachable", label };
+  }
   // Asked together, taken in the linking environment's order of preference.
   const probes = urls.map((url) =>
     options.reaches(url).then(

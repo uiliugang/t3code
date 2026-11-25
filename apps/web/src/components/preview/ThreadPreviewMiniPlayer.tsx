@@ -1,8 +1,7 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { FILL_PREVIEW_VIEWPORT, type ScopedThreadRef } from "@t3tools/contracts";
-import { previewPdfAssetUrl } from "@t3tools/shared/preview";
-import { useEnvironmentHttpBaseUrl } from "~/state/environments";
+import { previewPdfUrlAtom } from "~/state/assets";
 import { PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
@@ -225,9 +224,13 @@ export function ThreadPreviewMiniPlayer({ threadRef, miniPlayer }: Props) {
 function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly tabId: string }) {
   const t = useUiTranslation();
   const gt = useGT();
-  const httpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
   const { serverEpoch, snapshot, desktopOverlay, serverTab, sourceSize } =
     useBrowserMiniPlayerSource(threadRef, tabId);
+  const pdfUrl = useAtomValue(
+    previewPdfUrlAtom(threadRef.environmentId)(
+      serverTab && snapshot?.navStatus._tag === "Success" ? snapshot.navStatus.url : null,
+    ),
+  );
   const runtimeTabId = previewRuntimeTabId(threadRef, serverEpoch, tabId);
   const recordingTabIds = useActiveBrowserRecordingTabIds();
   const recording =
@@ -274,10 +277,6 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
   };
 
   if (!snapshot) return null;
-  const pdfUrl =
-    snapshot.navStatus._tag === "Success"
-      ? previewPdfAssetUrl(snapshot.navStatus.url, httpBaseUrl)
-      : null;
   const loadFailed = snapshot.navStatus._tag === "LoadFailed" ? snapshot.navStatus : null;
   const poppedOut = serverTab ? serverPictureInPicture : Boolean(desktopOverlay?.pictureInPicture);
   const canPopOut = serverTab

@@ -39,6 +39,7 @@ vi.mock("gt-react-native", async (importOriginal) => {
   return { ...gt, useGT: () => gt.mFallback };
 });
 vi.mock("../../lib/localAttachmentPreview", () => ({ loadLocalAttachmentPreview: vi.fn() }));
+vi.mock("../../lib/saveWorkspaceFile", () => ({ saveWorkspaceFile: vi.fn() }));
 vi.mock("../../lib/attachmentDownload", () => ({
   downloadAndShareAttachment: harness.share,
   downloadAttachmentForPreview: harness.download,

@@ -3,12 +3,13 @@ import { translatableMessage } from "../errors/translatable.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import {
+  NOISE_HTTP_ORIGIN,
   ORCHESTRATION_PROTOCOL_HEADER,
   ORCHESTRATION_PROTOCOL_VERSION_TEXT,
 } from "@t3tools/contracts";
 import * as Result from "effect/Result";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { FetchHttpClient, type HttpMethod } from "effect/http";
+import { FetchHttpClient, HttpClient, type HttpMethod } from "effect/http";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import type { PreparedConnection, PreparedHttpAuthorization } from "../connection/model.ts";
@@ -151,7 +152,12 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
 >(input: {
   readonly prepared: Pick<
     PreparedConnection,
-    "environmentId" | "httpBaseUrl" | "httpAuthorization" | "target"
+    | "environmentId"
+    | "httpBaseUrl"
+    | "httpAuthorization"
+    | "target"
+    | "transport"
+    | "noiseHttpClient"
   >;
   readonly signer: Option.Option<ManagedRelay.ManagedRelayDpopSigner["Service"]>;
   readonly remoteAuthorization?: Option.Option<
@@ -179,13 +185,21 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
   RemoteEnvironmentRequestError,
   Effect.Services<ReturnType<typeof makeEnvironmentHttpApiGroupClient<Group>>> | R
 > {
-  let httpBaseUrl = input.prepared.httpBaseUrl;
+  const noise = input.prepared.transport === "noise";
+  const encryptedHttp = input.prepared.noiseHttpClient;
+  if (noise && !encryptedHttp) {
+    return yield* new RemoteEnvironmentAuthFetchError({
+      ...translatableMessage(msg("Could not authorize the environment request.")),
+      cause: "HTTP is unavailable on a Noise connection",
+    });
+  }
+  let httpBaseUrl = noise ? NOISE_HTTP_ORIGIN : input.prepared.httpBaseUrl;
   const requestUrlFor = (baseUrl: string) =>
     input.url(makeEnvironmentHttpApiUrlBuilder(baseUrl)[input.group]);
   return yield* Effect.gen(function* () {
     let rejectedAccessToken: string | undefined;
     for (;;) {
-      let authorization = input.prepared.httpAuthorization;
+      let authorization = noise ? null : input.prepared.httpAuthorization;
       if (authorization?._tag === "Dpop") {
         const remote = input.remoteAuthorization;
         if (remote === undefined || Option.isNone(remote)) {
@@ -227,7 +241,10 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
       }
 
       const requestUrl = requestUrlFor(httpBaseUrl);
-      const client = yield* makeEnvironmentHttpApiGroupClient(httpBaseUrl, input.group);
+      const groupClient = makeEnvironmentHttpApiGroupClient(httpBaseUrl, input.group);
+      const client = yield* noise && encryptedHttp
+        ? groupClient.pipe(Effect.provideService(HttpClient.HttpClient, encryptedHttp))
+        : groupClient;
       const headers = yield* buildEnvironmentAuthHeaders(
         authorization,
         input.method,

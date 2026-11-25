@@ -9,4 +9,5 @@ export const linkedEnvironmentPrefillAtom = Atom.make<{
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly host: string | null;
+  readonly noisePin?: string;
 } | null>(null).pipe(Atom.withLabel("linked-environment-prefill"));

@@ -1,11 +1,16 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { peerPairingChannelsMatch } from "@t3tools/client-runtime/state/peerPairingCode";
 import { useAtomValue } from "@effect/atom-react";
 import {
   linkBackBlockLabel,
   linkBatchFailureLabel,
   linkWithMintedCode,
 } from "@t3tools/client-runtime/link-batch";
-import { ANOTHER_ADDRESS, linkRequestFailureMessage } from "@t3tools/client-runtime/link-request";
+import {
+  ANOTHER_ADDRESS,
+  linkRequestFailureMessage,
+  linkThroughPairing,
+} from "@t3tools/client-runtime/link-request";
 import {
   AuthAccessWriteScope,
   type AuthMcpClientAccess,
@@ -333,8 +338,13 @@ export function LinkEnvironmentDialog({
   const throughCandidate =
     prefilledThrough ?? (targetId === null || canMint ? null : (routes.get(targetId) ?? null));
   const via = useEnvironment(throughCandidate?.viaEnvironmentId ?? null);
+  const viaConnection = usePreparedConnection(throughCandidate?.viaEnvironmentId ?? null);
+  const sourceConnection = usePreparedConnection(environmentId);
   const through =
-    throughCandidate !== null && via !== null && !throughFailed.has(throughCandidate.environmentId)
+    throughCandidate !== null &&
+    via !== null &&
+    peerPairingChannelsMatch(sourceConnection, viaConnection) &&
+    !throughFailed.has(throughCandidate.environmentId)
       ? throughCandidate
       : null;
   const linkBack = useLinkBackOffers(environmentId, targetId === null ? [] : [targetId], open);
@@ -362,17 +372,15 @@ export function LinkEnvironmentDialog({
       environmentId: target.viaEnvironmentId,
       input: { environmentId: target.environmentId, access },
     });
-    if (asked._tag === "Success" && asked.value.type === "credential") {
-      const [url, ...alternateUrls] = asked.value.urls;
-      if (url !== undefined) {
-        return {
-          url,
-          ...(alternateUrls.length > 0 ? { alternateUrls } : {}),
-          expectedEnvironmentId: asked.value.environmentId,
-          expectedLabel: asked.value.label,
-          pairingCode: asked.value.credential,
-        };
-      }
+    if (asked._tag === "Success") {
+      const acceptsNoiseLink =
+        source?.serverConfig?.environment.capabilities.noisePeerLink === true &&
+        Option.isSome(sourceConnection) &&
+        sourceConnection.value.transport === "noise" &&
+        Option.isSome(viaConnection) &&
+        viaConnection.value.transport === "noise";
+      const input = linkThroughPairing(asked.value, target.environmentId, acceptsNoiseLink);
+      if (input) return input;
     }
     if (asked._tag === "Failure" && isAtomCommandInterrupted(asked)) return null;
     setThroughFailed((failed) => new Set(failed).add(target.environmentId));
@@ -388,7 +396,7 @@ export function LinkEnvironmentDialog({
   // Settles to the code to link with, or null after reporting why there is none.
   const resolvePairingCode = async () => {
     if (!canMint || targetId === null) return pairingCode.trim();
-    const minted = await mintPairingCodeOn(targetId, access);
+    const minted = await mintPairingCodeOn(targetId, access, environmentId);
     if (Result.isSuccess(minted)) return minted.success;
     setMintFailed((failed) => new Set(failed).add(targetId));
     failureToast(
@@ -437,7 +445,7 @@ export function LinkEnvironmentDialog({
         ? await linkWithMintedCode({
             machine: linkBack.source,
             access,
-            mint: mintPairingCodeOn,
+            mint: (id, access) => mintPairingCodeOn(id, access, targetId),
             link: async (input) => {
               const reverse = await linkOnTarget({ environmentId: targetId, input });
               return reverse._tag === "Success"

@@ -4,6 +4,8 @@
  * app's own `/ws` upgrade authenticates. Callers fetch a fresh one each time they (re)connect a
  * stream.
  */
+import { msg } from "gt-i18n";
+import { translatableMessage } from "../errors/translatable.ts";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import type { HttpClient } from "effect/http";
@@ -12,7 +14,10 @@ import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
-import type { RemoteEnvironmentRequestError } from "../rpc/http.ts";
+import {
+  RemoteEnvironmentAuthFetchError,
+  type RemoteEnvironmentRequestError,
+} from "../rpc/http.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
 import type { DeviceHubAccess } from "../device/hubAccess.ts";
 
@@ -46,6 +51,35 @@ export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDevi
     readonly prepared: PreparedConnection;
     readonly hubBasePath: string;
   }): Effect.fn.Return<DeviceHubAccess, RemoteEnvironmentRequestError, HttpClient.HttpClient> {
+    const media = input.prepared.mediaOrigins;
+    const transport = input.prepared.browserMedia;
+    if (transport) {
+      const httpBase = "https://noise.invalid" + input.hubBasePath;
+      return {
+        httpBase,
+        wsBase: httpBase.replace(/^http/, "ws"),
+        credentials: false,
+        encrypted: true,
+        query: {},
+        transport,
+      };
+    }
+    if (media) {
+      const base = input.hubBasePath === "/api/device-hub" ? media.device : media.browser;
+      const httpBase = base + input.hubBasePath;
+      return {
+        httpBase,
+        wsBase: httpBase.replace(/^http/, "ws"),
+        credentials: false,
+        query: {},
+        encrypted: true,
+      };
+    }
+    if (input.prepared.transport === "noise")
+      return yield* new RemoteEnvironmentAuthFetchError({
+        ...translatableMessage(msg("Could not authorize the environment request.")),
+        cause: "Encrypted media transport is unavailable",
+      });
     const httpBase = environmentEndpointUrl(input.prepared.httpBaseUrl, input.hubBasePath);
     const wsBase = httpBase.replace(/^http/, "ws");
     if (input.prepared.httpAuthorization === null) {

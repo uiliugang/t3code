@@ -1,5 +1,7 @@
+import { NoisePeerCall } from "../peer/noiseTrust.ts";
 import {
   AuthAccessTokenType,
+  AuthGrantScope,
   AuthAccessWriteScope,
   AuthMcpClientAccess,
   AuthOrchestrationOperateScope,
@@ -36,6 +38,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 
@@ -52,6 +55,8 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import {
+  CLOUD_CONNECT_SUBJECT,
+  NOISE_APPROVAL_SUBJECT,
   MCP_APPROVAL_SUBJECT_PREFIX,
   PEER_LINK_PAIRING_SUBJECT_PREFIX,
 } from "../persistence/AuthPairingLinks.ts";
@@ -60,7 +65,7 @@ import { requestUrl } from "../requestUrl.ts";
 const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
 export const INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT = "administrative-bootstrap";
 /** Sessions and pairing links T3 Connect minted for a device signed in to the linked account. */
-export const CLOUD_CONNECT_SUBJECT = "cloud-connect";
+export { CLOUD_CONNECT_SUBJECT };
 
 export interface IssuedPairingLink {
   readonly id: string;
@@ -560,8 +565,22 @@ export class EnvironmentAuth extends Context.Service<
       { readonly credential: string; readonly expiresAt: DateTime.Utc },
       ServerAuthInternalError | ManagedLimits.ManagedPolicyRefusedError
     >;
+    readonly openNoiseSession: (
+      credential: string,
+      proofKeyThumbprint: string,
+    ) => Effect.Effect<
+      | "pending"
+      | "rejected"
+      | (AuthenticatedSession & {
+          readonly scopes: ReadonlyArray<AuthGrantScope>;
+          readonly expiresAt: DateTime.Utc;
+        }),
+      ServerAuthInternalError,
+      Scope.Scope
+    >;
     readonly approveConnectDevice: (
       pairingLinkId: string,
+      approverSubject?: string,
     ) => Effect.Effect<boolean, ServerAuthInternalError>;
     /** Pairing link ids of waiting devices that show this code; more than one is ambiguous. */
     readonly connectRequestsShowingCode: (
@@ -591,6 +610,7 @@ export class EnvironmentAuth extends Context.Service<
     >;
     readonly listPairingLinks: (input?: {
       readonly excludeSubjects?: ReadonlyArray<string>;
+      readonly includeNoiseRequests?: boolean;
     }) => Effect.Effect<ReadonlyArray<AuthPairingLink>, ServerAuthInternalError>;
     readonly revokePairingLink: (id: string) => Effect.Effect<boolean, ServerAuthInternalError>;
     readonly issueSession: (input?: {
@@ -628,7 +648,7 @@ export class EnvironmentAuth extends Context.Service<
       use: AuthWebSocketTicketUse,
     ) => Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError>;
     readonly issueWebSocketTicket: (
-      session: Pick<AuthenticatedSession, "sessionId" | "proofKeyThumbprint">,
+      session: Pick<AuthenticatedSession, "sessionId" | "subject" | "proofKeyThumbprint">,
       input?: { readonly use?: AuthWebSocketTicketUse },
     ) => Effect.Effect<AuthWebSocketTicketResult, ServerAuthInternalError>;
     readonly issueStartupPairingUrl: (
@@ -708,14 +728,21 @@ function toBootstrapExchangeError(
   });
 }
 
-const rejectMcpClientAudience = <S extends { readonly subject: string }>(session: S) =>
+const requireOrdinarySessionAudience = <S extends { readonly subject: string }>(session: S) =>
   session.subject === MCP_CLIENT_SUBJECT
     ? Effect.fail(
         new ServerAuthInvalidCredentialError({
           diagnostic: "MCP client sessions are only accepted by the MCP endpoint.",
         }),
       ).pipe(Effect.tap(() => Effect.logWarning("Rejected an MCP client session outside /mcp.")))
-    : Effect.succeed(session);
+    : session.subject === SessionStore.NOISE_SESSION_SUBJECT ||
+        session.subject === SessionStore.LOCAL_NOISE_DEVICE_SUBJECT
+      ? Effect.fail(
+          new ServerAuthInvalidCredentialError({
+            diagnostic: "This session requires the approved Noise channel.",
+          }),
+        )
+      : Effect.succeed(session);
 
 const toSessionVerificationError = (cause: SessionStore.SessionCredentialError) =>
   SessionStore.isSessionCredentialInvalidError(cause)
@@ -835,7 +862,7 @@ export const make = Effect.gen(function* () {
           : Effect.void,
       ),
       mapSessionVerificationErrors,
-      Effect.flatMap(rejectMcpClientAudience),
+      Effect.flatMap(requireOrdinarySessionAudience),
       Effect.map((session) => ({
         sessionId: session.sessionId,
         subject: session.subject,
@@ -1225,7 +1252,9 @@ export const make = Effect.gen(function* () {
           .filter(
             (pairingLink) =>
               !excludedSubjects.includes(pairingLink.subject) &&
-              !pairingLink.subject.startsWith(MCP_APPROVAL_SUBJECT_PREFIX),
+              (!pairingLink.subject.startsWith(MCP_APPROVAL_SUBJECT_PREFIX) ||
+                (input?.includeNoiseRequests === true &&
+                  pairingLink.subject === NOISE_APPROVAL_SUBJECT)),
           )
           .map((link) => ({ ...link, ...authScopeResponse(link.scopes) }))
           .toSorted(
@@ -1252,6 +1281,8 @@ export const make = Effect.gen(function* () {
   const issueConnectCredential: EnvironmentAuth["Service"]["issueConnectCredential"] = Effect.fn(
     "EnvironmentAuth.issueConnectCredential",
   )(function* ({ proofKeyThumbprint, requireApproval }) {
+    if (!ManagedLimits.allowsConnect(managedPolicy))
+      return yield* ManagedLimits.refuseConnect(managedPolicy);
     return yield* issueConnectCredentialLocked({ proofKeyThumbprint, requireApproval }).pipe(
       connectTrustLock.withPermits(1),
     );
@@ -1266,13 +1297,11 @@ export const make = Effect.gen(function* () {
       !(yield* bootstrapCredentials
         .isConnectDeviceTrusted(proofKeyThumbprint)
         .pipe(Effect.mapError((cause) => new ServerAuthConnectDevicesError({ cause }))));
-    if (mustWait) {
-      const pending = yield* bootstrapCredentials
-        .findPendingConnect(proofKeyThumbprint)
-        .pipe(Effect.mapError((cause) => new ServerAuthConnectDevicesError({ cause })));
-      if (Option.isSome(pending)) {
-        return { credential: pending.value.credential, expiresAt: pending.value.expiresAt };
-      }
+    const pending = yield* bootstrapCredentials
+      .findPendingConnect(proofKeyThumbprint, !mustWait)
+      .pipe(Effect.mapError((cause) => new ServerAuthConnectDevicesError({ cause })));
+    if (Option.isSome(pending)) {
+      return { credential: pending.value.credential, expiresAt: pending.value.expiresAt };
     }
     const issued = yield* createPairingLink({
       scopes: AuthStandardClientScopes,
@@ -1286,13 +1315,60 @@ export const make = Effect.gen(function* () {
     return { credential: issued.credential, expiresAt: issued.expiresAt };
   });
 
-  const approveConnectDevice: EnvironmentAuth["Service"]["approveConnectDevice"] = (
-    pairingLinkId,
-  ) =>
-    bootstrapCredentials.approveConnectRequest(pairingLinkId).pipe(
-      Effect.mapError((cause) => new ServerAuthConnectDevicesError({ cause })),
-      Effect.withSpan("EnvironmentAuth.approveConnectDevice"),
+  const openNoiseSession: EnvironmentAuth["Service"]["openNoiseSession"] = Effect.fn(
+    "EnvironmentAuth.openNoiseSession",
+  )(function* (credential, proofKeyThumbprint) {
+    if (!ManagedLimits.allowsConnect(managedPolicy)) return "rejected";
+    return yield* Effect.acquireRelease(
+      Effect.gen(function* () {
+        const grant = yield* bootstrapCredentials
+          .exchangeNoise(credential, proofKeyThumbprint)
+          .pipe(Effect.mapError((cause) => new ServerAuthConnectDevicesError({ cause })));
+        if (typeof grant === "string") return grant;
+        const scopes = grant.scopes.filter(Schema.is(AuthGrantScope));
+        const session = yield* sessions
+          .issue({
+            subject: SessionStore.NOISE_SESSION_SUBJECT,
+            method: "dpop-access-token",
+            proofKeyThumbprint,
+            scopes,
+            ttl: RENEWABLE_ACCESS_TOKEN_TTL,
+            client: { deviceType: "mobile", label: "T3 Connect" },
+          })
+          .pipe(
+            Effect.mapError((cause) => new ServerAuthAuthenticatedSessionIssueError({ cause })),
+          );
+        return {
+          sessionId: session.sessionId,
+          subject: SessionStore.NOISE_SESSION_SUBJECT,
+          method: session.method,
+          proofKeyThumbprint,
+          scopes,
+          expiresAt: DateTime.toUtc(session.expiresAt),
+        };
+      }).pipe(connectTrustLock.withPermits(1)),
+      (result) =>
+        typeof result === "string"
+          ? Effect.void
+          : sessions.revoke(result.sessionId).pipe(Effect.orDie),
     );
+  });
+
+  const approveConnectDevice: EnvironmentAuth["Service"]["approveConnectDevice"] = Effect.fn(
+    "EnvironmentAuth.approveConnectDevice",
+  )(
+    function* (pairingLinkId, approverSubject) {
+      if (
+        (approverSubject === SessionStore.NOISE_SESSION_SUBJECT ||
+          approverSubject === SessionStore.LOCAL_NOISE_DEVICE_SUBJECT ||
+          approverSubject === "cli") &&
+        (yield* bootstrapCredentials.approveNoiseRequest(pairingLinkId))
+      )
+        return true;
+      return yield* bootstrapCredentials.approveConnectRequest(pairingLinkId);
+    },
+    Effect.mapError((cause) => new ServerAuthConnectDevicesError({ cause })),
+  );
 
   const connectRequestsShowingCode: EnvironmentAuth["Service"]["connectRequestsShowingCode"] =
     Effect.fn("EnvironmentAuth.connectRequestsShowingCode")(function* (verificationCode) {
@@ -1509,8 +1585,15 @@ export const make = Effect.gen(function* () {
   const issueWebSocketTicket: EnvironmentAuth["Service"]["issueWebSocketTicket"] = (
     session,
     input,
-  ) =>
-    sessions
+  ) => {
+    if (session.subject === SessionStore.NOISE_SESSION_SUBJECT) {
+      return Effect.fail(
+        new ServerAuthWebSocketTokenIssueError({
+          cause: "An approved Noise connection cannot issue tickets for another transport.",
+        }),
+      );
+    }
+    return sessions
       .issueWebSocketToken(session.sessionId, {
         ...(input?.use ? { audience: input.use } : {}),
         ...(input?.use === "rpc" && session.proofKeyThumbprint
@@ -1528,6 +1611,7 @@ export const make = Effect.gen(function* () {
         ),
         Effect.withSpan("EnvironmentAuth.issueWebSocketTicket"),
       );
+  };
 
   const authenticateHttpRequest: EnvironmentAuth["Service"]["authenticateHttpRequest"] = (
     request,
@@ -1545,7 +1629,7 @@ export const make = Effect.gen(function* () {
         if (websocketTicket && websocketTicket.trim().length > 0) {
           const session = yield* sessions
             .verifyWebSocketToken(websocketTicket)
-            .pipe(mapSessionVerificationErrors, Effect.flatMap(rejectMcpClientAudience));
+            .pipe(mapSessionVerificationErrors, Effect.flatMap(requireOrdinarySessionAudience));
           if (session.audience !== undefined && session.audience !== use) {
             return yield* new ServerAuthInvalidCredentialError({
               diagnostic: `WebSocket ticket was issued for the ${session.audience} route.`,
@@ -1653,6 +1737,7 @@ export const make = Effect.gen(function* () {
     );
     if (
       Option.isNone(session) ||
+      ((yield* NoisePeerCall) && !session.value.peerLink) ||
       session.value.subject !== MCP_CLIENT_SUBJECT ||
       session.value.method !== "bearer-access-token"
     ) {
@@ -1722,6 +1807,7 @@ export const make = Effect.gen(function* () {
     renewAccessToken,
     createPairingLink,
     issueConnectCredential,
+    openNoiseSession,
     approveConnectDevice,
     connectRequestsShowingCode,
     listConnectDevices,
@@ -1780,7 +1866,11 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
   const remoteAllowed = ManagedLimits.allowsRemoteClients(policy);
   const disallowed = new Set<string>();
   if (!remoteAllowed) disallowed.add(LINK_PAIRED_SUBJECTS.link);
-  if (!ManagedLimits.allowsConnect(policy)) disallowed.add(LINK_PAIRED_SUBJECTS.connect);
+  if (!ManagedLimits.allowsConnect(policy)) {
+    disallowed.add(LINK_PAIRED_SUBJECTS.connect);
+    disallowed.add(NOISE_APPROVAL_SUBJECT);
+    disallowed.add(SessionStore.NOISE_SESSION_SUBJECT);
+  }
   if (disallowed.size === 0) return;
   const sessions = (yield* stores.sessions.listActive()).filter(
     (session) =>

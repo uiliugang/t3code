@@ -54,6 +54,7 @@ const SNAPSHOT: OrchestrationV2ThreadDetailSnapshot = { snapshotSequence: 7, pro
 const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?: {
   readonly snapshot?: OrchestrationV2ThreadDetailSnapshot;
   readonly socketSnapshot?: false;
+  readonly transport?: "noise";
 }) {
   const subscriptions = yield* Queue.unbounded<{
     readonly afterSequence: number | undefined;
@@ -61,6 +62,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     readonly closed: Deferred.Deferred<void>;
   }>();
   const olderLoads = yield* Queue.unbounded<{
+    readonly transport: "rpc" | "http";
     readonly cursor: string | null;
     readonly response: Deferred.Deferred<OrchestrationV2ThreadHistoryPage>;
     readonly closed: Deferred.Deferred<void>;
@@ -70,7 +72,19 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
   let diskLoads = 0;
   let opened = 0;
   let active = 0;
+  const olderPage = Effect.fn("TestThreadAtoms.olderPage")(function* (
+    cursor: string | null,
+    transport: "rpc" | "http",
+  ) {
+    const response = yield* Deferred.make<OrchestrationV2ThreadHistoryPage>();
+    const closed = yield* Deferred.make<void>();
+    yield* Effect.addFinalizer(() => Deferred.succeed(closed, undefined));
+    yield* Queue.offer(olderLoads, { cursor, transport, response, closed });
+    return yield* Deferred.await(response);
+  }, Effect.scoped);
   const client = {
+    [ORCHESTRATION_V2_WS_METHODS.getThreadHistoryPage]: (input: { readonly cursor: string }) =>
+      olderPage(input.cursor, "rpc"),
     [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input: { readonly afterSequence?: number }) =>
       Stream.unwrap(
         Effect.gen(function* () {
@@ -96,6 +110,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
       ),
   } as unknown as WsRpcProtocolClient;
   const session: RpcSession = {
+    ...(options?.transport === undefined ? {} : { transport: options.transport }),
     client,
     initialConfig: Effect.succeed({
       threadResumeCompletionMarker: true,
@@ -113,6 +128,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     session: yield* SubscriptionRef.make(Option.some(session)),
     prepared: yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(
       Option.some({
+        ...(options?.transport === undefined ? {} : { transport: options.transport }),
         environmentId: TARGET.environmentId,
         label: TARGET.label,
         httpBaseUrl: TARGET.httpBaseUrl,
@@ -154,14 +170,9 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     ThreadHistoryController.ThreadHistoryController,
   ).pipe(Effect.provide(ThreadHistoryController.layer));
   const historyHttpClient = HttpClient.make((request, url) =>
-    Effect.gen(function* () {
-      const response = yield* Deferred.make<OrchestrationV2ThreadHistoryPage>();
-      const closed = yield* Deferred.make<void>();
-      yield* Effect.addFinalizer(() => Deferred.succeed(closed, undefined));
-      yield* Queue.offer(olderLoads, { cursor: url.searchParams.get("cursor"), response, closed });
-      const page = yield* Deferred.await(response);
-      return HttpClientResponse.fromWeb(request, Response.json(page));
-    }).pipe(Effect.scoped),
+    olderPage(url.searchParams.get("cursor"), "http").pipe(
+      Effect.map((page) => HttpClientResponse.fromWeb(request, Response.json(page))),
+    ),
   );
   const runtime = Atom.runtime(
     Layer.mergeAll(
@@ -327,9 +338,12 @@ describe("createEnvironmentThreadStateAtoms", () => {
     }),
   );
 
-  it.effect("opens from the bounded socket snapshot without HTTP and merges older history", () =>
+  it.effect.each([undefined, "noise"] as const)("pages older socket history (%s)", (transport) =>
     Effect.gen(function* () {
-      const h = yield* makeHarness({ socketSnapshot: false });
+      const h = yield* makeHarness({
+        socketSnapshot: false,
+        ...(transport === undefined ? {} : { transport }),
+      });
       const unmount = h.registry.mount(h.stateAtom);
       const subscription = yield* Queue.take(h.subscriptions);
       expect(subscription.afterSequence).toBeUndefined();
@@ -352,6 +366,7 @@ describe("createEnvironmentThreadStateAtoms", () => {
       const loading = yield* h.loadEarlier().pipe(Effect.forkScoped);
       const request = yield* Queue.take(h.olderLoads);
       expect(request.cursor).toBe("socket-older-1");
+      expect(request.transport).toBe(transport === "noise" ? "rpc" : "http");
       const olderItem = {
         id: TurnItemId.make("socket-fallback-older-item"),
         type: "command_execution" as const,

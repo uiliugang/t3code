@@ -5,6 +5,9 @@ export * from "./composerContextClipboard.ts";
 export * from "./background.ts";
 export * from "./acpRegistry.ts";
 export * from "./auth.ts";
+export * from "./connectNoise.ts";
+export * from "./noiseHttpRoutes.ts";
+export * from "./noiseHttp.ts";
 export * from "./environment.ts";
 export * from "./environmentHttp.ts";
 export * from "./relayClient.ts";
@@ -93,3 +96,4 @@ export * from "./wechat.ts";
 export * from "./speech.ts";
 
 export * from "./workItem.ts";
+export * from "./noiseGuest.ts";

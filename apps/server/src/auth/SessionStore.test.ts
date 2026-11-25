@@ -172,6 +172,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
   );
 
   it.effect.each([
+    {
+      name: "a new Noise connection for the same device",
+      subject: SessionStore.NOISE_SESSION_SUBJECT,
+      renewal: {},
+      closesAtMinute: 60,
+    },
     { name: "a renewal for the same key", renewal: {}, closesAtMinute: 119 },
     {
       name: "a renewal for the same key, on a media ticket",
@@ -212,7 +218,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
   ] as const)("closes a DPoP socket at minute $closesAtMinute after $name", (testCase) =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;
-      const client = yield* sessions.issue(relaySessionInput);
+      const input =
+        "subject" in testCase
+          ? { ...relaySessionInput, subject: testCase.subject }
+          : relaySessionInput;
+      const client = yield* sessions.issue(input);
       const invalidated = yield* Deferred.make<void>();
       // Media tickets carry no proof key, so their routes wait without one.
       const watched =
@@ -232,7 +242,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
         );
       yield* TestClock.adjust(Duration.minutes(59));
       if ("sameInstantPredecessor" in testCase) yield* sessions.issue(relaySessionInput);
-      const renewal = yield* sessions.issue({ ...relaySessionInput, ...testCase.renewal });
+      const renewal = yield* sessions.issue({ ...input, ...testCase.renewal });
       if ("revokeBeforeExpiry" in testCase) yield* sessions.revoke(renewal.sessionId);
       yield* TestClock.adjust(Duration.millis((testCase.closesAtMinute - 59) * 60_000 - 1));
       expect(yield* Deferred.isDone(invalidated)).toBe(false);

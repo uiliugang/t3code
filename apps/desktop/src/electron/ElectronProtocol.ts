@@ -91,7 +91,7 @@ function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInpu
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
-    "frame-src 'self' blob: http: https:",
+    "frame-src 'self' blob: data: http: https:",
     "object-src 'self' blob: http: https:",
     "form-action 'self'",
   ].join("; ");

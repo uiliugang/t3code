@@ -1,3 +1,5 @@
+import { NOISE_PREVIEW_ORIGIN } from "@t3tools/shared/preview";
+import { installNoisePreviewDocument } from "./NoisePreviewDocument.ts";
 import { PreviewAutomationEvaluateInput } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import {
@@ -552,6 +554,38 @@ describe("server browser element refs", () => {
     });
     const result = await ServerBrowserPage.evaluate(cdp, input, 5_000);
     expect(result).toEqual({ answer: 42, nested: { ready: true } });
+  });
+
+  it("renders an encrypted workspace document and its signed subresources without contacting an origin", async () => {
+    const entry = NOISE_PREVIEW_ORIGIN + "/api/assets/test/index.html";
+    const requested: string[] = [];
+    await installNoisePreviewDocument(page, {
+      entry,
+      read: async (path) => {
+        requested.push(path);
+        if (path.endsWith("/index.html"))
+          return {
+            status: 200,
+            headers: { "content-type": "text/html" },
+            body: Buffer.from('<link rel="stylesheet" href="style.css"><h1>Private page</h1>'),
+          };
+        if (path.endsWith("/style.css"))
+          return {
+            status: 200,
+            headers: { "content-type": "text/css" },
+            body: Buffer.from("h1 {color: rgb(1, 2, 3)}"),
+          };
+        return null;
+      },
+    });
+    await page.goto(entry);
+    expect(await page.evaluate("getComputedStyle(document.querySelector('h1')).color")).toBe(
+      "rgb(1, 2, 3)",
+    );
+    expect(requested).toContain("/api/assets/test/style.css");
+    await expect(
+      page.goto(NOISE_PREVIEW_ORIGIN + "/api/assets/other/not-authorized.html"),
+    ).rejects.toThrow();
   });
 
   it("still awaits the promise an async function returns", async () => {

@@ -39,6 +39,7 @@ import {
   requiredScopeForDeviceList,
 } from "./RpcAuthorization.ts";
 import * as RpcAuthorization from "./RpcAuthorization.ts";
+import { NoiseCaller } from "./noiseTrust.ts";
 
 describe("RPC authorization scopes", () => {
   it("declares exactly one scope for every RPC in the server group", () => {
@@ -177,6 +178,94 @@ describe("RPC scope middleware", () => {
     }),
   );
 });
+
+it.effect(
+  "restricts private reads and file transfers to approved Noise sockets with the matching scope",
+  () =>
+    Effect.gen(function* () {
+      const methods = [
+        WS_METHODS.serverGetAgentActivity,
+        WS_METHODS.assetsReadWorkspaceChunk,
+        WS_METHODS.attachmentsBeginUpload,
+        WS_METHODS.attachmentsWriteChunk,
+        WS_METHODS.attachmentsReadChunk,
+      ] as const;
+      const group = WsRpcGroup.omit(
+        ...[...WsRpcGroup.requests.keys()].filter(
+          (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof methods)[number]> =>
+            !(methods as readonly string[]).includes(tag),
+        ),
+      );
+      const id = { attachmentId: "image" };
+      const output = { data: Uint8Array.of(3), totalBytes: 1 };
+      const handlers = Layer.mergeAll(
+        group.toLayerHandler(WS_METHODS.serverGetAgentActivity, () => Effect.succeed([])),
+        group.toLayerHandler(WS_METHODS.assetsReadWorkspaceChunk, () =>
+          Effect.succeed({ ...output, revision: "file-version" }),
+        ),
+        group.toLayerHandler(WS_METHODS.attachmentsBeginUpload, () => Effect.succeed(id)),
+        group.toLayerHandler(WS_METHODS.attachmentsWriteChunk, () => Effect.void),
+        group.toLayerHandler(WS_METHODS.attachmentsReadChunk, () => Effect.succeed(output)),
+      );
+      for (const noiseSession of [false, true]) {
+        const client = yield* RpcTest.makeClient(group).pipe(
+          Effect.provide(
+            Layer.merge(
+              handlers,
+              RpcAuthorization.layer(
+                noiseSession
+                  ? [AuthOrchestrationReadScope]
+                  : [
+                      AuthOrchestrationReadScope,
+                      AuthOrchestrationOperateScope,
+                      AuthFilesystemReadScope,
+                    ],
+                { noiseSession },
+              ),
+            ),
+          ),
+        );
+        const activity = client[WS_METHODS.serverGetAgentActivity]({});
+        if (noiseSession) expect(yield* activity).toEqual([]);
+        else
+          expect(yield* activity.pipe(Effect.flip)).toMatchObject({
+            _tag: "EnvironmentAuthorizationError",
+            requiredPermission: AuthOrchestrationReadScope,
+          });
+        const begin = yield* client[WS_METHODS.attachmentsBeginUpload]({
+          name: "a.png",
+          mimeType: "image/png",
+          sizeBytes: 1,
+        }).pipe(Effect.flip);
+        const write = yield* client[WS_METHODS.attachmentsWriteChunk]({
+          ...id,
+          offset: 0,
+          data: output.data,
+        }).pipe(Effect.flip);
+        for (const failure of [begin, write]) {
+          expect(failure).toMatchObject({
+            _tag: "EnvironmentAuthorizationError",
+            requiredPermission: AuthOrchestrationOperateScope,
+          });
+        }
+        const workspace = client[WS_METHODS.assetsReadWorkspaceChunk]({
+          resource: { _tag: "workspace-file", threadId: ThreadId.make("thread"), path: "x.png" },
+          offset: 0,
+        });
+        expect(yield* workspace.pipe(Effect.flip)).toMatchObject({
+          _tag: "EnvironmentAuthorizationError",
+          requiredPermission: AuthFilesystemReadScope,
+        });
+        const read = client[WS_METHODS.attachmentsReadChunk]({ ...id, offset: 0 });
+        if (noiseSession) expect(yield* read).toEqual(output);
+        else
+          expect(yield* read.pipe(Effect.flip)).toMatchObject({
+            _tag: "EnvironmentAuthorizationError",
+            requiredPermission: AuthOrchestrationReadScope,
+          });
+      }
+    }),
+);
 
 it.effect("allows issue reads but requires a source-control grant before commenting", () =>
   Effect.gen(function* () {
@@ -327,9 +416,11 @@ it.effect("pairs a client with a linked environment only for one that may hand o
       ),
     );
     let asked = 0;
+    const channels: boolean[] = [];
     const environmentId = EnvironmentId.make("environment-box");
     const handlers = group.toLayerHandler(WS_METHODS.peerLinksPairClient, () =>
-      Effect.sync(() => {
+      Effect.map(NoiseCaller, (encrypted) => {
+        channels.push(encrypted);
         asked++;
         return {
           type: "unsupported" as const,
@@ -364,6 +455,16 @@ it.effect("pairs a client with a linked environment only for one that may hand o
       "unsupported",
     );
     expect(asked).toBe(1);
+    const encryptedManager = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.merge(
+          handlers,
+          RpcAuthorization.layer([AuthAccessWriteScope], { noiseSession: true }),
+        ),
+      ),
+    );
+    yield* encryptedManager[WS_METHODS.peerLinksPairClient]({ environmentId });
+    expect(channels).toEqual([false, true]);
   }).pipe(Effect.scoped),
 );
 

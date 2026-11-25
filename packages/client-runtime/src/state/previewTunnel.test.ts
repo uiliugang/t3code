@@ -51,6 +51,29 @@ describe("preview tunnel url", () => {
       expect(yield* Fiber.join(pending)).toBe(
         "wss://remote.example.test/api/preview/tunnel?wsTicket=media-ticket",
       );
+      const base = "http://127.0.0.1:41111";
+      registry.set(
+        prepared,
+        Option.some({
+          ...PREPARED,
+          transport: "noise",
+          httpAuthorization: null,
+          mediaOrigins: {
+            asset: base + "/a",
+            browser: base + "/b",
+            device: base + "/d",
+            tunnel: base + "/t",
+          },
+        }),
+      );
+      expect(yield* Effect.promise(() => read(ENVIRONMENT_ID))).toBe(
+        "ws://127.0.0.1:41111/t/api/preview/tunnel",
+      );
+      registry.set(
+        prepared,
+        Option.some({ ...PREPARED, transport: "noise", httpAuthorization: null }),
+      );
+      expect(yield* Effect.promise(() => read(ENVIRONMENT_ID))).toBeNull();
     }),
   );
 });

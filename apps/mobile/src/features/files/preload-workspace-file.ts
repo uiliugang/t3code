@@ -1,5 +1,5 @@
 import { AuthFilesystemReadScope } from "@t3tools/contracts";
-import { readEnvironmentScope } from "../../state/session";
+import { environmentSession, readEnvironmentScope } from "../../state/session";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -31,7 +31,12 @@ export function preloadWorkspaceFileContents(input: {
   readonly relativePath: string;
   readonly theme: HighlightScheme;
 }): void {
+  const connection = appAtomRegistry.get(
+    environmentSession.preparedConnectionValueAtom(input.environmentId),
+  );
   if (
+    connection._tag === "None" ||
+    connection.value.transport === "noise" ||
     !readEnvironmentScope(input.environmentId, AuthFilesystemReadScope) ||
     isWorkspaceBrowserPreviewPath(input.relativePath) ||
     isWorkspaceImagePreviewPath(input.relativePath) ||

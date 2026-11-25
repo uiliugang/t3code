@@ -126,6 +126,8 @@ function differentMachineError(label: string) {
 export const preparePairingRegistration = Effect.fn(
   "clientRuntime.connection.onboarding.preparePairingRegistration",
 )(function* (input: PairingConnectionInput) {
+  if (input.expectedEnvironmentId !== undefined)
+    yield* ClientCapabilities.assertOrdinaryConnectionAllowed(input.expectedEnvironmentId);
   const target = yield* resolvePairingTarget(input);
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const descriptor = yield* fetchRemoteEnvironmentDescriptor({
@@ -138,6 +140,8 @@ export const preparePairingRegistration = Effect.fn(
   ) {
     return yield* differentMachineError(descriptor.label);
   }
+  if (input.expectedEnvironmentId === undefined)
+    yield* ClientCapabilities.assertOrdinaryConnectionAllowed(descriptor.environmentId);
   const connectionId = bearerConnectionId(descriptor.environmentId, target.httpBaseUrl);
   const route = {
     target: new BearerConnectionTarget({

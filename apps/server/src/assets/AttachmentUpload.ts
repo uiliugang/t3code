@@ -64,7 +64,7 @@ function decodeClaims(encodedPayload: string): AttachmentUploadClaims | null {
   }
 }
 
-export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(function* (
+export const createAttachmentUpload = Effect.fn("AttachmentUpload.create")(function* (
   input: AttachmentCreateUploadUrlInput,
 ) {
   const config = yield* ServerConfig.ServerConfig;
@@ -93,27 +93,31 @@ export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(f
     attachmentType === "file" ? attachmentFileExtension(name) : undefined,
   );
   const expiresAt = nowMs + ATTACHMENT_UPLOAD_URL_TTL_MS;
-  const encodedPayload = base64UrlEncode(
-    encodeAttachmentUploadClaims({
-      version: 1,
-      kind: "attachment-upload",
-      type: attachmentType,
-      attachmentId,
-      name,
-      mimeType: input.mimeType,
-      sizeBytes: input.sizeBytes,
-      expiresAt,
-    }),
-  );
+  return {
+    version: 1,
+    kind: "attachment-upload",
+    type: attachmentType,
+    attachmentId,
+    name,
+    mimeType: input.mimeType,
+    sizeBytes: input.sizeBytes,
+    expiresAt,
+  } satisfies AttachmentUploadClaims;
+});
 
+export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(function* (
+  input: AttachmentCreateUploadUrlInput,
+) {
+  const claims = yield* createAttachmentUpload(input);
+  const encodedPayload = base64UrlEncode(encodeAttachmentUploadClaims(claims));
   const signer = yield* AssetSigner.AssetSigner;
   const signature = yield* signer
     .sign(encodedPayload)
     .pipe(Effect.mapError((cause) => new AttachmentUploadSigningKeyError({ cause })));
   return {
-    attachmentId,
+    attachmentId: claims.attachmentId,
     relativeUrl: `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/${encodedPayload}.${signature}`,
-    expiresAt,
+    expiresAt: claims.expiresAt,
   };
 });
 

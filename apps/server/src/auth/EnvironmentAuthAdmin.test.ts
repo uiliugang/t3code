@@ -107,8 +107,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const sessions = yield* SessionStore.SessionStore;
         const phone = yield* sessions.issue({ subject: "one-time-token" });
         const connect = yield* sessions.issue({ subject: "cloud-connect" });
+        const grants = yield* PairingGrantStore.PairingGrantStore;
+        const request = yield* grants.issueOneTimeToken({
+          subject: "cloud-connect",
+          proofKeyThumbprint: "phone",
+        });
+        assert.equal(yield* grants.exchangeNoise(request.credential, "phone"), "pending");
 
-        yield* EnvironmentAuth.make.pipe(
+        const restricted = yield* EnvironmentAuth.make.pipe(
           Effect.provide(
             Layer.merge(
               ManagedPolicy.layerTest({
@@ -121,6 +127,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           ),
         );
 
+        assert.equal(
+          (yield* Effect.flip(
+            restricted.issueConnectCredential({
+              proofKeyThumbprint: "phone",
+              requireApproval: false,
+            }),
+          ))._tag,
+          "ManagedPolicyRefusedError",
+        );
+        assert.equal(yield* grants.exchangeNoise(request.credential, "phone"), "rejected");
         const remaining = (yield* sessions.listActive()).map((session) => session.sessionId);
         assert.include(remaining, phone.sessionId);
         assert.notInclude(remaining, connect.sessionId);

@@ -1142,7 +1142,17 @@ export const DesktopAppleSpeechTranscribeInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export interface LocalNoiseMediaListener {
+  readonly origins: Readonly<Record<"asset" | "device" | "browser" | "tunnel", string>>;
+  accept(): Promise<number>;
+  read(id: number): Promise<Uint8Array>;
+  write(id: number, bytes: Uint8Array): Promise<void>;
+  close(id: number): void;
+  release(): void;
+}
+
 export interface DesktopBridge {
+  openNoiseMediaListener?: () => Promise<LocalNoiseMediaListener>;
   getAppBranding: () => DesktopAppBranding | null;
   getPathForFile: (file: File) => string;
   getClientPlatform: () => string;

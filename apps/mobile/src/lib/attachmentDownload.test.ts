@@ -1,10 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, vi } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
+import * as Exit from "effect/Exit";
+
+import { ATTACHMENT_TRANSFER_CHUNK_BYTES } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 
 const mocks = vi.hoisted(() => ({
   directories: new Set<string>(),
   deleted: vi.fn(),
   download: vi.fn(),
   copy: vi.fn(),
+  write: vi.fn(),
+  close: vi.fn(),
   share: vi.fn(),
   shareFromSource: vi.fn(),
   available: vi.fn(),
@@ -53,12 +60,17 @@ vi.mock("expo-file-system", () => {
       this.uri = typeof source === "string" ? source : `${source.uri}/${encodeURIComponent(name!)}`;
     }
 
+    create() {}
+    open() {
+      return { writeBytes: mocks.write, close: mocks.close };
+    }
+
     async copy(destination: File): Promise<void> {
       await mocks.copy(this.uri, destination.uri);
     }
   }
 
-  return { Directory, File, Paths: { cache: "file:///cache" } };
+  return { Directory, File, FileMode: { WriteOnly: "write" }, Paths: { cache: "file:///cache" } };
 });
 
 vi.mock("expo", () => ({ requireNativeModule: () => ({ openFile: mocks.open }) }));
@@ -73,6 +85,7 @@ vi.mock("./shareFileFromSource", () => ({ shareFileFromSource: mocks.shareFromSo
 
 import {
   downloadAndShareAttachment,
+  downloadNoiseFile,
   downloadAttachmentForPreview,
   shareLocalAttachment,
 } from "./attachmentDownload";
@@ -92,6 +105,8 @@ beforeEach(() => {
   mocks.deleted.mockReset();
   mocks.download.mockReset();
   mocks.copy.mockReset();
+  mocks.write.mockReset().mockResolvedValue(undefined);
+  mocks.close.mockReset();
   mocks.share.mockReset();
   mocks.shareFromSource.mockReset();
   mocks.available.mockReset();
@@ -111,6 +126,75 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   expect(isForegroundHandoffActive()).toBe(false);
+});
+
+describe("Noise attachment downloads", () => {
+  const fullChunk = new Uint8Array(ATTACHMENT_TRANSFER_CHUNK_BYTES).fill(17);
+
+  it.effect(
+    "writes chunks in order, shares a local copy, and removes the private file on release",
+    () =>
+      Effect.gen(function* () {
+        const tail = Uint8Array.of(201, 255);
+        const readChunk = vi.fn(({ offset }: { offset: number }) =>
+          Effect.succeed({
+            totalBytes: fullChunk.byteLength + tail.byteLength,
+            data: offset === 0 ? fullChunk : tail,
+          }),
+        );
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const { uri: url } = yield* downloadNoiseFile("stored-media", (offset) =>
+              readChunk({ offset }),
+            );
+            expect(mocks.write.mock.calls).toEqual([[fullChunk], [tail]]);
+            expect(mocks.close).toHaveBeenCalledOnce();
+            expect(mocks.deleted).not.toHaveBeenCalled();
+            yield* Effect.promise(() =>
+              downloadAndShareAttachment({ ...input, url, signal: new AbortController().signal }),
+            );
+            expect(mocks.copy).toHaveBeenCalledWith(url, expect.stringMatching(/report\.pdf$/));
+            expect(mocks.download).not.toHaveBeenCalled();
+          }),
+        );
+        expect(mocks.deleted).toHaveBeenCalledOnce();
+        expect(readChunk.mock.calls.map(([request]) => request.offset)).toEqual([
+          0,
+          fullChunk.byteLength,
+        ]);
+      }),
+  );
+
+  it.effect.each(["short", "changed", "replaced", "aborted"])(
+    "discards partial bytes when the next chunk is %s",
+    (reason) =>
+      Effect.gen(function* () {
+        const readChunk = vi.fn(({ offset }: { offset: number }) => {
+          const expected = fullChunk.byteLength + 2;
+          if (offset === 0)
+            return Effect.succeed({ totalBytes: expected, data: fullChunk, revision: "v1" });
+          if (reason === "aborted") {
+            return Effect.interrupt;
+          }
+          return Effect.succeed({
+            totalBytes: reason === "changed" ? expected + 1 : expected,
+            data: new Uint8Array(reason === "replaced" ? 2 : 1),
+            revision: reason === "replaced" ? "v2" : "v1",
+          });
+        });
+        const result = yield* Effect.exit(
+          Effect.scoped(
+            downloadNoiseFile("/repo/media.bin", (offset) => readChunk({ offset }), "v1"),
+          ),
+        );
+        expect(Exit.isFailure(result)).toBe(true);
+        expect(Exit.hasInterrupts(result)).toBe(reason === "aborted");
+        expect(mocks.write).toHaveBeenCalledOnce();
+        expect(mocks.close).toHaveBeenCalledOnce();
+        expect(mocks.deleted).toHaveBeenCalledOnce();
+        expect(mocks.download).not.toHaveBeenCalled();
+      }),
+  );
 });
 
 describe("downloadAndShareAttachment", () => {

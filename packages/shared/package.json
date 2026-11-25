@@ -61,6 +61,9 @@
       "types": "./src/delimitedPreview.ts",
       "import": "./src/delimitedPreview.ts"
     },
+    "./connectNoiseWasm": "./src/connectNoiseWasm.ts",
+    "./noiseHttpFetch": "./src/noiseHttpFetch.ts",
+    "./noiseRpcSocket": "./src/noiseRpcSocket.ts",
     "./socketFrameParts": {
       "types": "./src/socketFrameParts.ts",
       "import": "./src/socketFrameParts.ts"

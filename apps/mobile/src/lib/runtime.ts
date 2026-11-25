@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import { Platform } from "react-native";
 
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 
@@ -18,7 +19,11 @@ function configuredRelayUrl(): string {
   return resolveCloudPublicConfig().relay.url ?? "http://relay.invalid";
 }
 
-const layerHttpClient = layerRemoteHttpClient(fetch);
+const layerHttpClient = layerRemoteHttpClient((input, init) =>
+  Platform.OS === "android" && init?.redirect === "error"
+    ? import("expo/fetch").then(({ fetch: expoFetch }) => expoFetch(input, init))
+    : fetch(input, init),
+);
 
 type RuntimeLayerSource =
   | ReturnType<typeof ManagedRelayLayer.layer>

@@ -1,3 +1,16 @@
+import * as PeerClientPairing from "./PeerClientPairing.ts";
+import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { AuthAccessWriteScope } from "@t3tools/contracts";
+import { initializeConnectNoise, noiseHostPublicKey } from "@t3tools/shared/connectNoiseWasm";
+import * as ConnectNoise from "../auth/connectNoise.ts";
+import { noiseHostKeyName } from "../auth/noiseHostIdentity.ts";
+import * as NoiseIngress from "../auth/noiseIngress.ts";
+import { serveNoiseMedia } from "../auth/noiseMedia.ts";
+import { GuestShareService } from "../guest/GuestShareService.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import { PeerTrust, peerHostPin, type TrustedPeer } from "./noiseTrust.ts";
+import { NoiseCaller } from "../auth/noiseTrust.ts";
+import * as ConfigProvider from "effect/ConfigProvider";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - The HTTPS test server needs certificate bytes.
 import * as NodeFS from "node:fs";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - A peer with a certificate this machine does not trust.
@@ -22,6 +35,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { Tool, Toolkit } from "effect/ai";
 import {
   FetchHttpClient,
+  HttpBody,
   HttpClient,
   HttpServer,
   HttpServerRequest,
@@ -122,6 +136,260 @@ const serveApart = (descriptor: ExecutionEnvironmentDescriptor) =>
   Layer.build(Layer.fresh(NodeHttpServer.layerTest)).pipe(
     Effect.flatMap((server) => serveB(descriptor).pipe(Effect.provideContext(server))),
   );
+
+it.live(
+  "two Noise-only environments pair over pinned channels, make MCP calls and revoke the link",
+  () =>
+    Effect.gen(function* () {
+      const aServer = yield* Layer.build(Layer.fresh(NodeHttpServer.layerTest));
+      const bServer = yield* Layer.build(Layer.fresh(NodeHttpServer.layerTest));
+      const cServer = yield* Layer.build(Layer.fresh(NodeHttpServer.layerTest));
+      const origin = (server: typeof aServer) => {
+        const a = Context.get(server, HttpServer.HttpServer).address;
+        if (a._tag === "UnixPathAddress") throw new Error("test expected TCP listener");
+        return `http://127.0.0.1:${a.port}`;
+      };
+      yield* Effect.promise(initializeConnectNoise);
+      const token = Buffer.alloc(32, 3).toString("base64url");
+      const host = (
+        server: typeof aServer,
+        descriptor: ExecutionEnvironmentDescriptor,
+        seed: number,
+        shared = token,
+      ) => {
+        const key = Buffer.alloc(32, seed);
+        const pinned = {
+          origin: origin(server),
+          environmentId: descriptor.environmentId,
+          pin: Buffer.from(noiseHostPublicKey(key)).toString("base64url"),
+          token: shared,
+        };
+        return { server, descriptor, key, pinned };
+      };
+      const home = host(aServer, laptop, 17);
+      const target = host(
+        bServer,
+        descriptorOf(box.environmentId, box.label, {
+          linkClientPairing: true,
+          linkPairingForLink: true,
+        }),
+        29,
+      );
+      const desk = host(
+        cServer,
+        descriptorOf("environment-desk", "Desk"),
+        42,
+        Buffer.alloc(32, 6).toString("base64url"),
+      );
+      const builderForDesk = { ...target.pinned, token: desk.pinned.token };
+      const start = Effect.fn("test.serveNoisePeer")(function* (
+        here: typeof home,
+        ...peers: ReadonlyArray<TrustedPeer>
+      ) {
+        const noiseRoutes = Layer.unwrap(
+          Effect.gen(function* () {
+            const router = yield* HttpRouter.HttpRouter;
+            yield* (yield* ServerSecretStore.ServerSecretStore).set(noiseHostKeyName, here.key);
+            return ConnectNoise.routeLayer(
+              () => Effect.die("A peer obtained device access"),
+              undefined,
+              (request, principal, socket) =>
+                serveNoiseMedia(request, principal, socket, router).pipe(
+                  Effect.provide(Layer.mock(GuestShareService)({})),
+                ),
+            );
+          }),
+        ).pipe(Layer.provide(ManagedPolicy.layerTest()));
+        return yield* servePeer(
+          here.descriptor,
+          McpHttpServer.toolkitRegistration(ProbeToolkit, probeHandlers),
+          Layer.merge(noiseRoutes, NoiseIngress.layer),
+        ).pipe(
+          Effect.provideContext(here.server),
+          Effect.provideService(PeerTrust, { origin: here.pinned.origin, peers }),
+        );
+      });
+      const serviceA = yield* start(home, target.pinned);
+      const serviceB = yield* start(target, home.pinned, desk.pinned);
+      yield* start(desk, builderForDesk);
+      const linking = (here: typeof home, peer: TrustedPeer) =>
+        makeA(here.descriptor).pipe(
+          Effect.provideService(PeerTrust, { origin: here.pinned.origin, peers: [peer] }),
+        );
+      const a = yield* linking(home, target.pinned);
+      const b = yield* linking(target, home.pinned);
+      const pair = (from: typeof a, to: typeof serviceB) =>
+        to.auth.issuePairingCredential({ access: "full-access", purpose: "peer-link" }).pipe(
+          Effect.flatMap((grant) =>
+            from.links.link({
+              url: to.url,
+              pairingCode: grant.credential,
+              access: "full-access",
+            }),
+          ),
+        );
+      expect((yield* pair(a, serviceB)).environmentId).toBe(box.environmentId);
+      expect((yield* pair(b, serviceA)).environmentId).toBe(laptop.environmentId);
+      expect(yield* probe(a)).toMatchObject({ caller: "T3 Code · Laptop" });
+      expect(
+        yield* HttpClient.get(serviceB.url + "/.well-known/t3/environment").pipe(
+          Effect.map((r) => r.status),
+          Effect.provide(FetchHttpClient.layer),
+        ),
+      ).toBe(403);
+      const request = (peer: TrustedPeer) =>
+        PeerLinks.peerHttpClient.pipe(
+          Effect.provideService(PeerTrust, { origin: home.pinned.origin, peers: [peer] }),
+          Effect.flatMap((client) => client.get(peer.origin + "/.well-known/t3/environment")),
+          Effect.provide(FetchHttpClient.layer),
+        );
+      expect(yield* Effect.isFailure(request({ ...target.pinned, pin: home.pinned.pin }))).toBe(
+        true,
+      );
+      expect(yield* Effect.isFailure(request({ ...target.pinned, token: "f".repeat(43) }))).toBe(
+        true,
+      );
+      expect(
+        yield* Effect.isFailure(request({ ...target.pinned, environmentId: laptop.environmentId })),
+      ).toBe(true);
+      const trust = { origin: home.pinned.origin, peers: [target.pinned] };
+      const normal = yield* serviceB.auth.issueMcpClientSession({
+        label: "Local MCP app",
+        access: "auto",
+        peerLink: false,
+        client: { deviceType: "bot" },
+      });
+      const transport = yield* PeerLinks.peerHttpClient.pipe(
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(PeerTrust, trust),
+      );
+      expect(
+        (yield* transport.post(serviceB.url + "/mcp", {
+          headers: { authorization: "Bearer " + normal.token },
+        })).status,
+      ).toBe(401);
+      expect(yield* Effect.isFailure(transport.get(serviceB.url + "/api/auth/session"))).toBe(true);
+      const ordinaryRegistration = yield* transport.post(serviceB.url + "/oauth/mcp/register", {
+        body: HttpBody.jsonUnsafe({
+          client_name: "Ordinary app",
+          redirect_uris: ["https://app.example/callback"],
+        }),
+      });
+      expect(ordinaryRegistration.status).toBe(400);
+      const revokeOrdinary = yield* transport.post(serviceB.url + "/oauth/mcp/revoke", {
+        body: HttpBody.text(
+          new URLSearchParams({ token: normal.token }).toString(),
+          "application/x-www-form-urlencoded",
+        ),
+      });
+      expect(revokeOrdinary.status).toBe(200);
+      expect(
+        (yield* serviceB.auth.listSessions()).some((s) => s.sessionId === normal.sessionId),
+      ).toBe(true);
+
+      const pairing = yield* PeerClientPairing.PeerClientPairing.pipe(
+        Effect.provide(PeerClientPairing.layer),
+        Effect.provideService(EnvironmentAuth.EnvironmentAuth, serviceA.auth),
+        Effect.provideService(PeerLinks.PeerLinks, a.links),
+        Effect.provideService(PeerTrust, trust),
+        Effect.provide(FetchHttpClient.layer),
+      );
+      const phone = yield* serviceA.auth.issueSession({ scopes: [AuthAccessWriteScope] });
+      const ask = pairing.requestForLink(
+        { environmentId: box.environmentId, access: "auto" },
+        phone,
+      );
+      const ordinary = yield* ask;
+      expect(ordinary.type).toBe("noise");
+      expect(ordinary).not.toHaveProperty("credential");
+      const invitation = yield* ask.pipe(Effect.provideService(NoiseCaller, true));
+      if (invitation.type !== "noise-link")
+        return yield* Effect.die("Expected a protected peer-link invitation");
+      const input = {
+        url: target.pinned.origin,
+        expectedEnvironmentId: box.environmentId,
+        pairingCode: invitation.credential,
+        access: "auto" as const,
+        expectedNoisePin: invitation.hostPin,
+      };
+      expect(
+        yield* Effect.isFailure(
+          a.links.link({ ...input, expectedNoisePin: peerHostPin(home.pinned) }),
+        ),
+      ).toBe(true);
+      expect(
+        yield* Effect.isFailure(
+          a.links.link({ ...input, alternateUrls: ["https://elsewhere.example"] }),
+        ),
+      ).toBe(true);
+      expect(
+        yield* Effect.isFailure(
+          a.links.link({ ...input, expectedEnvironmentId: laptop.environmentId }),
+        ),
+      ).toBe(true);
+      expect(yield* a.links.unlink(box.environmentId)).toEqual({ removed: true, endedThere: true });
+      expect(yield* serviceB.linkedSessions).toEqual([]);
+      expect(yield* Effect.isFailure(probe(a))).toBe(true);
+      const c = yield* linking(desk, builderForDesk);
+      expect((yield* c.links.link(input)).access).toBe("auto");
+      expect(yield* probe(c)).toMatchObject({ caller: "T3 Code · Desk" });
+      const restart = (configured: typeof trust | null) =>
+        layerLinkingEnvironment(
+          desk.descriptor,
+          ServerSecretStore.layer,
+          Layer.succeed(SqlClient.SqlClient, c.sql),
+        ).pipe(
+          Layer.build,
+          Effect.map((context) => Context.get(context, PeerLinks.PeerLinks)),
+          Effect.provideService(PeerTrust, configured),
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+        );
+      // A previously direct link adopts the host pin once. Removing trust must never downgrade its bearer.
+      yield* c.sql`UPDATE peer_environment_links SET noise_pin = NULL`;
+      const adopted = yield* restart({ origin: desk.pinned.origin, peers: [builderForDesk] });
+      expect(Option.getOrThrow(yield* adopted.get(box.environmentId)).urls).toEqual([
+        target.pinned.origin,
+      ]);
+      const withoutPin = yield* restart(null);
+      expect(Option.getOrThrow(yield* withoutPin.get(box.environmentId)).urls).toEqual([]);
+      expect(yield* Effect.isFailure(withoutPin.resolve(box.environmentId))).toBe(true);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_NOISE_ONLY: "true" } })),
+      ),
+    ),
+);
+it.effect("only returns configured private HTTPS origins for an encrypted caller", () =>
+  Effect.gen(function* () {
+    const { links, sql } = yield* makeA(laptop);
+    const direct = "https://box.example.ts.net:8443";
+    yield* sql`
+      INSERT INTO peer_environment_links (
+        environment_id, secret_name, label, urls_json, access, linked_at, expires_at, fenced
+      ) VALUES (
+        ${box.environmentId}, 'test-secret', 'Box',
+        ${JSON.stringify(["https://relay.example.com", direct, "https://user@box.example.ts.net:8443", "https://box.example.ts.net"])}, 'auto',
+        '2026-01-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z', 1
+      )
+    `;
+    const stored = yield* links
+      .get(box.environmentId)
+      .pipe(Effect.provideService(NoiseCaller, true));
+    expect(Option.getOrThrow(stored).urls).toEqual([direct]);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      ConfigProvider.layer(
+        ConfigProvider.fromEnv({
+          env: {
+            T3CODE_NOISE_PEER_ORIGINS: "https://relay.example.com,https://box.example.ts.net:8443",
+          },
+        }),
+      ),
+    ),
+  ),
+);
 
 it.effect("routes peer reads to readers and sees uncommitted link updates", () =>
   Effect.gen(function* () {

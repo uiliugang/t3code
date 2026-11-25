@@ -33,6 +33,7 @@ function requireAttachmentWriteAccess<W extends { readonly environmentId: Enviro
 
 const commands = createAttachmentEnvironmentAtoms(connectionAtomRuntime);
 export const attachmentEnvironment = {
+  openNoiseTransfer: commands.openNoiseTransfer,
   createUploadUrl: requireAttachmentWriteAccess(commands.createUploadUrl),
   remove: requireAttachmentWriteAccess(commands.remove),
 };

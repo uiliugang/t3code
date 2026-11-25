@@ -179,7 +179,7 @@ describe("openPreviewSession", () => {
 });
 
 describe("openUrlInPreview from a link", () => {
-  it.each(["link", "file"] as const)(
+  it.each(["link", "file", "encrypted file"] as const)(
     "opens a side chat's %s in the parent's browser panel after the pane unmounts",
     async (entryPoint) => {
       const sideChatRef = { ...threadRef, threadId: "side-chat" as ScopedThreadRef["threadId"] };
@@ -198,10 +198,14 @@ describe("openUrlInPreview from a link", () => {
           threadRef: sideChatRef,
           filePath: "/repo/index.html",
           workspaceRoot: "/repo",
-          httpBaseUrl: "http://localhost:3000",
+          httpBaseUrl:
+            entryPoint === "encrypted file" ? "t3noise://environment" : "http://localhost:3000",
           createAssetUrl: async () => {
             unhost();
-            return AsyncResult.success({ relativeUrl: "/assets/index.html", expiresAt: 0 });
+            return AsyncResult.success({
+              relativeUrl: "/api/assets/signed/index.html",
+              expiresAt: 0,
+            });
           },
           openPreview,
         });
@@ -209,7 +213,12 @@ describe("openUrlInPreview from a link", () => {
 
       expect(openPreview).toHaveBeenCalledWith(
         expect.objectContaining({
-          input: expect.objectContaining({ threadId: threadRef.threadId }),
+          input: expect.objectContaining({
+            threadId: threadRef.threadId,
+            ...(entryPoint === "encrypted file" && {
+              url: "https://noise-preview.invalid/api/assets/signed/index.html",
+            }),
+          }),
         }),
       );
       expect(readThreadPreviewState(threadRef).activeTabId).toBe(snapshot.tabId);

@@ -8,8 +8,14 @@ import {
 } from "./duoControl.ts";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
+import { captureDeviceScreenshot, DeviceScreenshotError } from "./screenshot.ts";
 import { createCanvasFrameSink, type DeviceFrameSink } from "./frame.ts";
-import { type DeviceHubAccess, withDeviceHubQuery } from "./hubAccess.ts";
+import {
+  type DeviceHubAccess,
+  type DeviceMediaSocket,
+  openDeviceMediaSocket,
+  withDeviceHubQuery,
+} from "./hubAccess.ts";
 import type { DevicePlatform } from "@t3tools/contracts";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
@@ -409,6 +415,8 @@ const IOS_ORIENTATIONS: ReadonlyArray<DeviceScreenSize["orientation"]> = [
   "landscape_right",
 ];
 
+const isDeviceScreenshotError = Schema.is(DeviceScreenshotError);
+
 export function createDeviceStreamClient(
   target: DeviceStreamTarget,
   output: HTMLCanvasElement | DeviceFrameSink,
@@ -430,7 +438,7 @@ export function createDeviceStreamClient(
 
   let stopped = true;
   let lastHomePress = -Infinity;
-  let socket: WebSocket | null = null;
+  let socket: DeviceMediaSocket | null = null;
   let controller: AbortController | null = null;
   const retryTimers = new Map<"video" | "input", ReturnType<typeof setTimeout>>();
   let primeController: AbortController | null = null;
@@ -548,7 +556,7 @@ export function createDeviceStreamClient(
       if (released) return;
       const failure = resolve(msg("Could not receive the device stream. Reconnect to try again."));
       // An <img> cannot read the 409 that a WebRTC-only serve-sim answers with.
-      if (typeof RTCPeerConnection === "undefined") fail(failure);
+      if (!access.encrypted && typeof RTCPeerConnection === "undefined") fail(failure);
       else void switchToWebRtc(failure, false);
     };
     image.addEventListener("load", check);
@@ -574,6 +582,11 @@ export function createDeviceStreamClient(
 
   const fallBackToMjpeg = () => {
     if (stopped || mjpeg) return;
+    if (access.transport) {
+      closeDecoder();
+      void readEncryptedScreenshot();
+      return;
+    }
     mjpeg = true;
     controller?.abort();
     controller = null;
@@ -718,6 +731,30 @@ export function createDeviceStreamClient(
     events.onUnauthorized();
   };
 
+  // WebRTC-only device hosts still expose screenshots through the authenticated hub.
+  const readEncryptedScreenshot = async () => {
+    if (stopped) return;
+    const capture = new AbortController();
+    controller?.abort();
+    controller = capture;
+    try {
+      const blob = await captureDeviceScreenshot(target, capture.signal);
+      if (capture.signal.aborted) return;
+      const image = await createImageBitmap(blob);
+      try {
+        if (!capture.signal.aborted) paint(image, image.width, image.height);
+      } finally {
+        image.close();
+      }
+      if (!capture.signal.aborted) scheduleRetry("video", () => void readEncryptedScreenshot());
+    } catch (cause) {
+      if (capture.signal.aborted) return;
+      if (isDeviceScreenshotError(cause) && (cause.status === 401 || cause.status === 403))
+        return handleUnauthorized();
+      fail(resolve(msg("Could not receive the device stream. Reconnect to try again.")));
+    }
+  };
+
   const readIosVideo = async () => {
     const lifecycle = generation;
     const feedGeneration = ++videoGeneration;
@@ -732,7 +769,7 @@ export function createDeviceStreamClient(
     let retryDetail: string | undefined;
     let leaseEnd: string | undefined;
     try {
-      const response = await fetch(httpUrl(videoPath), {
+      const response = await (access.transport?.fetch ?? fetch)(httpUrl(videoPath), {
         signal: videoController.signal,
         credentials: access.credentials ? "include" : "same-origin",
       });
@@ -870,10 +907,13 @@ export function createDeviceStreamClient(
     primeController = controller;
     const timeout = setTimeout(() => controller.abort(), 2_000);
     try {
-      const response = await fetch(httpUrl(`/helper/${device}/stream.mjpeg`), {
-        signal: controller.signal,
-        credentials: access.credentials ? "include" : "same-origin",
-      });
+      const response = await (access.transport?.fetch ?? fetch)(
+        httpUrl(`/helper/${device}/stream.mjpeg`),
+        {
+          signal: controller.signal,
+          credentials: access.credentials ? "include" : "same-origin",
+        },
+      );
       if (stopped || generation !== session) return;
       if (response.status === 401 || response.status === 403) return handleUnauthorized();
       await response.body?.getReader().read();
@@ -894,7 +934,7 @@ export function createDeviceStreamClient(
     const probe = new AbortController();
     const timeout = setTimeout(() => probe.abort(), TRANSPORT_PROBE_TIMEOUT_MS);
     try {
-      const response = await fetch(httpUrl(`/api?device=${device}`), {
+      const response = await (access.transport?.fetch ?? fetch)(httpUrl(`/api?device=${device}`), {
         signal: probe.signal,
         credentials: access.credentials ? "include" : "same-origin",
       });
@@ -921,7 +961,7 @@ export function createDeviceStreamClient(
     current.video.srcObject = null;
     current.video.remove();
     // Releases the capture session; best effort because the page may be unloading.
-    void fetch(webRtcUrl("close"), {
+    void (access.transport?.fetch ?? fetch)(webRtcUrl("close"), {
       method: "POST",
       keepalive: true,
       headers: { "content-type": "application/json" },
@@ -1043,7 +1083,7 @@ export function createDeviceStreamClient(
         iceGatheringDeadlineMs = Math.min(iceGatheringDeadlineMs * 2, ICE_GATHERING_MAX_TIMEOUT_MS);
         return retry(resolve(msg("Device stream found no network candidates yet. Retrying…")));
       }
-      const response = await fetch(webRtcUrl("offer"), {
+      const response = await (access.transport?.fetch ?? fetch)(webRtcUrl("offer"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -1082,6 +1122,13 @@ export function createDeviceStreamClient(
    */
   const switchToWebRtc = async (failure: string, locked: boolean) => {
     const session = generation;
+    if (access.encrypted) {
+      mjpeg = false;
+      releaseImage?.();
+      releaseImage = null;
+      events.onCanvasVideo?.();
+      return readEncryptedScreenshot();
+    }
     if (typeof RTCPeerConnection === "undefined") return fail(failure);
     const settings = (await probeWebRtc()) ?? (locked ? { transport: "webrtc" as const } : null);
     if (stopped || generation !== session) return;
@@ -1139,7 +1186,7 @@ export function createDeviceStreamClient(
     const session = generation;
     if (!serveSimOnly) await primeIosHelper(session);
     if (stopped || generation !== session) return;
-    const ws = new WebSocket(wsUrl(`/helper/ws?device=${device}`));
+    const ws = openDeviceMediaSocket(access, wsUrl(`/helper/ws?device=${device}`));
     ws.binaryType = "arraybuffer";
     socket = ws;
     iosInputAdmitted = false;
@@ -1230,7 +1277,8 @@ export function createDeviceStreamClient(
   /** `inputOnly` keeps a socket for input beside a WebRTC feed, so its reconnects leave video alone. */
   const connectAndroid = (inputOnly = false) => {
     if (stopped) return;
-    const ws = new WebSocket(
+    const ws = openDeviceMediaSocket(
+      access,
       wsUrl(`/ws?device=${device}&${inputOnly ? "video=0" : "frame-meta=1"}`),
     );
     ws.binaryType = "arraybuffer";
@@ -1307,6 +1355,10 @@ export function createDeviceStreamClient(
     const session = generation;
     const settings = await probeWebRtc();
     if (stopped || generation !== session) return;
+    if (access.encrypted && (settings || !useWebCodecs)) {
+      if (!target.videoOnly) connectAndroid(true);
+      return readEncryptedScreenshot();
+    }
     if (settings) {
       if (typeof RTCPeerConnection === "undefined")
         return fail(resolve(msg("This browser cannot receive the device's WebRTC stream.")));
@@ -1328,6 +1380,7 @@ export function createDeviceStreamClient(
     if (serveSimOnly) {
       if (!target.videoOnly) void connectIosInput();
       if (useWebCodecs) void readIosVideo();
+      else if (access.encrypted) void readEncryptedScreenshot();
       else
         fail(
           resolve(msg("This browser cannot decode this device's stream (WebCodecs unavailable).")),

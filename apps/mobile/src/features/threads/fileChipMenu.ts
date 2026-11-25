@@ -49,29 +49,38 @@ export function resolveFileChipTarget(
   };
 }
 
-function fileChipMetadata(target: FileChipTarget) {
+function fileChipMetadata(target: FileChipTarget, noise: boolean) {
+  if (noise && !target.relativePath) return null;
   const path = target.fullPath ?? target.relativePath;
   if (!path) return null;
   const name = fileBasename(path);
   const dot = name.lastIndexOf(".");
-  const mimeType = dot < 0 ? null : hostPreviewMimeTypeFromExtension(name.slice(dot));
+  const mimeType =
+    (dot < 0 ? null : hostPreviewMimeTypeFromExtension(name.slice(dot))) ??
+    (noise ? "application/octet-stream" : null);
   return mimeType ? { path, name, mimeType } : null;
 }
 
 /** Use literal resolved paths so encoded filename characters are not decoded twice. */
-export function fileChipShareSource(target: FileChipTarget, threadId: ThreadId) {
-  const metadata = fileChipMetadata(target);
+export function fileChipShareSource(target: FileChipTarget, threadId: ThreadId, noise = false) {
+  const metadata = fileChipMetadata(target, noise);
   return metadata
     ? {
         name: metadata.name,
         mimeType: metadata.mimeType,
-        resource: { _tag: "media-file" as const, threadId, path: metadata.path },
+        resource: {
+          _tag: "media-file" as const,
+          threadId,
+          path: metadata.path,
+          ...(noise ? { disposition: "attachment" as const } : {}),
+        },
       }
     : null;
 }
 
 export function fileChipMenu(
   target: FileChipTarget,
+  noise = false,
   resolve: MessageResolver = m,
 ): MarkdownFileContextMenu {
   return {
@@ -82,7 +91,7 @@ export function fileChipMenu(
         ? [{ id: "copy-relative-path", title: resolve(msg("Copy relative path")) }]
         : []),
       { id: "open-file", title: resolve(msg("Open in file viewer")) },
-      ...(fileChipMetadata(target)
+      ...(fileChipMetadata(target, noise)
         ? [
             {
               id: "save",

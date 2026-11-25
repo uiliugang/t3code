@@ -67,6 +67,7 @@ vi.mock("./saveImageToLibrary", () => ({
   canSaveImageToLibrary: (mimeType: string) => mimeType === "image/png",
   saveImageToLibrary: state.saveImage,
 }));
+vi.mock("./saveWorkspaceFile", () => ({ saveWorkspaceFile: vi.fn() }));
 vi.mock("expo-haptics", () => ({
   notificationAsync: async () => {},
   NotificationFeedbackType: { Success: "success" },

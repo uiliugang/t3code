@@ -7,6 +7,8 @@ import {
   type PeerLinkRequestAnswerInput,
   type PeerLinkName,
   type PeerLinkSummary,
+  type PeerLinkClientPairingResult,
+  readNoisePin,
   resolveEnvironmentMachineKind,
   type ServerConfig,
 } from "@t3tools/contracts";
@@ -20,6 +22,31 @@ import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
 export type LinkRequestItem = Extract<OrchestrationV2TurnItem, { readonly type: "link_request" }>;
+
+export function linkThroughPairing(
+  reply: PeerLinkClientPairingResult,
+  target: EnvironmentId,
+  acceptsNoiseLink: boolean,
+) {
+  const [url, ...alternateUrls] = reply.urls;
+  if (!url || reply.environmentId !== target) return null;
+  if (reply.type !== "credential" && reply.type !== "noise-link") return null;
+  if (
+    reply.type === "noise-link" &&
+    (!acceptsNoiseLink ||
+      alternateUrls.length !== 0 ||
+      readNoisePin(reply.hostPin)?.environmentId !== target)
+  )
+    return null;
+  return {
+    url,
+    ...(alternateUrls.length > 0 ? { alternateUrls } : {}),
+    expectedEnvironmentId: target,
+    expectedLabel: reply.label,
+    ...(reply.type === "noise-link" ? { expectedNoisePin: reply.hostPin } : {}),
+    pairingCode: reply.credential,
+  };
+}
 
 /** Whether an environment offers links: it supports them and its Linked environments beta is on. */
 export const offersLinkedEnvironments = (

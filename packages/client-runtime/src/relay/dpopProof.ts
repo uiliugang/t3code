@@ -51,6 +51,7 @@ export const createProof = Effect.fn("DpopProof.createProof")(function* (input: 
   readonly method: string;
   readonly url: string;
   readonly accessToken?: string | undefined;
+  readonly nonce?: string;
   readonly key: DpopProofKey;
 }) {
   const htu = normalizeDpopHtu(input.url);
@@ -61,6 +62,7 @@ export const createProof = Effect.fn("DpopProof.createProof")(function* (input: 
   const payload = encodeSegment({
     htm: input.method.toUpperCase(),
     htu,
+    ...(input.nonce === undefined ? {} : { nonce: input.nonce }),
     jti: yield* random.uuidV4(),
     iat: Math.floor((yield* Clock.currentTimeMillis) / 1_000),
     ...(input.accessToken ? { ath: yield* sha256Base64Url(utf8(input.accessToken)) } : {}),

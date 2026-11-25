@@ -45,6 +45,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/http";
 
+import * as Runtime from "../lib/runtime";
 import { APP_VERSION } from "../branding";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
@@ -62,6 +63,7 @@ import {
   readDesktopSecondaryBootstrapsResult,
   type DesktopSecondaryBootstrapsRead,
 } from "./desktopLocal";
+import { layerNoiseConnections, otherWindowPinChanges } from "./noise";
 import * as ConnectionStorage from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
 import { m } from "../i18n/messages";
@@ -167,6 +169,7 @@ const layerWakeups = Wakeups.layer({
         Stream.map(() => "credentials-changed" as const),
       ),
       networkPathChanges,
+      otherWindowPinChanges,
     ],
     { concurrency: "unbounded" },
   ),
@@ -858,11 +861,16 @@ const layerRpcRequestObserver = Layer.succeed(
   }),
 );
 
+const layerEncryptedCapabilities = layerNoiseConnections.pipe(
+  Layer.provideMerge(layerCapabilities),
+  Layer.provide(Runtime.layer),
+);
+
 type ConnectionPlatformLayerSource =
   | typeof ConnectionStorage.layer
   | typeof layerConnectivity
   | typeof layerWakeups
-  | typeof layerCapabilities
+  | typeof layerEncryptedCapabilities
   | typeof layerPlatformConnectionSource
   | typeof layerEnvironmentOwnedDataCleanup
   | typeof layerRpcRequestObserver;
@@ -875,7 +883,7 @@ export const layer: Layer.Layer<
   ConnectionStorage.layer,
   layerConnectivity,
   layerWakeups,
-  layerCapabilities,
+  layerEncryptedCapabilities,
   layerPlatformConnectionSource,
   layerEnvironmentOwnedDataCleanup,
   layerRpcRequestObserver,

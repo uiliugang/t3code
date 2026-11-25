@@ -4,3 +4,4 @@ export * from "./cloudAccountService.ts";
 export * from "./errorPresentation.ts";
 export * as ManagedRelay from "./managedRelay.ts";
 export * from "./managedRelayState.ts";
+export * as NoiseApproval from "./noiseApproval.ts";

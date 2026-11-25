@@ -1,3 +1,4 @@
+import { usePreparedConnection } from "../../state/session";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { useNavigation } from "@react-navigation/native";
@@ -196,10 +197,21 @@ export function ThreadHtmlRender(props: {
     mimeType: "text/html",
     disposition: "inline" as const,
   };
-  const asset = useAssetUrlState(props.environmentId, resource);
-  const refresh = useRefreshAssetUrl(props.environmentId, resource);
+  const connection = usePreparedConnection(props.environmentId);
+  // Local HTML has no response headers to enforce the renderer's sandbox policy.
+  const requiresSource =
+    connection._tag === "Some" &&
+    connection.value.transport === "noise" &&
+    !connection.value.mediaOrigins;
+  const asset = useAssetUrlState(props.environmentId, requiresSource ? null : resource);
+  const refresh = useRefreshAssetUrl(props.environmentId, requiresSource ? null : resource);
   // Signed URLs are re-minted periodically; following them would reload the page.
-  const [uri, setUri] = useState<string | null>(null);
+  const [remoteUri, setUri] = useState<string | null>(null);
+  const mediaOrigin = connection._tag === "Some" ? connection.value.mediaOrigins?.asset : undefined;
+  const uri =
+    requiresSource || (mediaOrigin && !remoteUri?.startsWith(mediaOrigin + "/api/assets/"))
+      ? null
+      : remoteUri;
   if (uri === null && asset._tag === "Success") setUri(asset.url);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -217,26 +229,26 @@ export function ThreadHtmlRender(props: {
     });
   };
 
+  const openDocument = () =>
+    navigation.navigate("ThreadAttachment", {
+      environmentId: String(props.environmentId),
+      threadId: String(props.threadId),
+      attachmentId,
+      name: fileName,
+      mimeType: "text/html",
+      sizeBytes: "0",
+      htmlRender: "1",
+    });
   return (
     <View style={{ marginBottom: ROW_BOTTOM_MARGIN }}>
       <View style={{ height: ACTION_ROW_HEIGHT }} className="flex-row items-start justify-end">
-        {uri !== null && !failed ? (
+        {requiresSource || (uri !== null && !failed) ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={gt("Open {title}", { title })}
             hitSlop={8}
             className="h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-card/80"
-            onPress={() =>
-              navigation.navigate("ThreadAttachment", {
-                environmentId: String(props.environmentId),
-                threadId: String(props.threadId),
-                attachmentId,
-                name: fileName,
-                mimeType: "text/html",
-                sizeBytes: "0",
-                htmlRender: "1",
-              })
-            }
+            onPress={openDocument}
           >
             <SymbolView
               name="arrow.up.left.and.arrow.down.right"
@@ -256,6 +268,15 @@ export function ThreadHtmlRender(props: {
             nested
             onLoadError={handleLoadError}
           />
+        ) : requiresSource ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Open {title}", { title })}
+            className="flex-1 items-center justify-center"
+            onPress={openDocument}
+          >
+            <Text className="text-sm text-foreground-muted">{t("Open file")}</Text>
+          </Pressable>
         ) : failed || asset._tag === "Failure" ? (
           <Pressable
             accessibilityRole="button"

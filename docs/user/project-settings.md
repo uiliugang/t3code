@@ -267,6 +267,28 @@ returns. Leave it off if you don't want request bodies stored outside your
 machine. To skip requests that waited too long, set **Skip requests older
 than** on the task.
 
+### Encrypted webhook delivery
+
+On a linked host, opening a scheduled webhook task through Noise gives you a
+`t3hook://` address. A host running with `T3CODE_NOISE_ONLY=true` requires encrypted delivery. Copy the address from an approved client to a
+private file on a sender you control. Rotate an existing webhook's URL token
+before switching if you previously gave its ordinary URL to another service.
+
+```sh
+t3 webhook send --address-file ./hook.address --body-file ./event.json
+```
+
+The sender encrypts the hook ID, token, original body, headers, query and
+method before contacting Connect. For signed events, add
+`--headers-file ./headers.json` with the original headers as a JSON object.
+Use `--method` and `--query` to preserve those values when needed.
+The encrypted envelope must fit the relay's 1 MiB limit. Connect can hold it
+when offline delivery is enabled. A retry of the same held envelope keeps its
+delivery ID. Running the send command again creates a new event.
+
+An external provider that only posts to HTTPS needs a trusted forwarder running
+the sender, or a direct HTTPS endpoint you operate outside Noise-only mode.
+
 ## Import and export settings
 
 On web and desktop, open **Settings → General → Import and export** and choose

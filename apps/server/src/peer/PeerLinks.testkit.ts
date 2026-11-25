@@ -62,13 +62,19 @@ export const descriptorOf = (
 });
 
 /** An environment's own sessions and pairing links, on a database and secret store of its own. */
-export const layerEnvironmentAuth = (prefix: string) =>
+export const layerEnvironmentAuth = (prefix: string, identity?: EnvironmentId) =>
   EnvironmentAuth.layer.pipe(
     Layer.provide(ManagedPolicy.layerTest()),
     Layer.provideMerge(ServerSettings.layerTest({ linkedEnvironmentsEnabled: true })),
     Layer.provide(Sqlite.layerMemory),
     Layer.provideMerge(ServerSecretStore.layer),
-    Layer.provideMerge(ServerEnvironment.layerIdentity),
+    Layer.provideMerge(
+      identity
+        ? Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(identity),
+          })
+        : ServerEnvironment.layerIdentity,
+    ),
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix })),
     Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.fresh,
@@ -97,7 +103,9 @@ export const servePeer = <E, R, E2 = never, R2 = never>(
       getEnvironmentId: Ref.get(descriptor).pipe(Effect.map((current) => current.environmentId)),
       getDescriptor: Ref.get(descriptor),
     });
-    const authContext = yield* Layer.build(layerEnvironmentAuth("t3-peer-link-peer-"));
+    const authContext = yield* Layer.build(
+      layerEnvironmentAuth("t3-peer-link-peer-", initial.environmentId),
+    );
     const layerRecordBearers = HttpRouter.middleware(
       (httpEffect) =>
         Effect.gen(function* () {

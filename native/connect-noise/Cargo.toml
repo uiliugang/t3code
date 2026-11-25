@@ -1,0 +1,34 @@
+[package]
+name = "t3-connect-noise"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+snow = { version = "0.10.0", default-features = false, features = [
+  "use-getrandom",
+  "use-curve25519",
+  "use-chacha20poly1305",
+  "use-sha2",
+] }
+curve25519-dalek = { version = "4.1", default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+wasm-bindgen = "=0.2.130"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21.1", default-features = false }
+
+[dev-dependencies]
+hex = "0.4"
+miniz_oxide = "0.8"
+tungstenite = "0.30"
+
+[profile.release]
+lto = true
+opt-level = "s"

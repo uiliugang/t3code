@@ -55,11 +55,12 @@ export class FcmClientError extends Schema.TaggedError<
 export class FcmClient extends Context.Service<
   FcmClient,
   {
-    readonly send: (input: {
+    readonly sendWake: (input: {
       readonly token: string;
       readonly packageName: string | null;
-      readonly data: Readonly<Record<string, string>>;
-      readonly alert: boolean;
+      readonly environmentId: string;
+      readonly deviceId: string;
+      readonly userId: string;
     }) => Effect.Effect<{ readonly unregistered: boolean }, FcmClientError>;
   }
 >()("t3code-relay/agentActivity/FcmClient") {}
@@ -118,8 +119,14 @@ const make = Effect.gen(function* () {
   );
 
   return FcmClient.of({
-    send: Effect.fn("relay.fcm.send")(function* (input) {
-      if (new TextEncoder().encode(encodeJson(input.data)).length > 4096)
+    sendWake: Effect.fn("relay.fcm.send")(function* (input) {
+      const data = {
+        t3_kind: "agent_activity_wake",
+        environment_id: input.environmentId,
+        device_id: input.deviceId,
+        user_id: input.userId,
+      };
+      if (new TextEncoder().encode(encodeJson(data)).length > 4096)
         return yield* new FcmClientError({ operation: "send", status: null });
       if (Option.isNone(account))
         return yield* new FcmClientError({ operation: "configuration", status: null });
@@ -131,11 +138,10 @@ const make = Effect.gen(function* () {
         HttpClientRequest.bodyJson({
           message: {
             token: input.token,
-            data: input.data,
+            data,
             android: {
               priority: "HIGH",
               ttl: "300s",
-              ...(!input.alert ? { collapse_key: "t3-agent-activity" } : {}),
               ...(input.packageName ? { restricted_package_name: input.packageName } : {}),
             },
           },

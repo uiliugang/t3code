@@ -11,6 +11,7 @@ import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import {
   executeEnvironmentHttpRequest,
@@ -54,17 +55,19 @@ export const exchangeRemoteDpopAccessToken = Effect.fn(
   const response = yield* executeEnvironmentHttpRequest(
     environmentEndpointUrl(input.httpBaseUrl, "/oauth/token"),
     input.timeoutMs ?? DEFAULT_REMOTE_REQUEST_TIMEOUT_MS,
-    client.token({
-      headers: { dpop: input.dpopProof },
-      payload: {
-        grant_type: AuthTokenExchangeGrantType,
-        subject_token: input.credential,
-        subject_token_type: input.credentialType ?? AuthEnvironmentBootstrapTokenType,
-        requested_token_type: AuthAccessTokenType,
-        ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
-        ...clientMetadataTokenExchangeFields(input.clientMetadata),
-      },
-    }),
+    client
+      .token({
+        headers: { dpop: input.dpopProof },
+        payload: {
+          grant_type: AuthTokenExchangeGrantType,
+          subject_token: input.credential,
+          subject_token_type: input.credentialType ?? AuthEnvironmentBootstrapTokenType,
+          requested_token_type: AuthAccessTokenType,
+          ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
+          ...clientMetadataTokenExchangeFields(input.clientMetadata),
+        },
+      })
+      .pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" })),
   );
   return response;
 });
@@ -82,17 +85,19 @@ export const bootstrapRemoteBearerSession = Effect.fn(
   return yield* executeEnvironmentHttpRequest(
     environmentEndpointUrl(input.httpBaseUrl, "/oauth/token"),
     input.timeoutMs ?? DEFAULT_REMOTE_REQUEST_TIMEOUT_MS,
-    client.token({
-      headers: {},
-      payload: {
-        grant_type: AuthTokenExchangeGrantType,
-        subject_token: input.credential,
-        subject_token_type: AuthEnvironmentBootstrapTokenType,
-        requested_token_type: AuthAccessTokenType,
-        ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
-        ...clientMetadataTokenExchangeFields(input.clientMetadata),
-      },
-    }),
+    client
+      .token({
+        headers: {},
+        payload: {
+          grant_type: AuthTokenExchangeGrantType,
+          subject_token: input.credential,
+          subject_token_type: AuthEnvironmentBootstrapTokenType,
+          requested_token_type: AuthAccessTokenType,
+          ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
+          ...clientMetadataTokenExchangeFields(input.clientMetadata),
+        },
+      })
+      .pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" })),
   );
 });
 

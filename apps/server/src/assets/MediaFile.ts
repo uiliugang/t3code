@@ -112,12 +112,27 @@ export const readFileRevision = (filePath: string) =>
     NodeFSP.stat(filePath, { bigint: true }).then(mediaFileRevision, () => null),
   );
 
-export const readMediaFileHeader = (filePath: string, file: OpenMediaFile, byteCount: number) =>
+export const readMediaFileBytes = (
+  filePath: string,
+  file: OpenMediaFile,
+  offset: number,
+  byteCount: number,
+) =>
   Effect.tryPromise({
     try: async () => {
       const buffer = new Uint8Array(byteCount);
-      const { bytesRead } = await file.handle.read(buffer, 0, byteCount, 0);
-      return buffer.subarray(0, bytesRead);
+      let length = 0;
+      while (length < byteCount) {
+        const { bytesRead } = await file.handle.read(
+          buffer,
+          length,
+          byteCount - length,
+          offset + length,
+        );
+        if (bytesRead === 0) break;
+        length += bytesRead;
+      }
+      return buffer.subarray(0, length);
     },
     catch: (cause) => new MediaFileReadError({ path: filePath, cause }),
   });

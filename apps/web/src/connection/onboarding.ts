@@ -6,6 +6,7 @@ import {
 import type { DesktopSshEnvironmentTarget, EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
+import { enrollNoiseConnection } from "./noise";
 import { connectionAtomRuntime } from "./runtime";
 
 const onboardingScheduler = createAtomCommandScheduler();
@@ -42,4 +43,9 @@ export const reachesEnvironment = createRuntimeCommand(connectionAtomRuntime, {
     ConnectionOnboarding.ConnectionOnboarding.pipe(
       Effect.flatMap((onboarding) => onboarding.reaches(input)),
     ),
+});
+
+export const enrollEncryptedRelay = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:connection:enroll-encrypted-relay",
+  execute: enrollNoiseConnection,
 });

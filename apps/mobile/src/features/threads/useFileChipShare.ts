@@ -1,48 +1,41 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
-import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import * as Option from "effect/Option";
 import { useGT } from "gt-react-native";
 import { m } from "../../i18n/messages";
 import { useEffect, useRef } from "react";
 
 import { downloadAndShareAttachment } from "../../lib/attachmentDownload";
-import { assetEnvironment } from "../../state/assets";
-import { usePreparedConnection } from "../../state/session";
-import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import { refreshAssetUrl } from "../../state/assets";
 import { fileChipShareSource, type FileChipTarget } from "./fileChipMenu";
 
 export function useFileChipShare(
   environmentId: EnvironmentId,
   threadId: ThreadId,
   sourceIdentifier: string,
+  noise: boolean,
 ) {
   const gt = useGT();
-  const connection = usePreparedConnection(environmentId);
-  const httpBaseUrl = Option.isSome(connection) ? connection.value.httpBaseUrl : null;
-  const createUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
-    refresh: true,
-    reportFailure: false,
-  });
   const requestRef = useRef<AbortController | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight file share download when the component unmounts
   useEffect(() => () => requestRef.current?.abort(), []);
 
   return (target: FileChipTarget) => {
-    const source = fileChipShareSource(target, threadId);
+    const source = fileChipShareSource(target, threadId, noise);
     if (!source || requestRef.current) return;
     const request = new AbortController();
     requestRef.current = request;
+    let releaseFile: (() => void) | undefined;
     void (async () => {
-      if (httpBaseUrl === null) throw new Error(gt("Reconnect to the environment and try again."));
-      const result = await createUrl(
-        { environmentId, input: { resource: source.resource } },
-        { signal: request.signal },
+      const url = await refreshAssetUrl(
+        environmentId,
+        source.resource,
+        request.signal,
+        (release) => {
+          releaseFile = release;
+        },
       );
       if (request.signal.aborted) return;
-      const url =
-        result._tag === "Success" ? resolveAssetUrl(httpBaseUrl, result.value.relativeUrl) : null;
       if (url === null)
         throw new Error(gt("The file could not be loaded. Reconnect and try again."));
       await downloadAndShareAttachment({
@@ -61,6 +54,7 @@ export function useFileChipShare(
         }
       })
       .finally(() => {
+        releaseFile?.();
         if (requestRef.current === request) {
           requestRef.current = null;
         }

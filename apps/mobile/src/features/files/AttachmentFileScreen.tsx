@@ -74,7 +74,9 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
   };
   const { uri, resource } = document;
   // A file only the native viewer can show opens it as soon as the file resolves.
-  if (nativeViewer === "pending" && uri) {
+  if (nativeViewer === "pending" && !nativeKind && uri) {
+    setNativeViewer(null);
+  } else if (nativeViewer === "pending" && uri) {
     setNativeViewer("open");
     setNativeOpen(true);
   }
@@ -235,7 +237,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
         subtitle={subtitle}
         sizeBytes={sizeBytes}
         uri={uri}
-        isLocal={localAttachment !== null}
+        isLocal={localAttachment !== null || !!uri?.startsWith("file:")}
         refresh={refresh}
         environmentId={environmentId}
         // Entries go to the thread's chat composer, also from a question-answer draft.

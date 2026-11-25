@@ -68,6 +68,19 @@ describe("image preview groups", () => {
     },
   );
 
+  it("keeps source-only workspace SVGs out of swipeable Noise image previews", () => {
+    const gallery = messageImageGallery(
+      { text: "![first](./diagram.svg) ![second](./picture.png)" },
+      {
+        environmentId: EnvironmentId.make("test"),
+        threadId: ThreadId.make("thread"),
+        workspaceRoot: "/repo",
+        workspaceSvgAsSource: true,
+      },
+    );
+    expect(gallery.map((item) => item.name)).toEqual(["picture.png"]);
+  });
+
   it("gives every remote image page its own media actions", () => {
     const environmentId = EnvironmentId.make("test");
     const ids = ["a", "b"];

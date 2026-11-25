@@ -851,7 +851,7 @@ function ConfiguredCloudLinkRow({
           description={
             signedOut
               ? gt("Sign in to send activity to mobile notifications and Live Activities.")
-              : gt("Send activity to mobile notifications and Live Activities without T3 Connect.")
+              : gt("Allow mobile devices to receive activity updates from this environment.")
           }
           managed={connectDenial}
           control={

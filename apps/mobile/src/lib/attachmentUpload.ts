@@ -1,6 +1,7 @@
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import {
   isAssetAttachmentNotFoundFailure,
+  type NoiseAttachmentTransfer,
   runAttachmentUploadCycle,
   verifyPersistedAttachmentUpload,
 } from "@t3tools/client-runtime/state/attachments";
@@ -14,10 +15,12 @@ import type {
   UploadChatImageAttachment,
 } from "@t3tools/contracts";
 import {
+  ATTACHMENT_TRANSFER_CHUNK_BYTES,
   AuthOrchestrationOperateScope,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 
 import { appAtomRegistry } from "../state/atom-registry";
@@ -206,63 +209,178 @@ async function composerImageAttachmentDataUrl(
   }
 }
 
-async function uploadFileBytes(
+const uploadSource = Effect.fn("ComposerAttachments.uploadSource")(function* (
+  attachment: DraftComposerAttachment,
+  { File, Paths }: typeof import("expo-file-system"),
+) {
+  const fileUri = attachment.fileUri;
+  if (fileUri !== undefined) {
+    return yield* Effect.try({
+      try: () =>
+        new File(resolveOwnedComposerAttachmentFileUri(fileUri, Paths.document.uri) ?? fileUri),
+      catch: attachmentUploadError,
+    });
+  }
+  const dataUrl = attachment.type === "image" ? attachment.dataUrl : undefined;
+  if (dataUrl === undefined) {
+    return yield* attachmentUploadError(
+      new Error(`'${attachment.name}' is no longer available. Attach the image again.`),
+    );
+  }
+  const file = yield* Effect.acquireRelease(
+    Effect.try({
+      try: () => new File(Paths.cache, `t3-upload-${uuidv4()}`),
+      catch: attachmentUploadError,
+    }),
+    (temp) =>
+      Effect.sync(() => {
+        if (temp.exists) temp.delete();
+      }),
+  );
+  yield* Effect.tryPromise({
+    try: async () => {
+      file.create();
+      await file.write(dataUrl.slice(dataUrl.indexOf(",") + 1), { encoding: "base64" });
+    },
+    catch: attachmentUploadError,
+  }).pipe(Effect.uninterruptible);
+  return file;
+});
+
+const uploadFileBytes = Effect.fn("ComposerAttachments.uploadFileBytes")(function* (
   environmentId: EnvironmentId,
   attachment: DraftComposerAttachment,
   url: string,
-  signal: AbortSignal,
   onProgress?: (progress: number) => void,
-): Promise<void> {
-  const { File, Paths, UploadType } = await import("expo-file-system");
-  if (signal.aborted) throw new Error("Upload cancelled.");
-  if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
-    throw new Error(m(msg("This connection cannot upload attachments.")));
-  }
-  const fileUri = attachment.fileUri;
-  const inlineDataUrl = attachment.type === "image" ? attachment.dataUrl : undefined;
-  if (fileUri === undefined && inlineDataUrl === undefined) {
-    throw new Error(`'${attachment.name}' is no longer available. Attach the image again.`);
-  }
-  const file =
-    fileUri === undefined
-      ? new File(Paths.cache, `t3-upload-${uuidv4()}`)
-      : new File(resolveOwnedComposerAttachmentFileUri(fileUri, Paths.document.uri) ?? fileUri);
-  try {
-    if (fileUri === undefined && inlineDataUrl !== undefined) {
-      file.create();
-      await file.write(inlineDataUrl.slice(inlineDataUrl.indexOf(",") + 1), {
-        encoding: "base64",
+) {
+  const fs = yield* Effect.promise(() => import("expo-file-system"));
+  const file = yield* uploadSource(attachment, fs);
+  const result = yield* Effect.tryPromise({
+    try: (signal) => {
+      requireUploadAccess(environmentId);
+      const prepared = appAtomRegistry.get(
+        environmentSession.preparedConnectionValueAtom(environmentId),
+      );
+      if (Option.isNone(prepared) || prepared.value.transport === "noise") {
+        throw new Error(m(msg("The environment is not connected.")));
+      }
+      return file.upload(url, {
+        httpMethod: "POST",
+        uploadType: fs.UploadType.BINARY_CONTENT,
+        headers: { "Content-Type": composerAttachmentWireMimeType(attachment) },
+        signal,
+        ...(onProgress
+          ? {
+              // Native events carry Int64 counts, which expo-modules-jsi delivers as BigInt despite the number type.
+              onProgress: ({ bytesSent, totalBytes }) => {
+                const total = Number(totalBytes);
+                if (total > 0) onProgress(Number(bytesSent) / total);
+              },
+            }
+          : {}),
       });
-    }
-    const result = await file.upload(url, {
-      httpMethod: "POST",
-      uploadType: UploadType.BINARY_CONTENT,
-      headers: { "Content-Type": composerAttachmentWireMimeType(attachment) },
-      signal,
-      ...(onProgress
-        ? {
-            // Native events carry Int64 counts, which expo-modules-jsi delivers as BigInt despite the `number` type.
-            onProgress: ({ bytesSent, totalBytes }) => {
-              const total = Number(totalBytes);
-              if (total > 0) onProgress(Number(bytesSent) / total);
-            },
-          }
-        : {}),
-    });
-    if (result.status < 200 || result.status >= 300) {
-      throw new Error(
+    },
+    catch: attachmentUploadError,
+  });
+  if (result.status < 200 || result.status >= 300) {
+    return yield* attachmentUploadError(
+      new Error(
         m(
           msg("Upload failed for ''{name}'' ({status}).", {
             name: attachment.name,
             status: String(result.status),
           }),
         ),
+      ),
+    );
+  }
+}, Effect.scoped);
+
+const noiseTransferForUpload = Effect.fn("ComposerAttachments.noiseTransferForUpload")(function* (
+  environmentId: EnvironmentId,
+) {
+  const prepared = appAtomRegistry.get(
+    environmentSession.preparedConnectionValueAtom(environmentId),
+  );
+  if (Option.isNone(prepared)) {
+    return yield* attachmentUploadError(new Error(m(msg("The environment is not connected."))));
+  }
+  if (prepared.value.transport !== "noise") return null;
+  return yield* attachmentEnvironment.openNoiseTransfer
+    .run(appAtomRegistry, { environmentId, input: undefined })
+    .pipe(Effect.mapError(attachmentUploadError));
+});
+
+export const verifyComposerAttachmentUpload = Effect.fn("ComposerAttachments.verifyUpload")(
+  function* (
+    environmentId: EnvironmentId,
+    attachmentId: string,
+    opened?: NoiseAttachmentTransfer | null,
+  ) {
+    const transfer = opened === undefined ? yield* noiseTransferForUpload(environmentId) : opened;
+    if (transfer) {
+      return yield* transfer.readChunk({ attachmentId, offset: 0, length: 0 }).pipe(
+        Effect.as(true),
+        Effect.catchIf(isAssetAttachmentNotFoundFailure, () => Effect.succeed(false)),
+        Effect.mapError(attachmentUploadError),
       );
     }
-  } finally {
-    if (fileUri === undefined && file.exists) file.delete();
-  }
-}
+    const verification = yield* verifyPersistedAttachmentUpload({
+      registry: appAtomRegistry,
+      createAssetUrl: assetEnvironment.createUrl,
+      environmentId,
+      attachmentId,
+    });
+    if (verification.status === "failed") return yield* attachmentUploadError(verification.error);
+    return verification.status === "verified";
+  },
+);
+
+const uploadNoiseFile = Effect.fn("ComposerAttachments.uploadNoiseFile")(function* (
+  transfer: NoiseAttachmentTransfer,
+  attachment: DraftComposerAttachment,
+  onProgress?: (progress: number) => void,
+) {
+  const fs = yield* Effect.promise(() => import("expo-file-system"));
+  const file = yield* uploadSource(attachment, fs);
+  const handle = yield* Effect.acquireRelease(
+    Effect.try({ try: () => file.open(fs.FileMode.ReadOnly), catch: attachmentUploadError }),
+    (reader) => Effect.sync(() => reader.close()),
+  );
+  const read = (length: number) =>
+    Effect.tryPromise({
+      try: () => handle.readBytes(length),
+      catch: attachmentUploadError,
+    }).pipe(Effect.uninterruptible);
+  return yield* Effect.acquireUseRelease(
+    transfer.beginUpload(attachmentUploadInput(attachment)),
+    ({ attachmentId }) =>
+      Effect.gen(function* () {
+        let offset = 0;
+        while (offset < attachment.sizeBytes) {
+          const data = yield* read(
+            Math.min(ATTACHMENT_TRANSFER_CHUNK_BYTES, attachment.sizeBytes - offset),
+          );
+          const end = offset + data.length;
+          if (
+            data.length === 0 ||
+            end > attachment.sizeBytes ||
+            (end === attachment.sizeBytes && (yield* read(1)).length !== 0)
+          ) {
+            return yield* attachmentUploadError(
+              new Error(m(msg("Upload failed for ''{name}''.", { name: attachment.name }))),
+            );
+          }
+          yield* transfer.writeChunk({ attachmentId, offset, data });
+          offset = end;
+          onProgress?.(offset / attachment.sizeBytes);
+        }
+        return attachmentId;
+      }),
+    ({ attachmentId }, exit) =>
+      Exit.isFailure(exit) ? transfer.remove({ attachmentId }).pipe(Effect.ignore) : Effect.void,
+  ).pipe(Effect.mapError(attachmentUploadError));
+}, Effect.scoped);
 
 function requireUploadAccess(environmentId: EnvironmentId): void {
   if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
@@ -284,32 +402,26 @@ export const uploadComposerAttachment = Effect.fn("uploadComposerAttachment")(fu
     try: () => requireUploadAccess(environmentId),
     catch: attachmentUploadError,
   });
+  const transfer = yield* noiseTransferForUpload(environmentId);
   if (
     attachment.uploadEnvironmentId === environmentId &&
     attachment.uploadedAttachmentId !== undefined
   ) {
-    const verification = yield* verifyPersistedAttachmentUpload({
-      registry: appAtomRegistry,
-      createAssetUrl: assetEnvironment.createUrl,
-      environmentId,
-      attachmentId: attachment.uploadedAttachmentId,
-    });
-    if (verification.status === "failed") {
-      return yield* attachmentUploadError(verification.error);
+    if (
+      yield* verifyComposerAttachmentUpload(
+        environmentId,
+        attachment.uploadedAttachmentId,
+        transfer,
+      )
+    ) {
+      return attachment.uploadedAttachmentId;
     }
-    if (verification.status === "verified") return attachment.uploadedAttachmentId;
   }
   yield* Effect.try({
     try: () => requireUploadAccess(environmentId),
     catch: attachmentUploadError,
   });
-  if (
-    Option.isNone(
-      appAtomRegistry.get(environmentSession.preparedConnectionValueAtom(environmentId)),
-    )
-  ) {
-    return yield* attachmentUploadError(new Error(m(msg("The environment is not connected."))));
-  }
+  if (transfer) return yield* uploadNoiseFile(transfer, attachment, onProgress);
   const result = yield* runAttachmentUploadCycle({
     registry: appAtomRegistry,
     createUploadUrl: attachmentEnvironment.createUploadUrl,
@@ -322,15 +434,11 @@ export const uploadComposerAttachment = Effect.fn("uploadComposerAttachment")(fu
       const connection = appAtomRegistry.get(
         environmentSession.preparedConnectionValueAtom(environmentId),
       );
-      return Option.isNone(connection)
+      return Option.isNone(connection) || connection.value.transport === "noise"
         ? null
         : resolveAssetUrl(connection.value.httpBaseUrl, relativeUrl);
     },
-    transport: (url) =>
-      Effect.tryPromise({
-        try: (signal) => uploadFileBytes(environmentId, attachment, url, signal, onProgress),
-        catch: attachmentUploadError,
-      }),
+    transport: (url) => uploadFileBytes(environmentId, attachment, url, onProgress),
   });
   if (result.status === "uploaded") return result.attachmentId;
   if (result.attachmentId !== null) {
@@ -377,7 +485,14 @@ export const prepareTurnAttachments = Effect.fn("prepareTurnAttachments")(functi
       catch: attachmentUploadError,
     });
   const files = input.attachments.filter((attachment) => attachment.type === "file");
-  if (input.attachments.length === 0 || (files.length === 0 && !input.supportsImageUploads)) {
+  const uploadImages =
+    input.supportsImageUploads ||
+    (files.length !== input.attachments.length &&
+      Option.exists(
+        appAtomRegistry.get(environmentSession.preparedConnectionValueAtom(environmentId)),
+        (connection) => connection.transport === "noise",
+      ));
+  if (input.attachments.length === 0 || (files.length === 0 && !uploadImages)) {
     const imageAttachments = yield* inlineImages(input.attachments);
     return {
       status: "ready",
@@ -394,7 +509,7 @@ export const prepareTurnAttachments = Effect.fn("prepareTurnAttachments")(functi
   const uploadedAttachments: UploadedMobileAttachment[] = [];
   const pendingAttachmentIds: string[] = [];
   for (const attachment of input.attachments) {
-    if (attachment.type === "image" && !input.supportsImageUploads) {
+    if (attachment.type === "image" && !uploadImages) {
       uploadedAttachments.push(...(yield* inlineImages([attachment])));
       continue;
     }

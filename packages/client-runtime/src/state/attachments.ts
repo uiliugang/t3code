@@ -14,17 +14,62 @@ import type { MFunctionType } from "gt-i18n/types";
 import type { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import {
+  currentSession,
+  environmentRpcUnavailable,
+  requestInSession,
+  type EnvironmentRpcInput,
+} from "../rpc/client.ts";
+import {
+  createEnvironmentCommand,
   createEnvironmentRpcCommand,
   awaitAtomResult,
   runAtomCommand,
+  withEnvironmentRpcPermissions,
   type AtomCommand,
 } from "./runtime.ts";
+
+type FileTransferMethod =
+  | typeof WS_METHODS.assetsReadWorkspaceChunk
+  | typeof WS_METHODS.attachmentsBeginUpload
+  | typeof WS_METHODS.attachmentsWriteChunk
+  | typeof WS_METHODS.attachmentsReadChunk
+  | typeof WS_METHODS.attachmentsDelete;
 
 export function createAttachmentEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    openNoiseTransfer: createEnvironmentCommand(runtime, {
+      label: "environment-command:attachments:open-noise-transfer",
+      execute: Effect.fn("Attachments.openNoiseTransfer")(function* (
+        _: undefined,
+        registry: AtomRegistry.AtomRegistry,
+      ) {
+        const supervisor = yield* EnvironmentSupervisor;
+        const session = yield* currentSession();
+        if (session.transport !== "noise")
+          return yield* environmentRpcUnavailable(supervisor.target);
+        const permissions = withEnvironmentRpcPermissions(runtime, registry);
+        // A reconnect must never send a remaining chunk (or cleanup) to a different socket.
+        const bind =
+          <T extends FileTransferMethod>(tag: T) =>
+          (input: EnvironmentRpcInput<T>) =>
+            Effect.gen(function* () {
+              if ((yield* currentSession()) !== session)
+                return yield* environmentRpcUnavailable(supervisor.target);
+              return yield* requestInSession(session, tag, input);
+            }).pipe(Effect.provideService(EnvironmentSupervisor, supervisor), permissions);
+        return {
+          beginUpload: bind(WS_METHODS.attachmentsBeginUpload),
+          writeChunk: bind(WS_METHODS.attachmentsWriteChunk),
+          readChunk: bind(WS_METHODS.attachmentsReadChunk),
+          readWorkspaceChunk: bind(WS_METHODS.assetsReadWorkspaceChunk),
+          remove: bind(WS_METHODS.attachmentsDelete),
+        };
+      }),
+    }),
     createUploadUrl: createEnvironmentRpcCommand(runtime, {
       label: "environment-command:attachments:create-upload-url",
       tag: WS_METHODS.attachmentsCreateUploadUrl,
@@ -35,6 +80,10 @@ export function createAttachmentEnvironmentAtoms<R, E>(
     }),
   };
 }
+
+export type NoiseAttachmentTransfer = Effect.Success<
+  ReturnType<ReturnType<typeof createAttachmentEnvironmentAtoms>["openNoiseTransfer"]["run"]>
+>;
 
 /**
  * Pending uploads expire, so this is the signal to upload the bytes again rather than retry the

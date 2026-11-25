@@ -8,3 +8,5 @@ packages/source-control-github/schema/** linguist-generated
 packages/issue-tracker-linear/schema/** linguist-generated
 apps/server/schema/** linguist-generated
 **/*.graphql.ts linguist-generated
+packages/shared/src/_generated/noise.* linguist-generated
+apps/mobile/modules/t3-native-controls/android/src/main/jniLibs/**/libt3_connect_noise.so binary linguist-generated

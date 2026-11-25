@@ -589,7 +589,8 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         }
         if (current !== null) yield* Fiber.interrupt(current.fiber);
         const identity = descriptorShellIdentity(prepared?.descriptor);
-        if (prepared === null || identity === null) return [null, null] as const;
+        if (prepared === null || prepared.transport === "noise" || identity === null)
+          return [null, null] as const;
         // Items a closed session still has in flight must not land on the rows this loads.
         yield* Ref.set(activeSubscription, null);
         const fiber = yield* loadOverHttp(prepared, identity).pipe(Effect.forkIn(stateScope));
@@ -682,7 +683,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           loaded?.kind !== "snapshot" &&
           Option.isSome((yield* SubscriptionRef.get(state)).snapshot) &&
           canResumeFrom(yield* Ref.get(origin), identity, yield* Clock.currentTimeMillis);
-        if (!resumingHeldRows && loaded === null) {
+        if (session.transport !== "noise" && !resumingHeldRows && loaded === null) {
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
               Option.match({
@@ -697,7 +698,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
               }),
             ),
           );
-          loaded = yield* loadOverHttp(prepared, identity);
+          if (prepared.transport !== "noise") loaded = yield* loadOverHttp(prepared, identity);
         }
 
         const current = yield* SubscriptionRef.get(state);
@@ -712,7 +713,9 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           afterSequence: current.snapshot.value.snapshotSequence,
           // Only rows the client already held may be refused; a cursor from the snapshot just
           // loaded falls back to the socket snapshot, so a refusal cannot loop.
-          ...(resumingHeldRows ? { httpSnapshotFallback: true as const } : {}),
+          ...(resumingHeldRows && session.transport !== "noise"
+            ? { httpSnapshotFallback: true as const }
+            : {}),
           // No stream item has touched the snapshot just loaded, so its identities still hold.
           ...(loaded?.kind === "snapshot" && loaded.projectIdentities !== undefined
             ? { knownProjectIdentities: loaded.projectIdentities }

@@ -1,3 +1,4 @@
+import { usePreparedConnection } from "../../state/session";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -96,6 +97,9 @@ export function FileMarkdownPreview(props: {
   readonly onRefresh?: () => Promise<void> | void;
 }) {
   const t = useUiTranslation();
+  const connection = usePreparedConnection(props.environmentId);
+  const noise = connection._tag === "Some" && connection.value.transport === "noise";
+  const sourceOnlyMedia = noise && !connection.value.mediaOrigins;
   const navigation = useNavigation();
   const gt = useGT();
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
@@ -117,12 +121,15 @@ export function FileMarkdownPreview(props: {
     const media = resolveMobileMarkdownMediaSource(image.href, {
       threadId: props.threadId ?? undefined,
       workspaceRoot: markdownDirectory,
+      ...(noise ? { draftWorkspaceRoot: props.cwd } : {}),
       imageEmbed: true,
     });
     const preview = resolveMarkdownMediaPreview(image.href, {
       environmentId: props.environmentId,
       threadId: props.threadId ?? undefined,
       workspaceRoot: markdownDirectory,
+      ...(noise ? { draftWorkspaceRoot: props.cwd } : {}),
+      workspaceSvgAsSource: sourceOnlyMedia,
       captured: props.captured,
       imageEmbed: true,
     });
@@ -145,6 +152,7 @@ export function FileMarkdownPreview(props: {
       );
     }
     if (media?.access === "direct") {
+      if (noise) return <ThreadMarkdownImageUnavailable alt={image.alt} />;
       if (media.kind === "video") {
         return (
           <ThreadMarkdownVideo
@@ -197,6 +205,8 @@ export function FileMarkdownPreview(props: {
     environmentId: props.environmentId,
     threadId: props.threadId,
     workspaceRoot: markdownDirectory,
+    ...(noise ? { draftWorkspaceRoot: props.cwd } : {}),
+    blockRemoteEmbeds: noise,
     captured: props.captured,
   });
   const openMedia = (href: string, imageEmbed = false) => {
@@ -204,6 +214,8 @@ export function FileMarkdownPreview(props: {
       environmentId: props.environmentId,
       threadId: props.threadId ?? undefined,
       workspaceRoot: markdownDirectory,
+      ...(noise ? { draftWorkspaceRoot: props.cwd } : {}),
+      workspaceSvgAsSource: sourceOnlyMedia,
       captured: props.captured,
       imageEmbed,
     });
@@ -246,6 +258,8 @@ export function FileMarkdownPreview(props: {
             environmentId: props.environmentId,
             threadId: props.threadId ?? undefined,
             workspaceRoot: markdownDirectory,
+            ...(noise ? { draftWorkspaceRoot: props.cwd } : {}),
+            workspaceSvgAsSource: sourceOnlyMedia,
             captured: props.captured,
           },
           false,

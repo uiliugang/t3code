@@ -4,13 +4,14 @@ This fork does not send product usage events, T3 Connect client traces, or mobil
 
 ## Agent activity for mobile notifications
 
-When **Publish agent activity** is enabled on a host, it sends project and thread titles, model
-names, activity status, and environment and thread identifiers to the T3 Connect relay for
-[mobile notifications and live activities](./mobile-notifications.md). This setting is independent of diagnostic export.
+When **Publish agent activity** is enabled on a fork host, it sends a signed wake signal
+identifying the environment. T3 Connect and Firebase can see the recipient, environment ID
+and delivery timing. An approved Android phone reads project and thread titles, activity
+status and other notification details from the host over its encrypted connection.
+See [mobile notifications](./mobile-notifications.md).
 
-To stop publishing, turn off **Publish agent activity** under **Settings > Sharing & access** on
-the host. Turning off notifications on a phone controls that phone's alerts, not the host's
-publishing setting.
+To stop sending wake signals, turn off **Publish agent activity** under **Settings > Sharing & access**
+on the host. Notification preferences on each phone control what it displays.
 
 ## Export diagnostics to your own receiver
 

@@ -1,3 +1,4 @@
+import { noiseHttpSession } from "./noiseHttp.ts";
 import {
   authScopeRequiredResponse,
   AuthAccessTokenType,
@@ -168,19 +169,21 @@ export const authenticateMediaRequest =
   Effect.fnUntraced(function* (requiredScope: AuthEnvironmentScope) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-    const session = yield* serverAuth.authenticateWebSocketUpgrade(request, "media").pipe(
-      Effect.catch((error) =>
-        Effect.gen(function* () {
-          if (EnvironmentAuth.isServerAuthCredentialError(error)) {
-            return yield* failEnvironmentAuthInvalid(
-              EnvironmentAuth.serverAuthCredentialReason(error),
-              EnvironmentAuth.serverAuthDpopFailureReason(error),
-            );
-          }
-          return yield* failEnvironmentInternal("internal_error", error);
-        }),
-      ),
-    );
+    const session =
+      noiseHttpSession(request) ??
+      (yield* serverAuth.authenticateWebSocketUpgrade(request, "media").pipe(
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            if (EnvironmentAuth.isServerAuthCredentialError(error)) {
+              return yield* failEnvironmentAuthInvalid(
+                EnvironmentAuth.serverAuthCredentialReason(error),
+                EnvironmentAuth.serverAuthDpopFailureReason(error),
+              );
+            }
+            return yield* failEnvironmentInternal("internal_error", error);
+          }),
+        ),
+      ));
     if (!session.scopes.includes(requiredScope)) {
       return yield* failEnvironmentScopeRequired(requiredScope);
     }
@@ -255,17 +258,19 @@ export const layerAuthenticatedAuth = Layer.effect(
     return (httpEffect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
-        const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
-          Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-            failEnvironmentAuthInvalid(
-              EnvironmentAuth.serverAuthCredentialReason(error),
-              EnvironmentAuth.serverAuthDpopFailureReason(error),
+        const session =
+          noiseHttpSession(request) ??
+          (yield* serverAuth.authenticateHttpRequest(request).pipe(
+            Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
+              failEnvironmentAuthInvalid(
+                EnvironmentAuth.serverAuthCredentialReason(error),
+                EnvironmentAuth.serverAuthDpopFailureReason(error),
+              ),
             ),
-          ),
-          Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-            failEnvironmentInternal("internal_error", error),
-          ),
-        );
+            Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
+              failEnvironmentInternal("internal_error", error),
+            ),
+          ));
         return yield* httpEffect.pipe(
           Effect.provideService(EnvironmentAuthenticatedPrincipal, {
             ...session,
@@ -558,8 +563,11 @@ export const layer = HttpApiBuilder.group(
         Effect.fn("environment.auth.approveConnectDevice")(
           function* (args) {
             yield* annotateEnvironmentRequest(args.endpoint.name);
-            yield* requireEnvironmentScope(AuthAccessWriteScope);
-            const approved = yield* serverAuth.approveConnectDevice(args.payload.pairingLinkId);
+            const session = yield* requireEnvironmentScope(AuthAccessWriteScope);
+            const approved = yield* serverAuth.approveConnectDevice(
+              args.payload.pairingLinkId,
+              session.subject,
+            );
             return { approved };
           },
           Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>

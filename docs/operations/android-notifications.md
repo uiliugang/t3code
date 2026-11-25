@@ -1,6 +1,6 @@
 # Android notifications
 
-The Android app receives Firebase Cloud Messaging (FCM) data messages. The relay sends them directly through FCM HTTP v1; an Expo Push account is not required.
+Firebase Cloud Messaging (FCM) wakes Android when activity changes. Each data message contains only `t3_kind=agent_activity_wake`, `environment_id`, `device_id`, and `user_id`. The phone checks the signed-in account and preferences, opens its approved Noise connection to the host, and builds notifications from the returned activity.
 
 ## Android compatibility and automated checks
 
@@ -28,10 +28,12 @@ The lint command uses the K1 frontend because AGP's K2 frontend crashes while an
 4. Enable the Firebase Cloud Messaging API in the Google project if it is not already enabled. For hosted delivery, set the relay's `FCM_SERVICE_ACCOUNT` secret to the service-account JSON.
 5. Build a new Android binary. A JavaScript-only update cannot install the native notification handler or Firebase configuration. Hosted delivery also needs the relay database migration and updated relay deployment; local verification can use the watcher below.
 
-For a local development build, from `apps/mobile`:
+For a local development build, set the public relay and Clerk values for your test deployment in the build environment. From `apps/mobile` run
 
 ```sh
 APP_VARIANT=development \
+T3CODE_RELAY_URL=https://your-relay.example \
+EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=your-publishable-key \
 T3CODE_ANDROID_GOOGLE_SERVICES_FILE=/absolute/path/google-services.json \
 vp run android:dev
 ```
@@ -56,23 +58,19 @@ Building with `APP_VARIANT=production` selects `com.t3tools.t3code` and its corr
 
 ## Focused delivery check
 
-`infra/relay/scripts/android-push-smoke.ts` sends a message through the production FCM client implementation without provisioning the relay's database, Clerk integration, or Cloudflare queues. It verifies only Firebase-to-device delivery.
+Keep the fork host online with activity publishing and T3 Connect remote access enabled. A publish-only link has no tunnel for the phone to fetch details. Sign in to the matching Clerk account in an APK built for that relay, register the Android device and enable notifications for the environment. Pair the Android device using the host's Noise pin and approve its displayed code. Open the environment from the phone once to verify the connection. [Android Noise pairing](../user/remote-access.md#use-an-end-to-end-encrypted-connection-on-android)
 
-Provide a private device JSON file containing the app's native FCM `token`, registered `deviceId`, signed-in `userId`, and Android `packageName`. An optional `deepLink` can target an existing thread for tap verification. The app must have registered its local native notification handler and have notification permission. From `infra/relay`:
+Place the app's FCM `token`, `packageName`, registered `deviceId`, signed-in `userId`, and the target `environmentId` in a private device JSON file. From `infra/relay` run
 
 ```sh
-vp run push:android:smoke /path/service-account.json /path/device.json running
-vp run push:android:smoke /path/service-account.json /path/device.json approval
-vp run push:android:smoke /path/service-account.json /path/device.json completed
+vp run push:android:smoke /path/service-account.json /path/device.json
 ```
 
-Supported states are `running`, `approval`, `input`, `completed`, `failed`, and `end`. Firebase acceptance is not proof that a device displayed the message. Check the actual notification, background the app, and test a notification tap. Also test dismissal, disabling ongoing activity, sign-out, token rotation, and delivery after the app process has exited. Android Settings **Force stop** intentionally prevents delivery until the app is opened again.
+The command sends one wake through the production FCM client. Fields such as `deepLink` in an older device file are ignored. Update older files with the host's environment ID and remove the old phase argument from command lines.
 
-With the app in the foreground, Android suppresses an alert only for the thread currently on screen, matching iOS notification presentation; alerts for other threads still show. Activity cards still update in the foreground and retain finished results silently. Check that completion stays quiet while its thread is open, alerts while another screen is open, alerts after backgrounding, and that retrying a suppressed alert does not show it later. This uses the app lifecycle and route on the receiving phone, not thread visibility on other clients.
+To verify the full path, leave a local Replay thread waiting for approval, background the Android app, and send a wake. Check the project and thread shown on the phone and tap the notification to open that thread. Repeating the wake for an unchanged request should leave a single alert. Firebase acceptance confirms only that Firebase accepted the wake. The host supplies the current state at fetch time, and Android delivery can be delayed. An unreachable host or a revoked device cannot supply details.
 
-With ongoing activity enabled, verify two threads entering approval/input together produce one `2 agents need attention` alert, and two observed active threads completing/failing together produce one `2 agents finished` alert. The body lists their titles. The relay shares iOS transition selection and retains its delivered baseline when work finishes; publishing the same states again must not produce another alert. Grouped alerts open the aggregate’s priority thread; individual alerts retain their thread link.
-
-Verify an expanded card with five threads, attention/failure priority, project names and statuses. When all work finishes, the card should show **Agent work completed** or **Agent work failed**, lose its ongoing/promotion flag, and expire 15 minutes after the newest displayed result. Replays must not extend that deadline. Quiet running work uses the relay’s two-hour state lifetime; approval/input states use 24 hours. Reopen the same signed-in app and confirm existing alerts and dismissal survive, with a silent aggregate replay on cold start or a foreground after at least 60 seconds. Also check empty replays remove an orphaned card and completions older than two minutes never alert, even with ongoing activity disabled.
+Check a completed run and an empty environment to verify card expiry and removal. Also test foreground thread suppression, dismissal, sign-out, and delivery after process exit. Android's **Force stop** setting prevents delivery until the app is opened again.
 
 After Android prebuild, run the native presentation regression tests from `apps/mobile/android`:
 
@@ -84,15 +82,15 @@ After Android prebuild, run the native presentation regression tests from `apps/
 
 ### Local verification with existing T3 services
 
-You do not need to duplicate T3 Connect's hosted infrastructure to develop Android push. Keep the normal Clerk login and environment connections. `infra/relay/scripts/android-push-watch.ts` subscribes to one paired environment's shell stream, uses the shared agent-awareness projection, and sends updates through the new FCM client. It holds transient state in memory and needs no hosted database or Clerk secret.
+The local watcher can send wakes when a paired host changes. Use the host’s loopback WebSocket URL or a trusted direct connection. The watcher authenticates with a bearer token and its shell subscription carries readable project and thread details, so a relay or proxy on that path could read them. It batches changes into the same environment wake as the smoke command. Production Android notifications fetch their details over Noise.
 
-Create a private `connection.json` containing `wsUrl` (the environment's `/ws` URL) and `bearerToken` (a normal paired environment access token). Use a separate pairing credential for this watcher. Supply the same device file described above, then run from `infra/relay`:
+Create a private `connection.json` containing `wsUrl` (the host's `/ws` URL) and `bearerToken` (a separate paired credential). Use the device JSON and phone setup from the focused delivery check. The watcher verifies that the host's ID matches `environmentId` in that file. From `infra/relay` run
 
 ```sh
 vp run push:android:watch /path/service-account.json /path/device.json /path/connection.json
 ```
 
-The Android native handler must already be configured with that device and account, and notifications must be allowed. A native instrumentation harness can configure a disposable emulator before testing; a signed-in development app configures the handler during device registration. This watcher is a development transport: it observes all unarchived threads in its paired environment, enables all alert types, keeps no durable queue, and must stay running. It does not register Android devices with the existing hosted relay. The hosted relay needs the changes below before its notification settings and delivery work end to end.
+Keep the watcher running while changing a thread on the host. The phone still uses its saved T3 Connect environment and Noise approval to read the latest activity.
 
 ### Hosted delivery
 
@@ -112,7 +110,7 @@ A maintainer with access to the existing Alchemy state and deployment credential
    ```
 
 4. Give the tester the deployed relay URL and matching public Clerk configuration. The deploy wrapper also writes the relay URL and public tracing configuration into that checkout's root `.env`. Rebuild the private APK with this `T3CODE_RELAY_URL`, the existing Firebase Android file, and OTA updates disabled. If using the separate development package, authorize its Clerk callback as described above.
-5. Configure one isolated T3 server with the same relay URL and link that test environment through the new relay. Existing production relay links do not automatically move to a personal stage. Enable activity publishing for the test environment, enable notifications on the phone, and verify a real agent turn produces a running update and completion alert while the phone is locked.
+5. Configure one isolated T3 server with the same relay URL and link that test environment through the new relay. Existing production relay links do not automatically move to a personal stage. Enable activity publishing and remote access, approve the phone's Noise pairing request, and verify that a local Replay turn updates the notification while the phone is locked.
 
 The maintainer can perform deployment themselves and return only the public client configuration; the tester does not need copies of their hosting or Clerk server credentials. A fully independent deployment needs its own initial Cloudflare stack, PostgreSQL database, Firebase project, and a Clerk instance the operator can configure. Its Alchemy deployment needs PlanetScale and Axiom credentials.
 
@@ -120,4 +118,4 @@ Build the host client and mobile app with the same relay URL and Clerk public co
 
 For deployment through GitHub Actions, add `FCM_SERVICE_ACCOUNT` to the `production` environment's secrets. The relay workflow passes it to Alchemy. The maintainer must also supply `google-services.json` for the production Android package in the native build environment; changing the relay secret alone cannot move an installed app to another Firebase project.
 
-Android delivery uses `RelayFcmDeliveryQueue` and a separate dead-letter queue. Failed requests are retried; messages expire after five minutes. Before sending, the consumer rechecks the device token, current preferences, environment links, and current thread state. `UNREGISTERED` responses invalidate only the matching device token. OAuth tokens are cached within the FCM service and refreshed after an authorization failure.
+The fork host signs an environment wake when activity changes. The relay checks the linked accounts, registered devices, and notification preferences before sending FCM wakes. The current relay sends fork host wakes directly to FCM. For hosts on the older publication protocol, it queues routing identifiers and rechecks the environment key, link, preferences, and token on delivery. The consumer discards older queued jobs containing activity details. Firebase `UNREGISTERED` responses invalidate the matching device token. The phone fetches the snapshot through Noise and applies its alert preferences locally.

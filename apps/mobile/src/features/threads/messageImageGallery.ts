@@ -11,6 +11,7 @@ export function messageImageGallery(
     environmentId: EnvironmentId;
     threadId: ThreadId;
     workspaceRoot: string | null | undefined;
+    workspaceSvgAsSource?: boolean;
   },
 ): FilePreviewItem[] {
   const images: FilePreviewItem[] = [];

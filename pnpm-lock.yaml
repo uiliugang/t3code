@@ -1561,6 +1561,9 @@ importers:
       effect:
         specifier: 4.1.5
         version: 4.1.5(patch_hash=24395ce5abc3df3a44cceace2bb247cfe7d201e82b099212372b9347de142f28)
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       gt-i18n:
         specifier: 1.0.40
         version: 1.0.40

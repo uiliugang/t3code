@@ -15,6 +15,10 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as RpcHttp from "../rpc/http.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
+import {
+  EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE,
+  RelayEnvironmentDiscovery,
+} from "../relay/discovery.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { fetchRemoteSessionState } from "../authorization/remote.ts";
 import {
@@ -32,6 +36,7 @@ import {
   PrimaryConnectionTarget,
 } from "./model.ts";
 import * as Onboarding from "./onboarding.ts";
+import { makeEncryptedRelay } from "./encryptedRelay.ts";
 import {
   prepareBearerConnectionUpdate,
   preparePairingRegistration,
@@ -240,6 +245,35 @@ const registerSwitchedOffEnvironment = Effect.gen(function* () {
 });
 
 describe("connection onboarding", () => {
+  it.effect("keeps the original environment enabled when saving its Noise pin fails", () =>
+    Effect.gen(function* () {
+      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+      const onboarding = yield* Onboarding.ConnectionOnboarding;
+      const environmentId = yield* onboarding.registerPairing(PAIRING_INPUT);
+      const before = (yield* SubscriptionRef.get(registry.entries)).get(environmentId);
+      expect(before?.enabled).toBe(true);
+      const discovery = yield* SubscriptionRef.make(EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE);
+      const failure = new Error("Storage is full");
+      const noise = makeEncryptedRelay({
+        enabled: () => true,
+        loadPeer: Effect.die("Enrollment does not use a transport"),
+        storage: Effect.succeed({
+          getItem: () => Effect.succeed(null),
+          setItem: () => Effect.fail(failure),
+        }),
+      });
+      expect(
+        yield* noise
+          .enroll({ pin: { environmentId, key: new Uint8Array(32) }, replacePin: false })
+          .pipe(
+            Effect.flip,
+            Effect.provide(Layer.mock(RelayEnvironmentDiscovery)({ state: discovery })),
+          ),
+      ).toBe(failure);
+      expect((yield* SubscriptionRef.get(registry.entries)).get(environmentId)).toEqual(before);
+    }).pipe(Effect.provide(layerPairingOnboarding())),
+  );
+
   it.effect("prepares a persisted bearer registration from pairing details", () =>
     Effect.gen(function* () {
       const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
@@ -632,6 +666,27 @@ describe("connection onboarding", () => {
       expect(error).not.toHaveProperty("serverUpdateRequired");
       expect(calls.map((call) => call.url)).toEqual([
         "https://remote.example.test/.well-known/t3/environment",
+      ]);
+    }),
+  );
+
+  it.effect("keeps the pairing credential when the destination requires Noise", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+      const error = yield* preparePairingRegistration(PAIRING_INPUT).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            layerPairingOnboarding({}, calls),
+            Layer.mock(ClientCapabilities.NoiseConnections)({
+              readPin: () => Effect.succeed(new Uint8Array(32)),
+            }),
+          ),
+        ),
+        Effect.flip,
+      );
+      expect(error).toMatchObject({ reason: "configuration" });
+      expect(calls.map(({ url }) => new URL(url).pathname)).toEqual([
+        "/.well-known/t3/environment",
       ]);
     }),
   );

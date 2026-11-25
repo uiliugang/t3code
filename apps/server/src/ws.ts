@@ -1,3 +1,4 @@
+import { NoiseGuestCall } from "./auth/noiseGuestContext.ts";
 import * as WorkItems from "./work-items/WorkItemService.ts";
 import * as DeliveryAutomation from "./work-items/DeliveryAutomationService.ts";
 import * as DeliverySync from "./work-items/DeliverySyncReactor.ts";
@@ -36,6 +37,7 @@ import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { rpcInitialItems } from "./rpcInitialItems.ts";
 import { subscribeChatGptHandoff } from "./provider/CodexChatGptHandoff.ts";
@@ -74,6 +76,7 @@ import {
   OrchestrationV2DispatchCommandError,
   OrchestrationV2GetShellSnapshotError,
   OrchestrationV2GetThreadProjectionError,
+  type OrchestrationV2RpcSchemas,
   OrchestrationV2ThreadLaunchError,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
@@ -180,6 +183,7 @@ import {
 } from "./orchestration-v2/ThreadStream.ts";
 import {
   buildBoundedThreadProjection,
+  decodeThreadHistoryCursor,
   THREAD_HISTORY_PAGE_POLICY,
   THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
 } from "./orchestration-v2/threadHistoryPaging.ts";
@@ -222,15 +226,24 @@ import { withSocketHeartbeat } from "./socketHeartbeat.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
+import { makeNoisePreviewDocument } from "./preview/NoisePreviewDocument.ts";
+import { PreviewInvalidUrlError } from "@t3tools/contracts";
+import { NOISE_PREVIEW_ORIGIN } from "@t3tools/shared/preview";
 import * as PreviewManager from "./preview/Manager.ts";
-import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import {
+  issueAssetUrl,
+  issueNoiseWorkspaceUrl,
+  noiseAssetSigningContext,
+  readWorkspaceChunk,
+} from "./assets/AssetAccess.ts";
 import {
   attachmentRelativePath,
   chatAttachmentStableKey,
   createDeterministicAttachmentId,
 } from "./attachmentStore.ts";
 import { parseBase64DataUrl } from "./imageMime.ts";
-import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
+import { issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
+import * as AttachmentTransfer from "./assets/AttachmentTransfer.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
@@ -263,13 +276,18 @@ import * as DefectReporter from "./observability/DefectReporter.ts";
 import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import { makeNoiseHttpBridge } from "./auth/noiseHttp.ts";
 import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
+import type * as Socket from "effect/socket/Socket";
+import { serveNoiseMedia } from "./auth/noiseMedia.ts";
+import * as ConnectNoise from "./auth/connectNoise.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import { isPrivateBrowserThread } from "./preview/privateBrowserTab.ts";
 import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
+import { AgentAwarenessRelay } from "./relay/AgentAwarenessRelay.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
@@ -801,6 +819,7 @@ function toAuthAccessStreamEvent(
         type: "pairingLinkUpserted",
         payload: { ...change.pairingLink, ...authScopeResponse(change.pairingLink.scopes) },
       };
+    case "noiseRequestPending":
     case "pairingLinkRemoved":
       return {
         version: 1,
@@ -874,6 +893,41 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
       ),
     ),
 );
+
+export const getOrchestrationV2ThreadHistoryPage = Effect.fn(
+  "ws.orchestrationV2.getThreadHistoryPage",
+)(function* (input: typeof OrchestrationV2RpcSchemas.getThreadHistoryPage.input.Type) {
+  const threadManagement = yield* ThreadManagementService.ThreadManagementService;
+  yield* Effect.try({
+    try: () => decodeThreadHistoryCursor(input.cursor),
+    catch: () =>
+      new OrchestrationV2GetThreadProjectionError({
+        threadId: input.threadId,
+        message: "Invalid history cursor",
+      }),
+  });
+  const workMode =
+    input.view === "work" ? "work" : input.throughEntryId === undefined ? "deferred" : undefined;
+  const page = yield* threadManagement
+    .getThreadHistoryPage(
+      input.threadId,
+      input.cursor,
+      input.throughEntryId,
+      input.view === "conversation",
+      workMode,
+    )
+    .pipe(
+      Effect.mapError(
+        (cause) =>
+          new OrchestrationV2GetThreadProjectionError({
+            threadId: input.threadId,
+            message: "Failed to load earlier thread history",
+            cause,
+          }),
+      ),
+    );
+  return { ...page, idTable: true as const };
+});
 
 export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subscribeThread")(
   function* (input: {
@@ -1404,10 +1458,32 @@ export const layerWsRpc = (
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
   reportProfiles: ServerBrowser.ProfileReporter,
   settingsClient: { readonly secretReferences: boolean },
+  socketScope?: Scope.Scope,
+  router?: HttpRouter.HttpRouter,
 ) =>
   Layer.effectContext(
     Effect.gen(function* () {
+      const noiseHttp = makeNoiseHttpBridge(currentSession, router);
+      const noiseAssetContext =
+        currentSession.subject === SessionStore.NOISE_SESSION_SUBJECT
+          ? noiseAssetSigningContext(currentSession)
+          : undefined;
+      const issueSessionAsset = (input: Parameters<typeof issueAssetUrl>[0]) =>
+        noiseAssetContext &&
+        (input.resource._tag === "workspace-file" ||
+          input.resource._tag === "draft-workspace-file" ||
+          input.resource._tag === "media-file")
+          ? issueNoiseWorkspaceUrl(input.resource, input.workspaceRoot, noiseAssetContext)
+          : issueAssetUrl(input, noiseAssetContext);
+      const previewLifetime = noiseAssetContext
+        ? yield* Effect.abortSignal.pipe(
+            Effect.provideService(Scope.Scope, socketScope ?? (yield* Effect.scope)),
+          )
+        : undefined;
       const currentSessionId = currentSession.sessionId;
+      const attachmentUploads = yield* AttachmentTransfer.makeUploads(
+        socketScope ?? (yield* Effect.scope),
+      );
       const sql = yield* SqlClient.SqlClient;
       const threadManagement = yield* ThreadManagementService.ThreadManagementService;
       const intakeContext = yield* Effect.context<
@@ -1573,6 +1649,7 @@ export const layerWsRpc = (
       const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const triage = yield* TriageService.TriageService;
+      const awareness = yield* AgentAwarenessRelay;
       const hostResources = yield* HostResources.HostResources;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
@@ -1783,9 +1860,10 @@ export const layerWsRpc = (
         yield* providerRegistry.refreshInstance(input.instanceId);
         return { disabled: true } as const;
       });
+      const includeNoiseRequests = currentSession.subject === SessionStore.NOISE_SESSION_SUBJECT;
       const loadAuthAccessSnapshot = () =>
         Effect.all({
-          pairingLinks: serverAuth.listPairingLinks(),
+          pairingLinks: serverAuth.listPairingLinks({ includeNoiseRequests }),
           clientSessions: serverAuth.listClientSessions(currentSessionId),
           connectDevices: serverAuth.listConnectDevices(),
         }).pipe(
@@ -2171,6 +2249,7 @@ export const layerWsRpc = (
                 ),
             ),
           ),
+        [ORCHESTRATION_V2_WS_METHODS.getThreadHistoryPage]: getOrchestrationV2ThreadHistoryPage,
         [ORCHESTRATION_V2_WS_METHODS.launchThread]: (input) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": input.commandId,
@@ -2782,6 +2861,18 @@ export const layerWsRpc = (
             maxFiles: config.traceMaxFiles,
           }),
         [WS_METHODS.serverGetProcessDiagnostics]: (_input) => processDiagnostics.read,
+        [WS_METHODS.serverNoiseHttp]: noiseHttp.dispatch,
+        [WS_METHODS.serverNoiseHttpUpload]: noiseHttp.upload,
+        [WS_METHODS.serverGetAgentActivity]: () =>
+          awareness.readActivity().pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationV2GetShellSnapshotError({
+                  message: "Could not read agent activity.",
+                  cause,
+                }),
+            ),
+          ),
         [WS_METHODS.serverGetHostResources]: (_input) => hostResources.read,
         [WS_METHODS.serverGetProcessResourceHistory]: (input) =>
           processResourceMonitor.readHistory(input),
@@ -3158,10 +3249,19 @@ export const layerWsRpc = (
           taskFolders.find(input.worktreePath).pipe(Effect.map((taskFolder) => ({ taskFolder }))),
         [WS_METHODS.workspaceAddTaskFolderRepository]: (input) => taskFolders.addRepository(input),
         [WS_METHODS.attachmentsCreateUploadUrl]: (input) => issueAttachmentUploadUrl(input),
-        [WS_METHODS.attachmentsDelete]: (input) => deletePendingAttachment(input.attachmentId),
+        [WS_METHODS.attachmentsBeginUpload]: attachmentUploads.begin,
+        [WS_METHODS.attachmentsWriteChunk]: attachmentUploads.write,
+        [WS_METHODS.attachmentsReadChunk]: AttachmentTransfer.readChunk,
+        [WS_METHODS.attachmentsDelete]: (input) => attachmentUploads.remove(input.attachmentId),
         [WS_METHODS.agentSessionsScan]: () => agentSessionScanner.scan,
         [WS_METHODS.agentSessionsImport]: (input) =>
           agentSessionImporter.importRecentAgentThreads(input),
+        [WS_METHODS.assetsReadWorkspaceChunk]: (input) =>
+          input.resource._tag === "draft-workspace-file"
+            ? readWorkspaceChunk(input, input.resource.cwd)
+            : threadWorkspaceRoot(input.resource.threadId).pipe(
+                Effect.flatMap((root) => readWorkspaceChunk(input, root)),
+              ),
         [WS_METHODS.assetsCreateUrl]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
@@ -3174,13 +3274,14 @@ export const layerWsRpc = (
               input.resource._tag === SOURCE_CONTROL_MEDIA_ASSET ||
               // A network path is served only from the thread's project, looked up below.
               (input.resource._tag === "media-file" &&
+                !noiseAssetContext &&
                 path.isAbsolute(input.resource.path) &&
                 !isNetworkPath(input.resource.path))
             ) {
-              return yield* issueAssetUrl({ resource: input.resource });
+              return yield* issueSessionAsset({ resource: input.resource });
             }
             if (input.resource._tag === "draft-workspace-file") {
-              return yield* issueAssetUrl({
+              return yield* issueSessionAsset({
                 resource: input.resource,
                 workspaceRoot: input.resource.cwd,
               });
@@ -3204,7 +3305,7 @@ export const layerWsRpc = (
               }
               // Clone projects precede their files; clients retry asset URLs after clone completion.
               const clone = yield* projectCloneTracker.get(project.value.projectId);
-              return yield* issueAssetUrl({
+              return yield* issueSessionAsset({
                 resource: input.resource,
                 ...(project.value.faviconPath
                   ? { projectFaviconPath: project.value.faviconPath }
@@ -3239,7 +3340,7 @@ export const layerWsRpc = (
                 resource: input.resource,
               });
             }
-            return yield* issueAssetUrl({
+            return yield* issueSessionAsset({
               resource: input.resource,
               workspaceRoot: thread.thread.worktreePath ?? project.value.workspaceRoot,
             });
@@ -3468,7 +3569,23 @@ export const layerWsRpc = (
               (unsubscribe) => Effect.sync(unsubscribe),
             ),
           ),
-        [WS_METHODS.previewOpen]: (input) => previewManager.open(input),
+        [WS_METHODS.previewOpen]: Effect.fn("preview.open")(function* (input) {
+          const entry = input.url && URL.parse(input.url);
+          if (entry && entry.origin === NOISE_PREVIEW_ORIGIN) {
+            const noiseDocument =
+              noiseAssetContext && previewLifetime
+                ? yield* makeNoisePreviewDocument(entry, noiseAssetContext, previewLifetime)
+                : undefined;
+            if (!noiseDocument)
+              return yield* new PreviewInvalidUrlError({
+                inputLength: entry.href.length,
+                reason: "unexpected",
+                cause: "Unavailable encrypted document",
+              });
+            return yield* previewManager.open({ ...input, runtime: "server", noiseDocument });
+          }
+          return yield* previewManager.open(input);
+        }),
         [WS_METHODS.previewResize]: (input) => previewManager.resize(input),
         [WS_METHODS.previewAdjust]: (input) => previewManager.adjust(input),
         [WS_METHODS.previewClose]: (input) => previewManager.close(input),
@@ -3737,7 +3854,8 @@ export const layerWsRpc = (
                     Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
                       Effect.flatMap((revision) =>
                         // Device trust has no incremental event older clients could decode.
-                        change.type === "connectDevicesChanged"
+                        change.type === "connectDevicesChanged" ||
+                        (change.type === "noiseRequestPending" && includeNoiseRequests)
                           ? loadAuthAccessSnapshot().pipe(
                               Effect.map((payload): AuthAccessStreamEvent => ({
                                 version: 1,
@@ -3798,6 +3916,7 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
+    const router = yield* HttpRouter.HttpRouter;
     const projectionStore = yield* ProjectionStoreV2;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const threadPrediction = yield* ThreadPrediction.ThreadPrediction;
@@ -3814,7 +3933,125 @@ export const layer = Layer.unwrap(
     const peerThreadRelay = yield* PeerThreadRelay.PeerThreadRelay;
     const peerClientPairing = yield* PeerClientPairing.PeerClientPairing;
     const sql = yield* SqlClient.SqlClient;
-    return HttpRouter.add(
+    const serve = Effect.fn("ws.serveRpc")(function* (
+      request: HttpServerRequest.HttpServerRequest,
+      session: EnvironmentAuth.AuthenticatedSession,
+      transport: { url: URL } | { socket: Socket.Socket },
+    ) {
+      const noiseSocket = "socket" in transport ? transport.socket : undefined;
+      const splitFrames =
+        "url" in transport && transport.url.searchParams.has(SOCKET_FRAME_PARTS_QUERY_PARAM);
+      const settingsClient =
+        "url" in transport ? readSettingsClient(transport.url) : { secretReferences: true };
+      const sessions = yield* SessionStore.SessionStore;
+      const reportProfiles = yield* serverBrowser.profileReporter;
+      const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
+        const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
+        yield* RpcServer.make(ServerWsRpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
+          Effect.provideService(RpcServer.Protocol, withOutputWindow(protocol)),
+          Effect.provide(
+            Layer.merge(
+              RpcAuthorization.layer(session.scopes, { noiseSession: noiseSocket !== undefined }),
+              rpcInstrumentationLayer,
+            ),
+          ),
+          Effect.forkScoped,
+        );
+        return httpEffect;
+      }).pipe(
+        Effect.provide(
+          layerWsRpc(
+            session,
+            serverBrowser,
+            reportProfiles,
+            settingsClient,
+            yield* Effect.scope,
+            router,
+          ).pipe(
+            Layer.provideMerge(RpcSerialization.layerJson),
+            Layer.provide(Layer.succeed(ThreadPrediction.ThreadPrediction, threadPrediction)),
+            // Handler-context reporters see only request defects, not server-wide defects.
+            Layer.provide(DefectReporter.layer),
+            Layer.provide(AcpRegistrySessions.layer),
+            Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
+            Layer.provide(Layer.succeed(ProjectionStoreV2, projectionStore)),
+            // Installs outlive the connection that started them and lock across clients.
+            Layer.provide(
+              Layer.succeed(
+                ProviderMaintenanceRunner.ProviderMaintenanceRunner,
+                providerMaintenanceRunner,
+              ),
+            ),
+            Layer.provide(Layer.succeed(NpmRelease.NpmRelease, npmRelease)),
+            Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
+            // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.
+            Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
+            Layer.provide(Layer.succeed(IssueService.IssueService, issues)),
+            Layer.provide(Layer.succeed(ThreadIssueService.ThreadIssueService, threadIssues)),
+            Layer.provide(
+              Layer.succeed(IssueTrackerConnections.IssueTrackerConnections, issueTrackers),
+            ),
+            Layer.provide(OtlpEndpointCheck.layer),
+            Layer.provide(
+              Layer.succeed(
+                PullRequestReviewGuideService.PullRequestReviewGuideService,
+                reviewGuides,
+              ),
+            ),
+            Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
+            Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
+            Layer.provide(Layer.succeed(PeerThreadRelay.PeerThreadRelay, peerThreadRelay)),
+            Layer.provide(Layer.succeed(PeerClientPairing.PeerClientPairing, peerClientPairing)),
+            Layer.provide(
+              SourceControlDiscovery.layer.pipe(
+                Layer.provide(
+                  SourceControlProviderRegistry.layer.pipe(
+                    Layer.provide(SourceControlBuiltInDrivers.layer),
+                    Layer.provideMerge(GitVcsDriver.layer),
+                    Layer.provide(
+                      VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      const framedRpcWebSocketHttpEffect = rpcWebSocketHttpEffect.pipe(
+        Effect.provideService(
+          HttpServerRequest.HttpServerRequest,
+          // The RPC server upgrades the request itself, so its socket is
+          // wrapped through the request it reads.
+          Object.create(request, {
+            ...(noiseSocket ? { headers: { value: {} } } : {}),
+            upgrade: {
+              value: Effect.map(
+                noiseSocket ? Effect.succeed(noiseSocket) : request.upgrade,
+                (socket) =>
+                  withSocketHeartbeat(splitFrames ? splitLargeSocketFrames(socket) : socket),
+              ),
+            },
+          }),
+        ),
+      );
+      return yield* Effect.acquireUseRelease(
+        sessions.markConnected(session.sessionId),
+        () =>
+          Effect.raceFirst(
+            framedRpcWebSocketHttpEffect,
+            sessions.awaitInvalidation(session.sessionId, session.proofKeyThumbprint).pipe(
+              Effect.as(HttpServerResponse.empty()),
+              Effect.catchTags({
+                SessionCredentialVerificationError: (error) =>
+                  failEnvironmentInternal("internal_error", error),
+              }),
+            ),
+          ),
+        () => sessions.markDisconnected(session.sessionId),
+      );
+    });
+    const websocket = HttpRouter.add(
       "GET",
       "/ws",
       Effect.gen(function* () {
@@ -3831,7 +4068,6 @@ export const layer = Layer.unwrap(
           );
         }
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
         const session = yield* serverAuth.authenticateWebSocketUpgrade(request, "rpc").pipe(
           Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
             failEnvironmentAuthInvalid(
@@ -3849,105 +4085,26 @@ export const layer = Layer.unwrap(
             "sec-websocket-extensions"
           ];
         }
-        const reportProfiles = yield* serverBrowser.profileReporter;
-        const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
-          const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
-          yield* RpcServer.make(ServerWsRpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
-            Effect.provideService(RpcServer.Protocol, withOutputWindow(protocol)),
-            Effect.provide(
-              Layer.merge(RpcAuthorization.layer(session.scopes), rpcInstrumentationLayer),
-            ),
-            Effect.forkScoped,
-          );
-          return httpEffect;
-        }).pipe(
-          Effect.provide(
-            layerWsRpc(session, serverBrowser, reportProfiles, readSettingsClient(url.value)).pipe(
-              Layer.provideMerge(RpcSerialization.layerJson),
-              Layer.provide(Layer.succeed(ThreadPrediction.ThreadPrediction, threadPrediction)),
-              // Handler-context reporters see only request defects, not server-wide defects.
-              Layer.provide(DefectReporter.layer),
-              Layer.provide(AcpRegistrySessions.layer),
-              Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
-              Layer.provide(Layer.succeed(ProjectionStoreV2, projectionStore)),
-              // Installs outlive the connection that started them and lock across clients.
-              Layer.provide(
-                Layer.succeed(
-                  ProviderMaintenanceRunner.ProviderMaintenanceRunner,
-                  providerMaintenanceRunner,
-                ),
-              ),
-              Layer.provide(Layer.succeed(NpmRelease.NpmRelease, npmRelease)),
-              Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
-              // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.
-              Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
-              Layer.provide(Layer.succeed(IssueService.IssueService, issues)),
-              Layer.provide(Layer.succeed(ThreadIssueService.ThreadIssueService, threadIssues)),
-              Layer.provide(
-                Layer.succeed(IssueTrackerConnections.IssueTrackerConnections, issueTrackers),
-              ),
-              Layer.provide(OtlpEndpointCheck.layer),
-              Layer.provide(
-                Layer.succeed(
-                  PullRequestReviewGuideService.PullRequestReviewGuideService,
-                  reviewGuides,
-                ),
-              ),
-              Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
-              Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
-              Layer.provide(Layer.succeed(PeerThreadRelay.PeerThreadRelay, peerThreadRelay)),
-              Layer.provide(Layer.succeed(PeerClientPairing.PeerClientPairing, peerClientPairing)),
-              Layer.provide(
-                SourceControlDiscovery.layer.pipe(
-                  Layer.provide(
-                    SourceControlProviderRegistry.layer.pipe(
-                      Layer.provide(SourceControlBuiltInDrivers.layer),
-                      Layer.provideMerge(GitVcsDriver.layer),
-                      Layer.provide(
-                        VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-        const splitFrames = url.value.searchParams.has(SOCKET_FRAME_PARTS_QUERY_PARAM);
-        const framedRpcWebSocketHttpEffect = rpcWebSocketHttpEffect.pipe(
-          Effect.provideService(
-            HttpServerRequest.HttpServerRequest,
-            // The RPC server upgrades the request itself, so its socket is
-            // wrapped through the request it reads.
-            Object.create(request, {
-              upgrade: {
-                value: Effect.map(request.upgrade, (socket) =>
-                  withSocketHeartbeat(splitFrames ? splitLargeSocketFrames(socket) : socket),
-                ),
-              },
-            }),
-          ),
-        );
-        return yield* Effect.acquireUseRelease(
-          sessions.markConnected(session.sessionId),
-          () =>
-            Effect.raceFirst(
-              framedRpcWebSocketHttpEffect,
-              sessions.awaitInvalidation(session.sessionId, session.proofKeyThumbprint).pipe(
-                Effect.as(HttpServerResponse.empty()),
-                Effect.catchTags({
-                  SessionCredentialVerificationError: (error) =>
-                    failEnvironmentInternal("internal_error", error),
-                }),
-              ),
-            ),
-          () => sessions.markDisconnected(session.sessionId),
-        );
+        return yield* serve(request, session, { url: url.value });
       }).pipe(
         Effect.catchTags({
           EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
           EnvironmentInternalError: HttpServerRespondable.toResponse,
         }),
+      ),
+    );
+    return Layer.merge(
+      websocket,
+      ConnectNoise.routeLayer(
+        (request, session, socket, media) =>
+          media
+            ? serveNoiseMedia(request, session, socket, router)
+            : serve(request, session, { socket }).pipe(Effect.orDie),
+        (request, guest, socket) =>
+          serveNoiseMedia(request, guest, socket, router).pipe(
+            Effect.provideService(NoiseGuestCall, true),
+          ),
+        (request, host, socket) => serveNoiseMedia(request, host, socket, router),
       ),
     );
   }),

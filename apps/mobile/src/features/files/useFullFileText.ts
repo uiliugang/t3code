@@ -1,4 +1,9 @@
-import type { AssetResource, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type {
+  AssetResource,
+  EnvironmentId,
+  ThreadId,
+  WorkspaceFileResource,
+} from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Effect from "effect/Effect";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
@@ -8,8 +13,25 @@ import { useMemo } from "react";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useAssetUrlState } from "../../state/assets";
 
-// Whole-file reads past this stay on the 1 MB RPC preview; a phone lays out every source row.
-export const MOBILE_FULL_FILE_MAX_BYTES = 8 * 1024 * 1024;
+import { environmentCatalog } from "../../connection/catalog";
+import { attachmentEnvironment } from "../../state/attachments";
+import { readNoiseWorkspaceFileText, MOBILE_FULL_FILE_MAX_BYTES } from "./noiseWorkspaceFileText";
+
+const encryptedTextByEnvironment = Atom.family((environmentId: EnvironmentId) =>
+  Atom.family((resource: WorkspaceFileResource) =>
+    Atom.make((get) => {
+      get(environmentCatalog.sessionGenerationAtom(environmentId));
+      return attachmentEnvironment.openNoiseTransfer
+        .run(get.registry, { environmentId, input: undefined })
+        .pipe(Effect.flatMap((transfer) => readNoiseWorkspaceFileText(transfer, resource)));
+    }).pipe(Atom.setIdleTTL(0)),
+  ),
+);
+
+export const encryptedWorkspaceText = (
+  environmentId: EnvironmentId,
+  resource: WorkspaceFileResource,
+) => encryptedTextByEnvironment(environmentId)(resource);
 
 /**
  * A refresh can keep the URL, so the key also carries the revision it downloads for. No idle TTL:

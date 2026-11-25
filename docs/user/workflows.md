@@ -63,7 +63,7 @@ Every start needs a `--key`: starting twice with the same key returns the same r
 ## Triggers
 
 - **Schedules:** `every` runs on an interval, starting one interval after the workflow loads; `daily` runs at a local time of day (a time missed by more than 10 minutes while the server is down is skipped).
-- **Webhooks:** `t3 workflow hooks` prints each hook's path; prepend your server's address. The path contains the hook's secret, so share it only with the sender. A sender's retry that repeats its delivery header (such as GitHub's `X-GitHub-Delivery`) starts no second run, and bodies over 1 MiB are refused. Organization policies blocking webhook tasks block workflow webhooks too.
+- **Webhooks:** Run `t3 workflow hooks` on the host. For a path starting with `/api/hooks/`, prepend your server's address. A host running with `T3CODE_NOISE_ONLY=true` and linked to T3 Connect prints a `t3hook://` address instead. Save that address in a private file and send events with `t3 webhook send --address-file ./hook.address --body-file ./event.json`. Each address contains the hook's secret, so share it only with the sender. A sender's retry that repeats its delivery header (such as GitHub's `X-GitHub-Delivery`) starts no second run. The size limit is 1 MiB for either a plain body or the complete encrypted delivery. Organization policies blocking webhook tasks block workflow webhooks too.
 - **Issues and pull requests:** workflows can start on new issues or pull requests and read, comment on, or update them via **Settings → Source control & issues** — no webhook needed. T3 Code checks roughly once a minute, and only items opened after the workflow was first loaded start runs.
 
 ## Follow runs in the app

@@ -1,5 +1,6 @@
 import {
   RelayAgentActivityPublishProofPayload,
+  RelayAgentActivityWakeProofPayload,
   RelayAgentActivityPublishProofInvalidReason,
   type RelayAgentActivityPublishRequest,
 } from "@t3tools/contracts/relay";
@@ -7,6 +8,7 @@ import {
   decodeRelayJwt,
   normalizeRelayIssuer,
   RELAY_ACTIVITY_PUBLISH_TYP,
+  RELAY_ACTIVITY_WAKE_TYP,
   verifyRelayJwt,
 } from "@t3tools/shared/relayJwt";
 import { stableStringify } from "@t3tools/shared/relaySigning";
@@ -27,11 +29,11 @@ export class EnvironmentPublishSignatureExpired extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("EnvironmentPublishSignatureExpired", {
   environmentId: Schema.String,
-  threadId: Schema.String,
+  threadId: Schema.optional(Schema.String),
   expiresAt: Schema.String,
 }) {
   override get message(): string {
-    return `Environment '${this.environmentId}' publish signature for thread '${this.threadId}' expired at ${this.expiresAt}`;
+    return `Environment '${this.environmentId}' activity signature expired at ${this.expiresAt}`;
   }
 }
 
@@ -40,7 +42,7 @@ export class EnvironmentPublishSignatureInvalid extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("EnvironmentPublishSignatureInvalid", {
   environmentId: Schema.String,
-  threadId: Schema.String,
+  threadId: Schema.optional(Schema.String),
   reason: RelayAgentActivityPublishProofInvalidReason,
   stage: Schema.Literals([
     "decode_token",
@@ -53,7 +55,7 @@ export class EnvironmentPublishSignatureInvalid extends Schema.TaggedError<
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
-    return `Environment '${this.environmentId}' publish signature for thread '${this.threadId}' is invalid during ${this.stage}: ${this.reason}`;
+    return `Environment '${this.environmentId}' activity signature is invalid during ${this.stage}: ${this.reason}`;
   }
 }
 
@@ -62,15 +64,17 @@ export type EnvironmentPublishSignatureError =
   | EnvironmentPublishSignatureInvalid
   | DpopProofs.DpopProofReplayPersistenceError;
 
+export type ActivityPublication = { readonly environmentId: string } & (
+  | { readonly threadId: string; readonly request: RelayAgentActivityPublishRequest }
+  | { readonly threadId?: undefined; readonly request: { readonly proof: string } }
+);
+
 export class EnvironmentPublishSignatures extends Context.Service<
   EnvironmentPublishSignatures,
   {
-    readonly verify: (input: {
-      readonly environmentId: string;
-      readonly environmentPublicKey: string;
-      readonly threadId: string;
-      readonly request: RelayAgentActivityPublishRequest;
-    }) => Effect.Effect<void, EnvironmentPublishSignatureError>;
+    readonly verify: (
+      input: ActivityPublication & { readonly environmentPublicKey: string },
+    ) => Effect.Effect<void, EnvironmentPublishSignatureError>;
   }
 >()("t3code-relay/environments/EnvironmentPublishSignatures") {}
 
@@ -99,7 +103,7 @@ const make = Effect.gen(function* () {
     verify: Effect.fn("relay.environment_publish_signatures.verify")(function* (input) {
       yield* Effect.annotateCurrentSpan({
         "relay.environment_id": input.environmentId,
-        "relay.thread_id": input.threadId,
+        ...(input.threadId === undefined ? {} : { "relay.thread_id": input.threadId }),
       });
       const now = yield* DateTime.now;
       const decoded = yield* decodeRelayJwt(input.request.proof).pipe(
@@ -124,33 +128,46 @@ const make = Effect.gen(function* () {
           expiresAt: DateTime.formatIso(DateTime.makeUnsafe(decoded.exp * 1_000)),
         });
       }
-      const proof = yield* verifyRelayJwt(RelayAgentActivityPublishProofPayload, {
+      const jwt = {
         publicKey: input.environmentPublicKey,
         token: input.request.proof,
-        typ: RELAY_ACTIVITY_PUBLISH_TYP,
         issuer: `t3-env:${input.environmentId}`,
         audience: normalizeRelayIssuer(config.relayIssuer),
-      }).pipe(
-        Effect.provideService(Signature.Signature, signature),
-        Effect.mapError(
-          (cause) =>
-            new EnvironmentPublishSignatureInvalid({
-              environmentId: input.environmentId,
-              threadId: input.threadId,
-              reason: "invalid_signature_or_payload",
-              stage: "verify_proof",
-              cause,
-            }),
-        ),
-      );
+      };
+      const checked =
+        input.threadId === undefined
+          ? verifyRelayJwt(RelayAgentActivityWakeProofPayload, {
+              ...jwt,
+              typ: RELAY_ACTIVITY_WAKE_TYP,
+            })
+          : verifyRelayJwt(RelayAgentActivityPublishProofPayload, {
+              ...jwt,
+              typ: RELAY_ACTIVITY_PUBLISH_TYP,
+            });
+      const proof: RelayAgentActivityWakeProofPayload | RelayAgentActivityPublishProofPayload =
+        yield* checked.pipe(
+          Effect.provideService(Signature.Signature, signature),
+          Effect.mapError(
+            (cause) =>
+              new EnvironmentPublishSignatureInvalid({
+                environmentId: input.environmentId,
+                threadId: input.threadId,
+                reason: "invalid_signature_or_payload",
+                stage: "verify_proof",
+                cause,
+              }),
+          ),
+        );
       if (
         proof.environmentId !== input.environmentId ||
-        proof.threadId !== input.threadId ||
         proof.sub !== input.environmentId ||
-        stableStringify(proof.state) !== stableStringify(input.request.state) ||
-        (input.request.state !== null &&
-          (input.request.state.environmentId !== input.environmentId ||
-            input.request.state.threadId !== input.threadId))
+        (input.threadId !== undefined &&
+          (!("threadId" in proof && "state" in proof) ||
+            proof.threadId !== input.threadId ||
+            stableStringify(proof.state) !== stableStringify(input.request.state) ||
+            (input.request.state !== null &&
+              (input.request.state.environmentId !== input.environmentId ||
+                input.request.state.threadId !== input.threadId))))
       ) {
         return yield* new EnvironmentPublishSignatureInvalid({
           environmentId: input.environmentId,

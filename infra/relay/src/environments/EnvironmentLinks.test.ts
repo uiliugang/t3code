@@ -1,17 +1,21 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { PGlite } from "@electric-sql/pglite";
+import { RelayListEnvironmentsResponse } from "@t3tools/contracts/relay";
 import { drizzle } from "drizzle-orm/pglite";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import type { SQL } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { PgDialect, type SelectedFields } from "drizzle-orm/pg-core";
 
 import * as RelayDb from "../db.ts";
 import { relayEnvironmentLinks } from "../persistence/schema.ts";
 import * as EnvironmentLinks from "./EnvironmentLinks.ts";
+
+const decodeEnvironments = Schema.decodeEffect(RelayListEnvironmentsResponse);
 
 describe("EnvironmentLinks", () => {
   it.effect("carries the webhook-hold opt-in over only from links with the same key", () => {
@@ -93,7 +97,7 @@ describe("EnvironmentLinks", () => {
       const rows = [
         matching,
         { ...matching, userId: "user-2" },
-        { ...matching, environmentId: "env-2" },
+        { ...matching, environmentId: "env-2", notificationsEnabled: false },
         { ...matching, userId: "user-3", environmentPublicKey: "key-2" },
         { ...revoked, revokedAt: timestamp },
       ];
@@ -111,6 +115,12 @@ describe("EnvironmentLinks", () => {
       );
       // PGlite returns promises where the production Drizzle driver returns Effects.
       const effectDb = {
+        select: (fields: SelectedFields) => ({
+          from: (table: typeof relayEnvironmentLinks) => ({
+            where: (condition: SQL | undefined) =>
+              Effect.promise(() => db.select(fields).from(table).where(condition)),
+          }),
+        }),
         update: (table: typeof relayEnvironmentLinks) => ({
           set: (values: Partial<typeof relayEnvironmentLinks.$inferInsert>) => ({
             where: (condition: SQL | undefined) => ({
@@ -140,6 +150,22 @@ describe("EnvironmentLinks", () => {
       expect(
         yield* links.updateLiveActivityPreference({ ...revoked, liveActivitiesEnabled: false }),
       ).toBe(false);
+
+      const { environments } = yield* decodeEnvironments({
+        environments: yield* links.listForUser({ userId: matching.userId }),
+      });
+      expect(
+        environments.toSorted((a, b) => a.environmentId.localeCompare(b.environmentId)),
+      ).toMatchObject([
+        {
+          environmentId: "env-1",
+          activityPreferences: { notificationsEnabled: true, liveActivitiesEnabled: false },
+        },
+        {
+          environmentId: "env-2",
+          activityPreferences: { notificationsEnabled: false, liveActivitiesEnabled: true },
+        },
+      ]);
 
       const updated = yield* Effect.promise(() => db.select().from(relayEnvironmentLinks));
       expect(

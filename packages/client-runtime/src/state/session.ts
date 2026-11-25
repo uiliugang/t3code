@@ -23,6 +23,7 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
+import { environmentRpcUnavailable } from "../rpc/client.ts";
 import {
   RemoteEnvironmentAuthFetchError,
   RemoteEnvironmentAuthUndeclaredStatusError,
@@ -220,6 +221,11 @@ function makeEnvironmentSessionAtoms<R, E>(
           consecutiveFailures = 0;
         }
         return Effect.gen(function* () {
+          if (prepared.transport === "noise" || connection.value.transport === "noise") {
+            const session = connection.value.authSessionState;
+            if (connection.value.transport === "noise" && session !== undefined) return session;
+            return yield* environmentRpcUnavailable(prepared);
+          }
           const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
           const remoteAuthorization = yield* Effect.serviceOption(
             RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,

@@ -4,8 +4,10 @@ import {
 } from "@t3tools/client-runtime/pull-request-markdown";
 import { markdownTaskMarkerOffset } from "@t3tools/shared/markdownTaskList";
 import type { ReactNode } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { useProject } from "../../state/entities";
+import { refreshAssetUrl } from "../../state/assets";
+import { usePreparedConnection } from "../../state/session";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
 import {
   PullRequestMedia,
@@ -30,7 +32,7 @@ import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { markdownImageSources } from "../../lib/markdownImageSources";
 import { markdownReferenceDefinitions } from "../../lib/markdownDocument";
 import { FilePreviewGallery, useFilePreviewGallery } from "../../components/ui/FilePreviewGallery";
-import { pullRequestImageSource } from "./pullRequestMediaSource";
+import { pullRequestImageSource, pullRequestMediaSource } from "./pullRequestMediaSource";
 import {
   FilePreviewModal,
   type FilePreviewSource,
@@ -66,8 +68,18 @@ export function PullRequestMarkdownRepository(props: {
     projectId: target.input.projectId,
   });
   const cwd = project?.workspaceRoot;
+  const connection = usePreparedConnection(target.environmentId);
   const media = cwd
-    ? { environmentId: target.environmentId, cwd, repository: target.input.repository }
+    ? {
+        environmentId: target.environmentId,
+        cwd,
+        repository: target.input.repository,
+        bridgedImages: connection._tag === "Some" && !!connection.value.mediaOrigins,
+        directImages:
+          Platform.OS === "android" &&
+          connection._tag === "Some" &&
+          connection.value.transport === "noise",
+      }
     : null;
   return (
     <AutolinksContext value={autolinks}>
@@ -87,7 +99,7 @@ function MarkdownImage(props: {
   readonly alt: string | null;
   readonly onPreview: (source: FilePreviewSource) => void;
 }) {
-  const media = usePullRequestMediaUrl(props.href);
+  const media = usePullRequestMediaUrl(props.href, "image");
   const context = useContext(PullRequestMediaContext);
   const withGallery = useFilePreviewGallery();
   return (
@@ -249,6 +261,20 @@ function PullRequestMarkdownContent(props: {
         textStyle={styles.nativeTextStyle}
         onLinkPress={openLink}
         renderImage={renderImage}
+        resolveImageSource={
+          mediaContext?.directImages
+            ? async ({ href }) => {
+                const url = resolveMediaUrl(href);
+                if (!/^https?:\/\//i.test(url)) throw new Error("Remote image is unavailable");
+                const source = pullRequestMediaSource(url, mediaContext, "image");
+                if (source.resource) {
+                  const uri = await refreshAssetUrl(mediaContext.environmentId, source.resource);
+                  if (uri) return { uri };
+                }
+                return { uri: source.uri ?? url };
+              }
+            : undefined
+        }
         onImagePress={(href) =>
           setPreview(pullRequestImageSource(resolveMediaUrl(href), mediaContext))
         }
