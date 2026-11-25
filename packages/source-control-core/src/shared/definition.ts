@@ -1,4 +1,5 @@
 import {
+  normalizeGithubIssueHost,
   type PullRequestAction,
   type PullRequestReviewVerdict,
   type RepositoryIdentity,
@@ -829,16 +830,24 @@ export function makeSourceControlDefinitionRegistry(
       (identity.locator?.remoteUrl === undefined ? null : httpUrl(identity.locator.remoteUrl)) ??
       (identity.webUrl === undefined ? null : httpUrl(identity.webUrl));
     const host =
-      tracker === "github" && primaryUrl?.hostname === canonicalHost
-        ? primaryUrl.host
+      tracker === "github" && primaryUrl?.hostname.toLowerCase() === canonicalHost
+        ? (normalizeGithubIssueHost(primaryUrl.host) ?? canonicalHost)
         : canonicalHost;
+    const originMatches =
+      originUrl === null
+        ? tracker !== "github" || host === canonicalHost
+        : tracker === "github" && originUrl.protocol === "https:"
+          ? (primaryUrl === null || primaryUrl.protocol === "https:") &&
+            normalizeGithubIssueHost(originUrl.host) === host
+          : primaryUrl === null
+            ? originUrl.host === host
+            : originUrl.origin === primaryUrl.origin;
     const primary = { tracker, host, scope };
     if (
       origin === undefined ||
       projectChangeRequestHost(origin, undefined) !==
         projectChangeRequestHost(identity, undefined) ||
-      (originUrl !== null &&
-        (primaryUrl === null ? originUrl.host !== host : originUrl.origin !== primaryUrl.origin))
+      !originMatches
     )
       return [primary];
     const originScope = issueScope({

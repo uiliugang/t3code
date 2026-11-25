@@ -50,11 +50,14 @@ export function useOpenIssueLink(
     // A list page's panel ref is a placeholder, not an environment; the link names its own.
     const environmentId = threadRef?.environmentId ?? targetEnvironmentId;
     if (resolvedPanelRef === undefined || environmentId === undefined) return false;
-    if (serverConfigs.get(environmentId)?.environment.capabilities.issues !== true) return false;
+    const config = serverConfigs.get(environmentId);
+    if (config?.environment.capabilities.issues !== true) return false;
     const target = resolveIssueLinkTarget({
       url: targetUrl,
       projects: allProjects.filter((project) => project.environmentId === environmentId),
       trackers,
+      issueProjectSources: config.settings?.issueProjectSources,
+      githubIssueSourcePorts: config.environment.capabilities.githubIssueSourcePorts,
     });
     if (target === null) return false;
     event.preventDefault();

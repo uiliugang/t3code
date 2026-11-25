@@ -171,6 +171,24 @@ it("keeps legacy sources read-only without compare-and-set support", () => {
   expect(update).not.toHaveBeenCalled();
 });
 
+it("allows restoring a ported GitHub source without letting an older server save it", async () => {
+  update.mockReset().mockResolvedValue({ _tag: "Success" });
+  using screen = setup();
+  const ported = { ...second, host: "git.example.test:8443" };
+  screen.render(true, [ported]);
+  act(() => screen.button("Edit server").click());
+  expect(screen.button("Save").disabled).toBe(true);
+  await act(async () => screen.button("Restore automatic").click());
+  expect(update).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      issueSourceProvider: "github",
+      expectedIssueProjectSources: { [projectId]: [ported] },
+      patch: { issueProjectSources: { [projectId]: [] } },
+    },
+  });
+});
+
 it("restores automatic GitHub sources without removing MEP on a multi-provider server", async () => {
   update.mockReset().mockResolvedValue({ _tag: "Success" });
   using screen = setup();

@@ -174,6 +174,9 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
             saved={saved}
             singleProvider={singleProvider}
             compareAndSet={compareAndSet}
+            githubIssueSourcePorts={
+              serverConfig.environment.capabilities.githubIssueSourcePorts === true
+            }
             sources={sources}
             provider={provider}
             error={result?.error ?? query.error ?? undefined}

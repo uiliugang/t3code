@@ -42,12 +42,11 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
     if (!destination) {
       // An issue link from the same text opens the issue; anything else leaves for the browser.
       const environmentId = context && EnvironmentId.make(context.environmentId);
-      const issuesEnabled =
-        environmentId !== null &&
-        serverConfigs.get(environmentId)?.environment.capabilities.issues === true;
+      const config = environmentId === null ? undefined : serverConfigs.get(environmentId);
+      const issuesEnabled = config?.environment.capabilities.issues === true;
       // Only a standalone tracker's link needs the bindings, whose read probes the tracker.
       const connections =
-        issuesEnabled && isStandaloneIssueLink(url)
+        issuesEnabled && environmentId !== null && isStandaloneIssueLink(url)
           ? await readTrackerConnections({ environmentId, input: {} })
           : null;
       const issue =
@@ -57,6 +56,8 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
               projects: projects.filter((project) => project.environmentId === environmentId),
               preferredProjectId: context.projectId,
               trackers: connections?._tag === "Success" ? connections.value : undefined,
+              issueProjectSources: config.settings?.issueProjectSources,
+              githubIssueSourcePorts: config.environment.capabilities.githubIssueSourcePorts,
             })
           : null;
       if (!issue || !environmentId) return tryOpenWebLink(url, "pull-request");

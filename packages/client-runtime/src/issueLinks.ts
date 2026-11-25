@@ -1,9 +1,14 @@
 import {
   IssueTrackerKind,
   issueTrackerBindingScopes,
+  mergeProjectIssueSources,
+  normalizeGithubIssueHost,
+  repositoryIssueKind,
+  SourceControlProviderKind,
   type IssueRef,
   type IssueTrackerConnectionList,
   type RepositoryIdentity,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import {
   LINEAR_HOST,
@@ -15,6 +20,8 @@ import { sourceControlClients } from "./sourceControlClients.ts";
 import type { EnvironmentProject } from "./state/shell.ts";
 
 type LinkProject = Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">;
+type IssueProjectSources = ServerSettings["issueProjectSources"];
+const GITHUB = SourceControlProviderKind.make("github");
 
 const issueBindingsByRepository = new WeakMap<
   RepositoryIdentity,
@@ -22,21 +29,38 @@ const issueBindingsByRepository = new WeakMap<
 >();
 
 /** The hosts and scopes a project's git-host tracker is bound to, the way the server resolves them. */
-function projectIssueBindings(project: LinkProject) {
+function projectIssueBindings(project: LinkProject, saved?: IssueProjectSources) {
   const identity = project.repositoryIdentity;
-  if (identity == null) return [];
+  const manual = mergeProjectIssueSources(
+    [],
+    saved?.[project.id] ?? [],
+    repositoryIssueKind(identity),
+  ).flatMap((source) => {
+    if (source.provider !== "github" || !/^[\w.-]+\/[\w.-]+$/u.test(source.scope)) return [];
+    const host = normalizeGithubIssueHost(source.host);
+    return host === undefined ? [] : [{ tracker: GITHUB, host, scope: source.scope.toLowerCase() }];
+  });
+  if (identity == null) return manual;
   const cached = issueBindingsByRepository.get(identity);
-  if (cached !== undefined) return cached;
-  const bindings = sourceControlClients
-    .issueBindings(identity)
-    .map((binding) => ({ ...binding, scope: binding.scope.toLowerCase() }));
-  issueBindingsByRepository.set(identity, bindings);
-  return bindings;
+  const bindings =
+    cached ??
+    sourceControlClients
+      .issueBindings(identity)
+      .map((binding) => ({ ...binding, scope: binding.scope.toLowerCase() }));
+  if (cached === undefined) issueBindingsByRepository.set(identity, bindings);
+  return manual.length === 0
+    ? bindings
+    : [
+        ...manual,
+        ...bindings.filter(({ tracker }) => tracker !== "github" && tracker !== "meituan"),
+      ];
 }
 
 function linkAuthority(url: string): string | null {
   try {
-    return new URL(url).host.toLowerCase();
+    const link = new URL(url);
+    const host = link.host.toLowerCase();
+    return link.protocol === "https:" ? (normalizeGithubIssueHost(host) ?? host) : host;
   } catch {
     return null;
   }
@@ -47,12 +71,13 @@ function parseIssueLink(
   url: string,
   authority: string | null,
   projects: ReadonlyArray<LinkProject>,
+  saved?: IssueProjectSources,
 ) {
   const parsed = sourceControlClients.parseIssueUrl(url);
   if (parsed !== null || authority === null) return parsed;
   const hostname = new URL(url).hostname.toLowerCase();
   for (const project of projects) {
-    const bindings = projectIssueBindings(project);
+    const bindings = projectIssueBindings(project, saved);
     const binding = bindings.find(
       (entry) =>
         entry.host === authority || (entry.tracker !== "github" && entry.host === hostname),
@@ -149,10 +174,12 @@ export function resolveIssueLinkTarget<Project extends LinkProject>(input: {
   readonly preferredProjectId?: string | undefined;
   /** The environment's standalone trackers and bindings; without them only git-host links resolve. */
   readonly trackers?: IssueTrackerConnectionList | undefined;
+  readonly issueProjectSources?: IssueProjectSources | undefined;
+  readonly githubIssueSourcePorts?: boolean | undefined;
 }): { readonly project: Project; readonly ref: IssueRef } | null {
   // A link names its server's port; a binding does only when its remote or web URL did.
   const authority = linkAuthority(input.url);
-  const parsed = parseIssueLink(input.url, authority, input.projects);
+  const parsed = parseIssueLink(input.url, authority, input.projects, input.issueProjectSources);
   if (parsed === null)
     return resolveStandaloneIssueLink(
       input.url,
@@ -161,8 +188,14 @@ export function resolveIssueLinkTarget<Project extends LinkProject>(input: {
       input.preferredProjectId,
     );
   const { definition, link } = parsed;
+  if (
+    definition.kind === "github" &&
+    authority?.includes(":") &&
+    input.githubIssueSourcePorts !== true
+  )
+    return null;
   const onHost = input.projects.flatMap((project) =>
-    projectIssueBindings(project)
+    projectIssueBindings(project, input.issueProjectSources)
       .filter(
         (binding) =>
           binding.tracker === definition.kind &&

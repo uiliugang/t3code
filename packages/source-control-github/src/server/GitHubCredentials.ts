@@ -17,6 +17,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
 import {
+  normalizeGithubIssueHost,
   requireSettingsSecretLiteral,
   type ServerSettings,
   type SettingsSecretUnresolvedError,
@@ -125,19 +126,31 @@ export function isGitHubHost(host: string): boolean {
   return HOSTNAME.test(host);
 }
 
+export function normalizeGitHubHost(rawHost: string): string {
+  const host = normalizeHost(rawHost);
+  return isGitHubHost(host) ? (normalizeGithubIssueHost(host) ?? host) : host;
+}
+
+function hostSetting<Value>(entries: Readonly<Record<string, Value>>, host: string) {
+  return (
+    entries[host] ?? Object.entries(entries).find(([key]) => normalizeGitHubHost(key) === host)?.[1]
+  );
+}
+
 function isGitHubDotCom(host: string): boolean {
   return host === "github.com" || host.endsWith(".ghe.com");
 }
 
 /** Restrict GH_ENTERPRISE_TOKEN to GH_HOST to prevent remote URLs from leaking it. */
 export function environmentToken(
-  host: string,
+  rawHost: string,
   env: Readonly<Record<string, string | undefined>>,
 ): string | null {
+  const host = normalizeGitHubHost(rawHost);
   if (!isGitHubHost(host)) return null;
   const names = isGitHubDotCom(host)
     ? ["GH_TOKEN", "GITHUB_TOKEN"]
-    : env.GH_HOST?.trim().toLowerCase() === host
+    : env.GH_HOST !== undefined && normalizeGitHubHost(env.GH_HOST) === host
       ? ["GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]
       : [];
   for (const name of names) {
@@ -213,14 +226,14 @@ export const make = Effect.gen(function* () {
 
   const hostChoice = (host: string) =>
     sourceControlHost.settings.get.pipe(
-      Effect.map((settings) => readSettings(settings).hosts[host]),
+      Effect.map((settings) => hostSetting(readSettings(settings).hosts, host)),
       Effect.orElseSucceed(() => undefined),
     );
 
   const savedToken = (host: string) =>
     sourceControlHost.settings.getWithSecrets(GitHubClient.definition.kind).pipe(
       Effect.map((settings) => ({
-        token: readSettings(settings).tokens[host],
+        token: hostSetting(readSettings(settings).tokens, host),
         secretProviders: settings.secretProviders,
       })),
       Effect.orElseSucceed(() => ({ token: undefined, secretProviders: {} })),
@@ -268,7 +281,7 @@ export const make = Effect.gen(function* () {
   });
 
   const saved = Effect.fn("GitHubCredentials.saved")(function* (rawHost: string) {
-    const host = normalizeHost(rawHost);
+    const host = normalizeGitHubHost(rawHost);
     if (!isGitHubHost(host)) return yield* new GitHubNotSignedInError({ host });
     if ((yield* hostChoice(host))?.enabled === false) {
       return yield* new GitHubHostDisabledError({ host });
@@ -285,7 +298,7 @@ export const make = Effect.gen(function* () {
 
   return GitHubCredentials.of({
     get: Effect.fn("GitHubCredentials.get")(function* (rawHost) {
-      const host = normalizeHost(rawHost);
+      const host = normalizeGitHubHost(rawHost);
       const fromSettings = yield* saved(host);
       if (Option.isSome(fromSettings)) return fromSettings.value;
       return yield* Cache.get(cache, cacheKey(host, (yield* hostChoice(host))?.account));
@@ -293,7 +306,7 @@ export const make = Effect.gen(function* () {
     saved,
     fingerprint: fingerprintOf,
     invalidate: Effect.fn("GitHubCredentials.invalidate")(function (rawHost) {
-      const host = normalizeHost(rawHost);
+      const host = normalizeGitHubHost(rawHost);
       return hostChoice(host).pipe(
         Effect.flatMap((choice) => Cache.invalidate(cache, cacheKey(host, choice?.account))),
       );

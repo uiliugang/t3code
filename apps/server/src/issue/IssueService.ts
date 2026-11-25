@@ -12,6 +12,7 @@ import {
   type IssueTrackerAccountId,
   SourceControlProviderKind,
   issueTrackerBindingScopes,
+  normalizeGithubIssueHost,
   projectIssueProvider,
   repositoryIssueKind,
   type IssueCandidates,
@@ -485,12 +486,26 @@ const make = Effect.gen(function* () {
       );
     }
 
+    let host = ref.host?.trim().toLowerCase();
+    if (ref.tracker === "github") {
+      if (host !== undefined) host = normalizeGithubIssueHost(host) ?? host;
+      if (ref.url !== undefined) {
+        const url = parseUrl(ref.url);
+        if (url?.protocol !== "https:" || (host !== undefined && url.host !== host)) {
+          return yield* new IssueOperationError({
+            operation: writeOperation ?? "resolveUrl",
+            reason: "not-found",
+            detail: "The issue URL does not match the selected GitHub host.",
+          });
+        }
+        host = url.host;
+      }
+    }
     const { supported } = yield* listProjects({
       projectId: ref.projectId,
       standaloneOnly: standaloneTracker,
       refreshRepository: writeOperation !== undefined && !standaloneTracker,
     });
-    const host = ref.host?.trim().toLowerCase();
     const candidates = supported.filter(
       (candidate) =>
         candidate.tracker === ref.tracker && (host === undefined || candidate.host === host),
@@ -526,11 +541,13 @@ const make = Effect.gen(function* () {
       excludeProjectIds: input.excludeProjectIds,
     });
     const host = input.host?.trim().toLowerCase();
+    const githubHost = host === undefined ? undefined : (normalizeGithubIssueHost(host) ?? host);
     const limit = input.limit ?? DEFAULT_LIST_LIMIT;
     const scopes = new Map<string, SupportedProject>();
     for (const project of supported) {
       if (input.tracker !== undefined && project.tracker !== input.tracker) continue;
-      if (host !== undefined && project.host !== host) continue;
+      if (host !== undefined && project.host !== (project.tracker === "github" ? githubHost : host))
+        continue;
       const key = listCursorKey(project);
       if (!scopes.has(key)) scopes.set(key, project);
     }

@@ -115,7 +115,9 @@ export const definition = defineSourceControl({
   // `/issues/` is too generic a path to believe from a host that is not GitHub's, unless a known
   // project's host vouches for it as a GitHub Enterprise Server.
   parseIssueUrl: (url, known) =>
-    !isRetiredPublicHost(url.hostname) && (known || isGitHubHost(url.hostname))
+    url.protocol === "https:" &&
+    !isRetiredPublicHost(url.hostname) &&
+    (known || isGitHubHost(url.hostname))
       ? parseIssuePath(url, ISSUE_PATH)
       : null,
   repositoryUrlFromPage: (url) =>

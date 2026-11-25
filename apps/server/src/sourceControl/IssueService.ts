@@ -23,6 +23,7 @@ import {
   type IssueSourcesInput,
   type IssueSourcesResult,
 } from "@t3tools/contracts";
+import * as Array from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
@@ -225,11 +226,11 @@ export const make = Effect.gen(function* () {
       (handle?._tag === "Success" && handle.success.context
         ? handle.success.provider.kind
         : undefined);
-    const sources = mergeProjectIssueSources(automatic, manual, repositoryKind)
-      .filter(
+    const sources = normalizedSources(
+      mergeProjectIssueSources(automatic, manual, repositoryKind).filter(
         (source) => source.provider !== "meituan" || isMeituanServiceEnabled(saved, "requirements"),
-      )
-      .map(normalizeGithubIssueSource);
+      ),
+    );
     const provider = projectIssueProvider(repositoryKind, automatic.length ? automatic : manual);
     return {
       cwd,
@@ -263,6 +264,12 @@ export const make = Effect.gen(function* () {
       ? /^[1-9]\d*$/u.test(source.scope) && source.host === "mep.sankuai.com"
       : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) &&
         normalizeGithubIssueHost(source.host) !== undefined;
+  const normalizedSources = (sources: readonly IssueSource[]) =>
+    Array.dedupeWith(
+      sources.map(normalizeGithubIssueSource),
+      (left, right) =>
+        left.provider === right.provider && left.host === right.host && left.scope === right.scope,
+    );
   const resolveAll = Effect.fn("IssueService.resolveAll")(function* (
     input: IssueTarget,
     refreshRepository = false,
@@ -329,11 +336,11 @@ export const make = Effect.gen(function* () {
             ((enabled && kind === "meituan") ||
               (kind === "github" && project.repositoryIdentity?.provider !== kind));
           const resolved = discover ? yield* resolveSources(project, saved) : { sources: manual };
-          const sources = resolved.sources.filter(validSource).map(normalizeGithubIssueSource);
+          const valid = resolved.sources.filter(validSource);
           return {
             ...resolved,
-            sources,
-            ...(sources.length !== resolved.sources.length
+            sources: normalizedSources(valid),
+            ...(valid.length !== resolved.sources.length
               ? {
                   failure: new RequirementIssueError({
                     operation: "resolve",

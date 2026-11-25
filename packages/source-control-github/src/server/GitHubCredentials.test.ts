@@ -201,7 +201,7 @@ describe("GitHubCredentials", () => {
   it.effect.each(ENTERPRISE_TOKEN_VARIABLES)(
     "keeps %s away from a host other than GH_HOST",
     (name) => {
-      vi.stubEnv("GH_HOST", "ghe.corp.example");
+      vi.stubEnv("GH_HOST", "GHE.corp.example:443");
       vi.stubEnv(name, "enterprise-secret");
       const { layer } = harness();
       return Effect.gen(function* () {
@@ -210,9 +210,29 @@ describe("GitHubCredentials", () => {
         expect(Redacted.value(other.token)).toBe("active-token");
         const own = yield* credentials.get("ghe.corp.example");
         expect(Redacted.value(own.token)).toBe("enterprise-secret");
+        const otherPort = yield* credentials.get("ghe.corp.example:8443");
+        expect(Redacted.value(otherPort.token)).toBe("active-token");
       }).pipe(Effect.provide(layer));
     },
   );
+
+  it.effect("reads a saved HTTPS default-port alias without borrowing another port's token", () => {
+    const { layer, calls } = harness({ "off.example:443": { enabled: false } }, [], {
+      "code.example:443": "legacy-token",
+      "code.example:8443": "other-token",
+    });
+    return Effect.gen(function* () {
+      const credentials = yield* GitHubCredentials.GitHubCredentials;
+      expect(Redacted.value((yield* credentials.get("code.example")).token)).toBe("legacy-token");
+      expect(Redacted.value((yield* credentials.get("code.example:8443")).token)).toBe(
+        "other-token",
+      );
+      expect((yield* Effect.flip(credentials.get("off.example")))._tag).toBe(
+        "GitHubHostDisabledError",
+      );
+      expect(calls).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  });
 
   it.effect("never hands a token to a host that is not a plain hostname", () => {
     vi.stubEnv("GH_TOKEN", "env-token");

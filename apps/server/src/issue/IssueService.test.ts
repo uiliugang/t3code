@@ -11,7 +11,7 @@ import {
   type IssueTrackerProjectBinding,
   SourceControlProviderKind,
   type OrchestrationProjectShell,
-  type ProjectId,
+  ProjectId,
 } from "@t3tools/contracts";
 import {
   IssueTrackerError,
@@ -396,10 +396,49 @@ describe("IssueService", () => {
       expect(
         yield* Effect.flip(enterprise.resolveUrl("https://code.acme.test:8443/acme/web/issues/7")),
       ).toMatchObject({ reason: "not-found" });
+      expect(
+        yield* Effect.flip(enterprise.resolveUrl("http://code.acme.test/acme/web/issues/7")),
+      ).toMatchObject({ reason: "not-found" });
+      const legacy = {
+        ...own,
+        projectId: ProjectId.make("ghes"),
+        host: "code.acme.test:443",
+        url: "https://code.acme.test:443/acme/web/issues/1",
+      };
+      yield* enterprise.comment({ ...legacy, body: "ok" });
+      expect((yield* enterprise.list({ state: "open", host: legacy.host })).trackers).toHaveLength(
+        1,
+      );
+      expect(
+        yield* Effect.flip(
+          enterprise.comment({
+            ...legacy,
+            host: "code.acme.test",
+            url: "https://code.acme.test:8443/acme/web/issues/1",
+            body: "no",
+          }),
+        ),
+      ).toMatchObject({ reason: "not-found" });
 
       const requestedHosts: string[] = [];
+      const portedProject = project({
+        id: "ported",
+        repository: "acme/web",
+        host: "code.acme.test:8443",
+      });
       const ported = yield* makeService({
-        projects: [project({ id: "ported", repository: "acme/web", host: "code.acme.test:8443" })],
+        projects: [
+          {
+            ...portedProject,
+            repositoryIdentity: {
+              ...portedProject.repositoryIdentity!,
+              origin: {
+                canonicalKey: "code.acme.test/me/web",
+                remoteUrl: "git@code.acme.test:me/web.git",
+              },
+            },
+          },
+        ],
         trackers: [
           fakeTracker({
             listIssues: ({ host }) =>
@@ -422,6 +461,9 @@ describe("IssueService", () => {
         body: "ok",
       });
       expect(requestedHosts).toEqual(["code.acme.test:8443", "code.acme.test:8443"]);
+      expect(yield* ported.resolveUrl("https://code.acme.test:8443/me/web/issues/7")).toMatchObject(
+        { writable: false },
+      );
 
       const unsupported = yield* makeService({
         projects: [

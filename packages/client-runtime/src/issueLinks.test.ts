@@ -81,6 +81,7 @@ describe("resolveIssueLinkTarget", () => {
       }) as never;
     const target = resolveIssueLinkTarget({
       url: "https://github.example.com:8443/acme/web/issues/7",
+      githubIssueSourcePorts: true,
       projects: [
         enterprise("bare", "github.example.com"),
         enterprise("ported", "github.example.com:8443"),
@@ -91,6 +92,13 @@ describe("resolveIssueLinkTarget", () => {
     expect(
       resolveIssueLinkTarget({
         url: "https://github.example.com:8443/acme/web/issues/7",
+        projects: [enterprise("ported", "github.example.com:8443")],
+      }),
+    ).toBeNull();
+    expect(
+      resolveIssueLinkTarget({
+        url: "https://github.example.com:8443/acme/web/issues/7",
+        githubIssueSourcePorts: true,
         projects: [enterprise("bare", "github.example.com")],
       }),
     ).toBeNull();
@@ -101,6 +109,25 @@ describe("resolveIssueLinkTarget", () => {
       projects: [enterprise("custom", "code.acme.test")],
     });
     expect(custom?.ref).toMatchObject({ projectId: "custom", host: "code.acme.test", key: "7" });
+  });
+
+  it("resolves a manual GitHub source instead of the project's git binding", () => {
+    const input = {
+      projects: [project("p1", "acme/api")],
+      githubIssueSourcePorts: true,
+      issueProjectSources: {
+        [ProjectId.make("p1")]: [
+          { provider: "github" as const, host: "code.acme.test:9443", scope: "work/api" },
+        ],
+      },
+    };
+    expect(
+      resolveIssueLinkTarget({ ...input, url: "https://code.acme.test:9443/work/api/issues/7" })
+        ?.ref,
+    ).toMatchObject({ projectId: "p1", host: "code.acme.test:9443", scope: "work/api" });
+    expect(
+      resolveIssueLinkTarget({ ...input, url: "https://github.com/acme/api/issues/7" }),
+    ).toBeNull();
   });
 
   it("reads a Linear link through the project bound to its team, else any bound to Linear", () => {
@@ -176,6 +203,7 @@ describe("resolveIssueLinkTarget", () => {
   it.each([
     "https://github.com.evil.example/acme/web/issues/7",
     "https://github.com/acme/web/pull/7",
+    "http://github.com/acme/web/issues/7",
   ])("leaves %s an ordinary link", (url) => {
     expect(resolveIssueLinkTarget({ url, projects })).toBeNull();
   });

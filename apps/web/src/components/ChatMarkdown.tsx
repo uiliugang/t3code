@@ -455,6 +455,8 @@ function markdownServerConfigFields(config: ServerConfig | null) {
   return {
     pullRequestsEnabled: config !== null,
     issuesEnabled: config?.environment.capabilities.issues === true,
+    githubIssueSourcePorts: config?.environment.capabilities.githubIssueSourcePorts === true,
+    issueProjectSources: config?.settings?.issueProjectSources,
     isMacOS: config?.environment.platform.os === "darwin",
     availableEditors: config?.availableEditors ?? NO_MARKDOWN_EDITORS,
     revealInFileManager:
@@ -471,6 +473,8 @@ function markdownServerConfigFieldsEqual(
   return (
     previous.pullRequestsEnabled === next.pullRequestsEnabled &&
     previous.issuesEnabled === next.issuesEnabled &&
+    previous.githubIssueSourcePorts === next.githubIssueSourcePorts &&
+    previous.issueProjectSources === next.issueProjectSources &&
     previous.isMacOS === next.isMacOS &&
     previous.revealInFileManager === next.revealInFileManager &&
     previous.availableEditors.length === next.availableEditors.length &&
@@ -723,8 +727,15 @@ function useChatMarkdownState(
       },
     );
   };
-  const { pullRequestsEnabled, issuesEnabled, availableEditors, revealInFileManager, isMacOS } =
-    useAtomValue(markdownServerConfigFieldsAtom(environmentId));
+  const {
+    pullRequestsEnabled,
+    issuesEnabled,
+    githubIssueSourcePorts,
+    issueProjectSources,
+    availableEditors,
+    revealInFileManager,
+    isMacOS,
+  } = useAtomValue(markdownServerConfigFieldsAtom(environmentId));
   const revealInFileManagerLabel =
     revealInFileManager === undefined
       ? undefined
@@ -1112,6 +1123,8 @@ function useChatMarkdownState(
     openMarkdownMedia,
     projects,
     issueProjects,
+    issueProjectSources,
+    githubIssueSourcePorts,
     issueTrackers,
     linkedThreadPullRequestFor,
     resolveThreadPullRequest,
@@ -1285,6 +1298,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
       openExternalLinkInPreview,
       projects,
       issueProjects,
+      issueProjectSources,
+      githubIssueSourcePorts,
       issueTrackers,
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
@@ -1365,6 +1380,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
               url: href,
               projects: issueProjects,
               trackers: issueTrackers,
+              issueProjectSources,
+              githubIssueSourcePorts,
             })
           : null;
       const issuePreviewTarget =

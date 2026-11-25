@@ -1,6 +1,7 @@
 import {
   issueSourcesMatch,
   mergeProjectIssueSources,
+  normalizeGithubIssueHost,
   repositoryIssueKind,
   type RepositoryIdentity,
   RequirementIssueError,
@@ -134,17 +135,20 @@ export function withGithubRepositoryOverride(
   scope: string | null,
 ): IssueSource[] {
   const saved = sources.filter((source) => source.provider === "github");
-  const host = current?.host ?? "github.com";
+  const authority = (host: string) => normalizeGithubIssueHost(host) ?? host;
+  const host = authority(current?.host ?? "github.com");
   const matches = (source: IssueSource, repository: string | undefined) =>
-    source.host === host && source.scope === repository;
+    authority(source.host) === host && source.scope === repository;
   const index = saved.findIndex((source) => matches(source, current?.scope));
   const next =
-    scope && !saved.some((source, i) => i !== index && matches(source, scope))
+    scope && !saved.some((source) => !matches(source, current?.scope) && matches(source, scope))
       ? [{ provider: "github" as const, host, scope }]
       : [];
   return index === -1
     ? [...saved, ...next]
-    : saved.flatMap((source, i) => (i === index ? next : [source]));
+    : saved.flatMap((source, i) =>
+        i === index ? next : matches(source, current?.scope) ? [] : [source],
+      );
 }
 
 export function withMepSpaceOverrides(ids: readonly string[]): IssueSource[] {

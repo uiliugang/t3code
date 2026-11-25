@@ -29,6 +29,7 @@ describe("IssueService", () => {
     ["github.com", "https://github.com/me/fork.git", "origin"],
     ["forge.example.test", "https://forge.example.test/me/fork.git", "origin"],
     ["forge.example.test:8443", "https://forge.example.test:8443/me/fork.git", "origin"],
+    ["forge.example.test", "https://forge.example.test/me/fork.git", "origin", true],
     ["github.com", "git@work:me/fork.git", "origin"],
     ["github.com", "git@unresolved.test:me/fork.git", "origin"],
     ["github.com", "file://127.0.0.1/mirror/fork.git", "origin"],
@@ -37,7 +38,7 @@ describe("IssueService", () => {
     ["github.com", "https://gitlab.com/me/fork.git", "fork"],
   ] as const)(
     "creates a %s fork issue in the repository offered for %s (remote %s)",
-    ([host, remoteUrl, remoteName]) =>
+    ([host, remoteUrl, remoteName, legacyAliases]) =>
       Effect.gen(function* () {
         const projectId = ProjectId.make("fork");
         const originHost = remoteUrl.startsWith("https:")
@@ -73,7 +74,18 @@ describe("IssueService", () => {
             Layer.mergeAll(
               KeyValueStore.layerMemory,
               NodeCrypto.layer,
-              Settings.ServerSettingsService.layerTest({}),
+              Settings.ServerSettingsService.layerTest(
+                legacyAliases
+                  ? {
+                      issueProjectSources: {
+                        [projectId]: [
+                          { provider: "github", host, scope: "me/fork" },
+                          { provider: "github", host: host.toUpperCase(), scope: "me/fork" },
+                        ],
+                      },
+                    }
+                  : {},
+              ),
               Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
                 namedProjectsRoot: "/projects",
               }),
@@ -166,6 +178,7 @@ describe("IssueService", () => {
           return;
         }
         const source = listed!.sources[0]!;
+        expect(listed!.sources).toHaveLength(1);
         expect(source.scope).toBe("me/fork");
         expect(source.host).toBe(host);
         const created = yield* service.create({

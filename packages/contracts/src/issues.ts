@@ -16,9 +16,14 @@ export type IssueSource = typeof IssueSource.Type;
 export function normalizeGithubIssueHost(host: string): string | undefined {
   const match = /^[\w.-]+(?::([0-9]{1,5}))?$/u.exec(host);
   if (!match || host.length > 253) return undefined;
-  const port = match[1];
-  if (port !== undefined && Number(port) === 0) return undefined;
-  return URL.parse(`https://${host}`)?.host;
+  const port = match[1] === undefined ? 443 : Number(match[1]);
+  if (port === 0 || port > 65535) return undefined;
+  try {
+    const hostname = new URL(`https://${host}`).hostname.toLowerCase();
+    return port === 443 ? hostname : `${hostname}:${port}`;
+  } catch {
+    return undefined;
+  }
 }
 
 export function normalizeGithubIssueSource(source: IssueSource): IssueSource {
