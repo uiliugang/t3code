@@ -659,10 +659,9 @@ export function projectSettingsImportPatch(
   const saved = target.issueProjectSources[project.id] ?? [];
   const discovery = capabilities.discovery;
   const failedDiscovery = discovery?.error !== undefined;
-  const provider = detectedProjectIssueKind(
-    failedDiscovery ? null : project.repositoryIdentity,
-    discovery,
-  );
+  const provider = failedDiscovery
+    ? detectedProjectIssueKind(null, { sources: discovery.sources })
+    : detectedProjectIssueKind(project.repositoryIdentity, discovery);
   const incoming =
     !capabilities.singleProjectIssueProvider &&
     failedDiscovery &&

@@ -975,7 +975,11 @@ describe("settings transfer", () => {
     };
     const registry = AtomRegistry.make();
     try {
-      for (const sources of [[oldMep], []]) {
+      for (const { sources, provider } of [
+        { sources: [oldMep] },
+        { sources: [] },
+        { sources: [], provider: "meituan" as const },
+      ]) {
         const context = await projectImportSourceContext(backup, destination, {}, registry, {
           label: "Discover legacy issue sources",
           run: () =>
@@ -983,6 +987,7 @@ describe("settings transfer", () => {
               {
                 projectId: destination.id,
                 repository: "team/repo",
+                ...(provider ? { provider } : {}),
                 sources,
                 manual: sources.length > 0,
                 error: "MEP discovery failed",
