@@ -756,6 +756,13 @@ describe("settings transfer", () => {
     expect(
       projectSettingsImportPatch({ ...file, issueSources: legacySources }, destination, target),
     ).toEqual(patch);
+    const incompatible = projectSettingsImportPatch(
+      { ...file, issueSources: legacySources.slice(0, 1) },
+      destination,
+      target,
+    );
+    expect(incompatible.projectSettingsOverrides).toEqual(patch.projectSettingsOverrides);
+    expect(incompatible).not.toHaveProperty("issueProjectSources");
     expect(patch.projectSettingsOverrides).toEqual({
       [destination.id]: {
         defaultModelSelection: null,

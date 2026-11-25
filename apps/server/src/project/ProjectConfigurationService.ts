@@ -569,18 +569,14 @@ const make = Effect.gen(function* () {
                 generators.listModels({ id }),
               ),
             ),
-            ...(definition.issueSources !== undefined
-              ? {
-                  issueProjectSources: {
-                    [project.id]: importProjectIssueSources(
-                      definition.issueSources,
-                      server.issueProjectSources[project.id] ?? [],
-                      (yield* identities.resolve(project.workspaceRoot, { refresh: true }))
-                        ?.provider,
-                    ),
-                  },
-                }
-              : {}),
+            ...importProjectIssueSources(
+              project.id,
+              definition.issueSources,
+              server.issueProjectSources[project.id] ?? [],
+              definition.issueSources?.length
+                ? (yield* identities.resolve(project.workspaceRoot, { refresh: true }))?.provider
+                : undefined,
+            ),
             projectSettingsOverrides: {
               [project.id]:
                 Object.keys(definition.settings).length === 0

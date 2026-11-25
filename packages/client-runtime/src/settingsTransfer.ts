@@ -648,17 +648,12 @@ export function projectSettingsImportPatch(
   }));
   return {
     ...importedVirtualModels(file, target, providers, generators),
-    ...(file.issueSources === undefined
-      ? {}
-      : {
-          issueProjectSources: {
-            [project.id]: importProjectIssueSources(
-              file.issueSources,
-              target.issueProjectSources[project.id] ?? [],
-              project.repositoryIdentity?.provider,
-            ),
-          },
-        }),
+    ...importProjectIssueSources(
+      project.id,
+      file.issueSources,
+      target.issueProjectSources[project.id] ?? [],
+      project.repositoryIdentity?.provider,
+    ),
     projectSettingsOverrides: {
       [project.id]:
         Object.keys(file.settings).length === 0
