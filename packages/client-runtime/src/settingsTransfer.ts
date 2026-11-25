@@ -21,6 +21,7 @@ import {
   WorkspaceRootId,
   type ClientSettings,
   type EnvironmentId,
+  type ExecutionEnvironmentCapabilities,
   type ListTextGeneratorModelsResult,
   type Project,
   type ResolvedKeybindingsConfig,
@@ -621,6 +622,7 @@ export function projectSettingsImportPatch(
   file: ProjectSettingsFile,
   project: TransferProject,
   target: ServerSettings,
+  capabilities: Pick<ExecutionEnvironmentCapabilities, "singleProjectIssueProvider"> = {},
   t: UiTranslator = translateUi.bind(null, "en"),
   providers?: readonly ServerProvider[],
   generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
@@ -648,12 +650,16 @@ export function projectSettingsImportPatch(
   }));
   return {
     ...importedVirtualModels(file, target, providers, generators),
-    ...importProjectIssueSources(
-      project.id,
-      file.issueSources,
-      target.issueProjectSources[project.id] ?? [],
-      project.repositoryIdentity?.provider,
-    ),
+    ...(file.issueSources === undefined
+      ? {}
+      : capabilities.singleProjectIssueProvider
+        ? { issueProjectSources: { [project.id]: file.issueSources } }
+        : importProjectIssueSources(
+            project.id,
+            file.issueSources,
+            target.issueProjectSources[project.id] ?? [],
+            project.repositoryIdentity?.provider,
+          )),
     projectSettingsOverrides: {
       [project.id]:
         Object.keys(file.settings).length === 0

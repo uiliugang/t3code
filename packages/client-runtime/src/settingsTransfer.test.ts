@@ -753,6 +753,24 @@ describe("settings transfer", () => {
       projectSettingsOverrides: { [destination.id]: { defaultAutoPull: true } },
     };
     const patch = projectSettingsImportPatch(file, destination, target);
+    const staleDestination = {
+      ...destination,
+      repositoryIdentity: {
+        ...destination.repositoryIdentity,
+        provider: SourceControlProviderKind.make("meituan"),
+      },
+    };
+    const mixedFile = { ...file, issueSources: legacySources };
+    expect(
+      projectSettingsImportPatch(mixedFile, staleDestination, target, {
+        singleProjectIssueProvider: true,
+      }).issueProjectSources?.[destination.id],
+    ).toEqual(legacySources);
+    expect(
+      projectSettingsImportPatch(mixedFile, staleDestination, target).issueProjectSources?.[
+        destination.id
+      ],
+    ).toEqual([legacySources[0]]);
     expect(
       projectSettingsImportPatch({ ...file, issueSources: legacySources }, destination, target),
     ).toEqual(patch);

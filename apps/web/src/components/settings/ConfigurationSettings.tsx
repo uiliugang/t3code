@@ -303,6 +303,9 @@ export function ProjectConfigurationSettings({
             serverEnvironment.settingsValueAtom(project.environmentId),
           );
           if (!current) throw new Error(t("Reconnect this environment before importing."));
+          const targetConfig = appAtomRegistry.get(
+            serverEnvironment.configValueAtom(project.environmentId),
+          );
           const result = await update({
             environmentId: project.environmentId,
             input: {
@@ -310,9 +313,9 @@ export function ProjectConfigurationSettings({
                 file,
                 project,
                 current,
+                targetConfig?.environment.capabilities,
                 t,
-                appAtomRegistry.get(serverEnvironment.configValueAtom(project.environmentId))
-                  ?.providers,
+                targetConfig?.providers,
                 await importGeneratorCatalog(
                   file,
                   current,

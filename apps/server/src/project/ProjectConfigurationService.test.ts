@@ -13,6 +13,7 @@ import {
   type ProjectImportDefinition,
   type ProjectImportSnapshot,
   type RepositoryIdentity,
+  type IssueProjectSources,
   type SourceControlCloneRepositoryInput,
 } from "@t3tools/contracts";
 import { canonicalRepositoryCloneKey } from "@t3tools/shared/git";
@@ -79,6 +80,7 @@ const cloneError = (reason?: "authentication_failed") =>
   });
 
 const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* (options?: {
+  issueProjectSources?: typeof IssueProjectSources.Type;
   clone?: (
     input: SourceControlCloneRepositoryInput,
     attempt: number,
@@ -91,6 +93,7 @@ const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* 
   const registered = new Map<ProjectId, Project>();
   const rejectedCreates = new Set<string>();
   const knownIdentities = new Map<string, RepositoryIdentity>();
+  const cachedIdentities = new Map<string, RepositoryIdentity>();
   const projectLayer = Layer.mock(ProjectService.ProjectService)({
     snapshot: Effect.sync(() => ({
       projects: [...registered.values()],
@@ -167,10 +170,16 @@ const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* 
       }),
   });
   const identityLayer = Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
-    resolve: (cwd) =>
+    resolve: (cwd, options) =>
       Effect.gen(function* () {
+        if (options?.refresh) cachedIdentities.delete(cwd);
+        const cached = cachedIdentities.get(cwd);
+        if (cached) return cached;
         const known = knownIdentities.get(cwd);
-        if (known) return known;
+        if (known) {
+          cachedIdentities.set(cwd, known);
+          return known;
+        }
         const marker = path.join(cwd, "fixture.remote");
         if (!(yield* fs.exists(marker))) return null;
         const remote = yield* fs.readFileString(marker);
@@ -187,7 +196,9 @@ const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* 
     Layer.provide(projectLayer),
     Layer.provide(repositoriesLayer),
     Layer.provide(identityLayer),
-    Layer.provideMerge(ServerSettings.layerTest()),
+    Layer.provideMerge(
+      ServerSettings.layerTest({ issueProjectSources: options?.issueProjectSources ?? {} }),
+    ),
     Layer.provideMerge(ServerConfig.layerTest(baseDir, baseDir)),
   );
   return { layer, baseDir, attempts, registered, knownIdentities };
@@ -508,7 +519,10 @@ describe("ProjectConfigurationService", () => {
 
   it.effect("exports every repository in a workspace without credentials or machine paths", () =>
     Effect.gen(function* () {
-      const test = yield* harness();
+      const projectId = ProjectId.make("export-source");
+      const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
+      const github = { provider: "github", host: "github.com", scope: "team/restored" } as const;
+      const test = yield* harness({ issueProjectSources: { [projectId]: [mep, github] } });
       const fs = yield* FileSystem.FileSystem;
       const rootPath = `${test.baseDir}/source`;
       const webPath = `${test.baseDir}/source-link/web`;
@@ -518,7 +532,6 @@ describe("ProjectConfigurationService", () => {
       yield* fs.makeDirectory(apiPath);
       const primaryId = WorkspaceRootId.make("web");
       const apiId = WorkspaceRootId.make("api");
-      const projectId = ProjectId.make("export-source");
       const setupScript = {
         id: "setup",
         name: "Setup",
@@ -574,13 +587,8 @@ describe("ProjectConfigurationService", () => {
       }
       yield* Effect.gen(function* () {
         const service = yield* ProjectConfigurationService.ProjectConfigurationService;
-        const settings = yield* ServerSettings.ServerSettingsService;
-        const issueSources = [
-          { provider: "meituan" as const, host: "mep.example.test", scope: "team-space" },
-        ];
-        yield* settings.updateSettings({ issueProjectSources: { [projectId]: issueSources } });
         const exported = yield* service.exportProjects({ projectIds: [projectId] });
-        expect(exported[0]!.configuration.issueSources).toEqual([]);
+        expect(exported[0]!.configuration.issueSources).toEqual([github]);
         const roots = exported[0]!.configuration.workspace.roots;
         expect(exported[0]!.configuration.workspace.grouped).toBe(true);
         expect(roots.map((root) => [root.alias, root.remoteUrl, root.directory])).toEqual([
@@ -590,6 +598,25 @@ describe("ProjectConfigurationService", () => {
         expect(roots[0]!.setupScript).toEqual(setupScript);
         expect(roots[1]!.defaultBaseRef).toBe("develop");
         expect(roots.every((root) => !("sourcePath" in root))).toBe(true);
+        const previous = test.knownIdentities.get(webPath)!;
+        test.registered.set(projectId, {
+          ...test.registered.get(projectId)!,
+          repositoryIdentity: previous,
+        });
+        test.knownIdentities.set(webPath, {
+          ...previous,
+          provider: SourceControlProviderKind.make("meituan"),
+          locator: { ...previous.locator, remoteUrl: "https://git.sankuai.com/team/web.git" },
+        });
+        const switched = (yield* service.exportProjects({ projectIds: [projectId] }))[0]!
+          .configuration;
+        expect(switched.issueSources).toEqual([mep]);
+        expect(switched.workspace.roots[0]?.remoteUrl).toBe("https://git.sankuai.com/team/web.git");
+        test.knownIdentities.delete(webPath);
+        const removed = (yield* service.exportProjects({ projectIds: [projectId] }))[0]!
+          .configuration;
+        expect(removed.issueSources).toEqual([mep]);
+        expect(removed.workspace.roots[0]?.remoteUrl).toBeNull();
       }).pipe(Effect.provide(test.layer));
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );

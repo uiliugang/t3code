@@ -2,7 +2,6 @@ import {
   CommandId,
   defaultInstanceIdForDriver,
   mergeProjectIssueSources,
-  importProjectIssueSources,
   ProjectConfigurationExportInput,
   ProjectImportDefinition,
   ProjectImportError,
@@ -222,15 +221,18 @@ const make = Effect.gen(function* () {
               },
             ];
             const primaryRootId = project.workspaceConfig?.primaryRootId ?? roots[0]!.id;
+            const savedSources = server.issueProjectSources[project.id];
             let repositoryKind = project.repositoryIdentity?.provider;
             const exportedRoots = yield* Effect.forEach(roots, (root) =>
               Effect.gen(function* () {
-                const resolved = yield* identities.resolve(root.sourcePath);
+                const refresh = root.id === primaryRootId && Boolean(savedSources?.length);
+                const resolved = yield* identities.resolve(root.sourcePath, { refresh });
                 const identity =
                   resolved ??
-                  (root.sourcePath === project.workspaceRoot ? project.repositoryIdentity : null);
-                if (root.id === primaryRootId)
-                  repositoryKind = identity?.provider ?? repositoryKind;
+                  (!refresh && root.sourcePath === project.workspaceRoot
+                    ? project.repositoryIdentity
+                    : null);
+                if (root.id === primaryRootId) repositoryKind = identity?.provider;
                 const directory = identity?.rootPath
                   ? relativeDirectory(
                       yield* physicalPath(identity.rootPath),
@@ -258,7 +260,6 @@ const make = Effect.gen(function* () {
               }),
             );
             const overrides = resolveProjectSettings(server, project.id, project).overrides;
-            const savedSources = server.issueProjectSources[project.id];
             const virtualModels = projectVirtualModels(overrides, server);
             return {
               projectId: project.id,
@@ -569,14 +570,9 @@ const make = Effect.gen(function* () {
                 generators.listModels({ id }),
               ),
             ),
-            ...importProjectIssueSources(
-              project.id,
-              definition.issueSources,
-              server.issueProjectSources[project.id] ?? [],
-              definition.issueSources?.length
-                ? (yield* identities.resolve(project.workspaceRoot, { refresh: true }))?.provider
-                : undefined,
-            ),
+            ...(definition.issueSources === undefined
+              ? {}
+              : { issueProjectSources: { [project.id]: definition.issueSources } }),
             projectSettingsOverrides: {
               [project.id]:
                 Object.keys(definition.settings).length === 0

@@ -346,6 +346,7 @@ export function ProjectConfigurationSettings({
                 file,
                 project,
                 current,
+                config?.environment.capabilities,
                 t,
                 config?.providers,
                 await importGeneratorCatalog(
