@@ -1,7 +1,7 @@
 import {
   CommandId,
   defaultInstanceIdForDriver,
-  mergeProjectIssueSources,
+  projectIssueSourcesForTransfer,
   ProjectConfigurationExportInput,
   ProjectImportDefinition,
   ProjectImportError,
@@ -261,14 +261,13 @@ const make = Effect.gen(function* () {
             );
             const overrides = resolveProjectSettings(server, project.id, project).overrides;
             const virtualModels = projectVirtualModels(overrides, server);
+            const issueSources = projectIssueSourcesForTransfer(savedSources, repositoryKind);
             return {
               projectId: project.id,
               configuration: {
                 name: project.title,
                 settings: overrides,
-                ...(savedSources !== undefined
-                  ? { issueSources: mergeProjectIssueSources([], savedSources, repositoryKind) }
-                  : {}),
+                ...(issueSources === undefined ? {} : { issueSources }),
                 ...(Object.keys(virtualModels).length ? { virtualModels } : {}),
                 providers: Object.fromEntries(
                   [...providerIds(overrides), ...bindingProviders(virtualModels)].map((id) => [

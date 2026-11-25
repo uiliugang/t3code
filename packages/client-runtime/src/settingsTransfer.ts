@@ -4,7 +4,7 @@ import {
   CustomModelSetting,
   KeybindingsConfig,
   IssueSource,
-  mergeProjectIssueSources,
+  projectIssueSourcesForTransfer,
   importProjectIssueSources,
   MAX_KEYBINDINGS_COUNT,
   ProjectSettingsOverrides,
@@ -480,7 +480,10 @@ export function createProjectSettingsFile(
 ): ProjectSettingsFile {
   const settings = resolveProjectSettings(server, project.id).overrides;
   const virtualModels = projectVirtualModels(settings, server);
-  const savedSources = server.issueProjectSources[project.id];
+  const issueSources = projectIssueSourcesForTransfer(
+    server.issueProjectSources[project.id],
+    project.repositoryIdentity?.provider,
+  );
   return {
     format: "t3-code-settings",
     version: 1,
@@ -493,15 +496,7 @@ export function createProjectSettingsFile(
     repositories: Object.fromEntries(
       (project.workspaceConfig?.roots ?? []).map((root) => [root.id, root.alias]),
     ),
-    ...(savedSources !== undefined
-      ? {
-          issueSources: mergeProjectIssueSources(
-            [],
-            savedSources,
-            project.repositoryIdentity?.provider,
-          ),
-        }
-      : {}),
+    ...(issueSources === undefined ? {} : { issueSources }),
   };
 }
 

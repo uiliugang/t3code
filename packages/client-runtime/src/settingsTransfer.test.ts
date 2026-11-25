@@ -809,12 +809,22 @@ describe("settings transfer", () => {
         source,
       ),
     ).toEqual({ projectSettingsOverrides: { [destination.id]: null } });
-    expect(
-      applyServerSettingsPatch(
-        target,
-        projectSettingsImportPatch({ ...file, issueSources: [] }, destination, target),
-      ).issueProjectSources,
-    ).toEqual({ ...target.issueProjectSources, [destination.id]: [] });
+    const mepSources = legacySources.slice(0, 1);
+    const mepTarget = { ...target, issueProjectSources: { [destination.id]: mepSources } };
+    for (const saved of [mepSources, []]) {
+      const backup = createProjectSettingsFile(sourceProject, {
+        ...source,
+        issueProjectSources: { [sourceProject.id]: saved },
+      });
+      const restoredFile = parseSettingsFile(serializeSettingsFile(backup));
+      if (restoredFile.scope !== "project") throw new Error("Expected a project backup");
+      const restored = applyServerSettingsPatch(
+        mepTarget,
+        projectSettingsImportPatch(restoredFile, staleDestination, mepTarget),
+      );
+      expect(restored.issueProjectSources[destination.id]).toEqual(saved);
+      expect(Object.hasOwn(restoredFile, "issueSources")).toBe(saved.length === 0);
+    }
     expect(createProjectSettingsFile(sourceProject, settings())).not.toHaveProperty("issueSources");
     expect(() =>
       parseSettingsFile(JSON.stringify({ ...file, settings: { defaultRuntimeMode: "invalid" } })),

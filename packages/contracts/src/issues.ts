@@ -40,21 +40,26 @@ export function mergeProjectIssueSources(
 }
 
 export const IssueProjectSources = Schema.Record(ProjectId, Schema.Array(IssueSource));
+export function projectIssueSourcesForTransfer(
+  sources: readonly IssueSource[] | undefined,
+  repositoryKind?: string,
+) {
+  if (!sources?.length) return sources;
+  const compatible = mergeProjectIssueSources([], sources, repositoryKind);
+  return compatible.length ? compatible : undefined;
+}
+
 export function importProjectIssueSources(
   projectId: ProjectId,
   incoming: readonly IssueSource[] | undefined,
   saved: readonly IssueSource[],
   repositoryKind?: string,
 ) {
-  if (!incoming) return {};
-  const compatible = mergeProjectIssueSources(
-    [],
+  const compatible = projectIssueSourcesForTransfer(
     incoming,
     projectIssueProvider(repositoryKind, saved),
   );
-  return incoming.length && !compatible.length
-    ? {}
-    : { issueProjectSources: { [projectId]: compatible } };
+  return compatible === undefined ? {} : { issueProjectSources: { [projectId]: compatible } };
 }
 export const IssueTarget = Schema.Struct({
   projectId: ProjectId,
