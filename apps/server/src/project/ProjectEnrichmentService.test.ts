@@ -193,14 +193,15 @@ it.effect(
 it.effect("keeps the last identity on inspection failure but publishes a confirmed removal", () =>
   Effect.gen(function* () {
     const root = "/fork";
-    let state: "ready" | "offline" | "removed" = "ready";
+    let state: "ready" | "offline" | "moved" | "removed" = "ready";
     const metadata = Layer.merge(
       Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
         resolve: (cwd, options) =>
           Effect.suspend(() =>
-            state === "offline"
-              ? (options?.onUnavailable?.(cwd === "/cold" ? identity(cwd) : null) ??
-                Effect.succeed(null))
+            state === "offline" || state === "moved"
+              ? (options?.onUnavailable?.(
+                  state === "moved" ? identity(cwd, 2) : cwd === "/cold" ? identity(cwd) : null,
+                ) ?? Effect.succeed(null))
               : Effect.succeed(state === "ready" ? identity(cwd) : null),
           ),
       }),
@@ -231,6 +232,18 @@ it.effect("keeps the last identity on inspection failure but publishes a confirm
       const offline = yield* PubSub.take(changes);
       assert.isFalse(offline.repositoryIdentityResolved);
       assert.deepEqual(offline.enrichment.repositoryIdentity, identity(root));
+      state = "moved";
+      assert.equal(
+        (yield* service.refreshRepositoryIdentity(root).pipe(Effect.result))._tag,
+        "Failure",
+      );
+      assert.deepEqual((yield* service.peek(root)).repositoryIdentity, identity(root, 2));
+      const moved = yield* PubSub.take(changes);
+      assert.deepEqual(moved.enrichment.repositoryIdentity, identity(root, 2));
+      assert.equal(
+        (yield* service.readRepositoryIdentity(root).pipe(Effect.result))._tag,
+        "Failure",
+      );
       state = "removed";
       yield* service.refreshRepositoryIdentity(root);
       const removed = yield* PubSub.take(changes);

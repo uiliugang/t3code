@@ -30,6 +30,7 @@ describe("IssueService", () => {
     ["forge.example.test", "https://forge.example.test/me/fork.git"],
     ["github.com", "git@work:me/fork.git"],
     ["github.com", "git@unresolved.test:me/fork.git"],
+    ["github.com", "file://127.0.0.1/mirror/fork.git"],
   ] as const)(
     "creates a %s fork issue in the repository offered for %s on the first lookup",
     ([host, remoteUrl]) =>
@@ -87,10 +88,14 @@ describe("IssueService", () => {
                             remoteName: "upstream",
                             remoteUrl: `https://${host}/org/repo.git`,
                           },
-                          origin: {
-                            canonicalKey: `${originHost}/me/fork`,
-                            remoteUrl: origin.remoteUrl,
-                          },
+                          ...(remoteUrl.startsWith("file:")
+                            ? { hasLocalOrigin: true }
+                            : {
+                                origin: {
+                                  canonicalKey: `${originHost}/me/fork`,
+                                  remoteUrl: origin.remoteUrl,
+                                },
+                              }),
                         }
                       : null,
                   }),
@@ -115,7 +120,7 @@ describe("IssueService", () => {
           ),
         );
         const [listed] = yield* service.sources({ projectIds: [projectId] });
-        if (originHost !== host) {
+        if (originHost !== host || remoteUrl.startsWith("file:")) {
           const result = yield* service
             .create({
               projectId,

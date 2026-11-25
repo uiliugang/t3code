@@ -285,6 +285,7 @@ export const RepositoryIdentity = Schema.Struct({
   owner: Schema.optionalKey(TrimmedNonEmptyString),
   name: Schema.optionalKey(TrimmedNonEmptyString),
   origin: Schema.optionalKey(RepositoryOrigin),
+  hasLocalOrigin: Schema.optionalKey(Schema.Literal(true)),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;
 

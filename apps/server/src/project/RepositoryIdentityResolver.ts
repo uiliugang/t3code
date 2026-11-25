@@ -57,25 +57,23 @@ function isLocalRemoteUrl(url: string): boolean {
   return colonIndex === -1 || (slashIndex !== -1 && slashIndex < colonIndex);
 }
 
-function parseRemoteFetchUrls(stdout: string): Map<string, string> {
+function parseRemoteFetchUrls(stdout: string) {
   const remotes = new Map<string, string>();
+  let hasLocalOrigin = false;
   for (const line of stdout.split(/\r?\n/)) {
     // Git uses a tab before the URL and one space before the direction; both can occur in URLs.
     // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
     const match = /^(\S+)\t(.+) \((fetch|push)\)(?:\s+\[[^\]]+\])?$/.exec(line);
     if (!match) continue;
     const [, remoteName = "", remoteUrl = "", direction = ""] = match;
-    if (
-      direction !== "fetch" ||
-      remoteName.length === 0 ||
-      remoteUrl.length === 0 ||
-      isLocalRemoteUrl(remoteUrl)
-    ) {
+    if (direction !== "fetch" || !remoteName || !remoteUrl) continue;
+    if (isLocalRemoteUrl(remoteUrl)) {
+      if (remoteName === "origin") hasLocalOrigin = true;
       continue;
     }
     remotes.set(remoteName, remoteUrl);
   }
-  return remotes;
+  return { remotes, hasLocalOrigin };
 }
 
 // `gh repo set-default` marks one remote with `base`, or with OWNER/REPO when it picked a
@@ -214,6 +212,7 @@ function buildRepositoryIdentity(input: {
   readonly keyUrl: string;
   readonly originUrl: string | undefined;
   readonly originKeyUrl: string | undefined;
+  readonly hasLocalOrigin: boolean;
   readonly rootPath: string;
 }): RepositoryIdentity {
   const canonicalKey = sourceControlDefinitions.repositoryKeyFromRemote(input.keyUrl);
@@ -237,6 +236,7 @@ function buildRepositoryIdentity(input: {
     ...(owner ? { owner } : {}),
     ...(repositoryName ? { name: repositoryName } : {}),
     ...(origin ? { origin } : {}),
+    ...(input.hasLocalOrigin ? { hasLocalOrigin: true } : {}),
   };
 }
 
@@ -372,8 +372,7 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         ? new RepositoryIdentityCacheKey({ rootPath, isBare: true })
         : null;
     }
-    if (!topLevelResult.value.stderr.startsWith("fatal: not a git repository (or "))
-      return undefined;
+    if (!/^fatal: not a git repository \(or /mu.test(topLevelResult.value.stderr)) return undefined;
     return (yield* hasSkippedCheckout()) ? undefined : null;
   },
 );
@@ -408,7 +407,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     return undefined;
   }
 
-  const remotes = parseRemoteFetchUrls(remoteResult.value.stdout);
+  const { remotes, hasLocalOrigin } = parseRemoteFetchUrls(remoteResult.value.stdout);
   // Exits 1 when no remote has a mark.
   const resolved =
     resolvedResult._tag === "Some" && resolvedResult.value.code === 0
@@ -427,6 +426,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     keyUrl,
     originUrl,
     originKeyUrl,
+    hasLocalOrigin,
     rootPath: cacheKey.rootPath,
   });
 });

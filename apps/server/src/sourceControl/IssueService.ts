@@ -172,10 +172,12 @@ export const make = Effect.gen(function* () {
         origin.success.provider.kind === "unknown" ||
         origin.success.provider.kind === identity?.provider)
         ? origin
-        : yield* lookup(identity?.locator, identity?.canonicalKey);
+        : identity?.hasLocalOrigin
+          ? undefined
+          : yield* lookup(identity?.locator, identity?.canonicalKey);
     let repository: string | null = null;
     let failure: RequirementIssueError | undefined;
-    if (handle._tag === "Success" && handle.success.context) {
+    if (handle?._tag === "Success" && handle.success.context) {
       const { provider, context } = handle.success;
       repository =
         provider.repositoryNameFromRemoteUrl?.(context.remoteUrl) ??
@@ -213,7 +215,7 @@ export const make = Effect.gen(function* () {
           });
       }
     } else if (
-      handle._tag === "Failure" &&
+      handle?._tag === "Failure" &&
       !(
         isUnsupportedVcsOperation(handle.failure.cause) &&
         handle.failure.cause.operation === "VcsDriverRegistry.resolve" &&
@@ -227,7 +229,7 @@ export const make = Effect.gen(function* () {
       });
     const repositoryKind =
       projectIssueProvider(project.repositoryIdentity?.provider, []) ??
-      (handle._tag === "Success" && handle.success.context
+      (handle?._tag === "Success" && handle.success.context
         ? handle.success.provider.kind
         : undefined);
     const sources = mergeProjectIssueSources(automatic, manual, repositoryKind).filter(

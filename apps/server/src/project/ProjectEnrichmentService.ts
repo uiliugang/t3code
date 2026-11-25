@@ -375,12 +375,18 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     Effect.fn("ProjectEnrichmentService.refreshRepositoryIdentity")(function* (workspaceRoot) {
       // Remote-less folders hit this after every turn; publishing their unchanged null would
       // push a shell frame to every subscriber.
-      const identity = yield* inspectRepository(workspaceRoot, true);
-      const publish = identity !== null || lastRepositoryIdentities.has(workspaceRoot);
+      const result = yield* inspectRepository(workspaceRoot, true).pipe(
+        Effect.match({ onSuccess: Exit.succeed, onFailure: Exit.fail }),
+      );
+      const identity = displayIdentity(result);
+      const publish =
+        identity !== undefined &&
+        (identity !== null || lastRepositoryIdentities.has(workspaceRoot));
       lookupsInFlight.delete(workspaceRoot);
-      rememberRepositoryIdentity(workspaceRoot, identity);
-      yield* Cache.set(repositoryIdentityCache, workspaceRoot, Exit.succeed(identity));
+      if (identity !== undefined) rememberRepositoryIdentity(workspaceRoot, identity);
+      yield* Cache.set(repositoryIdentityCache, workspaceRoot, result);
       if (publish) yield* resolveRepositoryIdentity(workspaceRoot);
+      if (Exit.isFailure(result)) return yield* result;
     });
 
   return ProjectEnrichmentService.of({

@@ -419,7 +419,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
             run: (input) =>
               Effect.suspend(() => {
                 runs.push(input.args);
-                return runner.run(input);
+                return runner.run({ ...input, env: { ...input.env, GIT_TRACE: "1" } });
               }),
           }),
         );
@@ -467,6 +467,13 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(mixedIdentity?.locator.remoteName).toBe("mirror");
       expect(mixedIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
       const backup = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
+      yield* git(mixedDir, ["remote", "add", "origin", "file://127.0.0.1/mirror/fork.git"]);
+      const mirrored = yield* resolver.resolve(mixedDir, backup);
+      expect(mirrored).toMatchObject({
+        canonicalKey: mixedIdentity?.canonicalKey,
+        hasLocalOrigin: true,
+      });
+      expect(mirrored?.origin).toBeUndefined();
       yield* git(mixedDir, ["remote", "remove", "mirror"]);
       expect(yield* resolver.resolve(mixedDir, backup)).toBeNull();
       yield* fileSystem.remove(mixedDir, { recursive: true });
