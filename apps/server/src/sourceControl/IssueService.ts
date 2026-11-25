@@ -46,6 +46,7 @@ import * as Provider from "@t3tools/source-control-core/server/SourceControlProv
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
 type Board = NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>;
+const isUnsupportedVcsOperation = Schema.is(VcsUnsupportedOperationError);
 class DiscoveryKey extends Persistable.Class<{
   payload: {
     readonly cwd: string;
@@ -187,7 +188,7 @@ export const make = Effect.gen(function* () {
     } else if (
       handle._tag === "Failure" &&
       !(
-        Schema.is(VcsUnsupportedOperationError)(handle.failure.cause) &&
+        isUnsupportedVcsOperation(handle.failure.cause) &&
         handle.failure.cause.operation === "VcsDriverRegistry.resolve" &&
         handle.failure.cause.kind === "unknown"
       )
