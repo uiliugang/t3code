@@ -1015,6 +1015,14 @@ const make = Effect.gen(function* () {
       row.workspaceRoot,
       {
         refresh: true,
+        onUnavailable: Effect.fail(
+          new ServerSettingsError({
+            settingsPath,
+            operation: "write-file",
+            detail:
+              "Could not inspect the project repository. Restore its checkout or Git configuration before saving requirement sources.",
+          }),
+        ),
       },
     ))?.provider;
   });

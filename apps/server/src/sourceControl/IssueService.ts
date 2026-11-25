@@ -44,6 +44,7 @@ import * as Providers from "./SourceControlProviderRegistry.ts";
 import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 import * as Provider from "@t3tools/source-control-core/server/SourceControlProvider";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 
 type Board = NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>;
 const isUnsupportedVcsOperation = Schema.is(VcsUnsupportedOperationError);
@@ -132,8 +133,17 @@ export const make = Effect.gen(function* () {
     const automatic: IssueSource[] = [];
     const identity = project.repositoryIdentity;
     const originUrl = identity?.origin?.remoteUrl;
-    const lookup = (remote?: { readonly remoteName: string; readonly remoteUrl: string }) => {
-      const host = remote && sourceControlDefinitions.recognizeRemote(remote.remoteUrl);
+    const lookup = (
+      remote?: { readonly remoteName: string; readonly remoteUrl: string },
+      canonicalKey?: string,
+    ) => {
+      const host =
+        remote &&
+        sourceControlDefinitions.recognizeRemote(
+          canonicalKey && isSshRemoteUrl(remote.remoteUrl)
+            ? `https://${canonicalKey}`
+            : remote.remoteUrl,
+        );
       return providers
         .resolveHandle({
           cwd,
@@ -151,12 +161,15 @@ export const make = Effect.gen(function* () {
         .pipe(Effect.result);
     };
     const origin = originUrl
-      ? yield* lookup({ remoteName: "origin", remoteUrl: originUrl })
+      ? yield* lookup(
+          { remoteName: "origin", remoteUrl: originUrl },
+          identity?.origin?.canonicalKey,
+        )
       : undefined;
     const handle =
       origin && (origin._tag === "Failure" || origin.success.provider.kind === identity?.provider)
         ? origin
-        : yield* lookup(identity?.locator);
+        : yield* lookup(identity?.locator, identity?.canonicalKey);
     let repository: string | null = null;
     let failure: RequirementIssueError | undefined;
     if (handle._tag === "Success" && handle.success.context) {

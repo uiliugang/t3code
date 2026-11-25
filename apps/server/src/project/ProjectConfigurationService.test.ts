@@ -621,6 +621,12 @@ describe("ProjectConfigurationService", () => {
           ...test.registered.get(projectId)!,
           repositoryIdentity: previous,
         });
+        const head = `${rootPath}/.git/HEAD`;
+        yield* fs.rename(head, `${head}.offline`);
+        expect(
+          (yield* service.exportProjects({ projectIds: [projectId] }).pipe(Effect.result))._tag,
+        ).toBe("Failure");
+        yield* fs.rename(`${head}.offline`, head);
         yield* git(rootPath, "remote", "set-url", "origin", "https://git.sankuai.com/team/web.git");
         const switched = (yield* service.exportProjects({ projectIds: [projectId] }))[0]!
           .configuration;

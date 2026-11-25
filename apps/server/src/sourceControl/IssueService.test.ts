@@ -25,12 +25,16 @@ import { fakeSourceControlProvider } from "@t3tools/source-control-testing/fakeS
 import * as Service from "./IssueService.ts";
 
 describe("IssueService", () => {
-  it.effect.each(["github.com", "forge.example.test"])(
-    "creates a %s fork issue in the repository offered on the first lookup",
-    (host) =>
+  it.effect.each([
+    ["github.com", "https://github.com/me/fork.git"],
+    ["forge.example.test", "https://forge.example.test/me/fork.git"],
+    ["github.com", "git@work:me/fork.git"],
+  ] as const)(
+    "creates a %s fork issue in the repository offered for %s on the first lookup",
+    ([host, remoteUrl]) =>
       Effect.gen(function* () {
         const projectId = ProjectId.make("fork");
-        const origin = { remoteName: "origin", remoteUrl: `https://${host}/me/fork.git` };
+        const origin = { remoteName: "origin", remoteUrl };
         const provider = fakeSourceControlProvider("github", {
           issueBoard: {
             search: () => Effect.die("unexpected search"),
@@ -89,11 +93,16 @@ describe("IssueService", () => {
               Layer.mock(Providers.SourceControlProviderRegistry)({
                 resolveLink: () => undefined,
                 get: () => Effect.succeed(provider),
-                resolveHandle: ({ context }) =>
-                  Effect.succeed({
-                    provider,
-                    context: { ...(context ?? origin), provider: github },
-                  }),
+                resolveHandle: ({ context }) => {
+                  const anonymous = context?.provider.baseUrl === "https://work";
+                  return Effect.succeed({
+                    provider: anonymous ? fakeSourceControlProvider("unknown", {}) : provider,
+                    context: {
+                      ...(context ?? origin),
+                      provider: anonymous ? context.provider : github,
+                    },
+                  });
+                },
               }),
             ),
           ),

@@ -2915,6 +2915,34 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect(
+    "preserves the entire project backup target when its repository cannot be inspected",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const sql = yield* SqlClient.SqlClient;
+        const fs = yield* FileSystem.FileSystem;
+        const config = yield* ServerConfig.ServerConfig;
+        const id = ProjectId.make("unreadable");
+        const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
+        const github = { provider: "github", host: "github.com", scope: "acme/old" } as const;
+        const saved = { issueProjectSources: { [id]: [mep, github] } };
+        yield* fs.writeFileString(config.settingsPath, JSON.stringify(saved));
+        const folder = yield* fs.makeTempDirectoryScoped();
+        yield* sql`INSERT INTO projection_projects
+        (project_id, title, workspace_root, auto_pull, scripts_json, created_at, updated_at)
+        VALUES (${id}, 'Offline', ${`${folder}/missing`}, 0, '[]', '2026-08-25', '2026-08-25')`;
+        const backup = {
+          issueProjectSources: { [id]: [mep, { ...github, scope: "acme/new" }] },
+          projectSettingsOverrides: { [id]: { defaultAutoPull: true } },
+        };
+        const before = yield* service.getSettings;
+        const result = yield* service.updateSettings(backup).pipe(Effect.result);
+        assert.equal(result._tag, "Failure");
+        assert.deepEqual(yield* service.getSettings, before);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("does not hold the settings lock while detecting issue repositories", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

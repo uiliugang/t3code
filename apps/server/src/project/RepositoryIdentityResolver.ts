@@ -202,7 +202,7 @@ function buildRepositoryIdentity(input: {
   readonly rootPath: string;
 }): RepositoryIdentity {
   const canonicalKey = sourceControlDefinitions.repositoryKeyFromRemote(input.keyUrl);
-  const sourceControlProvider = sourceControlDefinitions.recognizeRemote(input.remoteUrl);
+  const sourceControlProvider = sourceControlDefinitions.recognizeRemote(input.keyUrl);
   const repositoryPath = repositoryPathOf(canonicalKey, input.remoteUrl);
   const repositoryPathSegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
   const [owner] = repositoryPathSegments;
@@ -271,6 +271,12 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         : undefined;
     }
 
+    const hasEntry = (target: string) =>
+      fileSystem.lstat(target).pipe(
+        Effect.as(true),
+        Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+        Effect.orElseSucceed(() => true),
+      );
     // Explicit Git directories preserve safe.bareRepository=explicit for both layouts.
     for (const [gitDir, entry] of [
       [".", "HEAD"],
@@ -278,19 +284,7 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
     ] as const) {
       // An explicit --git-dir fails unless the folder has this entry; a symlink counts even
       // when its target is missing, as git reads a symlinked HEAD's target text.
-      const target = path.join(cwd, entry);
-      const hasEntry = yield* fileSystem.exists(target).pipe(
-        Effect.flatMap((exists) =>
-          exists
-            ? Effect.succeed(true)
-            : fileSystem.readLink(target).pipe(
-                Effect.as(true),
-                Effect.orElseSucceed(() => false),
-              ),
-        ),
-        Effect.orElseSucceed(() => true),
-      );
-      if (!hasEntry) continue;
+      if (!(yield* hasEntry(path.join(cwd, entry)))) continue;
       const bareResult = yield* processRunner
         .run({
           command: "git",
@@ -307,7 +301,10 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         })
         .pipe(Effect.option);
       if (bareResult._tag === "None" || bareResult.value.timedOut) return undefined;
-      if (bareResult.value.code !== 0) continue;
+      if (bareResult.value.code !== 0) {
+        if (entry === ".git" || (yield* hasEntry(path.join(cwd, "objects")))) return undefined;
+        continue;
+      }
 
       const [isBare, ...rootLines] = bareResult.value.stdout.split("\n");
       const rootPath = rootLines.join("\n").replace(/\n$/, "");
@@ -316,9 +313,16 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         ? new RepositoryIdentityCacheKey({ rootPath, isBare: true })
         : null;
     }
-    return topLevelResult.value.stderr.startsWith("fatal: not a git repository (or ")
-      ? null
-      : undefined;
+    if (!topLevelResult.value.stderr.startsWith("fatal: not a git repository (or "))
+      return undefined;
+    const physical = yield* fileSystem.realPath(cwd).pipe(Effect.option);
+    if (physical._tag === "None") return undefined;
+    let directory = physical.value;
+    while (path.dirname(directory) !== directory) {
+      directory = path.dirname(directory);
+      if (yield* hasEntry(path.join(directory, ".git"))) return undefined;
+    }
+    return null;
   },
 );
 
