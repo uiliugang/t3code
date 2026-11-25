@@ -567,6 +567,7 @@ describe("ProjectConfigurationService", () => {
       ]) {
         test.knownIdentities.set(sourcePath!, {
           canonicalKey: "fixture",
+          provider: SourceControlProviderKind.make(sourcePath === webPath ? "github" : "unknown"),
           rootPath: yield* fs.realPath(repositoryRoot!),
           locator: { source: "git-remote", remoteName: "origin", remoteUrl: remoteUrl! },
         });
@@ -579,7 +580,7 @@ describe("ProjectConfigurationService", () => {
         ];
         yield* settings.updateSettings({ issueProjectSources: { [projectId]: issueSources } });
         const exported = yield* service.exportProjects({ projectIds: [projectId] });
-        expect(exported[0]!.configuration).toMatchObject({ issueSources });
+        expect(exported[0]!.configuration.issueSources).toEqual([]);
         const roots = exported[0]!.configuration.workspace.roots;
         expect(exported[0]!.configuration.workspace.grouped).toBe(true);
         expect(roots.map((root) => [root.alias, root.remoteUrl, root.directory])).toEqual([

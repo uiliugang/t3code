@@ -7,6 +7,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  SourceControlProviderKind,
   WorkspaceRootId,
   type ServerSettings,
   requiredScopesForServerSettingsPatch,
@@ -712,11 +713,22 @@ describe("settings transfer", () => {
   });
 
   it("restores the project's override set, including null values and inherited settings", () => {
-    const sourceProject = project();
-    const issueSources = [{ provider: "meituan" as const, host: "mep.example.com", scope: "42" }];
+    const sourceProject = {
+      ...project(),
+      repositoryIdentity: {
+        ...project().repositoryIdentity!,
+        provider: SourceControlProviderKind.make("github"),
+      },
+    };
+    const issueSources = [{ provider: "github" as const, host: "github.com", scope: "team/repo" }];
     const source = {
       ...settings(),
-      issueProjectSources: { [sourceProject.id]: issueSources },
+      issueProjectSources: {
+        [sourceProject.id]: [
+          { provider: "meituan" as const, host: "mep.sankuai.com", scope: "42" },
+          ...issueSources,
+        ],
+      },
       projectSettingsFolded: true,
       projectSettingsOverrides: {
         [sourceProject.id]: {

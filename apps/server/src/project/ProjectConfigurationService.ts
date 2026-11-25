@@ -1,6 +1,7 @@
 import {
   CommandId,
   defaultInstanceIdForDriver,
+  mergeProjectIssueSources,
   ProjectConfigurationExportInput,
   ProjectImportDefinition,
   ProjectImportError,
@@ -219,12 +220,16 @@ const make = Effect.gen(function* () {
                 accessIntent: "write" as const,
               },
             ];
+            const primaryRootId = project.workspaceConfig?.primaryRootId ?? roots[0]!.id;
+            let repositoryKind = project.repositoryIdentity?.provider;
             const exportedRoots = yield* Effect.forEach(roots, (root) =>
               Effect.gen(function* () {
                 const resolved = yield* identities.resolve(root.sourcePath);
                 const identity =
                   resolved ??
                   (root.sourcePath === project.workspaceRoot ? project.repositoryIdentity : null);
+                if (root.id === primaryRootId)
+                  repositoryKind = identity?.provider ?? repositoryKind;
                 const directory = identity?.rootPath
                   ? relativeDirectory(
                       yield* physicalPath(identity.rootPath),
@@ -252,14 +257,15 @@ const make = Effect.gen(function* () {
               }),
             );
             const overrides = resolveProjectSettings(server, project.id, project).overrides;
+            const savedSources = server.issueProjectSources[project.id];
             const virtualModels = projectVirtualModels(overrides, server);
             return {
               projectId: project.id,
               configuration: {
                 name: project.title,
                 settings: overrides,
-                ...(Object.hasOwn(server.issueProjectSources, project.id)
-                  ? { issueSources: server.issueProjectSources[project.id] }
+                ...(savedSources !== undefined
+                  ? { issueSources: mergeProjectIssueSources([], savedSources, repositoryKind) }
                   : {}),
                 ...(Object.keys(virtualModels).length ? { virtualModels } : {}),
                 providers: Object.fromEntries(
@@ -270,7 +276,7 @@ const make = Effect.gen(function* () {
                 ),
                 workspace: {
                   grouped: project.workspaceConfig !== undefined,
-                  primaryRootId: project.workspaceConfig?.primaryRootId ?? roots[0]!.id,
+                  primaryRootId,
                   roots: exportedRoots,
                 },
               },
