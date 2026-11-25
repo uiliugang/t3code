@@ -198,7 +198,10 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         remoteName: "origin",
         remoteUrl: "https://github.com/T3Tools/t3code.git",
       });
-      expect(identity?.issueRepository).toBeUndefined();
+      expect(identity?.issueRepository).toMatchObject({
+        provider: "unknown",
+        locator: { remoteUrl: "https://proxy.example/T3Tools/t3code.git" },
+      });
 
       yield* git(cwd, ["config", "--unset", "url.https://proxy.example/.insteadOf"]);
       yield* git(cwd, ["config", "url.file:///srv/mirror/.insteadOf", "https://github.com/"]);
@@ -246,7 +249,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
   );
 
   it.effect(
-    "probes the effective HTTPS issue remote before falling back to the configured forge",
+    "never falls back to the configured issue forge when the effective HTTPS remote is unknown",
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -256,7 +259,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         yield* git(cwd, ["init"]);
         yield* git(cwd, ["remote", "add", "origin", configured]);
         yield* git(cwd, ["config", `url.${rewritten}.insteadOf`, configured]);
-        let probe: "offline" | "forge" | "proxy" = "offline";
+        let probe: "offline" | "forge" | "unknown" = "offline";
         const resolver = yield* RepositoryIdentityResolver.make({
           refine: (identity) => {
             if (identity.locator.remoteUrl !== rewritten) return Effect.succeed(identity);
@@ -283,9 +286,11 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
           canonicalKey: "github.com/team/old",
           issueRepository: { provider: "github", locator: { remoteUrl: rewritten } },
         });
-        probe = "proxy";
-        const proxy = yield* resolver.resolve(cwd, strict);
-        expect((proxy?.issueRepository ?? proxy)?.locator.remoteUrl).toBe(configured);
+        probe = "unknown";
+        expect(yield* resolver.resolve(cwd, strict)).toMatchObject({
+          canonicalKey: "github.com/team/old",
+          issueRepository: { provider: "unknown", locator: { remoteUrl: rewritten } },
+        });
       }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 

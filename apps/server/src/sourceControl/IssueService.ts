@@ -1,5 +1,6 @@
 import {
   RequirementIssueError,
+  isGithubIssueHost,
   isMeituanServiceEnabled,
   mergeProjectIssueSources,
   projectIssueProvider,
@@ -177,7 +178,7 @@ export const make = Effect.gen(function* () {
         automatic.push({
           provider: "github",
           scope: repository,
-          host: new URL(context.provider.baseUrl).hostname,
+          host: new URL(context.provider.baseUrl).host,
         });
       if (
         provider.discoverIssueSources &&
@@ -257,7 +258,7 @@ export const make = Effect.gen(function* () {
   const validSource = (source: IssueSource) =>
     source.provider === "meituan"
       ? /^[1-9]\d*$/u.test(source.scope) && source.host === "mep.sankuai.com"
-      : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) && /^[\w.-]+$/u.test(source.host);
+      : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) && isGithubIssueHost(source.host);
   const resolveAll = Effect.fn("IssueService.resolveAll")(function* (
     input: IssueTarget,
     refreshRepository = false,

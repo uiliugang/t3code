@@ -13,6 +13,13 @@ export const IssueSource = Schema.Struct({
 });
 export type IssueSource = typeof IssueSource.Type;
 
+export function isGithubIssueHost(host: string): boolean {
+  const match = /^[\w.-]+(?::([0-9]{1,5}))?$/u.exec(host);
+  if (!match || host.length > 253) return false;
+  const port = match[1];
+  return port === undefined || (Number(port) > 0 && Number(port) <= 65535);
+}
+
 export function issueSourcesMatch(
   current: readonly IssueSource[],
   expected: readonly IssueSource[],

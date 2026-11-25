@@ -1112,6 +1112,17 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           );
         }
       }
+      if ((yield* HostProcess.Platform) !== "win32") {
+        const worktreeHome = path.join(root, ".t3");
+        yield* fs.remove(worktreeHome);
+        yield* fs.symlink(path.dirname(stoppedDb), worktreeHome);
+        const error = yield* runMigrateDevDb(
+          { baseDir: `${worktreeHome}${path.sep}..`, source, projects: 1, threadsPerProject: 1 },
+          { cwd: mainCheckout, sharedHome },
+        ).pipe(Effect.flip);
+        assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+        assert.isFalse(yield* fs.exists(path.join(path.dirname(stoppedDb), "server-owner.sqlite")));
+      }
     }),
   );
 
@@ -1261,14 +1272,12 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           yield* fs.writeFileString(dbInA, "unintended-dev-db-in-a");
 
           const dotDotBaseDir = `${path.join(dirA, "link")}${path.sep}..`;
-          const migratedDotDot = yield* runMigrateDevDb(
+          const ambiguousDestination = yield* runMigrateDevDb(
             { baseDir: dotDotBaseDir, source, projects: 5, threadsPerProject: 2 },
             { sharedHome: sourceDir },
-          );
-          assert.equal(
-            migratedDotDot.databasePath,
-            path.join(yield* fs.realPath(dirB), "userdata", "statev2.sqlite"),
-          );
+          ).pipe(Effect.flip);
+          assert.equal(ambiguousDestination._tag, "MigrateDevDbSharedHomeError");
+          assert.isFalse(yield* fs.exists(path.join(dirB, "userdata", "statev2.sqlite")));
           assert.equal(yield* fs.readFileString(dbInA), "unintended-dev-db-in-a");
 
           // Explicit `--source` with `link/..`: lexical `srcA/seed.sqlite` exists, but real `srcB/seed.sqlite` is missing.

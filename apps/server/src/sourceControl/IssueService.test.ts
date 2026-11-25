@@ -28,6 +28,7 @@ describe("IssueService", () => {
   it.effect.each([
     ["github.com", "https://github.com/me/fork.git", "origin"],
     ["forge.example.test", "https://forge.example.test/me/fork.git", "origin"],
+    ["forge.example.test:8443", "https://forge.example.test:8443/me/fork.git", "origin"],
     ["github.com", "git@work:me/fork.git", "origin"],
     ["github.com", "git@unresolved.test:me/fork.git", "origin"],
     ["github.com", "file://127.0.0.1/mirror/fork.git", "origin"],
@@ -40,7 +41,7 @@ describe("IssueService", () => {
       Effect.gen(function* () {
         const projectId = ProjectId.make("fork");
         const originHost = remoteUrl.startsWith("https:")
-          ? new URL(remoteUrl).hostname
+          ? new URL(remoteUrl).host
           : remoteUrl.includes("unresolved.test")
             ? "unresolved.test"
             : host;
@@ -166,6 +167,7 @@ describe("IssueService", () => {
         }
         const source = listed!.sources[0]!;
         expect(source.scope).toBe("me/fork");
+        expect(source.host).toBe(host);
         const created = yield* service.create({
           provider: "github",
           projectId,

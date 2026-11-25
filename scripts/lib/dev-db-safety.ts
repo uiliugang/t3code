@@ -285,10 +285,14 @@ export const inspectIsolatedDevDirectory = Effect.fn("inspectIsolatedDevDirector
 ) {
   const path = yield* Path.Path;
   const base = yield* inspectPath(baseDir);
+  const normalized = path.resolve(baseDir);
+  if (normalized !== baseDir && (yield* inspectPath(normalized)).canonical !== base.canonical) {
+    return yield* new MigrateDevDbSharedHomeError();
+  }
   const platform = yield* HostProcess.Platform;
   if (stateSubdir === "userdata") {
     const fs = yield* FileSystem.FileSystem;
-    for (const candidate of new Set([baseDir, path.resolve(baseDir)])) {
+    for (const candidate of new Set([baseDir, normalized])) {
       const parts = devHomePathParts(candidate, platform);
       if (!parts || comparableDevDbPath(parts.leaf, platform) !== ".t3") continue;
       const parent = yield* inspectPath(parts.parent);

@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  isGithubIssueHost,
   isMeituanServiceEnabled,
+  issueSourcesMatch,
   mergeProjectIssueSources,
   projectIssueProvider,
   MAX_WORK_ITEM_DISCOVERY_LIMIT,
@@ -543,7 +545,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const t = useUiTranslation();
   const { connectedEnvironments } = useSettingsScope();
   const [selected, setSelected] = useState<string[]>([]);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<ReadonlyMap<string, readonly IssueSource[]> | null>(null);
   const [scope, setScope] = useState("");
   const [host, setHost] = useState("github.com");
   const [busy, setBusy] = useState(false);
@@ -644,20 +646,34 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const githubOverrides = githubChosen.filter((project) =>
     savedSources.get(projectKey(project))?.some((source) => source.provider === "github"),
   );
-  const readOnlySelection = githubChosen.some(
-    (project) => !casEnvironments.has(project.environmentId),
-  );
-  const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && /^[\w.-]+$/u.test(host.trim());
+  const lacksCas = (project: Project) => !casEnvironments.has(project.environmentId);
+  const cannotSave = githubChosen.some(lacksCas);
+  const cannotReset = githubOverrides.some(lacksCas);
+  const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && isGithubIssueHost(host.trim());
   const run = async (action: "refresh" | "save" | "reset") => {
     const actionTargets =
       action === "refresh" ? chosen : action === "reset" ? githubOverrides : githubChosen;
+    const expected = action === "save" ? editing : savedSources;
     if (
+      !expected ||
       !actionTargets.length ||
       busy ||
-      (action !== "refresh" && readOnlySelection) ||
+      (action !== "refresh" && actionTargets.some(lacksCas)) ||
       (action === "save" && !valid)
     )
       return;
+    if (
+      action === "save" &&
+      (actionTargets.length !== expected.size ||
+        actionTargets.some((project) => {
+          const key = projectKey(project);
+          const before = expected.get(key);
+          return before === undefined || !issueSourcesMatch(savedSources.get(key) ?? [], before);
+        }))
+    ) {
+      setMessage(t("Project sources have changed. Reopen the editor and try again."));
+      return;
+    }
     setBusy(true);
     setMessage("");
     const results = await Promise.all(
@@ -677,26 +693,27 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               : targets.length;
           return { success: targets.length - failed, failed };
         }
-        const { settings, environment: descriptor } = environment.serverConfig!;
-        const saved = settings.issueProjectSources;
+        const { environment: descriptor } = environment.serverConfig!;
         const scoped = descriptor.capabilities.singleProjectIssueProvider === true;
         const replacement =
           action === "reset"
             ? []
             : [{ provider: "github" as const, scope: scope.trim(), host: host.trim() }];
-        const entries = Object.fromEntries(
-          targets.map((project) => [
-            project.id,
-            replaceProjectIssueSources(scoped, "github", saved[project.id] ?? [], replacement),
-          ]),
+        const expectedSources = targets.map(
+          (project) => [project.id, expected.get(projectKey(project)) ?? []] as const,
         );
         const result = await update({
           environmentId: environment.environmentId,
           input: {
-            patch: { issueProjectSources: entries },
-            expectedIssueProjectSources: Object.fromEntries(
-              targets.map((project) => [project.id, saved[project.id] ?? []]),
-            ),
+            patch: {
+              issueProjectSources: Object.fromEntries(
+                expectedSources.map(([id, sources]) => [
+                  id,
+                  replaceProjectIssueSources(scoped, "github", sources, replacement),
+                ]),
+              ),
+            },
+            expectedIssueProjectSources: Object.fromEntries(expectedSources),
             ...(scoped ? { issueSourceProvider: "github" as const } : {}),
           },
         });
@@ -712,7 +729,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
         failed: String(results.reduce((sum, result) => sum + result.failed, 0)),
       }),
     );
-    if (!results.some((result) => result.failed)) setEditing(false);
+    if (!results.some((result) => result.failed)) setEditing(null);
     setBusy(false);
   };
   return (
@@ -798,10 +815,20 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
             <Button
               size="sm"
               variant="outline"
-              disabled={busy || readOnlySelection}
+              disabled={busy || cannotSave}
               onClick={() => {
-                setEditing(!editing);
+                setEditing(
+                  editing
+                    ? null
+                    : new Map(
+                        githubChosen.map((project) => {
+                          const key = projectKey(project);
+                          return [key, savedSources.get(key) ?? []];
+                        }),
+                      ),
+                );
                 setScope("");
+                setMessage("");
               }}
             >
               <Settings2Icon />
@@ -812,7 +839,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={busy || readOnlySelection}
+                disabled={busy || cannotReset}
                 onClick={() => void run("reset")}
               >
                 <Undo2Icon />
@@ -823,7 +850,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
           </>
         ) : null}
       </div>
-      {editing && githubChosen.length && !readOnlySelection ? (
+      {editing && githubChosen.length && !cannotSave ? (
         <form
           className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted/20 p-4 sm:grid-cols-2"
           onSubmit={(event) => {
@@ -849,7 +876,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               size="icon-xs"
               variant="ghost-muted"
               aria-label={t("Close")}
-              onClick={() => setEditing(false)}
+              onClick={() => setEditing(null)}
             >
               <XIcon />
             </Button>

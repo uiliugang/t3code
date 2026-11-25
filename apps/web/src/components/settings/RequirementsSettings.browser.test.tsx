@@ -1,5 +1,5 @@
 import "~/index.css";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type IssueSource } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
@@ -12,7 +12,7 @@ const environmentId = EnvironmentId.make("legacy");
 const projectId = ProjectId.make("project");
 const github = { provider: "github", host: "github.com", scope: "team/old" } as const;
 const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "42" } as const;
-const saved = [github, mep];
+const saved: IssueSource[] = [github, mep];
 const settings = { issueProjectSources: { [projectId]: saved } };
 const environment = {
   environmentId,
@@ -99,13 +99,24 @@ it("preserves MEP when bulk saving or restoring GitHub with compare-and-set supp
   await userEvent.click(screen.getByRole("checkbox", { name: "Select Example" }));
   await userEvent.click(screen.getByRole("button", { name: /^GitHub override/ }));
   await userEvent.fill(screen.getByRole("textbox", { name: "GitHub repository" }), "team/new");
+  await userEvent.fill(
+    screen.getByRole("textbox", { name: "GitHub host" }),
+    "forge.example.test:8443",
+  );
   await userEvent.click(screen.getByRole("button", { name: "Save GitHub override" }));
   await expect.element(screen.getByText("Completed: 1 succeeded, 0 failed.")).toBeVisible();
   expect(mocks.update).toHaveBeenNthCalledWith(1, {
     environmentId,
     input: {
       expectedIssueProjectSources: { [projectId]: saved },
-      patch: { issueProjectSources: { [projectId]: [mep, { ...github, scope: "team/new" }] } },
+      patch: {
+        issueProjectSources: {
+          [projectId]: [
+            mep,
+            { provider: "github", host: "forge.example.test:8443", scope: "team/new" },
+          ],
+        },
+      },
     },
   });
   await userEvent.click(screen.getByRole("button", { name: /^Restore GitHub automatic/ }));
@@ -117,4 +128,26 @@ it("preserves MEP when bulk saving or restoring GitHub with compare-and-set supp
       patch: { issueProjectSources: { [projectId]: [mep] } },
     },
   });
+});
+
+it("does not overwrite sources that changed while the bulk editor was open", async () => {
+  mocks.update.mockReset().mockResolvedValue({ _tag: "Success" });
+  environment.serverConfig.environment.capabilities = { issueProjectSourcesCas: true };
+  await using screen = await render(<RequirementsSettings />);
+  await userEvent.click(screen.getByRole("checkbox", { name: "Select Example" }));
+  await userEvent.click(screen.getByRole("button", { name: /^GitHub override/ }));
+  await userEvent.fill(screen.getByRole("textbox", { name: "GitHub repository" }), "team/new");
+  environment.serverConfig.settings = {
+    issueProjectSources: { [projectId]: [{ ...github, scope: "team/concurrent" }, mep] },
+  };
+  try {
+    await screen.rerender(<RequirementsSettings />);
+    await userEvent.click(screen.getByRole("button", { name: "Save GitHub override" }));
+    await expect
+      .element(screen.getByText("Project sources have changed. Reopen the editor and try again."))
+      .toBeVisible();
+    expect(mocks.update).not.toHaveBeenCalled();
+  } finally {
+    environment.serverConfig.settings = settings;
+  }
 });
