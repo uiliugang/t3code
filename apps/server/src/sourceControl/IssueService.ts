@@ -3,6 +3,7 @@ import {
   isMeituanServiceEnabled,
   mergeProjectIssueSources,
   projectIssueProvider,
+  repositoryIssueKind,
   IssueSource,
   SourceControlProviderError,
   SourceControlProviderKind,
@@ -210,7 +211,7 @@ export const make = Effect.gen(function* () {
         cause: handle.failure,
       });
     const repositoryKind =
-      projectIssueProvider(project.repositoryIdentity?.provider, []) ??
+      projectIssueProvider(repositoryIssueKind(project.repositoryIdentity), []) ??
       (handle?._tag === "Success" && handle.success.context
         ? handle.success.provider.kind
         : undefined);
@@ -300,15 +301,16 @@ export const make = Effect.gen(function* () {
           project: OrchestrationProjectShell,
         ) {
           const enabled = isMeituanServiceEnabled(saved, "requirements");
+          const kind = repositoryIssueKind(project.repositoryIdentity);
           const manual = mergeProjectIssueSources(
             [],
             saved.issueProjectSources[project.id] ?? [],
-            project.repositoryIdentity?.provider,
+            kind,
           ).filter((source) => source.provider !== "meituan" || enabled);
           const discover =
-            enabled &&
-            project.repositoryIdentity?.provider === "meituan" &&
-            !manual.some((source) => source.provider === "meituan");
+            !manual.length &&
+            ((enabled && kind === "meituan") ||
+              (kind === "github" && project.repositoryIdentity?.provider !== kind));
           const resolved = discover ? yield* resolveSources(project, saved) : { sources: manual };
           const sources = resolved.sources.filter(validSource);
           return {

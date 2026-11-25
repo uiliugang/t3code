@@ -5,6 +5,7 @@ import {
   KeybindingsConfig,
   IssueSource,
   projectIssueSourcesForTransfer,
+  repositoryIssueKind,
   importProjectIssueSources,
   MAX_KEYBINDINGS_COUNT,
   ProjectSettingsOverrides,
@@ -475,8 +476,16 @@ export function createApplicationSettingsFile(input: {
 }
 
 function hasUnconfirmedProvider(project: TransferProject) {
-  const provider = project.repositoryIdentity?.provider;
-  return !provider || provider === "unknown";
+  const identity = project.repositoryIdentity;
+  const provider = repositoryIssueKind(identity);
+  return (
+    !provider ||
+    provider === "unknown" ||
+    identity?.issueProvider === "unknown" ||
+    (!identity?.issueProvider &&
+      identity?.origin !== undefined &&
+      identity.canonicalKey.split("/", 1)[0] !== identity.origin.canonicalKey.split("/", 1)[0])
+  );
 }
 
 export function createProjectSettingsFile(
@@ -488,7 +497,7 @@ export function createProjectSettingsFile(
   const saved = server.issueProjectSources[project.id];
   const issueSources = hasUnconfirmedProvider(project)
     ? saved
-    : projectIssueSourcesForTransfer(saved, project.repositoryIdentity?.provider);
+    : projectIssueSourcesForTransfer(saved, repositoryIssueKind(project.repositoryIdentity));
   return {
     format: "t3-code-settings",
     version: 1,
@@ -671,7 +680,7 @@ export function projectSettingsImportPatch(
             project.id,
             incoming,
             saved,
-            project.repositoryIdentity?.provider,
+            repositoryIssueKind(project.repositoryIdentity),
           )),
     projectSettingsOverrides: {
       [project.id]:

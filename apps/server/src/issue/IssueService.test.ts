@@ -260,6 +260,33 @@ describe("IssueService", () => {
       expect(bound).toMatchObject({ tracker: ones, scope: "456", writable: true });
       expect((yield* service.detail(bound)).writable).toBe(true);
       yield* Effect.flip(service.resolveUrl(url("789")));
+      const upstream = project({ id: "p", repository: "acme/upstream" });
+      const crossForge = yield* makeService({
+        projects: [
+          {
+            ...upstream,
+            repositoryIdentity: {
+              ...upstream.repositoryIdentity!,
+              issueProvider: SourceControlProviderKind.make("meituan"),
+              origin: { canonicalKey: "git.sankuai.com/acme/fork" },
+            },
+          },
+        ],
+        trackers: [fakeTracker(), fakeTracker({ kind: ones })],
+        spaces: ["123"],
+      });
+      expect(
+        (yield* crossForge.list({ state: "all" })).trackers.map((item) => item.tracker),
+      ).toEqual([ones]);
+      yield* Effect.flip(
+        crossForge.setState({
+          projectId: upstream.id,
+          tracker: GITHUB,
+          scope: "acme/upstream",
+          key: "1",
+          state: "closed",
+        }),
+      );
       const failure = new RequirementIssueError({ operation: "discovery", reason: "unavailable" });
       const isolated = yield* makeService({
         projects: [project({ id: "p" })],

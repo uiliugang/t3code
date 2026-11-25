@@ -333,7 +333,7 @@ describe("IssueService", () => {
           host: "mep.sankuai.com",
           scope: "456",
         });
-        sources[projects[0]!.id]!.unshift({
+        sources[projects[0]!.id]!.push({
           provider: "github",
           host: "github.com",
           scope: "acme/legacy",
@@ -419,6 +419,17 @@ describe("IssueService", () => {
           expect((yield* (yield* service.trackerSources).forProject(repoProject)).sources).toEqual(
             expectedSpaces,
           );
+          const sidebar = yield* service.trackerSources;
+          expect(
+            (yield* sidebar.forProject({
+              ...repoProject,
+              repositoryIdentity: {
+                ...repoProject.repositoryIdentity,
+                provider: SourceControlProviderKind.make("gitlab"),
+                issueProvider: SourceControlProviderKind.make("github"),
+              },
+            })).sources,
+          ).toEqual([{ provider: "github", host: "github.com", scope: "acme/legacy" }]);
           expect((yield* service.sources({ projectIds: [repoProject.id] }))[0]?.sources).toEqual(
             expectedSpaces,
           );

@@ -12,6 +12,8 @@ import {
   type IssueTrackerAccountId,
   SourceControlProviderKind,
   issueTrackerBindingScopes,
+  projectIssueProvider,
+  repositoryIssueKind,
   type IssueCandidates,
   type IssueCommentInput,
   type IssueCommentsPage,
@@ -311,6 +313,10 @@ const make = Effect.gen(function* () {
                 const shell = { ...project, repositoryIdentity };
                 const gitBindings = resolveGitHostBindings(shell);
                 const { sources, failure } = yield* requirements.forProject(shell);
+                const requirementProvider = projectIssueProvider(
+                  repositoryIssueKind(repositoryIdentity),
+                  sources,
+                );
                 if (failure)
                   errors.push({
                     projectId: project.id,
@@ -320,7 +326,12 @@ const make = Effect.gen(function* () {
                 return [
                   ...standalone,
                   ...gitBindings
-                    .filter((git) => !sources.some((source) => source.provider === git.tracker))
+                    .filter(
+                      ({ tracker }) =>
+                        (tracker !== "github" && tracker !== "meituan") ||
+                        ((!requirementProvider || tracker === requirementProvider) &&
+                          !sources.length),
+                    )
                     .map((git) => ({ project, ...git })),
                   ...sources.map(({ provider, host, scope }) => ({
                     project,

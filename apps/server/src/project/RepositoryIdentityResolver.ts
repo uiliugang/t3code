@@ -14,7 +14,10 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import * as ProcessRunner from "../processRunner.ts";
-import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import {
+  selectRequirementRemote,
+  sourceControlDefinitions,
+} from "../sourceControl/sourceControlDefinitions.ts";
 import { explicitBareRepositoryEnv, unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
@@ -59,6 +62,7 @@ function isLocalRemoteUrl(url: string): boolean {
 
 function parseRemoteFetchUrls(stdout: string) {
   const remotes = new Map<string, string>();
+  const fetchRemotes = new Map<string, string>();
   let hasLocalOrigin = false;
   for (const line of stdout.split(/\r?\n/)) {
     // Git uses a tab before the URL and one space before the direction; both can occur in URLs.
@@ -67,13 +71,14 @@ function parseRemoteFetchUrls(stdout: string) {
     if (!match) continue;
     const [, remoteName = "", remoteUrl = "", direction = ""] = match;
     if (direction !== "fetch" || !remoteName || !remoteUrl) continue;
+    fetchRemotes.set(remoteName, remoteUrl);
     if (isLocalRemoteUrl(remoteUrl)) {
       if (remoteName === "origin") hasLocalOrigin = true;
       continue;
     }
     remotes.set(remoteName, remoteUrl);
   }
-  return { remotes, hasLocalOrigin };
+  return { remotes, fetchRemotes, hasLocalOrigin };
 }
 
 // `gh repo set-default` marks one remote with `base`, or with OWNER/REPO when it picked a
@@ -403,9 +408,7 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
 
 const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   "RepositoryIdentityResolver.resolveFromCacheKey",
-)(function* (
-  cacheKey: RepositoryIdentityCacheKey,
-): Effect.fn.Return<RepositoryIdentity | null | undefined, never, ProcessRunner.ProcessRunner> {
+)(function* (cacheKey: RepositoryIdentityCacheKey) {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const env = gitEnv(yield* HostProcess.Platform);
   const runGit = (args: ReadonlyArray<string>) =>
@@ -418,7 +421,10 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
       })
       .pipe(Effect.option);
   const [remoteResult, resolvedResult] = yield* Effect.all(
-    [runGit(["remote", "-v"]), runGit(["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"])],
+    [
+      runGit(["remote", "-v"]),
+      runGit(["config", "--get-regexp", "^remote\\..*\\.(gh-resolved|t3-private-pr-companion)$"]),
+    ],
     { concurrency: "unbounded" },
   );
   if (
@@ -431,7 +437,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     return undefined;
   }
 
-  const { remotes, hasLocalOrigin } = parseRemoteFetchUrls(remoteResult.value.stdout);
+  const { remotes, fetchRemotes, hasLocalOrigin } = parseRemoteFetchUrls(remoteResult.value.stdout);
   // Exits 1 when no remote has a mark.
   const resolved =
     resolvedResult._tag === "Some" && resolvedResult.value.code === 0
@@ -445,7 +451,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     originUrl === undefined || originUrl === remote.remoteUrl
       ? keyUrl
       : yield* sshResolvedRemoteUrl(originUrl, remotes);
-  return buildRepositoryIdentity({
+  const identity = buildRepositoryIdentity({
     ...remote,
     keyUrl,
     originUrl,
@@ -453,6 +459,34 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     hasLocalOrigin,
     rootPath: cacheKey.rootPath,
   });
+  if (remote.remoteName === "origin" || hasLocalOrigin) return { identity };
+  for (const line of resolved.split("\n")) {
+    const mark = /^remote\.(.+)\.t3-private-pr-companion\s+(.+)$/u.exec(line);
+    if (!mark) continue;
+    const [, name = "", companion = ""] = mark;
+    const url = fetchRemotes.get(name);
+    if (
+      url &&
+      sourceControlDefinitions.recognizeRemote(url)?.kind === "tanstack-source" &&
+      sourceControlDefinitions.repositoryKeyFromRemote(companion) ===
+        sourceControlDefinitions.repositoryKeyFromRemote(url)
+    )
+      fetchRemotes.delete(name);
+  }
+  const selected = selectRequirementRemote(
+    Array.from(fetchRemotes, ([name, url]) => ({ name, url })),
+  );
+  if (!selected || selected.remoteUrl === remote.remoteUrl) return { identity };
+  const issueIdentity = buildRepositoryIdentity({
+    remoteName: selected.remoteName,
+    remoteUrl: selected.remoteUrl,
+    keyUrl: selected.remoteUrl === originUrl ? originKeyUrl : selected.remoteUrl,
+    originUrl: undefined,
+    originKeyUrl: undefined,
+    hasLocalOrigin: false,
+    rootPath: cacheKey.rootPath,
+  });
+  return { identity, issueIdentity };
 });
 
 const unconfirmedProvider = Symbol("UnconfirmedProvider");
@@ -518,12 +552,21 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
         const remote = yield* Cache.get(remoteIdentityCache, cacheKey);
         if (remote === null) return null;
         if (remote !== undefined) {
-          if (options?.refresh) yield* Cache.invalidate(providerIdentityCache, remote);
-          if (options?.remoteOnly) return remote;
-          const result = yield* Cache.get(providerIdentityCache, remote);
-          if (result === unconfirmedProvider)
-            return yield* options?.onUnavailable?.(remote) ?? Effect.succeed(remote);
-          return result;
+          const { identity, issueIdentity } = remote;
+          if (options?.remoteOnly) return identity;
+          if (options?.refresh) {
+            yield* Cache.invalidate(providerIdentityCache, identity);
+            if (issueIdentity) yield* Cache.invalidate(providerIdentityCache, issueIdentity);
+          }
+          const result = yield* Cache.get(providerIdentityCache, identity);
+          const issue = issueIdentity && (yield* Cache.get(providerIdentityCache, issueIdentity));
+          if (result === unconfirmedProvider || issue === unconfirmedProvider) {
+            const display = issueIdentity?.provider
+              ? { ...identity, issueProvider: issueIdentity.provider }
+              : identity;
+            return yield* options?.onUnavailable?.(display) ?? Effect.succeed(display);
+          }
+          return issue?.provider ? { ...result, issueProvider: issue.provider } : result;
         }
       }
       return yield* options?.onUnavailable?.(null) ?? Effect.succeed(null);

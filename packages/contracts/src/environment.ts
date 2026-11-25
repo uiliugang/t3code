@@ -285,9 +285,15 @@ export const RepositoryIdentity = Schema.Struct({
   owner: Schema.optionalKey(TrimmedNonEmptyString),
   name: Schema.optionalKey(TrimmedNonEmptyString),
   origin: Schema.optionalKey(RepositoryOrigin),
+  issueProvider: Schema.optionalKey(SourceControlProviderKind),
   hasLocalOrigin: Schema.optionalKey(Schema.Literal(true)),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;
+
+export function repositoryIssueKind(identity: RepositoryIdentity | null | undefined) {
+  const selected = identity?.issueProvider;
+  return selected === "github" || selected === "meituan" ? selected : identity?.provider;
+}
 
 export function repositoryGroupingKeyOf(identity: RepositoryIdentity): string {
   return identity.origin?.canonicalKey ?? identity.canonicalKey;

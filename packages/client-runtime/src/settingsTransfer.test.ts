@@ -741,6 +741,19 @@ describe("settings transfer", () => {
     };
     const file = createProjectSettingsFile(sourceProject, source);
     expect(file).toHaveProperty("issueSources", issueSources);
+    expect(
+      createProjectSettingsFile(
+        {
+          ...sourceProject,
+          repositoryIdentity: {
+            ...sourceProject.repositoryIdentity,
+            provider: SourceControlProviderKind.make("gitlab"),
+            issueProvider: SourceControlProviderKind.make("github"),
+          },
+        },
+        source,
+      ).issueSources,
+    ).toEqual(issueSources);
     expect(parseSettingsFile(serializeSettingsFile(file))).toEqual(file);
     const destination = { ...sourceProject, id: ProjectId.make("target-project") };
     const unrelatedId = ProjectId.make("unrelated-project");
@@ -772,7 +785,20 @@ describe("settings transfer", () => {
       ...target,
       issueProjectSources: { [destination.id]: [...legacySources].reverse() },
     };
-    for (const legacyProject of [unknownProject, { ...destination, repositoryIdentity: null }]) {
+    const legacyFork = {
+      ...destination,
+      repositoryIdentity: {
+        ...destination.repositoryIdentity,
+        canonicalKey: "gitlab.com/vendor/repo",
+        provider: SourceControlProviderKind.make("gitlab"),
+        origin: { canonicalKey: "github.com/team/repo" },
+      },
+    };
+    for (const legacyProject of [
+      unknownProject,
+      legacyFork,
+      { ...destination, repositoryIdentity: null },
+    ]) {
       expect(() => projectSettingsImportPatch(mixedFile, legacyProject, settings())).toThrow(
         /GitHub.*MEP/,
       );

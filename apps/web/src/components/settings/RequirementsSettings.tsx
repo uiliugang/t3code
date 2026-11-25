@@ -3,6 +3,7 @@ import {
   isMeituanServiceEnabled,
   mergeProjectIssueSources,
   projectIssueProvider,
+  repositoryIssueKind,
   MAX_WORK_ITEM_DISCOVERY_LIMIT,
   WorkItemDiscoveryLimit,
   type IssueSource,
@@ -91,7 +92,7 @@ function matchesProjectSourceFilters(
     singleProvider,
     result?.sources ?? [],
     saved,
-    result?.provider ?? project.repositoryIdentity?.provider,
+    result?.provider ?? repositoryIssueKind(project.repositoryIdentity),
   ).some(
     (source) =>
       (filters.provider === "all" || source.provider === filters.provider) &&
@@ -242,7 +243,7 @@ function EnvironmentTrackers({
       caps.singleProjectIssueProvider === true,
       row?.sources ?? [],
       settings.issueProjectSources[project.id] ?? [],
-      row?.provider ?? project.repositoryIdentity?.provider,
+      row?.provider ?? repositoryIssueKind(project.repositoryIdentity),
     ).some((source) => source.provider === "meituan");
   });
   return (
@@ -291,7 +292,7 @@ function ProjectSourceRow({
   const settings = useEnvironmentSettings(project.environmentId, (value) => value);
   const saved = settings.issueProjectSources[project.id] ?? [];
   const enabled = isMeituanServiceEnabled(settings, "requirements");
-  const kind = result?.provider ?? project.repositoryIdentity?.provider;
+  const kind = result?.provider ?? repositoryIssueKind(project.repositoryIdentity);
   const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
   const provider = projectIssueProvider(kind, sources);
   const singleProvider =
@@ -620,7 +621,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
     const key = projectKey(project);
     const result = discoveredSources.get(key);
     const provider = projectIssueProvider(
-      result?.provider ?? project.repositoryIdentity?.provider,
+      result?.provider ?? repositoryIssueKind(project.repositoryIdentity),
       result?.sources.length ? result.sources : (savedSources.get(key) ?? []),
     );
     return (

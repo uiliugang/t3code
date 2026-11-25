@@ -21,6 +21,7 @@ import {
   importProjectIssueSources,
   issueSourcesMatch,
   projectIssueProvider,
+  repositoryIssueKind,
   type ManagedPolicySummary,
   globalIdleCompaction,
   isSecretReference,
@@ -1011,7 +1012,7 @@ const make = Effect.gen(function* () {
     const resolver = yield* Effect.serviceOption(
       RepositoryIdentityResolver.RepositoryIdentityResolver,
     );
-    return (yield* Option.getOrElse(resolver, () => repositoryIdentities).resolve(
+    const identity = yield* Option.getOrElse(resolver, () => repositoryIdentities).resolve(
       row.workspaceRoot,
       {
         refresh: true,
@@ -1025,7 +1026,8 @@ const make = Effect.gen(function* () {
             }),
           ),
       },
-    ))?.provider;
+    );
+    return repositoryIssueKind(identity);
   });
   const {
     settings: managed,

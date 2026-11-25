@@ -2,6 +2,7 @@ import {
   CommandId,
   defaultInstanceIdForDriver,
   projectIssueSourcesForTransfer,
+  repositoryIssueKind,
   ProjectConfigurationExportInput,
   ProjectImportDefinition,
   ProjectImportError,
@@ -222,7 +223,7 @@ const make = Effect.gen(function* () {
             ];
             const primaryRootId = project.workspaceConfig?.primaryRootId ?? roots[0]!.id;
             const savedSources = server.issueProjectSources[project.id];
-            let repositoryKind = project.repositoryIdentity?.provider;
+            let repositoryKind = repositoryIssueKind(project.repositoryIdentity);
             const exportedRoots = yield* Effect.forEach(roots, (root) =>
               Effect.gen(function* () {
                 const refresh = root.id === primaryRootId && Boolean(savedSources?.length);
@@ -243,7 +244,7 @@ const make = Effect.gen(function* () {
                     : {}),
                 });
                 const identity = resolved ?? (!refresh ? snapshotIdentity : null);
-                if (root.id === primaryRootId) repositoryKind = identity?.provider;
+                if (root.id === primaryRootId) repositoryKind = repositoryIssueKind(identity);
                 const directory = identity?.rootPath
                   ? relativeDirectory(
                       yield* physicalPath(identity.rootPath),

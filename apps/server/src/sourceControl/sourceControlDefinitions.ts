@@ -17,6 +17,26 @@ export const BUILT_IN_SOURCE_CONTROL_DRIVER_LIST = [
 
 export const sourceControlDefinitions = builtInSourceControlDefinitions;
 
+export function selectRequirementRemote(
+  remotes: ReadonlyArray<{ readonly name: string; readonly url: string }>,
+) {
+  const origin = remotes.find((remote) => remote.name === "origin");
+  const candidates = (origin ? [origin] : remotes).flatMap((remote) => {
+    const provider = sourceControlDefinitions.recognizeRemote(remote.url);
+    return provider ? [{ remoteName: remote.name, remoteUrl: remote.url, provider }] : [];
+  });
+  const selected = candidates.find((remote) => remote.provider.kind !== "unknown") ?? candidates[0];
+  if (!selected || /^file:/iu.test(selected.remoteUrl)) return null;
+  if (
+    !origin &&
+    remotes.length > 1 &&
+    (selected.remoteName === "upstream" ||
+      remotes.filter((remote) => remote.name !== "upstream").length !== 1)
+  )
+    return null;
+  return selected;
+}
+
 /** A host CLI command that merges or closes a change request, such as `gh pr merge`. */
 export const isChangeRequestCloseCommand = (command: string) =>
   sourceControlDefinitions.definitions.some(

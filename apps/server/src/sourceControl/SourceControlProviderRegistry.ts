@@ -15,7 +15,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as BuiltInDrivers from "./builtInDrivers.ts";
-import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
+import { selectRequirementRemote, sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import {
   probeSourceControlProvider,
@@ -422,16 +422,8 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       ) {
         if (refresh) yield* Cache.invalidate(issueRemotes, cwd);
         const remotes = yield* Cache.get(issueRemotes, cwd);
-        const origin = remotes.find((remote) => remote.name === "origin");
-        const selected = selectProviderContext(origin ? [origin] : remotes);
-        if (!selected || /^file:/iu.test(selected.remoteUrl)) return null;
-        if (
-          !origin &&
-          remotes.length > 1 &&
-          (selected.remoteName === "upstream" ||
-            remotes.filter((remote) => remote.name !== "upstream").length !== 1)
-        )
-          return null;
+        const selected = selectRequirementRemote(remotes);
+        if (!selected) return null;
         const context =
           hint?.remoteUrl === selected.remoteUrl
             ? { ...selected, provider: hint.provider }
