@@ -481,6 +481,45 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         ]);
       }).pipe(Effect.provide(ServerSettingsModule.ServerSettingsService.layerTest())),
   );
+  it.effect("restores a legacy project backup without writing incompatible sources", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const id = ProjectId.make("project");
+      const github = { provider: "github", host: "github.com", scope: "acme/web" } as const;
+      const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
+      const renamed = { ...github, scope: "acme/mobile" };
+      yield* service.updateSettings({ issueProjectSources: { [id]: [github] } });
+      const overrides = { [id]: { defaultAutoPull: true } };
+      const backup = {
+        projectSettingsOverrides: overrides,
+        importVirtualModels: { team: { name: "Team", binding: null } },
+        issueProjectSources: { [id]: [mep, renamed] },
+      };
+      yield* Effect.flip(
+        service.updateSettings({
+          ...backup,
+          projectSettingsOverrides: { [ProjectId.make("other")]: null },
+        }),
+      );
+      yield* Effect.flip(service.updateSettings({ ...backup, defaultAutoPull: true }));
+      yield* Effect.flip(service.updateSettings(backup, "github", { [id]: [github] }));
+      const restored = yield* service.updateSettings(backup);
+      assert.deepEqual(restored.issueProjectSources[id], [renamed]);
+      assert.deepEqual(restored.projectSettingsOverrides[id], overrides[id]);
+      assert.deepEqual(restored.virtualModels?.team, backup.importVirtualModels.team);
+      const incompatible = yield* service.updateSettings({
+        projectSettingsOverrides: { [id]: null },
+        issueProjectSources: { [id]: [mep] },
+      });
+      assert.deepEqual(incompatible.issueProjectSources[id], [renamed]);
+      assert.isUndefined(incompatible.projectSettingsOverrides[id]);
+      const cleared = yield* service.updateSettings({
+        ...backup,
+        issueProjectSources: { [id]: [] },
+      });
+      assert.deepEqual(cleared.issueProjectSources[id] ?? [], []);
+    }).pipe(Effect.provide(ServerSettingsModule.ServerSettingsService.layerTest())),
+  );
   it.effect("accepts unchanged legacy sources echoed by a scoped edit or reset", () => {
     const edit = ProjectId.make("edit");
     const reset = ProjectId.make("reset");

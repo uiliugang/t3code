@@ -18,6 +18,7 @@ import {
   ServerSettingsError,
   type ServerSettingsPatch,
   type IssueProvider,
+  importProjectIssueSources,
   issueSourcesMatch,
   projectIssueProvider,
   type ManagedPolicySummary,
@@ -123,7 +124,30 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
     }
   }
   if (!patch.issueProjectSources) return applyServerSettingsPatch(current, patch);
-  const sources = { ...patch.issueProjectSources };
+  const { issueProjectSources, ...settings } = patch;
+  if (!issueSourceProvider && !expectedIssueProjectSources && settings.projectSettingsOverrides) {
+    const targets = Object.keys(settings.projectSettingsOverrides);
+    if (
+      targets.length === 1 &&
+      Object.keys(issueProjectSources).length === 1 &&
+      Object.keys(settings).every(
+        (key) => key === "projectSettingsOverrides" || key === "importVirtualModels",
+      )
+    ) {
+      const id = ProjectId.make(targets[0]!);
+      if (Object.hasOwn(issueProjectSources, id))
+        return applyServerSettingsPatch(current, {
+          ...settings,
+          ...importProjectIssueSources(
+            id,
+            issueProjectSources[id],
+            current.issueProjectSources[id] ?? [],
+            repositoryKinds?.get(id),
+          ),
+        });
+    }
+  }
+  const sources = { ...issueProjectSources };
   for (const [key, next] of Object.entries(sources)) {
     if (!next.length && !issueSourceProvider) continue;
     const id = ProjectId.make(key);
