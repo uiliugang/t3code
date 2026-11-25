@@ -129,26 +129,49 @@ export interface RunMigrateDevDbOptions {
   readonly ambientHome?: string | undefined;
 }
 
-const LIVE_HOME_MARKERS = [
-  ["userdata", "secrets"],
-  ["userdata", "settings.json"],
+// Markers written only by installed service or desktop homes (never by a worktree dev server).
+const INSTALLED_HOME_MARKERS = [
   ["runtime", "service-state.json"],
   ["runtime", "versions"],
   ["userdata", "logs", "boot-service.log"],
+  ["userdata", "desktop-settings.json"],
+  ["userdata", "desktop-host-scope"],
+  ["userdata", "desktop-last-started-version"],
+  ["userdata", "connection-catalog.json"],
 ] as const;
+
+// Additional markers that any live or initialized server home writes, which `--drop-resumable`
+// (intended only for freshly copied standalone SQLite seed files) must also refuse.
+const DROP_RESUMABLE_EXTRA_MARKERS = [
+  ["userdata", "secrets"],
+  ["userdata", "settings.json"],
+] as const;
+
+const hasAnyMarker = Effect.fn("hasAnyMarker")(function* (
+  baseDir: string,
+  markers: ReadonlyArray<readonly [string, ...Array<string>]>,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const present = yield* Effect.forEach(markers, (segments) =>
+    fs.exists(path.join(baseDir, ...segments)).pipe(Effect.orElseSucceed(() => true)),
+  );
+  return present.some(Boolean);
+});
+
+const looksLikeInstalledHome = Effect.fn("looksLikeInstalledHome")(function* (baseDir: string) {
+  const path = yield* Path.Path;
+  return yield* hasAnyMarker(path.resolve(baseDir), INSTALLED_HOME_MARKERS);
+});
 
 // A custom T3CODE_HOME or installed service home holds secrets, settings, or service state beside userdata/statev2.sqlite.
 // Unreadable markers count as present so a permission or I/O error never lets a live database pass as a dev copy.
 const looksLikeLiveDatabase = Effect.fn("looksLikeLiveDatabase")(function* (databasePath: string) {
-  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const stateDir = path.dirname(path.resolve(databasePath));
   if (path.basename(stateDir).toLowerCase() !== "userdata") return false;
   const baseDir = path.dirname(stateDir);
-  const present = yield* Effect.forEach(LIVE_HOME_MARKERS, (segments) =>
-    fs.exists(path.join(baseDir, ...segments)).pipe(Effect.orElseSucceed(() => true)),
-  );
-  return present.some(Boolean);
+  return yield* hasAnyMarker(baseDir, [...INSTALLED_HOME_MARKERS, ...DROP_RESUMABLE_EXTRA_MARKERS]);
 });
 
 interface KeptProject {
@@ -462,20 +485,27 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
     resolve(databasePath),
     Effect.forEach(liveDatabases, resolve),
   ]);
-  const targetStat = yield* fs.stat(target).pipe(Effect.option);
-  const targetHasExtraLinks = Option.exists(
-    targetStat,
-    (info) => Option.getOrElse(info.nlink, () => 1n) > 1n,
+  const targetStatResult = yield* fs.stat(target).pipe(
+    Effect.map((info) => ({ missing: false as const, info })),
+    Effect.catchReason("PlatformError", "NotFound", () =>
+      Effect.succeed({ missing: true as const, info: undefined }),
+    ),
+    Effect.option,
   );
-  const targetIdentity = Option.flatMap(targetStat, (info) =>
-    Option.map(info.ino, (ino) => `${info.dev}:${ino}`),
+  const targetUnverifiedOrLinked = Option.match(targetStatResult, {
+    onNone: () => true,
+    onSome: ({ missing, info }) =>
+      missing ? false : info.type !== "File" || !Option.exists(info.nlink, (nlink) => nlink === 1n),
+  });
+  const targetIdentity = Option.flatMap(targetStatResult, ({ info }) =>
+    info === undefined ? Option.none() : Option.map(info.ino, (ino) => `${info.dev}:${ino}`),
   );
   const liveIdentities = yield* Effect.forEach(
     liveDatabases.flatMap((live) => [live, `${live}-wal`, `${live}-shm`]),
     identity,
   );
   if (
-    targetHasExtraLinks ||
+    targetUnverifiedOrLinked ||
     resolvedLives.some((live) => comparable(target) === comparable(live)) ||
     (Option.isSome(targetIdentity) &&
       liveIdentities.some(
@@ -720,13 +750,35 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     return yield* new MigrateDevDbSourceMissingError({ sourcePath });
   }
   const protectedHomes = [sharedHome, ...(ambientHome ? [path.resolve(ambientHome)] : [])];
-  const [canonicalBaseDir, canonicalProtectedHomes] = yield* Effect.all([
+  const resolveTargetPath = (file: string) =>
+    fs.realPath(file).pipe(
+      Effect.catch(() =>
+        fs
+          .realPath(path.dirname(file))
+          .pipe(Effect.map((dir) => path.join(dir, path.basename(file)))),
+      ),
+      Effect.orElseSucceed(() => path.resolve(file)),
+    );
+  const [canonicalBaseDir, canonicalProtectedHomes, resolvedDestinationDb] = yield* Effect.all([
     fs.realPath(baseDir).pipe(Effect.orElseSucceed(() => baseDir)),
     Effect.forEach(protectedHomes, (home) =>
       fs.realPath(home).pipe(Effect.orElseSucceed(() => home)),
     ),
+    resolveTargetPath(databasePath),
   ]);
-  if (canonicalProtectedHomes.includes(canonicalBaseDir)) {
+  const resolvedDestinationHome =
+    path.basename(path.dirname(resolvedDestinationDb)).toLowerCase() === "userdata"
+      ? path.dirname(path.dirname(resolvedDestinationDb))
+      : undefined;
+  if (
+    canonicalProtectedHomes.includes(canonicalBaseDir) ||
+    (resolvedDestinationHome !== undefined &&
+      canonicalProtectedHomes.includes(resolvedDestinationHome)) ||
+    (yield* looksLikeInstalledHome(baseDir)) ||
+    (yield* looksLikeInstalledHome(canonicalBaseDir)) ||
+    (resolvedDestinationHome !== undefined &&
+      (yield* looksLikeInstalledHome(resolvedDestinationHome)))
+  ) {
     return yield* new MigrateDevDbSharedHomeError();
   }
   // Both destination and snapshot are deleted below; reject sources resolving to either.

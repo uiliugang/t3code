@@ -845,7 +845,30 @@ export const layer: Layer.Layer<
           return;
         }
       }
-      const recreateResult = yield* Effect.result(restoreMissingWorktree(projection.thread));
+      const recreateResult = yield* Effect.result(
+        Effect.gen(function* () {
+          const direct = yield* restoreMissingWorktree(projection.thread);
+          if (direct !== undefined) {
+            yield* worktreeRestore.takeRecreated(projection.thread.id, {
+              action: "record",
+              projectId: projection.thread.projectId,
+              worktreePath: direct.worktreePath,
+            });
+            return direct;
+          }
+          const pending = yield* worktreeRestore.takeRecreated(projection.thread.id, {
+            action: "peek",
+          });
+          if (pending !== undefined && pending.worktreePath !== projection.thread.worktreePath) {
+            yield* worktreeRestore.takeRecreated(projection.thread.id, {
+              action: "clear",
+              worktreePath: pending.worktreePath,
+            });
+            return undefined;
+          }
+          return pending;
+        }),
+      );
       if (recreateResult._tag === "Failure") {
         if (input.willRetry === true) return yield* recreateResult.failure;
         const metadataMissing = recreateResult.failure._tag === "WorktreeMetadataMissingError";
@@ -859,14 +882,8 @@ export const layer: Layer.Layer<
         });
         return;
       }
-      const recreatedBeforeDispatch = yield* worktreeRestore.takeRecreated(projection.thread.id);
-      const recreated =
-        recreateResult.success ??
-        (recreatedBeforeDispatch?.worktreePath === projection.thread.worktreePath
-          ? recreatedBeforeDispatch
-          : undefined);
-      if (recreated !== undefined) {
-        const { project, worktreePath } = recreated;
+      if (recreateResult.success !== undefined) {
+        const { project, worktreePath } = recreateResult.success;
         // Opening the setup terminal takes its own workspace lease.
         return {
           worktreeSetup: Effect.gen(function* () {
@@ -880,14 +897,19 @@ export const layer: Layer.Layer<
                   project,
                   observeCompletion: {},
                 });
-                if (setup.status !== "started" || !setup.completion) return;
-                if (setup.async) {
-                  yield* setup.completion.pipe(Effect.forkDetach);
-                } else {
-                  const { exitCode } = yield* setup.completion;
-                  if (exitCode !== 0)
-                    return yield* new WorktreeSetupScriptFailedError({ worktreePath, exitCode });
+                if (setup.status === "started" && setup.completion) {
+                  if (setup.async) {
+                    yield* setup.completion.pipe(Effect.forkDetach);
+                  } else {
+                    const { exitCode } = yield* setup.completion;
+                    if (exitCode !== 0)
+                      return yield* new WorktreeSetupScriptFailedError({ worktreePath, exitCode });
+                  }
                 }
+                yield* worktreeRestore.takeRecreated(projection.thread.id, {
+                  action: "clear",
+                  worktreePath,
+                });
               }),
             );
             if (setupResult._tag === "Failure") {

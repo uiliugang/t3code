@@ -704,9 +704,16 @@ it.layer(
               }),
               Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
               Layer.mock(ThreadWorktreeRestore)({
-                recordRecreated: (entry) =>
+                takeRecreated: (threadId, options) =>
                   Effect.sync(() => {
-                    recordedRecreations.push(entry);
+                    if (options?.action === "record") {
+                      recordedRecreations.push({
+                        threadId,
+                        projectId: options.projectId,
+                        worktreePath: options.worktreePath,
+                      });
+                    }
+                    return undefined;
                   }),
               }),
               layerNoTaskFolders,

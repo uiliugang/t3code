@@ -240,10 +240,20 @@ it.effect.each([
           NodeServices.layer,
           layerNoTaskFolders,
           Layer.mock(ThreadWorktreeRestore)({
-            recordRecreated: (entry) =>
+            takeRecreated: (recordedThreadId, options) =>
               Effect.sync(() => {
-                assert.deepEqual(entry, { threadId, projectId, worktreePath });
-                calls.push("recreated");
+                if (options?.action === "record") {
+                  assert.deepEqual(
+                    {
+                      threadId: recordedThreadId,
+                      projectId: options.projectId,
+                      worktreePath: options.worktreePath,
+                    },
+                    { threadId, projectId, worktreePath },
+                  );
+                  calls.push("recreated");
+                }
+                return undefined;
               }),
           }),
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),

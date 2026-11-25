@@ -1,17 +1,11 @@
-import {
-  ProjectId,
-  ThreadId,
-  type OrchestrationV2ThreadShell,
-  type Project,
-  type TerminalCwdNotFoundError,
-} from "@t3tools/contracts";
-import * as Context from "effect/Context";
+import { ProjectId, ThreadId, type TerminalCwdNotFoundError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -27,54 +21,27 @@ import { isWithinRoot } from "./KnownWorkspaces.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 import * as TaskFolders from "./TaskFolders.ts";
 import { TerminalCwdRecovery } from "../terminal/Manager.ts";
+import {
+  ThreadWorktreeRestore,
+  WorktreeMetadataMissingError,
+  WorktreeRecreateError,
+  WorktreeRecreateNoBaseError,
+  type RecreatedWorktree,
+  type WorktreeThread,
+} from "./ThreadWorktreeRestore.ts";
 import { worktreeDependencyEnvironment } from "./worktreeDependencyEnvironment.ts";
 
-export class WorktreeRecreateError extends Schema.TaggedError<
-  WorktreeRecreateError,
-  { readonly brand: unique symbol }
->()("WorktreeRecreateError", {
-  worktreePath: Schema.String,
-  branch: Schema.String,
-  cause: Schema.Defect(),
-}) {
-  override get message(): string {
-    return `Could not recreate the worktree for branch '${this.branch}' at ${this.worktreePath}.`;
-  }
-}
-
-class WorktreeRecreateNoBaseError extends Schema.TaggedError<
-  WorktreeRecreateNoBaseError,
-  { readonly brand: unique symbol }
->()("WorktreeRecreateNoBaseError", { worktreePath: Schema.String, branch: Schema.String }) {
-  override get message(): string {
-    return `Could not recreate branch '${this.branch}' at ${this.worktreePath}: no permitted base branch is available.`;
-  }
-}
-
-class WorktreeMetadataMissingError extends Schema.TaggedError<
+export {
+  ThreadWorktreeRestore,
   WorktreeMetadataMissingError,
-  { readonly brand: unique symbol }
->()("WorktreeMetadataMissingError", { worktreePath: Schema.String }) {
-  override get message(): string {
-    return "Worktree metadata is missing. Files in this directory were retained. Inspect the directory before continuing.";
-  }
-}
+  WorktreeRecreateError,
+  WorktreeRecreateNoBaseError,
+  type RecreatedWorktree,
+  type WorktreeThread,
+};
 
 // `git worktree remove` skips pnpm junctions on Windows, leaving these behind without a checkout.
 const LEFTOVER_WORKTREE_ENTRIES = new Set(["node_modules", ".next"]);
-
-export interface RecreatedWorktree {
-  readonly project: Project;
-  readonly worktreePath: string;
-}
-
-type WorktreeThread = Pick<
-  OrchestrationV2ThreadShell,
-  "id" | "projectId" | "worktreePath" | "branch" | "workspace"
-> &
-  Partial<
-    Pick<OrchestrationV2ThreadShell, "lineage" | "delegatedFrom" | "forkedFrom" | "linkOrigin">
-  >;
 
 export const makeRestoreMissingWorktree = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -272,6 +239,10 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
     // A task folder can miss one repository's worktree while the thread's own folder is there.
     const taskFolder = yield* taskFolders.find(worktreePath).pipe(Effect.orElseSucceed(() => null));
     if (taskFolder !== null) {
+      const project = yield* projects.getById(thread.projectId).pipe(
+        Effect.map(Option.getOrUndefined),
+        Effect.mapError((cause) => new WorktreeRecreateError({ worktreePath, branch, cause })),
+      );
       const restored = yield* taskFolders
         .restore({
           taskFolder,
@@ -304,12 +275,8 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
               : new WorktreeRecreateError({ worktreePath, branch, cause }),
           ),
         );
-      if (!restored) return;
-      const project = yield* projects.getById(thread.projectId).pipe(
-        Effect.map(Option.getOrUndefined),
-        Effect.mapError((cause) => new WorktreeRecreateError({ worktreePath, branch, cause })),
-      );
-      return project === undefined ? undefined : { project, worktreePath };
+      if (!restored || project === undefined) return;
+      return { project, worktreePath };
     }
     const exists = yield* fileSystem.exists(worktreePath).pipe(Effect.orElseSucceed(() => true));
     if (!(yield* isManagedWorktreePath(worktreePath))) return;
@@ -349,34 +316,14 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
   });
 });
 
-export class ThreadWorktreeRestore extends Context.Service<
-  ThreadWorktreeRestore,
-  {
-    readonly restore: (
-      thread: WorktreeThread,
-    ) => Effect.Effect<
-      void,
-      WorktreeRecreateError | WorktreeRecreateNoBaseError | WorktreeMetadataMissingError
-    >;
-    /** Marks a checkout recreated outside turn start so the next turn runs setup once. */
-    readonly recordRecreated?: (input: {
-      readonly threadId: ThreadId;
-      readonly projectId: ProjectId;
-      readonly worktreePath: string;
-    }) => Effect.Effect<void>;
-    /** A checkout recreated for the thread whose setup has not run yet. */
-    readonly takeRecreated: (threadId: ThreadId) => Effect.Effect<RecreatedWorktree | undefined>;
-  }
->()("t3/workspace/restoreMissingWorktree/ThreadWorktreeRestore") {}
+const PersistedRecreatedEntry = Schema.Struct({
+  projectId: ProjectId,
+  worktreePath: Schema.String,
+});
+type PersistedRecreatedEntry = typeof PersistedRecreatedEntry.Type;
 
 const PersistedRecreatedMap = Schema.fromJsonString(
-  Schema.Record(
-    Schema.String,
-    Schema.Struct({
-      projectId: ProjectId,
-      worktreePath: Schema.String,
-    }),
-  ),
+  Schema.Record(Schema.String, PersistedRecreatedEntry),
 );
 const decodePersistedRecreated = Schema.decodeUnknownEffect(PersistedRecreatedMap);
 
@@ -389,34 +336,33 @@ export const layerThreadWorktreeRestore = Layer.effect(
     const serverConfig = yield* ServerConfig.ServerConfig;
     const projects = yield* ProjectService.ProjectService;
     const restore = yield* makeRestoreMissingWorktree;
+    const stateLock = yield* Semaphore.make(1);
     // Sends, terminals and rollbacks restore before turn start, so turn start runs setup from here.
     const recreated = new Map<ThreadId, RecreatedWorktree>();
     const pendingPath =
       typeof serverConfig.stateDir === "string" && serverConfig.stateDir.length > 0
         ? path.join(serverConfig.stateDir, "recreated-worktree-setup.json")
         : null;
-    const readPersisted =
+    const persistenceError = (worktreePath: string) => (cause: unknown) =>
+      new WorktreeRecreateError({ worktreePath, branch: "", cause });
+    const readPersisted = (worktreePathForError = pendingPath ?? "") =>
       pendingPath === null
-        ? Effect.succeed(
-            {} as Record<string, { readonly projectId: ProjectId; readonly worktreePath: string }>,
-          )
+        ? Effect.succeed({} as Record<string, PersistedRecreatedEntry>)
         : fileSystem.readFileString(pendingPath).pipe(
+            Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("{}")),
             Effect.flatMap(decodePersistedRecreated),
-            Effect.orElseSucceed(
-              () =>
-                ({}) as Record<
-                  string,
-                  { readonly projectId: ProjectId; readonly worktreePath: string }
-                >,
-            ),
+            Effect.mapError(persistenceError(worktreePathForError)),
           );
     const writePersisted = (
-      entries: Record<string, { readonly projectId: ProjectId; readonly worktreePath: string }>,
+      entries: Record<string, PersistedRecreatedEntry>,
+      worktreePathForError: string,
     ) =>
       pendingPath === null
         ? Effect.void
         : (Object.keys(entries).length === 0
-            ? fileSystem.remove(pendingPath, { force: true })
+            ? fileSystem
+                .remove(pendingPath)
+                .pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.void))
             : writeFileStringAtomically({
                 filePath: pendingPath,
                 contents: `${JSON.stringify(entries, null, 2)}\n`,
@@ -424,35 +370,99 @@ export const layerThreadWorktreeRestore = Layer.effect(
                 Effect.provideService(FileSystem.FileSystem, fileSystem),
                 Effect.provideService(Path.Path, path),
               )
-          ).pipe(Effect.ignore);
-    const persistEntry = (threadId: ThreadId, projectId: ProjectId, worktreePath: string) =>
-      readPersisted.pipe(
-        Effect.flatMap((entries) =>
-          writePersisted({ ...entries, [threadId]: { projectId, worktreePath } }),
-        ),
-      );
-    const removePersistedEntry = (threadId: ThreadId) =>
-      readPersisted.pipe(
-        Effect.flatMap((entries) => {
-          if (!(threadId in entries)) return Effect.void;
-          const next = { ...entries };
-          delete next[threadId];
-          return writePersisted(next);
+          ).pipe(Effect.mapError(persistenceError(worktreePathForError)));
+    const persistEntry = (
+      threadId: ThreadId,
+      projectId: ProjectId,
+      worktreePath: string,
+      resolved?: RecreatedWorktree,
+    ) =>
+      stateLock.withPermit(
+        Effect.gen(function* () {
+          const entries = yield* readPersisted(worktreePath);
+          yield* writePersisted(
+            { ...entries, [threadId]: { projectId, worktreePath } },
+            worktreePath,
+          );
+          if (resolved !== undefined) recreated.set(threadId, resolved);
         }),
       );
+    const clearRecreated = Effect.fn("ThreadWorktreeRestore.clearRecreated")(function* (
+      threadId: ThreadId,
+      expectedWorktreePath?: string,
+    ) {
+      yield* stateLock.withPermit(
+        Effect.gen(function* () {
+          const cached = recreated.get(threadId);
+          const targetPath = expectedWorktreePath ?? cached?.worktreePath ?? pendingPath ?? "";
+          if (pendingPath !== null) {
+            const entries = yield* readPersisted(targetPath);
+            const persisted = entries[threadId];
+            if (
+              persisted !== undefined &&
+              (expectedWorktreePath === undefined ||
+                persisted.worktreePath === expectedWorktreePath)
+            ) {
+              const next = { ...entries };
+              delete next[threadId];
+              yield* writePersisted(next, persisted.worktreePath);
+            }
+          }
+          if (
+            cached !== undefined &&
+            (expectedWorktreePath === undefined || cached.worktreePath === expectedWorktreePath)
+          ) {
+            recreated.delete(threadId);
+          }
+        }),
+      );
+    });
+    const peekRecreated = Effect.fn("ThreadWorktreeRestore.peekRecreated")(function* (
+      threadId: ThreadId,
+    ) {
+      return yield* stateLock.withPermit(
+        Effect.gen(function* () {
+          const cached = recreated.get(threadId);
+          if (cached !== undefined) return cached;
+          if (pendingPath === null) return undefined;
+          const entries = yield* readPersisted();
+          const persisted = entries[threadId];
+          if (persisted === undefined) return undefined;
+          const project = yield* projects
+            .getById(persisted.projectId)
+            .pipe(
+              Effect.map(Option.getOrUndefined),
+              Effect.mapError(persistenceError(persisted.worktreePath)),
+            );
+          if (project === undefined) {
+            const next = { ...entries };
+            delete next[threadId];
+            yield* writePersisted(next, persisted.worktreePath);
+            return undefined;
+          }
+          const resolved: RecreatedWorktree = { project, worktreePath: persisted.worktreePath };
+          recreated.set(threadId, resolved);
+          return resolved;
+        }),
+      );
+    });
     const recordRecreated = Effect.fn("ThreadWorktreeRestore.recordRecreated")(function* (input: {
       readonly threadId: ThreadId;
       readonly projectId: ProjectId;
       readonly worktreePath: string;
     }) {
-      const project = yield* projects.getById(input.projectId).pipe(
-        Effect.map(Option.getOrUndefined),
-        Effect.orElseSucceed(() => undefined),
+      const project = yield* projects
+        .getById(input.projectId)
+        .pipe(
+          Effect.map(Option.getOrUndefined),
+          Effect.mapError(persistenceError(input.worktreePath)),
+        );
+      yield* persistEntry(
+        input.threadId,
+        input.projectId,
+        input.worktreePath,
+        project === undefined ? undefined : { project, worktreePath: input.worktreePath },
       );
-      if (project !== undefined) {
-        recreated.set(input.threadId, { project, worktreePath: input.worktreePath });
-      }
-      yield* persistEntry(input.threadId, input.projectId, input.worktreePath);
     });
     return {
       restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (thread: WorktreeThread) {
@@ -460,30 +470,37 @@ export const layerThreadWorktreeRestore = Layer.effect(
           ? restore(thread)
           : withWorkspaceLease(path.resolve(thread.worktreePath), restore(thread));
         if (result !== undefined) {
-          recreated.set(thread.id, result);
-          yield* persistEntry(thread.id, thread.projectId, result.worktreePath);
+          yield* persistEntry(thread.id, thread.projectId, result.worktreePath, result);
         }
       }),
-      recordRecreated,
       takeRecreated: Effect.fn("ThreadWorktreeRestore.takeRecreated")(function* (
         threadId: ThreadId,
+        options?:
+          | { readonly action?: "take" | "peek" }
+          | { readonly action: "clear"; readonly worktreePath?: string }
+          | {
+              readonly action: "record";
+              readonly projectId: ProjectId;
+              readonly worktreePath: string;
+            },
       ) {
-        const cached = recreated.get(threadId);
-        recreated.delete(threadId);
-        if (cached !== undefined) {
-          yield* removePersistedEntry(threadId);
-          return cached;
+        if (options?.action === "record") {
+          yield* recordRecreated({
+            threadId,
+            projectId: options.projectId,
+            worktreePath: options.worktreePath,
+          });
+          return undefined;
         }
-        const persisted = (yield* readPersisted)[threadId];
-        if (persisted === undefined) return undefined;
-        const project = yield* projects
-          .getById(persisted.projectId)
-          .pipe(Effect.map(Option.getOrUndefined), Effect.option);
-        if (Option.isNone(project)) return undefined;
-        yield* removePersistedEntry(threadId);
-        return project.value === undefined
-          ? undefined
-          : { project: project.value, worktreePath: persisted.worktreePath };
+        if (options?.action === "clear") {
+          yield* clearRecreated(threadId, options.worktreePath);
+          return undefined;
+        }
+        const found = yield* peekRecreated(threadId);
+        if (found !== undefined && options?.action !== "peek") {
+          yield* clearRecreated(threadId, found.worktreePath);
+        }
+        return found;
       }),
     };
   }),
@@ -533,15 +550,15 @@ export const makePrepareTerminalLaunch = Effect.fn(
     const recover = (error: TerminalCwdNotFoundError) =>
       restoreMissingWorktree(thread).pipe(
         Effect.tap((recreated) =>
-          recreated === undefined ||
-          Option.isNone(worktreeRestore) ||
-          worktreeRestore.value.recordRecreated === undefined
+          recreated === undefined || Option.isNone(worktreeRestore)
             ? Effect.void
-            : worktreeRestore.value.recordRecreated({
-                threadId: thread.id,
-                projectId: thread.projectId,
-                worktreePath: recreated.worktreePath,
-              }),
+            : worktreeRestore.value
+                .takeRecreated(thread.id, {
+                  action: "record",
+                  projectId: thread.projectId,
+                  worktreePath: recreated.worktreePath,
+                })
+                .pipe(Effect.asVoid),
         ),
         Effect.asVoid,
         Effect.catch((cause) =>

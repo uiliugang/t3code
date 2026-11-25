@@ -356,6 +356,7 @@ it.effect("starts the hub requiring a session token and reports the one it print
         await NodeFSP.mkdir(NodePath.dirname(entry), { recursive: true });
         await NodeFSP.writeFile(NodePath.join(install, ".install-complete"), DEVICE_HUB_VERSION);
         // Stands in for the hub: it serves /readyz and prints its startup link.
+        // Include Chinese UTF-8 lines and an invalid non-UTF-8 byte right before the token line.
         await NodeFSP.mkdir(state, { recursive: true });
         await NodeFSP.writeFile(
           NodePath.join(state, "hub.log"),
@@ -363,11 +364,13 @@ it.effect("starts the hub requiring a session token and reports the one it print
         );
         await NodeFSP.writeFile(
           entry,
-          `import * as http from "node:http";
+          `import * as fs from "node:fs";
+import * as http from "node:http";
 const args = process.argv.slice(2);
 const token = args.includes("--require-token") ? "printed-token" : undefined;
 http.createServer((_request, response) => response.end("ok")).listen(Number(args[args.indexOf("--port") + 1]), "127.0.0.1", () => {
-  console.log("  Local:   http://localhost/" + (token ? "?token=" + token : ""));
+  fs.writeSync(1, Buffer.from([0xff, 0x20]));
+  console.log("Local: http://localhost/" + (token ? "?token=" + token : "") + "&after=keep");
   console.log("state-dir=" + process.env.EXPO_DEVICE_HUB_STATE_DIR);
 });`,
         );
@@ -379,10 +382,13 @@ http.createServer((_request, response) => response.end("ok")).listen(Number(args
           JSON.parse(await NodeFSP.readFile(NodePath.join(state, "hub.json"), "utf8")).token,
         ).toBe("printed-token");
         expect((await NodeFSP.stat(NodePath.join(state, "hub.log"))).mode & 0o077).toBe(0);
-        const logText = await NodeFSP.readFile(NodePath.join(state, "hub.log"), "utf8");
-        expect(logText).toContain(`state-dir=${state}\n`);
-        expect(logText).toContain(`token=${"*".repeat("printed-token".length)}`);
-        expect(logText).not.toContain("printed-token");
+        const logBytes = await NodeFSP.readFile(NodePath.join(state, "hub.log"));
+        const logLatin1 = logBytes.toString("latin1");
+        expect(logLatin1).toContain(
+          `\xff Local: http://localhost/?token=${"*".repeat("printed-token".length)}&after=keep\n`,
+        );
+        expect(logBytes.toString("utf8")).toContain(`state-dir=${state}\n`);
+        expect(logLatin1).not.toContain("printed-token");
       } finally {
         run("stop");
         await NodeFSP.rm(home, { recursive: true, force: true });

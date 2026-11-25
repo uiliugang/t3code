@@ -895,7 +895,12 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           );
           assert.equal(seedCall?.env?.T3CODE_HOME, undefined);
           const [ambientSeedCall] = yield* spawnedCalls(undefined, "/opt/live-t3");
-          assert.equal(ambientSeedCall?.env?.T3CODE_HOME, "/opt/live-t3");
+          assert.equal(ambientSeedCall?.env?.T3CODE_HOME, path.resolve(root, "/opt/live-t3"));
+          const [relativeAmbientSeedCall] = yield* spawnedCalls(undefined, "relative-live-home");
+          assert.equal(
+            relativeAmbientSeedCall?.env?.T3CODE_HOME,
+            path.resolve(root, "relative-live-home"),
+          );
 
           // Either database means the worktree already has data.
           for (const name of ["state.sqlite", "statev2.sqlite"]) {

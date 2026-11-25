@@ -758,7 +758,9 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     return yield* new DevRunnerBuiltNeedsShareError({ mode: input.mode });
   }
 
-  const worktreePath = yield* resolveGitWorktreePath(yield* HostProcess.WorkingDirectory);
+  const path = yield* Path.Path;
+  const cwd = yield* HostProcess.WorkingDirectory;
+  const worktreePath = yield* resolveGitWorktreePath(cwd);
 
   const { offset, source } = yield* resolveOffset({
     portOffset,
@@ -778,7 +780,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   // A dev server started inside a worktree defaults to that worktree's own
   // (gitignored) `.t3` — see @t3tools/shared/devHome for why this must
   // outrank an ambient T3CODE_HOME. `--home-dir` still wins.
-  const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
+  const worktreeHome = yield* resolveWorktreeT3Home(cwd);
   // Trim before choosing: `--home-dir ""` is not a selection, and treating it
   // as one would skip the worktree default and land on the shared home —
   // exactly the outcome this precedence exists to prevent.
@@ -907,7 +909,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   if (ambientHome === undefined) {
     delete seedEnv.T3CODE_HOME;
   } else {
-    seedEnv.T3CODE_HOME = ambientHome;
+    seedEnv.T3CODE_HOME = path.resolve(cwd, ambientHome);
   }
   // After sharing, so the warm step sees the same bundled-dev env as Vite.
   yield* prepareFirstStart({

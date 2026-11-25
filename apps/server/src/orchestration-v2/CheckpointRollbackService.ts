@@ -24,7 +24,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import type * as ServerConfig from "../config.ts";
 import type * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
-import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
+import { ThreadWorktreeRestore } from "../workspace/ThreadWorktreeRestore.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as WorkspaceFolders from "../workspace/WorkspaceFolders.ts";
 import {
@@ -265,13 +265,15 @@ export const layer: Layer.Layer<
         });
 
       const recordRecreatedWorktree = (recreatedPath: string) =>
-        Option.isNone(worktreeRestore) || worktreeRestore.value.recordRecreated === undefined
+        Option.isNone(worktreeRestore)
           ? Effect.void
-          : worktreeRestore.value.recordRecreated({
-              threadId: input.threadId,
-              projectId: context.thread.projectId,
-              worktreePath: recreatedPath,
-            });
+          : worktreeRestore.value
+              .takeRecreated(input.threadId, {
+                action: "record",
+                projectId: context.thread.projectId,
+                worktreePath: recreatedPath,
+              })
+              .pipe(Effect.asVoid);
 
       if (context.thread.workspace === undefined && taskFolder !== null && branch != null) {
         // Cleanup can remove any of the folder's checkouts; the linked project folder has none.

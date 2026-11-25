@@ -422,9 +422,6 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         yield* fs.makeDirectory(path.dirname(installedDb), { recursive: true });
         yield* fs.symlink(realDiskDb, installedDb);
 
-        const hardLinkedDb = path.join(stagingDir, "hardlinked.sqlite");
-        yield* fs.link(customDb, hardLinkedDb);
-
         const refusedAmbient = yield* Effect.flip(
           dropResumableFamilies(customDb, { sharedHome, ambientHome: customHome }),
         );
@@ -435,6 +432,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         );
         assert.equal(refusedSymlinkedInstalled._tag, "MigrateDevDbSharedHomeError");
 
+        const hardLinkedDb = path.join(stagingDir, "hardlinked.sqlite");
+        yield* fs.link(customDb, hardLinkedDb);
         const refusedHardLink = yield* Effect.flip(
           dropResumableFamilies(hardLinkedDb, { sharedHome }),
         );
@@ -769,5 +768,49 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       ).pipe(Effect.flip);
       assert.equal(error._tag, "MigrateDevDbSharedHomeError");
     }),
+  );
+
+  it.effect(
+    "refuses to overwrite a stopped installed home while still refreshing an ordinary dev worktree",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-src2-" });
+        const installedDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-installed-dest-",
+        });
+        const devWorktreeDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-worktree-dest-",
+        });
+
+        const source = yield* createFixtureSource(sourceDir);
+        const installedDb = path.join(installedDir, "userdata", "statev2.sqlite");
+        yield* fs.makeDirectory(path.dirname(installedDb), { recursive: true });
+        yield* fs.writeFileString(installedDb, "live-installed-database-bytes");
+        yield* fs.makeDirectory(path.join(installedDir, "runtime"), { recursive: true });
+        yield* fs.writeFileString(path.join(installedDir, "runtime", "service-state.json"), "{}");
+
+        const refused = yield* runMigrateDevDb(
+          { baseDir: installedDir, source, projects: 5, threadsPerProject: 2 },
+          { sharedHome: sourceDir },
+        ).pipe(Effect.flip);
+        assert.equal(refused._tag, "MigrateDevDbSharedHomeError");
+        assert.equal(yield* fs.readFileString(installedDb), "live-installed-database-bytes");
+
+        // An existing worktree .t3 with settings.json/secrets still refreshes cleanly.
+        yield* fs.makeDirectory(path.join(devWorktreeDir, "userdata", "secrets"), {
+          recursive: true,
+        });
+        yield* fs.writeFileString(path.join(devWorktreeDir, "userdata", "settings.json"), "{}");
+        const refreshed = yield* runMigrateDevDb(
+          { baseDir: devWorktreeDir, source, projects: 5, threadsPerProject: 2 },
+          { sharedHome: sourceDir },
+        );
+        assert.equal(
+          refreshed.databasePath,
+          path.join(devWorktreeDir, "userdata", "statev2.sqlite"),
+        );
+      }),
   );
 });

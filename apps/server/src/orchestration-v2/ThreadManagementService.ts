@@ -76,7 +76,7 @@ import { contextBoundaryOrdinal } from "./contextBoundary.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ManagedWorktrees from "../workspace/ManagedWorktrees.ts";
-import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
+import { ThreadWorktreeRestore } from "../workspace/ThreadWorktreeRestore.ts";
 import { checkOutput, outputRequestProblem } from "./runOutput.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
