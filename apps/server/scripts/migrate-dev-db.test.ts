@@ -10,6 +10,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { splitPathParentAndLeaf } from "../../../scripts/lib/dev-db-safety.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
+import { holdServerOwnershipLock } from "../src/serverOwnership.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { dropResumableFamilies, runMigrateDevDb } from "./migrate-dev-db.ts";
@@ -913,54 +914,69 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
     }),
   );
 
-  it.effect("preserves the old database if a sidecar cannot be removed before replacement", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const sharedHome = yield* fs.makeTempDirectoryScoped();
-      const baseDir = yield* fs.makeTempDirectoryScoped();
-      const source = yield* createFixtureSource(sharedHome);
-      const destination = path.join(baseDir, "userdata", "statev2.sqlite");
-      yield* fs.makeDirectory(path.dirname(destination), { recursive: true });
-      yield* withDatabase(
-        destination,
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          yield* sql`CREATE TABLE retained (value TEXT)`;
-          yield* sql`INSERT INTO retained VALUES ('old data')`;
-        }),
-      );
-      const sidecar = `${destination}-shm`;
-      const denied = PlatformError.systemError({
-        _tag: "PermissionDenied",
-        module: "FileSystem",
-        method: "remove",
-        pathOrDescriptor: sidecar,
-      });
-      const error = yield* runMigrateDevDb(
-        { baseDir, source, projects: 1, threadsPerProject: 1 },
-        { sharedHome },
-      ).pipe(
-        Effect.provideService(FileSystem.FileSystem, {
-          ...fs,
-          remove: (file, options) =>
-            path.basename(file) === path.basename(sidecar)
-              ? Effect.fail(denied)
-              : fs.remove(file, options),
-        }),
-        Effect.flip,
-      );
-      assert.equal(error, denied);
-      assert.isTrue(yield* fs.exists(destination));
-      const rows = yield* withDatabase(
-        destination,
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          return yield* sql`SELECT value FROM retained`;
-        }),
-      );
-      assert.deepStrictEqual(rows, [{ value: "old data" }]);
-    }),
+  it.effect.each(["remove", "rename"] as const)(
+    "holds server ownership and preserves the old database if %s fails",
+    (method) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* fs.makeTempDirectoryScoped();
+        const baseDir = yield* fs.makeTempDirectoryScoped();
+        const source = yield* createFixtureSource(sharedHome);
+        const destination = path.join(baseDir, "userdata", "statev2.sqlite");
+        yield* fs.makeDirectory(path.dirname(destination), { recursive: true });
+        yield* withDatabase(
+          destination,
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            yield* sql`CREATE TABLE retained (value TEXT)`;
+            yield* sql`INSERT INTO retained VALUES ('old data')`;
+          }),
+        );
+        const sidecar = `${destination}-shm`;
+        const denied = PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method,
+          pathOrDescriptor: method === "remove" ? sidecar : destination,
+        });
+        const statePath = path.join(path.dirname(destination), "server-runtime.json");
+        const failWhileOwned = holdServerOwnershipLock(statePath).pipe(
+          Effect.scoped,
+          Effect.flip,
+          Effect.flatMap((error) => {
+            assert.equal(error._tag, "ServerAlreadyRunningError");
+            return Effect.fail(denied);
+          }),
+        );
+        const error = yield* runMigrateDevDb(
+          { baseDir, source, projects: 1, threadsPerProject: 1 },
+          { sharedHome },
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            remove: (file, options) =>
+              method === "remove" && path.basename(file) === path.basename(sidecar)
+                ? failWhileOwned
+                : fs.remove(file, options),
+            rename: (from, to) =>
+              method === "rename" && path.basename(to) === path.basename(destination)
+                ? failWhileOwned
+                : fs.rename(from, to),
+          }),
+          Effect.flip,
+        );
+        assert.equal(error, denied);
+        assert.isTrue(yield* fs.exists(destination));
+        const rows = yield* withDatabase(
+          destination,
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            return yield* sql`SELECT value FROM retained`;
+          }),
+        );
+        assert.deepStrictEqual(rows, [{ value: "old data" }]);
+      }),
   );
 
   it.effect("stops if an existing snapshot cannot be removed", () =>

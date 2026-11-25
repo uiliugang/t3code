@@ -182,7 +182,7 @@ export const databaseFamilyPaths = (databasePath: string): ReadonlyArray<string>
   DATABASE_FILE_SUFFIXES.map((suffix) => `${databasePath}${suffix}`);
 
 const stateDatabasePaths = (stateDir: string, path: Path.Path) =>
-  ["statev2.sqlite", "state.sqlite"].flatMap((name) =>
+  ["statev2.sqlite", "state.sqlite", "server-owner.sqlite"].flatMap((name) =>
     databaseFamilyPaths(path.join(stateDir, name)),
   );
 
@@ -246,7 +246,7 @@ export const assertIsolatedDevStartup = Effect.fn("assertIsolatedDevStartup")(fu
   readonly baseDir: string;
   readonly stateSubdir: "userdata" | "dev";
   readonly protectedHomes: readonly string[];
-  readonly usesWorktreeDefault: boolean;
+  readonly defaultWorktreeHome: string | undefined;
 }) {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
@@ -264,22 +264,24 @@ export const assertIsolatedDevStartup = Effect.fn("assertIsolatedDevStartup")(fu
           comparableDevDbPath(target.canonical, platform) ||
         Option.exists(target.identity, (identity) => Option.contains(candidate.identity, identity)),
     );
-  const stateHome =
-    path.basename(state.canonical).toLowerCase() === "userdata"
-      ? path.dirname(state.canonical)
-      : undefined;
-  const installed = (home: string) =>
-    input.usesWorktreeDefault
-      ? looksLikeInstalledHome(home)
-      : hasAnyMarker(home, STRICT_INSTALLED_MARKERS);
+  const expectedWorktreeHome =
+    input.defaultWorktreeHome === undefined
+      ? undefined
+      : path.join(
+          (yield* inspectPath(path.dirname(input.defaultWorktreeHome))).canonical,
+          path.basename(input.defaultWorktreeHome),
+        );
 
   if (
+    (expectedWorktreeHome !== undefined && base.canonical !== expectedWorktreeHome) ||
+    state.canonical !== path.join(base.canonical, input.stateSubdir) ||
     matches(state, protectedPaths.stateDirs) ||
     databasePaths.some((file) => matches(file, protectedPaths.databases)) ||
     (input.stateSubdir === "userdata" &&
-      (matches(base, protectedPaths.homes) || (yield* installed(base.canonical)))) ||
-    (stateHome !== undefined && stateHome !== base.canonical && (yield* installed(stateHome)))
+      (matches(base, protectedPaths.homes) ||
+        (yield* hasAnyMarker(base.canonical, STRICT_INSTALLED_MARKERS))))
   ) {
     return yield* new MigrateDevDbSharedHomeError();
   }
+  return base.canonical;
 });

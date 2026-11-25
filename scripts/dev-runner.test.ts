@@ -764,7 +764,9 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
     describe("t3 home precedence", () => {
       const makeWorktree = Effect.acquireRelease(
         Effect.sync(() => {
-          const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-devrunner-"));
+          const root = NodeFS.realpathSync(
+            NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-devrunner-")),
+          );
           NodeFS.writeFileSync(
             NodePath.join(root, ".git"),
             "gitdir: /elsewhere/.git/worktrees/x\n",
@@ -779,6 +781,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         readonly cwd: string;
         readonly ambientHome: string | undefined;
         readonly seed?: boolean;
+        readonly runArgs?: readonly string[];
       }) =>
         Effect.gen(function* () {
           let captured: Record<string, string | undefined> | undefined;
@@ -798,6 +801,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             ...devServerInput,
             t3Home: input.t3Home,
             seed: input.seed,
+            runArgs: input.runArgs ?? devServerInput.runArgs,
           }).pipe(
             Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
             Effect.provideService(HostProcess.Platform, "linux"),
@@ -817,12 +821,13 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         Effect.gen(function* () {
           const path = yield* Path.Path;
           const root = yield* makeWorktree;
+          const explicitHome = path.join(root, "explicit-home");
           const home = yield* spawnedHome({
-            t3Home: "/tmp/explicit-home",
+            t3Home: explicitHome,
             cwd: root,
             ambientHome: "/home/user/.t3",
           });
-          assert.equal(home, path.resolve("/tmp/explicit-home"));
+          assert.equal(home, explicitHome);
         }).pipe(Effect.scoped),
       );
 
@@ -852,17 +857,53 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         }).pipe(Effect.scoped),
       );
 
-      it.effect(
-        "refuses a worktree whose seeded userdata aliases the live home even with --no-seed",
-        () =>
+      it.effect("allows T3CODE_HOME to name the current isolated worktree home", () =>
+        Effect.gen(function* () {
+          const root = yield* makeWorktree;
+          const home = NodePath.join(root, ".t3");
+          assert.equal(
+            yield* spawnedHome({
+              t3Home: undefined,
+              cwd: root,
+              ambientHome: home,
+              seed: false,
+            }),
+            NodePath.join(NodeFS.realpathSync(root), ".t3"),
+          );
+        }).pipe(Effect.scoped),
+      );
+
+      it.effect.each([{ runArgs: ["--base-dir", "/other"] }, { runArgs: ["--base-dir=/other"] }])(
+        "refuses a passthrough base-dir override: $runArgs",
+        ({ runArgs }) =>
+          Effect.gen(function* () {
+            const root = yield* makeWorktree;
+            const error = yield* spawnedHome({
+              t3Home: undefined,
+              cwd: root,
+              ambientHome: undefined,
+              seed: false,
+              runArgs,
+            }).pipe(Effect.flip);
+            assert.include(error.message, "--home-dir");
+          }).pipe(Effect.scoped),
+      );
+
+      it.effect.each(["known live home", "unconfigured service home"])(
+        "refuses seeded userdata redirected to %s even with --no-seed",
+        (target) =>
           Effect.gen(function* () {
             const fs = yield* FileSystem.FileSystem;
             const path = yield* Path.Path;
             const root = yield* makeWorktree;
-            const liveState = path.join(root, "home", ".t3", "userdata");
+            const liveState =
+              target === "known live home"
+                ? path.join(root, "home", ".t3", "userdata")
+                : path.join(root, "service", "userdata");
             const worktreeHome = path.join(root, ".t3");
             yield* fs.makeDirectory(liveState, { recursive: true });
             yield* fs.writeFileString(path.join(liveState, "statev2.sqlite"), "live data");
+            yield* fs.makeDirectory(path.join(liveState, "secrets"));
             yield* fs.makeDirectory(worktreeHome, { recursive: true });
             NodeFS.symlinkSync(liveState, path.join(worktreeHome, "userdata"), "junction");
 
@@ -874,6 +915,48 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             }).pipe(Effect.flip);
             assert.match(error.message, /Refusing to modify a live T3 Code database/);
           }).pipe(Effect.scoped),
+      );
+
+      it.effect("does not start if seeding fails after userdata is redirected", () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = yield* makeWorktree;
+          const home = path.join(root, "home");
+          const liveState = path.join(home, ".t3", "userdata");
+          const worktreeHome = path.join(root, ".t3");
+          yield* fs.makeDirectory(liveState, { recursive: true });
+          yield* fs.makeDirectory(worktreeHome, { recursive: true });
+          yield* fs.writeFileString(path.join(liveState, "statev2.sqlite"), "live data");
+          let attemptedBackend = false;
+          const spawner = Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) =>
+              Effect.sync(() => {
+                const { command: executable, args } = command as unknown as {
+                  readonly command: string;
+                  readonly args: readonly string[];
+                };
+                if (args.some((arg) => arg.endsWith("migrate-dev-db.ts"))) {
+                  NodeFS.symlinkSync(liveState, path.join(worktreeHome, "userdata"), "junction");
+                  return mockProcess(1);
+                }
+                if (executable === "vp") attemptedBackend = true;
+                return mockProcess(0);
+              }),
+            ),
+          );
+          const error = yield* runDevRunnerWithInput({ ...devServerInput, t3Home: undefined }).pipe(
+            Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawner)),
+            Effect.provideService(HostProcess.Platform, "linux"),
+            Effect.provideService(HostProcess.WorkingDirectory, root),
+            Effect.provideService(HostProcess.HomeDirectory, home),
+            Effect.provideService(HostProcess.Environment, {}),
+            Effect.flip,
+          );
+          assert.match(error.message, /Refusing to modify a live T3 Code database/);
+          assert.isFalse(attemptedBackend);
+        }).pipe(Effect.scoped),
       );
 
       it.effect("seeds a worktree database from ~/.t3 only when it has none", () =>

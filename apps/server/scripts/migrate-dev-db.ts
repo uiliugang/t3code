@@ -18,6 +18,7 @@ import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 import { resolveBaseDir } from "../src/os-jank.ts";
 import { rebuildMessageSearch } from "../src/orchestration-v2/messageSearchIndex.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
+import { holdServerOwnershipLock } from "../src/serverOwnership.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
@@ -703,6 +704,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const databasePath = path.join(stateDir, "statev2.sqlite");
   const displayDatabasePath = path.join(displayBaseDir, "userdata", "statev2.sqlite");
   const snapshotPath = `${databasePath}.migrate-dev-db-tmp`;
+  const statePath = path.join(stateDir, "server-runtime.json");
 
   const { canonical: sourcePath, identity: sourceIdentity } = yield* inspectPath(rawSourcePath);
   if (Option.isNone(sourceIdentity)) {
@@ -713,6 +715,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const destinationRewriteFiles = [
     ...databaseFamilyPaths(databasePath),
     ...databaseFamilyPaths(snapshotPath),
+    ...databaseFamilyPaths(path.join(stateDir, "server-owner.sqlite")),
   ];
   const {
     homes: protectedHomeStats,
@@ -790,6 +793,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   yield* assertUnlinkedDatabaseFiles(destinationRewriteFiles);
 
   yield* fs.makeDirectory(stateDir, { recursive: true });
+  yield* holdServerOwnershipLock(statePath);
 
   const wrapPhase =
     (phase: MigrateDevDbPhaseError["phase"], phaseDatabasePath: string) =>
@@ -878,7 +882,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     eventCount: pruned.eventCount,
     executedMigrations: executedMigrations.map(([id, name]) => `${id}_${name}`),
   };
-});
+}, Effect.scoped);
 
 const formatSize = (bytes: number): string =>
   bytes >= 1024 * 1024

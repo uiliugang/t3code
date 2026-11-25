@@ -149,6 +149,15 @@ export class DevRunnerPortExhaustedError extends Schema.TaggedError<
   }
 }
 
+export class DevRunnerBaseDirOverrideError extends Schema.TaggedError<
+  DevRunnerBaseDirOverrideError,
+  { readonly brand: unique symbol }
+>()("DevRunnerBaseDirOverrideError", {}) {
+  override get message() {
+    return "Use --home-dir on the dev runner; passing --base-dir to the backend bypasses dev home selection.";
+  }
+}
+
 export class DevRunnerProcessError extends Schema.TaggedError<
   DevRunnerProcessError,
   { readonly brand: unique symbol }
@@ -758,6 +767,13 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     return yield* new DevRunnerBuiltNeedsShareError({ mode: input.mode });
   }
 
+  if (
+    input.mode !== "dev:web" &&
+    input.runArgs.some((arg) => arg === "--base-dir" || arg.startsWith("--base-dir="))
+  ) {
+    return yield* new DevRunnerBaseDirOverrideError();
+  }
+
   const cwd = yield* HostProcess.WorkingDirectory;
   const worktreePath = yield* resolveGitWorktreePath(cwd);
 
@@ -821,15 +837,18 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   const ambientHome = hostEnvironment.T3CODE_HOME?.trim() || undefined;
   const resolvedAmbientHome =
     ambientHome === undefined ? undefined : yield* resolveBaseDir(ambientHome);
+  const ambientSharedHome = resolvedAmbientHome === worktreeHome ? undefined : resolvedAmbientHome;
   const defaultHome = yield* DEFAULT_T3_HOME;
-  if (worktreeHome !== undefined && input.mode !== "dev:web") {
-    yield* assertIsolatedDevStartup({
-      baseDir,
-      stateSubdir: env.T3CODE_HOME === undefined ? "dev" : "userdata",
-      protectedHomes: [...new Set([defaultHome, resolvedAmbientHome ?? defaultHome])],
-      usesWorktreeDefault: baseDir === worktreeHome,
-    });
-  }
+  const verifyStartupHome =
+    worktreeHome !== undefined && input.mode !== "dev:web"
+      ? assertIsolatedDevStartup({
+          baseDir,
+          stateSubdir: env.T3CODE_HOME === undefined ? "dev" : "userdata",
+          protectedHomes: [...new Set([defaultHome, ambientSharedHome ?? defaultHome])],
+          defaultWorktreeHome: baseDir === worktreeHome ? worktreeHome : undefined,
+        })
+      : Effect.succeed(baseDir);
+  yield* verifyStartupHome;
 
   const sharedWebPort = BASE_WEB_PORT + webOffset;
   let built = false;
@@ -917,10 +936,10 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   }
 
   const seedEnv: NodeJS.ProcessEnv = { ...env };
-  if (resolvedAmbientHome === undefined) {
+  if (ambientSharedHome === undefined) {
     delete seedEnv.T3CODE_HOME;
   } else {
-    seedEnv.T3CODE_HOME = resolvedAmbientHome;
+    seedEnv.T3CODE_HOME = ambientSharedHome;
   }
   // After sharing, so the warm step sees the same bundled-dev env as Vite.
   yield* prepareFirstStart({
@@ -930,6 +949,9 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     env,
     seedEnv,
   });
+
+  const startupHome = yield* verifyStartupHome;
+  if (env.T3CODE_HOME !== undefined) env.T3CODE_HOME = startupHome;
 
   const args = [...(built ? BUILT_DEV_ARGS : MODE_ARGS[input.mode]), ...input.runArgs];
   const spawnCommand = yield* resolveSpawnCommand("vp", args, { env });
