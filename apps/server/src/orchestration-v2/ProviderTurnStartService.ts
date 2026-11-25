@@ -114,6 +114,15 @@ class WorktreeSetupScriptFailedError extends Schema.TaggedError<WorktreeSetupScr
   }
 }
 
+class WorktreeSetupCommandNotWrittenError extends Schema.TaggedError<
+  WorktreeSetupCommandNotWrittenError,
+  { readonly brand: unique symbol }
+>()("WorktreeSetupCommandNotWrittenError", { worktreePath: Schema.String }) {
+  override get message(): string {
+    return `Could not write setup command to terminal in '${this.worktreePath}'.`;
+  }
+}
+
 /** Runs that ended without completing: their provider turn may still project as running. */
 const NON_COMPLETING_TERMINAL_RUN_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
   "failed",
@@ -908,18 +917,17 @@ export const layer: Layer.Layer<
                   observeCompletion: {},
                 });
                 if (setup.status === "started") {
+                  const written =
+                    setup.commandWritten === undefined ? true : yield* setup.commandWritten;
                   if (setup.async) {
-                    const written =
-                      setup.commandWritten === undefined ? true : yield* setup.commandWritten;
                     if (setup.completion) {
                       yield* setup.completion.pipe(Effect.forkDetach);
                     }
                     if (!written) {
-                      return yield* new WorktreeSetupScriptFailedError({
-                        worktreePath,
-                        exitCode: null,
-                      });
+                      return yield* new WorktreeSetupCommandNotWrittenError({ worktreePath });
                     }
+                  } else if (!written) {
+                    return yield* new WorktreeSetupCommandNotWrittenError({ worktreePath });
                   } else if (setup.completion) {
                     const { exitCode } = yield* setup.completion;
                     if (exitCode !== 0)
@@ -933,7 +941,6 @@ export const layer: Layer.Layer<
               }),
             );
             if (setupResult._tag === "Failure") {
-              if (input.willRetry === true) return yield* setupResult.failure;
               yield* settleStartFailure({
                 signal: "worktree-setup-failure",
                 title: "Couldn't set up restored workspace",

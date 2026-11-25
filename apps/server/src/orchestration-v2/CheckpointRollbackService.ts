@@ -265,26 +265,6 @@ export const layer: Layer.Layer<
           checkpointId: input.checkpointId,
         });
 
-      const toRestoreProject = (row: ProjectStore.ProjectRow): Project => ({
-        id: row.projectId,
-        title: row.title,
-        workspaceRoot: row.workspaceRoot,
-        ...(row.workspaceConfig === undefined ? {} : { workspaceConfig: row.workspaceConfig }),
-        repositoryIdentity: null,
-        faviconPath: row.faviconPath,
-        projectIcon: row.projectIcon,
-        defaultModelSelection: row.defaultModelSelection,
-        defaultThreadEnvMode: row.defaultThreadEnvMode,
-        autoPull: row.autoPull,
-        scripts: row.scripts,
-        trackedFolders: row.trackedFolders,
-        pinnedAt: row.pinnedAt,
-        archivedAt: row.archivedAt,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-      });
-
       const recordRecreatedWorktree = (recreatedPath: string, project?: Project) =>
         Option.isNone(worktreeRestore)
           ? Effect.void
@@ -330,7 +310,7 @@ export const layer: Layer.Layer<
         ) {
           const projectRow = yield* projects.get(context.thread.projectId);
           if (Option.isSome(projectRow)) {
-            const project = toRestoreProject(projectRow.value);
+            const project = ProjectStore.projectFromRow(projectRow.value);
             const recreate = gitWorkflow.pruneWorktrees({ cwd: project.workspaceRoot }).pipe(
               Effect.andThen(
                 gitWorkflow.createWorktree({

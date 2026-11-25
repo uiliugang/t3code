@@ -3588,4 +3588,52 @@ it.layer(
       expect(missingEvents).toEqual([]);
     }),
   );
+
+  it.effect(
+    "rejects strict writes as soon as PTY exit is queued while preserving interactive writes on exited sessions",
+    () =>
+      Effect.gen(function* () {
+        const { manager, ptyAdapter } = yield* createManager();
+        const input = openInput();
+        yield* manager.open(input);
+        const process = ptyAdapter.processes[0]!;
+        const outputBlocked = yield* Deferred.make<void>();
+        const releaseOutput = yield* Deferred.make<void>();
+        const exitedDelivered = yield* Deferred.make<void>();
+        const unsubscribe = yield* manager.subscribe((event) => {
+          if (event.type === "output" && event.data === "before-exit\n") {
+            return Deferred.succeed(outputBlocked, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseOutput)),
+            );
+          }
+          if (event.type === "exited") {
+            return Deferred.succeed(exitedDelivered, undefined).pipe(Effect.asVoid);
+          }
+          return Effect.void;
+        });
+        yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+        process.emitData("before-exit\n");
+        yield* Deferred.await(outputBlocked);
+        // Exit arrives while the earlier output event is still draining; session.status is still "running".
+        process.emitExit({ exitCode: 1, signal: 0 });
+
+        const strictWhileQueued = yield* manager
+          .write({ ...input, data: "setup\r" }, undefined, { requireRunning: true })
+          .pipe(Effect.flip);
+        expect(strictWhileQueued._tag).toBe("TerminalNotRunningError");
+        expect(process.writes).toEqual([]);
+
+        yield* Deferred.succeed(releaseOutput, undefined);
+        yield* Deferred.await(exitedDelivered);
+
+        // Interactive writes continue to silently ignore already-exited sessions, while strict writes fail.
+        yield* manager.write({ ...input, data: "interactive\r" });
+        const strictAfterExited = yield* manager
+          .write({ ...input, data: "setup\r" }, undefined, { requireRunning: true })
+          .pipe(Effect.flip);
+        expect(strictAfterExited._tag).toBe("TerminalNotRunningError");
+        expect(process.writes).toEqual([]);
+      }),
+  );
 });

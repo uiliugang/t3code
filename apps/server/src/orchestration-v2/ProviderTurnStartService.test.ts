@@ -2659,7 +2659,7 @@ effectIt.effect.each([{ async: false }, { async: true }])(
 );
 
 effectIt.effect(
-  "fails the current start attempt once when async setup commandWritten resolves false and retains pending setup",
+  "fails the current start attempt once when async setup commandWritten resolves false and retains pending setup for the next user start",
   () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -2669,6 +2669,7 @@ effectIt.effect(
       });
       const worktreePath = path.join(worktreesDir, "project", "restore");
       yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      let shouldWrite = false;
       const runSetup = vi.fn(() =>
         Effect.succeed({
           status: "started" as const,
@@ -2678,8 +2679,73 @@ effectIt.effect(
           terminalId: "setup-unwritten",
           cwd: worktreePath,
           async: true,
-          commandWritten: Effect.succeed(false),
-          completion: Effect.succeed({ exitCode: null, durationMs: 0 }),
+          commandWritten: Effect.succeed(shouldWrite),
+          completion: Effect.succeed({ exitCode: shouldWrite ? 0 : null, durationMs: 0 }),
+        }),
+      );
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        runSetup,
+      });
+      const initialProjection = harness.projection();
+
+      yield* harness.startWithRetry;
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+      expect(harness.projection().turnItems).toMatchObject([
+        {
+          type: "error",
+          title: "Couldn't set up restored workspace",
+          failure: {
+            message: `Could not write setup command to terminal in '${worktreePath}'.`,
+          },
+        },
+      ]);
+
+      // Pending setup was retained, so a subsequent explicit start runs setup again, clears it, and opens provider.
+      shouldWrite = true;
+      harness.setProjection(initialProjection);
+      yield* harness.startWithRetry;
+      expect(runSetup).toHaveBeenCalledTimes(2);
+      expect(harness.open).toHaveBeenCalledTimes(1);
+      expect(harness.projection().runs.at(-1)?.status).toBe("running");
+
+      // And a third start does not run setup again because the pending record was cleared on success.
+      harness.setProjection(initialProjection);
+      yield* harness.startWithRetry;
+      expect(runSetup).toHaveBeenCalledTimes(2);
+      expect(harness.open).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect(
+  "does not automatically retry a synchronous setup script that already ran and exited nonzero under EffectWorker",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-sync-setup-once-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      const runSetup = vi.fn(() =>
+        Effect.succeed({
+          status: "started" as const,
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "setup",
+          terminalId: "setup-sync-fail",
+          cwd: worktreePath,
+          async: false,
+          commandWritten: Effect.succeed(true),
+          completion: Effect.succeed({ exitCode: 2, durationMs: 0 }),
         }),
       );
       const harness = makeLocalCommandHarness({
@@ -2692,7 +2758,13 @@ effectIt.effect(
         runSetup,
       });
 
-      yield* harness.start;
+      yield* Effect.gen(function* () {
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const { storedEffect } = yield* enqueueStart(harness.projection());
+        expect(yield* worker.drain()).toBe(1);
+        expect(yield* storedEffect).toMatchObject({ status: "succeeded", attemptCount: 1 });
+      }).pipe(Effect.provide(layerStartEffectWorker(harness)));
+
       expect(runSetup).toHaveBeenCalledTimes(1);
       expect(harness.open).not.toHaveBeenCalled();
       expect(harness.projection().runs.at(-1)?.status).toBe("failed");
@@ -2700,6 +2772,9 @@ effectIt.effect(
         {
           type: "error",
           title: "Couldn't set up restored workspace",
+          failure: {
+            message: `Setup script exited with 2 in '${worktreePath}'.`,
+          },
         },
       ]);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),

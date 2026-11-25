@@ -328,6 +328,7 @@ interface TerminalSessionState {
   pendingProcessEvents: Array<PendingProcessEvent | undefined>;
   pendingProcessEventIndex: number;
   processEventDrainRunning: boolean;
+  processExitQueued: boolean;
   exitCode: number | null;
   exitSignal: number | null;
   updatedAt: string;
@@ -541,6 +542,9 @@ function enqueueProcessEvent(
     return false;
   }
 
+  if (event.type === "exit") {
+    session.processExitQueued = true;
+  }
   session.pendingProcessEvents.push(event);
   if (session.processEventDrainRunning) {
     return false;
@@ -2656,6 +2660,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           session.pendingProcessEvents = [];
           session.pendingProcessEventIndex = 0;
           session.processEventDrainRunning = false;
+          session.processExitQueued = false;
           return { type: "idle" } as const;
         }
 
@@ -2664,6 +2669,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           session.pendingProcessEvents = [];
           session.pendingProcessEventIndex = 0;
           session.processEventDrainRunning = false;
+          session.processExitQueued = false;
           return { type: "idle" } as const;
         }
 
@@ -2708,6 +2714,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         session.pendingProcessEvents = [];
         session.pendingProcessEventIndex = 0;
         session.processEventDrainRunning = false;
+        session.processExitQueued = false;
         session.exitCode = Number.isInteger(nextEvent.event.exitCode)
           ? nextEvent.event.exitCode
           : null;
@@ -2780,6 +2787,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.pendingProcessEvents = [];
       session.pendingProcessEventIndex = 0;
       session.processEventDrainRunning = false;
+      session.processExitQueued = false;
       session.updatedAt = updatedAt;
       return [undefined, state] as const;
     });
@@ -2926,6 +2934,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.pendingProcessEvents = [];
       session.pendingProcessEventIndex = 0;
       session.processEventDrainRunning = false;
+      session.processExitQueued = false;
       session.updatedAt = startingAt;
       return [undefined, state] as const;
     });
@@ -3056,6 +3065,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         session.pendingProcessEvents = [];
         session.pendingProcessEventIndex = 0;
         session.processEventDrainRunning = false;
+        session.processExitQueued = false;
         advanceEventSequence(session);
         return [undefined, state] as const;
       });
@@ -3386,6 +3396,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         pendingProcessEvents: [],
         pendingProcessEventIndex: 0,
         processEventDrainRunning: false,
+        processExitQueued: false,
         exitCode: null,
         exitSignal: null,
         updatedAt: yield* nowIso,
@@ -3459,6 +3470,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       liveSession.pendingProcessEvents = [];
       liveSession.pendingProcessEventIndex = 0;
       liveSession.processEventDrainRunning = false;
+      liveSession.processExitQueued = false;
       yield* persistHistory(liveSession.threadId, liveSession.terminalId, liveSession.history);
     } else if (liveSession.status === "exited" || liveSession.status === "error") {
       liveSession.runtimeEnv = nextRuntimeEnv;
@@ -3468,6 +3480,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       liveSession.pendingProcessEvents = [];
       liveSession.pendingProcessEventIndex = 0;
       liveSession.processEventDrainRunning = false;
+      liveSession.processExitQueued = false;
       yield* persistHistory(liveSession.threadId, liveSession.terminalId, liveSession.history);
     }
 
@@ -3880,7 +3893,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       const terminalId = input.terminalId;
       const session = yield* requireSession(input.threadId, terminalId);
       const process = session.process;
-      if (!process || session.status !== "running") {
+      if (
+        !process ||
+        session.status !== "running" ||
+        (options?.requireRunning === true && session.processExitQueued)
+      ) {
         if (session.status === "exited" && options?.requireRunning !== true) return;
         return yield* new TerminalNotRunningError({
           threadId: input.threadId,
@@ -3941,11 +3958,19 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       Effect.gen(function* () {
         const terminalId = input.terminalId;
         const session = yield* requireSession(input.threadId, terminalId);
+        const pendingExit = session.pendingProcessEvents
+          .slice(session.pendingProcessEventIndex)
+          .find(
+            (candidate): candidate is Extract<PendingProcessEvent, { type: "exit" }> =>
+              candidate?.type === "exit",
+          );
         session.history.clear();
         session.pendingHistoryControlSequence = "";
-        session.pendingProcessEvents = [];
+        session.pendingProcessEvents = pendingExit ? [pendingExit] : [];
         session.pendingProcessEventIndex = 0;
-        session.processEventDrainRunning = false;
+        if (!pendingExit) {
+          session.processEventDrainRunning = false;
+        }
         const eventStamp = advanceEventSequence(session);
         // A drain waits for the key to go idle, which never happens while the shell keeps
         // printing; every reader of the file flushes it first.

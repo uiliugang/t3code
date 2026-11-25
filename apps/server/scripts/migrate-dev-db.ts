@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+// @effect-diagnostics nodeBuiltinImport:off - realpath.native resolves symlinks before `..` as OS open/lstat do; Effect realPath normalizes `..` lexically first.
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
@@ -174,15 +176,25 @@ const looksLikeInstalledHome = Effect.fn("looksLikeInstalledHome")(function* (ba
   return yield* hasAnyMarker(resolved, DESKTOP_USERDATA_MARKERS);
 });
 
+class NativeRealPathError extends Schema.TaggedError<
+  NativeRealPathError,
+  { readonly brand: unique symbol }
+>()("NativeRealPathError", { cause: Schema.Defect() }) {}
+
+const nativeRealPath = (targetPath: string) =>
+  Effect.tryPromise({
+    try: () => NodeFSP.realpath(targetPath),
+    catch: (cause) => new NativeRealPathError({ cause }),
+  });
+
 // A custom T3CODE_HOME or installed service home holds secrets, settings, or service state beside userdata/statev2.sqlite.
 // Unreadable markers count as present so a permission or I/O error never lets a live database pass as a dev copy.
 const looksLikeLiveDatabase = Effect.fn("looksLikeLiveDatabase")(function* (databasePath: string) {
-  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const rawStateDir = path.dirname(path.resolve(databasePath));
-  const resolvedStateDir = yield* fs.realPath(rawStateDir).pipe(Effect.option);
+  const rawStateDir = path.dirname(databasePath);
+  const resolvedStateDir = yield* nativeRealPath(rawStateDir).pipe(Effect.option);
   if (Option.isNone(resolvedStateDir)) return true;
-  const candidateStateDirs = [...new Set([rawStateDir, resolvedStateDir.value])];
+  const candidateStateDirs = [...new Set([path.resolve(rawStateDir), resolvedStateDir.value])];
   for (const stateDir of candidateStateDirs) {
     if (path.basename(stateDir).toLowerCase() !== "userdata") continue;
     const baseDir = path.dirname(stateDir);
@@ -485,11 +497,11 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
   const platform = yield* HostProcess.Platform;
   // A symlink, `..` or another letter case can name the live database; compare where they lead.
   const resolve = (file: string) =>
-    fs.realPath(file).pipe(
+    nativeRealPath(file).pipe(
       Effect.catch(() =>
-        fs
-          .realPath(path.dirname(file))
-          .pipe(Effect.map((dir) => path.join(dir, path.basename(file)))),
+        nativeRealPath(path.dirname(file)).pipe(
+          Effect.map((dir) => path.join(dir, path.basename(file))),
+        ),
       ),
       Effect.orElseSucceed(() => path.resolve(file)),
     );
@@ -506,11 +518,7 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
   const ambientHome = (options.ambientHome ?? env.T3CODE_HOME)?.trim();
   const protectedHomes = [sharedHome, ...(ambientHome ? [path.resolve(ambientHome)] : [])];
   const liveDatabases = protectedHomes.map((home) => path.join(home, "userdata", "statev2.sqlite"));
-  const [target, resolvedLives] = yield* Effect.all([
-    resolve(databasePath),
-    Effect.forEach(liveDatabases, resolve),
-  ]);
-  const rawStatResult = yield* fs.lstat(path.resolve(databasePath)).pipe(
+  const rawStatResult = yield* fs.lstat(databasePath).pipe(
     Effect.map((info) => ({ missing: false as const, info })),
     Effect.catchReason("PlatformError", "NotFound", () =>
       Effect.succeed({ missing: true as const, info: undefined }),
@@ -524,6 +532,14 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
     onNone: () => true,
     onSome: ({ info }) => info === undefined || info.type !== "File",
   });
+  const rawIdentity = Option.flatMap(rawStatResult, ({ info }) =>
+    info === undefined ? Option.none() : Option.map(info.ino, (ino) => `${info.dev}:${ino}`),
+  );
+  const [targetResult, resolvedLives] = yield* Effect.all([
+    nativeRealPath(databasePath).pipe(Effect.option),
+    Effect.forEach(liveDatabases, resolve),
+  ]);
+  const target = Option.getOrElse(targetResult, () => path.resolve(databasePath));
   const targetStatResult = yield* fs.stat(target).pipe(
     Effect.map((info) => ({ missing: false as const, info })),
     Effect.catchReason("PlatformError", "NotFound", () =>
@@ -544,6 +560,11 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
   const targetIdentity = Option.flatMap(targetStatResult, ({ info }) =>
     info === undefined ? Option.none() : Option.map(info.ino, (ino) => `${info.dev}:${ino}`),
   );
+  const targetMismatchesRawInput =
+    Option.isNone(targetResult) ||
+    Option.isNone(rawIdentity) ||
+    Option.isNone(targetIdentity) ||
+    rawIdentity.value !== targetIdentity.value;
   const liveIdentities = yield* Effect.forEach(
     liveDatabases.flatMap((live) => [live, `${live}-wal`, `${live}-shm`]),
     identity,
@@ -551,6 +572,7 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
   if (
     rawInputUnverifiedOrSymlink ||
     targetUnverifiedOrLinked ||
+    targetMismatchesRawInput ||
     resolvedLives.some((live) => comparable(target) === comparable(live)) ||
     (Option.isSome(targetIdentity) &&
       liveIdentities.some(
@@ -796,21 +818,21 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   }
   const protectedHomes = [sharedHome, ...(ambientHome ? [path.resolve(ambientHome)] : [])];
   const resolveTargetPath = (file: string) =>
-    fs.realPath(file).pipe(
+    nativeRealPath(file).pipe(
       Effect.catch(() =>
-        fs
-          .realPath(path.dirname(file))
-          .pipe(Effect.map((dir) => path.join(dir, path.basename(file)))),
+        nativeRealPath(path.dirname(file)).pipe(
+          Effect.map((dir) => path.join(dir, path.basename(file))),
+        ),
       ),
       Effect.orElseSucceed(() => path.resolve(file)),
     );
   const [canonicalBaseDir, canonicalProtectedHomes, resolvedStateDir, resolvedDestinationDb] =
     yield* Effect.all([
-      fs.realPath(baseDir).pipe(Effect.orElseSucceed(() => baseDir)),
+      nativeRealPath(baseDir).pipe(Effect.orElseSucceed(() => baseDir)),
       Effect.forEach(protectedHomes, (home) =>
-        fs.realPath(home).pipe(Effect.orElseSucceed(() => home)),
+        nativeRealPath(home).pipe(Effect.orElseSucceed(() => home)),
       ),
-      fs.realPath(stateDir).pipe(Effect.orElseSucceed(() => stateDir)),
+      nativeRealPath(stateDir).pipe(Effect.orElseSucceed(() => stateDir)),
       resolveTargetPath(databasePath),
     ]);
   const stateDirHome =
@@ -835,13 +857,13 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     return yield* new MigrateDevDbSharedHomeError();
   }
   // Both destination and snapshot are deleted below; reject sources resolving to either.
-  const canonicalSourcePath = yield* fs
-    .realPath(sourcePath)
-    .pipe(Effect.orElseSucceed(() => sourcePath));
+  const canonicalSourcePath = yield* nativeRealPath(sourcePath).pipe(
+    Effect.orElseSucceed(() => sourcePath),
+  );
   for (const destination of [databasePath, snapshotPath]) {
-    const canonicalDestination = yield* fs
-      .realPath(destination)
-      .pipe(Effect.orElseSucceed(() => destination));
+    const canonicalDestination = yield* nativeRealPath(destination).pipe(
+      Effect.orElseSucceed(() => destination),
+    );
     if (canonicalSourcePath === canonicalDestination) {
       return yield* new MigrateDevDbSourceIsDestinationError({ sourcePath });
     }

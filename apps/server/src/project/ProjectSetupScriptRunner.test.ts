@@ -49,6 +49,7 @@ const makeHarness = Effect.fn(function* (options: {
   readonly command?: string;
   readonly history?: string;
   readonly opening?: Deferred.Deferred<void>;
+  readonly gettingShell?: Deferred.Deferred<void>;
   readonly previousSession?: TerminalSessionSnapshot;
   readonly shell?: string | null;
   readonly settings?: Partial<ServerSettingsValue>;
@@ -56,6 +57,7 @@ const makeHarness = Effect.fn(function* (options: {
   const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
   const opens: TerminalOpenInput[] = [];
   const openedSessions: TerminalSessionSnapshot[] = [];
+  let closes = 0;
   let session = options.previousSession;
   const writes = yield* Queue.unbounded<string>();
   const outputLines = yield* Queue.unbounded<string>();
@@ -76,9 +78,11 @@ const makeHarness = Effect.fn(function* (options: {
         }),
       ),
     getShell: () =>
-      options.shell === null
-        ? Effect.fail(new TerminalNotRunningError({ threadId, terminalId }))
-        : Effect.succeed(options.shell ?? "/bin/zsh"),
+      options.gettingShell
+        ? Deferred.succeed(options.gettingShell, undefined).pipe(Effect.andThen(Effect.never))
+        : options.shell === null
+          ? Effect.fail(new TerminalNotRunningError({ threadId, terminalId }))
+          : Effect.succeed(options.shell ?? "/bin/zsh"),
     subscribe: (listener) =>
       Effect.sync(() => {
         listeners.add(listener);
@@ -92,6 +96,7 @@ const makeHarness = Effect.fn(function* (options: {
         : Queue.offer(writes, input.data).pipe(Effect.asVoid),
     close: () =>
       Effect.sync(() => {
+        closes += 1;
         session = undefined;
       }).pipe(
         Effect.andThen(
@@ -154,6 +159,8 @@ const makeHarness = Effect.fn(function* (options: {
     emit,
     openedSessions,
     opens,
+    closeCount: () => closes,
+    isOpen: () => session !== undefined,
     markExitedWithoutEvent,
   };
 });
@@ -369,16 +376,17 @@ describe("ProjectSetupScriptRunner", () => {
     }),
   );
 
-  it.effect.each(["opening", "commandWritten", "completion"] as const)(
+  it.effect.each(["opening", "gettingShell", "commandWritten", "completion"] as const)(
     "stops pending setup when cancelled during %s",
     (phase) =>
       Effect.gen(function* () {
         const opening = yield* Deferred.make<void>();
-        const { start, listeners, writes, emit } = yield* makeHarness(
-          phase === "opening" ? { opening } : {},
+        const gettingShell = yield* Deferred.make<void>();
+        const { start, listeners, writes, emit, closeCount, isOpen } = yield* makeHarness(
+          phase === "opening" ? { opening } : phase === "gettingShell" ? { gettingShell } : {},
         );
         const pending =
-          phase === "opening"
+          phase === "opening" || phase === "gettingShell"
             ? start.pipe(Effect.asVoid)
             : yield* start.pipe(
                 Effect.map((result) =>
@@ -393,9 +401,15 @@ describe("ProjectSetupScriptRunner", () => {
               );
         const fiber = yield* pending.pipe(Effect.forkChild({ startImmediately: true }));
         if (phase === "opening") yield* Deferred.await(opening);
+        if (phase === "gettingShell") yield* Deferred.await(gettingShell);
         expect(listeners.size).toBe(2);
+        const closesBeforeCancel = closeCount();
         yield* Fiber.interrupt(fiber);
         expect(listeners.size).toBe(0);
+        expect(isOpen()).toBe(false);
+        if (phase !== "opening") {
+          expect(closeCount()).toBe(closesBeforeCancel + 1);
+        }
         yield* emit({ ...event, type: "output", data: "\r\n% \x1b[?2004h" });
         expect(yield* Queue.size(writes)).toBe(0);
       }),

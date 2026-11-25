@@ -314,28 +314,7 @@ export const make = Effect.gen(function* () {
     return Option.fromUndefinedOr(matches[0]);
   });
 
-  const toProject = (
-    row: ProjectStore.ProjectRow,
-    enrichment: ProjectEnrichmentService.ProjectEnrichment | null,
-  ): Project => ({
-    id: row.projectId,
-    title: row.title,
-    workspaceRoot: row.workspaceRoot,
-    ...(row.workspaceConfig === undefined ? {} : { workspaceConfig: row.workspaceConfig }),
-    repositoryIdentity: enrichment?.repositoryIdentity ?? null,
-    faviconPath: row.faviconPath ?? enrichment?.faviconPath ?? null,
-    defaultModelSelection: row.defaultModelSelection,
-    defaultThreadEnvMode: row.defaultThreadEnvMode,
-    autoPull: row.autoPull,
-    projectIcon: row.projectIcon,
-    scripts: row.scripts,
-    trackedFolders: row.trackedFolders,
-    pinnedAt: row.pinnedAt,
-    archivedAt: row.archivedAt,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    deletedAt: row.deletedAt,
-  });
+  const toProject = ProjectStore.projectFromRow;
 
   // Clients read `trackedFolders` off the project, so the stored list is brought back in step
   // with the disk when a project is read, at most this often. Server work reads the disk itself.
