@@ -83,7 +83,12 @@ function setup() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement("div");
   const root = createRoot(container);
-  const render = (allowed: boolean, saved: IssueSource[] = sources, singleProvider = true) =>
+  const render = (
+    allowed: boolean,
+    saved: IssueSource[] = sources,
+    singleProvider = true,
+    mep = true,
+  ) =>
     act(() =>
       root.render(
         <ProjectSourcesRow
@@ -97,7 +102,7 @@ function setup() {
           provider={saved[0]?.provider}
           error={undefined}
           discovery="ready"
-          mep
+          mep={mep}
           allowed={allowed}
         />,
       ),
@@ -168,4 +173,24 @@ it("removes a legacy binding without losing either same-platform repository", as
       patch: { issueProjectSources: { [projectId]: sources } },
     },
   });
+});
+
+it("can clear a disabled MEP binding before choosing GitHub", async () => {
+  update.mockReset().mockResolvedValue({ _tag: "Success" });
+  using screen = setup();
+  screen.render(true, [space], true, false);
+  act(() => screen.button("Edit server").click());
+  expect(screen.container.querySelector("input")).toBeNull();
+  expect(screen.container.textContent).toContain(space.scope);
+  await act(async () => screen.button("Restore automatic").click());
+  expect(update).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      expectedIssueProjectSources: { [projectId]: [space] },
+      patch: { issueProjectSources: { [projectId]: [] } },
+    },
+  });
+  screen.render(true, [], true, false);
+  act(() => screen.button("Edit server").click());
+  expect(screen.container.textContent).toContain("GitHub repository");
 });

@@ -523,10 +523,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
   it.effect("accepts unchanged legacy sources echoed by a scoped edit or reset", () => {
     const edit = ProjectId.make("edit");
     const reset = ProjectId.make("reset");
+    const automatic = ProjectId.make("automatic");
     const github = { provider: "github", host: "github.com", scope: "acme/repo" } as const;
     const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
     const mixed = [github, mep];
-    const expected = { [edit]: mixed, [reset]: mixed };
+    const expected = { [edit]: mixed, [reset]: mixed, [automatic]: [mep] };
     return Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
       const renamed = { ...github, scope: "acme/next" };
@@ -538,12 +539,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         ),
       );
       const result = yield* service.updateSettings(
-        { issueProjectSources: { [edit]: [mep, renamed], [reset]: [mep] } },
+        { issueProjectSources: { [edit]: [mep, renamed], [reset]: [mep], [automatic]: [mep] } },
         "github",
         expected,
       );
       assert.deepEqual(result.issueProjectSources[edit], [renamed]);
       assert.deepEqual(result.issueProjectSources[reset] ?? [], []);
+      assert.deepEqual(result.issueProjectSources[automatic], [mep]);
     }).pipe(
       Effect.provide(
         ServerSettingsModule.ServerSettingsService.layerTest({ issueProjectSources: expected }),

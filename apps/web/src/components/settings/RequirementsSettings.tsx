@@ -46,7 +46,7 @@ import {
   parseMepSpaceIds,
   canBindUndetectedProject,
   listedProjectIssueSources,
-  legacyIssueSourceCleanup,
+  projectIssueSourceCleanup,
   projectIssueSourceEdit,
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
@@ -296,7 +296,7 @@ function ProjectSourceRow({
   const provider = projectIssueProvider(kind, sources);
   const singleProvider =
     group.environment.serverConfig?.environment.capabilities.singleProjectIssueProvider === true;
-  const legacy = legacyIssueSourceCleanup(singleProvider, project.id, provider, saved);
+  const cleanup = projectIssueSourceCleanup(singleProvider, project.id, provider, saved, enabled);
   const githubSources = sources.filter((entry) => entry.provider === "github");
   const manualGithub = saved.some((entry) => entry.provider === "github");
   const discovery = error || result?.error ? "failed" : result ? "ready" : "pending";
@@ -366,18 +366,22 @@ function ProjectSourceRow({
         ) : null}
       </td>
       <td className="col-start-2 min-w-0 space-y-1 align-top lg:py-4 lg:pr-3">
-        {legacy ? (
+        {cleanup ? (
           <div>
-            <p>{t("Legacy sources: {sources}", { sources: legacy.scopes })}</p>
+            <p>
+              {cleanup.disabledMep
+                ? `${t("Manual override")} · ${cleanup.scopes}`
+                : t("Legacy sources: {sources}", { sources: cleanup.scopes })}
+            </p>
             {canEdit ? (
               <Button
                 variant="ghost-muted"
                 size="xs"
                 disabled={disabled || saving}
-                onClick={() => void persist(legacy.input)}
+                onClick={() => void persist(cleanup.input)}
               >
                 <Undo2Icon />
-                {t("Remove incompatible sources")}
+                {t(cleanup.disabledMep ? "Restore automatic" : "Remove incompatible sources")}
               </Button>
             ) : null}
           </div>

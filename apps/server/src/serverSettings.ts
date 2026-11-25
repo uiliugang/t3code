@@ -156,6 +156,14 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
     const bound = projectIssueProvider(repositoryKinds?.get(id), saved);
     const other = next.filter((source) => source.provider !== provider);
     if (
+      issueSourceProvider &&
+      expectedIssueProjectSources?.[id] &&
+      other.length > 0 &&
+      other.length === next.length &&
+      issueSourcesMatch(next, saved)
+    )
+      continue;
+    if (
       (bound && bound !== provider) ||
       (other.length &&
         !(

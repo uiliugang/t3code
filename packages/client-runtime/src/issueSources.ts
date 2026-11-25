@@ -57,22 +57,29 @@ export function projectIssueSourceEdit(
   };
 }
 
-export function legacyIssueSourceCleanup(
+export function projectIssueSourceCleanup(
   singleProvider: boolean,
   projectId: ProjectId,
   provider: IssueProvider | undefined,
   saved: readonly IssueSource[],
+  mepEnabled: boolean,
 ) {
-  if (singleProvider || !provider) return null;
-  const incompatible = saved.filter((source) => source.provider !== provider);
-  if (!incompatible.length) return null;
+  if (!provider) return null;
+  const disabledMep =
+    !mepEnabled && provider === "meituan" && saved.some((s) => s.provider === provider);
+  if (singleProvider && !disabledMep) return null;
+  const remove = (source: IssueSource) =>
+    disabledMep ? singleProvider || source.provider === "meituan" : source.provider !== provider;
+  const removed = saved.filter(remove);
+  if (!removed.length) return null;
   return {
-    scopes: incompatible.map((source) => `${source.host}/${source.scope}`).join(", "),
+    disabledMep,
+    scopes: removed.map((source) => `${source.host}/${source.scope}`).join(", "),
     input: {
       expectedIssueProjectSources: { [projectId]: saved },
       patch: {
         issueProjectSources: {
-          [projectId]: saved.filter((source) => source.provider === provider),
+          [projectId]: saved.filter((source) => !remove(source)),
         },
       },
     },

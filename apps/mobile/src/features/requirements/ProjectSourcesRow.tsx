@@ -1,7 +1,7 @@
 import {
   canBindUndetectedProject,
   parseMepSpaceIds,
-  legacyIssueSourceCleanup,
+  projectIssueSourceCleanup,
   projectIssueSourceEdit,
   withGithubRepositoryOverride,
   withMepSpaceOverrides,
@@ -64,12 +64,12 @@ export function ProjectSourcesRow({
   const spaces = sources.filter((s) => s.provider === "meituan").map((s) => s.scope);
   const manual = saved.some((s) => s.provider === "meituan");
   const github = githubSources[0];
-  const legacy = legacyIssueSourceCleanup(singleProvider, projectId, provider, saved);
+  const cleanup = projectIssueSourceCleanup(singleProvider, projectId, provider, saved, mep);
   const canChoose =
     provider !== undefined || canBindUndetectedProject(singleProvider, discovery, error);
   const showGithub = canChoose && provider !== "meituan";
   const showMep = canChoose && mep && provider !== "github";
-  const space = mep ? spaces[0] : undefined;
+  const space = mep || cleanup?.disabledMep ? spaces[0] : undefined;
   const githubLabel =
     githubSources.length > 1
       ? t("{count} GitHub repositories", { count: githubSources.length })
@@ -101,7 +101,7 @@ export function ProjectSourcesRow({
   };
   const close = () => setView("closed");
   const open = () => {
-    if (allowed && !legacy && showGithub && !showMep && githubSources.length <= 1)
+    if (allowed && !cleanup && showGithub && !showMep && githubSources.length <= 1)
       edit({ provider: "github", source: github });
     else setView("sources");
   };
@@ -190,18 +190,22 @@ export function ProjectSourcesRow({
                 {error}
               </Text>
             ) : null}
-            {legacy && !editing ? (
+            {cleanup && !editing ? (
               <View className="gap-2">
                 <Text textRole="footnote">
-                  {t("Legacy sources: {sources}", { sources: legacy.scopes })}
+                  {cleanup.disabledMep
+                    ? `${t("Manual override")} · ${cleanup.scopes}`
+                    : t("Legacy sources: {sources}", { sources: cleanup.scopes })}
                 </Text>
                 {allowed ? (
                   <Button
                     size="compact"
                     tone="text"
-                    label={t("Remove incompatible sources")}
+                    label={t(
+                      cleanup.disabledMep ? "Restore automatic" : "Remove incompatible sources",
+                    )}
                     disabled={busy}
-                    onPress={() => void persist(legacy.input)}
+                    onPress={() => void persist(cleanup.input)}
                   />
                 ) : null}
               </View>

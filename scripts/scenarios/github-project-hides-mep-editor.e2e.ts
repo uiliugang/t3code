@@ -119,6 +119,29 @@ test("GitHub issue sources do not offer the MEP space editor", WEB, async ({ t3,
           }),
         ),
         Effect.andThen(Effect.promise(exercise)),
+        Effect.andThen(
+          client["server.updateSettings"]({ patch: { meituanRequirementsEnabled: false } }),
+        ),
+        Effect.andThen(
+          Effect.promise(async () => {
+            const row = screen.getByRole("row", /manual-mep/);
+            const clear = row.getByRole("button", /Restore automatic|恢复自动/);
+            await expect(clear).toBeEnabled();
+            await expect(row.getByText(/mep\.sankuai\.com\/4101/)).toBeVisible();
+            await app.screenshot("disabled-mep-before-clear");
+            await clear.tap();
+            await expect(clear).toHaveCount(0);
+            await screen
+              .getByRole("row", /unbound-project/)
+              .getByRole("checkbox")
+              .tap();
+            await row.getByRole("checkbox").tap();
+            await screen.getByRole("button", /GitHub (override|覆盖)/).tap();
+            await screen.getByPlaceholder("owner/repository").fill("acme/after-mep");
+            await screen.getByRole("button", /Save GitHub override|保存 GitHub 覆盖/).tap();
+            await expect(row.getByText(/acme\/after-mep/)).toBeVisible();
+          }),
+        ),
         Effect.ensuring(
           client["server.updateSettings"]({
             patch: {
