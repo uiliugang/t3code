@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   appSignInTargetForRemote,
+  configuredSourceControlTokenHosts,
   sourceControlClients,
   withSourceControlHostToken,
 } from "./sourceControlClients.ts";
@@ -10,6 +11,10 @@ import {
 it("replaces or clears a GitHub credential across its HTTPS aliases only", () => {
   const tokens = { "code.example": "", "code.example:443": "legacy", "code.example:8443": "other" };
   expect(sourceControlTokenForHost("github", tokens, "code.example")).toBe("legacy");
+  expect(configuredSourceControlTokenHosts("github", tokens)).toEqual([
+    "code.example",
+    "code.example:8443",
+  ]);
   const updated = withSourceControlHostToken("github", tokens, "Code.Example:443", "replacement");
   expect(updated).toEqual({
     "code.example": "replacement",

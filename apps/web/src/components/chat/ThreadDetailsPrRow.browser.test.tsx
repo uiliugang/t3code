@@ -18,7 +18,7 @@ import { expect, it, vi } from "vite-plus/test";
 const state = vi.hoisted(() => ({
   issuesSupported: false,
   issuePortsSupported: false,
-  linkedIssueDetail: vi.fn(() => null),
+  linkedIssueDetail: vi.fn<(...args: readonly unknown[]) => null>(() => null),
   isDraft: false,
   headSha: "shown-head",
   status: "success" as PullRequestCheck["status"],
@@ -61,7 +61,9 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
   useQuietThreadShell: ((ref: unknown) =>
     ref === null ? null : { branch: null, pullRequests: state.pullRequests }) as never,
 }));
-vi.mock(import("~/state/issues"), () => ({ useLinkedIssueDetail: state.linkedIssueDetail }));
+vi.mock(import("~/state/issues"), () => ({
+  useLinkedIssueDetail: (...args) => state.linkedIssueDetail(...args),
+}));
 
 const queryData = () => ({
   projectId: ProjectId.make("project"),

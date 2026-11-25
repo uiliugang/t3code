@@ -1,12 +1,12 @@
 import { builtInSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
 import {
-  isConfiguredSourceControlToken,
   HostCredentialSettings,
   readSourceControlHostSettings,
   type SourceControlAppSignIn,
   type SourceControlDefinition,
 } from "@t3tools/source-control-core/shared/definition";
 import {
+  isConfiguredSourceControlToken,
   sourceControlTokenHost,
   type ServerSettings,
   type SettingsSecretValue,
