@@ -132,26 +132,31 @@ export const make = Effect.gen(function* () {
     const automatic: IssueSource[] = [];
     const identity = project.repositoryIdentity;
     const originUrl = identity?.origin?.remoteUrl;
-    const locator =
-      originUrl && sourceControlDefinitions.recognizeRemote(originUrl)?.kind === identity?.provider
-        ? { remoteName: "origin", remoteUrl: originUrl }
-        : identity?.locator;
-    const host = locator && sourceControlDefinitions.recognizeRemote(locator.remoteUrl);
-    const handle = yield* providers
-      .resolveHandle({
-        cwd,
-        refresh: refreshRepository,
-        ...(locator && host
-          ? {
-              context: {
-                provider: host,
-                remoteName: locator.remoteName,
-                remoteUrl: locator.remoteUrl,
-              },
-            }
-          : {}),
-      })
-      .pipe(Effect.result);
+    const lookup = (remote?: { readonly remoteName: string; readonly remoteUrl: string }) => {
+      const host = remote && sourceControlDefinitions.recognizeRemote(remote.remoteUrl);
+      return providers
+        .resolveHandle({
+          cwd,
+          refresh: refreshRepository,
+          ...(remote && host
+            ? {
+                context: {
+                  provider: host,
+                  remoteName: remote.remoteName,
+                  remoteUrl: remote.remoteUrl,
+                },
+              }
+            : {}),
+        })
+        .pipe(Effect.result);
+    };
+    const origin = originUrl
+      ? yield* lookup({ remoteName: "origin", remoteUrl: originUrl })
+      : undefined;
+    const handle =
+      origin && (origin._tag === "Failure" || origin.success.provider.kind === identity?.provider)
+        ? origin
+        : yield* lookup(identity?.locator);
     let repository: string | null = null;
     let failure: RequirementIssueError | undefined;
     if (handle._tag === "Success" && handle.success.context) {

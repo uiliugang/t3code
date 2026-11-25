@@ -33,10 +33,13 @@ export interface RepositoryIdentityResolverOptions {
 export class RepositoryIdentityResolver extends Context.Service<
   RepositoryIdentityResolver,
   {
-    readonly resolve: (
+    readonly resolve: <E = never>(
       cwd: string,
-      options?: { readonly refresh?: boolean; readonly fallbackOnUnavailable?: RepositoryIdentity },
-    ) => Effect.Effect<RepositoryIdentity | null>;
+      options?: {
+        readonly refresh?: boolean;
+        readonly onUnavailable?: Effect.Effect<RepositoryIdentity | null, E>;
+      },
+    ) => Effect.Effect<RepositoryIdentity | null, E>;
   }
 >()("t3/project/RepositoryIdentityResolver") {}
 
@@ -230,6 +233,7 @@ class RepositoryIdentityCacheKey extends Data.Class<{
 const gitEnv = (platform: NodeJS.Platform): NodeJS.ProcessEnv => ({
   ...unsetInheritedRepositoryEnv(process.env, platform),
   ...explicitBareRepositoryEnv(process.env, platform),
+  LC_ALL: "C",
 });
 
 const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.resolveCacheKey")(
@@ -245,7 +249,7 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
       Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
       Effect.orElseSucceed(() => true),
     );
-    if (!isFolder) return null;
+    if (!isFolder) return undefined;
 
     // git is always a real executable; cmd shell mode would split spaced paths on re-tokenization.
     const topLevelResult = yield* processRunner
@@ -257,14 +261,14 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
       })
       .pipe(Effect.option);
     if (topLevelResult._tag === "None" || topLevelResult.value.timedOut) {
-      return null;
+      return undefined;
     }
     if (topLevelResult.value.code === 0) {
       // Git appends LF on every platform; a preceding CR belongs to the path.
       const rootPath = topLevelResult.value.stdout.replace(/\n$/, "");
       return rootPath.length > 0
         ? new RepositoryIdentityCacheKey({ rootPath, isBare: false })
-        : null;
+        : undefined;
     }
 
     // Explicit Git directories preserve safe.bareRepository=explicit for both layouts.
@@ -302,7 +306,7 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
           timeoutBehavior: "timedOutResult",
         })
         .pipe(Effect.option);
-      if (bareResult._tag === "None" || bareResult.value.timedOut) return null;
+      if (bareResult._tag === "None" || bareResult.value.timedOut) return undefined;
       if (bareResult.value.code !== 0) continue;
 
       const [isBare, ...rootLines] = bareResult.value.stdout.split("\n");
@@ -312,7 +316,9 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         ? new RepositoryIdentityCacheKey({ rootPath, isBare: true })
         : null;
     }
-    return null;
+    return topLevelResult.value.stderr.startsWith("fatal: not a git repository (or ")
+      ? null
+      : undefined;
   },
 );
 
@@ -339,7 +345,9 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   if (
     remoteResult._tag === "None" ||
     remoteResult.value.code !== 0 ||
-    remoteResult.value.timedOut
+    remoteResult.value.timedOut ||
+    remoteResult.value.stdoutTruncated ||
+    remoteResult.value.stdoutInvalidUtf8
   ) {
     return undefined;
   }
@@ -382,7 +390,10 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
       onFailure: () => Duration.zero,
     });
 
-  const repositoryRootCache = yield* Cache.makeWith<string, RepositoryIdentityCacheKey | null>(
+  const repositoryRootCache = yield* Cache.makeWith<
+    string,
+    RepositoryIdentityCacheKey | null | undefined
+  >(
     (cwd) =>
       resolveRepositoryIdentityCacheKey(cwd).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
@@ -411,10 +422,13 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
     function* (cwd, options) {
       if (options?.refresh) yield* Cache.invalidate(repositoryRootCache, cwd);
       const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
-      if (cacheKey === null) return options?.fallbackOnUnavailable ?? null;
-      if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
-      const identity = yield* Cache.get(repositoryIdentityCache, cacheKey);
-      return identity === undefined ? (options?.fallbackOnUnavailable ?? null) : identity;
+      if (cacheKey !== undefined) {
+        if (cacheKey === null) return null;
+        if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
+        const identity = yield* Cache.get(repositoryIdentityCache, cacheKey);
+        if (identity !== undefined) return identity;
+      }
+      return yield* options?.onUnavailable ?? Effect.succeed(null);
     },
   );
 

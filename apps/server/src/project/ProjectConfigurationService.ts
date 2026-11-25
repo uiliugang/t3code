@@ -230,21 +230,18 @@ const make = Effect.gen(function* () {
                   root.sourcePath === project.workspaceRoot ? project.repositoryIdentity : null;
                 const resolved = yield* identities.resolve(root.sourcePath, {
                   refresh,
-                  ...(refresh && snapshotIdentity
-                    ? { fallbackOnUnavailable: snapshotIdentity }
+                  ...(refresh
+                    ? {
+                        onUnavailable: Effect.fail(
+                          new ProjectImportError({
+                            operation: "export",
+                            cause: `Could not inspect the repository for ${project.title}. Restore its checkout or Git configuration before exporting.`,
+                          }),
+                        ),
+                      }
                     : {}),
                 });
                 const identity = resolved ?? (!refresh ? snapshotIdentity : null);
-                if (refresh && !resolved)
-                  yield* fs.access(root.sourcePath, { readable: true }).pipe(
-                    Effect.mapError(
-                      () =>
-                        new ProjectImportError({
-                          operation: "export",
-                          cause: `Could not read the workspace for ${project.title}. Restore its checkout before exporting.`,
-                        }),
-                    ),
-                  );
                 if (root.id === primaryRootId) repositoryKind = identity?.provider;
                 const directory = identity?.rootPath
                   ? relativeDirectory(

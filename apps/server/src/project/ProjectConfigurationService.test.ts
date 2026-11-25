@@ -12,7 +12,6 @@ import {
   type Project,
   type ProjectImportDefinition,
   type ProjectImportSnapshot,
-  type RepositoryIdentity,
   type IssueProjectSources,
   type SourceControlCloneRepositoryInput,
 } from "@t3tools/contracts";
@@ -30,6 +29,7 @@ import * as Struct from "effect/Struct";
 import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import * as ProcessRunner from "../processRunner.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import { TextGenerators } from "../textGeneration/TextGenerators.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -81,6 +81,7 @@ const cloneError = (reason?: "authentication_failed") =>
 
 const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* (options?: {
   issueProjectSources?: typeof IssueProjectSources.Type;
+  identities?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"];
   clone?: (
     input: SourceControlCloneRepositoryInput,
     attempt: number,
@@ -92,8 +93,6 @@ const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* 
   const attempts: SourceControlCloneRepositoryInput[] = [];
   const registered = new Map<ProjectId, Project>();
   const rejectedCreates = new Set<string>();
-  const knownIdentities = new Map<string, RepositoryIdentity>();
-  const cachedIdentities = new Map<string, RepositoryIdentity>();
   const projectLayer = Layer.mock(ProjectService.ProjectService)({
     snapshot: Effect.sync(() => ({
       projects: [...registered.values()],
@@ -170,17 +169,8 @@ const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* 
       }),
   });
   const identityLayer = Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
-    resolve: (cwd, options) =>
+    resolve: (cwd) =>
       Effect.gen(function* () {
-        if (options?.refresh) cachedIdentities.delete(cwd);
-        if (!(yield* fs.exists(cwd))) return options?.fallbackOnUnavailable ?? null;
-        const cached = cachedIdentities.get(cwd);
-        if (cached) return cached;
-        const known = knownIdentities.get(cwd);
-        if (known) {
-          cachedIdentities.set(cwd, known);
-          return known;
-        }
         const marker = path.join(cwd, "fixture.remote");
         if (!(yield* fs.exists(marker))) return null;
         const remote = yield* fs.readFileString(marker);
@@ -196,13 +186,17 @@ const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* 
     Layer.provide(Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([]) })),
     Layer.provide(projectLayer),
     Layer.provide(repositoriesLayer),
-    Layer.provide(identityLayer),
+    Layer.provide(
+      options?.identities
+        ? Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, options.identities)
+        : identityLayer,
+    ),
     Layer.provideMerge(
       ServerSettings.layerTest({ issueProjectSources: options?.issueProjectSources ?? {} }),
     ),
     Layer.provideMerge(ServerConfig.layerTest(baseDir, baseDir)),
   );
-  return { layer, baseDir, attempts, registered, knownIdentities };
+  return { layer, baseDir, attempts, registered };
 });
 
 const snapshot = Effect.fn("test.ProjectConfigurationService.snapshot")(function* () {
@@ -523,8 +517,27 @@ describe("ProjectConfigurationService", () => {
       const projectId = ProjectId.make("export-source");
       const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
       const github = { provider: "github", host: "github.com", scope: "team/restored" } as const;
-      const test = yield* harness({ issueProjectSources: { [projectId]: [mep, github] } });
       const fs = yield* FileSystem.FileSystem;
+      const emptyConfig = yield* fs.makeTempFileScoped();
+      const system = yield* ProcessRunner.ProcessRunner.pipe(Effect.provide(ProcessRunner.layer));
+      const runner = ProcessRunner.ProcessRunner.of({
+        run: (input) =>
+          system.run({
+            ...input,
+            env: { ...input.env, GIT_CONFIG_GLOBAL: emptyConfig, GIT_CONFIG_NOSYSTEM: "1" },
+          }),
+      });
+      const identities = yield* RepositoryIdentityResolver.make().pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, runner),
+      );
+      const git = (cwd: string, ...args: string[]) =>
+        runner
+          .run({ command: "git", args: ["-C", cwd, ...args] })
+          .pipe(Effect.tap((result) => Effect.sync(() => expect(result.code).toBe(0))));
+      const test = yield* harness({
+        issueProjectSources: { [projectId]: [mep, github] },
+        identities,
+      });
       const rootPath = `${test.baseDir}/source`;
       const webPath = `${test.baseDir}/source-link/web`;
       const apiPath = `${test.baseDir}/api`;
@@ -575,16 +588,12 @@ describe("ProjectConfigurationService", () => {
         updatedAt: "2026-10-29T00:00:00.000Z",
         deletedAt: null,
       });
-      for (const [sourcePath, repositoryRoot, remoteUrl] of [
-        [webPath, rootPath, "https://user:secret@github.com/team/web.git?token=secret"],
-        [apiPath, apiPath, "git@code.example.test:team/api.git"],
-      ]) {
-        test.knownIdentities.set(sourcePath!, {
-          canonicalKey: "fixture",
-          provider: SourceControlProviderKind.make(sourcePath === webPath ? "github" : "unknown"),
-          rootPath: yield* fs.realPath(repositoryRoot!),
-          locator: { source: "git-remote", remoteName: "origin", remoteUrl: remoteUrl! },
-        });
+      for (const [repositoryRoot, remoteUrl] of [
+        [rootPath, "https://user:secret@github.com/team/web.git?token=secret"],
+        [apiPath, "git@code.example.test:team/api.git"],
+      ] as const) {
+        yield* git(repositoryRoot, "init");
+        yield* git(repositoryRoot, "remote", "add", "origin", remoteUrl);
       }
       yield* Effect.gen(function* () {
         const service = yield* ProjectConfigurationService.ProjectConfigurationService;
@@ -599,21 +608,25 @@ describe("ProjectConfigurationService", () => {
         expect(roots[0]!.setupScript).toEqual(setupScript);
         expect(roots[1]!.defaultBaseRef).toBe("develop");
         expect(roots.every((root) => !("sourcePath" in root))).toBe(true);
-        const previous = test.knownIdentities.get(webPath)!;
+        const previous = (yield* identities.resolve(webPath))!;
+        const config = `${rootPath}/.git/config`;
+        const contents = yield* fs.readFileString(config);
+        yield* fs.writeFileString(config, "[invalid\n");
+        const unreadable = yield* service
+          .exportProjects({ projectIds: [projectId] })
+          .pipe(Effect.flip);
+        expect(unreadable.operation).toBe("export");
+        yield* fs.writeFileString(config, contents);
         test.registered.set(projectId, {
           ...test.registered.get(projectId)!,
           repositoryIdentity: previous,
         });
-        test.knownIdentities.set(webPath, {
-          ...previous,
-          provider: SourceControlProviderKind.make("meituan"),
-          locator: { ...previous.locator, remoteUrl: "https://git.sankuai.com/team/web.git" },
-        });
+        yield* git(rootPath, "remote", "set-url", "origin", "https://git.sankuai.com/team/web.git");
         const switched = (yield* service.exportProjects({ projectIds: [projectId] }))[0]!
           .configuration;
         expect(switched.issueSources).toEqual([mep]);
         expect(switched.workspace.roots[0]?.remoteUrl).toBe("https://git.sankuai.com/team/web.git");
-        test.knownIdentities.delete(webPath);
+        yield* git(rootPath, "remote", "remove", "origin");
         const removed = (yield* service.exportProjects({ projectIds: [projectId] }))[0]!
           .configuration;
         expect(removed.issueSources).toEqual([mep]);
