@@ -1,12 +1,21 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  EnvironmentId,
+  type ServerConfig as ClientConfig,
+  WS_METHODS,
+  WsRpcGroup,
+} from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -16,9 +25,60 @@ import * as Executor from "./DaxiangApprovalExecutor.ts";
 import * as Approval from "./DaxiangApprovalService.ts";
 import * as Messages from "./DaxiangMessageService.ts";
 import * as ServerBrowser from "../preview/ServerBrowser.ts";
+import {
+  AVAILABLE_CONNECTION_STATE,
+  type PreparedConnection,
+  RelayConnectionTarget,
+} from "../../../../packages/client-runtime/src/connection/model.ts";
+import { EnvironmentSupervisor } from "../../../../packages/client-runtime/src/connection/supervisor.ts";
+import {
+  subscribe,
+  subscribeDaxiangApproval,
+} from "../../../../packages/client-runtime/src/rpc/client.ts";
+import type { RpcSession } from "../../../../packages/client-runtime/src/rpc/session.ts";
+
+const approvalClients = Effect.fn("TestApproval.clients")(function* (
+  service: Approval.DaxiangApprovalService["Service"],
+) {
+  const tag = WS_METHODS.daxiangApprovalSubscribe;
+  const rpc = WsRpcGroup.requests.get(tag);
+  if (rpc?._tag !== tag) throw new Error("Missing DaXiang approval RPC");
+  const codec = Schema.toCodecJson(rpc.payloadSchema);
+  const client = {
+    [tag]: (request: typeof codec.Type) =>
+      service.subscribe(Schema.decodeSync(codec)(Schema.encodeSync(codec)(request)).includeKms),
+  };
+  const session = yield* SubscriptionRef.make<Option.Option<RpcSession>>(
+    Option.some({
+      client: client as unknown as RpcSession["client"],
+      initialConfig: Effect.succeed({
+        environment: { capabilities: { daxiangApprovalMonitor: true } },
+      } as ClientConfig),
+      subscribeServerConfig: () => Stream.die("Unexpected config subscription"),
+      ready: Effect.void,
+      probe: Effect.void,
+      inboundFrames: Effect.succeed(0),
+      closed: Effect.never,
+    }),
+  );
+  const supervisor = Layer.mock(EnvironmentSupervisor)({
+    session,
+    state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
+    prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
+    target: new RelayConnectionTarget({
+      environmentId: EnvironmentId.make("offline"),
+      label: "Offline",
+    }),
+  });
+  return {
+    current: subscribeDaxiangApproval({}).pipe(Stream.provide(supervisor)),
+    legacy: subscribe(tag, {}).pipe(Stream.provide(supervisor)),
+    optedOut: subscribeDaxiangApproval({ includeKms: false }).pipe(Stream.provide(supervisor)),
+  };
+});
 
 it.effect.each(["unsupported launcher", "broken patched copy"])(
-  "uses current approval settings for every link after falling back from %s",
+  "applies current approval settings and sends KMS cards only to opted-in clients after falling back from %s",
   (failure) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -72,18 +132,23 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
         const opened: string[] = [];
         const watchArgs: ReadonlyArray<string>[] = [];
         const kmsUrl = "https://kms.mws.sankuai.com/key-management/workflow?uid=42";
-        const event = JSON.stringify({
+        const envelope = {
           event: "message",
-          msgId: "message-1",
           sessionType: "chat",
           sessionId: "chat-1",
           fromUid: "sender",
-          body: {
-            link: kmsUrl,
-            content:
-              "https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
+        };
+        const cards = [
+          { ...envelope, msgId: "kms-card", body: { link: kmsUrl, content: kmsUrl } },
+          {
+            ...envelope,
+            msgId: "pr-card",
+            body: {
+              content:
+                "https://dev.sankuai.com/code/repo-detail/group/repo/pr/1/diff https://dev.sankuai.com/code/repo-detail/group/repo/pr/2/diff",
+            },
           },
-        });
+        ];
         const context = yield* Layer.build(Approval.layer).pipe(
           Effect.provide(Layer.mock(ServerBrowser.ServerBrowser)({})),
           Effect.provideService(ServerSettings.ServerSettingsService, settings),
@@ -135,7 +200,9 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
                 watchArgs.push(command.args.map(String));
                 return ChildProcessSpawner.makeHandle({
                   pid: ChildProcessSpawner.ProcessId(123),
-                  stdout: Stream.make(new TextEncoder().encode(`${event}\n`)),
+                  stdout: Stream.fromIterable(cards).pipe(
+                    Stream.map((card) => new TextEncoder().encode(`${JSON.stringify(card)}\n`)),
+                  ),
                   stderr: Stream.empty,
                   all: Stream.empty,
                   exitCode: Effect.never,
@@ -154,7 +221,8 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
         );
         const service = Context.get(context, Approval.DaxiangApprovalService);
         yield* service.start;
-        const snapshot = yield* service.subscribe(true).pipe(
+        const clients = yield* approvalClients(service);
+        const snapshot = yield* clients.current.pipe(
           Stream.filter(
             (state) =>
               state.records.some((record) => record.title === "group/repo #2") ||
@@ -183,11 +251,13 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
             url: kmsUrl,
             outcome: "opened",
           });
-          const legacy = yield* service.subscribe().pipe(Stream.runHead);
-          assert.deepStrictEqual(
-            legacy._tag === "Some" ? legacy.value.records.map((record) => record.kind) : [],
-            ["pr", "pr"],
-          );
+          for (const ordinaryOnly of [clients.legacy, clients.optedOut]) {
+            const state = yield* ordinaryOnly.pipe(Stream.runHead);
+            assert.deepStrictEqual(
+              Option.getOrThrow(state).records,
+              snapshot.value.records.slice(0, 2),
+            );
+          }
         }
       }),
     ).pipe(Effect.provide(NodeServices.layer)),

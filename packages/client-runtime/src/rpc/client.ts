@@ -625,7 +625,7 @@ export const subscribeDaxiangApproval = (
 ) =>
   subscribeDynamicMapped(
     WS_METHODS.daxiangApprovalSubscribe,
-    () => Effect.succeed({ ...input, input: { includeKms: true } }),
+    () => Effect.succeed({ ...input, includeKms: input.includeKms ?? true }),
     (session, _input, stream) =>
       Stream.unwrap(
         sessionCapabilities(session).pipe(
