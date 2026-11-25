@@ -1,13 +1,20 @@
+export interface DeviceMediaSocketEvents {
+  open: Event;
+  message: MessageEvent;
+  close: CloseEvent;
+  error: Parameters<NonNullable<WebSocket["onerror"]>>[0];
+}
+
 export interface DeviceMediaSocket {
   readonly readyState: number;
-  binaryType: BinaryType;
-  onopen: ((event: Event) => void) | null;
-  onmessage: ((event: MessageEvent) => void) | null;
-  onclose: ((event: CloseEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
-  addEventListener<K extends keyof WebSocketEventMap>(
+  binaryType: WebSocket["binaryType"];
+  onopen: ((event: DeviceMediaSocketEvents["open"]) => void) | null;
+  onmessage: ((event: DeviceMediaSocketEvents["message"]) => void) | null;
+  onclose: ((event: DeviceMediaSocketEvents["close"]) => void) | null;
+  onerror: ((event: DeviceMediaSocketEvents["error"]) => void) | null;
+  addEventListener<K extends keyof DeviceMediaSocketEvents>(
     type: K,
-    listener: (event: WebSocketEventMap[K]) => void,
+    listener: (event: DeviceMediaSocketEvents[K]) => void,
   ): void;
   send(data: string | Uint8Array<ArrayBuffer>): void;
   close(): void;

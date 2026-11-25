@@ -1,6 +1,7 @@
 import { fetchNoiseHttp } from "@t3tools/shared/noiseHttpFetch";
 import type {
   DeviceMediaSocket,
+  DeviceMediaSocketEvents,
   DeviceMediaTransport,
 } from "@t3tools/client-runtime/device/hub-access";
 import {
@@ -73,7 +74,7 @@ function mediaFetch<E>(
 
 class BrowserMediaSocket<E> implements DeviceMediaSocket {
   readyState: number = WebSocket.CONNECTING;
-  binaryType: BinaryType = "arraybuffer";
+  binaryType: DeviceMediaSocket["binaryType"] = "arraybuffer";
   onopen: DeviceMediaSocket["onopen"] = null;
   onclose: DeviceMediaSocket["onclose"] = null;
   onmessage: DeviceMediaSocket["onmessage"] = null;
@@ -126,9 +127,9 @@ class BrowserMediaSocket<E> implements DeviceMediaSocket {
     void Effect.runPromise(Effect.scoped(exchange), { signal }).catch(() => this.fail());
   }
 
-  addEventListener<K extends keyof WebSocketEventMap>(
+  addEventListener<K extends keyof DeviceMediaSocketEvents>(
     type: K,
-    listener: (event: WebSocketEventMap[K]) => void,
+    listener: (event: DeviceMediaSocketEvents[K]) => void,
   ) {
     this.events.addEventListener(type, listener as EventListener);
   }
