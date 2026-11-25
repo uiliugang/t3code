@@ -831,16 +831,24 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       const path = yield* Path.Path;
       const sharedDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-overlap-" });
       const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-overlap-dest-" });
-      const leftoverSnapshot = path.join(destDir, "userdata", "statev2.sqlite.migrate-dev-db-tmp");
-      yield* fs.makeDirectory(path.dirname(leftoverSnapshot), { recursive: true });
-      yield* fs.writeFileString(leftoverSnapshot, "not a real db");
-
-      const error = yield* runMigrateDevDb(
-        { baseDir: destDir, source: leftoverSnapshot, projects: 5, threadsPerProject: 10 },
-        { sharedHome: sharedDir },
-      ).pipe(Effect.flip);
-      assert.equal(error._tag, "MigrateDevDbSourceIsDestinationError");
-      assert.equal(yield* fs.exists(leftoverSnapshot), true);
+      yield* fs.makeDirectory(path.join(destDir, "userdata"), { recursive: true });
+      for (const fileName of [
+        "statev2.sqlite",
+        "statev2.sqlite-wal",
+        "statev2.sqlite-shm",
+        "statev2.sqlite.migrate-dev-db-tmp",
+        "statev2.sqlite.migrate-dev-db-tmp-wal",
+        "statev2.sqlite.migrate-dev-db-tmp-shm",
+      ]) {
+        const candidate = path.join(destDir, "userdata", fileName);
+        yield* fs.writeFileString(candidate, `backup-bytes-${fileName}`);
+        const error = yield* runMigrateDevDb(
+          { baseDir: destDir, source: candidate, projects: 5, threadsPerProject: 10 },
+          { sharedHome: sharedDir },
+        ).pipe(Effect.flip);
+        assert.equal(error._tag, "MigrateDevDbSourceIsDestinationError", fileName);
+        assert.equal(yield* fs.readFileString(candidate), `backup-bytes-${fileName}`);
+      }
     }),
   );
 
@@ -1045,6 +1053,57 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         ).pipe(Effect.flip);
         assert.equal(refusedSharedStateDir._tag, "MigrateDevDbSharedHomeError");
         assert.equal(yield* fs.readFileString(externalLiveDb), "cli-ambient-live-db-bytes");
+
+        // Hard link (same dev:ino, distinct canonical path) to a protected live database must be refused.
+        const hardLinkDestHome = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-hardlink-dest-",
+        });
+        const hardLinkedDestDb = path.join(hardLinkDestHome, "userdata", "statev2.sqlite");
+        yield* fs.makeDirectory(path.dirname(hardLinkedDestDb), { recursive: true });
+        yield* fs.link(externalLiveDb, hardLinkedDestDb);
+        const refusedHardLinkedDest = yield* runMigrateDevDb(
+          { baseDir: hardLinkDestHome, source, projects: 5, threadsPerProject: 2 },
+          { sharedHome: sourceDir, ambientHome: cliAmbientHome },
+        ).pipe(Effect.flip);
+        assert.equal(refusedHardLinkedDest._tag, "MigrateDevDbSharedHomeError");
+        assert.equal(yield* fs.readFileString(externalLiveDb), "cli-ambient-live-db-bytes");
+
+        // An unreadable or dangling protected `T3CODE_HOME` must fail closed instead of falling back lexically.
+        const danglingAmbientParent = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-unverified-ambient-",
+        });
+        const danglingAmbientLink = path.join(danglingAmbientParent, "ambient-link");
+        yield* fs.symlink(path.join(danglingAmbientParent, "missing-ambient"), danglingAmbientLink);
+        const unverifiedDestHome = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-unverified-dest-",
+        });
+        const refusedUnverifiedProtected = yield* runMigrateDevDb(
+          { baseDir: unverifiedDestHome, source, projects: 5, threadsPerProject: 2 },
+          { sharedHome: sourceDir, ambientHome: danglingAmbientLink },
+        ).pipe(Effect.flip);
+        assert.equal(refusedUnverifiedProtected._tag, "MigrateDevDbSharedHomeError");
+
+        // Symlink to an existing standalone file at destination or snapshot filename must be refused without unlinking.
+        const standaloneTargetDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-standalone-file-",
+        });
+        const standaloneFile = path.join(standaloneTargetDir, "existing-file.sqlite");
+        yield* fs.writeFileString(standaloneFile, "standalone-existing-file-bytes");
+        for (const fileName of ["statev2.sqlite", "statev2.sqlite.migrate-dev-db-tmp"]) {
+          const symlinkedFileHome = yield* fs.makeTempDirectoryScoped({
+            prefix: "migrate-dev-db-file-symlink-dest-",
+          });
+          const linkAtDest = path.join(symlinkedFileHome, "userdata", fileName);
+          yield* fs.makeDirectory(path.dirname(linkAtDest), { recursive: true });
+          yield* fs.symlink(standaloneFile, linkAtDest);
+          const refusedFileSymlink = yield* runMigrateDevDb(
+            { baseDir: symlinkedFileHome, source, projects: 5, threadsPerProject: 2 },
+            { sharedHome: sourceDir },
+          ).pipe(Effect.flip);
+          assert.equal(refusedFileSymlink._tag, "MigrateDevDbSharedHomeError", fileName);
+          assert.equal((yield* fs.lstat(linkAtDest)).type, "SymbolicLink");
+          assert.equal(yield* fs.readFileString(standaloneFile), "standalone-existing-file-bytes");
+        }
 
         // Dangling symlink at destination `statev2.sqlite` or `--base-dir link/.` must fail closed without unlinking.
         const danglingDestHome = yield* fs.makeTempDirectoryScoped({

@@ -1466,7 +1466,7 @@ function makeLocalCommandHarness(input: {
         ),
   );
   const writeIfRunCurrent = vi.fn<EventSink.EventSinkV2["Service"]["writeIfRunCurrent"]>(
-    ({ events: incoming, activeAttemptId, expectedStatus }) =>
+    ({ runId: targetRunId, events: incoming, activeAttemptId, expectedStatus }) =>
       "writeFailure" in input
         ? Effect.fail(
             new EventSink.EventSinkWriteError({
@@ -1475,7 +1475,7 @@ function makeLocalCommandHarness(input: {
             }),
           )
         : Effect.sync(() => {
-            const current = projection.runs.find((candidate) => candidate.id === runId);
+            const current = projection.runs.find((candidate) => candidate.id === targetRunId);
             const committed =
               current !== undefined &&
               current.activeAttemptId === activeAttemptId &&
@@ -1655,7 +1655,9 @@ function makeLocalCommandHarness(input: {
           getRuntimeRecoveryProjection,
           getRun,
           getTurnStartHistory: () =>
-            input.sideChat !== undefined || input.previousTurn !== undefined
+            input.sideChat !== undefined ||
+            input.previousTurn !== undefined ||
+            input.failClearRecreatedOnce === true
               ? Effect.succeed([])
               : Effect.fail(
                   new ProjectionStore.ProjectionStoreReadError({
@@ -2892,7 +2894,6 @@ effectIt.effect(
         failClearRecreatedOnce: true,
         runSetup,
       });
-      const initialProjection = harness.projection();
 
       yield* Effect.gen(function* () {
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
@@ -2911,12 +2912,100 @@ effectIt.effect(
         },
       ]);
 
-      // Once the transient clear failure passes, a subsequent explicit user start clears it and proceeds.
-      harness.setProjection(initialProjection);
-      yield* harness.startWithRetry;
+      // Keep the failed run in history and dispatch a brand-new user run (`runId: nextRunId`):
+      // once the transient clear failure passes, the new run runs setup, clears pending state, and enters `running`.
+      const failedProjection = harness.projection();
+      const firstRun = failedProjection.runs[0]!;
+      const firstAttempt = failedProjection.attempts[0]!;
+      const firstNode = failedProjection.nodes[0]!;
+      const firstMessage = failedProjection.messages[0]!;
+      const firstScope = failedProjection.checkpointScopes[0]!;
+      const nextRunId = RunId.make("run-after-clear-failure");
+      const nextAttemptId = RunAttemptId.make("attempt-after-clear-failure");
+      const nextNodeId = NodeId.make("root-after-clear-failure");
+      const nextMessageId = MessageId.make("message-after-clear-failure");
+      const nextScopeId = CheckpointScopeId.make("scope-after-clear-failure");
+      harness.setProjection({
+        ...failedProjection,
+        runs: [
+          ...failedProjection.runs,
+          {
+            ...firstRun,
+            id: nextRunId,
+            ordinal: firstRun.ordinal + 1,
+            userMessageId: nextMessageId,
+            rootNodeId: nextNodeId,
+            activeAttemptId: nextAttemptId,
+            status: "starting",
+            startedAt: null,
+            completedAt: null,
+          },
+        ],
+        attempts: [
+          ...failedProjection.attempts,
+          {
+            ...firstAttempt,
+            id: nextAttemptId,
+            runId: nextRunId,
+            rootNodeId: nextNodeId,
+            attemptOrdinal: 1,
+            providerTurnId: null,
+            status: "pending",
+            startedAt: null,
+            completedAt: null,
+          },
+        ],
+        nodes: [
+          ...failedProjection.nodes,
+          {
+            ...firstNode,
+            id: nextNodeId,
+            runId: nextRunId,
+            rootNodeId: nextNodeId,
+            checkpointScopeId: nextScopeId,
+            providerTurnId: null,
+            status: "pending",
+            startedAt: null,
+            completedAt: null,
+          },
+        ],
+        messages: [
+          ...failedProjection.messages,
+          {
+            ...firstMessage,
+            id: nextMessageId,
+            runId: nextRunId,
+            nodeId: nextNodeId,
+            text: "Retry after fixing disk",
+          },
+        ],
+        checkpointScopes: [
+          ...failedProjection.checkpointScopes,
+          {
+            ...firstScope,
+            id: nextScopeId,
+            runId: nextRunId,
+            nodeId: nextNodeId,
+          },
+        ],
+      });
+
+      yield* Effect.gen(function* () {
+        yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({
+          threadId: failedProjection.thread.id,
+          runId: nextRunId,
+          willRetry: true,
+        });
+      }).pipe(Effect.provide(harness.layer));
+
       expect(runSetup).toHaveBeenCalledTimes(2);
       expect(harness.open).toHaveBeenCalledTimes(1);
-      expect(harness.projection().runs.at(-1)?.status).toBe("running");
+      expect(
+        harness.projection().runs.map((candidate) => [candidate.id, candidate.status]),
+      ).toEqual([
+        [firstRun.id, "failed"],
+        [nextRunId, "running"],
+      ]);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 

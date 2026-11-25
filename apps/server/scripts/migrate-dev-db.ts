@@ -290,10 +290,15 @@ interface KeptProject {
   readonly threads: number;
 }
 
+const DATABASE_FILE_SUFFIXES = ["", "-wal", "-shm"] as const;
+
+const databaseFamilyPaths = (databasePath: string): ReadonlyArray<string> =>
+  DATABASE_FILE_SUFFIXES.map((suffix) => `${databasePath}${suffix}`);
+
 const removeDatabaseFiles = Effect.fn("removeDatabaseFiles")(function* (databasePath: string) {
   const fs = yield* FileSystem.FileSystem;
-  for (const suffix of ["", "-wal", "-shm"]) {
-    yield* fs.remove(`${databasePath}${suffix}`).pipe(Effect.orElseSucceed(() => undefined));
+  for (const candidate of databaseFamilyPaths(databasePath)) {
+    yield* fs.remove(candidate).pipe(Effect.orElseSucceed(() => undefined));
   }
 });
 
@@ -640,7 +645,7 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
     Option.isNone(targetIdentity) ||
     rawIdentity.value !== targetIdentity.value;
   const liveIdentities = yield* Effect.forEach(
-    liveDatabases.flatMap((live) => [live, `${live}-wal`, `${live}-shm`]),
+    liveDatabases.flatMap(databaseFamilyPaths),
     identity,
   );
   if (
@@ -905,49 +910,98 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const displayDatabasePath = path.join(displayBaseDir, "userdata", "statev2.sqlite");
   const snapshotPath = `${databasePath}.migrate-dev-db-tmp`;
 
+  const statIdentity = (file: string) =>
+    fs.stat(file).pipe(
+      Effect.map((info) => ({
+        status: "verified" as const,
+        identity: Option.map(info.ino, (ino) => `${info.dev}:${ino}`),
+      })),
+      Effect.catchReason("PlatformError", "NotFound", () =>
+        Effect.succeed({ status: "missing" as const, identity: Option.none<string>() }),
+      ),
+      Effect.orElseSucceed(() => ({
+        status: "unverified" as const,
+        identity: Option.none<string>(),
+      })),
+    );
+
+  const rawSourceInfo = yield* statIdentity(rawSourcePath);
   const resolvedSourcePath = Option.getOrUndefined(
     yield* nativeRealPath(rawSourcePath).pipe(Effect.option),
   );
-  if (resolvedSourcePath === undefined || !(yield* fs.exists(resolvedSourcePath))) {
+  if (rawSourceInfo.status === "missing") {
     return yield* new MigrateDevDbSourceMissingError({
       sourcePath: input.source ?? path.resolve(rawSourcePath),
     });
   }
+  if (rawSourceInfo.status === "unverified" || resolvedSourcePath === undefined) {
+    return yield* new MigrateDevDbSharedHomeError();
+  }
   const sourcePath = resolvedSourcePath;
+  const sourceIdentity = (yield* statIdentity(sourcePath)).identity;
   const protectedHomes = [sharedHome, ...(ambientHome ? [path.resolve(ambientHome)] : [])];
   const protectedStateDirs = protectedHomes.map((home) => path.join(home, "userdata"));
-  const protectedDatabases = protectedStateDirs.map((dir) => path.join(dir, "statev2.sqlite"));
-  const resolveProtectedPath = (file: string) =>
-    resolveFilesystemPath(file).pipe(
-      Effect.map((resolved) => Option.getOrElse(resolved, () => path.resolve(file))),
-    );
+  const protectedDatabases = protectedStateDirs.flatMap((dir) =>
+    databaseFamilyPaths(path.join(dir, "statev2.sqlite")),
+  );
+  const destinationRewriteFiles = [
+    ...databaseFamilyPaths(databasePath),
+    ...databaseFamilyPaths(snapshotPath),
+  ];
   const [
-    canonicalProtectedHomes,
-    canonicalProtectedStateDirs,
-    canonicalProtectedDatabases,
+    protectedHomeOptions,
+    protectedStateDirOptions,
+    protectedDatabaseOptions,
+    protectedHomeStats,
+    protectedStateDirStats,
+    protectedDatabaseStats,
     stateDirOption,
-    destinationDbOption,
-    snapshotDbOption,
+    destinationFileOptions,
+    baseDirStat,
+    stateDirStat,
+    destinationFileStats,
   ] = yield* Effect.all([
-    Effect.forEach(protectedHomes, resolveProtectedPath),
-    Effect.forEach(protectedStateDirs, resolveProtectedPath),
-    Effect.forEach(protectedDatabases, resolveProtectedPath),
+    Effect.forEach(protectedHomes, resolveFilesystemPath),
+    Effect.forEach(protectedStateDirs, resolveFilesystemPath),
+    Effect.forEach(protectedDatabases, resolveFilesystemPath),
+    Effect.forEach(protectedHomes, statIdentity),
+    Effect.forEach(protectedStateDirs, statIdentity),
+    Effect.forEach(protectedDatabases, statIdentity),
     resolveFilesystemPath(stateDir),
-    resolveFilesystemPath(databasePath),
-    resolveFilesystemPath(snapshotPath),
+    Effect.forEach(destinationRewriteFiles, resolveFilesystemPath),
+    statIdentity(canonicalBaseDir),
+    statIdentity(stateDir),
+    Effect.forEach(destinationRewriteFiles, statIdentity),
   ]);
   if (
+    protectedHomeOptions.some(Option.isNone) ||
+    protectedStateDirOptions.some(Option.isNone) ||
+    protectedDatabaseOptions.some(Option.isNone) ||
+    protectedHomeStats.some(({ status }) => status === "unverified") ||
+    protectedStateDirStats.some(({ status }) => status === "unverified") ||
+    protectedDatabaseStats.some(({ status }) => status === "unverified") ||
     Option.isNone(stateDirOption) ||
-    Option.isNone(destinationDbOption) ||
-    Option.isNone(snapshotDbOption)
+    destinationFileOptions.some(Option.isNone) ||
+    baseDirStat.status === "unverified" ||
+    stateDirStat.status === "unverified" ||
+    destinationFileStats.some(({ status }) => status === "unverified")
   ) {
     return yield* new MigrateDevDbSharedHomeError();
   }
+  const canonicalProtectedHomes = protectedHomeOptions.map((option) => Option.getOrThrow(option));
+  const canonicalProtectedStateDirs = protectedStateDirOptions.map((option) =>
+    Option.getOrThrow(option),
+  );
+  const canonicalProtectedDatabases = protectedDatabaseOptions.map((option) =>
+    Option.getOrThrow(option),
+  );
   const resolvedStateDir = stateDirOption.value;
-  const resolvedDestinationDb = destinationDbOption.value;
-  const resolvedSnapshotDb = snapshotDbOption.value;
-  // Also reject any symlink at the destination or snapshot filename itself (e.g. a symlink to a standalone seed).
-  for (const rawFile of [databasePath, snapshotPath]) {
+  const resolvedDestinationFiles = destinationFileOptions.map((option) =>
+    Option.getOrThrow(option),
+  );
+  const resolvedDestinationDb = resolvedDestinationFiles[0]!;
+  // Reject any symlink at the destination or snapshot database / WAL / SHM filenames themselves.
+  for (const rawFile of destinationRewriteFiles) {
     const rawInfo = yield* fs.lstat(rawFile).pipe(
       Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null)),
       Effect.option,
@@ -956,6 +1010,14 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
       return yield* new MigrateDevDbSharedHomeError();
     }
   }
+  const sharesIdentity = (
+    target: Option.Option<string>,
+    candidates: ReadonlyArray<{ readonly identity: Option.Option<string> }>,
+  ) =>
+    Option.isSome(target) &&
+    candidates.some(
+      ({ identity: candidate }) => Option.isSome(candidate) && candidate.value === target.value,
+    );
   const stateDirHome =
     path.basename(resolvedStateDir).toLowerCase() === "userdata"
       ? path.dirname(resolvedStateDir)
@@ -967,8 +1029,13 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   if (
     canonicalProtectedHomes.some((home) => samePath(home, canonicalBaseDir)) ||
     canonicalProtectedStateDirs.some((dir) => samePath(dir, resolvedStateDir)) ||
-    canonicalProtectedDatabases.some(
-      (live) => samePath(live, resolvedDestinationDb) || samePath(live, resolvedSnapshotDb),
+    canonicalProtectedDatabases.some((live) =>
+      resolvedDestinationFiles.some((dest) => samePath(live, dest)),
+    ) ||
+    sharesIdentity(baseDirStat.identity, protectedHomeStats) ||
+    sharesIdentity(stateDirStat.identity, protectedStateDirStats) ||
+    destinationFileStats.some((destStat) =>
+      sharesIdentity(destStat.identity, protectedDatabaseStats),
     ) ||
     (stateDirHome !== undefined &&
       canonicalProtectedHomes.some((home) => samePath(home, stateDirHome))) ||
@@ -982,13 +1049,16 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   ) {
     return yield* new MigrateDevDbSharedHomeError();
   }
-  // Both destination and snapshot are deleted below; reject sources resolving to either.
-  for (const canonicalDestination of [resolvedDestinationDb, resolvedSnapshotDb]) {
-    if (samePath(sourcePath, canonicalDestination)) {
-      return yield* new MigrateDevDbSourceIsDestinationError({
-        sourcePath: input.source ?? sourcePath,
-      });
-    }
+  // Every destination and snapshot database / WAL / SHM file is deleted below; reject sources matching any of them.
+  if (
+    resolvedDestinationFiles.some((canonicalDestination) =>
+      samePath(sourcePath, canonicalDestination),
+    ) ||
+    sharesIdentity(sourceIdentity, destinationFileStats)
+  ) {
+    return yield* new MigrateDevDbSourceIsDestinationError({
+      sourcePath: input.source ?? sourcePath,
+    });
   }
 
   yield* fs.makeDirectory(stateDir, { recursive: true });
