@@ -349,13 +349,15 @@ function ProjectSourceRow({
             </span>
           </p>
         ))}
-        {enabled && (spaces.length > 0 || manual || githubSources.length === 0) ? (
+        {enabled ? (
           <>
             <div className="flex min-w-0 items-center gap-1.5">
-              <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs wrap-anywhere">
-                <MepIcon aria-hidden className="size-3.5 shrink-0" />
-                <span>{mepSpaceSummary(spaces, manual, discovery, t)}</span>
-              </p>
+              {spaces.length > 0 || manual || githubSources.length === 0 ? (
+                <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs wrap-anywhere">
+                  <MepIcon aria-hidden className="size-3.5 shrink-0" />
+                  <span>{mepSpaceSummary(spaces, manual, discovery, t)}</span>
+                </p>
+              ) : null}
               {draft === null ? (
                 <span className="flex shrink-0 opacity-0 group-focus-within/project-source:opacity-100 group-hover/project-source:opacity-100 any-pointer-coarse:opacity-100">
                   <Button
