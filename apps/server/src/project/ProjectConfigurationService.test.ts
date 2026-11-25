@@ -626,6 +626,17 @@ describe("ProjectConfigurationService", () => {
         expect(
           (yield* service.exportProjects({ projectIds: [projectId] }).pipe(Effect.result))._tag,
         ).toBe("Failure");
+        yield* git(test.baseDir, "init");
+        yield* git(
+          test.baseDir,
+          "remote",
+          "add",
+          "origin",
+          "https://git.sankuai.com/team/parent.git",
+        );
+        expect(
+          (yield* service.exportProjects({ projectIds: [projectId] }).pipe(Effect.result))._tag,
+        ).toBe("Failure");
         yield* fs.rename(`${head}.offline`, head);
         yield* git(rootPath, "remote", "set-url", "origin", "https://git.sankuai.com/team/web.git");
         const switched = (yield* service.exportProjects({ projectIds: [projectId] }))[0]!

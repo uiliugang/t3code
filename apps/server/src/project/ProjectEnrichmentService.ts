@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
@@ -41,6 +42,15 @@ export interface ProjectEnrichmentServiceOptions {
   readonly concurrency?: number;
 }
 
+class RepositoryInspectionError extends Schema.TaggedError<
+  RepositoryInspectionError,
+  { readonly brand: unique symbol }
+>()("RepositoryInspectionError", { workspaceRoot: Schema.String }) {
+  override get message() {
+    return "Could not inspect the project repository.";
+  }
+}
+
 export class ProjectEnrichmentService extends Context.Service<
   ProjectEnrichmentService,
   {
@@ -52,7 +62,9 @@ export class ProjectEnrichmentService extends Context.Service<
     ) => Effect.Effect<RepositoryIdentity | null>;
     readonly invalidate: (workspaceRoots: Iterable<string>) => Effect.Effect<void>;
     /** Re-resolves past both identity caches and publishes a found identity, leaving the favicon alone. */
-    readonly refreshRepositoryIdentity: (workspaceRoot: string) => Effect.Effect<void>;
+    readonly refreshRepositoryIdentity: (
+      workspaceRoot: string,
+    ) => Effect.Effect<void, RepositoryInspectionError>;
     readonly subscribeChanges: Effect.Effect<
       PubSub.Subscription<ProjectEnrichmentChange>,
       never,
@@ -97,6 +109,11 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   const lastRepositoryIdentities = new Map<string, RepositoryIdentity>();
   // `invalidate` drops a root's in-flight lookup so its late result cannot overwrite a newer one.
   const lookupsInFlight = new Map<string, object>();
+  const inspectRepository = (workspaceRoot: string, refresh = false) =>
+    repositoryIdentityResolver.resolve(workspaceRoot, {
+      refresh,
+      onUnavailable: Effect.fail(new RepositoryInspectionError({ workspaceRoot })),
+    });
   const rememberRepositoryIdentity = (
     workspaceRoot: string,
     repositoryIdentity: RepositoryIdentity | null,
@@ -116,7 +133,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
         const lookup = {};
         lookupsInFlight.set(workspaceRoot, lookup);
         const isCurrent = () => lookupsInFlight.get(workspaceRoot) === lookup;
-        return Effect.exit(repositoryIdentityResolver.resolve(workspaceRoot)).pipe(
+        return Effect.exit(inspectRepository(workspaceRoot)).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
               if (Exit.isSuccess(result) && isCurrent()) {
@@ -204,7 +221,9 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
         workspaceRoot,
         repositoryIdentityResolved,
         enrichment: {
-          repositoryIdentity: availableValue(Option.some(repositoryIdentity)),
+          repositoryIdentity: Exit.isSuccess(repositoryIdentity)
+            ? repositoryIdentity.value
+            : (lastRepositoryIdentities.get(workspaceRoot) ?? null),
           faviconPath: availableValue(faviconPath),
           repositoryIdentityResolved,
         },
@@ -346,14 +365,12 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     Effect.fn("ProjectEnrichmentService.refreshRepositoryIdentity")(function* (workspaceRoot) {
       // Remote-less folders hit this after every turn; publishing their unchanged null would
       // push a shell frame to every subscriber.
-      if (
-        (yield* repositoryIdentityResolver.resolve(workspaceRoot, { refresh: true })) === null &&
-        !lastRepositoryIdentities.has(workspaceRoot)
-      ) {
-        return;
-      }
-      yield* Cache.invalidate(repositoryIdentityCache, workspaceRoot);
-      yield* resolveRepositoryIdentity(workspaceRoot);
+      const identity = yield* inspectRepository(workspaceRoot, true);
+      const publish = identity !== null || lastRepositoryIdentities.has(workspaceRoot);
+      lookupsInFlight.delete(workspaceRoot);
+      rememberRepositoryIdentity(workspaceRoot, identity);
+      yield* Cache.set(repositoryIdentityCache, workspaceRoot, Exit.succeed(identity));
+      if (publish) yield* resolveRepositoryIdentity(workspaceRoot);
     });
 
   return ProjectEnrichmentService.of({

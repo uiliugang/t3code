@@ -1019,7 +1019,14 @@ export const make = Effect.gen(function* () {
       if (!repositoryLookup && root === shell.value.workspaceRoot) {
         return Option.some(yield* enrichShell(shell.value));
       }
-      if (repositoryLookup === "refresh") yield* projectEnrichment.refreshRepositoryIdentity(root);
+      if (repositoryLookup === "refresh")
+        yield* projectEnrichment
+          .refreshRepositoryIdentity(root)
+          .pipe(
+            Effect.mapError(
+              (cause) => new ProjectOperationError({ operation: "read-project", projectId, cause }),
+            ),
+          );
       const repositoryIdentity = yield* projectEnrichment.readRepositoryIdentity(root);
       return Option.some({ ...shell.value, workspaceRoot: root, repositoryIdentity });
     },

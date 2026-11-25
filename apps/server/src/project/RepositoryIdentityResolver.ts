@@ -255,7 +255,7 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
     const topLevelResult = yield* processRunner
       .run({
         command: "git",
-        args: ["-C", cwd, "rev-parse", "--show-toplevel"],
+        args: ["-C", cwd, "rev-parse", "--show-cdup", "--show-toplevel"],
         env,
         timeoutBehavior: "timedOutResult",
       })
@@ -263,20 +263,39 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
     if (topLevelResult._tag === "None" || topLevelResult.value.timedOut) {
       return undefined;
     }
-    if (topLevelResult.value.code === 0) {
-      // Git appends LF on every platform; a preceding CR belongs to the path.
-      const rootPath = topLevelResult.value.stdout.replace(/\n$/, "");
-      return rootPath.length > 0
-        ? new RepositoryIdentityCacheKey({ rootPath, isBare: false })
-        : undefined;
-    }
-
     const hasEntry = (target: string) =>
       fileSystem.lstat(target).pipe(
         Effect.as(true),
         Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
         Effect.orElseSucceed(() => true),
       );
+    const hasSkippedCheckout = Effect.fn("RepositoryIdentityResolver.hasSkippedCheckout")(
+      function* (levels = Infinity) {
+        if (levels === 0) return false;
+        const physical = yield* fileSystem.realPath(cwd).pipe(Effect.option);
+        if (physical._tag === "None") return true;
+        let directory = physical.value;
+        for (let depth = 0; depth < levels; depth++) {
+          if (yield* hasEntry(path.join(directory, ".git"))) return true;
+          const parent = path.dirname(directory);
+          if (parent === directory) return false;
+          directory = parent;
+        }
+        return false;
+      },
+    );
+    if (topLevelResult.value.code === 0) {
+      // Git appends LF on every platform; a preceding CR belongs to the path.
+      const [, climb, rootPath] =
+        /^((?:\.\.\/)*)\n([\s\S]+)\n$/u.exec(topLevelResult.value.stdout) ?? [];
+      if (
+        climb === undefined ||
+        !rootPath ||
+        (yield* hasSkippedCheckout(climb.length / "../".length))
+      )
+        return undefined;
+      return new RepositoryIdentityCacheKey({ rootPath, isBare: false });
+    }
     // Explicit Git directories preserve safe.bareRepository=explicit for both layouts.
     for (const [gitDir, entry] of [
       [".", "HEAD"],
@@ -315,14 +334,7 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
     }
     if (!topLevelResult.value.stderr.startsWith("fatal: not a git repository (or "))
       return undefined;
-    const physical = yield* fileSystem.realPath(cwd).pipe(Effect.option);
-    if (physical._tag === "None") return undefined;
-    let directory = physical.value;
-    while (path.dirname(directory) !== directory) {
-      directory = path.dirname(directory);
-      if (yield* hasEntry(path.join(directory, ".git"))) return undefined;
-    }
-    return null;
+    return (yield* hasSkippedCheckout()) ? undefined : null;
   },
 );
 

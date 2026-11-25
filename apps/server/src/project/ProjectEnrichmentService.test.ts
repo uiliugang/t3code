@@ -190,6 +190,46 @@ it.effect(
     }),
 );
 
+it.effect("keeps the last identity on inspection failure but publishes a confirmed removal", () =>
+  Effect.gen(function* () {
+    const root = "/fork";
+    let state: "ready" | "offline" | "removed" = "ready";
+    const metadata = Layer.merge(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: (cwd, options) =>
+          Effect.suspend(() =>
+            state === "offline"
+              ? (options?.onUnavailable ?? Effect.succeed(null))
+              : Effect.succeed(state === "ready" ? identity(cwd) : null),
+          ),
+      }),
+      Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        invalidate: () => Effect.void,
+        resolvePath: () => Effect.succeed(null),
+      }),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectEnrichment.ProjectEnrichmentService;
+      assert.deepEqual(yield* service.readRepositoryIdentity(root), identity(root));
+      const changes = yield* service.subscribeChanges;
+      state = "offline";
+      const refresh = yield* service.refreshRepositoryIdentity(root).pipe(Effect.result);
+      assert.equal(refresh._tag, "Failure");
+      assert.deepEqual((yield* service.peek(root)).repositoryIdentity, identity(root));
+      yield* TestClock.adjust(Duration.seconds(61));
+      yield* service.request(root);
+      const offline = yield* PubSub.take(changes);
+      assert.isFalse(offline.repositoryIdentityResolved);
+      assert.deepEqual(offline.enrichment.repositoryIdentity, identity(root));
+      state = "removed";
+      yield* service.refreshRepositoryIdentity(root);
+      const removed = yield* PubSub.take(changes);
+      assert.isTrue(removed.repositoryIdentityResolved);
+      assert.isNull(removed.enrichment.repositoryIdentity);
+    }).pipe(Effect.provide(layer(metadata)));
+  }),
+);
+
 it.effect("deduplicates requests, bounds pending work, and reloads invalidated roots", () =>
   Effect.gen(function* () {
     const firstStarted = yield* Deferred.make<void>();
