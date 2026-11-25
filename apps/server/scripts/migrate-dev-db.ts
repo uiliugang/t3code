@@ -5,6 +5,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import * as Console from "effect/Console";
@@ -129,6 +130,8 @@ export interface RunMigrateDevDbOptions {
   readonly sharedHome?: string | undefined;
   /** Test override for ambient T3CODE_HOME. */
   readonly ambientHome?: string | undefined;
+  /** Test override for the working directory when `--base-dir` is omitted. */
+  readonly cwd?: string | undefined;
 }
 
 // Markers written only by installed service or packaged desktop homes.
@@ -187,33 +190,75 @@ const nativeRealPath = (targetPath: string) =>
     catch: (cause) => new NativeRealPathError({ cause }),
   });
 
+export const splitPathParentAndLeaf = (
+  rawPath: string,
+  platform: NodeJS.Platform,
+): { readonly parent: string; readonly leaf: string } | undefined => {
+  const pathOps = platform === "win32" ? NodePath.win32 : NodePath.posix;
+  const separatorPattern = platform === "win32" ? /[\\/]+$/ : /\/+$/;
+  let cursor = rawPath;
+  while (true) {
+    const parsedRoot = pathOps.parse(cursor).root;
+    let trimmed = cursor;
+    if (trimmed.length > parsedRoot.length) {
+      trimmed = trimmed.replace(separatorPattern, "");
+      if (trimmed.length < parsedRoot.length) {
+        trimmed = parsedRoot;
+      }
+    }
+    if (trimmed.length === 0 || trimmed === parsedRoot) {
+      return undefined;
+    }
+    const afterRoot = trimmed.slice(parsedRoot.length);
+    const slashIndex =
+      platform === "win32"
+        ? Math.max(afterRoot.lastIndexOf("/"), afterRoot.lastIndexOf("\\"))
+        : afterRoot.lastIndexOf("/");
+    const leaf = slashIndex === -1 ? afterRoot : afterRoot.slice(slashIndex + 1);
+    const parent =
+      slashIndex === -1
+        ? parsedRoot.length > 0
+          ? parsedRoot
+          : "."
+        : `${parsedRoot}${afterRoot.slice(0, slashIndex)}` || parsedRoot || ".";
+    if (leaf === ".") {
+      cursor = parent;
+      continue;
+    }
+    if (leaf === "" || leaf === "..") {
+      return undefined;
+    }
+    return { parent, leaf };
+  }
+};
+
 const resolveFilesystemPath = Effect.fn("resolveFilesystemPath")(function* (rawPath: string) {
+  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
   const direct = yield* nativeRealPath(rawPath).pipe(Effect.option);
   if (Option.isSome(direct)) return direct;
   const missingTail: Array<string> = [];
   let cursor = rawPath;
   while (true) {
-    const trimmed = cursor.replace(/[\\/]+$/, "");
-    if (trimmed.length === 0) return Option.none<string>();
-    const slashIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
-    const base = slashIndex === -1 ? trimmed : trimmed.slice(slashIndex + 1);
-    if (base === "" || base === "." || base === "..") {
+    // A dangling symlink or unreadable entry exists at lstat time and must fail closed.
+    const cursorStat = yield* fs.lstat(cursor).pipe(
+      Effect.as("present" as const),
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("missing" as const)),
+      Effect.option,
+    );
+    if (!Option.exists(cursorStat, (state) => state === "missing")) {
       return Option.none<string>();
     }
-    missingTail.unshift(base);
-    cursor =
-      slashIndex === -1
-        ? "."
-        : slashIndex === 0
-          ? trimmed.slice(0, 1)
-          : trimmed.slice(0, slashIndex);
+    const split = splitPathParentAndLeaf(cursor, platform);
+    if (split === undefined) {
+      return Option.none<string>();
+    }
+    missingTail.unshift(split.leaf);
+    cursor = split.parent;
     const resolvedParent = yield* nativeRealPath(cursor).pipe(Effect.option);
     if (Option.isSome(resolvedParent)) {
       return Option.some(path.join(resolvedParent.value, ...missingTail));
-    }
-    if (cursor === "." || cursor === "/" || /^[A-Za-z]:[\\/]?$/.test(cursor)) {
-      return Option.none<string>();
     }
   }
 });
@@ -835,27 +880,31 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const ambientHome = (options.ambientHome ?? env.T3CODE_HOME)?.trim();
   const rawSourcePath = input.source ?? path.join(sharedHome, "userdata", "statev2.sqlite");
 
-  const resolvedBaseDir =
-    input.baseDir !== undefined
-      ? yield* resolveFilesystemPath(input.baseDir)
-      : Option.fromUndefinedOr(yield* resolveWorktreeT3Home(process.cwd()));
+  const worktreeBaseDir =
+    input.baseDir === undefined
+      ? yield* resolveWorktreeT3Home(options.cwd ?? process.cwd())
+      : undefined;
+  if (input.baseDir === undefined && worktreeBaseDir === undefined) {
+    return yield* new MigrateDevDbNotInWorktreeError();
+  }
+  const rawBaseDir = input.baseDir ?? worktreeBaseDir!;
+  const resolvedBaseDir = yield* resolveFilesystemPath(rawBaseDir);
   if (Option.isNone(resolvedBaseDir)) {
-    return yield* input.baseDir !== undefined
-      ? new MigrateDevDbSharedHomeError()
-      : new MigrateDevDbNotInWorktreeError();
+    return yield* new MigrateDevDbSharedHomeError();
   }
   const canonicalBaseDir = resolvedBaseDir.value;
-  const lexicalBaseDir =
-    input.baseDir !== undefined ? path.resolve(input.baseDir) : canonicalBaseDir;
-  const baseDir =
-    input.baseDir !== undefined &&
-    Option.exists(yield* resolveFilesystemPath(lexicalBaseDir), (lexicalResolved) =>
-      samePath(lexicalResolved, canonicalBaseDir),
-    )
-      ? lexicalBaseDir
-      : canonicalBaseDir;
-  const stateDir = path.join(baseDir, "userdata");
+  const lexicalBaseDir = path.resolve(rawBaseDir);
+  // All filesystem writes use `canonicalBaseDir`; preserve `lexicalBaseDir` for display only when
+  // its canonical path is byte-identical (avoiding case-sensitive volume collisions on macOS).
+  const displayBaseDir = Option.exists(
+    yield* resolveFilesystemPath(lexicalBaseDir),
+    (lexicalResolved) => lexicalResolved === canonicalBaseDir,
+  )
+    ? lexicalBaseDir
+    : canonicalBaseDir;
+  const stateDir = path.join(canonicalBaseDir, "userdata");
   const databasePath = path.join(stateDir, "statev2.sqlite");
+  const displayDatabasePath = path.join(displayBaseDir, "userdata", "statev2.sqlite");
   const snapshotPath = `${databasePath}.migrate-dev-db-tmp`;
 
   const resolvedSourcePath = Option.getOrUndefined(
@@ -891,7 +940,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
       canonicalProtectedHomes.some((home) => samePath(home, stateDirHome))) ||
     (resolvedDestinationHome !== undefined &&
       canonicalProtectedHomes.some((home) => samePath(home, resolvedDestinationHome))) ||
-    (yield* looksLikeInstalledHome(baseDir)) ||
+    (yield* looksLikeInstalledHome(displayBaseDir)) ||
     (yield* looksLikeInstalledHome(canonicalBaseDir)) ||
     (stateDirHome !== undefined && (yield* looksLikeInstalledHome(stateDirHome))) ||
     (resolvedDestinationHome !== undefined &&
@@ -985,7 +1034,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
 
   const size = (yield* fs.stat(databasePath)).size;
   return {
-    databasePath,
+    databasePath: displayDatabasePath,
     sizeBytes: Number(size),
     projects: pruned.projects,
     eventCount: pruned.eventCount,

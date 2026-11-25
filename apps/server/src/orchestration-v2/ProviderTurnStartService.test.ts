@@ -671,6 +671,7 @@ function makeLocalCommandHarness(input: {
   readonly fileSystem?: FileSystem.FileSystem;
   readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   readonly recreatedBeforeDispatch?: boolean;
+  readonly failClearRecreatedOnce?: boolean;
   readonly previousNativeSession?: boolean;
   readonly previousMessages?: ReadonlyArray<string>;
   readonly createdBy?: "agent" | "system";
@@ -1595,25 +1596,36 @@ function makeLocalCommandHarness(input: {
                 }),
               );
             }
-            return Effect.sync(() => {
+            let failClearOnce = input.failClearRecreatedOnce === true;
+            return Effect.suspend(() => {
               if (options?.action === "record") {
                 recreatedBeforeDispatch.pending = true;
-                return;
+                return Effect.undefined;
               }
               if (options?.action === "clear") {
+                if (failClearOnce) {
+                  failClearOnce = false;
+                  return Effect.fail(
+                    new WorktreeRecreateError({
+                      worktreePath: targetWorktreePath,
+                      branch: "feature/restore",
+                      cause: new Error("failed to persist cleared state"),
+                    }),
+                  );
+                }
                 recreatedBeforeDispatch.pending = false;
-                return;
+                return Effect.undefined;
               }
-              if (!recreatedBeforeDispatch.pending) return;
+              if (!recreatedBeforeDispatch.pending) return Effect.undefined;
               if (options?.action !== "peek") {
                 recreatedBeforeDispatch.pending = false;
               }
-              return {
+              return Effect.succeed({
                 project: {
                   workspaceRoot: input.workspaceRoot ?? "/tmp/native-account-project",
                 } as never,
                 worktreePath: targetWorktreePath,
-              };
+              });
             });
           },
         }),
@@ -2841,6 +2853,60 @@ effectIt.effect(
       expect(runSetup).toHaveBeenCalledTimes(2);
       expect(harness.open).toHaveBeenCalledTimes(1);
       expect(harness.projection().runs.at(-1)?.status).toBe("running");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect(
+  "does not re-run a succeeded setup script under EffectWorker when clearing pending setup fails",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-clear-fail-once-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      const runSetup = vi.fn(() =>
+        Effect.succeed({
+          status: "started" as const,
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "setup",
+          terminalId: "setup-clear-fail",
+          cwd: worktreePath,
+          async: false,
+          commandWritten: Effect.succeed(true),
+          completion: Effect.succeed({ exitCode: 0, durationMs: 0 }),
+        }),
+      );
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        failClearRecreatedOnce: true,
+        runSetup,
+      });
+
+      yield* Effect.gen(function* () {
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const { storedEffect } = yield* enqueueStart(harness.projection());
+        expect(yield* worker.drain()).toBe(1);
+        expect(yield* storedEffect).toMatchObject({ status: "succeeded", attemptCount: 1 });
+      }).pipe(Effect.provide(layerStartEffectWorker(harness)));
+
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+      expect(harness.projection().turnItems).toMatchObject([
+        {
+          type: "error",
+          title: "Couldn't set up restored workspace",
+        },
+      ]);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 

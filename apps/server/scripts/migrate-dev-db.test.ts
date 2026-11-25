@@ -10,7 +10,11 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { dropResumableFamilies, runMigrateDevDb } from "./migrate-dev-db.ts";
+import {
+  dropResumableFamilies,
+  runMigrateDevDb,
+  splitPathParentAndLeaf,
+} from "./migrate-dev-db.ts";
 
 const withDatabase = <A, E, R>(
   databasePath: string,
@@ -948,7 +952,97 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             path.join(yield* fs.realPath(dirB), "userdata", "statev2.sqlite"),
           );
           assert.equal(yield* fs.readFileString(dbInA), "unintended-dev-db-in-a");
+
+          // Explicit `--source` with `link/..`: lexical `srcA/seed.sqlite` exists, but real `srcB/seed.sqlite` is missing.
+          const srcA = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-src-a-" });
+          const srcB = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-src-b-" });
+          yield* fs.makeDirectory(path.join(srcB, "sub"), { recursive: true });
+          yield* fs.symlink(path.join(srcB, "sub"), path.join(srcA, "link"));
+          const lexicalSource = yield* createFixtureSource(srcA);
+          const keepTargetDir = yield* fs.makeTempDirectoryScoped({
+            prefix: "migrate-dev-db-src-dotdot-dest-",
+          });
+          const existingDestDb = path.join(keepTargetDir, "userdata", "statev2.sqlite");
+          yield* fs.makeDirectory(path.dirname(existingDestDb), { recursive: true });
+          yield* fs.writeFileString(existingDestDb, "preserve-existing-dest");
+          assert.isTrue(yield* fs.exists(lexicalSource));
+          const dotDotSource = `${path.join(srcA, "link")}${path.sep}..${path.sep}userdata${path.sep}statev2.sqlite`;
+          const refusedDotDotSource = yield* runMigrateDevDb(
+            { baseDir: keepTargetDir, source: dotDotSource, projects: 5, threadsPerProject: 2 },
+            { sharedHome: sourceDir },
+          ).pipe(Effect.flip);
+          assert.equal(refusedDotDotSource._tag, "MigrateDevDbSourceMissingError");
+          assert.equal(yield* fs.readFileString(existingDestDb), "preserve-existing-dest");
+
+          // POSIX preserves literal backslashes in missing directory names instead of splitting on `\`.
+          const slashRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "migrate-dev-db-backslash-",
+          });
+          const nestedSlashDir = path.join(slashRoot, "2.72", "bin");
+          const nestedSlashDb = path.join(nestedSlashDir, "userdata", "statev2.sqlite");
+          yield* fs.makeDirectory(path.dirname(nestedSlashDb), { recursive: true });
+          yield* fs.writeFileString(nestedSlashDb, "existing-slash-nested-db");
+          const backslashBaseDir = path.join(slashRoot, "2.72\\bin");
+          const migratedBackslash = yield* runMigrateDevDb(
+            { baseDir: backslashBaseDir, source, projects: 5, threadsPerProject: 2 },
+            { sharedHome: sourceDir },
+          );
+          assert.equal(
+            migratedBackslash.databasePath,
+            path.join(backslashBaseDir, "userdata", "statev2.sqlite"),
+          );
+          assert.equal(yield* fs.readFileString(nestedSlashDb), "existing-slash-nested-db");
+
+          // Trailing `/.` on a not-yet-created `--base-dir` resolves cleanly instead of failing closed.
+          const trailingDotDir = path.join(slashRoot, "new-home");
+          const migratedTrailingDot = yield* runMigrateDevDb(
+            { baseDir: `${trailingDotDir}/.`, source, projects: 5, threadsPerProject: 2 },
+            { sharedHome: sourceDir },
+          );
+          assert.isTrue(yield* fs.exists(migratedTrailingDot.databasePath));
         }
+
+        // Default `--base-dir` omitted: a worktree `.t3` symlinked to `T3CODE_HOME` whose `userdata`
+        // is in turn symlinked to an external `state` directory must still be refused.
+        const linkedWorktreeRoot = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-default-wt-",
+        });
+        const cliAmbientHome = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-cli-home-",
+        });
+        const externalStateDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-ext-state-",
+        });
+        const externalLiveDb = path.join(externalStateDir, "statev2.sqlite");
+        yield* fs.writeFileString(externalLiveDb, "cli-ambient-live-db-bytes");
+        yield* fs.symlink(externalStateDir, path.join(cliAmbientHome, "userdata"));
+        yield* fs.writeFileString(
+          path.join(linkedWorktreeRoot, ".git"),
+          "gitdir: /repo/.git/worktrees/default-branch\n",
+        );
+        yield* fs.symlink(cliAmbientHome, path.join(linkedWorktreeRoot, ".t3"));
+        const refusedDefaultTwoHop = yield* runMigrateDevDb(
+          { projects: 5, threadsPerProject: 2, source },
+          { sharedHome: sourceDir, ambientHome: cliAmbientHome, cwd: linkedWorktreeRoot },
+        ).pipe(Effect.flip);
+        assert.equal(refusedDefaultTwoHop._tag, "MigrateDevDbSharedHomeError");
+        assert.equal(yield* fs.readFileString(externalLiveDb), "cli-ambient-live-db-bytes");
+
+        // Platform path-splitting rules: Windows drive-relative paths (`C:seed`), roots, and POSIX backslashes.
+        assert.deepStrictEqual(splitPathParentAndLeaf("C:seed", "win32"), {
+          parent: "C:",
+          leaf: "seed",
+        });
+        assert.deepStrictEqual(splitPathParentAndLeaf("C:dir\\seed\\.", "win32"), {
+          parent: "C:dir",
+          leaf: "seed",
+        });
+        assert.equal(splitPathParentAndLeaf("C:\\", "win32"), undefined);
+        assert.equal(splitPathParentAndLeaf("C:", "win32"), undefined);
+        assert.deepStrictEqual(splitPathParentAndLeaf("/tmp/2.72\\bin/.", "darwin"), {
+          parent: "/tmp",
+          leaf: "2.72\\bin",
+        });
       }),
   );
 });
