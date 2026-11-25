@@ -20,7 +20,8 @@ const environment = {
   serverConfig: { environment: { capabilities: {} }, settings },
 };
 
-vi.mock(import("./SettingsScopeContext"), () => ({
+vi.mock(import("./SettingsScopeContext"), async (original) => ({
+  ...(await original()),
   useSettingsScope: (() => ({
     scope: { kind: "environment" },
     search: {},
@@ -28,8 +29,12 @@ vi.mock(import("./SettingsScopeContext"), () => ({
     connectedEnvironments: [environment],
   })) as never,
 }));
-vi.mock(import("./IssueTrackerSettings"), () => ({ IssueTrackerSettings: () => null }));
-vi.mock(import("../../hooks/useSettings"), () => ({
+vi.mock(import("./IssueTrackerSettings"), async (original) => ({
+  ...(await original()),
+  IssueTrackerSettings: () => null,
+}));
+vi.mock(import("../../hooks/useSettings"), async (original) => ({
+  ...(await original()),
   useEnvironmentSettings: ((_id: unknown, select: (value: typeof settings) => unknown) =>
     select(settings)) as never,
 }));
@@ -37,23 +42,38 @@ vi.mock(import("../../hooks/useUiTranslation"), async () => {
   const { translateUi } = await import("@t3tools/shared/uiLocale");
   return { useUiTranslation: () => translateUi.bind(null, "en") };
 });
-vi.mock(import("../../state/entities"), () => ({
+vi.mock(import("../../state/entities"), async (original) => ({
+  ...(await original()),
   useProjects: (() => [{ environmentId, id: projectId, title: "Example" }]) as never,
 }));
-vi.mock(import("../../state/query"), () => ({
+vi.mock(import("../../state/query"), async (original) => ({
+  ...(await original()),
   useEnvironmentQuery: (() => ({ data: sources, isPending: false })) as never,
 }));
-vi.mock(import("../../state/server"), () => ({
-  serverEnvironment: { updateSettings: { permissionAtom: () => Atom.make(true) } } as never,
-}));
-vi.mock(import("../../state/use-atom-command"), () => ({
+vi.mock(import("../../state/server"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      updateSettings: { permissionAtom: () => Atom.make(true) } as never,
+    },
+  };
+});
+vi.mock(import("../../state/use-atom-command"), async (original) => ({
+  ...(await original()),
   useAtomCommand: (() => mocks.update) as never,
 }));
-vi.mock(import("../../state/sourceControl"), () => ({
-  sourceControlEnvironment: {
-    issueSources: () => Atom.make(AsyncResult.success(sources)),
-  } as never,
-}));
+vi.mock(import("../../state/sourceControl"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    sourceControlEnvironment: {
+      ...actual.sourceControlEnvironment,
+      issueSources: (() => Atom.make(AsyncResult.success(sources))) as never,
+    },
+  };
+});
 
 const sources = [{ projectId, provider: "github", sources: [github] }];
 
