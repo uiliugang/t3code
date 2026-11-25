@@ -158,6 +158,7 @@ it.layer(
           threadAutoSettlementScope: true,
           threadTerminalCleanup: true,
           issueProjectSourcesCas: true,
+          githubIssueSourcePorts: true,
           singleProjectIssueProvider: true,
           meituanIntegration: true,
           meituanTools: true,

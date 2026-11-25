@@ -53,7 +53,10 @@ function parseIssueLink(
   const hostname = new URL(url).hostname.toLowerCase();
   for (const project of projects) {
     const bindings = projectIssueBindings(project);
-    const binding = bindings.find((entry) => entry.host === hostname || entry.host === authority);
+    const binding = bindings.find(
+      (entry) =>
+        entry.host === authority || (entry.tracker !== "github" && entry.host === hostname),
+    );
     if (!binding) continue;
     const known = sourceControlClients.parseIssueUrl(url, binding.tracker);
     if (known !== null) return known;
@@ -168,7 +171,7 @@ export function resolveIssueLinkTarget<Project extends LinkProject>(input: {
       .map((binding) => ({ project, binding })),
   );
   const onAuthority = onHost.filter((candidate) => candidate.binding.host === authority);
-  const bound = onAuthority.length > 0 ? onAuthority : onHost;
+  const bound = definition.kind === "github" || onAuthority.length > 0 ? onAuthority : onHost;
   const preferFirst = (candidates: typeof bound) =>
     candidates.find((candidate) => candidate.project.id === input.preferredProjectId) ??
     candidates[0];

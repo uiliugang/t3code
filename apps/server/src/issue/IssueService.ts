@@ -951,6 +951,7 @@ const make = Effect.gen(function* () {
     return listProjects({ host: url.hostname, authority: url.host.toLowerCase() }).pipe(
       Effect.map(({ supported }) => {
         for (const project of supported) {
+          if (project.tracker === "github" && project.host !== url.host.toLowerCase()) continue;
           const parsed = sourceControlDefinitions.parseIssueUrl(
             value,
             SourceControlProviderKind.make(project.tracker),
@@ -985,7 +986,7 @@ const make = Effect.gen(function* () {
       const { supported } = yield* listProjects({ host: link.host, authority });
       const onHost = supported.filter((project) => project.tracker === tracker);
       const onAuthority = onHost.filter((project) => project.host === authority);
-      const onTracker = onAuthority.length > 0 ? onAuthority : onHost;
+      const onTracker = tracker === "github" || onAuthority.length > 0 ? onAuthority : onHost;
       const preferFirst = (projects: ReadonlyArray<SupportedProject>) =>
         projects.find((project) => project.project.id === preferredProjectId) ?? projects[0];
       const scope = link.scope.toLowerCase();

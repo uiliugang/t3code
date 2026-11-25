@@ -467,7 +467,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         const expected = { [id]: [github, second] };
         yield* service.updateSettings({ issueProjectSources: expected });
         yield* service.updateSettings(
-          { issueProjectSources: { [id]: [renamed, second] } },
+          { issueProjectSources: { [id]: [{ ...renamed, host: "GitHub.com:443" }, second] } },
           "github",
           expected,
         );

@@ -1,6 +1,7 @@
 import {
   RequirementIssueError,
-  isGithubIssueHost,
+  normalizeGithubIssueHost,
+  normalizeGithubIssueSource,
   isMeituanServiceEnabled,
   mergeProjectIssueSources,
   projectIssueProvider,
@@ -224,9 +225,11 @@ export const make = Effect.gen(function* () {
       (handle?._tag === "Success" && handle.success.context
         ? handle.success.provider.kind
         : undefined);
-    const sources = mergeProjectIssueSources(automatic, manual, repositoryKind).filter(
-      (source) => source.provider !== "meituan" || isMeituanServiceEnabled(saved, "requirements"),
-    );
+    const sources = mergeProjectIssueSources(automatic, manual, repositoryKind)
+      .filter(
+        (source) => source.provider !== "meituan" || isMeituanServiceEnabled(saved, "requirements"),
+      )
+      .map(normalizeGithubIssueSource);
     const provider = projectIssueProvider(repositoryKind, automatic.length ? automatic : manual);
     return {
       cwd,
@@ -258,17 +261,22 @@ export const make = Effect.gen(function* () {
   const validSource = (source: IssueSource) =>
     source.provider === "meituan"
       ? /^[1-9]\d*$/u.test(source.scope) && source.host === "mep.sankuai.com"
-      : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) && isGithubIssueHost(source.host);
+      : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) &&
+        normalizeGithubIssueHost(source.host) !== undefined;
   const resolveAll = Effect.fn("IssueService.resolveAll")(function* (
     input: IssueTarget,
     refreshRepository = false,
   ) {
     const resolved = yield* projectSources(input.projectId, false, refreshRepository);
+    const host =
+      input.host && input.provider === "github"
+        ? (normalizeGithubIssueHost(input.host) ?? input.host)
+        : input.host;
     const sources = resolved.sources.filter(
       (source) =>
         source.provider === input.provider &&
         (!input.scope || source.scope === input.scope) &&
-        (!input.host || source.host === input.host),
+        (!host || source.host === host),
     );
     for (const source of sources) {
       if (!validSource(source))
@@ -321,7 +329,7 @@ export const make = Effect.gen(function* () {
             ((enabled && kind === "meituan") ||
               (kind === "github" && project.repositoryIdentity?.provider !== kind));
           const resolved = discover ? yield* resolveSources(project, saved) : { sources: manual };
-          const sources = resolved.sources.filter(validSource);
+          const sources = resolved.sources.filter(validSource).map(normalizeGithubIssueSource);
           return {
             ...resolved,
             sources,

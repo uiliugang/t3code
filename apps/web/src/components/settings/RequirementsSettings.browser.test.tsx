@@ -18,7 +18,9 @@ const environment = {
   environmentId,
   connection: { phase: "connected" },
   serverConfig: {
-    environment: { capabilities: {} as { issueProjectSourcesCas?: boolean } },
+    environment: {
+      capabilities: {} as { issueProjectSourcesCas?: boolean; githubIssueSourcePorts?: boolean },
+    },
     settings,
   },
 };
@@ -94,7 +96,10 @@ it("does not bulk edit an older server that cannot compare saved sources", async
 
 it("preserves MEP when bulk saving or restoring GitHub with compare-and-set support", async () => {
   mocks.update.mockReset().mockResolvedValue({ _tag: "Success" });
-  environment.serverConfig.environment.capabilities = { issueProjectSourcesCas: true };
+  environment.serverConfig.environment.capabilities = {
+    issueProjectSourcesCas: true,
+    githubIssueSourcePorts: true,
+  };
   await using screen = await render(<RequirementsSettings />);
   await userEvent.click(screen.getByRole("checkbox", { name: "Select Example" }));
   await userEvent.click(screen.getByRole("button", { name: /^GitHub override/ }));
@@ -150,4 +155,27 @@ it("does not overwrite sources that changed while the bulk editor was open", asy
   } finally {
     environment.serverConfig.settings = settings;
   }
+});
+
+it("requires port support for a non-default port but normalizes the default port for older servers", async () => {
+  mocks.update.mockReset().mockResolvedValue({ _tag: "Success" });
+  environment.serverConfig.environment.capabilities = { issueProjectSourcesCas: true };
+  await using screen = await render(<RequirementsSettings />);
+  await userEvent.click(screen.getByRole("checkbox", { name: "Select Example" }));
+  await userEvent.click(screen.getByRole("button", { name: /^GitHub override/ }));
+  await userEvent.fill(screen.getByRole("textbox", { name: "GitHub repository" }), "team/new");
+  const host = screen.getByRole("textbox", { name: "GitHub host" });
+  const save = screen.getByRole("button", { name: "Save GitHub override" });
+  await userEvent.fill(host, "forge.example.test:8443");
+  await expect.element(save).toBeDisabled();
+  expect(mocks.update).not.toHaveBeenCalled();
+  await userEvent.fill(host, "GitHub.com:443");
+  await userEvent.click(save);
+  expect(mocks.update).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      expectedIssueProjectSources: { [projectId]: saved },
+      patch: { issueProjectSources: { [projectId]: [mep, { ...github, scope: "team/new" }] } },
+    },
+  });
 });

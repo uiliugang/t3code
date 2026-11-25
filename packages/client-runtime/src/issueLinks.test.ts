@@ -67,7 +67,12 @@ describe("resolveIssueLinkTarget", () => {
         id: ProjectId.make(id),
         environmentId: EnvironmentId.make("env"),
         repositoryIdentity: {
-          canonicalKey: `${host}/acme/web`,
+          canonicalKey: `${new URL(`https://${host}`).hostname}/acme/web`,
+          locator: {
+            source: "git-remote",
+            remoteName: "origin",
+            remoteUrl: `https://${host}/acme/web.git`,
+          },
           provider: SourceControlProviderKind.make("github"),
           displayName: "acme/web",
           owner: "acme",
@@ -82,6 +87,13 @@ describe("resolveIssueLinkTarget", () => {
       ],
     });
     expect(target?.ref.projectId).toBe("ported");
+    expect(target?.ref.host).toBe("github.example.com:8443");
+    expect(
+      resolveIssueLinkTarget({
+        url: "https://github.example.com:8443/acme/web/issues/7",
+        projects: [enterprise("bare", "github.example.com")],
+      }),
+    ).toBeNull();
 
     // An Enterprise Server's hostname need not say "github"; its project vouches for it.
     const custom = resolveIssueLinkTarget({

@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-  isGithubIssueHost,
+  normalizeGithubIssueHost,
   isMeituanServiceEnabled,
   issueSourcesMatch,
   mergeProjectIssueSources,
@@ -649,7 +649,21 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const lacksCas = (project: Project) => !casEnvironments.has(project.environmentId);
   const cannotSave = githubChosen.some(lacksCas);
   const cannotReset = githubOverrides.some(lacksCas);
-  const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && isGithubIssueHost(host.trim());
+  const githubHost = normalizeGithubIssueHost(host.trim());
+  const unsupportedPort =
+    githubHost?.includes(":") === true &&
+    githubChosen.some(
+      (project) =>
+        !connectedEnvironments.some(
+          (entry) =>
+            entry.environmentId === project.environmentId &&
+            entry.serverConfig?.environment.capabilities.githubIssueSourcePorts === true,
+        ),
+    );
+  const githubOverride =
+    githubHost && !unsupportedPort && /^[\w.-]+\/[\w.-]+$/u.test(scope.trim())
+      ? { provider: "github" as const, scope: scope.trim(), host: githubHost }
+      : undefined;
   const run = async (action: "refresh" | "save" | "reset") => {
     const actionTargets =
       action === "refresh" ? chosen : action === "reset" ? githubOverrides : githubChosen;
@@ -659,7 +673,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
       !actionTargets.length ||
       busy ||
       (action !== "refresh" && actionTargets.some(lacksCas)) ||
-      (action === "save" && !valid)
+      (action === "save" && !githubOverride)
     )
       return;
     if (
@@ -695,10 +709,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
         }
         const { environment: descriptor } = environment.serverConfig!;
         const scoped = descriptor.capabilities.singleProjectIssueProvider === true;
-        const replacement =
-          action === "reset"
-            ? []
-            : [{ provider: "github" as const, scope: scope.trim(), host: host.trim() }];
+        const replacement = action === "save" && githubOverride ? [githubOverride] : [];
         const expectedSources = targets.map(
           (project) => [project.id, expected.get(projectKey(project)) ?? []] as const,
         );
@@ -901,7 +912,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
             />
           </div>
           <div className="flex justify-end sm:col-span-2">
-            <Button size="sm" type="submit" disabled={busy || !valid}>
+            <Button size="sm" type="submit" disabled={busy || !githubOverride}>
               <SaveIcon />
               {t("Save GitHub override")}
             </Button>

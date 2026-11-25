@@ -393,6 +393,35 @@ describe("IssueService", () => {
       expect(
         yield* enterprise.resolveUrl("https://code.acme.test/acme/web/issues/7"),
       ).toMatchObject({ projectId: "ghes", host: "code.acme.test", key: "7", writable: true });
+      expect(
+        yield* Effect.flip(enterprise.resolveUrl("https://code.acme.test:8443/acme/web/issues/7")),
+      ).toMatchObject({ reason: "not-found" });
+
+      const requestedHosts: string[] = [];
+      const ported = yield* makeService({
+        projects: [project({ id: "ported", repository: "acme/web", host: "code.acme.test:8443" })],
+        trackers: [
+          fakeTracker({
+            listIssues: ({ host }) =>
+              Effect.sync(() => {
+                requestedHosts.push(host);
+                return { items: [], nextCursor: null };
+              }),
+            comment: ({ host }) =>
+              Effect.sync(() => {
+                requestedHosts.push(host);
+              }),
+          }),
+        ],
+      });
+      yield* ported.list({ state: "open", involvement: "all" });
+      yield* ported.comment({
+        ...own,
+        projectId: "ported" as ProjectId,
+        host: "code.acme.test:8443",
+        body: "ok",
+      });
+      expect(requestedHosts).toEqual(["code.acme.test:8443", "code.acme.test:8443"]);
 
       const unsupported = yield* makeService({
         projects: [

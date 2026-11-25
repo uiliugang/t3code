@@ -13,11 +13,18 @@ export const IssueSource = Schema.Struct({
 });
 export type IssueSource = typeof IssueSource.Type;
 
-export function isGithubIssueHost(host: string): boolean {
+export function normalizeGithubIssueHost(host: string): string | undefined {
   const match = /^[\w.-]+(?::([0-9]{1,5}))?$/u.exec(host);
-  if (!match || host.length > 253) return false;
+  if (!match || host.length > 253) return undefined;
   const port = match[1];
-  return port === undefined || (Number(port) > 0 && Number(port) <= 65535);
+  if (port !== undefined && Number(port) === 0) return undefined;
+  return URL.parse(`https://${host}`)?.host;
+}
+
+export function normalizeGithubIssueSource(source: IssueSource): IssueSource {
+  if (source.provider !== "github") return source;
+  const host = normalizeGithubIssueHost(source.host);
+  return host === undefined || host === source.host ? source : { ...source, host };
 }
 
 export function issueSourcesMatch(

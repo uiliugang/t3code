@@ -819,8 +819,7 @@ export function makeSourceControlDefinitionRegistry(
     if (!identity || tracker === undefined || tracker === "unknown") return [];
     const scope = issueScope(identity);
     if (scope === null) return [];
-    const host = changeRequestHost(identity, tracker);
-    const primary = { tracker, host, scope };
+    const canonicalHost = changeRequestHost(identity, tracker);
     const origin = identity.origin;
     // The origin keeps no provider or web URL, so it is read only on the primary's server. Keys
     // drop schemes and ports, so an HTTP origin must match the primary's remote, its web address
@@ -829,6 +828,11 @@ export function makeSourceControlDefinitionRegistry(
     const primaryUrl =
       (identity.locator?.remoteUrl === undefined ? null : httpUrl(identity.locator.remoteUrl)) ??
       (identity.webUrl === undefined ? null : httpUrl(identity.webUrl));
+    const host =
+      tracker === "github" && primaryUrl?.hostname === canonicalHost
+        ? primaryUrl.host
+        : canonicalHost;
+    const primary = { tracker, host, scope };
     if (
       origin === undefined ||
       projectChangeRequestHost(origin, undefined) !==

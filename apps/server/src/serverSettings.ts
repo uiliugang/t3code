@@ -20,6 +20,7 @@ import {
   type IssueProvider,
   importProjectIssueSources,
   issueSourcesMatch,
+  normalizeGithubIssueSource,
   projectIssueProvider,
   repositoryIssueKind,
   type ManagedPolicySummary,
@@ -141,7 +142,7 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
           ...settings,
           ...importProjectIssueSources(
             id,
-            issueProjectSources[id],
+            issueProjectSources[id]?.map(normalizeGithubIssueSource),
             current.issueProjectSources[id] ?? [],
             repositoryKinds?.get(id),
           ),
@@ -184,7 +185,12 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
     }
     if (other.length) sources[id] = next.filter((source) => source.provider === provider);
   }
-  return applyServerSettingsPatch(current, { ...patch, issueProjectSources: sources });
+  return applyServerSettingsPatch(current, {
+    ...patch,
+    issueProjectSources: Object.fromEntries(
+      Object.entries(sources).map(([id, entries]) => [id, entries.map(normalizeGithubIssueSource)]),
+    ),
+  });
 });
 
 const textEncoder = new TextEncoder();

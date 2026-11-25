@@ -99,6 +99,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   pullRequestChecks: Schema.optionalKey(Schema.Boolean),
   issues: Schema.optionalKey(Schema.Boolean),
   issueProjectSourcesCas: Schema.optionalKey(Schema.Boolean),
+  githubIssueSourcePorts: Schema.optionalKey(Schema.Boolean),
   singleProjectIssueProvider: Schema.optionalKey(Schema.Boolean),
   /** Side chats: hidden `lineage.sideChat` forks. Older servers ignore the fork flag. */
   sideChats: Schema.optionalKey(Schema.Boolean),
