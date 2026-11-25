@@ -1561,7 +1561,10 @@ function makeLocalCommandHarness(input: {
       projection.runs.find((candidate) => candidate.id === id),
     ),
   );
-  const recreatedBeforeDispatch = { pending: input.recreatedBeforeDispatch === true };
+  const recreatedBeforeDispatch = {
+    pending: input.recreatedBeforeDispatch === true,
+    failClearOnce: input.failClearRecreatedOnce === true,
+  };
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -1596,15 +1599,14 @@ function makeLocalCommandHarness(input: {
                 }),
               );
             }
-            let failClearOnce = input.failClearRecreatedOnce === true;
             return Effect.suspend(() => {
               if (options?.action === "record") {
                 recreatedBeforeDispatch.pending = true;
                 return Effect.undefined;
               }
               if (options?.action === "clear") {
-                if (failClearOnce) {
-                  failClearOnce = false;
+                if (recreatedBeforeDispatch.failClearOnce) {
+                  recreatedBeforeDispatch.failClearOnce = false;
                   return Effect.fail(
                     new WorktreeRecreateError({
                       worktreePath: targetWorktreePath,
@@ -2890,6 +2892,7 @@ effectIt.effect(
         failClearRecreatedOnce: true,
         runSetup,
       });
+      const initialProjection = harness.projection();
 
       yield* Effect.gen(function* () {
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
@@ -2907,6 +2910,13 @@ effectIt.effect(
           title: "Couldn't set up restored workspace",
         },
       ]);
+
+      // Once the transient clear failure passes, a subsequent explicit user start clears it and proceeds.
+      harness.setProjection(initialProjection);
+      yield* harness.startWithRetry;
+      expect(runSetup).toHaveBeenCalledTimes(2);
+      expect(harness.open).toHaveBeenCalledTimes(1);
+      expect(harness.projection().runs.at(-1)?.status).toBe("running");
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 

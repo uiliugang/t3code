@@ -1028,18 +1028,69 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         assert.equal(refusedDefaultTwoHop._tag, "MigrateDevDbSharedHomeError");
         assert.equal(yield* fs.readFileString(externalLiveDb), "cli-ambient-live-db-bytes");
 
-        // Platform path-splitting rules: Windows drive-relative paths (`C:seed`), roots, and POSIX backslashes.
+        // Distinct homes sharing the same external `state` directory via `userdata` symlinks must also be refused.
+        const separateWorktreeRoot = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-separate-wt-",
+        });
+        yield* fs.writeFileString(
+          path.join(separateWorktreeRoot, ".git"),
+          "gitdir: /repo/.git/worktrees/separate-branch\n",
+        );
+        const separateWorktreeHome = path.join(separateWorktreeRoot, ".t3");
+        yield* fs.makeDirectory(separateWorktreeHome, { recursive: true });
+        yield* fs.symlink(externalStateDir, path.join(separateWorktreeHome, "userdata"));
+        const refusedSharedStateDir = yield* runMigrateDevDb(
+          { projects: 5, threadsPerProject: 2, source },
+          { sharedHome: sourceDir, ambientHome: cliAmbientHome, cwd: separateWorktreeRoot },
+        ).pipe(Effect.flip);
+        assert.equal(refusedSharedStateDir._tag, "MigrateDevDbSharedHomeError");
+        assert.equal(yield* fs.readFileString(externalLiveDb), "cli-ambient-live-db-bytes");
+
+        // Dangling symlink at destination `statev2.sqlite` or `--base-dir link/.` must fail closed without unlinking.
+        const danglingDestHome = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-dangling-dest-",
+        });
+        const danglingDbLink = path.join(danglingDestHome, "userdata", "statev2.sqlite");
+        yield* fs.makeDirectory(path.dirname(danglingDbLink), { recursive: true });
+        yield* fs.symlink(path.join(danglingDestHome, "missing-target.sqlite"), danglingDbLink);
+        const refusedDanglingDb = yield* runMigrateDevDb(
+          { baseDir: danglingDestHome, source, projects: 5, threadsPerProject: 2 },
+          { sharedHome: sourceDir },
+        ).pipe(Effect.flip);
+        assert.equal(refusedDanglingDb._tag, "MigrateDevDbSharedHomeError");
+        assert.equal((yield* fs.lstat(danglingDbLink)).type, "SymbolicLink");
+
+        const danglingBaseLink = path.join(danglingDestHome, "dangling-home-link");
+        yield* fs.symlink(path.join(danglingDestHome, "nowhere"), danglingBaseLink);
+        const refusedDanglingBaseDot = yield* runMigrateDevDb(
+          { baseDir: `${danglingBaseLink}/.`, source, projects: 5, threadsPerProject: 2 },
+          { sharedHome: sourceDir },
+        ).pipe(Effect.flip);
+        assert.equal(refusedDanglingBaseDot._tag, "MigrateDevDbSharedHomeError");
+        assert.equal((yield* fs.lstat(danglingBaseLink)).type, "SymbolicLink");
+
+        // Platform path-splitting rules: Windows drive-relative paths (`C:seed`), roots, `.` termination, and POSIX backslashes.
+        assert.equal(splitPathParentAndLeaf(".", "darwin"), undefined);
+        assert.equal(splitPathParentAndLeaf(".", "win32"), undefined);
+        assert.deepStrictEqual(splitPathParentAndLeaf("./.", "darwin"), {
+          parent: ".",
+          leaf: ".",
+        });
         assert.deepStrictEqual(splitPathParentAndLeaf("C:seed", "win32"), {
           parent: "C:",
           leaf: "seed",
         });
         assert.deepStrictEqual(splitPathParentAndLeaf("C:dir\\seed\\.", "win32"), {
-          parent: "C:dir",
-          leaf: "seed",
+          parent: "C:dir\\seed",
+          leaf: ".",
         });
         assert.equal(splitPathParentAndLeaf("C:\\", "win32"), undefined);
         assert.equal(splitPathParentAndLeaf("C:", "win32"), undefined);
         assert.deepStrictEqual(splitPathParentAndLeaf("/tmp/2.72\\bin/.", "darwin"), {
+          parent: "/tmp/2.72\\bin",
+          leaf: ".",
+        });
+        assert.deepStrictEqual(splitPathParentAndLeaf("/tmp/2.72\\bin", "darwin"), {
           parent: "/tmp",
           leaf: "2.72\\bin",
         });

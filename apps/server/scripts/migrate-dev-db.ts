@@ -196,40 +196,36 @@ export const splitPathParentAndLeaf = (
 ): { readonly parent: string; readonly leaf: string } | undefined => {
   const pathOps = platform === "win32" ? NodePath.win32 : NodePath.posix;
   const separatorPattern = platform === "win32" ? /[\\/]+$/ : /\/+$/;
-  let cursor = rawPath;
-  while (true) {
-    const parsedRoot = pathOps.parse(cursor).root;
-    let trimmed = cursor;
-    if (trimmed.length > parsedRoot.length) {
-      trimmed = trimmed.replace(separatorPattern, "");
-      if (trimmed.length < parsedRoot.length) {
-        trimmed = parsedRoot;
-      }
+  const parsedRoot = pathOps.parse(rawPath).root;
+  let trimmed = rawPath;
+  if (trimmed.length > parsedRoot.length) {
+    trimmed = trimmed.replace(separatorPattern, "");
+    if (trimmed.length < parsedRoot.length) {
+      trimmed = parsedRoot;
     }
-    if (trimmed.length === 0 || trimmed === parsedRoot) {
-      return undefined;
-    }
-    const afterRoot = trimmed.slice(parsedRoot.length);
-    const slashIndex =
-      platform === "win32"
-        ? Math.max(afterRoot.lastIndexOf("/"), afterRoot.lastIndexOf("\\"))
-        : afterRoot.lastIndexOf("/");
-    const leaf = slashIndex === -1 ? afterRoot : afterRoot.slice(slashIndex + 1);
-    const parent =
-      slashIndex === -1
-        ? parsedRoot.length > 0
-          ? parsedRoot
-          : "."
-        : `${parsedRoot}${afterRoot.slice(0, slashIndex)}` || parsedRoot || ".";
-    if (leaf === ".") {
-      cursor = parent;
-      continue;
-    }
-    if (leaf === "" || leaf === "..") {
-      return undefined;
-    }
-    return { parent, leaf };
   }
+  if (trimmed.length === 0 || trimmed === parsedRoot) {
+    return undefined;
+  }
+  const afterRoot = trimmed.slice(parsedRoot.length);
+  const slashIndex =
+    platform === "win32"
+      ? Math.max(afterRoot.lastIndexOf("/"), afterRoot.lastIndexOf("\\"))
+      : afterRoot.lastIndexOf("/");
+  const leaf = slashIndex === -1 ? afterRoot : afterRoot.slice(slashIndex + 1);
+  const parent =
+    slashIndex === -1
+      ? parsedRoot.length > 0
+        ? parsedRoot
+        : "."
+      : `${parsedRoot}${afterRoot.slice(0, slashIndex)}` || parsedRoot || ".";
+  if (leaf === "" || leaf === "..") {
+    return undefined;
+  }
+  if (leaf === "." && parent === trimmed) {
+    return undefined;
+  }
+  return { parent, leaf };
 };
 
 const resolveFilesystemPath = Effect.fn("resolveFilesystemPath")(function* (rawPath: string) {
@@ -254,7 +250,9 @@ const resolveFilesystemPath = Effect.fn("resolveFilesystemPath")(function* (rawP
     if (split === undefined) {
       return Option.none<string>();
     }
-    missingTail.unshift(split.leaf);
+    if (split.leaf !== ".") {
+      missingTail.unshift(split.leaf);
+    }
     cursor = split.parent;
     const resolvedParent = yield* nativeRealPath(cursor).pipe(Effect.option);
     if (Option.isSome(resolvedParent)) {
@@ -917,15 +915,47 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   }
   const sourcePath = resolvedSourcePath;
   const protectedHomes = [sharedHome, ...(ambientHome ? [path.resolve(ambientHome)] : [])];
-  const resolveTargetPath = (file: string) =>
+  const protectedStateDirs = protectedHomes.map((home) => path.join(home, "userdata"));
+  const protectedDatabases = protectedStateDirs.map((dir) => path.join(dir, "statev2.sqlite"));
+  const resolveProtectedPath = (file: string) =>
     resolveFilesystemPath(file).pipe(
       Effect.map((resolved) => Option.getOrElse(resolved, () => path.resolve(file))),
     );
-  const [canonicalProtectedHomes, resolvedStateDir, resolvedDestinationDb] = yield* Effect.all([
-    Effect.forEach(protectedHomes, resolveTargetPath),
-    resolveTargetPath(stateDir),
-    resolveTargetPath(databasePath),
+  const [
+    canonicalProtectedHomes,
+    canonicalProtectedStateDirs,
+    canonicalProtectedDatabases,
+    stateDirOption,
+    destinationDbOption,
+    snapshotDbOption,
+  ] = yield* Effect.all([
+    Effect.forEach(protectedHomes, resolveProtectedPath),
+    Effect.forEach(protectedStateDirs, resolveProtectedPath),
+    Effect.forEach(protectedDatabases, resolveProtectedPath),
+    resolveFilesystemPath(stateDir),
+    resolveFilesystemPath(databasePath),
+    resolveFilesystemPath(snapshotPath),
   ]);
+  if (
+    Option.isNone(stateDirOption) ||
+    Option.isNone(destinationDbOption) ||
+    Option.isNone(snapshotDbOption)
+  ) {
+    return yield* new MigrateDevDbSharedHomeError();
+  }
+  const resolvedStateDir = stateDirOption.value;
+  const resolvedDestinationDb = destinationDbOption.value;
+  const resolvedSnapshotDb = snapshotDbOption.value;
+  // Also reject any symlink at the destination or snapshot filename itself (e.g. a symlink to a standalone seed).
+  for (const rawFile of [databasePath, snapshotPath]) {
+    const rawInfo = yield* fs.lstat(rawFile).pipe(
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null)),
+      Effect.option,
+    );
+    if (Option.isNone(rawInfo) || (rawInfo.value !== null && rawInfo.value.type !== "File")) {
+      return yield* new MigrateDevDbSharedHomeError();
+    }
+  }
   const stateDirHome =
     path.basename(resolvedStateDir).toLowerCase() === "userdata"
       ? path.dirname(resolvedStateDir)
@@ -936,6 +966,10 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
       : undefined;
   if (
     canonicalProtectedHomes.some((home) => samePath(home, canonicalBaseDir)) ||
+    canonicalProtectedStateDirs.some((dir) => samePath(dir, resolvedStateDir)) ||
+    canonicalProtectedDatabases.some(
+      (live) => samePath(live, resolvedDestinationDb) || samePath(live, resolvedSnapshotDb),
+    ) ||
     (stateDirHome !== undefined &&
       canonicalProtectedHomes.some((home) => samePath(home, stateDirHome))) ||
     (resolvedDestinationHome !== undefined &&
@@ -949,8 +983,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     return yield* new MigrateDevDbSharedHomeError();
   }
   // Both destination and snapshot are deleted below; reject sources resolving to either.
-  for (const destination of [databasePath, snapshotPath]) {
-    const canonicalDestination = yield* resolveTargetPath(destination);
+  for (const canonicalDestination of [resolvedDestinationDb, resolvedSnapshotDb]) {
     if (samePath(sourcePath, canonicalDestination)) {
       return yield* new MigrateDevDbSourceIsDestinationError({
         sourcePath: input.source ?? sourcePath,
