@@ -1060,13 +1060,15 @@ const zhCN: Readonly<Record<string, string>> = {
   "Set override": "设置覆盖",
   "GitHub override": "GitHub 覆盖",
   "Restore GitHub automatic": "恢复 GitHub 自动",
+  "Legacy sources: {sources}": "历史来源：{sources}",
+  "Remove incompatible sources": "移除不兼容的来源",
   "Restore automatic": "恢复自动",
   "Restore MEP automatic": "恢复 MEP 自动关联",
   "Save override": "保存覆盖",
   "Save GitHub override": "保存 GitHub 覆盖",
   "GitHub Issue repository override": "GitHub Issue 仓库覆盖",
-  "Only changes the selected projects' GitHub Issue sources. MEP ONES spaces are not affected.":
-    "仅修改所选项目的 GitHub Issue 来源，不影响 MEP ONES 空间。",
+  "Saving or restoring GitHub sources removes previously saved MEP spaces from the selected projects.":
+    "保存或恢复 GitHub 来源会移除所选项目以前保存的 MEP 空间。",
   "Source mode": "来源方式",
   "All modes": "全部方式",
   "Edit MEP spaces for {project}": "编辑 {project} 的 MEP 空间",
@@ -2046,6 +2048,9 @@ const zhCN: Readonly<Record<string, string>> = {
     "通过 dumbo-web 监听。PR 和 MCM 使用官方 CLI；Lion、RDS 和 DMS 仍需人工处理。",
   "Monitoring disabled": "监听已停用",
   "dumbo-web is not installed": "未安装 dumbo-web",
+  "Enhanced dumbo-web card support": "增强 dumbo-web 卡片识别",
+  "Could not apply the dumbo-web card enhancement. Listening with the original CLI.":
+    "未能应用 dumbo-web 卡片增强，已使用原版 CLI 继续监听。",
   "DaXiang login required": "需要登录大象",
   "Connecting to DaXiang": "正在连接大象",
   "Listening for approval links": "正在监听审批链接",
@@ -4448,6 +4453,10 @@ const zhCN: Readonly<Record<string, string>> = {
   'Action "{action}" requires repository "{repository}" on the destination.':
     "操作“{action}”需要目标环境中的“{repository}”仓库。",
   "Settings files must be smaller than 1 MiB.": "设置文件必须小于 1 MiB。",
+  "The destination server cannot confirm the issue platform for this clone. Update the server or import the bindings from project settings after cloning.":
+    "目标服务端无法确认克隆仓库的需求平台。请升级服务端，或先不导入绑定，克隆后再从项目设置恢复。",
+  "This backup contains both GitHub and MEP sources. Keep one platform in the backup or update the destination server before importing.":
+    "备份同时包含 GitHub 和 MEP 来源。请在备份中只保留一个平台，或升级目标服务端后再导入。",
   "Invalid shortcut or condition.": "快捷键或生效条件无效。",
   "Invalid settings file. Check its format, version and setting values.":
     "设置文件无效。请检查文件格式、版本和设置值。",

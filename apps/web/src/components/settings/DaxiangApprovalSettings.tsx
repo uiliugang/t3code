@@ -49,9 +49,10 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
   const canOpenBrowser = useAtomValue(
     serverEnvironment.mutateDaxiangApproval.permissionAtom(environmentId, openBrowserLogin),
   );
+  const capabilities = useAtomValue(environmentServerConfigsAtom).get(environmentId)?.environment
+    .capabilities;
   const browserLoginSupported =
-    useAtomValue(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .daxiangApprovalBrowserLogin === true && canOpenBrowser;
+    capabilities?.daxiangApprovalBrowserLogin === true && canOpenBrowser;
   const monitor = useEnvironmentSettings(
     environmentId,
     (settings) => settings.daxiang.approvalMonitor,
@@ -129,11 +130,13 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
     void run({ type: "cancel_browser_login", threadId: browserLogin.threadId });
   };
 
-  const toggle = (key: keyof MonitorSettings, title: string, subtitle: string) => (
+  const toggle = (key: keyof MonitorSettings, title: string, subtitle?: string) => (
     <div className="flex items-start justify-between gap-4 py-2">
       <div className="grid gap-1">
         <Label htmlFor={`approval-${key}-${environmentId}`}>{t(title)}</Label>
-        <p className="max-w-prose text-xs text-muted-foreground">{t(subtitle)}</p>
+        {subtitle ? (
+          <p className="max-w-prose text-xs text-muted-foreground">{t(subtitle)}</p>
+        ) : null}
       </div>
       <Switch
         id={`approval-${key}-${environmentId}`}
@@ -202,6 +205,15 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
           </div>
         </div>
         {state?.error ? <p className="text-xs text-destructive">{state.error}</p> : null}
+        {monitor.enhanceDumboWeb && state?.enhancementFailed ? (
+          <p role="alert" className="text-xs text-destructive">
+            {t(
+              msg(
+                "Could not apply the dumbo-web card enhancement. Listening with the original CLI.",
+              ),
+            )}
+          </p>
+        ) : null}
         {(!browserLoginSupported || showChrome) && (
           <div className="grid gap-1.5 sm:max-w-xs">
             <Label htmlFor={`approval-port-${environmentId}`}>{t("Chrome CDP port")}</Label>
@@ -291,6 +303,9 @@ export function DaxiangApprovalSettings({ environmentId }: { environmentId: Envi
       ) : null}
 
       <div className="grid gap-1">
+        {capabilities?.daxiangDumboWebEnhancement === true
+          ? toggle("enhanceDumboWeb", msg("Enhanced dumbo-web card support"))
+          : null}
         {toggle(
           "includeGroupChats",
           "Include group chats",

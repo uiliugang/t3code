@@ -59,24 +59,30 @@ const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
     Effect.succeed({ absolutePath: `${workspaceRoot}/${relativePath}`, relativePath }),
 });
 
-const layerMetadata = Layer.merge(
-  Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
-    resolve: (workspaceRoot) =>
-      Effect.succeed({
-        canonicalKey: `github.com/t3tools/${workspaceRoot.split("/").at(-1)}`,
-        locator: {
-          source: "git-remote" as const,
-          remoteName: "origin",
-          remoteUrl: `git@github.com:t3tools/${workspaceRoot.split("/").at(-1)}.git`,
-        },
-        rootPath: workspaceRoot,
-      }),
-  }),
-  Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
-    invalidate: () => Effect.void,
-    resolvePath: (workspaceRoot) => Effect.succeed(`${workspaceRoot}/favicon.svg`),
-  }),
-);
+const testMetadata = (providerOffline = false) =>
+  Layer.merge(
+    Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+      resolve: (workspaceRoot, options) => {
+        const remote = {
+          canonicalKey: `github.com/t3tools/${workspaceRoot.split("/").at(-1)}`,
+          locator: {
+            source: "git-remote" as const,
+            remoteName: "origin",
+            remoteUrl: `git@github.com:t3tools/${workspaceRoot.split("/").at(-1)}.git`,
+          },
+          rootPath: workspaceRoot,
+        };
+        return (
+          (providerOffline ? options?.onUnavailable?.(remote) : undefined) ?? Effect.succeed(remote)
+        );
+      },
+    }),
+    Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+      invalidate: () => Effect.void,
+      resolvePath: (workspaceRoot) => Effect.succeed(`${workspaceRoot}/favicon.svg`),
+    }),
+  );
+const layerMetadata = testMetadata();
 
 class EnrichmentCompletions extends Context.Service<EnrichmentCompletions, Queue.Queue<void>>()(
   "t3/project/ProjectService.test/EnrichmentCompletions",
@@ -127,7 +133,7 @@ const layerTestFor = (
 
 const layerTest = layerTestFor(layerMetadata);
 
-it.layer(layerTestFor(layerMetadata, true))("folder import", (it) => {
+it.layer(layerTestFor(testMetadata(true), true))("folder import", (it) => {
   it.effect(
     "deduplicates paths and repositories, preserves successes and retries failed folders",
     () =>
@@ -144,6 +150,7 @@ it.layer(layerTestFor(layerMetadata, true))("folder import", (it) => {
         const paths = [first, `${root}/alias`, second, missing];
         const preview = yield* service.inspectFolders({ paths });
         assert.equal(preview[0]?.workspaceRoot, preview[1]?.workspaceRoot);
+        assert.isNotNull(preview[0]?.repositoryKey);
         assert.equal(preview[0]?.repositoryKey, preview[2]?.repositoryKey);
         assert.isNotNull(preview[3]?.error);
         const input = { folders: paths.map((path) => ({ path, allowSameRepository: false })) };

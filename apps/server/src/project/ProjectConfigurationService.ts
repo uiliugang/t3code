@@ -1,6 +1,8 @@
 import {
   CommandId,
   defaultInstanceIdForDriver,
+  projectIssueSourcesForTransfer,
+  repositoryIssueKind,
   ProjectConfigurationExportInput,
   ProjectImportDefinition,
   ProjectImportError,
@@ -219,12 +221,30 @@ const make = Effect.gen(function* () {
                 accessIntent: "write" as const,
               },
             ];
+            const primaryRootId = project.workspaceConfig?.primaryRootId ?? roots[0]!.id;
+            const savedSources = server.issueProjectSources[project.id];
+            let repositoryKind = repositoryIssueKind(project.repositoryIdentity);
             const exportedRoots = yield* Effect.forEach(roots, (root) =>
               Effect.gen(function* () {
-                const resolved = yield* identities.resolve(root.sourcePath);
-                const identity =
-                  resolved ??
-                  (root.sourcePath === project.workspaceRoot ? project.repositoryIdentity : null);
+                const refresh = root.id === primaryRootId && Boolean(savedSources?.length);
+                const snapshotIdentity =
+                  root.sourcePath === project.workspaceRoot ? project.repositoryIdentity : null;
+                const resolved = yield* identities.resolve(root.sourcePath, {
+                  refresh,
+                  ...(refresh
+                    ? {
+                        onUnavailable: () =>
+                          Effect.fail(
+                            new ProjectImportError({
+                              operation: "export",
+                              cause: `Could not inspect the repository for ${project.title}. Restore its checkout or Git configuration before exporting.`,
+                            }),
+                          ),
+                      }
+                    : {}),
+                });
+                const identity = resolved ?? (!refresh ? snapshotIdentity : null);
+                if (root.id === primaryRootId) repositoryKind = repositoryIssueKind(identity);
                 const directory = identity?.rootPath
                   ? relativeDirectory(
                       yield* physicalPath(identity.rootPath),
@@ -245,7 +265,8 @@ const make = Effect.gen(function* () {
                   ...(root.defaultBaseRef ? { defaultBaseRef: root.defaultBaseRef } : {}),
                   ...(root.setupScript ? { setupScript: root.setupScript } : {}),
                   remoteUrl: safeCloneUrl(
-                    identity?.origin ? identity.origin.remoteUrl : identity?.locator.remoteUrl,
+                    identity?.issueRepository?.locator.remoteUrl ??
+                      (identity?.origin ? identity.origin.remoteUrl : identity?.locator.remoteUrl),
                   ),
                   directory,
                 };
@@ -253,14 +274,13 @@ const make = Effect.gen(function* () {
             );
             const overrides = resolveProjectSettings(server, project.id, project).overrides;
             const virtualModels = projectVirtualModels(overrides, server);
+            const issueSources = projectIssueSourcesForTransfer(savedSources, repositoryKind);
             return {
               projectId: project.id,
               configuration: {
                 name: project.title,
                 settings: overrides,
-                ...(Object.hasOwn(server.issueProjectSources, project.id)
-                  ? { issueSources: server.issueProjectSources[project.id] }
-                  : {}),
+                ...(issueSources === undefined ? {} : { issueSources }),
                 ...(Object.keys(virtualModels).length ? { virtualModels } : {}),
                 providers: Object.fromEntries(
                   [...providerIds(overrides), ...bindingProviders(virtualModels)].map((id) => [
@@ -270,7 +290,7 @@ const make = Effect.gen(function* () {
                 ),
                 workspace: {
                   grouped: project.workspaceConfig !== undefined,
-                  primaryRootId: project.workspaceConfig?.primaryRootId ?? roots[0]!.id,
+                  primaryRootId,
                   roots: exportedRoots,
                 },
               },
@@ -562,13 +582,9 @@ const make = Effect.gen(function* () {
                 generators.listModels({ id }),
               ),
             ),
-            ...(definition.issueSources !== undefined
-              ? {
-                  issueProjectSources: {
-                    [project.id]: definition.issueSources,
-                  },
-                }
-              : {}),
+            ...(definition.issueSources === undefined
+              ? {}
+              : { issueProjectSources: { [project.id]: definition.issueSources } }),
             projectSettingsOverrides: {
               [project.id]:
                 Object.keys(definition.settings).length === 0
@@ -580,7 +596,13 @@ const make = Effect.gen(function* () {
                     },
             },
           })
-          .pipe(Effect.mapError(() => "settings_failed" as const));
+          .pipe(
+            Effect.provideService(
+              RepositoryIdentityResolver.RepositoryIdentityResolver,
+              identities,
+            ),
+            Effect.mapError(() => "settings_failed" as const),
+          );
       }),
     );
     yield* update(id, (entry) => ({

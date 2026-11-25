@@ -3,9 +3,12 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   RequirementIssueError,
+  type IssueSource,
   ProjectId,
   SourceControlProviderKind,
   SourceControlProviderError,
+  VcsDriverKind,
+  VcsUnsupportedOperationError,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -18,9 +21,165 @@ import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
 import * as Provider from "@t3tools/source-control-core/server/SourceControlProvider";
+import { fakeSourceControlProvider } from "@t3tools/source-control-testing/fakeSourceControlDriver";
 import * as Service from "./IssueService.ts";
 
 describe("IssueService", () => {
+  it.effect.each([
+    ["github.com", "https://github.com/me/fork.git", "origin"],
+    ["forge.example.test", "https://forge.example.test/me/fork.git", "origin"],
+    ["github.com", "git@work:me/fork.git", "origin"],
+    ["github.com", "git@unresolved.test:me/fork.git", "origin"],
+    ["github.com", "file://127.0.0.1/mirror/fork.git", "origin"],
+    ["github.com", "https://gitlab.com/me/fork.git", "origin"],
+    ["github.com", "https://github.com/me/fork.git", "fork"],
+    ["github.com", "https://gitlab.com/me/fork.git", "fork"],
+  ] as const)(
+    "creates a %s fork issue in the repository offered for %s (remote %s)",
+    ([host, remoteUrl, remoteName]) =>
+      Effect.gen(function* () {
+        const projectId = ProjectId.make("fork");
+        const originHost = remoteUrl.startsWith("https:")
+          ? new URL(remoteUrl).hostname
+          : remoteUrl.includes("unresolved.test")
+            ? "unresolved.test"
+            : host;
+        const fork = { remoteName, remoteUrl };
+        const provider = fakeSourceControlProvider("github", {
+          issueBoard: {
+            search: () => Effect.die("unexpected search"),
+            read: () => Effect.die("unexpected read"),
+            people: () => Effect.die("unexpected people"),
+            metadata: () => Effect.die("unexpected metadata"),
+            setState: () => Effect.die("unexpected state change"),
+            create: ({ source, title }) =>
+              Effect.succeed({
+                id: "1",
+                url: `https://${source.host}/${source.scope}/issues/1`,
+                title,
+                state: "open",
+                stateCategory: "todo",
+                type: "",
+                assignees: [],
+                priority: "",
+                updatedAt: "",
+              }),
+          },
+        });
+        const github = { kind: provider.kind, name: "GitHub", baseUrl: `https://${host}` };
+        const service = yield* Service.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              KeyValueStore.layerMemory,
+              NodeCrypto.layer,
+              Settings.ServerSettingsService.layerTest({}),
+              Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                namedProjectsRoot: "/projects",
+              }),
+              Layer.mock(Projects.ProjectService)({
+                getShell: (_id, _cwd, lookup) =>
+                  Effect.succeedSome({
+                    id: projectId,
+                    title: "fork",
+                    workspaceRoot: "/fork",
+                    scripts: [],
+                    defaultModelSelection: null,
+                    createdAt: "2026-01-01T00:00:00Z",
+                    updatedAt: "2026-01-01T00:00:00Z",
+                    repositoryIdentity: lookup
+                      ? {
+                          provider: provider.kind,
+                          canonicalKey: `${host}/org/repo`,
+                          locator: {
+                            source: "git-remote",
+                            remoteName: "upstream",
+                            remoteUrl: `https://${host}/org/repo.git`,
+                          },
+                          ...(remoteUrl.startsWith("file:")
+                            ? { hasLocalOrigin: true }
+                            : remoteName === "origin"
+                              ? {
+                                  origin: {
+                                    canonicalKey: `${originHost}/me/fork`,
+                                    remoteUrl,
+                                  },
+                                }
+                              : {}),
+                        }
+                      : null,
+                  }),
+              }),
+              Layer.mock(Providers.SourceControlProviderRegistry)({
+                resolveLink: () => undefined,
+                get: () => Effect.succeed(provider),
+                resolveHandle: ({ context }) => {
+                  context ??= {
+                    ...fork,
+                    provider:
+                      originHost === "gitlab.com"
+                        ? {
+                            kind: SourceControlProviderKind.make("gitlab"),
+                            name: "GitLab",
+                            baseUrl: "https://gitlab.com",
+                          }
+                        : github,
+                  };
+                  const anonymous =
+                    context?.provider.baseUrl === "https://work" ||
+                    context?.provider.baseUrl === "https://unresolved.test";
+                  if (context?.provider.kind === "gitlab")
+                    return Effect.succeed({
+                      provider: fakeSourceControlProvider("gitlab", {}),
+                      context,
+                    });
+                  return Effect.succeed({
+                    provider: anonymous ? fakeSourceControlProvider("unknown", {}) : provider,
+                    context: {
+                      ...context,
+                      provider: anonymous ? context.provider : github,
+                    },
+                  });
+                },
+              }),
+            ),
+          ),
+        );
+        const [listed] = yield* service.sources({ projectIds: [projectId] });
+        const [refreshed] = yield* service.sources({ projectIds: [projectId], refresh: true });
+        expect(refreshed?.sources).toEqual(listed?.sources);
+        if (originHost !== host || remoteUrl.startsWith("file:")) {
+          const result = yield* service
+            .create({
+              projectId,
+              provider: "github",
+              title: "Fork issue",
+              type: "DEVTASK",
+              subtype: "",
+              body: "",
+              assignees: [],
+              fields: {},
+            })
+            .pipe(Effect.result);
+          expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "invalid-target" } });
+          expect(listed?.sources).toEqual([]);
+          return;
+        }
+        const source = listed!.sources[0]!;
+        expect(source.scope).toBe("me/fork");
+        const created = yield* service.create({
+          provider: "github",
+          projectId,
+          title: "Fork issue",
+          type: "DEVTASK",
+          subtype: "",
+          body: "",
+          assignees: [],
+          fields: {},
+        });
+        expect(created.url).toBe(`https://${host}/me/fork/issues/1`);
+      }),
+  );
+
   it.effect(
     "retries failed discoveries while persisting empty results across service restarts",
     () =>
@@ -140,6 +299,7 @@ describe("IssueService", () => {
           "not-a-repository",
           "discovery-offline",
           "manual-offline",
+          "local-folder",
         ].map((name) => ({
           id: ProjectId.make(name),
           title: name,
@@ -150,7 +310,7 @@ describe("IssueService", () => {
           createdAt: "2026-01-01T00:00:00Z",
           updatedAt: "2026-01-01T00:00:00Z",
         }));
-        const sources = Object.fromEntries(
+        const sources: Record<string, IssueSource[]> = Object.fromEntries(
           projects.slice(0, 4).map((project, index) => [
             project.id,
             [
@@ -166,11 +326,17 @@ describe("IssueService", () => {
         const searched: string[] = [];
         const resolved: string[] = [];
         let discovered = false;
+        let movedToGithub = false;
         let discoveries = 0;
         sources[projects[0]!.id]!.push({
           provider: "meituan",
           host: "mep.sankuai.com",
           scope: "456",
+        });
+        sources[projects[0]!.id]!.push({
+          provider: "github",
+          host: "github.com",
+          scope: "acme/legacy",
         });
         const provider = yield* Provider.SourceControlProvider.pipe(
           Effect.provide(
@@ -227,6 +393,54 @@ describe("IssueService", () => {
         );
         yield* Effect.gen(function* () {
           const service = yield* Service.IssueService;
+          const repoProject = {
+            ...projects[0]!,
+            repositoryIdentity: {
+              provider: SourceControlProviderKind.make("meituan"),
+              canonicalKey: "git.sankuai.com/team/shared",
+              locator: {
+                source: "git-remote" as const,
+                remoteName: "origin",
+                remoteUrl: "https://git.sankuai.com/team/shared.git",
+              },
+            },
+          };
+          expect(
+            (yield* service.sources({ projectIds: [ProjectId.make("local-folder")] }))[0],
+          ).toEqual({
+            projectId: ProjectId.make("local-folder"),
+            repository: null,
+            sources: [],
+            manual: false,
+          });
+          const expectedSpaces = sources[repoProject.id]!.filter(
+            (source) => source.provider === "meituan",
+          );
+          expect((yield* (yield* service.trackerSources).forProject(repoProject)).sources).toEqual(
+            expectedSpaces,
+          );
+          const sidebar = yield* service.trackerSources;
+          expect(
+            (yield* sidebar.forProject({
+              ...repoProject,
+              repositoryIdentity: {
+                ...repoProject.repositoryIdentity,
+                provider: SourceControlProviderKind.make("gitlab"),
+                issueRepository: {
+                  ...repoProject.repositoryIdentity,
+                  provider: SourceControlProviderKind.make("github"),
+                },
+              },
+            })).sources,
+          ).toEqual([{ provider: "github", host: "github.com", scope: "acme/legacy" }]);
+          expect((yield* service.sources({ projectIds: [repoProject.id] }))[0]?.sources).toEqual(
+            expectedSpaces,
+          );
+          expect(
+            (yield* service
+              .read({ provider: "github", projectId: repoProject.id, id: "1" })
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid-target");
           const result = yield* service.list({
             provider: "meituan",
             assignee: "all",
@@ -354,6 +568,25 @@ describe("IssueService", () => {
               id: "1",
             })).title,
           ).toBe("789");
+          movedToGithub = true;
+          const stale = { provider: "meituan" as const, projectId: projects[0]!.id, scope: "789" };
+          expect(
+            (yield* service
+              .create({
+                ...stale,
+                title: "Test",
+                type: "DEVTASK",
+                subtype: "",
+                body: "",
+                assignees: [],
+                fields: {},
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid-target");
+          expect(
+            (yield* service.setState({ ...stale, id: "1", state: "done" }).pipe(Effect.flip))
+              .reason,
+          ).toBe("invalid-target");
         }).pipe(
           Effect.provide(
             Layer.effect(Service.IssueService, Service.make).pipe(
@@ -366,9 +599,26 @@ describe("IssueService", () => {
               ),
               Layer.provide(
                 Layer.mock(Projects.ProjectService)({
-                  getShell: (id) =>
+                  getShell: (id, _cwd, refresh) =>
                     Effect.succeed(
-                      Option.fromUndefinedOr(projects.find((project) => project.id === id)),
+                      Option.fromUndefinedOr(projects.find((project) => project.id === id)).pipe(
+                        Option.map((project) =>
+                          refresh === "refresh" && movedToGithub
+                            ? {
+                                ...project,
+                                repositoryIdentity: {
+                                  provider: SourceControlProviderKind.make("github"),
+                                  canonicalKey: "github.com/acme/moved",
+                                  locator: {
+                                    source: "git-remote" as const,
+                                    remoteName: "origin",
+                                    remoteUrl: "https://github.com/acme/moved.git",
+                                  },
+                                },
+                              }
+                            : project,
+                        ),
+                      ),
                     ),
                   listShells: (options) =>
                     Effect.succeed(
@@ -385,6 +635,20 @@ describe("IssueService", () => {
                   get: () => Effect.succeed(provider),
                   resolveHandle: ({ cwd }) => {
                     resolved.push(cwd);
+                    if (cwd === "/local-folder")
+                      return Effect.fail(
+                        new SourceControlProviderError({
+                          provider: SourceControlProviderKind.make("unknown"),
+                          cwd,
+                          operation: "detectProvider",
+                          detail: "Failed to detect source control provider.",
+                          cause: new VcsUnsupportedOperationError({
+                            operation: "VcsDriverRegistry.resolve",
+                            kind: VcsDriverKind.make("unknown"),
+                            detail: "No supported VCS repository was detected.",
+                          }),
+                        }),
+                      );
                     if (
                       ["/scratch", "/archived", "/not-a-repository", "/manual-offline"].includes(
                         cwd,

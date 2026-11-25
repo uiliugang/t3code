@@ -22,10 +22,9 @@ const StoredCredential = Schema.Struct({
   password: Schema.RedactedFromValue(Schema.NonEmptyString),
 });
 const StoredConfigs = Schema.Array(StoredCredential);
-const decodeStoredConfig = Schema.decodeEffect(
-  Schema.fromJsonString(Schema.Union([StoredConfigs, StoredCredential])),
-);
-const encodeStoredConfig = Schema.encodeEffect(Schema.fromJsonString(StoredConfigs));
+const StoredFile = Schema.fromJsonString(Schema.Union([StoredConfigs, StoredCredential]));
+const decodeStoredConfig = Schema.decodeEffect(StoredFile);
+const encodeStoredConfig = Schema.encodeEffect(StoredFile);
 
 class CloudSandboxError extends Schema.TaggedError<
   CloudSandboxError,
@@ -102,7 +101,7 @@ export const make = Effect.fn("desktop.cloudSandbox.make")(function* (stateDir: 
       return;
     }
     yield* protect;
-    const contents = yield* encodeStoredConfig(stored);
+    const contents = yield* encodeStoredConfig(stored.length === 1 ? stored[0]! : stored);
     const encrypted = yield* storage.encryptString(contents);
     yield* fs.makeDirectory(stateDir, { recursive: true });
     const temp = yield* fs.makeTempFileScoped({

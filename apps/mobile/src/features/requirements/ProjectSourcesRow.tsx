@@ -1,11 +1,13 @@
 import {
+  canBindUndetectedProject,
   parseMepSpaceIds,
+  projectIssueSourceCleanup,
   projectIssueSourceEdit,
   withGithubRepositoryOverride,
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
 import { mepSpaceValue } from "@t3tools/client-runtime/meituanSettings";
-import type { EnvironmentId, IssueSource, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, IssueProvider, IssueSource, ProjectId } from "@t3tools/contracts";
 import { useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
@@ -29,6 +31,8 @@ export function ProjectSourcesRow({
   repository,
   saved,
   sources,
+  provider,
+  singleProvider,
   error,
   discovery,
   mep,
@@ -40,6 +44,8 @@ export function ProjectSourcesRow({
   repository: string | null;
   saved: readonly IssueSource[];
   sources: readonly IssueSource[];
+  provider: IssueProvider | undefined;
+  singleProvider: boolean;
   error: string | undefined;
   discovery: "pending" | "failed" | "ready";
   mep: boolean;
@@ -58,7 +64,12 @@ export function ProjectSourcesRow({
   const spaces = sources.filter((s) => s.provider === "meituan").map((s) => s.scope);
   const manual = saved.some((s) => s.provider === "meituan");
   const github = githubSources[0];
-  const space = mep ? spaces[0] : undefined;
+  const cleanup = projectIssueSourceCleanup(singleProvider, projectId, provider, saved, mep);
+  const canChoose =
+    provider !== undefined || canBindUndetectedProject(singleProvider, discovery, error);
+  const showGithub = canChoose && provider !== "meituan";
+  const showMep = canChoose && mep && provider !== "github";
+  const space = mep || cleanup?.disabledMep ? spaces[0] : undefined;
   const githubLabel =
     githubSources.length > 1
       ? t("{count} GitHub repositories", { count: githubSources.length })
@@ -90,28 +101,12 @@ export function ProjectSourcesRow({
   };
   const close = () => setView("closed");
   const open = () => {
-    if (allowed && !mep && githubSources.length <= 1) edit({ provider: "github", source: github });
+    if (allowed && !cleanup && showGithub && !showMep && githubSources.length <= 1)
+      edit({ provider: "github", source: github });
     else setView("sources");
   };
-  const save = async (restore: boolean) => {
-    if (
-      !editing ||
-      busy ||
-      !allowed ||
-      (!restore && !valid) ||
-      (editing.provider === "meituan" && !mep)
-    )
-      return;
-    const input = projectIssueSourceEdit(
-      projectId,
-      editing.provider,
-      saved,
-      editing.saved,
-      (latest) =>
-        editing.provider === "meituan"
-          ? withMepSpaceOverrides(latest, restore ? [] : (parseMepSpaceIds(draft) ?? []))
-          : withGithubRepositoryOverride(latest, editing.source, restore ? null : draft.trim()),
-    );
+  const persist = async (input: ReturnType<typeof projectIssueSourceEdit>) => {
+    if (!allowed || busy) return;
     if (!input) {
       setFailure(t("Project sources have changed. Reopen the editor and try again."));
       return;
@@ -119,10 +114,30 @@ export function ProjectSourcesRow({
     setBusy(true);
     setFailure(null);
     const result = await update({ environmentId, input });
-    if (result._tag === "Success") {
-      close();
-    } else setFailure(t("Could not save project sources. Reopen the editor and try again."));
+    if (result._tag === "Success") close();
+    else setFailure(t("Could not save project sources. Reopen the editor and try again."));
     setBusy(false);
+  };
+  const save = (restore: boolean) => {
+    if (
+      !editing ||
+      busy ||
+      !allowed ||
+      (!restore && !valid) ||
+      !(editing.provider === "meituan" ? showMep : showGithub)
+    )
+      return;
+    const input = projectIssueSourceEdit(
+      projectId,
+      singleProvider ? editing.provider : undefined,
+      saved,
+      editing.saved,
+      (latest) =>
+        editing.provider === "meituan"
+          ? withMepSpaceOverrides(restore ? [] : (parseMepSpaceIds(draft) ?? []))
+          : withGithubRepositoryOverride(latest, editing.source, restore ? null : draft.trim()),
+    );
+    return persist(input);
   };
   return (
     <>
@@ -173,6 +188,31 @@ export function ProjectSourcesRow({
             {error ? (
               <Text accessibilityRole="alert" className="text-danger">
                 {error}
+              </Text>
+            ) : null}
+            {cleanup && !editing ? (
+              <View className="gap-2">
+                <Text textRole="footnote">
+                  {cleanup.disabledMep
+                    ? `${t("Manual override")} · ${cleanup.scopes}`
+                    : t("Legacy sources: {sources}", { sources: cleanup.scopes })}
+                </Text>
+                {allowed ? (
+                  <Button
+                    size="compact"
+                    tone="text"
+                    label={t(
+                      cleanup.disabledMep ? "Restore automatic" : "Remove incompatible sources",
+                    )}
+                    disabled={busy}
+                    onPress={() => void persist(cleanup.input)}
+                  />
+                ) : null}
+              </View>
+            ) : null}
+            {failure && !editing ? (
+              <Text accessibilityRole="alert" className="text-danger">
+                {failure}
               </Text>
             ) : null}
             {editing && allowed ? (
@@ -239,26 +279,28 @@ export function ProjectSourcesRow({
               </View>
             ) : (
               <>
-                <ListSection title={t("GitHub repository")}>
-                  {(githubSources.length ? githubSources : [undefined]).map((source) => (
-                    <SourceChoice
-                      key={source ? JSON.stringify([source.host, source.scope]) : "github"}
-                      label={
-                        source?.scope ??
-                        t(
-                          discovery === "pending"
-                            ? "Loading..."
-                            : discovery === "failed"
-                              ? "Unknown"
-                              : "Not configured",
-                        )
-                      }
-                      description={source?.host}
-                      onEdit={allowed ? () => edit({ provider: "github", source }) : undefined}
-                    />
-                  ))}
-                </ListSection>
-                {mep ? (
+                {showGithub ? (
+                  <ListSection title={t("GitHub repository")}>
+                    {(githubSources.length ? githubSources : [undefined]).map((source) => (
+                      <SourceChoice
+                        key={source ? JSON.stringify([source.host, source.scope]) : "github"}
+                        label={
+                          source?.scope ??
+                          t(
+                            discovery === "pending"
+                              ? "Loading..."
+                              : discovery === "failed"
+                                ? "Unknown"
+                                : "Not configured",
+                          )
+                        }
+                        description={source?.host}
+                        onEdit={allowed ? () => edit({ provider: "github", source }) : undefined}
+                      />
+                    ))}
+                  </ListSection>
+                ) : null}
+                {showMep ? (
                   <ListSection title={t("MEP space IDs")}>
                     <SourceChoice
                       label={mepSpaceValue(spaces, discovery, t)}

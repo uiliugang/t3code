@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { SourceControlProviderError, SourceControlProviderKind } from "@t3tools/contracts";
 import { vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
@@ -111,20 +112,23 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       });
 
       yield* git(aliasDir, ["init"]);
-      yield* git(aliasDir, ["remote", "add", "origin", "git@github.com-personal:owner/repo.git"]);
+      yield* git(aliasDir, ["remote", "add", "origin", "git@work:owner/repo.git"]);
       yield* git(plainDir, ["init"]);
       yield* git(plainDir, ["remote", "add", "origin", "git@github.com:owner/repo.git"]);
 
       const runner = yield* ProcessRunner.ProcessRunner;
-      // Stands in for `Host github.com-personal` / `HostName github.com` in ~/.ssh/config.
       const resolver = yield* RepositoryIdentityResolver.make().pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, {
           run: (input) =>
             input.command === "ssh" && input.args.includes("-G")
               ? Effect.succeed({
-                  stdout: input.args.some((arg) => arg.includes("github.com-personal"))
-                    ? "user git\nhostname github.com\nport 22\n"
-                    : `hostname ${input.args.at(-1) ?? ""}\nport 22\n`,
+                  stdout: input.args.includes("git@work.alias")
+                    ? "hostname forge.example.test\n"
+                    : input.args.includes("git@work.alias.test")
+                      ? "hostname ssh.github.com\nport 443\n"
+                      : input.args.includes("git@work")
+                        ? "user git\nhostname github.com\nport 22\n"
+                        : `hostname ${input.args.at(-1) ?? ""}\nport 22\n`,
                   stderr: "",
                   code: ChildProcessSpawner.ExitCode(0),
                   timedOut: false,
@@ -142,7 +146,30 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
 
       expect(plainIdentity?.canonicalKey).toBe("github.com/owner/repo");
       expect(aliasIdentity?.canonicalKey).toBe(plainIdentity?.canonicalKey);
-      expect(aliasIdentity?.locator.remoteUrl).toBe("git@github.com-personal:owner/repo.git");
+      expect(aliasIdentity?.provider).toBe(plainIdentity?.provider);
+      expect(aliasIdentity?.locator.remoteUrl).toBe("git@work:owner/repo.git");
+      yield* git(aliasDir, ["remote", "set-url", "origin", "git@work.alias.test:me/fork.git"]);
+      const transport = yield* resolver.resolve(aliasDir, { refresh: true });
+      expect(sourceControlDefinitions.issueBindings(transport)).toEqual([
+        { tracker: "github", host: "github.com", scope: "me/fork" },
+      ]);
+      yield* git(aliasDir, ["remote", "add", "upstream", "https://github.com/org/parent.git"]);
+      expect((yield* resolver.resolve(aliasDir, { refresh: true }))?.origin).toMatchObject({
+        canonicalKey: "github.com/me/fork",
+        remoteUrl: "git@work.alias.test:me/fork.git",
+      });
+      yield* git(aliasDir, ["remote", "set-url", "upstream", "git@work.alias:org/parent.git"]);
+      for (const origin of [
+        "https://forge.example.test/me/fork.git",
+        "git@forge.example.test:me/fork.git",
+        "ssh://git@forge.example.test/me/fork.git",
+      ]) {
+        yield* git(aliasDir, ["remote", "set-url", "origin", origin]);
+        const fork = yield* resolver.resolve(aliasDir, { refresh: true });
+        expect(fork?.canonicalKey).toBe("forge.example.test/org/parent");
+        expect(fork?.locator.remoteUrl).toBe("git@work.alias:org/parent.git");
+        expect(fork?.origin?.canonicalKey).toBe("forge.example.test/me/fork");
+      }
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
@@ -170,6 +197,15 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         source: "git-remote",
         remoteName: "origin",
         remoteUrl: "https://github.com/T3Tools/t3code.git",
+      });
+
+      yield* git(cwd, ["config", "--unset", "url.https://proxy.example/.insteadOf"]);
+      yield* git(cwd, ["config", "url.file:///srv/mirror/.insteadOf", "https://github.com/"]);
+      const mirroredIdentity = yield* resolver.resolve(cwd, { refresh: true });
+      expect(mirroredIdentity).toMatchObject({
+        canonicalKey: "github.com/t3tools/t3code",
+        hasLocalOrigin: true,
+        issueRepository: null,
       });
 
       const shorthandCwd = yield* fileSystem.makeTempDirectoryScoped({
@@ -210,6 +246,54 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(identity?.name).toBe("Tool");
       expect(sourceControlDefinitions.repositorySelector(identity)).toBe("Acme/Platform/_git/Tool");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("does not treat an unanswered enterprise provider probe as a settled unknown", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped();
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "https://forge.example.test/team/web.git"]);
+      let offline = true;
+      let probes = 0;
+      const resolver = yield* RepositoryIdentityResolver.make({
+        refine: (identity) => {
+          probes++;
+          return offline && identity.provider !== "github"
+            ? Effect.fail(
+                new SourceControlProviderError({
+                  provider: SourceControlProviderKind.make("unknown"),
+                  operation: "detectProvider",
+                  cwd,
+                  detail: "Credential lookup timed out.",
+                }),
+              )
+            : Effect.succeed({ ...identity, provider: SourceControlProviderKind.make("github") });
+        },
+      });
+      expect((yield* resolver.resolve(cwd, { remoteOnly: true }))?.canonicalKey).toBe(
+        "forge.example.test/team/web",
+      );
+      expect(probes).toBe(0);
+      expect((yield* resolver.resolve(cwd))?.canonicalKey).toBe("forge.example.test/team/web");
+      const strict = { onUnavailable: () => Effect.fail("unavailable") };
+      expect((yield* resolver.resolve(cwd, strict).pipe(Effect.result))._tag).toBe("Failure");
+      offline = false;
+      expect((yield* resolver.resolve(cwd, strict))?.provider).toBe("github");
+      yield* git(cwd, ["remote", "set-url", "origin", "https://forge.example.test/team/new.git"]);
+      expect(
+        (yield* resolver.resolve(cwd, { remoteOnly: true, refresh: true }))?.canonicalKey,
+      ).toBe("forge.example.test/team/new");
+      expect((yield* resolver.resolve(cwd, strict))?.canonicalKey).toBe(
+        "forge.example.test/team/new",
+      );
+      yield* git(cwd, ["remote", "rename", "origin", "upstream"]);
+      yield* git(cwd, ["remote", "add", "origin", "https://github.com/team/fork.git"]);
+      offline = true;
+      expect((yield* resolver.resolve(cwd, { ...strict, refresh: true }))?.canonicalKey).toBe(
+        "forge.example.test/team/new",
+      );
+    }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
   it.effect("resolves the fetch remote of a partial clone", () =>
@@ -278,6 +362,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const identity = yield* resolver.resolve(cwd);
       expect(identity?.locator.remoteUrl).toBe("https://github.com/T3Tools/t3code.git");
       expect(identity?.origin?.remoteUrl).toBe("https://github.com/me/t3code.git");
+      expect(identity?.issueRepository?.locator.remoteUrl).toBe("https://github.com/me/t3code.git");
       expect(JSON.stringify(identity)).not.toContain("secret");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
@@ -368,6 +453,36 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect.each(["HEAD", "objects", "refs"])(
+    "does not inherit a parent repository or report no remote for a bare clone missing %s",
+    (entry) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const parent = yield* fs.makeTempDirectoryScoped();
+        const bare = path.join(parent, "child.git");
+        yield* git(parent, ["init", "--bare", bare]);
+        yield* git(bare, [
+          "--git-dir=.",
+          "remote",
+          "add",
+          "origin",
+          "https://github.com/team/child.git",
+        ]);
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        const strict = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
+        expect((yield* resolver.resolve(bare, strict))?.provider).toBe("github");
+        yield* fs.rename(path.join(bare, entry), path.join(bare, `${entry}.offline`));
+        const standalone = yield* resolver.resolve(bare, strict).pipe(Effect.result);
+        yield* git(parent, ["init"]);
+        yield* git(parent, ["remote", "add", "origin", "https://git.sankuai.com/team/parent.git"]);
+        const nested = yield* resolver.resolve(bare, strict).pipe(Effect.result);
+        expect([standalone._tag, nested._tag]).toEqual(["Failure", "Failure"]);
+        yield* fs.rename(path.join(bare, `${entry}.offline`), path.join(bare, entry));
+        expect((yield* resolver.resolve(bare, strict))?.provider).toBe("github");
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect(
     "returns null for non-git, missing and no-remote folders, probing only what can exist",
     () =>
@@ -390,7 +505,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
             run: (input) =>
               Effect.suspend(() => {
                 runs.push(input.args);
-                return runner.run(input);
+                return runner.run({ ...input, env: { ...input.env, GIT_TRACE: "1" } });
               }),
           }),
         );
@@ -400,10 +515,33 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         expect(yield* resolver.resolve(path.join(nonGitDir, "deleted"))).toBeNull();
         expect(runs).toEqual([]);
 
-        expect(yield* resolver.resolve(nonGitDir)).toBeNull();
+        yield* fileSystem.writeFileString(
+          path.join(nonGitDir, "config"),
+          "ordinary project configuration\n",
+        );
+        expect(
+          yield* resolver.resolve(nonGitDir, { onUnavailable: () => Effect.fail("unavailable") }),
+        ).toBeNull();
         expect(bareProbes()).toEqual([]);
 
         expect(yield* resolver.resolve(gitDir)).toBeNull();
+        const ceiling = path.join(gitDir, "projects");
+        const plain = path.join(ceiling, "plain");
+        yield* fileSystem.makeDirectory(plain, { recursive: true });
+        vi.stubEnv("GIT_CEILING_DIRECTORIES", ceiling);
+        yield* Effect.addFinalizer(() => Effect.sync(() => vi.unstubAllEnvs()));
+        const strict = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
+        expect(yield* resolver.resolve(plain, strict)).toBeNull();
+        const physicalCeiling = yield* fileSystem.realPath(ceiling);
+        vi.stubEnv(
+          "GIT_CEILING_DIRECTORIES",
+          `${path.sep === "\\" ? ";" : ":"}${physicalCeiling.split(path.sep).join("/")}/`,
+        );
+        expect(yield* resolver.resolve(plain, strict)).toBeNull();
+        yield* fileSystem.makeDirectory(path.join(plain, ".git"));
+        const below = path.join(plain, "nested");
+        yield* fileSystem.makeDirectory(below);
+        expect(yield* resolver.resolve(below, strict).pipe(Effect.flip)).toBe("unavailable");
       }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
@@ -431,6 +569,25 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const mixedIdentity = yield* resolver.resolve(mixedDir);
       expect(mixedIdentity?.locator.remoteName).toBe("mirror");
       expect(mixedIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
+      expect(mixedIdentity?.issueRepository).toBeUndefined();
+      const backup = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
+      yield* git(mixedDir, ["remote", "rename", "mirror", "upstream"]);
+      yield* git(mixedDir, ["remote", "add", "fork", "/srv/git/fork.git"]);
+      expect((yield* resolver.resolve(mixedDir, backup))?.issueRepository).toBeNull();
+      yield* git(mixedDir, ["remote", "remove", "fork"]);
+      yield* git(mixedDir, ["remote", "rename", "upstream", "mirror"]);
+      yield* git(mixedDir, ["remote", "add", "origin", "file://127.0.0.1/mirror/fork.git"]);
+      const mirrored = yield* resolver.resolve(mixedDir, backup);
+      expect(mirrored).toMatchObject({
+        canonicalKey: mixedIdentity?.canonicalKey,
+        hasLocalOrigin: true,
+      });
+      expect(mirrored?.origin).toBeUndefined();
+      yield* git(mixedDir, ["remote", "remove", "mirror"]);
+      expect(yield* resolver.resolve(mixedDir, backup)).toBeNull();
+      yield* fileSystem.remove(mixedDir, { recursive: true });
+      expect(yield* resolver.resolve(mixedDir, backup).pipe(Effect.flip)).toBe("unavailable");
+      expect(yield* resolver.resolve(mixedDir)).toBeNull();
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 

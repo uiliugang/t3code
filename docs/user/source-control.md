@@ -66,7 +66,7 @@ association without changing the original issue.
 
 Without a requirement link, use **Create issue** in the conversation's linked-issues area. The
 agent prepares the issue from the conversation and associates it automatically. The project
-selects the destination platform; choose one when multiple sources are configured. Missing
+uses GitHub Issues for a GitHub repository or MEP ONES for a Meituan Code repository. When there are several repositories or spaces on that platform, choose the destination. Without a recognized repository, the first saved platform is used; clear its manual binding before choosing a different one. Missing
 required fields may need your input. Creating an issue starts an agent and can incur provider costs.
 
 GitHub Issues close automatically after the confirmed scope's necessary pull requests all merge.

@@ -1,4 +1,5 @@
 import { builtInSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
+import { withoutRemoteUrlCredentials } from "@t3tools/shared/cloneUrl";
 import * as GitHubDriver from "@t3tools/source-control-github/server/driver";
 import * as GitLabDriver from "@t3tools/source-control-gitlab/server/driver";
 import * as MeituanDriver from "@t3tools/source-control-meituan/server/driver";
@@ -16,6 +17,31 @@ export const BUILT_IN_SOURCE_CONTROL_DRIVER_LIST = [
 ] as const;
 
 export const sourceControlDefinitions = builtInSourceControlDefinitions;
+
+export function isLocalRemoteUrl(url: string): boolean {
+  if (/^file:/i.test(url)) return true;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return false;
+  if (/^[a-z]:[\\/]/i.test(url)) return true;
+  const colonIndex = url.indexOf(":");
+  const slashIndex = url.search(/[\\/]/);
+  return colonIndex === -1 || (slashIndex !== -1 && slashIndex < colonIndex);
+}
+
+export function selectRequirementRemote(
+  remotes: ReadonlyArray<{ readonly name: string; readonly url: string }>,
+) {
+  const origin = remotes.find((remote) => remote.name === "origin");
+  const targets = remotes.filter(
+    (remote) => remote.name !== "gb-local" || !/^\.[\\/]?$/u.test(remote.url),
+  );
+  const candidates =
+    targets.length > 1 ? targets.filter((remote) => remote.name !== "upstream") : targets;
+  const selected = origin ?? (candidates.length === 1 ? candidates[0] : undefined);
+  if (!selected || isLocalRemoteUrl(selected.url)) return null;
+  const remoteUrl = withoutRemoteUrlCredentials(selected.url);
+  const provider = sourceControlDefinitions.recognizeRemote(remoteUrl);
+  return provider ? { remoteName: selected.name, remoteUrl, provider } : null;
+}
 
 /** A host CLI command that merges or closes a change request, such as `gh pr merge`. */
 export const isChangeRequestCloseCommand = (command: string) =>

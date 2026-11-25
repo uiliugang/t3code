@@ -167,6 +167,7 @@ function fakeTracker(overrides: Partial<IssueTrackerApi> = {}): IssueTrackerApi 
 
 function makeService(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
+  readonly refreshedProject?: () => OrchestrationProjectShell;
   readonly trackers: ReadonlyArray<IssueTrackerApi>;
   readonly bindings?: Record<string, IssueTrackerProjectBinding>;
   readonly bindingsFailure?: PersistenceSqlError;
@@ -215,9 +216,12 @@ function makeService(input: {
             ),
             Layer.mock(ProjectService.ProjectService)({
               listShells: () => Effect.succeed(input.projects),
-              getShell: (projectId) =>
+              getShell: (projectId, _root, refresh) =>
                 Effect.succeed(
-                  Option.fromNullishOr(input.projects.find((p) => p.id === projectId)),
+                  Option.fromNullishOr(
+                    (refresh && input.refreshedProject?.()) ||
+                      input.projects.find((p) => p.id === projectId),
+                  ),
                 ),
             }),
             Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
@@ -256,6 +260,52 @@ describe("IssueService", () => {
       expect(bound).toMatchObject({ tracker: ones, scope: "456", writable: true });
       expect((yield* service.detail(bound)).writable).toBe(true);
       yield* Effect.flip(service.resolveUrl(url("789")));
+      const upstream = project({ id: "p", repository: "acme/upstream" });
+      const crossForge = yield* makeService({
+        projects: [
+          {
+            ...upstream,
+            repositoryIdentity: {
+              ...upstream.repositoryIdentity!,
+              issueRepository: project({
+                id: "fork",
+                repository: "acme/fork",
+                provider: "meituan",
+                host: "git.sankuai.com",
+              }).repositoryIdentity!,
+              origin: { canonicalKey: "git.sankuai.com/acme/fork" },
+            },
+          },
+        ],
+        trackers: [fakeTracker(), fakeTracker({ kind: ones })],
+        spaces: ["123"],
+      });
+      expect(
+        (yield* crossForge.list({ state: "all" })).trackers.map((item) => item.tracker),
+      ).toEqual([ones]);
+      yield* Effect.flip(
+        crossForge.setState({
+          projectId: upstream.id,
+          tracker: GITHUB,
+          scope: "acme/upstream",
+          key: "1",
+          state: "closed",
+        }),
+      );
+      const otherForge = yield* makeService({
+        projects: [
+          project({ id: "p", provider: "gitlab", host: "gitlab.com", repository: "vendor/app" }),
+        ],
+        trackers: [
+          fakeTracker({ kind: IssueTrackerKind.make("gitlab") }),
+          fakeTracker({ kind: ones }),
+        ],
+        spaces: ["42"],
+      });
+      expect(yield* otherForge.projectScope(upstream.id)).toMatchObject({
+        tracker: ones,
+        scope: "42",
+      });
       const failure = new RequirementIssueError({ operation: "discovery", reason: "unavailable" });
       const isolated = yield* makeService({
         projects: [project({ id: "p" })],
@@ -360,6 +410,28 @@ describe("IssueService", () => {
         body: "ok",
       });
       expect(writes).toEqual(["acme/web#1", "me/web#1"]);
+      const enterpriseFork = project({
+        id: "fork",
+        host: "code.acme.test",
+        repository: "me/web",
+      }).repositoryIdentity!;
+      const crossHost = yield* makeService({
+        projects: [
+          {
+            ...fork,
+            repositoryIdentity: {
+              ...fork.repositoryIdentity!,
+              origin: { canonicalKey: enterpriseFork.canonicalKey },
+              issueRepository: enterpriseFork,
+            },
+          },
+        ],
+        trackers: [fakeTracker()],
+      });
+      expect(yield* crossHost.projectScope(fork.id)).toMatchObject({
+        host: "code.acme.test",
+        scope: "me/web",
+      });
 
       // Another host is not reachable through this project's credentials at all.
       const elsewhere = yield* Effect.flip(service.detail({ ...own, host: "ghe.example.test" }));
@@ -426,8 +498,10 @@ describe("IssueService", () => {
   it.effect("refuses what the tracker did not declare before calling it", () =>
     Effect.gen(function* () {
       let calls = 0;
+      let remote = "acme/web";
       const service = yield* makeService({
-        projects: [project({ id: "web", repository: "acme/web" })],
+        projects: [project({ id: "web", repository: remote })],
+        refreshedProject: () => project({ id: "web", repository: remote }),
         trackers: [
           fakeTracker({
             setState: () =>
@@ -449,7 +523,11 @@ describe("IssueService", () => {
         service.react({ ...ref, content: "heart", reacted: true }),
       );
       expect(reaction._tag).toBe("IssueOperationError");
+      remote = "acme/moved";
+      yield* Effect.flip(service.setState({ ...ref, state: "Closed" }));
       expect(calls).toBe(1);
+      yield* service.setState({ ...ref, scope: remote, state: "Closed" });
+      expect(calls).toBe(2);
     }),
   );
 
@@ -1068,13 +1146,37 @@ describe("IssueService with a standalone tracker", () => {
       // A project with no remote at all can still be bound, and then has only the standalone one.
       const standaloneOnly = yield* makeService({
         projects,
-        trackers,
+        refreshedProject: () => {
+          throw new Error("Checkout is offline");
+        },
+        trackers: [
+          fakeStandaloneTracker({
+            ...record(LINEAR),
+            create: ({ host, scope }) =>
+              Effect.succeed({
+                key: `${scope}-1`,
+                displayKey: `${scope}-1`,
+                url: `https://${host}/acme/issue/${scope}-1`,
+              }),
+          }),
+        ],
         bindings: { ["notes" as ProjectId]: { tracker: LINEAR, scope: "OPS" } },
       });
       const notes = yield* standaloneOnly.list({ state: "open", projectId: "notes" as ProjectId });
       expect(notes.entries.map((entry) => [entry.projectId, entry.scope])).toEqual([
         ["notes", "OPS"],
       ]);
+      expect(
+        yield* standaloneOnly.create({
+          projectId: "notes" as ProjectId,
+          tracker: LINEAR,
+          scope: "OPS",
+          title: "Project issue",
+          body: "",
+          labels: [],
+          assignees: [],
+        }),
+      ).toMatchObject({ key: "OPS-1", url: "https://linear.app/acme/issue/OPS-1" });
 
       // Bindings that cannot be read fail the listing; they are not taken for "none bound".
       const unreadable = yield* makeService({

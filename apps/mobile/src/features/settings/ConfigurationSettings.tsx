@@ -6,6 +6,7 @@ import {
   createApplicationSettingsFile,
   createProjectSettingsFile,
   projectSettingsImportPatch,
+  projectImportSourceContext,
   projectTransferIdentity,
   projectConfigurationsForImport,
   settingsKeybindingsForExport,
@@ -162,7 +163,11 @@ function ConfigurationTransfer({
               environmentId,
               input: {
                 id: importId,
-                projects: definitions,
+                projects: projectConfigurationsForImport(
+                  file,
+                  appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId))?.environment
+                    .capabilities ?? {},
+                ),
                 ...(destinationDirectory.trim()
                   ? { destinationDirectory: destinationDirectory.trim() }
                   : {}),
@@ -346,6 +351,13 @@ export function ProjectConfigurationSettings({
                 file,
                 project,
                 current,
+                await projectImportSourceContext(
+                  file,
+                  project,
+                  config?.environment.capabilities,
+                  appAtomRegistry,
+                  sourceControlEnvironment.refreshIssueSources,
+                ),
                 t,
                 config?.providers,
                 await importGeneratorCatalog(

@@ -104,6 +104,10 @@ export const validateClaudeEndpoint = Effect.fn("ClaudeEndpointValidation.valida
       ),
     );
   };
+  const withTimeout = Effect.timeoutOrElse({
+    duration: "30 seconds",
+    orElse: () => Effect.fail(fail("The BA check timed out. Try again or cancel the request.")),
+  });
   const program = Effect.gen(function* () {
     if (input.check === "connection") {
       yield* checkRuntime.pipe(
@@ -203,7 +207,7 @@ export const validateClaudeEndpoint = Effect.fn("ClaudeEndpointValidation.valida
       if (!stopped || !stopReason || [...blocks.values()].some((entry) => !entry.closed))
         return yield* fail("BA stream ended before the message completed.");
       return { blocks: [...blocks.values()], stopReason };
-    });
+    }, withTimeout);
     const tools = [
       {
         name: "t3_echo",
@@ -274,11 +278,7 @@ export const validateClaudeEndpoint = Effect.fn("ClaudeEndpointValidation.valida
       message: "Model, streamed response, and echo tool round trip passed.",
     };
   });
-  return yield* program.pipe(
-    Effect.timeoutOrElse({
-      duration: "30 seconds",
-      orElse: () => Effect.fail(fail("The BA check timed out. Try again or cancel the request.")),
-    }),
+  return yield* (input.check === "connection" ? program.pipe(withTimeout) : program).pipe(
     Effect.mapError((cause) =>
       isSetupError(cause)
         ? cause

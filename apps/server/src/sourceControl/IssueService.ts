@@ -1,9 +1,13 @@
 import {
   RequirementIssueError,
   isMeituanServiceEnabled,
+  mergeProjectIssueSources,
+  projectIssueProvider,
+  repositoryIssueKind,
   IssueSource,
   SourceControlProviderError,
   SourceControlProviderKind,
+  VcsUnsupportedOperationError,
   type IssueTarget,
   type OrchestrationProjectShell,
   type ServerSettings,
@@ -38,25 +42,29 @@ import * as Projects from "../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
+import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 import * as Provider from "@t3tools/source-control-core/server/SourceControlProvider";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 
 type Board = NonNullable<Provider.SourceControlProvider["Service"]["issueBoard"]>;
+const isUnsupportedVcsOperation = Schema.is(VcsUnsupportedOperationError);
 class DiscoveryKey extends Persistable.Class<{
-  payload: { readonly cwd: string; readonly remoteUrl: string; readonly key: string };
+  payload: {
+    readonly cwd: string;
+    readonly context: Provider.SourceControlProviderContext;
+    readonly key: string;
+  };
 }>()("IssueSourceDiscovery", {
   primaryKey: ({ key }) => key,
   success: Schema.Array(IssueSource),
   error: SourceControlProviderError,
 }) {
   [Equal.symbol](other: unknown): boolean {
-    return (
-      other instanceof DiscoveryKey &&
-      normalizeGitRemoteUrl(this.remoteUrl) === normalizeGitRemoteUrl(other.remoteUrl)
-    );
+    return other instanceof DiscoveryKey && this.key === other.key;
   }
   [Hash.symbol](): number {
-    return Hash.string(normalizeGitRemoteUrl(this.remoteUrl));
+    return Hash.string(this.key);
   }
 }
 export class IssueService extends Context.Service<
@@ -98,7 +106,7 @@ export const make = Effect.gen(function* () {
   const digester = yield* Digest.Digest;
   const discovery = yield* PersistedCache.make(
     Effect.fn("IssueService.discover")(function* (key: DiscoveryKey) {
-      const handle = yield* providers.resolveHandle({ cwd: key.cwd });
+      const handle = yield* providers.resolveHandle({ cwd: key.cwd, context: key.context });
       return handle.context && handle.provider.discoverIssueSources
         ? yield* handle.provider.discoverIssueSources({ cwd: key.cwd, context: handle.context })
         : [];
@@ -119,14 +127,48 @@ export const make = Effect.gen(function* () {
     project: OrchestrationProjectShell,
     saved: ServerSettings,
     refresh = false,
+    refreshRepository = refresh,
   ) {
     const { id: projectId, workspaceRoot: cwd } = project;
     const manual = saved.issueProjectSources[projectId] ?? [];
     const automatic: IssueSource[] = [];
-    const handle = yield* providers.resolveHandle({ cwd }).pipe(Effect.result);
+    const identity = project.repositoryIdentity;
+    const originUrl = identity?.origin?.remoteUrl;
+    const selected = identity?.issueRepository;
+    const remote =
+      selected?.locator ??
+      (originUrl ? { remoteName: "origin", remoteUrl: originUrl } : identity?.locator);
+    const key =
+      selected?.canonicalKey ??
+      (originUrl ? identity?.origin?.canonicalKey : identity?.canonicalKey);
+    const host =
+      remote &&
+      sourceControlDefinitions.recognizeRemote(
+        key && isSshRemoteUrl(remote.remoteUrl) ? `https://${key}` : remote.remoteUrl,
+      );
+    const context =
+      remote && host
+        ? {
+            remoteName: remote.remoteName,
+            remoteUrl: remote.remoteUrl,
+            provider: host,
+          }
+        : null;
+    const handle =
+      identity?.hasLocalOrigin || selected === null
+        ? undefined
+        : yield* providers
+            .resolveHandle({
+              cwd,
+              refresh: refreshRepository,
+              ...(context && (selected || context.remoteName === "origin")
+                ? { context }
+                : { issueRemoteHint: context }),
+            })
+            .pipe(Effect.result);
     let repository: string | null = null;
     let failure: RequirementIssueError | undefined;
-    if (handle._tag === "Success" && handle.success.context) {
+    if (handle?._tag === "Success" && handle.success.context) {
       const { provider, context } = handle.success;
       repository =
         provider.repositoryNameFromRemoteUrl?.(context.remoteUrl) ??
@@ -147,7 +189,7 @@ export const make = Effect.gen(function* () {
         );
         const key = new DiscoveryKey({
           cwd,
-          remoteUrl: context.remoteUrl,
+          context,
           key: Hex.encode(digest),
         });
         const result = yield* (
@@ -163,49 +205,64 @@ export const make = Effect.gen(function* () {
             cause: result.failure,
           });
       }
-    } else if (handle._tag === "Failure")
+    } else if (
+      handle?._tag === "Failure" &&
+      !(
+        isUnsupportedVcsOperation(handle.failure.cause) &&
+        handle.failure.cause.operation === "VcsDriverRegistry.resolve" &&
+        handle.failure.cause.kind === "unknown"
+      )
+    )
       failure = new RequirementIssueError({
         operation: "repository",
         reason: "unavailable",
         cause: handle.failure,
       });
-    const overridden = new Set(manual.map((source) => source.provider));
+    const repositoryKind =
+      projectIssueProvider(repositoryIssueKind(project.repositoryIdentity), []) ??
+      (handle?._tag === "Success" && handle.success.context
+        ? handle.success.provider.kind
+        : undefined);
+    const sources = mergeProjectIssueSources(automatic, manual, repositoryKind).filter(
+      (source) => source.provider !== "meituan" || isMeituanServiceEnabled(saved, "requirements"),
+    );
+    const provider = projectIssueProvider(repositoryKind, automatic.length ? automatic : manual);
     return {
       cwd,
       projectId,
       repository,
-      sources: [
-        ...automatic.filter((source) => !overridden.has(source.provider)),
-        ...manual,
-      ].filter(
-        (source) => source.provider !== "meituan" || isMeituanServiceEnabled(saved, "requirements"),
-      ),
-      manual: manual.length > 0,
+      ...(provider ? { provider } : {}),
+      sources,
+      manual: sources.length > 0 && manual.some((source) => source.provider === provider),
       ...(failure ? { failure } : {}),
     };
   });
   const projectSources = Effect.fn("IssueService.projectSources")(function* (
     id: IssueTarget["projectId"],
     refresh = false,
+    refreshRepository = refresh,
   ) {
     const project = yield* projects
-      .getShell(id)
+      .getShell(id, undefined, refreshRepository ? "refresh" : "resolve")
       .pipe(
         Effect.mapError(
           (cause) =>
-            new RequirementIssueError({ operation: "project", reason: "invalid-target", cause }),
+            new RequirementIssueError({ operation: "repository", reason: "unavailable", cause }),
         ),
       );
     if (Option.isNone(project))
       return yield* new RequirementIssueError({ operation: "project", reason: "invalid-target" });
-    return yield* resolveSources(project.value, yield* savedSettings, refresh);
+    return yield* resolveSources(project.value, yield* savedSettings, refresh, refreshRepository);
   });
   const validSource = (source: IssueSource) =>
     source.provider === "meituan"
       ? /^[1-9]\d*$/u.test(source.scope) && source.host === "mep.sankuai.com"
       : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) && /^[\w.-]+$/u.test(source.host);
-  const resolveAll = Effect.fn("IssueService.resolveAll")(function* (input: IssueTarget) {
-    const resolved = yield* projectSources(input.projectId);
+  const resolveAll = Effect.fn("IssueService.resolveAll")(function* (
+    input: IssueTarget,
+    refreshRepository = false,
+  ) {
+    const resolved = yield* projectSources(input.projectId, false, refreshRepository);
     const sources = resolved.sources.filter(
       (source) =>
         source.provider === input.provider &&
@@ -233,8 +290,11 @@ export const make = Effect.gen(function* () {
       return yield* new RequirementIssueError({ operation: "provider", reason: "unsupported" });
     return sources.map((source) => ({ cwd: resolved.cwd, source, board: provider.issueBoard! }));
   });
-  const resolve = Effect.fn("IssueService.resolve")(function* (input: IssueTarget) {
-    const targets = yield* resolveAll(input);
+  const resolve = Effect.fn("IssueService.resolve")(function* (
+    input: IssueTarget,
+    refreshRepository = false,
+  ) {
+    const targets = yield* resolveAll(input, refreshRepository);
     if (targets.length !== 1)
       return yield* new RequirementIssueError({ operation: "resolve", reason: "invalid-target" });
     return targets[0]!;
@@ -249,13 +309,16 @@ export const make = Effect.gen(function* () {
           project: OrchestrationProjectShell,
         ) {
           const enabled = isMeituanServiceEnabled(saved, "requirements");
-          const manual = (saved.issueProjectSources[project.id] ?? []).filter(
-            (source) => source.provider !== "meituan" || enabled,
-          );
+          const kind = repositoryIssueKind(project.repositoryIdentity);
+          const manual = mergeProjectIssueSources(
+            [],
+            saved.issueProjectSources[project.id] ?? [],
+            kind,
+          ).filter((source) => source.provider !== "meituan" || enabled);
           const discover =
-            enabled &&
-            project.repositoryIdentity?.provider === "meituan" &&
-            !manual.some((source) => source.provider === "meituan");
+            !manual.length &&
+            ((enabled && kind === "meituan") ||
+              (kind === "github" && project.repositoryIdentity?.provider !== kind));
           const resolved = discover ? yield* resolveSources(project, saved) : { sources: manual };
           const sources = resolved.sources.filter(validSource);
           return {
@@ -385,11 +448,11 @@ export const make = Effect.gen(function* () {
       return yield* target.board.metadata({ ...input, ...target });
     }),
     create: Effect.fn("IssueService.create")(function* (input) {
-      const target = yield* resolve(input);
+      const target = yield* resolve(input, true);
       return yield* target.board.create({ ...input, ...target });
     }),
     setState: Effect.fn("IssueService.setState")(function* (input) {
-      const target = yield* resolve(input);
+      const target = yield* resolve(input, true);
       return yield* target.board.setState({ ...input, ...target });
     }),
   });

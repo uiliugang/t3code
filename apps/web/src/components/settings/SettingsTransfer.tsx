@@ -129,7 +129,11 @@ export function SettingsTransfer({
           environmentId,
           input: {
             id: importId,
-            projects: definitions,
+            projects: projectConfigurationsForImport(
+              pending,
+              appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId))?.environment
+                .capabilities ?? {},
+            ),
             ...(destinationDirectory.trim()
               ? { destinationDirectory: destinationDirectory.trim() }
               : {}),

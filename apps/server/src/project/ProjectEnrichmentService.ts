@@ -1,4 +1,4 @@
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import { RepositoryIdentity } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
@@ -41,6 +42,18 @@ export interface ProjectEnrichmentServiceOptions {
   readonly concurrency?: number;
 }
 
+class RepositoryInspectionError extends Schema.TaggedError<
+  RepositoryInspectionError,
+  { readonly brand: unique symbol }
+>()("RepositoryInspectionError", {
+  workspaceRoot: Schema.String,
+  remote: Schema.NullOr(RepositoryIdentity),
+}) {
+  override get message() {
+    return "Could not inspect the project repository.";
+  }
+}
+
 export class ProjectEnrichmentService extends Context.Service<
   ProjectEnrichmentService,
   {
@@ -49,10 +62,13 @@ export class ProjectEnrichmentService extends Context.Service<
     readonly getAvailable: (workspaceRoot: string) => Effect.Effect<ProjectEnrichment>;
     readonly readRepositoryIdentity: (
       workspaceRoot: string,
-    ) => Effect.Effect<RepositoryIdentity | null>;
+      mode?: "remoteOnly",
+    ) => Effect.Effect<RepositoryIdentity | null, RepositoryInspectionError>;
     readonly invalidate: (workspaceRoots: Iterable<string>) => Effect.Effect<void>;
     /** Re-resolves past both identity caches and publishes a found identity, leaving the favicon alone. */
-    readonly refreshRepositoryIdentity: (workspaceRoot: string) => Effect.Effect<void>;
+    readonly refreshRepositoryIdentity: (
+      workspaceRoot: string,
+    ) => Effect.Effect<void, RepositoryInspectionError>;
     readonly subscribeChanges: Effect.Effect<
       PubSub.Subscription<ProjectEnrichmentChange>,
       never,
@@ -72,11 +88,9 @@ function availableValue<A, E>(cached: Option.Option<Exit.Exit<A, E>>): A | null 
   });
 }
 
-function isSuccessfullyResolved<A, E>(cached: Option.Option<Exit.Exit<A, E>>): boolean {
-  return Option.match(cached, {
-    onNone: () => false,
-    onSome: (exit) => Exit.isSuccess(exit),
-  });
+function displayIdentity(result: Exit.Exit<RepositoryIdentity | null, RepositoryInspectionError>) {
+  if (Exit.isSuccess(result)) return result.value;
+  return Option.getOrUndefined(Exit.findErrorOption(result))?.remote ?? undefined;
 }
 
 interface EnrichmentWorkLane {
@@ -97,6 +111,12 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   const lastRepositoryIdentities = new Map<string, RepositoryIdentity>();
   // `invalidate` drops a root's in-flight lookup so its late result cannot overwrite a newer one.
   const lookupsInFlight = new Map<string, object>();
+  const inspectRepository = (workspaceRoot: string, refresh = false) =>
+    repositoryIdentityResolver.resolve(workspaceRoot, {
+      refresh,
+      onUnavailable: (remote) =>
+        Effect.fail(new RepositoryInspectionError({ workspaceRoot, remote })),
+    });
   const rememberRepositoryIdentity = (
     workspaceRoot: string,
     repositoryIdentity: RepositoryIdentity | null,
@@ -116,11 +136,12 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
         const lookup = {};
         lookupsInFlight.set(workspaceRoot, lookup);
         const isCurrent = () => lookupsInFlight.get(workspaceRoot) === lookup;
-        return Effect.exit(repositoryIdentityResolver.resolve(workspaceRoot)).pipe(
+        return Effect.exit(inspectRepository(workspaceRoot)).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
-              if (Exit.isSuccess(result) && isCurrent()) {
-                rememberRepositoryIdentity(workspaceRoot, result.value);
+              const identity = displayIdentity(result);
+              if (identity !== undefined && isCurrent()) {
+                rememberRepositoryIdentity(workspaceRoot, identity);
               }
             }),
           ),
@@ -199,12 +220,15 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
       const repositoryIdentity = yield* Cache.get(repositoryIdentityCache, workspaceRoot);
       yield* logFailure(workspaceRoot, "repositoryIdentity", repositoryIdentity);
       const faviconPath = yield* Cache.getSuccess(faviconCache, workspaceRoot);
-      const repositoryIdentityResolved = Exit.isSuccess(repositoryIdentity);
+      const identity = displayIdentity(repositoryIdentity);
+      const repositoryIdentityResolved = identity !== undefined;
       yield* PubSub.publish(changes, {
         workspaceRoot,
         repositoryIdentityResolved,
         enrichment: {
-          repositoryIdentity: availableValue(Option.some(repositoryIdentity)),
+          repositoryIdentity: repositoryIdentityResolved
+            ? identity
+            : (lastRepositoryIdentities.get(workspaceRoot) ?? null),
           faviconPath: availableValue(faviconPath),
           repositoryIdentityResolved,
         },
@@ -276,10 +300,13 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
         ] as const,
         { concurrency: "unbounded" },
       );
-      const repositoryIdentityResolved = isSuccessfullyResolved(repositoryIdentity);
+      const identity = Option.isSome(repositoryIdentity)
+        ? displayIdentity(repositoryIdentity.value)
+        : undefined;
+      const repositoryIdentityResolved = identity !== undefined;
       return {
         repositoryIdentity: repositoryIdentityResolved
-          ? availableValue(repositoryIdentity)
+          ? identity
           : (lastRepositoryIdentities.get(workspaceRoot) ?? null),
         faviconPath: availableValue(faviconPath),
         repositoryIdentityResolved,
@@ -314,9 +341,11 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   );
 
   const readRepositoryIdentity: ProjectEnrichmentService["Service"]["readRepositoryIdentity"] =
-    Effect.fn("ProjectEnrichmentService.readRepositoryIdentity")(function* (workspaceRoot) {
+    Effect.fn("ProjectEnrichmentService.readRepositoryIdentity")(function* (workspaceRoot, mode) {
+      if (mode === "remoteOnly")
+        return yield* repositoryIdentityResolver.resolve(workspaceRoot, { remoteOnly: true });
       const resolved = yield* Cache.get(repositoryIdentityCache, workspaceRoot);
-      return Exit.isSuccess(resolved) ? resolved.value : null;
+      return yield* resolved;
     });
 
   const invalidate: ProjectEnrichmentService["Service"]["invalidate"] = Effect.fn(
@@ -346,11 +375,18 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     Effect.fn("ProjectEnrichmentService.refreshRepositoryIdentity")(function* (workspaceRoot) {
       // Remote-less folders hit this after every turn; publishing their unchanged null would
       // push a shell frame to every subscriber.
-      if ((yield* repositoryIdentityResolver.resolve(workspaceRoot, { refresh: true })) === null) {
-        return;
-      }
-      yield* Cache.invalidate(repositoryIdentityCache, workspaceRoot);
-      yield* resolveRepositoryIdentity(workspaceRoot);
+      const result = yield* inspectRepository(workspaceRoot, true).pipe(
+        Effect.match({ onSuccess: Exit.succeed, onFailure: Exit.fail }),
+      );
+      const identity = displayIdentity(result);
+      const publish =
+        identity !== undefined &&
+        (identity !== null || lastRepositoryIdentities.has(workspaceRoot));
+      lookupsInFlight.delete(workspaceRoot);
+      if (identity !== undefined) rememberRepositoryIdentity(workspaceRoot, identity);
+      yield* Cache.set(repositoryIdentityCache, workspaceRoot, result);
+      if (publish) yield* resolveRepositoryIdentity(workspaceRoot);
+      if (Exit.isFailure(result)) return yield* result;
     });
 
   return ProjectEnrichmentService.of({

@@ -268,12 +268,12 @@ const githubContext = (host: string) => ({
 describe("GitHubSourceControlProvider repository resolution", () => {
   // regression: #38251 an Enterprise Server's hostname need not say "github"; a gh login vouches for it
   it.effect.each([
-    ["github", "github"],
-    ["unknown", "unknown"],
-  ] as const)("refines a remote on an unknown host the gh login reads as %s", ([seen, expected]) =>
+    ["https://code.acme.test/acme/web.git", "github"],
+    ["https://code.acme.test/acme/web.git", "unknown"],
+    ["git@work:acme/web.git", "github"],
+  ] as const)("refines %s using its actual host's %s login", ([remoteUrl, expected]) =>
     Effect.gen(function* () {
       const provider = yield* makeProvider({});
-      const remoteUrl = "https://code.acme.test/acme/web.git";
       const identity = {
         canonicalKey: "code.acme.test/acme/web",
         locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl },
@@ -285,7 +285,12 @@ describe("GitHubSourceControlProvider repository resolution", () => {
         resolveContext: ({ context }) =>
           Effect.succeed({
             ...context,
-            provider: { ...context.provider, kind: SourceControlProviderKind.make(seen) },
+            provider: {
+              ...context.provider,
+              kind: SourceControlProviderKind.make(
+                context.provider.baseUrl === "https://code.acme.test" ? expected : "unknown",
+              ),
+            },
           }),
       });
       assert.deepStrictEqual(refined, {

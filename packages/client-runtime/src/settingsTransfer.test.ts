@@ -7,6 +7,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  SourceControlProviderKind,
   WorkspaceRootId,
   type ServerSettings,
   requiredScopesForServerSettingsPatch,
@@ -14,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import { AtomRegistry } from "effect/reactivity";
 import * as Struct from "effect/Struct";
 
 import {
@@ -22,6 +24,7 @@ import {
   createProjectSettingsFile,
   MAX_SETTINGS_FILE_BYTES,
   parseSettingsFile,
+  projectImportSourceContext,
   projectSettingsImportPatch,
   projectTransferIdentity,
   projectConfigurationsForImport,
@@ -676,6 +679,53 @@ describe("settings transfer", () => {
     );
     expect(projectConfigurationsForImport(withProjects)).toEqual([configuration]);
     expect(projectConfigurationsForImport(file)).toEqual([]);
+    const github = { provider: "github" as const, host: "github.com", scope: "team/override" };
+    const mep = { provider: "meituan" as const, host: "mep.sankuai.com", scope: "42" };
+    const mixed = { ...configuration, issueSources: [mep, github] };
+    const backup = { ...file, projects: [mixed] };
+    expect(projectConfigurationsForImport(backup, {})).toEqual([
+      { ...configuration, issueSources: [github] },
+    ]);
+    expect(projectConfigurationsForImport(backup, { singleProjectIssueProvider: true })).toEqual([
+      mixed,
+    ]);
+    expect(
+      projectConfigurationsForImport(
+        { ...file, projects: [{ ...configuration, issueSources: [mep] }] },
+        {},
+      ),
+    ).toEqual([configuration]);
+    const cleared = { ...configuration, issueSources: [] };
+    expect(projectConfigurationsForImport({ ...file, projects: [cleared] }, {})).toEqual([cleared]);
+    const gitlab = {
+      ...configuration,
+      workspace: {
+        ...configuration.workspace,
+        roots: configuration.workspace.roots.map((root) => ({
+          ...root,
+          remoteUrl: "https://gitlab.com/team/repo.git",
+        })),
+      },
+    };
+    expect(
+      projectConfigurationsForImport(
+        { ...file, projects: [{ ...gitlab, issueSources: [github] }] },
+        {},
+      ),
+    ).toEqual([gitlab]);
+    const unknown = {
+      ...mixed,
+      workspace: {
+        ...mixed.workspace,
+        roots: mixed.workspace.roots.map((root) => ({
+          ...root,
+          remoteUrl: "https://forge.example.test/team/repo.git",
+        })),
+      },
+    };
+    expect(() => projectConfigurationsForImport({ ...file, projects: [unknown] }, {})).toThrow(
+      /cannot confirm the issue platform/,
+    );
     expect(() =>
       parseSettingsFile(
         JSON.stringify({
@@ -712,11 +762,23 @@ describe("settings transfer", () => {
   });
 
   it("restores the project's override set, including null values and inherited settings", () => {
-    const sourceProject = project();
-    const issueSources = [{ provider: "meituan" as const, host: "mep.example.com", scope: "42" }];
+    const sourceProject = {
+      ...project(),
+      repositoryIdentity: {
+        ...project().repositoryIdentity!,
+        provider: SourceControlProviderKind.make("github"),
+      },
+    };
+    const issueSources = [{ provider: "github" as const, host: "github.com", scope: "team/repo" }];
+    const legacySources = [
+      { provider: "meituan" as const, host: "mep.sankuai.com", scope: "42" },
+      ...issueSources,
+    ];
     const source = {
       ...settings(),
-      issueProjectSources: { [sourceProject.id]: issueSources },
+      issueProjectSources: {
+        [sourceProject.id]: legacySources,
+      },
       projectSettingsFolded: true,
       projectSettingsOverrides: {
         [sourceProject.id]: {
@@ -728,6 +790,19 @@ describe("settings transfer", () => {
     };
     const file = createProjectSettingsFile(sourceProject, source);
     expect(file).toHaveProperty("issueSources", issueSources);
+    expect(
+      createProjectSettingsFile(
+        {
+          ...sourceProject,
+          repositoryIdentity: {
+            ...sourceProject.repositoryIdentity,
+            provider: SourceControlProviderKind.make("gitlab"),
+            issueRepository: sourceProject.repositoryIdentity,
+          },
+        },
+        source,
+      ).issueSources,
+    ).toEqual(issueSources);
     expect(parseSettingsFile(serializeSettingsFile(file))).toEqual(file);
     const destination = { ...sourceProject, id: ProjectId.make("target-project") };
     const unrelatedId = ProjectId.make("unrelated-project");
@@ -740,6 +815,100 @@ describe("settings transfer", () => {
       projectSettingsOverrides: { [destination.id]: { defaultAutoPull: true } },
     };
     const patch = projectSettingsImportPatch(file, destination, target);
+    const staleDestination = {
+      ...destination,
+      repositoryIdentity: {
+        ...destination.repositoryIdentity,
+        provider: SourceControlProviderKind.make("meituan"),
+      },
+    };
+    const mixedFile = { ...file, issueSources: legacySources };
+    const unknownProject = {
+      ...destination,
+      repositoryIdentity: {
+        ...destination.repositoryIdentity,
+        provider: SourceControlProviderKind.make("unknown"),
+      },
+    };
+    const mixedTarget = {
+      ...target,
+      issueProjectSources: { [destination.id]: [...legacySources].reverse() },
+    };
+    const legacyFork = {
+      ...destination,
+      repositoryIdentity: {
+        ...destination.repositoryIdentity,
+        canonicalKey: "gitlab.com/vendor/repo",
+        provider: SourceControlProviderKind.make("gitlab"),
+        origin: { canonicalKey: "github.com/team/repo" },
+      },
+    };
+    const legacyMepFork = {
+      ...destination,
+      repositoryIdentity: {
+        ...destination.repositoryIdentity,
+        origin: { canonicalKey: "git.sankuai.com/team/fork" },
+      },
+    };
+    const mepBackup = { ...file, issueSources: legacySources.slice(0, 1) };
+    const discovery = { discovery: { sources: mepBackup.issueSources } };
+    expect(
+      projectSettingsImportPatch(file, legacyMepFork, settings(), discovery),
+    ).not.toHaveProperty("issueProjectSources");
+    expect(
+      projectSettingsImportPatch(mepBackup, destination, settings(), discovery)
+        .issueProjectSources?.[destination.id],
+    ).toEqual(mepBackup.issueSources);
+    expect(
+      projectSettingsImportPatch(mepBackup, legacyMepFork, settings()).issueProjectSources?.[
+        destination.id
+      ],
+    ).toEqual(mepBackup.issueSources);
+    for (const legacyProject of [
+      unknownProject,
+      legacyFork,
+      { ...destination, repositoryIdentity: null },
+    ]) {
+      expect(() => projectSettingsImportPatch(mixedFile, legacyProject, settings())).toThrow(
+        /GitHub.*MEP/,
+      );
+      const legacyPatch = projectSettingsImportPatch(mixedFile, legacyProject, mixedTarget);
+      expect(legacyPatch.projectSettingsOverrides).toEqual(patch.projectSettingsOverrides);
+      expect(legacyPatch).not.toHaveProperty("issueProjectSources");
+      expect(projectSettingsImportPatch(file, legacyProject, target)).toEqual(patch);
+      expect(createProjectSettingsFile(legacyProject, mixedTarget).issueSources).toEqual(
+        mixedTarget.issueProjectSources[destination.id],
+      );
+      expect(
+        projectSettingsImportPatch({ ...file, issueSources: [] }, legacyProject, mixedTarget)
+          .issueProjectSources?.[destination.id],
+      ).toEqual([]);
+      expect(
+        projectSettingsImportPatch(mixedFile, legacyProject, mixedTarget, {
+          singleProjectIssueProvider: true,
+        }).issueProjectSources?.[destination.id],
+      ).toEqual(legacySources);
+    }
+    expect(
+      projectSettingsImportPatch(mixedFile, staleDestination, target, {
+        singleProjectIssueProvider: true,
+      }).issueProjectSources?.[destination.id],
+    ).toEqual(legacySources);
+    expect(
+      projectSettingsImportPatch(mixedFile, staleDestination, target).issueProjectSources?.[
+        destination.id
+      ],
+    ).toEqual([legacySources[0]]);
+    expect(
+      projectSettingsImportPatch({ ...file, issueSources: legacySources }, destination, target),
+    ).toEqual(patch);
+    const incompatible = projectSettingsImportPatch(
+      { ...file, issueSources: legacySources.slice(0, 1) },
+      destination,
+      target,
+    );
+    expect(incompatible.projectSettingsOverrides).toEqual(patch.projectSettingsOverrides);
+    expect(incompatible).not.toHaveProperty("issueProjectSources");
     expect(patch.projectSettingsOverrides).toEqual({
       [destination.id]: {
         defaultModelSelection: null,
@@ -768,16 +937,74 @@ describe("settings transfer", () => {
         source,
       ),
     ).toEqual({ projectSettingsOverrides: { [destination.id]: null } });
-    expect(
-      applyServerSettingsPatch(
-        target,
-        projectSettingsImportPatch({ ...file, issueSources: [] }, destination, target),
-      ).issueProjectSources,
-    ).toEqual({ ...target.issueProjectSources, [destination.id]: [] });
+    const mepSources = legacySources.slice(0, 1);
+    const mepTarget = { ...target, issueProjectSources: { [destination.id]: mepSources } };
+    for (const saved of [mepSources, []]) {
+      const backup = createProjectSettingsFile(sourceProject, {
+        ...source,
+        issueProjectSources: { [sourceProject.id]: saved },
+      });
+      const restoredFile = parseSettingsFile(serializeSettingsFile(backup));
+      if (restoredFile.scope !== "project") throw new Error("Expected a project backup");
+      const restored = applyServerSettingsPatch(
+        mepTarget,
+        projectSettingsImportPatch(restoredFile, staleDestination, mepTarget),
+      );
+      expect(restored.issueProjectSources[destination.id]).toEqual(saved);
+      expect(Object.hasOwn(restoredFile, "issueSources")).toBe(saved.length === 0);
+    }
     expect(createProjectSettingsFile(sourceProject, settings())).not.toHaveProperty("issueSources");
     expect(() =>
       parseSettingsFile(JSON.stringify({ ...file, settings: { defaultRuntimeMode: "invalid" } })),
     ).toThrow();
+  });
+
+  it("restores legacy project settings when source discovery reports a partial failure", async () => {
+    const destination = project();
+    const oldMep = { provider: "meituan" as const, host: "mep.sankuai.com", scope: "42" };
+    const newMep = { ...oldMep, scope: "43" };
+    const github = { provider: "github" as const, host: "github.com", scope: "team/override" };
+    const target = {
+      ...settings(),
+      issueProjectSources: { [destination.id]: [oldMep] },
+    };
+    const backup = {
+      ...createProjectSettingsFile(destination, target),
+      settings: { defaultAutoPull: true },
+      issueSources: [newMep, github],
+    };
+    const registry = AtomRegistry.make();
+    try {
+      for (const { sources, provider } of [
+        { sources: [oldMep] },
+        { sources: [] },
+        { sources: [], provider: "meituan" as const },
+      ]) {
+        const context = await projectImportSourceContext(backup, destination, {}, registry, {
+          label: "Discover legacy issue sources",
+          run: () =>
+            Effect.succeed([
+              {
+                projectId: destination.id,
+                repository: "team/repo",
+                ...(provider ? { provider } : {}),
+                sources,
+                manual: sources.length > 0,
+                error: "MEP discovery failed",
+              },
+            ]),
+        });
+        const patch = projectSettingsImportPatch(backup, destination, target, context);
+        const restored = applyServerSettingsPatch(target, patch);
+        expect(restored.projectSettingsOverrides[destination.id]?.defaultAutoPull).toBe(true);
+        expect(restored.issueProjectSources[destination.id]).toEqual(
+          sources.length ? [newMep] : [oldMep],
+        );
+        if (!sources.length) expect(patch).not.toHaveProperty("issueProjectSources");
+      }
+    } finally {
+      registry.dispose();
+    }
   });
 
   it("remaps action repositories by alias and rejects missing repositories and incompatible providers", () => {
