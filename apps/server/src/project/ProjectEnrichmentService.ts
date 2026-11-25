@@ -1,4 +1,4 @@
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import { RepositoryIdentity } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -45,7 +45,10 @@ export interface ProjectEnrichmentServiceOptions {
 class RepositoryInspectionError extends Schema.TaggedError<
   RepositoryInspectionError,
   { readonly brand: unique symbol }
->()("RepositoryInspectionError", { workspaceRoot: Schema.String }) {
+>()("RepositoryInspectionError", {
+  workspaceRoot: Schema.String,
+  remote: Schema.NullOr(RepositoryIdentity),
+}) {
   override get message() {
     return "Could not inspect the project repository.";
   }
@@ -85,11 +88,9 @@ function availableValue<A, E>(cached: Option.Option<Exit.Exit<A, E>>): A | null 
   });
 }
 
-function isSuccessfullyResolved<A, E>(cached: Option.Option<Exit.Exit<A, E>>): boolean {
-  return Option.match(cached, {
-    onNone: () => false,
-    onSome: (exit) => Exit.isSuccess(exit),
-  });
+function displayIdentity(result: Exit.Exit<RepositoryIdentity | null, RepositoryInspectionError>) {
+  if (Exit.isSuccess(result)) return result.value;
+  return Option.getOrUndefined(Exit.findErrorOption(result))?.remote ?? undefined;
 }
 
 interface EnrichmentWorkLane {
@@ -113,7 +114,8 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   const inspectRepository = (workspaceRoot: string, refresh = false) =>
     repositoryIdentityResolver.resolve(workspaceRoot, {
       refresh,
-      onUnavailable: Effect.fail(new RepositoryInspectionError({ workspaceRoot })),
+      onUnavailable: (remote) =>
+        Effect.fail(new RepositoryInspectionError({ workspaceRoot, remote })),
     });
   const rememberRepositoryIdentity = (
     workspaceRoot: string,
@@ -137,8 +139,9 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
         return Effect.exit(inspectRepository(workspaceRoot)).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
-              if (Exit.isSuccess(result) && isCurrent()) {
-                rememberRepositoryIdentity(workspaceRoot, result.value);
+              const identity = displayIdentity(result);
+              if (identity !== undefined && isCurrent()) {
+                rememberRepositoryIdentity(workspaceRoot, identity);
               }
             }),
           ),
@@ -217,13 +220,14 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
       const repositoryIdentity = yield* Cache.get(repositoryIdentityCache, workspaceRoot);
       yield* logFailure(workspaceRoot, "repositoryIdentity", repositoryIdentity);
       const faviconPath = yield* Cache.getSuccess(faviconCache, workspaceRoot);
-      const repositoryIdentityResolved = Exit.isSuccess(repositoryIdentity);
+      const identity = displayIdentity(repositoryIdentity);
+      const repositoryIdentityResolved = identity !== undefined;
       yield* PubSub.publish(changes, {
         workspaceRoot,
         repositoryIdentityResolved,
         enrichment: {
-          repositoryIdentity: Exit.isSuccess(repositoryIdentity)
-            ? repositoryIdentity.value
+          repositoryIdentity: repositoryIdentityResolved
+            ? identity
             : (lastRepositoryIdentities.get(workspaceRoot) ?? null),
           faviconPath: availableValue(faviconPath),
           repositoryIdentityResolved,
@@ -296,10 +300,13 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
         ] as const,
         { concurrency: "unbounded" },
       );
-      const repositoryIdentityResolved = isSuccessfullyResolved(repositoryIdentity);
+      const identity = Option.isSome(repositoryIdentity)
+        ? displayIdentity(repositoryIdentity.value)
+        : undefined;
+      const repositoryIdentityResolved = identity !== undefined;
       return {
         repositoryIdentity: repositoryIdentityResolved
-          ? availableValue(repositoryIdentity)
+          ? identity
           : (lastRepositoryIdentities.get(workspaceRoot) ?? null),
         faviconPath: availableValue(faviconPath),
         repositoryIdentityResolved,

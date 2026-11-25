@@ -61,9 +61,8 @@ const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
 const testMetadata = (providerOffline = false) =>
   Layer.merge(
     Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
-      resolve: (workspaceRoot, options) =>
-        (providerOffline ? options?.onUnavailable : undefined) ??
-        Effect.succeed({
+      resolve: (workspaceRoot, options) => {
+        const remote = {
           canonicalKey: `github.com/t3tools/${workspaceRoot.split("/").at(-1)}`,
           locator: {
             source: "git-remote" as const,
@@ -71,7 +70,11 @@ const testMetadata = (providerOffline = false) =>
             remoteUrl: `git@github.com:t3tools/${workspaceRoot.split("/").at(-1)}.git`,
           },
           rootPath: workspaceRoot,
-        }),
+        };
+        return (
+          (providerOffline ? options?.onUnavailable?.(remote) : undefined) ?? Effect.succeed(remote)
+        );
+      },
     }),
     Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
       invalidate: () => Effect.void,

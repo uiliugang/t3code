@@ -88,6 +88,9 @@ export const definition = defineSourceControl({
   },
   repositoryPathHint: "owner/repo",
   publicHost: "github.com",
+  repositoryKeyFromRemote: (key) =>
+    key.startsWith("ssh.github.com/") ? key.slice(4).replace(/\.git$/iu, "") : null,
+  canonicalRepositoryKey: (key) => (key.startsWith("ssh.github.com/") ? key.slice(4) : null),
   publishDescription: "github.com",
   publishHost: () => "github.com",
   newRepositoryOwner: (account) => ({ owner: account }),

@@ -124,9 +124,11 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
               ? Effect.succeed({
                   stdout: input.args.includes("git@work.alias")
                     ? "hostname forge.example.test\n"
-                    : input.args.includes("git@work")
-                      ? "user git\nhostname github.com\nport 22\n"
-                      : `hostname ${input.args.at(-1) ?? ""}\nport 22\n`,
+                    : input.args.includes("git@work.alias.test")
+                      ? "hostname ssh.github.com\nport 443\n"
+                      : input.args.includes("git@work")
+                        ? "user git\nhostname github.com\nport 22\n"
+                        : `hostname ${input.args.at(-1) ?? ""}\nport 22\n`,
                   stderr: "",
                   code: ChildProcessSpawner.ExitCode(0),
                   timedOut: false,
@@ -146,7 +148,17 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(aliasIdentity?.canonicalKey).toBe(plainIdentity?.canonicalKey);
       expect(aliasIdentity?.provider).toBe(plainIdentity?.provider);
       expect(aliasIdentity?.locator.remoteUrl).toBe("git@work:owner/repo.git");
-      yield* git(aliasDir, ["remote", "add", "upstream", "git@work.alias:org/parent.git"]);
+      yield* git(aliasDir, ["remote", "set-url", "origin", "git@work.alias.test:me/fork.git"]);
+      const transport = yield* resolver.resolve(aliasDir, { refresh: true });
+      expect(sourceControlDefinitions.issueBindings(transport)).toEqual([
+        { tracker: "github", host: "github.com", scope: "me/fork" },
+      ]);
+      yield* git(aliasDir, ["remote", "add", "upstream", "https://github.com/org/parent.git"]);
+      expect((yield* resolver.resolve(aliasDir, { refresh: true }))?.origin).toMatchObject({
+        canonicalKey: "github.com/me/fork",
+        remoteUrl: "git@work.alias.test:me/fork.git",
+      });
+      yield* git(aliasDir, ["remote", "set-url", "upstream", "git@work.alias:org/parent.git"]);
       for (const origin of [
         "https://forge.example.test/me/fork.git",
         "git@forge.example.test:me/fork.git",
@@ -214,7 +226,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       );
       expect(probes).toBe(0);
       expect((yield* resolver.resolve(cwd))?.canonicalKey).toBe("forge.example.test/team/web");
-      const strict = { onUnavailable: Effect.fail("unavailable") };
+      const strict = { onUnavailable: () => Effect.fail("unavailable") };
       expect((yield* resolver.resolve(cwd, strict).pipe(Effect.result))._tag).toBe("Failure");
       offline = false;
       expect((yield* resolver.resolve(cwd, strict))?.provider).toBe("github");
@@ -372,7 +384,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
           "https://github.com/team/child.git",
         ]);
         const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-        const strict = { refresh: true, onUnavailable: Effect.fail("unavailable") };
+        const strict = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
         expect((yield* resolver.resolve(bare, strict))?.provider).toBe("github");
         yield* fs.rename(path.join(bare, entry), path.join(bare, `${entry}.offline`));
         const standalone = yield* resolver.resolve(bare, strict).pipe(Effect.result);
@@ -422,7 +434,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
           "ordinary project configuration\n",
         );
         expect(
-          yield* resolver.resolve(nonGitDir, { onUnavailable: Effect.fail("unavailable") }),
+          yield* resolver.resolve(nonGitDir, { onUnavailable: () => Effect.fail("unavailable") }),
         ).toBeNull();
         expect(bareProbes()).toEqual([]);
 
@@ -454,7 +466,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const mixedIdentity = yield* resolver.resolve(mixedDir);
       expect(mixedIdentity?.locator.remoteName).toBe("mirror");
       expect(mixedIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
-      const backup = { refresh: true, onUnavailable: Effect.fail("unavailable") };
+      const backup = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
       yield* git(mixedDir, ["remote", "remove", "mirror"]);
       expect(yield* resolver.resolve(mixedDir, backup)).toBeNull();
       yield* fileSystem.remove(mixedDir, { recursive: true });

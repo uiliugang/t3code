@@ -38,7 +38,9 @@ export class RepositoryIdentityResolver extends Context.Service<
       options?: {
         readonly refresh?: boolean;
         readonly remoteOnly?: boolean;
-        readonly onUnavailable?: Effect.Effect<RepositoryIdentity | null, E>;
+        readonly onUnavailable?: (
+          remote: RepositoryIdentity | null,
+        ) => Effect.Effect<RepositoryIdentity | null, E>;
       },
     ) => Effect.Effect<RepositoryIdentity | null, E>;
   }
@@ -173,18 +175,24 @@ const sshResolvedRemoteUrl = Effect.fn("RepositoryIdentityResolver.sshResolvedRe
       hostName === undefined ||
       !SSH_HOST_NAME.test(hostName) ||
       IPV4.test(hostName) ||
-      hostName === host.toLowerCase() ||
-      (host.includes(".") &&
-        !sourceControlDefinitions.findByPublicHost(hostName) &&
-        !Array.from(remotes.values()).some(
-          (url) =>
-            (/^https?:\/\//iu.test(url) || isSshRemoteUrl(url)) &&
-            parseGitRemoteHost(url)?.host === hostName,
-        ))
+      hostName === host.toLowerCase()
+    )
+      return remoteUrl;
+    const resolvedUrl = `${scheme}${user}${hostName}${rest}`;
+    if (
+      host.includes(".") &&
+      !sourceControlDefinitions.findByPublicHost(
+        sourceControlDefinitions.repositoryKeyFromRemote(resolvedUrl).split("/")[0]!,
+      ) &&
+      !Array.from(remotes.values()).some(
+        (url) =>
+          (/^https?:\/\//iu.test(url) || isSshRemoteUrl(url)) &&
+          parseGitRemoteHost(url)?.host === hostName,
+      )
     ) {
       return remoteUrl;
     }
-    return `${scheme}${user}${hostName}${rest}`;
+    return resolvedUrl;
   },
 );
 
@@ -490,11 +498,11 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
           if (options?.remoteOnly) return remote;
           const result = yield* Cache.get(providerIdentityCache, remote);
           if (result === unconfirmedProvider)
-            return yield* options?.onUnavailable ?? Effect.succeed(remote);
+            return yield* options?.onUnavailable?.(remote) ?? Effect.succeed(remote);
           return result;
         }
       }
-      return yield* options?.onUnavailable ?? Effect.succeed(null);
+      return yield* options?.onUnavailable?.(null) ?? Effect.succeed(null);
     },
   );
 

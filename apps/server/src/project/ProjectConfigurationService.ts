@@ -232,12 +232,13 @@ const make = Effect.gen(function* () {
                   refresh,
                   ...(refresh
                     ? {
-                        onUnavailable: Effect.fail(
-                          new ProjectImportError({
-                            operation: "export",
-                            cause: `Could not inspect the repository for ${project.title}. Restore its checkout or Git configuration before exporting.`,
-                          }),
-                        ),
+                        onUnavailable: () =>
+                          Effect.fail(
+                            new ProjectImportError({
+                              operation: "export",
+                              cause: `Could not inspect the repository for ${project.title}. Restore its checkout or Git configuration before exporting.`,
+                            }),
+                          ),
                       }
                     : {}),
                 });

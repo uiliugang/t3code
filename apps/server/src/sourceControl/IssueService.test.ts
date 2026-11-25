@@ -29,11 +29,13 @@ describe("IssueService", () => {
     ["github.com", "https://github.com/me/fork.git"],
     ["forge.example.test", "https://forge.example.test/me/fork.git"],
     ["github.com", "git@work:me/fork.git"],
+    ["github.com", "git@unresolved.test:me/fork.git"],
   ] as const)(
     "creates a %s fork issue in the repository offered for %s on the first lookup",
     ([host, remoteUrl]) =>
       Effect.gen(function* () {
         const projectId = ProjectId.make("fork");
+        const originHost = remoteUrl.includes("unresolved.test") ? "unresolved.test" : host;
         const origin = { remoteName: "origin", remoteUrl };
         const provider = fakeSourceControlProvider("github", {
           issueBoard: {
@@ -85,7 +87,10 @@ describe("IssueService", () => {
                             remoteName: "upstream",
                             remoteUrl: `https://${host}/org/repo.git`,
                           },
-                          origin: { canonicalKey: `${host}/me/fork`, remoteUrl: origin.remoteUrl },
+                          origin: {
+                            canonicalKey: `${originHost}/me/fork`,
+                            remoteUrl: origin.remoteUrl,
+                          },
                         }
                       : null,
                   }),
@@ -94,7 +99,9 @@ describe("IssueService", () => {
                 resolveLink: () => undefined,
                 get: () => Effect.succeed(provider),
                 resolveHandle: ({ context }) => {
-                  const anonymous = context?.provider.baseUrl === "https://work";
+                  const anonymous =
+                    context?.provider.baseUrl === "https://work" ||
+                    context?.provider.baseUrl === "https://unresolved.test";
                   return Effect.succeed({
                     provider: anonymous ? fakeSourceControlProvider("unknown", {}) : provider,
                     context: {
@@ -108,6 +115,23 @@ describe("IssueService", () => {
           ),
         );
         const [listed] = yield* service.sources({ projectIds: [projectId] });
+        if (originHost !== host) {
+          const result = yield* service
+            .create({
+              projectId,
+              provider: "github",
+              title: "Fork issue",
+              type: "DEVTASK",
+              subtype: "",
+              body: "",
+              assignees: [],
+              fields: {},
+            })
+            .pipe(Effect.result);
+          expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "invalid-target" } });
+          expect(listed?.sources).toEqual([]);
+          return;
+        }
         const source = listed!.sources[0]!;
         expect(source.scope).toBe("me/fork");
         expect(

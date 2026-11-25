@@ -199,7 +199,8 @@ it.effect("keeps the last identity on inspection failure but publishes a confirm
         resolve: (cwd, options) =>
           Effect.suspend(() =>
             state === "offline"
-              ? (options?.onUnavailable ?? Effect.succeed(null))
+              ? (options?.onUnavailable?.(cwd === "/cold" ? identity(cwd) : null) ??
+                Effect.succeed(null))
               : Effect.succeed(state === "ready" ? identity(cwd) : null),
           ),
       }),
@@ -213,6 +214,11 @@ it.effect("keeps the last identity on inspection failure but publishes a confirm
       assert.deepEqual(yield* service.readRepositoryIdentity(root), identity(root));
       const changes = yield* service.subscribeChanges;
       state = "offline";
+      yield* service.request("/cold");
+      const cold = yield* PubSub.take(changes);
+      assert.isTrue(cold.repositoryIdentityResolved);
+      assert.deepEqual(cold.enrichment.repositoryIdentity, identity("/cold"));
+      assert.deepEqual((yield* service.peek("/cold")).repositoryIdentity, identity("/cold"));
       assert.equal(
         (yield* service.readRepositoryIdentity("/cold").pipe(Effect.result))._tag,
         "Failure",

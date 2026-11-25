@@ -1025,7 +1025,7 @@ export const make = Effect.gen(function* () {
           ? projectEnrichment.refreshRepositoryIdentity(root).pipe(Effect.andThen(readIdentity))
           : repositoryLookup === "resolve"
             ? readIdentity
-            : readIdentity.pipe(Effect.orElseSucceed(() => null))
+            : readIdentity.pipe(Effect.catch((error) => Effect.succeed(error.remote)))
       ).pipe(
         Effect.mapError(
           (cause) => new ProjectOperationError({ operation: "read-project", projectId, cause }),
@@ -1074,7 +1074,7 @@ export const make = Effect.gen(function* () {
               (project) => project.repositoryIdentity !== null,
               (project) =>
                 projectEnrichment.readRepositoryIdentity(project.workspaceRoot).pipe(
-                  Effect.orElseSucceed(() => null),
+                  Effect.catch((error) => Effect.succeed(error.remote)),
                   Effect.map((repositoryIdentity) => ({ ...project, repositoryIdentity })),
                 ),
             ),

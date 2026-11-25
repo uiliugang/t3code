@@ -167,7 +167,10 @@ export const make = Effect.gen(function* () {
         )
       : undefined;
     const handle =
-      origin && (origin._tag === "Failure" || origin.success.provider.kind === identity?.provider)
+      origin &&
+      (origin._tag === "Failure" ||
+        origin.success.provider.kind === "unknown" ||
+        origin.success.provider.kind === identity?.provider)
         ? origin
         : yield* lookup(identity?.locator, identity?.canonicalKey);
     let repository: string | null = null;

@@ -635,6 +635,12 @@ export function projectSettingsImportPatch(
     incoming?.length &&
     hasUnconfirmedProvider(project) &&
     [...saved, ...incoming].some((source) => source.provider !== incoming[0]?.provider);
+  if (ambiguousLegacyRestore && saved.length === 0)
+    throw new Error(
+      t(
+        "This backup contains both GitHub and MEP sources. Keep one platform in the backup or update the destination server before importing.",
+      ),
+    );
   const scripts = file.settings.defaultProjectScripts?.map((script) => ({
     ...script,
     ...(script.repositoryRootIds

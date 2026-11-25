@@ -773,6 +773,9 @@ describe("settings transfer", () => {
       issueProjectSources: { [destination.id]: [...legacySources].reverse() },
     };
     for (const legacyProject of [unknownProject, { ...destination, repositoryIdentity: null }]) {
+      expect(() => projectSettingsImportPatch(mixedFile, legacyProject, settings())).toThrow(
+        /GitHub.*MEP/,
+      );
       const legacyPatch = projectSettingsImportPatch(mixedFile, legacyProject, mixedTarget);
       expect(legacyPatch.projectSettingsOverrides).toEqual(patch.projectSettingsOverrides);
       expect(legacyPatch).not.toHaveProperty("issueProjectSources");

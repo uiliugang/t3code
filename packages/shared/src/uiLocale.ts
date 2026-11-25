@@ -4450,6 +4450,8 @@ const zhCN: Readonly<Record<string, string>> = {
   'Action "{action}" requires repository "{repository}" on the destination.':
     "操作“{action}”需要目标环境中的“{repository}”仓库。",
   "Settings files must be smaller than 1 MiB.": "设置文件必须小于 1 MiB。",
+  "This backup contains both GitHub and MEP sources. Keep one platform in the backup or update the destination server before importing.":
+    "备份同时包含 GitHub 和 MEP 来源。请在备份中只保留一个平台，或升级目标服务端后再导入。",
   "Invalid shortcut or condition.": "快捷键或生效条件无效。",
   "Invalid settings file. Check its format, version and setting values.":
     "设置文件无效。请检查文件格式、版本和设置值。",
