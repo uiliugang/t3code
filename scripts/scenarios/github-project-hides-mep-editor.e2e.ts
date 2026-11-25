@@ -11,6 +11,7 @@ test("GitHub issue sources do not offer the MEP space editor", WEB, async ({ t3,
   const automatic = await t3.project("automatic-github");
   const manual = await t3.project("manual-github");
   const mep = await t3.project("manual-mep");
+  await t3.project("unbound-project");
   await runPromise(
     run("git", ["remote", "add", "origin", "https://github.com/acme/automatic.git"], {
       cwd: automatic,
@@ -33,6 +34,16 @@ test("GitHub issue sources do not offer the MEP space editor", WEB, async ({ t3,
       await expect(row.getByRole("button", /MEP/)).toHaveCount(0);
     }
     await app.screenshot("project-issue-sources");
+    const unbound = screen.getByRole("row", /unbound-project/);
+    await expect(unbound.getByRole("button", /MEP/)).toBeEnabled();
+    await unbound.getByRole("checkbox").tap();
+    await screen.getByRole("button", /GitHub (override|覆盖)/).tap();
+    await screen.getByPlaceholder("owner/repository").fill("acme/first-binding");
+    await screen.getByRole("button", /Save GitHub override|保存 GitHub 覆盖/).tap();
+    await expect(unbound.getByText(/acme\/first-binding/)).toBeVisible();
+    await expect(unbound.getByRole("button", /MEP/)).toHaveCount(0);
+    await screen.getByRole("button", /Restore GitHub automatic|恢复 GitHub 自动/).tap();
+    await expect(unbound.getByRole("button", /MEP/)).toBeEnabled();
   };
   const { before, after } = await runPromise(
     Effect.gen(function* () {
@@ -49,6 +60,27 @@ test("GitHub issue sources do not offer the MEP space editor", WEB, async ({ t3,
       const mepProject = snapshot.projects.find((project) => project.workspaceRoot === mep);
       if (!manualProject || !mepProject || !githubProject)
         throw new Error("Scenario projects missing");
+      const scopes = (refresh: boolean) =>
+        client["issues.sources"]({ projectIds: [githubProject.id], refresh }).pipe(
+          Effect.map((rows) => rows.flatMap((row) => row.sources.map((source) => source.scope))),
+        );
+      const verifyScopes = (refresh: boolean, expected: string[]) =>
+        scopes(refresh).pipe(
+          Effect.flatMap((actual) =>
+            Effect.promise(async () => {
+              await expect(actual).toEqual(expected);
+            }),
+          ),
+        );
+      yield* verifyScopes(true, ["acme/automatic"]);
+      yield* run("git", ["remote", "remove", "origin"], { cwd: automatic });
+      yield* verifyScopes(true, []);
+      yield* verifyScopes(false, []);
+      yield* run("git", ["remote", "add", "origin", "https://github.com/acme/renamed.git"], {
+        cwd: automatic,
+      });
+      yield* verifyScopes(true, ["acme/renamed"]);
+      yield* verifyScopes(false, ["acme/renamed"]);
       const readFlags = client["server.getSettings"]({}).pipe(
         Effect.map(({ meituanIntegrationEnabled, meituanRequirementsEnabled }) => ({
           meituanIntegrationEnabled,

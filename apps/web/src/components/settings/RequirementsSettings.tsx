@@ -565,17 +565,22 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const refresh = useAtomCommand(sourceControlEnvironment.refreshIssueSources);
   const writable = visibleProjects.filter((project) => permissions.get(project.environmentId));
   const chosen = writable.filter((project) => selected.includes(projectKey(project)));
-  const githubChosen = chosen.filter((project) =>
-    matchesProjectSourceFilters(
-      project,
-      discoveredSources.get(projectKey(project)),
-      savedSources.get(projectKey(project)) ?? [],
-      { name: "", provider: "github", mode: modeFilter },
-    ),
+  const githubChosen = chosen.filter((project) => {
+    const key = projectKey(project);
+    const result = discoveredSources.get(key);
+    const provider = projectIssueProvider(
+      result?.provider ?? project.repositoryIdentity?.provider,
+      result?.sources.length ? result.sources : (savedSources.get(key) ?? []),
+    );
+    return provider === "github" || (!provider && result !== undefined && !result.error);
+  });
+  const githubOverrides = githubChosen.filter((project) =>
+    savedSources.get(projectKey(project))?.some((source) => source.provider === "github"),
   );
   const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && /^[\w.-]+$/u.test(host.trim());
   const run = async (action: "refresh" | "save" | "reset") => {
-    const actionTargets = action === "refresh" ? chosen : githubChosen;
+    const actionTargets =
+      action === "refresh" ? chosen : action === "reset" ? githubOverrides : githubChosen;
     if (!actionTargets.length || busy || (action === "save" && !valid)) return;
     setBusy(true);
     setMessage("");
@@ -723,11 +728,13 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               {t("GitHub override")}
               <span className="text-xs text-muted-foreground">{githubChosen.length}</span>
             </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void run("reset")}>
-              <Undo2Icon />
-              {t("Restore GitHub automatic")}
-              <span className="text-xs text-muted-foreground">{githubChosen.length}</span>
-            </Button>
+            {githubOverrides.length > 0 ? (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void run("reset")}>
+                <Undo2Icon />
+                {t("Restore GitHub automatic")}
+                <span className="text-xs text-muted-foreground">{githubOverrides.length}</span>
+              </Button>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -744,7 +751,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               <h3 className="text-sm font-medium">{t("GitHub Issue repository override")}</h3>
               <p className="text-xs text-muted-foreground">
                 {t(
-                  "Only changes the selected projects' GitHub Issue sources. MEP ONES spaces are not affected.",
+                  "Saving or restoring GitHub sources removes previously saved MEP spaces from the selected projects.",
                 )}
               </p>
             </div>

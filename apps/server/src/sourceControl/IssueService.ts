@@ -6,6 +6,7 @@ import {
   IssueSource,
   SourceControlProviderError,
   SourceControlProviderKind,
+  VcsUnsupportedOperationError,
   type IssueTarget,
   type OrchestrationProjectShell,
   type ServerSettings,
@@ -132,6 +133,7 @@ export const make = Effect.gen(function* () {
     const handle = yield* providers
       .resolveHandle({
         cwd,
+        refresh,
         ...(locator && host
           ? {
               context: {
@@ -182,7 +184,14 @@ export const make = Effect.gen(function* () {
             cause: result.failure,
           });
       }
-    } else if (handle._tag === "Failure")
+    } else if (
+      handle._tag === "Failure" &&
+      !(
+        Schema.is(VcsUnsupportedOperationError)(handle.failure.cause) &&
+        handle.failure.cause.operation === "VcsDriverRegistry.resolve" &&
+        handle.failure.cause.kind === "unknown"
+      )
+    )
       failure = new RequirementIssueError({
         operation: "repository",
         reason: "unavailable",
@@ -212,7 +221,7 @@ export const make = Effect.gen(function* () {
     refresh = false,
   ) {
     const project = yield* projects
-      .getShell(id)
+      .getShell(id, undefined, refresh)
       .pipe(
         Effect.mapError(
           (cause) =>

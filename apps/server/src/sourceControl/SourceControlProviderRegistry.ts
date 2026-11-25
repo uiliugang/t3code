@@ -58,6 +58,7 @@ export class SourceControlProviderRegistry extends Context.Service<
     readonly resolveHandle: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProvider.SourceControlProviderContext;
+      readonly refresh?: boolean;
     }) => Effect.Effect<SourceControlProviderHandle, SourceControlProviderError>;
     readonly resolve: (input: {
       readonly cwd: string;
@@ -396,7 +397,9 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
 
     const resolveHandle: SourceControlProviderRegistry["Service"]["resolveHandle"] = (input) =>
       (input.context === undefined
-        ? Cache.get(providerContextCache, input.cwd)
+        ? (input.refresh ? Cache.invalidate(providerContextCache, input.cwd) : Effect.void).pipe(
+            Effect.andThen(Cache.get(providerContextCache, input.cwd)),
+          )
         : refineContext(input.cwd, input.context)
       ).pipe(
         Effect.flatMap((context) => {

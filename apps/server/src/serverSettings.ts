@@ -96,7 +96,7 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
   settingsPath: string,
   issueSourceProvider?: IssueProvider,
   expectedIssueProjectSources?: ServerSettings["issueProjectSources"],
-  repositoryKind?: (id: ProjectId) => Effect.Effect<string | undefined, ServerSettingsError>,
+  repositoryKinds?: ReadonlyMap<string, string | undefined>,
 ) {
   for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
     if (
@@ -127,8 +127,7 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
     const id = ProjectId.make(key);
     const saved = current.issueProjectSources[id] ?? [];
     const provider = issueSourceProvider ?? next[0]?.provider;
-    const kind = repositoryKind ? yield* repositoryKind(id) : undefined;
-    const bound = projectIssueProvider(kind, saved);
+    const bound = projectIssueProvider(repositoryKinds?.get(id), saved);
     if ((bound && bound !== provider) || next.some((source) => source.provider !== provider)) {
       return yield* new ServerSettingsError({
         settingsPath,
@@ -1522,13 +1521,28 @@ const make = Effect.gen(function* () {
     );
   };
 
-  const updateAndPersistSettings = (
+  const updateAndPersistSettings = Effect.fn("ServerSettings.updateAndPersistSettings")(function* (
     patch: ServerSettingsPatch,
-    update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
+    update: (
+      current: ServerSettings,
+      kinds: ReadonlyMap<string, string | undefined>,
+    ) => Effect.Effect<ServerSettings, ServerSettingsError>,
     validateOnly = false,
     connectionSwitchInstanceId?: ProviderInstanceId,
-  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-    writeSemaphore.withPermits(1)(
+    issueSourceProvider?: IssueProvider,
+  ) {
+    const targets = Object.entries(patch.issueProjectSources ?? {}).filter(
+      ([, sources]) => sources.length || issueSourceProvider,
+    );
+    const repositoryKinds = new Map(
+      yield* Effect.forEach(
+        targets,
+        ([id]) =>
+          repositoryKind(ProjectId.make(id)).pipe(Effect.map((kind) => [id, kind] as const)),
+        { concurrency: 4 },
+      ),
+    );
+    return yield* writeSemaphore.withPermits(1)(
       Effect.gen(function* () {
         const { settings: current, parseFailure } = yield* reloadSettings;
         if (Option.isSome(parseFailure)) {
@@ -1542,7 +1556,7 @@ const make = Effect.gen(function* () {
         // a removed provider's reference is cleared below rather than restored by persistence.
         const updated = withoutRedirectedSimlockTokens(
           current,
-          withEchoedSecretReferences(current, yield* update(current)),
+          withEchoedSecretReferences(current, yield* update(current, repositoryKinds)),
         );
         for (const [id, instance] of Object.entries(updated.providerInstances)) {
           if (
@@ -1615,6 +1629,7 @@ const make = Effect.gen(function* () {
         return resolved;
       }),
     );
+  });
 
   const withSettingsSnapshot: ServerSettingsService["Service"]["withSettingsSnapshot"] = (
     use,
@@ -1789,7 +1804,7 @@ const make = Effect.gen(function* () {
   ) =>
     updateAndPersistSettings(
       patch,
-      (current) =>
+      (current, repositoryKinds) =>
         Effect.gen(function* () {
           yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
           yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
@@ -1801,7 +1816,7 @@ const make = Effect.gen(function* () {
             settingsPath,
             undefined,
             undefined,
-            repositoryKind,
+            repositoryKinds,
           );
           return applyProviderInstanceMutation(patched, mutation);
         }),
@@ -1823,19 +1838,24 @@ const make = Effect.gen(function* () {
       ),
     ),
     updateSettings: (patch, issueSourceProvider, expectedIssueProjectSources) =>
-      updateAndPersistSettings(patch, (current) =>
-        ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
-          Effect.andThen(() =>
-            applyCheckedSettingsPatch(
-              current,
-              patch,
-              settingsPath,
-              issueSourceProvider,
-              expectedIssueProjectSources,
-              repositoryKind,
+      updateAndPersistSettings(
+        patch,
+        (current, repositoryKinds) =>
+          ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
+            Effect.andThen(() =>
+              applyCheckedSettingsPatch(
+                current,
+                patch,
+                settingsPath,
+                issueSourceProvider,
+                expectedIssueProjectSources,
+                repositoryKinds,
+              ),
             ),
           ),
-        ),
+        false,
+        undefined,
+        issueSourceProvider,
       ),
     updateProviderInstance,
     validateProviderInstanceMutation: (mutation, patch) =>

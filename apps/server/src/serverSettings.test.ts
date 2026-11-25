@@ -37,6 +37,7 @@ import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import { sourceControlHostSecretName } from "./sourceControl/sourceControlHostSecrets.ts";
 import * as ServerConfig from "./config.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
+import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerSettingsModule from "./serverSettings.ts";
 import { SECRET_REDACTED } from "./settingsSecrets.ts";
@@ -2840,6 +2841,44 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       const persisted = yield* decodeServerSettings(JSON.parse(raw));
       assert.isTrue(persisted.projectSettingsFolded);
       assert.isUndefined(persisted.projectSettingsOverrides[legacyProject]);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("does not hold the settings lock while detecting issue repositories", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const sql = yield* SqlClient.SqlClient;
+      const id = ProjectId.make("project:issue-probe");
+      yield* sql`INSERT INTO projection_projects
+        (project_id, title, workspace_root, auto_pull, scripts_json, created_at, updated_at)
+        VALUES (${id}, 'Probe', '/probe', 1, '[]', '2026-08-25', '2026-08-25')`;
+      const started = yield* Deferred.make<void>();
+      const resume = yield* Deferred.make<void>();
+      const writer = yield* service
+        .updateSettings({
+          issueProjectSources: {
+            [id]: [{ provider: "github", host: "github.com", scope: "acme/repo" }],
+          },
+        })
+        .pipe(
+          Effect.provideService(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+            resolve: () =>
+              Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Deferred.await(resume)),
+                Effect.as(null),
+              ),
+          }),
+          Effect.forkChild,
+        );
+      yield* Deferred.await(started);
+      const snapshot = yield* service
+        .withSettingsSnapshot(() => Effect.void, { tryTrusted: true })
+        .pipe(Effect.result);
+      if (snapshot._tag === "Success") yield* service.updateSettings({ defaultAutoPull: true });
+      yield* Deferred.succeed(resume, undefined);
+      const saved = yield* Fiber.join(writer);
+      assert.equal(snapshot._tag, "Success");
+      assert.isTrue(saved.defaultAutoPull);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 

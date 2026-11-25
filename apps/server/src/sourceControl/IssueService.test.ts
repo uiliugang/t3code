@@ -7,6 +7,8 @@ import {
   ProjectId,
   SourceControlProviderKind,
   SourceControlProviderError,
+  VcsDriverKind,
+  VcsUnsupportedOperationError,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -141,6 +143,7 @@ describe("IssueService", () => {
           "not-a-repository",
           "discovery-offline",
           "manual-offline",
+          "local-folder",
         ].map((name) => ({
           id: ProjectId.make(name),
           title: name,
@@ -245,6 +248,14 @@ describe("IssueService", () => {
               },
             },
           };
+          expect(
+            (yield* service.sources({ projectIds: [ProjectId.make("local-folder")] }))[0],
+          ).toEqual({
+            projectId: ProjectId.make("local-folder"),
+            repository: null,
+            sources: [],
+            manual: false,
+          });
           const expectedSpaces = sources[repoProject.id]!.filter(
             (source) => source.provider === "meituan",
           );
@@ -417,6 +428,20 @@ describe("IssueService", () => {
                   get: () => Effect.succeed(provider),
                   resolveHandle: ({ cwd }) => {
                     resolved.push(cwd);
+                    if (cwd === "/local-folder")
+                      return Effect.fail(
+                        new SourceControlProviderError({
+                          provider: SourceControlProviderKind.make("unknown"),
+                          cwd,
+                          operation: "detectProvider",
+                          detail: "Failed to detect source control provider.",
+                          cause: new VcsUnsupportedOperationError({
+                            operation: "VcsDriverRegistry.resolve",
+                            kind: VcsDriverKind.make("unknown"),
+                            detail: "No supported VCS repository was detected.",
+                          }),
+                        }),
+                      );
                     if (
                       ["/scratch", "/archived", "/not-a-repository", "/manual-offline"].includes(
                         cwd,
