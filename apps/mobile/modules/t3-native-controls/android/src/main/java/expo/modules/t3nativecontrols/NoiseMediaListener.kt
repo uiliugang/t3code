@@ -12,6 +12,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 
 internal class NoiseMediaListener(context: AppContext) : SharedObject(context) {
@@ -22,8 +23,12 @@ internal class NoiseMediaListener(context: AppContext) : SharedObject(context) {
   private val firstLines = ConcurrentHashMap<Int, ByteArray>()
   private val nextId = AtomicInteger()
   private val ready = LinkedBlockingQueue<Int>()
-  private val paths = mapOf("asset" to "/api/assets/", "device" to "/api/device-hub/",
-    "browser" to "/api/preview-stream/", "tunnel" to "/api/preview/tunnel?")
+  private val paths = mapOf(
+    "asset" to "/api/assets/",
+    "device" to "/api/device-hub/",
+    "browser" to "/api/preview-stream/",
+    "tunnel" to "/api/preview/tunnel?"
+  )
   private val prefixes = paths.mapValues { "/" + UUID.randomUUID().toString() }
   val origins = prefixes.mapValues { "http://127.0.0.1:${server.localPort}${it.value}" }
 
@@ -32,13 +37,16 @@ internal class NoiseMediaListener(context: AppContext) : SharedObject(context) {
       while (!server.isClosed) {
         val socket = runCatching { server.accept() }.getOrNull() ?: break
         if (channels.size >= 32) {
-          socket.close()
-          continue
+          runCatching { socket.close() }
+        } else {
+          val id = nextId.incrementAndGet()
+          channels[id] = socket
+          if (server.isClosed) {
+            close(id)
+          } else {
+            runCatching { pool.execute { admit(id, socket) } }.onFailure { close(id) }
+          }
         }
-        val id = nextId.incrementAndGet()
-        channels[id] = socket
-        if (server.isClosed) { close(id); break }
-        runCatching { pool.execute { admit(id, socket) } }.onFailure { close(id) }
       }
     }
   }
@@ -67,16 +75,24 @@ internal class NoiseMediaListener(context: AppContext) : SharedObject(context) {
       firstLines[id] = "$method $target HTTP/1.1\r\n".toByteArray(Charsets.US_ASCII)
       socket.soTimeout = 0
       ready.put(id)
-    } catch (_: Exception) { close(id) }
+    } catch (_: Exception) {
+      close(id)
+    }
   }
 
+  @Suppress("TooGenericExceptionCaught") // Settle the JS promise for every failed native operation.
   fun run(promise: Promise, operation: () -> Any?) {
     try {
       pool.execute {
-        try { promise.resolve(operation()) }
-        catch (error: Exception) { promise.reject("ERR_NOISE_MEDIA", "Media connection closed", error) }
+        try {
+          promise.resolve(operation())
+        } catch (error: Exception) {
+          promise.reject("ERR_NOISE_MEDIA", "Media connection closed", error)
+        }
       }
-    } catch (error: Exception) { promise.reject("ERR_NOISE_MEDIA", "Media listener closed", error) }
+    } catch (error: RejectedExecutionException) {
+      promise.reject("ERR_NOISE_MEDIA", "Media listener closed", error)
+    }
   }
 
   fun accept(): Int = ready.take()
@@ -86,7 +102,9 @@ internal class NoiseMediaListener(context: AppContext) : SharedObject(context) {
     val count = inputs.getValue(id).read(bytes)
     return if (count < 1) byteArrayOf() else bytes.copyOf(count)
   }
-  fun write(id: Int, bytes: ByteArray) { channels.getValue(id).getOutputStream().write(bytes) }
+  fun write(id: Int, bytes: ByteArray) {
+    channels.getValue(id).getOutputStream().write(bytes)
+  }
   fun close(id: Int) {
     firstLines.remove(id)
     inputs.remove(id)

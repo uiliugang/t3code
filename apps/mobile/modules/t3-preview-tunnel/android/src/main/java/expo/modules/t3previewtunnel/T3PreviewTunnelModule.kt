@@ -23,7 +23,9 @@ class T3PreviewTunnelModule : Module() {
       Prop("environmentId") { view: T3TunnelWebView, environmentId: String ->
         view.setEnvironment(environmentId)
       }
-      Prop("localMediaPorts") { view: T3TunnelWebView, ports: List<Int> -> view.setLocalMediaPorts(ports) }
+      Prop("localMediaPorts") { view: T3TunnelWebView, ports: List<Int> ->
+        view.setLocalMediaPorts(ports)
+      }
       Prop("url") { view: T3TunnelWebView, url: String -> view.loadUrl(url) }
 
       AsyncFunction("loadUrl") { view: T3TunnelWebView, url: String ->

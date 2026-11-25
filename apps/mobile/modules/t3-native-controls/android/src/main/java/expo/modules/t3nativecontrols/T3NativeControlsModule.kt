@@ -32,8 +32,16 @@ class T3NativeControlsModule : Module() {
       AsyncFunction("read") { listener: NoiseMediaListener, id: Int, promise: Promise ->
         listener.run(promise) { listener.read(id) }
       }
-      AsyncFunction("write") { listener: NoiseMediaListener, id: Int, bytes: ByteArray, promise: Promise ->
-        listener.run(promise) { listener.write(id, bytes); null }
+      AsyncFunction("write") {
+          listener: NoiseMediaListener,
+          id: Int,
+          bytes: ByteArray,
+          promise: Promise
+        ->
+        listener.run(promise) {
+          listener.write(id, bytes)
+          null
+        }
       }
       Function("close") { listener: NoiseMediaListener, id: Int -> listener.close(id) }
     }
