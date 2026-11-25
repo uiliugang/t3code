@@ -1,7 +1,10 @@
 import { assert, it } from "@effect/vitest";
 import { ClaudeSettings, ProviderInstanceId } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { validateClaudeEndpoint } from "./ClaudeEndpointValidation.ts";
 
@@ -90,11 +93,11 @@ it.effect("checks optional model listing without sending a billable inference re
 );
 
 it.effect.each(["anthropic", "openai"] as const)(
-  "tests the %s tool round trip with exact model IDs and the selected auth header",
+  "gives each %s tool round its own timeout and uses the exact model ID and auth header",
   (protocol) =>
     Effect.gen(function* () {
       let requests = 0;
-      const result = yield* validateClaudeEndpoint(
+      const check = yield* validateClaudeEndpoint(
         config,
         {
           ...environment,
@@ -135,12 +138,55 @@ it.effect.each(["anthropic", "openai"] as const)(
                   headers: { "content-type": "text/event-stream" },
                 }),
               );
-            }),
+            }).pipe(Effect.delay("16 seconds")),
           ),
         ),
+        Effect.forkChild,
       );
+      yield* TestClock.adjust("32 seconds");
+      const result = yield* Fiber.join(check);
       assert.strictEqual(requests, 2);
       assert.isTrue(result.authenticated);
+    }),
+);
+
+it.effect.each(["first round headers", "second round stream"] as const)(
+  "times out after 30 seconds when waiting for %s",
+  (stall) =>
+    Effect.gen(function* () {
+      const completed = yield* Deferred.make<void>();
+      let requests = 0;
+      const check = yield* validateClaudeEndpoint(
+        config,
+        environment,
+        { instanceId, check: "model", model: "CaseSensitive" },
+        Effect.void,
+      ).pipe(
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            requests++;
+            if (stall === "first round headers") return Effect.never;
+            const first = requests === 1;
+            const response = HttpClientResponse.fromWeb(
+              request,
+              new Response(first ? stream(true) : new ReadableStream(), {
+                headers: { "content-type": "text/event-stream" },
+              }),
+            );
+            return Effect.succeed(response).pipe(Effect.delay("16 seconds"));
+          }),
+        ),
+        Effect.flip,
+        Effect.tap(() => Deferred.succeed(completed, undefined)),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust(stall === "first round headers" ? "29 seconds" : "45 seconds");
+      assert.isFalse(yield* Deferred.isDone(completed));
+      yield* TestClock.adjust("1 second");
+      assert.isTrue(yield* Deferred.isDone(completed));
+      assert.include((yield* Fiber.join(check)).detail, "timed out");
+      assert.strictEqual(requests, stall === "first round headers" ? 1 : 2);
     }),
 );
 
