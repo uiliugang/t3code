@@ -5,6 +5,7 @@ import {
   createApplicationSettingsFile,
   createProjectSettingsFile,
   projectSettingsImportPatch,
+  projectImportSourceContext,
   projectTransferIdentity,
   settingsKeybindingsForExport,
   settingsKeybindingsToImport,
@@ -313,7 +314,13 @@ export function ProjectConfigurationSettings({
                 file,
                 project,
                 current,
-                targetConfig?.environment.capabilities,
+                await projectImportSourceContext(
+                  file,
+                  project,
+                  targetConfig?.environment.capabilities,
+                  appAtomRegistry,
+                  sourceControlEnvironment.refreshIssueSources,
+                ),
                 t,
                 targetConfig?.providers,
                 await importGeneratorCatalog(

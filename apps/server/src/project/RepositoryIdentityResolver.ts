@@ -15,6 +15,7 @@ import * as Path from "effect/Path";
 
 import * as ProcessRunner from "../processRunner.ts";
 import {
+  isLocalRemoteUrl,
   selectRequirementRemote,
   sourceControlDefinitions,
 } from "../sourceControl/sourceControlDefinitions.ts";
@@ -48,17 +49,6 @@ export class RepositoryIdentityResolver extends Context.Service<
     ) => Effect.Effect<RepositoryIdentity | null, E>;
   }
 >()("t3/project/RepositoryIdentityResolver") {}
-
-// Local paths such as GitButler's gb-local=. would give unrelated repos the same identity.
-function isLocalRemoteUrl(url: string): boolean {
-  if (/^file:/i.test(url)) return true;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return false;
-  if (/^[a-z]:[\\/]/i.test(url)) return true;
-  // Git treats `host:path` as scp-style only when the colon precedes any slash.
-  const colonIndex = url.indexOf(":");
-  const slashIndex = url.search(/[\\/]/);
-  return colonIndex === -1 || (slashIndex !== -1 && slashIndex < colonIndex);
-}
 
 function parseRemoteFetchUrls(stdout: string) {
   const remotes = new Map<string, string>();

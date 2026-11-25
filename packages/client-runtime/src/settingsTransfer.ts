@@ -5,6 +5,8 @@ import {
   CustomModelSetting,
   KeybindingsConfig,
   IssueSource,
+  type IssueSourcesResult,
+  type IssueSourcesInput,
   projectIssueSourcesForTransfer,
   importProjectIssueSources,
   MAX_KEYBINDINGS_COUNT,
@@ -49,6 +51,7 @@ import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { getProviderClient } from "./providerClients.ts";
+import { sourceControlClients } from "./sourceControlClients.ts";
 
 export const MAX_SETTINGS_FILE_BYTES = 1024 * 1024;
 
@@ -614,11 +617,37 @@ export function applicationSettingsImportPatch(
   };
 }
 
+type IssueImportCapabilities = Pick<ExecutionEnvironmentCapabilities, "singleProjectIssueProvider">;
+type IssueDiscovery = Pick<(typeof IssueSourcesResult.Type)[number], "sources" | "provider">;
+
+export async function projectImportSourceContext<E>(
+  file: ProjectSettingsFile,
+  project: TransferProject,
+  capabilities: IssueImportCapabilities | undefined,
+  registry: AtomRegistry.AtomRegistry,
+  command: AtomCommand<
+    { environmentId: EnvironmentId; input: typeof IssueSourcesInput.Type },
+    typeof IssueSourcesResult.Type,
+    E
+  >,
+) {
+  if (capabilities?.singleProjectIssueProvider || !file.issueSources?.length) return capabilities;
+  const rows = await Effect.runPromise(
+    command.run(registry, {
+      environmentId: project.environmentId,
+      input: { projectIds: [project.id], refresh: true },
+    }),
+  );
+  const row = rows.find((entry) => entry.projectId === project.id);
+  if (!row || row.error) throw new Error(row?.error ?? "This project is no longer available.");
+  return { ...capabilities, discovery: row };
+}
+
 export function projectSettingsImportPatch(
   file: ProjectSettingsFile,
   project: TransferProject,
   target: ServerSettings,
-  capabilities: Pick<ExecutionEnvironmentCapabilities, "singleProjectIssueProvider"> = {},
+  capabilities: IssueImportCapabilities & { readonly discovery?: IssueDiscovery } = {},
   t: UiTranslator = translateUi.bind(null, "en"),
   providers?: readonly ServerProvider[],
   generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
@@ -626,7 +655,7 @@ export function projectSettingsImportPatch(
   checkProviders(file, target, t);
   const saved = target.issueProjectSources[project.id] ?? [];
   const incoming = file.issueSources;
-  const provider = detectedProjectIssueKind(project.repositoryIdentity);
+  const provider = detectedProjectIssueKind(project.repositoryIdentity, capabilities.discovery);
   const ambiguousLegacyRestore =
     !capabilities.singleProjectIssueProvider &&
     incoming?.length &&
@@ -683,19 +712,45 @@ export function projectSettingsImportPatch(
 
 export function projectConfigurationsForImport(
   file: SettingsFile,
+  capabilities?: IssueImportCapabilities,
 ): ReadonlyArray<ProjectImportDefinition> {
-  if (file.scope === "application") return file.projects ?? [];
-  if (!file.workspace) return [];
-  return [
-    {
-      name: file.name,
-      settings: file.settings,
-      providers: file.providers,
-      ...(file.virtualModels ? { virtualModels: file.virtualModels } : {}),
-      workspace: file.workspace,
-      ...(file.issueSources === undefined ? {} : { issueSources: file.issueSources }),
-    },
-  ];
+  const definitions =
+    file.scope === "application"
+      ? (file.projects ?? [])
+      : !file.workspace
+        ? []
+        : [
+            {
+              name: file.name,
+              settings: file.settings,
+              providers: file.providers,
+              ...(file.virtualModels ? { virtualModels: file.virtualModels } : {}),
+              workspace: file.workspace,
+              ...(file.issueSources === undefined ? {} : { issueSources: file.issueSources }),
+            },
+          ];
+  if (!capabilities || capabilities.singleProjectIssueProvider) return definitions;
+  return definitions.map((definition) => {
+    const { issueSources, workspace } = definition;
+    if (!issueSources?.length) return definition;
+    const remote = workspace.roots.find((root) => root.id === workspace.primaryRootId)?.remoteUrl;
+    const provider = remote ? sourceControlClients.recognizeRemote(remote)?.kind : undefined;
+    if (
+      !provider ||
+      provider === "unknown" ||
+      (provider !== "github" &&
+        provider !== "meituan" &&
+        issueSources.some((source) => source.provider !== issueSources[0]?.provider))
+    ) {
+      throw new Error(
+        "The destination server cannot confirm the issue platform for this clone. Update the server or import the bindings from project settings after cloning.",
+      );
+    }
+    const compatible = projectIssueSourcesForTransfer(issueSources, provider);
+    return compatible
+      ? { ...definition, issueSources: compatible }
+      : Struct.omit(definition, ["issueSources"]);
+  });
 }
 
 function keybindingCondition(node: KeybindingWhenNode): string {

@@ -17,14 +17,26 @@ export const BUILT_IN_SOURCE_CONTROL_DRIVER_LIST = [
 
 export const sourceControlDefinitions = builtInSourceControlDefinitions;
 
+export function isLocalRemoteUrl(url: string): boolean {
+  if (/^file:/i.test(url)) return true;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return false;
+  if (/^[a-z]:[\\/]/i.test(url)) return true;
+  const colonIndex = url.indexOf(":");
+  const slashIndex = url.search(/[\\/]/);
+  return colonIndex === -1 || (slashIndex !== -1 && slashIndex < colonIndex);
+}
+
 export function selectRequirementRemote(
   remotes: ReadonlyArray<{ readonly name: string; readonly url: string }>,
 ) {
   const origin = remotes.find((remote) => remote.name === "origin");
+  const targets = remotes.filter(
+    (remote) => remote.name !== "gb-local" || !/^\.[\\/]?$/u.test(remote.url),
+  );
   const candidates =
-    remotes.length > 1 ? remotes.filter((remote) => remote.name !== "upstream") : remotes;
+    targets.length > 1 ? targets.filter((remote) => remote.name !== "upstream") : targets;
   const selected = origin ?? (candidates.length === 1 ? candidates[0] : undefined);
-  if (!selected || /^file:/iu.test(selected.url)) return null;
+  if (!selected || isLocalRemoteUrl(selected.url)) return null;
   const provider = sourceControlDefinitions.recognizeRemote(selected.url);
   return provider ? { remoteName: selected.name, remoteUrl: selected.url, provider } : null;
 }

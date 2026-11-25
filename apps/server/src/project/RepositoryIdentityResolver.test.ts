@@ -489,7 +489,13 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const mixedIdentity = yield* resolver.resolve(mixedDir);
       expect(mixedIdentity?.locator.remoteName).toBe("mirror");
       expect(mixedIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
+      expect(mixedIdentity?.issueRepository).toBeUndefined();
       const backup = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
+      yield* git(mixedDir, ["remote", "rename", "mirror", "upstream"]);
+      yield* git(mixedDir, ["remote", "add", "fork", "/srv/git/fork.git"]);
+      expect((yield* resolver.resolve(mixedDir, backup))?.issueRepository).toBeNull();
+      yield* git(mixedDir, ["remote", "remove", "fork"]);
+      yield* git(mixedDir, ["remote", "rename", "upstream", "mirror"]);
       yield* git(mixedDir, ["remote", "add", "origin", "file://127.0.0.1/mirror/fork.git"]);
       const mirrored = yield* resolver.resolve(mixedDir, backup);
       expect(mirrored).toMatchObject({

@@ -677,6 +677,37 @@ describe("settings transfer", () => {
     );
     expect(projectConfigurationsForImport(withProjects)).toEqual([configuration]);
     expect(projectConfigurationsForImport(file)).toEqual([]);
+    const github = { provider: "github" as const, host: "github.com", scope: "team/override" };
+    const mep = { provider: "meituan" as const, host: "mep.sankuai.com", scope: "42" };
+    const mixed = { ...configuration, issueSources: [mep, github] };
+    const backup = { ...file, projects: [mixed] };
+    expect(projectConfigurationsForImport(backup, {})).toEqual([
+      { ...configuration, issueSources: [github] },
+    ]);
+    expect(projectConfigurationsForImport(backup, { singleProjectIssueProvider: true })).toEqual([
+      mixed,
+    ]);
+    expect(
+      projectConfigurationsForImport(
+        { ...file, projects: [{ ...configuration, issueSources: [mep] }] },
+        {},
+      ),
+    ).toEqual([configuration]);
+    const cleared = { ...configuration, issueSources: [] };
+    expect(projectConfigurationsForImport({ ...file, projects: [cleared] }, {})).toEqual([cleared]);
+    const unknown = {
+      ...mixed,
+      workspace: {
+        ...mixed.workspace,
+        roots: mixed.workspace.roots.map((root) => ({
+          ...root,
+          remoteUrl: "https://forge.example.test/team/repo.git",
+        })),
+      },
+    };
+    expect(() => projectConfigurationsForImport({ ...file, projects: [unknown] }, {})).toThrow(
+      /cannot confirm the issue platform/,
+    );
     expect(() =>
       parseSettingsFile(
         JSON.stringify({
@@ -802,6 +833,14 @@ describe("settings transfer", () => {
       },
     };
     const mepBackup = { ...file, issueSources: legacySources.slice(0, 1) };
+    const discovery = { discovery: { sources: mepBackup.issueSources } };
+    expect(
+      projectSettingsImportPatch(file, legacyMepFork, settings(), discovery),
+    ).not.toHaveProperty("issueProjectSources");
+    expect(
+      projectSettingsImportPatch(mepBackup, destination, settings(), discovery)
+        .issueProjectSources?.[destination.id],
+    ).toEqual(mepBackup.issueSources);
     expect(
       projectSettingsImportPatch(mepBackup, legacyMepFork, settings()).issueProjectSources?.[
         destination.id
