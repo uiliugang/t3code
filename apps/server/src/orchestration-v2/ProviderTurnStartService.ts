@@ -847,14 +847,24 @@ export const layer: Layer.Layer<
       }
       const recreateResult = yield* Effect.result(
         Effect.gen(function* () {
-          const direct = yield* restoreMissingWorktree(projection.thread);
-          if (direct !== undefined) {
-            yield* worktreeRestore.takeRecreated(projection.thread.id, {
-              action: "record",
-              projectId: projection.thread.projectId,
-              worktreePath: direct.worktreePath,
-            });
-            return direct;
+          const direct = yield* restoreMissingWorktree(projection.thread, {
+            beforeRecreate: (pending) =>
+              worktreeRestore
+                .takeRecreated(projection.thread.id, {
+                  action: "record",
+                  projectId: projection.thread.projectId,
+                  worktreePath: pending.worktreePath,
+                  project: pending.project,
+                })
+                .pipe(Effect.asVoid),
+          });
+          if (direct !== undefined) return direct;
+          if (
+            projection.thread.workspace !== undefined ||
+            projection.thread.worktreePath === null ||
+            projection.thread.branch === null
+          ) {
+            return undefined;
           }
           const pending = yield* worktreeRestore.takeRecreated(projection.thread.id, {
             action: "peek",
@@ -897,19 +907,27 @@ export const layer: Layer.Layer<
                   project,
                   observeCompletion: {},
                 });
-                if (setup.status === "started" && setup.completion) {
+                let clearPending = true;
+                if (setup.status === "started") {
                   if (setup.async) {
-                    yield* setup.completion.pipe(Effect.forkDetach);
-                  } else {
+                    if (setup.commandWritten !== undefined) {
+                      clearPending = yield* setup.commandWritten;
+                    }
+                    if (setup.completion) {
+                      yield* setup.completion.pipe(Effect.forkDetach);
+                    }
+                  } else if (setup.completion) {
                     const { exitCode } = yield* setup.completion;
                     if (exitCode !== 0)
                       return yield* new WorktreeSetupScriptFailedError({ worktreePath, exitCode });
                   }
                 }
-                yield* worktreeRestore.takeRecreated(projection.thread.id, {
-                  action: "clear",
-                  worktreePath,
-                });
+                if (clearPending) {
+                  yield* worktreeRestore.takeRecreated(projection.thread.id, {
+                    action: "clear",
+                    worktreePath,
+                  });
+                }
               }),
             );
             if (setupResult._tag === "Failure") {

@@ -395,7 +395,7 @@ it.effect.each([
       }
       if (createFails) {
         yield* Fiber.join(rollback).pipe(Effect.exit);
-        assert.deepEqual(calls, ["cleanup", "prune", "create"]);
+        assert.deepEqual(calls, ["cleanup", "recreated", "prune", "create"]);
         assert.equal(
           yield* fileSystem.readFileString(path.join(worktreePath, "unsaved.txt")),
           "keep",
@@ -412,7 +412,7 @@ it.effect.each([
       assert.deepEqual(
         calls,
         order === "cleanup-first"
-          ? ["cleanup", ...(recreates ? ["prune", "create", "recreated"] : []), ...rollbackCalls]
+          ? ["cleanup", ...(recreates ? ["recreated", "prune", "create"] : []), ...rollbackCalls]
           : [...rollbackCalls, "cleanup"],
       );
       if (!recreates) {

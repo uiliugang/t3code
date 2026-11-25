@@ -71,6 +71,7 @@ export class ThreadWorktreeRestore extends Context.Service<
             readonly action: "record";
             readonly projectId: ProjectId;
             readonly worktreePath: string;
+            readonly project?: Project;
           },
     ) => Effect.Effect<RecreatedWorktree | undefined, WorktreeRecreateError>;
   }

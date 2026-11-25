@@ -277,10 +277,13 @@ export const layer: Layer.Layer<
 
       if (context.thread.workspace === undefined && taskFolder !== null && branch != null) {
         // Cleanup can remove any of the folder's checkouts; the linked project folder has none.
-        const restored = yield* taskFolders.restore({
+        yield* taskFolders.restore({
           taskFolder,
           branch,
           projectCommands: TaskFolders.linkRunsProjectCommands(context.thread.linkOrigin),
+          ...(worktreePath === null
+            ? {}
+            : { beforeRecreate: () => recordRecreatedWorktree(worktreePath) }),
           recreate: (checkout) =>
             gitWorkflow.pruneWorktrees({ cwd: checkout.repositoryPath }).pipe(
               Effect.andThen(
@@ -292,9 +295,6 @@ export const layer: Layer.Layer<
               ),
             ),
         });
-        if (restored && worktreePath !== null) {
-          yield* recordRecreatedWorktree(worktreePath);
-        }
       } else if (context.thread.workspace === undefined && worktreePath != null && branch != null) {
         // Recreated only where the server would have made it, as turn start does.
         // A failed removal can leave the folder without its checkout; only a file restore replaces it.
@@ -319,6 +319,7 @@ export const layer: Layer.Layer<
             );
             if (leftover) {
               if (!(yield* isolated)) return yield* sharedWorkspace();
+              yield* recordRecreatedWorktree(worktreePath);
               // Set aside, not removed: a checkout that fails puts the folder and its files back.
               yield* Effect.acquireUseRelease(
                 Effect.gen(function* () {
@@ -352,9 +353,9 @@ export const layer: Layer.Layer<
                   ),
               );
             } else {
+              yield* recordRecreatedWorktree(worktreePath);
               yield* recreate;
             }
-            yield* recordRecreatedWorktree(worktreePath);
           }
         }
       }

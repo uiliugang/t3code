@@ -39,6 +39,8 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly terminalId: string;
   readonly cwd: string;
   readonly async: boolean;
+  /** Resolves with `true` once the command has been written to the setup terminal. */
+  readonly commandWritten?: Effect.Effect<boolean>;
   /** Null exit code means the terminal exited or closed before the sentinel. */
   readonly completion?: Effect.Effect<ProjectSetupScriptCompletion>;
 }
@@ -638,24 +640,26 @@ export const make = Effect.gen(function* () {
     ).pipe(
       Effect.flatMap((shell) =>
         shell === "exited" || commandLine === null
-          ? Effect.void
-          : terminalManager.write({
-              threadId: input.threadId,
-              terminalId,
-              // macOS zsh garbles long typed-ahead multiline input; a live line editor takes it as one paste.
-              data: projectScriptTerminalInput(
-                shell === "ready" && completionShell === "posix" && commandLine.includes("\r")
-                  ? `\x1b[200~${commandLine.replaceAll("\r", "\n")}\x1b[201~`
-                  : commandLine,
-              ),
-            }),
+          ? Effect.succeed(false)
+          : terminalManager
+              .write({
+                threadId: input.threadId,
+                terminalId,
+                // macOS zsh garbles long typed-ahead multiline input; a live line editor takes it as one paste.
+                data: projectScriptTerminalInput(
+                  shell === "ready" && completionShell === "posix" && commandLine.includes("\r")
+                    ? `\x1b[200~${commandLine.replaceAll("\r", "\n")}\x1b[201~`
+                    : commandLine,
+                ),
+              })
+              .pipe(Effect.as(true)),
       ),
       Effect.catchCause((cause) =>
         Effect.logWarning("project script command was not written", {
           ...errorContext,
           terminalId,
           cause,
-        }).pipe(Effect.andThen(observed?.abandon ?? Effect.void)),
+        }).pipe(Effect.andThen(observed?.abandon ?? Effect.void), Effect.as(false)),
       ),
       Effect.ensuring(Effect.sync(() => readiness.unsubscribe())),
       Effect.forkIn(serviceScope),
@@ -684,6 +688,7 @@ export const make = Effect.gen(function* () {
       terminalId,
       cwd,
       async: script.async !== false,
+      commandWritten: Fiber.join(commandWriter),
       ...(completion ? { completion } : {}),
     } as const;
   });

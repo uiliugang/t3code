@@ -191,13 +191,15 @@ export class TaskFolders extends Context.Service<
      * `projectCommands` every missing checkout comes back plain. Returns whether anything was
      * missing and put back.
      */
-    readonly restore: <E>(input: {
+    readonly restore: <E1 = never, E2 = never>(input: {
       readonly taskFolder: TaskFolder;
       readonly projectCommands: boolean;
       /** The thread's branch, for a project that lays its folder out with its own command. */
       readonly branch: string;
-      readonly recreate: (checkout: TaskFolderCheckout) => Effect.Effect<void, E>;
-    }) => Effect.Effect<boolean, TaskFolderError | E>;
+      /** Called once before the first missing path is recreated on disk. */
+      readonly beforeRecreate?: () => Effect.Effect<void, E1>;
+      readonly recreate: (checkout: TaskFolderCheckout) => Effect.Effect<void, E2>;
+    }) => Effect.Effect<boolean, TaskFolderError | E1 | E2>;
   }
 >()("t3/workspace/TaskFolders") {}
 
@@ -1532,6 +1534,7 @@ const make = Effect.gen(function* () {
     taskFolder,
     branch,
     projectCommands,
+    beforeRecreate,
     recreate,
   }) {
     const restoreFailed = fail("create", "Could not restore the worktrees");
@@ -1575,7 +1578,17 @@ const make = Effect.gen(function* () {
       exists,
     );
     let restored = false;
+    let announced = false;
+    const announceBeforeRecreate =
+      beforeRecreate === undefined
+        ? Effect.void
+        : Effect.suspend(() => {
+            if (announced) return Effect.void;
+            announced = true;
+            return beforeRecreate();
+          });
     if (layout !== null && projectCommands && present.includes(false)) {
+      yield* announceBeforeRecreate;
       restored = true;
       yield* fileSystem
         .makeDirectory(taskFolder.root, { recursive: true })
@@ -1598,6 +1611,7 @@ const make = Effect.gen(function* () {
           detail: `${checkout.worktreePath} holds a checkout that is not a worktree of ${checkout.repositoryPath}. Move it away to restore the thread's worktree.`,
         });
       }
+      yield* announceBeforeRecreate;
       yield* fileSystem
         .makeDirectory(path.dirname(checkout.worktreePath), { recursive: true })
         .pipe(Effect.mapError(restoreFailed));
@@ -1615,6 +1629,7 @@ const make = Effect.gen(function* () {
         (yield* trackedFolders(project)).map((folder) => path.resolve(folder.path)),
         isRepository,
       );
+      yield* announceBeforeRecreate;
       // A recorded repository the project no longer tracks still gets its worktree, never a link.
       yield* linkFolder(taskFolder.projectRoot, taskFolder.projectPath, [
         ...tracked,

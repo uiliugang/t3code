@@ -432,6 +432,28 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         );
         assert.equal(refusedSymlinkedInstalled._tag, "MigrateDevDbSharedHomeError");
 
+        // Two-hop symlink: alias/state-link -> installedHome/userdata, and statev2.sqlite -> realDiskDb.
+        const aliasDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-alias-" });
+        yield* fs.symlink(path.join(installedHome, "userdata"), path.join(aliasDir, "state-link"));
+        const twoHopDb = path.join(aliasDir, "state-link", "statev2.sqlite");
+        const refusedTwoHop = yield* Effect.flip(dropResumableFamilies(twoHopDb, { sharedHome }));
+        assert.equal(refusedTwoHop._tag, "MigrateDevDbSharedHomeError");
+        const preservedThreads = yield* withDatabase(
+          realDiskDb,
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            const [row] = yield* sql<{ n: number }>`
+              SELECT COUNT(*) AS n FROM orchestration_v2_projection_threads`;
+            return Number(row?.n ?? 0);
+          }),
+        );
+        assert.equal(preservedThreads, 10);
+
+        const missingDb = path.join(stagingDir, "typo.sqlite");
+        const refusedMissing = yield* Effect.flip(dropResumableFamilies(missingDb, { sharedHome }));
+        assert.equal(refusedMissing._tag, "MigrateDevDbSourceMissingError");
+        assert.isFalse(yield* fs.exists(missingDb));
+
         const hardLinkedDb = path.join(stagingDir, "hardlinked.sqlite");
         yield* fs.link(customDb, hardLinkedDb);
         const refusedHardLink = yield* Effect.flip(
@@ -798,18 +820,49 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         assert.equal(refused._tag, "MigrateDevDbSharedHomeError");
         assert.equal(yield* fs.readFileString(installedDb), "live-installed-database-bytes");
 
-        // An existing worktree .t3 with settings.json/secrets still refreshes cleanly.
-        yield* fs.makeDirectory(path.join(devWorktreeDir, "userdata", "secrets"), {
+        // A stopped packaged desktop home outside a worktree is also refused.
+        const desktopInstallDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "migrate-dev-db-desktop-install-",
+        });
+        const desktopInstallDb = path.join(desktopInstallDir, "userdata", "statev2.sqlite");
+        yield* fs.makeDirectory(path.dirname(desktopInstallDb), { recursive: true });
+        yield* fs.writeFileString(desktopInstallDb, "packaged-desktop-database-bytes");
+        yield* fs.writeFileString(
+          path.join(desktopInstallDir, "userdata", "desktop-last-started-version"),
+          "1.0.0",
+        );
+        const refusedDesktopInstall = yield* runMigrateDevDb(
+          { baseDir: desktopInstallDir, source, projects: 5, threadsPerProject: 2 },
+          { sharedHome: sourceDir },
+        ).pipe(Effect.flip);
+        assert.equal(refusedDesktopInstall._tag, "MigrateDevDbSharedHomeError");
+        assert.equal(yield* fs.readFileString(desktopInstallDb), "packaged-desktop-database-bytes");
+
+        // A linked git worktree that previously ran `vp run dev:desktop` still refreshes cleanly.
+        yield* fs.writeFileString(
+          path.join(devWorktreeDir, ".git"),
+          "gitdir: /repo/.git/worktrees/feature-branch\n",
+        );
+        const devWorktreeHome = path.join(devWorktreeDir, ".t3");
+        yield* fs.makeDirectory(path.join(devWorktreeHome, "userdata", "secrets"), {
           recursive: true,
         });
-        yield* fs.writeFileString(path.join(devWorktreeDir, "userdata", "settings.json"), "{}");
+        yield* fs.writeFileString(path.join(devWorktreeHome, "userdata", "settings.json"), "{}");
+        yield* fs.writeFileString(
+          path.join(devWorktreeHome, "userdata", "desktop-last-started-version"),
+          "0.0.0-dev",
+        );
+        yield* fs.writeFileString(
+          path.join(devWorktreeHome, "userdata", "desktop-settings.json"),
+          "{}",
+        );
         const refreshed = yield* runMigrateDevDb(
-          { baseDir: devWorktreeDir, source, projects: 5, threadsPerProject: 2 },
+          { baseDir: devWorktreeHome, source, projects: 5, threadsPerProject: 2 },
           { sharedHome: sourceDir },
         );
         assert.equal(
           refreshed.databasePath,
-          path.join(devWorktreeDir, "userdata", "statev2.sqlite"),
+          path.join(devWorktreeHome, "userdata", "statev2.sqlite"),
         );
       }),
   );
