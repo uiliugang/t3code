@@ -337,6 +337,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
 const PersistedRecreatedEntry = Schema.Struct({
   projectId: ProjectId,
   worktreePath: Schema.String,
+  setupCompleted: Schema.optionalKey(Schema.Literal(true)),
 });
 type PersistedRecreatedEntry = typeof PersistedRecreatedEntry.Type;
 
@@ -408,11 +409,18 @@ export const layerThreadWorktreeRestore = Layer.effect(
     const clearRecreated = Effect.fn("ThreadWorktreeRestore.clearRecreated")(function* (
       threadId: ThreadId,
       expectedWorktreePath?: string,
+      setupCompleted?: true,
     ) {
       yield* stateLock.withPermit(
         Effect.gen(function* () {
           const cached = recreated.get(threadId);
           const targetPath = expectedWorktreePath ?? cached?.worktreePath ?? pendingPath ?? "";
+          const cachedMatches =
+            cached !== undefined &&
+            (expectedWorktreePath === undefined || cached.worktreePath === expectedWorktreePath);
+          if (cachedMatches && setupCompleted) {
+            recreated.set(threadId, { ...cached, setupCompleted });
+          }
           if (pendingPath !== null) {
             const entries = yield* readPersisted(targetPath);
             const persisted = entries[threadId];
@@ -421,17 +429,18 @@ export const layerThreadWorktreeRestore = Layer.effect(
               (expectedWorktreePath === undefined ||
                 persisted.worktreePath === expectedWorktreePath)
             ) {
+              if (setupCompleted && !persisted.setupCompleted) {
+                yield* writePersisted(
+                  { ...entries, [threadId]: { ...persisted, setupCompleted } },
+                  persisted.worktreePath,
+                );
+              }
               const next = { ...entries };
               delete next[threadId];
               yield* writePersisted(next, persisted.worktreePath);
             }
           }
-          if (
-            cached !== undefined &&
-            (expectedWorktreePath === undefined || cached.worktreePath === expectedWorktreePath)
-          ) {
-            recreated.delete(threadId);
-          }
+          if (cachedMatches) recreated.delete(threadId);
         }),
       );
     });
@@ -458,7 +467,11 @@ export const layerThreadWorktreeRestore = Layer.effect(
             yield* writePersisted(next, persisted.worktreePath);
             return undefined;
           }
-          const resolved: RecreatedWorktree = { project, worktreePath: persisted.worktreePath };
+          const resolved: RecreatedWorktree = {
+            project,
+            worktreePath: persisted.worktreePath,
+            ...(persisted.setupCompleted ? { setupCompleted: true } : {}),
+          };
           recreated.set(threadId, resolved);
           return resolved;
         }),
@@ -499,7 +512,11 @@ export const layerThreadWorktreeRestore = Layer.effect(
         threadId: ThreadId,
         options?:
           | { readonly action?: "take" | "peek" }
-          | { readonly action: "clear"; readonly worktreePath?: string }
+          | {
+              readonly action: "clear";
+              readonly worktreePath?: string;
+              readonly setupCompleted?: true;
+            }
           | {
               readonly action: "record";
               readonly projectId: ProjectId;
@@ -517,7 +534,7 @@ export const layerThreadWorktreeRestore = Layer.effect(
           return undefined;
         }
         if (options?.action === "clear") {
-          yield* clearRecreated(threadId, options.worktreePath);
+          yield* clearRecreated(threadId, options.worktreePath, options.setupCompleted);
           return undefined;
         }
         const found = yield* peekRecreated(threadId);

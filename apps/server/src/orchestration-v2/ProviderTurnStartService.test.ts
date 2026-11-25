@@ -528,15 +528,20 @@ effectIt.effect("records task-folder recreation only when a checkout was missing
 
     const clearFailed = yield* Effect.gen(function* () {
       const { takeRecreated } = yield* ThreadWorktreeRestore;
-      return yield* takeRecreated(threadB.id, { action: "clear", worktreePath: worktreeB }).pipe(
-        Effect.flip,
-      );
+      return yield* takeRecreated(threadB.id, {
+        action: "clear",
+        worktreePath: worktreeB,
+        setupCompleted: true,
+      }).pipe(Effect.flip);
     }).pipe(Effect.provide(buildRestoreLayer(failingRemoveFs)));
     expect(clearFailed._tag).toBe("WorktreeRecreateError");
 
     yield* Effect.gen(function* () {
       const { takeRecreated } = yield* ThreadWorktreeRestore;
-      expect(yield* takeRecreated(threadB.id)).toMatchObject({ worktreePath: worktreeB });
+      expect(yield* takeRecreated(threadB.id)).toMatchObject({
+        worktreePath: worktreeB,
+        setupCompleted: true,
+      });
       expect(yield* takeRecreated(threadB.id)).toBeUndefined();
     }).pipe(Effect.provide(buildRestoreLayer()));
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
@@ -1565,6 +1570,7 @@ function makeLocalCommandHarness(input: {
   const recreatedBeforeDispatch = {
     pending: input.recreatedBeforeDispatch === true,
     failClearOnce: input.failClearRecreatedOnce === true,
+    setupCompleted: false,
   };
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
@@ -1603,9 +1609,11 @@ function makeLocalCommandHarness(input: {
             return Effect.suspend(() => {
               if (options?.action === "record") {
                 recreatedBeforeDispatch.pending = true;
+                recreatedBeforeDispatch.setupCompleted = false;
                 return Effect.undefined;
               }
               if (options?.action === "clear") {
+                if (options.setupCompleted) recreatedBeforeDispatch.setupCompleted = true;
                 if (recreatedBeforeDispatch.failClearOnce) {
                   recreatedBeforeDispatch.failClearOnce = false;
                   return Effect.fail(
@@ -1628,6 +1636,7 @@ function makeLocalCommandHarness(input: {
                   workspaceRoot: input.workspaceRoot ?? "/tmp/native-account-project",
                 } as never,
                 worktreePath: targetWorktreePath,
+                ...(recreatedBeforeDispatch.setupCompleted ? { setupCompleted: true } : {}),
               });
             });
           },
@@ -2958,8 +2967,6 @@ effectIt.effect(
         },
       ]);
 
-      // Keep the failed run in history and dispatch a brand-new user run (`runId: nextRunId`):
-      // once the transient clear failure passes, the new run runs setup, clears pending state, and enters `running`.
       const failedProjection = harness.projection();
       const firstRun = failedProjection.runs[0]!;
       const firstAttempt = failedProjection.attempts[0]!;
@@ -3044,7 +3051,7 @@ effectIt.effect(
         });
       }).pipe(Effect.provide(harness.layer));
 
-      expect(runSetup).toHaveBeenCalledTimes(2);
+      expect(runSetup).toHaveBeenCalledTimes(1);
       expect(harness.open).toHaveBeenCalledTimes(1);
       expect(harness.prepareProviderHandoff.mock.calls[0]?.[0]).toMatchObject({
         targetRunId: nextRunId,

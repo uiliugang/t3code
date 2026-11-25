@@ -39,10 +39,7 @@ const DESKTOP_USERDATA_MARKERS = [
 
 // Additional markers that any live or initialized server home writes, which `--drop-resumable`
 // (intended only for freshly copied standalone SQLite seed files) must also refuse.
-const DROP_RESUMABLE_EXTRA_MARKERS = [
-  ["userdata", "secrets"],
-  ["userdata", "settings.json"],
-] as const;
+const DROP_RESUMABLE_EXTRA_MARKERS = [["secrets"], ["settings.json"], ["environment-id"]] as const;
 
 const hasAnyMarker = Effect.fn("hasAnyMarker")(function* (
   baseDir: string,
@@ -161,15 +158,10 @@ export const looksLikeLiveDatabase = Effect.fn("looksLikeLiveDatabase")(function
   if (Option.isNone(resolvedStateDir)) return true;
   const candidateStateDirs = [...new Set([path.resolve(rawStateDir), resolvedStateDir.value])];
   for (const stateDir of candidateStateDirs) {
+    if (yield* hasAnyMarker(stateDir, DROP_RESUMABLE_EXTRA_MARKERS)) return true;
     if (path.basename(stateDir).toLowerCase() !== "userdata") continue;
     const baseDir = path.dirname(stateDir);
-    if (
-      yield* hasAnyMarker(baseDir, [
-        ...STRICT_INSTALLED_MARKERS,
-        ...DESKTOP_USERDATA_MARKERS,
-        ...DROP_RESUMABLE_EXTRA_MARKERS,
-      ])
-    ) {
+    if (yield* hasAnyMarker(baseDir, [...STRICT_INSTALLED_MARKERS, ...DESKTOP_USERDATA_MARKERS])) {
       return true;
     }
   }
@@ -208,7 +200,7 @@ export const inspectProtectedHomes = Effect.fn("inspectProtectedMigrationHomes")
   homes: readonly string[],
 ) {
   const path = yield* Path.Path;
-  const stateDirs = homes.map((home) => path.join(home, "userdata"));
+  const stateDirs = homes.flatMap((home) => [path.join(home, "userdata"), path.join(home, "dev")]);
   const databases = stateDirs.flatMap((dir) => stateDatabasePaths(dir, path));
   return yield* Effect.all({
     homes: Effect.forEach(homes, inspectPath),
@@ -242,6 +234,25 @@ export const assertUnlinkedDatabaseFiles = Effect.fn("assertUnlinkedDevDatabaseF
 export const comparableDevDbPath = (resolved: string, platform: NodeJS.Platform) =>
   platform === "linux" ? resolved : resolved.toLowerCase();
 
+export const inspectIsolatedDevDirectory = Effect.fn("inspectIsolatedDevDirectory")(function* (
+  baseDir: string,
+  stateSubdir: "userdata" | "dev",
+  defaultWorktreeHome?: string,
+) {
+  const path = yield* Path.Path;
+  const base = yield* inspectPath(baseDir);
+  const stateDir = path.join(base.canonical, stateSubdir);
+  const state = yield* inspectPath(stateDir);
+  if (state.canonical !== stateDir) return yield* new MigrateDevDbSharedHomeError();
+  if (defaultWorktreeHome !== undefined) {
+    const worktree = yield* inspectPath(path.dirname(defaultWorktreeHome));
+    if (base.canonical !== path.join(worktree.canonical, path.basename(defaultWorktreeHome))) {
+      return yield* new MigrateDevDbSharedHomeError();
+    }
+  }
+  return { base, state };
+});
+
 export const assertIsolatedDevStartup = Effect.fn("assertIsolatedDevStartup")(function* (input: {
   readonly baseDir: string;
   readonly stateSubdir: "userdata" | "dev";
@@ -250,11 +261,13 @@ export const assertIsolatedDevStartup = Effect.fn("assertIsolatedDevStartup")(fu
 }) {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
-  const stateDir = path.join(input.baseDir, input.stateSubdir);
+  const { base, state } = yield* inspectIsolatedDevDirectory(
+    input.baseDir,
+    input.stateSubdir,
+    input.defaultWorktreeHome,
+  );
   const protectedPaths = yield* inspectProtectedHomes(input.protectedHomes);
-  const base = yield* inspectPath(input.baseDir);
-  const state = yield* inspectPath(stateDir);
-  const files = stateDatabasePaths(stateDir, path);
+  const files = stateDatabasePaths(state.canonical, path);
   yield* assertUnlinkedDatabaseFiles(files);
   const databasePaths = yield* Effect.forEach(files, inspectPath);
   const matches = (target: typeof base, candidates: readonly (typeof base)[]) =>
@@ -264,17 +277,7 @@ export const assertIsolatedDevStartup = Effect.fn("assertIsolatedDevStartup")(fu
           comparableDevDbPath(target.canonical, platform) ||
         Option.exists(target.identity, (identity) => Option.contains(candidate.identity, identity)),
     );
-  const expectedWorktreeHome =
-    input.defaultWorktreeHome === undefined
-      ? undefined
-      : path.join(
-          (yield* inspectPath(path.dirname(input.defaultWorktreeHome))).canonical,
-          path.basename(input.defaultWorktreeHome),
-        );
-
   if (
-    (expectedWorktreeHome !== undefined && base.canonical !== expectedWorktreeHome) ||
-    state.canonical !== path.join(base.canonical, input.stateSubdir) ||
     matches(state, protectedPaths.stateDirs) ||
     databasePaths.some((file) => matches(file, protectedPaths.databases)) ||
     (input.stateSubdir === "userdata" &&

@@ -25,6 +25,7 @@ import {
   assertUnlinkedDatabaseFiles,
   comparableDevDbPath,
   databaseFamilyPaths,
+  inspectIsolatedDevDirectory,
   inspectPath,
   inspectProtectedHomes,
   looksLikeInstalledHome,
@@ -439,7 +440,10 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
     return yield* new MigrateDevDbSourceMissingError({ sourcePath: databasePath });
   }
   const target = main.canonical;
-  const files = databaseFamilyPaths(target);
+  const stateDir = path.dirname(target);
+  const ownerFiles = databaseFamilyPaths(path.join(stateDir, "server-owner.sqlite"));
+  if (ownerFiles.includes(target)) return yield* new MigrateDevDbSharedHomeError();
+  const files = [...databaseFamilyPaths(target), ...ownerFiles];
   yield* assertUnlinkedDatabaseFiles(files);
   const family = yield* Effect.forEach(files, inspectPath);
   const directory = yield* inspectPath(path.dirname(target));
@@ -460,6 +464,7 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
     return yield* new MigrateDevDbSharedHomeError();
   }
   // Beside the real file, where a running server keeps its runtime state.
+  yield* holdServerOwnershipLock(path.join(stateDir, "server-runtime.json"));
   yield* ensureNotInUse(target);
   return yield* Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -505,7 +510,7 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
       ProjectionStore.layer.pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: target }))),
     ),
   );
-});
+}, Effect.scoped);
 
 const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigrateDevDbInput) {
   const sql = yield* SqlClient.SqlClient;
@@ -685,11 +690,12 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     return yield* new MigrateDevDbNotInWorktreeError();
   }
   const rawBaseDir = input.baseDir ?? worktreeBaseDir!;
-  const resolvedBaseDir = yield* resolveFilesystemPath(rawBaseDir);
-  if (Option.isNone(resolvedBaseDir)) {
-    return yield* new MigrateDevDbSharedHomeError();
-  }
-  const canonicalBaseDir = resolvedBaseDir.value;
+  const { base: baseDirStat, state: stateDirStat } = yield* inspectIsolatedDevDirectory(
+    rawBaseDir,
+    "userdata",
+    worktreeBaseDir,
+  );
+  const canonicalBaseDir = baseDirStat.canonical;
   const lexicalBaseDir = path.resolve(rawBaseDir);
   // All filesystem writes use `canonicalBaseDir`; preserve `lexicalBaseDir` for display only when
   // its canonical path is byte-identical (avoiding case-sensitive volume collisions on macOS).
@@ -699,7 +705,6 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   )
     ? lexicalBaseDir
     : canonicalBaseDir;
-  const stateDirStat = yield* inspectPath(path.join(canonicalBaseDir, "userdata"));
   const stateDir = stateDirStat.canonical;
   const databasePath = path.join(stateDir, "statev2.sqlite");
   const displayDatabasePath = path.join(displayBaseDir, "userdata", "statev2.sqlite");
@@ -722,7 +727,6 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     stateDirs: protectedStateDirStats,
     databases: protectedDatabaseStats,
   } = yield* inspectProtectedHomes(homes);
-  const baseDirStat = yield* inspectPath(canonicalBaseDir);
   const destinationFileStats = yield* Effect.forEach(destinationRewriteFiles, inspectPath);
   const canonicalProtectedHomes = protectedHomeStats.map((entry) => entry.canonical);
   const canonicalProtectedStateDirs = protectedStateDirStats.map((entry) => entry.canonical);

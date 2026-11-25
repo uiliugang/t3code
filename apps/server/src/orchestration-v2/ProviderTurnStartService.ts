@@ -52,6 +52,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import {
   makeRestoreMissingWorktree,
   ThreadWorktreeRestore,
+  type RecreatedWorktree,
 } from "../workspace/restoreMissingWorktree.ts";
 import type * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as EventSink from "./EventSink.ts";
@@ -856,17 +857,20 @@ export const layer: Layer.Layer<
       }
       const recreateResult = yield* Effect.result(
         Effect.gen(function* () {
-          const direct = yield* restoreMissingWorktree(projection.thread, {
-            beforeRecreate: (pending) =>
-              worktreeRestore
-                .takeRecreated(projection.thread.id, {
-                  action: "record",
-                  projectId: projection.thread.projectId,
-                  worktreePath: pending.worktreePath,
-                  project: pending.project,
-                })
-                .pipe(Effect.asVoid),
-          });
+          const direct: RecreatedWorktree | void = yield* restoreMissingWorktree(
+            projection.thread,
+            {
+              beforeRecreate: (pending) =>
+                worktreeRestore
+                  .takeRecreated(projection.thread.id, {
+                    action: "record",
+                    projectId: projection.thread.projectId,
+                    worktreePath: pending.worktreePath,
+                    project: pending.project,
+                  })
+                  .pipe(Effect.asVoid),
+            },
+          );
           if (direct !== undefined) return direct;
           if (
             projection.thread.workspace !== undefined ||
@@ -902,21 +906,23 @@ export const layer: Layer.Layer<
         return;
       }
       if (recreateResult.success !== undefined) {
-        const { project, worktreePath } = recreateResult.success;
+        const { project, worktreePath, setupCompleted } = recreateResult.success;
         // Opening the setup terminal takes its own workspace lease.
         return {
           worktreeSetup: Effect.gen(function* () {
             const setupResult = yield* Effect.result(
               Effect.gen(function* () {
-                const setup = yield* setupScripts.runForThread({
-                  threadId: projection.thread.id,
-                  projectId: project.id,
-                  projectCwd: project.workspaceRoot,
-                  worktreePath,
-                  project,
-                  observeCompletion: {},
-                });
-                if (setup.status === "started") {
+                const setup = setupCompleted
+                  ? undefined
+                  : yield* setupScripts.runForThread({
+                      threadId: projection.thread.id,
+                      projectId: project.id,
+                      projectCwd: project.workspaceRoot,
+                      worktreePath,
+                      project,
+                      observeCompletion: {},
+                    });
+                if (setup?.status === "started") {
                   const written =
                     setup.commandWritten === undefined ? true : yield* setup.commandWritten;
                   if (setup.async) {
@@ -937,6 +943,7 @@ export const layer: Layer.Layer<
                 yield* worktreeRestore.takeRecreated(projection.thread.id, {
                   action: "clear",
                   worktreePath,
+                  setupCompleted: true,
                 });
               }),
             );

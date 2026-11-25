@@ -398,6 +398,39 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
     }),
   );
 
+  it.effect.each(["initialized dev", "owned seed"] as const)(
+    "keeps resumable threads in an %s database",
+    (kind) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped();
+        const sharedHome = yield* fs.makeTempDirectoryScoped();
+        let database = yield* createFixtureSource(home);
+        if (kind === "initialized dev") {
+          const stateDir = path.join(home, "dev");
+          yield* fs.rename(path.dirname(database), stateDir);
+          database = path.join(stateDir, path.basename(database));
+          yield* fs.writeFileString(path.join(stateDir, "settings.json"), "{}");
+        } else {
+          yield* holdServerOwnershipLock(path.join(path.dirname(database), "server-runtime.json"));
+        }
+        const error = yield* dropResumableFamilies(database, { sharedHome }).pipe(Effect.flip);
+        assert.equal(
+          error._tag,
+          kind === "initialized dev" ? "MigrateDevDbSharedHomeError" : "ServerAlreadyRunningError",
+        );
+        const rows = yield* withDatabase(
+          database,
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            return yield* sql`SELECT thread_id FROM orchestration_v2_projection_threads WHERE thread_id = 'running-thread'`;
+          }),
+        );
+        assert.deepStrictEqual(rows, [{ thread_id: "running-thread" }]);
+      }),
+  );
+
   it.effect("refuses to open an isolated copy with a linked SQLite sidecar", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -1013,6 +1046,28 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       assert.equal(error, denied);
       assert.equal(yield* fs.readFileString(snapshot), "previous snapshot");
       assert.isFalse(yield* fs.exists(database));
+    }),
+  );
+
+  it.effect("refuses a userdata link to an undeclared stopped server directory", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped();
+      const sharedHome = yield* fs.makeTempDirectoryScoped();
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const source = yield* createFixtureSource(sharedHome);
+      const stoppedDb = yield* createFixtureSource(home);
+      const stateDir = path.join(home, "state");
+      yield* fs.rename(path.dirname(stoppedDb), stateDir);
+      yield* fs.writeFileString(path.join(stateDir, "settings.json"), "{}");
+      yield* fs.symlink(stateDir, path.join(baseDir, "userdata"));
+      const error = yield* runMigrateDevDb(
+        { baseDir, source, projects: 1, threadsPerProject: 1 },
+        { sharedHome },
+      ).pipe(Effect.flip);
+      assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+      assert.isFalse(yield* fs.exists(path.join(stateDir, "server-owner.sqlite")));
     }),
   );
 

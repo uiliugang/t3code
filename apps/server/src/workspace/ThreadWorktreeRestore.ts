@@ -42,6 +42,7 @@ export class WorktreeMetadataMissingError extends Schema.TaggedError<
 export interface RecreatedWorktree {
   readonly project: Project;
   readonly worktreePath: string;
+  readonly setupCompleted?: true;
 }
 
 export type WorktreeThread = Pick<
@@ -61,12 +62,15 @@ export class ThreadWorktreeRestore extends Context.Service<
       void,
       WorktreeRecreateError | WorktreeRecreateNoBaseError | WorktreeMetadataMissingError
     >;
-    /** Reads, records, or clears recreated-checkout state whose setup has not completed yet. */
     readonly takeRecreated: (
       threadId: ThreadId,
       options?:
         | { readonly action?: "take" | "peek" }
-        | { readonly action: "clear"; readonly worktreePath?: string }
+        | {
+            readonly action: "clear";
+            readonly worktreePath?: string;
+            readonly setupCompleted?: true;
+          }
         | {
             readonly action: "record";
             readonly projectId: ProjectId;
