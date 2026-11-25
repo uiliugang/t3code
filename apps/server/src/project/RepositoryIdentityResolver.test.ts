@@ -439,6 +439,23 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         expect(bareProbes()).toEqual([]);
 
         expect(yield* resolver.resolve(gitDir)).toBeNull();
+        const ceiling = path.join(gitDir, "projects");
+        const plain = path.join(ceiling, "plain");
+        yield* fileSystem.makeDirectory(plain, { recursive: true });
+        vi.stubEnv("GIT_CEILING_DIRECTORIES", ceiling);
+        yield* Effect.addFinalizer(() => Effect.sync(() => vi.unstubAllEnvs()));
+        const strict = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
+        expect(yield* resolver.resolve(plain, strict)).toBeNull();
+        const physicalCeiling = yield* fileSystem.realPath(ceiling);
+        vi.stubEnv(
+          "GIT_CEILING_DIRECTORIES",
+          `${path.sep === "\\" ? ";" : ":"}${physicalCeiling.split(path.sep).join("/")}/`,
+        );
+        expect(yield* resolver.resolve(plain, strict)).toBeNull();
+        yield* fileSystem.makeDirectory(path.join(plain, ".git"));
+        const below = path.join(plain, "nested");
+        yield* fileSystem.makeDirectory(below);
+        expect(yield* resolver.resolve(below, strict).pipe(Effect.flip)).toBe("unavailable");
       }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 

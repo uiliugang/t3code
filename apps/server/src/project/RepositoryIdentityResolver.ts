@@ -289,6 +289,30 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         if (levels === 0) return false;
         const physical = yield* fileSystem.realPath(cwd).pipe(Effect.option);
         if (physical._tag === "None") return true;
+        if (levels === Infinity) {
+          const start = physical.value.split(path.sep).join("/");
+          const stopBefore = (ancestor: string) => {
+            const prefix = `${ancestor.split(path.sep).join("/").replace(/\/$/u, "")}/`;
+            if (start.startsWith(prefix) && start.length > prefix.length)
+              levels = Math.min(levels, start.slice(prefix.length).split("/").length);
+          };
+          const mount =
+            /^fatal: not a git repository \(or any parent up to mount point ([\s\S]+?)\)\r?\nStopping at filesystem boundary /mu.exec(
+              topLevelResult.value.stderr,
+            )?.[1];
+          if (mount) stopBefore(mount);
+          const ceilings = (yield* HostProcess.Environment).GIT_CEILING_DIRECTORIES;
+          let resolveSymlinks = true;
+          for (const entry of ceilings?.split(path.sep === "\\" ? ";" : ":") ?? []) {
+            if (!entry) resolveSymlinks = false;
+            else if (path.isAbsolute(entry)) {
+              const ceiling = resolveSymlinks
+                ? yield* fileSystem.realPath(entry).pipe(Effect.orElseSucceed(() => undefined))
+                : entry;
+              if (ceiling) stopBefore(ceiling);
+            }
+          }
+        }
         let directory = physical.value;
         for (let depth = 0; depth < levels; depth++) {
           if (yield* hasEntry(path.join(directory, ".git"))) return true;

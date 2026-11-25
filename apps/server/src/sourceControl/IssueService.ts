@@ -133,48 +133,31 @@ export const make = Effect.gen(function* () {
     const automatic: IssueSource[] = [];
     const identity = project.repositoryIdentity;
     const originUrl = identity?.origin?.remoteUrl;
-    const lookup = (
-      remote?: { readonly remoteName: string; readonly remoteUrl: string },
-      canonicalKey?: string,
-    ) => {
-      const host =
-        remote &&
-        sourceControlDefinitions.recognizeRemote(
-          canonicalKey && isSshRemoteUrl(remote.remoteUrl)
-            ? `https://${canonicalKey}`
-            : remote.remoteUrl,
-        );
-      return providers
-        .resolveHandle({
-          cwd,
-          refresh: refreshRepository,
-          ...(remote && host
-            ? {
-                context: {
-                  provider: host,
-                  remoteName: remote.remoteName,
-                  remoteUrl: remote.remoteUrl,
-                },
-              }
-            : {}),
-        })
-        .pipe(Effect.result);
-    };
-    const origin = originUrl
-      ? yield* lookup(
-          { remoteName: "origin", remoteUrl: originUrl },
-          identity?.origin?.canonicalKey,
-        )
-      : undefined;
+    const remote = originUrl ? { remoteName: "origin", remoteUrl: originUrl } : identity?.locator;
+    const key = originUrl ? identity?.origin?.canonicalKey : identity?.canonicalKey;
+    const host =
+      remote &&
+      sourceControlDefinitions.recognizeRemote(
+        key && isSshRemoteUrl(remote.remoteUrl) ? `https://${key}` : remote.remoteUrl,
+      );
     const handle =
-      origin &&
-      (origin._tag === "Failure" ||
-        origin.success.provider.kind === "unknown" ||
-        origin.success.provider.kind === identity?.provider)
-        ? origin
-        : identity?.hasLocalOrigin
-          ? undefined
-          : yield* lookup(identity?.locator, identity?.canonicalKey);
+      identity?.hasLocalOrigin || (remote && !host)
+        ? undefined
+        : yield* providers
+            .resolveHandle({
+              cwd,
+              refresh: refreshRepository,
+              ...(remote && host
+                ? {
+                    context: {
+                      remoteName: remote.remoteName,
+                      remoteUrl: remote.remoteUrl,
+                      provider: host,
+                    },
+                  }
+                : {}),
+            })
+            .pipe(Effect.result);
     let repository: string | null = null;
     let failure: RequirementIssueError | undefined;
     if (handle?._tag === "Success" && handle.success.context) {

@@ -31,12 +31,17 @@ describe("IssueService", () => {
     ["github.com", "git@work:me/fork.git"],
     ["github.com", "git@unresolved.test:me/fork.git"],
     ["github.com", "file://127.0.0.1/mirror/fork.git"],
+    ["github.com", "https://gitlab.com/me/fork.git"],
   ] as const)(
     "creates a %s fork issue in the repository offered for %s on the first lookup",
     ([host, remoteUrl]) =>
       Effect.gen(function* () {
         const projectId = ProjectId.make("fork");
-        const originHost = remoteUrl.includes("unresolved.test") ? "unresolved.test" : host;
+        const originHost = remoteUrl.startsWith("https:")
+          ? new URL(remoteUrl).hostname
+          : remoteUrl.includes("unresolved.test")
+            ? "unresolved.test"
+            : host;
         const origin = { remoteName: "origin", remoteUrl };
         const provider = fakeSourceControlProvider("github", {
           issueBoard: {
@@ -107,6 +112,11 @@ describe("IssueService", () => {
                   const anonymous =
                     context?.provider.baseUrl === "https://work" ||
                     context?.provider.baseUrl === "https://unresolved.test";
+                  if (context?.provider.kind === "gitlab")
+                    return Effect.succeed({
+                      provider: fakeSourceControlProvider("gitlab", {}),
+                      context,
+                    });
                   return Effect.succeed({
                     provider: anonymous ? fakeSourceControlProvider("unknown", {}) : provider,
                     context: {
