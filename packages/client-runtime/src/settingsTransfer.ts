@@ -474,9 +474,9 @@ export function createApplicationSettingsFile(input: {
   };
 }
 
-function hasUnidentifiedRemote(project: TransferProject) {
-  const identity = project.repositoryIdentity;
-  return !!identity?.locator.remoteUrl && (!identity.provider || identity.provider === "unknown");
+function hasUnconfirmedProvider(project: TransferProject) {
+  const provider = project.repositoryIdentity?.provider;
+  return !provider || provider === "unknown";
 }
 
 export function createProjectSettingsFile(
@@ -486,7 +486,7 @@ export function createProjectSettingsFile(
   const settings = resolveProjectSettings(server, project.id).overrides;
   const virtualModels = projectVirtualModels(settings, server);
   const saved = server.issueProjectSources[project.id];
-  const issueSources = hasUnidentifiedRemote(project)
+  const issueSources = hasUnconfirmedProvider(project)
     ? saved
     : projectIssueSourcesForTransfer(saved, project.repositoryIdentity?.provider);
   return {
@@ -633,7 +633,7 @@ export function projectSettingsImportPatch(
   const ambiguousLegacyRestore =
     !capabilities.singleProjectIssueProvider &&
     incoming?.length &&
-    hasUnidentifiedRemote(project) &&
+    hasUnconfirmedProvider(project) &&
     [...saved, ...incoming].some((source) => source.provider !== incoming[0]?.provider);
   const scripts = file.settings.defaultProjectScripts?.map((script) => ({
     ...script,

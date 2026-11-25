@@ -1101,7 +1101,7 @@ export const make = Effect.gen(function* () {
         Effect.all({
           root: physicalRoot(row.workspaceRoot),
           identity: projectEnrichment
-            .readRepositoryIdentity(row.workspaceRoot)
+            .readRepositoryIdentity(row.workspaceRoot, "remoteOnly")
             .pipe(Effect.orElseSucceed(() => null)),
           id: Effect.succeed(row.projectId),
         }),
@@ -1127,7 +1127,7 @@ export const make = Effect.gen(function* () {
           const root = yield* physicalRoot(normalized.success);
           const existing = known.find((entry) => entry.root === root);
           const identity = yield* projectEnrichment
-            .readRepositoryIdentity(normalized.success)
+            .readRepositoryIdentity(normalized.success, "remoteOnly")
             .pipe(Effect.orElseSucceed(() => null));
           const key = identity ? repositoryGroupingKeyOf(identity) : null;
           const sameRepository = key

@@ -37,6 +37,7 @@ export class RepositoryIdentityResolver extends Context.Service<
       cwd: string,
       options?: {
         readonly refresh?: boolean;
+        readonly remoteOnly?: boolean;
         readonly onUnavailable?: Effect.Effect<RepositoryIdentity | null, E>;
       },
     ) => Effect.Effect<RepositoryIdentity | null, E>;
@@ -422,7 +423,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   });
 });
 
-class UnconfirmedProvider extends Data.Class<{ readonly identity: RepositoryIdentity }> {}
+const unconfirmedProvider = Symbol("UnconfirmedProvider");
 
 export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   options: RepositoryIdentityResolverOptions = {},
@@ -435,7 +436,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const timeToLive = (exit: Exit.Exit<unknown>) =>
     Exit.match(exit, {
       onSuccess: (value) =>
-        value instanceof UnconfirmedProvider
+        value === unconfirmedProvider
           ? Duration.zero
           : value == null
             ? DEFAULT_NEGATIVE_CACHE_TTL
@@ -456,20 +457,21 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
     { capacity: cacheCapacity, timeToLive },
   );
 
-  const repositoryIdentityCache = yield* Cache.makeWith<
-    RepositoryIdentityCacheKey,
-    RepositoryIdentity | UnconfirmedProvider | null | undefined
-  >(
-    (cacheKey) =>
+  const remoteIdentityCache = yield* Cache.makeWith(
+    (cacheKey: RepositoryIdentityCacheKey) =>
       resolveRepositoryIdentityFromCacheKey(cacheKey).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
-        Effect.filterOrElse(
-          (identity): identity is null | undefined => identity == null,
-          (identity) =>
-            refine(identity).pipe(
-              Effect.orElseSucceed(() => new UnconfirmedProvider({ identity })),
-            ),
-        ),
+      ),
+    { capacity: cacheCapacity, timeToLive },
+  );
+
+  const providerIdentityCache = yield* Cache.makeWith<
+    RepositoryIdentity,
+    RepositoryIdentity | typeof unconfirmedProvider
+  >(
+    (identity) =>
+      refine(identity).pipe(
+        Effect.orElseSucceed((): typeof unconfirmedProvider => unconfirmedProvider),
       ),
     { capacity: cacheCapacity, timeToLive },
   );
@@ -480,11 +482,17 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
       const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
       if (cacheKey !== undefined) {
         if (cacheKey === null) return null;
-        if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
-        const identity = yield* Cache.get(repositoryIdentityCache, cacheKey);
-        if (identity instanceof UnconfirmedProvider)
-          return yield* options?.onUnavailable ?? Effect.succeed(identity.identity);
-        if (identity !== undefined) return identity;
+        if (options?.refresh) yield* Cache.invalidate(remoteIdentityCache, cacheKey);
+        const remote = yield* Cache.get(remoteIdentityCache, cacheKey);
+        if (remote === null) return null;
+        if (remote !== undefined) {
+          if (options?.refresh) yield* Cache.invalidate(providerIdentityCache, remote);
+          if (options?.remoteOnly) return remote;
+          const result = yield* Cache.get(providerIdentityCache, remote);
+          if (result === unconfirmedProvider)
+            return yield* options?.onUnavailable ?? Effect.succeed(remote);
+          return result;
+        }
       }
       return yield* options?.onUnavailable ?? Effect.succeed(null);
     },

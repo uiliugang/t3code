@@ -772,22 +772,24 @@ describe("settings transfer", () => {
       ...target,
       issueProjectSources: { [destination.id]: [...legacySources].reverse() },
     };
-    const legacyPatch = projectSettingsImportPatch(mixedFile, unknownProject, mixedTarget);
-    expect(legacyPatch.projectSettingsOverrides).toEqual(patch.projectSettingsOverrides);
-    expect(legacyPatch).not.toHaveProperty("issueProjectSources");
-    expect(projectSettingsImportPatch(file, unknownProject, target)).toEqual(patch);
-    expect(createProjectSettingsFile(unknownProject, mixedTarget).issueSources).toEqual(
-      mixedTarget.issueProjectSources[destination.id],
-    );
-    expect(
-      projectSettingsImportPatch({ ...file, issueSources: [] }, unknownProject, mixedTarget)
-        .issueProjectSources?.[destination.id],
-    ).toEqual([]);
-    expect(
-      projectSettingsImportPatch(mixedFile, unknownProject, mixedTarget, {
-        singleProjectIssueProvider: true,
-      }).issueProjectSources?.[destination.id],
-    ).toEqual(legacySources);
+    for (const legacyProject of [unknownProject, { ...destination, repositoryIdentity: null }]) {
+      const legacyPatch = projectSettingsImportPatch(mixedFile, legacyProject, mixedTarget);
+      expect(legacyPatch.projectSettingsOverrides).toEqual(patch.projectSettingsOverrides);
+      expect(legacyPatch).not.toHaveProperty("issueProjectSources");
+      expect(projectSettingsImportPatch(file, legacyProject, target)).toEqual(patch);
+      expect(createProjectSettingsFile(legacyProject, mixedTarget).issueSources).toEqual(
+        mixedTarget.issueProjectSources[destination.id],
+      );
+      expect(
+        projectSettingsImportPatch({ ...file, issueSources: [] }, legacyProject, mixedTarget)
+          .issueProjectSources?.[destination.id],
+      ).toEqual([]);
+      expect(
+        projectSettingsImportPatch(mixedFile, legacyProject, mixedTarget, {
+          singleProjectIssueProvider: true,
+        }).issueProjectSources?.[destination.id],
+      ).toEqual(legacySources);
+    }
     expect(
       projectSettingsImportPatch(mixedFile, staleDestination, target, {
         singleProjectIssueProvider: true,

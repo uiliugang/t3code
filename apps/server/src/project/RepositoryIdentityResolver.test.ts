@@ -193,9 +193,11 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       yield* git(cwd, ["init"]);
       yield* git(cwd, ["remote", "add", "origin", "https://forge.example.test/team/web.git"]);
       let offline = true;
+      let probes = 0;
       const resolver = yield* RepositoryIdentityResolver.make({
-        refine: (identity) =>
-          offline
+        refine: (identity) => {
+          probes++;
+          return offline
             ? Effect.fail(
                 new SourceControlProviderError({
                   provider: SourceControlProviderKind.make("unknown"),
@@ -204,13 +206,25 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
                   detail: "Credential lookup timed out.",
                 }),
               )
-            : Effect.succeed({ ...identity, provider: SourceControlProviderKind.make("github") }),
+            : Effect.succeed({ ...identity, provider: SourceControlProviderKind.make("github") });
+        },
       });
+      expect((yield* resolver.resolve(cwd, { remoteOnly: true }))?.canonicalKey).toBe(
+        "forge.example.test/team/web",
+      );
+      expect(probes).toBe(0);
       expect((yield* resolver.resolve(cwd))?.canonicalKey).toBe("forge.example.test/team/web");
       const strict = { onUnavailable: Effect.fail("unavailable") };
       expect((yield* resolver.resolve(cwd, strict).pipe(Effect.result))._tag).toBe("Failure");
       offline = false;
       expect((yield* resolver.resolve(cwd, strict))?.provider).toBe("github");
+      yield* git(cwd, ["remote", "set-url", "origin", "https://forge.example.test/team/new.git"]);
+      expect(
+        (yield* resolver.resolve(cwd, { remoteOnly: true, refresh: true }))?.canonicalKey,
+      ).toBe("forge.example.test/team/new");
+      expect((yield* resolver.resolve(cwd, strict))?.canonicalKey).toBe(
+        "forge.example.test/team/new",
+      );
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 

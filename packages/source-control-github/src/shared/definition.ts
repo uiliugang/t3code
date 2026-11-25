@@ -163,14 +163,17 @@ export const definition = defineSourceControl({
   checkoutChangeRequestHost: (identity) => projectChangeRequestHost(identity, KIND),
   changeRequestHeadRef: (number) => `refs/pull/${number}/head`,
   // `*.ghe.com` is GitHub Enterprise Cloud with data residency, one subdomain per enterprise.
-  recognizeRemote: ({ host, hostname }) =>
-    isGitHubHost(hostname)
+  recognizeRemote: ({ host, hostname }) => {
+    if (hostname === "ssh.github.com")
+      return { kind: KIND, name: "GitHub", baseUrl: "https://github.com" };
+    return isGitHubHost(hostname)
       ? {
           kind: KIND,
           name: hostname === "github.com" ? "GitHub" : "GitHub Self-Hosted",
           baseUrl: `https://${host}`,
         }
-      : null,
+      : null;
+  },
   isChangeRequestInRepository: (identity, link) =>
     isChangeRequestInProjectRepository(projectChangeRequestHost(identity, KIND), identity, link),
   canReadChangeRequestOnHost: (identity, link) =>

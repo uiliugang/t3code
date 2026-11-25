@@ -1057,13 +1057,37 @@ describe("IssueService with a standalone tracker", () => {
       // A project with no remote at all can still be bound, and then has only the standalone one.
       const standaloneOnly = yield* makeService({
         projects,
-        trackers,
+        refreshedProject: () => {
+          throw new Error("Checkout is offline");
+        },
+        trackers: [
+          fakeStandaloneTracker({
+            ...record(LINEAR),
+            create: ({ host, scope }) =>
+              Effect.succeed({
+                key: `${scope}-1`,
+                displayKey: `${scope}-1`,
+                url: `https://${host}/acme/issue/${scope}-1`,
+              }),
+          }),
+        ],
         bindings: { ["notes" as ProjectId]: { tracker: LINEAR, scope: "OPS" } },
       });
       const notes = yield* standaloneOnly.list({ state: "open", projectId: "notes" as ProjectId });
       expect(notes.entries.map((entry) => [entry.projectId, entry.scope])).toEqual([
         ["notes", "OPS"],
       ]);
+      expect(
+        yield* standaloneOnly.create({
+          projectId: "notes" as ProjectId,
+          tracker: LINEAR,
+          scope: "OPS",
+          title: "Project issue",
+          body: "",
+          labels: [],
+          assignees: [],
+        }),
+      ).toMatchObject({ key: "OPS-1", url: "https://linear.app/acme/issue/OPS-1" });
 
       // Bindings that cannot be read fail the listing; they are not taken for "none bound".
       const unreadable = yield* makeService({
