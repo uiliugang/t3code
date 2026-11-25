@@ -5164,7 +5164,7 @@ describe("parent run waiting on foreground subagents", () => {
       text: "Subagents launched; waiting for them to report back.",
       streaming: false,
     };
-    expect(liveRow([status])).toEqual({ ...thinking, label: "Waiting on 2 subagents" });
+    expect(liveRow([status])).toEqual({ ...thinking, waitingOnSubagents: 2 });
     expect(liveRow([{ ...status, runId: RunId.make("other-run") }])).toEqual(thinking);
   });
 

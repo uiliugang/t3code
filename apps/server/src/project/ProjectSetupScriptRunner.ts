@@ -642,16 +642,20 @@ export const make = Effect.gen(function* () {
         shell === "exited" || commandLine === null
           ? Effect.succeed(false)
           : terminalManager
-              .write({
-                threadId: input.threadId,
-                terminalId,
-                // macOS zsh garbles long typed-ahead multiline input; a live line editor takes it as one paste.
-                data: projectScriptTerminalInput(
-                  shell === "ready" && completionShell === "posix" && commandLine.includes("\r")
-                    ? `\x1b[200~${commandLine.replaceAll("\r", "\n")}\x1b[201~`
-                    : commandLine,
-                ),
-              })
+              .write(
+                {
+                  threadId: input.threadId,
+                  terminalId,
+                  // macOS zsh garbles long typed-ahead multiline input; a live line editor takes it as one paste.
+                  data: projectScriptTerminalInput(
+                    shell === "ready" && completionShell === "posix" && commandLine.includes("\r")
+                      ? `\x1b[200~${commandLine.replaceAll("\r", "\n")}\x1b[201~`
+                      : commandLine,
+                  ),
+                },
+                undefined,
+                { requireRunning: true },
+              )
               .pipe(Effect.as(true)),
       ),
       Effect.catchCause((cause) =>
@@ -665,14 +669,20 @@ export const make = Effect.gen(function* () {
       Effect.forkIn(serviceScope),
     );
 
-    const completion = observed?.completion.pipe(
-      Effect.onInterrupt(() =>
-        Fiber.interrupt(commandWriter).pipe(
-          Effect.andThen(Effect.sync(() => readiness.unsubscribe())),
-          Effect.andThen(terminalManager.close({ threadId: input.threadId, terminalId })),
-          Effect.ignore,
-        ),
+    const abortSetupTerminal = Fiber.interrupt(commandWriter).pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          observed?.unsubscribe();
+          readiness.unsubscribe();
+        }),
       ),
+      Effect.andThen(observed?.abandon ?? Effect.void),
+      Effect.andThen(terminalManager.close({ threadId: input.threadId, terminalId })),
+      Effect.ignore,
+    );
+
+    const completion = observed?.completion.pipe(
+      Effect.onInterrupt(() => abortSetupTerminal),
       Effect.tap(({ exitCode }) =>
         exitCode === 0
           ? terminalManager.closeIdle({ threadId: input.threadId, terminalId })
@@ -688,7 +698,7 @@ export const make = Effect.gen(function* () {
       terminalId,
       cwd,
       async: script.async !== false,
-      commandWritten: Fiber.join(commandWriter),
+      commandWritten: Fiber.join(commandWriter).pipe(Effect.onInterrupt(() => abortSetupTerminal)),
       ...(completion ? { completion } : {}),
     } as const;
   });

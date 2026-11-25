@@ -438,6 +438,14 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         const twoHopDb = path.join(aliasDir, "state-link", "statev2.sqlite");
         const refusedTwoHop = yield* Effect.flip(dropResumableFamilies(twoHopDb, { sharedHome }));
         assert.equal(refusedTwoHop._tag, "MigrateDevDbSharedHomeError");
+
+        // Two-hop file symlink: stagingDir/alias.sqlite -> installedHome/userdata/statev2.sqlite -> realDiskDb.
+        const twoHopFileDb = path.join(stagingDir, "alias.sqlite");
+        yield* fs.symlink(installedDb, twoHopFileDb);
+        const refusedTwoHopFile = yield* Effect.flip(
+          dropResumableFamilies(twoHopFileDb, { sharedHome }),
+        );
+        assert.equal(refusedTwoHopFile._tag, "MigrateDevDbSharedHomeError");
         const preservedThreads = yield* withDatabase(
           realDiskDb,
           Effect.gen(function* () {

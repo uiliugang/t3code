@@ -510,6 +510,20 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
     resolve(databasePath),
     Effect.forEach(liveDatabases, resolve),
   ]);
+  const rawStatResult = yield* fs.lstat(path.resolve(databasePath)).pipe(
+    Effect.map((info) => ({ missing: false as const, info })),
+    Effect.catchReason("PlatformError", "NotFound", () =>
+      Effect.succeed({ missing: true as const, info: undefined }),
+    ),
+    Effect.option,
+  );
+  if (Option.exists(rawStatResult, ({ missing }) => missing)) {
+    return yield* new MigrateDevDbSourceMissingError({ sourcePath: databasePath });
+  }
+  const rawInputUnverifiedOrSymlink = Option.match(rawStatResult, {
+    onNone: () => true,
+    onSome: ({ info }) => info === undefined || info.type !== "File",
+  });
   const targetStatResult = yield* fs.stat(target).pipe(
     Effect.map((info) => ({ missing: false as const, info })),
     Effect.catchReason("PlatformError", "NotFound", () =>
@@ -535,6 +549,7 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
     identity,
   );
   if (
+    rawInputUnverifiedOrSymlink ||
     targetUnverifiedOrLinked ||
     resolvedLives.some((live) => comparable(target) === comparable(live)) ||
     (Option.isSome(targetIdentity) &&

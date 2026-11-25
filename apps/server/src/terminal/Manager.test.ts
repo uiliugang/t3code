@@ -2547,8 +2547,10 @@ it.layer(
         const written = yield* Deferred.make<void>();
         const terminals = TerminalManager.TerminalManager.of({
           ...manager,
-          write: (input) =>
-            manager.write(input).pipe(Effect.tap(() => Deferred.succeed(written, undefined))),
+          write: (input, viewerId, options) =>
+            manager
+              .write(input, viewerId, options)
+              .pipe(Effect.tap(() => Deferred.succeed(written, undefined))),
         });
         const runner = yield* ProjectSetupScriptRunner.make.pipe(
           Effect.provide(

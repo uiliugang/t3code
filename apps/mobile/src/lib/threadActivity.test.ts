@@ -1450,12 +1450,12 @@ describe("buildThreadFeed", () => {
         new Set(),
         startedAt,
       );
-    const thinkingLabel = (rows: ReadonlyArray<ThreadFeedEntry>) => {
+    const waitingOnSubagents = (rows: ReadonlyArray<ThreadFeedEntry>) => {
       const row = rows.find((entry) => entry.type === "thinking");
-      return row?.type === "thinking" ? row.label : undefined;
+      return row?.type === "thinking" ? row.waitingOnSubagents : undefined;
     };
     expect(
-      thinkingLabel(
+      waitingOnSubagents(
         present([
           {
             ...assistantMessage("2026-06-20T00:00:05.000Z"),
@@ -1465,9 +1465,9 @@ describe("buildThreadFeed", () => {
           },
         ]),
       ),
-    ).toBe("Waiting on 2 subagents");
+    ).toBe(2);
     expect(
-      thinkingLabel(
+      waitingOnSubagents(
         present([
           {
             ...assistantMessage("2026-06-20T00:00:05.000Z"),

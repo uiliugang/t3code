@@ -84,7 +84,12 @@ const makeHarness = Effect.fn(function* (options: {
         listeners.add(listener);
         return () => listeners.delete(listener);
       }),
-    write: (input) => Queue.offer(writes, input.data).pipe(Effect.asVoid),
+    write: (input, _viewerId, writeOptions) =>
+      session?.status === "exited"
+        ? writeOptions?.requireRunning === true
+          ? Effect.fail(new TerminalNotRunningError({ threadId, terminalId }))
+          : Effect.void
+        : Queue.offer(writes, input.data).pipe(Effect.asVoid),
     close: () =>
       Effect.sync(() => {
         session = undefined;
@@ -135,7 +140,22 @@ const makeHarness = Effect.fn(function* (options: {
   });
   const emit = (terminalEvent: TerminalEvent) =>
     Effect.forEach([...listeners], (listener) => listener(terminalEvent), { discard: true });
-  return { start, listeners, writes, outputLines, opened, emit, openedSessions, opens };
+  const markExitedWithoutEvent = Effect.sync(() => {
+    if (session) {
+      session = { ...session, status: "exited", exitCode: 1 };
+    }
+  });
+  return {
+    start,
+    listeners,
+    writes,
+    outputLines,
+    opened,
+    emit,
+    openedSessions,
+    opens,
+    markExitedWithoutEvent,
+  };
 });
 
 const setup = Effect.fn(function* (
@@ -349,7 +369,7 @@ describe("ProjectSetupScriptRunner", () => {
     }),
   );
 
-  it.effect.each(["opening", "completion"] as const)(
+  it.effect.each(["opening", "commandWritten", "completion"] as const)(
     "stops pending setup when cancelled during %s",
     (phase) =>
       Effect.gen(function* () {
@@ -362,8 +382,12 @@ describe("ProjectSetupScriptRunner", () => {
             ? start.pipe(Effect.asVoid)
             : yield* start.pipe(
                 Effect.map((result) =>
-                  result.status === "started" && result.completion
-                    ? result.completion.pipe(Effect.asVoid)
+                  result.status === "started"
+                    ? phase === "commandWritten" && result.commandWritten
+                      ? result.commandWritten.pipe(Effect.asVoid)
+                      : result.completion
+                        ? result.completion.pipe(Effect.asVoid)
+                        : Effect.die("setup did not start")
                     : Effect.die("setup did not start"),
                 ),
               );
@@ -373,6 +397,22 @@ describe("ProjectSetupScriptRunner", () => {
         yield* Fiber.interrupt(fiber);
         expect(listeners.size).toBe(0);
         yield* emit({ ...event, type: "output", data: "\r\n% \x1b[?2004h" });
+        expect(yield* Queue.size(writes)).toBe(0);
+      }),
+  );
+
+  it.effect(
+    "reports commandWritten=false when the terminal session is already exited at write time",
+    () =>
+      Effect.gen(function* () {
+        const { result, writes, emit, completion, markExitedWithoutEvent } = yield* setup();
+        yield* markExitedWithoutEvent;
+        yield* emit({ ...event, type: "output", data: "\x1b[?2004h" });
+        expect(result.status).toBe("started");
+        if (result.status === "started") {
+          expect(yield* result.commandWritten!).toBe(false);
+        }
+        expect(yield* completion).toMatchObject({ exitCode: null });
         expect(yield* Queue.size(writes)).toBe(0);
       }),
   );

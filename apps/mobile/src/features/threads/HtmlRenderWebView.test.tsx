@@ -29,6 +29,9 @@ vi.mock("../../components/ui/AppText", () => ({
 vi.mock("../../lib/htmlRenderTheme", () => ({
   mobileHtmlRenderTheme: () => ({ variables: {} }),
 }));
+vi.mock("../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (text: string) => text,
+}));
 vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
   useAppearancePreferences: () => ({}),
 }));

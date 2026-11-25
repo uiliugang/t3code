@@ -55,14 +55,14 @@ describe("KeybindingsSettings.logic", () => {
         .filter((row) => row.command === "chat.new")
         .map(({ key, defaultKey }) => ({ key, defaultKey })),
     ).toEqual([
-      { key: "f8", defaultKey: "mod+shift+o" },
+      { key: "f8", defaultKey: "mod+t" },
       { key: "mod+n", defaultKey: "mod+n" },
     ]);
     const unassigned = buildKeybindingRows(
       mergeWithDefaultKeybindings(
         compileResolvedKeybindingsConfig([
           { command: "chat.new", key: "mod+n", when: "!terminalFocus" },
-          { command: "chat.new", key: "mod+shift+o", when: "false" },
+          { command: "chat.new", key: "mod+t", when: "false" },
           { command: "chat.new", key: "f8", when: "!terminalFocus" },
         ]),
       ),

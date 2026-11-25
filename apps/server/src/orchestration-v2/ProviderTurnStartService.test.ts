@@ -2658,6 +2658,53 @@ effectIt.effect.each([{ async: false }, { async: true }])(
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
+effectIt.effect(
+  "fails the current start attempt once when async setup commandWritten resolves false and retains pending setup",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-unwritten-setup-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      const runSetup = vi.fn(() =>
+        Effect.succeed({
+          status: "started" as const,
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "setup",
+          terminalId: "setup-unwritten",
+          cwd: worktreePath,
+          async: true,
+          commandWritten: Effect.succeed(false),
+          completion: Effect.succeed({ exitCode: null, durationMs: 0 }),
+        }),
+      );
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        runSetup,
+      });
+
+      yield* harness.start;
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+      expect(harness.projection().turnItems).toMatchObject([
+        {
+          type: "error",
+          title: "Couldn't set up restored workspace",
+        },
+      ]);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
 effectIt.effect("does not read recreated-worktree setup state for threads without a worktree", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

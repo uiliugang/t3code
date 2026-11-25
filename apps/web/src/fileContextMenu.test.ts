@@ -27,6 +27,7 @@ vi.mock(import("./state/session"), async (original) => ({
   useEnvironmentScope: () => true,
 }));
 vi.mock("./editorMenuIcons", () => ({ useEditorMenuIcons: () => new Map() }));
+vi.mock("./composerHandleContext", () => ({ useComposerHandleContext: () => null }));
 vi.mock("./state/use-atom-command", () => ({ useAtomCommand: () => state.openInEditor }));
 vi.mock(import("./remoteOpen"), async (original) => ({
   ...(await original()),
@@ -84,7 +85,10 @@ describe("useFileContextMenu", () => {
     state.openInEditor.mockClear();
     const menu = useFileContextMenu(BASE_TARGET.environmentId);
 
-    expect(menu.buildItems(BASE_TARGET)).toEqual([]);
+    expect(menu.buildItems(BASE_TARGET)).toEqual([
+      { id: "copy-mention", label: "Copy mention" },
+      { id: "add-to-chat", label: "Add to chat" },
+    ]);
     await menu.activate("open", BASE_TARGET);
     await menu.activate("editor:vscode", BASE_TARGET);
     expect(state.openInEditor).not.toHaveBeenCalled();
@@ -105,6 +109,8 @@ describe("useFileContextMenu", () => {
         label: "Open with",
         children: [{ id: "editor:vscode", label: "VS Code" }],
       },
+      { id: "copy-mention", label: "Copy mention" },
+      { id: "add-to-chat", label: "Add to chat" },
     ]);
     await menu.activate("open", BASE_TARGET);
     await menu.activate("editor:vscode", BASE_TARGET);
@@ -125,6 +131,8 @@ describe("useFileContextMenu", () => {
       "open",
       "reveal-in-folder",
       "open-with",
+      "copy-mention",
+      "add-to-chat",
     ]);
     await menu.activate("open", BASE_TARGET);
     expect(state.openInEditor).toHaveBeenCalledWith({

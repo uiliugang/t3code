@@ -1,3 +1,4 @@
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
@@ -55,6 +56,13 @@ vi.mock("../../../state/use-selected-thread-git-actions", () => ({
   }),
 }));
 vi.mock("../../../state/vcs", () => ({ vcsEnvironment: { status: () => null } }));
+vi.mock("../../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (text: string, values?: Parameters<typeof translateUi>[2]) =>
+    translateUi("en", text, values),
+}));
+vi.mock("../../../state/use-thread-repository", () => ({
+  useThreadRepository: () => ({ selectionTarget: undefined }),
+}));
 vi.mock("../thread-inspector-navigation", () => ({ useReturnToThread: () => () => {} }));
 vi.mock("./gitSheetComponents", () => ({
   SheetActionButton: (props: ActionProps) => {

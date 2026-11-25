@@ -907,14 +907,18 @@ export const layer: Layer.Layer<
                   project,
                   observeCompletion: {},
                 });
-                let clearPending = true;
                 if (setup.status === "started") {
                   if (setup.async) {
-                    if (setup.commandWritten !== undefined) {
-                      clearPending = yield* setup.commandWritten;
-                    }
+                    const written =
+                      setup.commandWritten === undefined ? true : yield* setup.commandWritten;
                     if (setup.completion) {
                       yield* setup.completion.pipe(Effect.forkDetach);
+                    }
+                    if (!written) {
+                      return yield* new WorktreeSetupScriptFailedError({
+                        worktreePath,
+                        exitCode: null,
+                      });
                     }
                   } else if (setup.completion) {
                     const { exitCode } = yield* setup.completion;
@@ -922,15 +926,14 @@ export const layer: Layer.Layer<
                       return yield* new WorktreeSetupScriptFailedError({ worktreePath, exitCode });
                   }
                 }
-                if (clearPending) {
-                  yield* worktreeRestore.takeRecreated(projection.thread.id, {
-                    action: "clear",
-                    worktreePath,
-                  });
-                }
+                yield* worktreeRestore.takeRecreated(projection.thread.id, {
+                  action: "clear",
+                  worktreePath,
+                });
               }),
             );
             if (setupResult._tag === "Failure") {
+              if (input.willRetry === true) return yield* setupResult.failure;
               yield* settleStartFailure({
                 signal: "worktree-setup-failure",
                 title: "Couldn't set up restored workspace",
@@ -2092,6 +2095,10 @@ export const layer: Layer.Layer<
             : { nativeThreadId: runningProviderThread.nativeThreadRef.nativeId }),
           status: "running",
           startedAt: now,
+          startedModes: {
+            runtimeMode: projection.thread.runtimeMode,
+            interactionMode: projection.thread.interactionMode,
+          },
         };
         const runningRootNode: OrchestrationV2ExecutionNode = {
           ...rootNode,
