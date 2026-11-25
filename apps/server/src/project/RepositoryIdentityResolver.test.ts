@@ -245,6 +245,50 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect(
+    "probes the effective HTTPS issue remote before falling back to the configured forge",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped();
+        const configured = "https://github.com/team/old.git";
+        const rewritten = "https://forge.example.test/team/new.git";
+        yield* git(cwd, ["init"]);
+        yield* git(cwd, ["remote", "add", "origin", configured]);
+        yield* git(cwd, ["config", `url.${rewritten}.insteadOf`, configured]);
+        let probe: "offline" | "forge" | "proxy" = "offline";
+        const resolver = yield* RepositoryIdentityResolver.make({
+          refine: (identity) => {
+            if (identity.locator.remoteUrl !== rewritten) return Effect.succeed(identity);
+            if (probe === "offline")
+              return Effect.fail(
+                new SourceControlProviderError({
+                  provider: SourceControlProviderKind.make("unknown"),
+                  operation: "detectProvider",
+                  cwd,
+                  detail: "Credential lookup timed out.",
+                }),
+              );
+            return Effect.succeed(
+              probe === "forge"
+                ? { ...identity, provider: SourceControlProviderKind.make("github") }
+                : identity,
+            );
+          },
+        });
+        const strict = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
+        expect(yield* resolver.resolve(cwd, strict).pipe(Effect.flip)).toBe("unavailable");
+        probe = "forge";
+        expect(yield* resolver.resolve(cwd, strict)).toMatchObject({
+          canonicalKey: "github.com/team/old",
+          issueRepository: { provider: "github", locator: { remoteUrl: rewritten } },
+        });
+        probe = "proxy";
+        const proxy = yield* resolver.resolve(cwd, strict);
+        expect((proxy?.issueRepository ?? proxy)?.locator.remoteUrl).toBe(configured);
+      }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
   it.effect("resolves an Azure DevOps remote as generic Git", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

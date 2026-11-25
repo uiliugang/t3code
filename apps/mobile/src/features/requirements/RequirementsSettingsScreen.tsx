@@ -111,6 +111,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
   );
   const byId = new Map(query.data?.map((row) => [row.projectId, row]));
   const singleProvider = serverConfig.environment.capabilities.singleProjectIssueProvider === true;
+  const compareAndSet = serverConfig.environment.capabilities.issueProjectSourcesCas === true;
   const rows = projects.map((project) => {
     const result = byId.get(project.id);
     const saved = settings.issueProjectSources[project.id] ?? [];
@@ -153,7 +154,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
       ) : null}
       <SettingsSection
         title={t("Project issue sources")}
-        footer={!allowed ? t("Read-only") : undefined}
+        footer={!allowed || !compareAndSet ? t("Read-only") : undefined}
       >
         {query.error ? (
           <Text accessibilityRole="alert" className="p-3 text-danger">
@@ -172,6 +173,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
             repository={result?.repository ?? null}
             saved={saved}
             singleProvider={singleProvider}
+            compareAndSet={compareAndSet}
             sources={sources}
             provider={provider}
             error={result?.error ?? query.error ?? undefined}

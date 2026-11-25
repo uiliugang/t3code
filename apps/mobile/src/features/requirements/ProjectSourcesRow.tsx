@@ -33,10 +33,11 @@ export function ProjectSourcesRow({
   sources,
   provider,
   singleProvider,
+  compareAndSet,
   error,
   discovery,
   mep,
-  allowed,
+  allowed: canWrite,
 }: {
   environmentId: EnvironmentId;
   projectId: ProjectId;
@@ -46,11 +47,13 @@ export function ProjectSourcesRow({
   sources: readonly IssueSource[];
   provider: IssueProvider | undefined;
   singleProvider: boolean;
+  compareAndSet: boolean;
   error: string | undefined;
   discovery: "pending" | "failed" | "ready";
   mep: boolean;
   allowed: boolean;
 }) {
+  const allowed = canWrite && compareAndSet;
   const t = useUiTranslation();
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const [view, setView] = useState<

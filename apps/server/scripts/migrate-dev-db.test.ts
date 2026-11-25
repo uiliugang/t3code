@@ -8,7 +8,10 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { splitPathParentAndLeaf } from "../../../scripts/lib/dev-db-safety.ts";
+import {
+  inspectIsolatedDevDirectory,
+  splitPathParentAndLeaf,
+} from "../../../scripts/lib/dev-db-safety.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import { holdServerOwnershipLock } from "../src/serverOwnership.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -1093,7 +1096,12 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       yield* fs.symlink(root, path.join(aliasParent, "worktree"));
 
       for (const cwd of [root, mainCheckout, otherWorktree]) {
-        for (const baseDir of [path.join(root, ".t3"), path.join(aliasParent, "worktree", ".t3")]) {
+        for (const baseDir of [
+          path.join(root, ".t3"),
+          path.join(aliasParent, "worktree", ".t3"),
+          `${path.join(root, ".t3", "userdata")}${path.sep}..`,
+          `${path.join(aliasParent, "worktree", ".t3", "userdata")}${path.sep}..`,
+        ]) {
           const error = yield* runMigrateDevDb(
             { baseDir, source, projects: 1, threadsPerProject: 1 },
             { cwd, sharedHome },
@@ -1103,6 +1111,28 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             yield* fs.exists(path.join(path.dirname(stoppedDb), "server-owner.sqlite")),
           );
         }
+      }
+    }),
+  );
+
+  it.effect("accepts ordinary worktree homes reached through parent or case aliases", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const home = path.join(root, ".t3");
+      const alias = path.join(root, "alias");
+      yield* fs.makeDirectory(path.join(home, "userdata"), { recursive: true });
+      yield* fs.symlink(root, alias);
+      const upperCase = path.join(alias, ".T3");
+      const candidates = [
+        `${path.join(alias, ".t3", "userdata")}${path.sep}..`,
+        ...((yield* fs.exists(upperCase)) ? [upperCase] : []),
+      ];
+      for (const candidate of candidates) {
+        const { base } = yield* inspectIsolatedDevDirectory(candidate, "userdata");
+        const expected = yield* inspectIsolatedDevDirectory(home, "userdata");
+        assert.deepStrictEqual(base.identity, expected.base.identity);
       }
     }),
   );

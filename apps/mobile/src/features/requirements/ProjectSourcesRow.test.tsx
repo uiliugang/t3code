@@ -88,6 +88,7 @@ function setup() {
     saved: IssueSource[] = sources,
     singleProvider = true,
     mep = true,
+    compareAndSet = true,
   ) =>
     act(() =>
       root.render(
@@ -98,6 +99,7 @@ function setup() {
           repository="acme/app"
           saved={saved}
           singleProvider={singleProvider}
+          compareAndSet={compareAndSet}
           sources={saved.filter((source) => source.provider === saved[0]?.provider)}
           provider={saved[0]?.provider}
           error={undefined}
@@ -158,7 +160,18 @@ it("keeps MEP spaces readable without offering a GitHub binding", () => {
   expect(details.querySelector("button, input")).toBeNull();
 });
 
-it("restores automatic GitHub sources on a legacy server without removing MEP", async () => {
+it("keeps legacy sources read-only without compare-and-set support", () => {
+  update.mockReset();
+  using screen = setup();
+  screen.render(true, [first, space], false, true, false);
+  act(() => screen.button("View sources for server").click());
+  expect(screen.container.textContent).toContain(space.scope);
+  expect(screen.button("Remove incompatible sources")).toBeUndefined();
+  expect(screen.container.querySelector("section button, section input")).toBeNull();
+  expect(update).not.toHaveBeenCalled();
+});
+
+it("restores automatic GitHub sources without removing MEP on a multi-provider server", async () => {
   update.mockReset().mockResolvedValue({ _tag: "Success" });
   using screen = setup();
   const legacy = [first, space];

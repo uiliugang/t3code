@@ -252,8 +252,11 @@ const devHomePathParts = (candidate: string, platform: NodeJS.Platform) => {
 };
 
 export const isDotT3Home = (candidate: string, platform: NodeJS.Platform) => {
-  const parts = devHomePathParts(candidate, platform);
-  return parts !== undefined && comparableDevDbPath(parts.leaf, platform) === ".t3";
+  const pathOps = platform === "win32" ? NodePath.win32 : NodePath.posix;
+  return [candidate, pathOps.resolve(candidate)].some((file) => {
+    const parts = devHomePathParts(file, platform);
+    return parts !== undefined && comparableDevDbPath(parts.leaf, platform) === ".t3";
+  });
 };
 
 export const selectWorktreeDevHome = Effect.fn("selectWorktreeDevHome")(function* (
@@ -283,11 +286,29 @@ export const inspectIsolatedDevDirectory = Effect.fn("inspectIsolatedDevDirector
   const path = yield* Path.Path;
   const base = yield* inspectPath(baseDir);
   const platform = yield* HostProcess.Platform;
-  const parts = devHomePathParts(baseDir, platform);
-  if (stateSubdir === "userdata" && parts && isDotT3Home(baseDir, platform)) {
-    const parent = yield* inspectPath(parts.parent);
-    if (base.canonical !== path.join(parent.canonical, parts.leaf)) {
-      return yield* new MigrateDevDbSharedHomeError();
+  if (stateSubdir === "userdata") {
+    const fs = yield* FileSystem.FileSystem;
+    for (const candidate of new Set([baseDir, path.resolve(baseDir)])) {
+      const parts = devHomePathParts(candidate, platform);
+      if (!parts || comparableDevDbPath(parts.leaf, platform) !== ".t3") continue;
+      const parent = yield* inspectPath(parts.parent);
+      const expected = path.join(parent.canonical, parts.leaf);
+      const info = yield* fs.lstat(expected).pipe(
+        Effect.asSome,
+        Effect.catchReason("PlatformError", "NotFound", () => Effect.succeedNone),
+        Effect.mapError(() => new MigrateDevDbSharedHomeError()),
+      );
+      if (
+        Option.match(info, {
+          onNone: () => base.canonical !== expected,
+          onSome: (entry) =>
+            entry.type !== "Directory" ||
+            !Option.exists(fileIdentity(entry), (identity) =>
+              Option.contains(base.identity, identity),
+            ),
+        })
+      )
+        return yield* new MigrateDevDbSharedHomeError();
     }
   }
   const stateDir = path.join(base.canonical, stateSubdir);

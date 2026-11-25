@@ -487,13 +487,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
       fetchRemotes.delete(name);
   }
   const selected = selectRequirementRemote(
-    Array.from(fetchRemotes, ([name, url]) => {
-      const configured = remotes.get(name);
-      const proxy =
-        /^https?:\/\//iu.test(url) &&
-        (sourceControlDefinitions.recognizeRemote(url)?.kind ?? "unknown") === "unknown";
-      return { name, url: proxy && configured ? configured : url };
-    }),
+    Array.from(fetchRemotes, ([name, url]) => ({ name, url })),
   );
   if (!selected) return { identity, issueIdentity: null };
   if (
@@ -504,19 +498,31 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
       selected.remoteUrl === fetchRemotes.get(selected.remoteName))
   )
     return { identity };
-  const issueIdentity = buildRepositoryIdentity({
-    remoteName: selected.remoteName,
-    remoteUrl: selected.remoteUrl,
-    keyUrl:
-      selected.remoteUrl === originUrl
-        ? originKeyUrl
-        : yield* sshResolvedRemoteUrl(selected.remoteUrl, remotes),
-    originUrl: undefined,
-    originKeyUrl: undefined,
-    hasLocalOrigin: false,
-    rootPath: cacheKey.rootPath,
+  const issueIdentityFor = Effect.fnUntraced(function* (remoteUrl: string) {
+    return buildRepositoryIdentity({
+      remoteName: selected.remoteName,
+      remoteUrl,
+      keyUrl:
+        remoteUrl === originUrl ? originKeyUrl : yield* sshResolvedRemoteUrl(remoteUrl, remotes),
+      originUrl: undefined,
+      originKeyUrl: undefined,
+      hasLocalOrigin: false,
+      rootPath: cacheKey.rootPath,
+    });
   });
-  return { identity, issueIdentity };
+  const configured = remotes.get(selected.remoteName);
+  const issueFallback =
+    selected.provider.kind === "unknown" &&
+    /^https?:\/\//iu.test(selected.remoteUrl) &&
+    configured !== undefined &&
+    configured !== selected.remoteUrl
+      ? identity.origin === undefined &&
+        selected.remoteName === remote.remoteName &&
+        configured === remote.remoteUrl
+        ? identity
+        : yield* issueIdentityFor(configured)
+      : undefined;
+  return { identity, issueIdentity: yield* issueIdentityFor(selected.remoteUrl), issueFallback };
 });
 
 const unconfirmedProvider = Symbol("UnconfirmedProvider");
@@ -582,16 +588,27 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
         const remote = yield* Cache.get(remoteIdentityCache, cacheKey);
         if (remote === null) return null;
         if (remote !== undefined) {
-          const { identity, issueIdentity } = remote;
+          const { identity, issueIdentity, issueFallback } = remote;
           if (options?.remoteOnly) return identity;
           if (options?.refresh) {
             yield* Cache.invalidate(providerIdentityCache, identity);
             if (issueIdentity) yield* Cache.invalidate(providerIdentityCache, issueIdentity);
+            if (issueFallback && issueFallback !== identity)
+              yield* Cache.invalidate(providerIdentityCache, issueFallback);
           }
           const result = yield* Cache.get(providerIdentityCache, identity);
           const issue = issueIdentity && (yield* Cache.get(providerIdentityCache, issueIdentity));
           const grouping = result === unconfirmedProvider ? identity : result;
-          const selected = issue === unconfirmedProvider ? issueIdentity : issue;
+          const fallback =
+            issueFallback && issue && issue !== unconfirmedProvider && issue.provider === "unknown"
+              ? issueFallback
+              : undefined;
+          const selected =
+            issue === unconfirmedProvider
+              ? issueIdentity
+              : fallback === identity
+                ? undefined
+                : (fallback ?? issue);
           const resolved =
             selected === undefined ? grouping : { ...grouping, issueRepository: selected };
           if (

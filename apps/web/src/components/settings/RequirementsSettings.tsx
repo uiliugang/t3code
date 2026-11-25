@@ -273,7 +273,7 @@ function ProjectSourceRow({
   checked,
   disabled,
   toggle,
-  canEdit,
+  canEdit: canWrite,
   result,
   error,
   loading,
@@ -298,6 +298,9 @@ function ProjectSourceRow({
   const provider = projectIssueProvider(kind, sources);
   const singleProvider =
     group.environment.serverConfig?.environment.capabilities.singleProjectIssueProvider === true;
+  const canEdit =
+    canWrite &&
+    group.environment.serverConfig?.environment.capabilities.issueProjectSourcesCas === true;
   const cleanup = projectIssueSourceCleanup(singleProvider, project.id, provider, saved, enabled);
   const githubSources = sources.filter((entry) => entry.provider === "github");
   const manualGithub = saved.some((entry) => entry.provider === "github");
@@ -316,7 +319,7 @@ function ProjectSourceRow({
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const inputId = `mep-spaces-${projectKey(project)}`;
   const persist = async (input: ReturnType<typeof projectIssueSourceEdit>) => {
-    if (saving || disabled) return;
+    if (saving || disabled || !canEdit) return;
     if (!input) {
       setFailure(t("Project sources have changed. Reopen the editor and try again."));
       return;
@@ -414,7 +417,7 @@ function ProjectSourceRow({
                   <Button
                     variant="ghost-muted"
                     size="icon-xs"
-                    disabled={disabled}
+                    disabled={disabled || !canEdit}
                     aria-label={t("Edit MEP spaces for {project}", { project: project.title })}
                     onClick={() => {
                       setFailure(null);
@@ -426,7 +429,7 @@ function ProjectSourceRow({
                 </span>
               ) : null}
             </div>
-            {draft !== null ? (
+            {draft !== null && canEdit ? (
               <form
                 className="grid gap-2 pt-1"
                 onSubmit={(event) => {
@@ -587,6 +590,13 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
       .filter((entry) => entry.serverConfig?.environment.capabilities.singleProjectIssueProvider)
       .map((entry) => entry.environmentId),
   );
+  const casEnvironments = new Set(
+    connectedEnvironments
+      .filter(
+        (entry) => entry.serverConfig?.environment.capabilities.issueProjectSourcesCas === true,
+      )
+      .map((entry) => entry.environmentId),
+  );
   for (const group of groups) {
     for (const project of group.projects) {
       savedSources.set(
@@ -634,11 +644,20 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const githubOverrides = githubChosen.filter((project) =>
     savedSources.get(projectKey(project))?.some((source) => source.provider === "github"),
   );
+  const readOnlySelection = githubChosen.some(
+    (project) => !casEnvironments.has(project.environmentId),
+  );
   const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && /^[\w.-]+$/u.test(host.trim());
   const run = async (action: "refresh" | "save" | "reset") => {
     const actionTargets =
       action === "refresh" ? chosen : action === "reset" ? githubOverrides : githubChosen;
-    if (!actionTargets.length || busy || (action === "save" && !valid)) return;
+    if (
+      !actionTargets.length ||
+      busy ||
+      (action !== "refresh" && readOnlySelection) ||
+      (action === "save" && !valid)
+    )
+      return;
     setBusy(true);
     setMessage("");
     const results = await Promise.all(
@@ -779,7 +798,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
             <Button
               size="sm"
               variant="outline"
-              disabled={busy}
+              disabled={busy || readOnlySelection}
               onClick={() => {
                 setEditing(!editing);
                 setScope("");
@@ -790,7 +809,12 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               <span className="text-xs text-muted-foreground">{githubChosen.length}</span>
             </Button>
             {githubOverrides.length > 0 ? (
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => void run("reset")}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || readOnlySelection}
+                onClick={() => void run("reset")}
+              >
                 <Undo2Icon />
                 {t("Restore GitHub automatic")}
                 <span className="text-xs text-muted-foreground">{githubOverrides.length}</span>
@@ -799,7 +823,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
           </>
         ) : null}
       </div>
-      {editing && githubChosen.length ? (
+      {editing && githubChosen.length && !readOnlySelection ? (
         <form
           className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted/20 p-4 sm:grid-cols-2"
           onSubmit={(event) => {

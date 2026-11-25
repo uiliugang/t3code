@@ -157,6 +157,7 @@ it.layer(
           worktreesDirectory: true,
           threadAutoSettlementScope: true,
           threadTerminalCleanup: true,
+          issueProjectSourcesCas: true,
           singleProjectIssueProvider: true,
           meituanIntegration: true,
           meituanTools: true,

@@ -17,7 +17,10 @@ const settings = { issueProjectSources: { [projectId]: saved } };
 const environment = {
   environmentId,
   connection: { phase: "connected" },
-  serverConfig: { environment: { capabilities: {} }, settings },
+  serverConfig: {
+    environment: { capabilities: {} as { issueProjectSourcesCas?: boolean } },
+    settings,
+  },
 };
 
 vi.mock(import("./SettingsScopeContext"), async (original) => ({
@@ -77,8 +80,21 @@ vi.mock(import("../../state/sourceControl"), async (original) => {
 
 const sources = [{ projectId, provider: "github", sources: [github] }];
 
-it("preserves MEP when bulk saving or restoring GitHub on a legacy server", async () => {
+it("does not bulk edit an older server that cannot compare saved sources", async () => {
+  mocks.update.mockReset();
+  environment.serverConfig.environment.capabilities = {};
+  await using screen = await render(<RequirementsSettings />);
+  await userEvent.click(screen.getByRole("checkbox", { name: "Select Example" }));
+  await expect.element(screen.getByRole("button", { name: /^GitHub override/ })).toBeDisabled();
+  await expect
+    .element(screen.getByRole("button", { name: /^Restore GitHub automatic/ }))
+    .toBeDisabled();
+  expect(mocks.update).not.toHaveBeenCalled();
+});
+
+it("preserves MEP when bulk saving or restoring GitHub with compare-and-set support", async () => {
   mocks.update.mockReset().mockResolvedValue({ _tag: "Success" });
+  environment.serverConfig.environment.capabilities = { issueProjectSourcesCas: true };
   await using screen = await render(<RequirementsSettings />);
   await userEvent.click(screen.getByRole("checkbox", { name: "Select Example" }));
   await userEvent.click(screen.getByRole("button", { name: /^GitHub override/ }));
