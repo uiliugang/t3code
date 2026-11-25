@@ -162,6 +162,9 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
             title={project.title}
             repository={result?.repository ?? null}
             saved={saved}
+            singleProvider={
+              serverConfig.environment.capabilities.singleProjectIssueProvider === true
+            }
             sources={sources}
             provider={provider}
             error={result?.error ?? query.error ?? undefined}

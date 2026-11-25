@@ -125,6 +125,7 @@ export const make = Effect.gen(function* () {
     project: OrchestrationProjectShell,
     saved: ServerSettings,
     refresh = false,
+    refreshRepository = refresh,
   ) {
     const { id: projectId, workspaceRoot: cwd } = project;
     const manual = saved.issueProjectSources[projectId] ?? [];
@@ -134,7 +135,7 @@ export const make = Effect.gen(function* () {
     const handle = yield* providers
       .resolveHandle({
         cwd,
-        refresh,
+        refresh: refreshRepository,
         ...(locator && host
           ? {
               context: {
@@ -220,9 +221,10 @@ export const make = Effect.gen(function* () {
   const projectSources = Effect.fn("IssueService.projectSources")(function* (
     id: IssueTarget["projectId"],
     refresh = false,
+    refreshRepository = refresh,
   ) {
     const project = yield* projects
-      .getShell(id, undefined, refresh)
+      .getShell(id, undefined, refreshRepository)
       .pipe(
         Effect.mapError(
           (cause) =>
@@ -231,14 +233,17 @@ export const make = Effect.gen(function* () {
       );
     if (Option.isNone(project))
       return yield* new RequirementIssueError({ operation: "project", reason: "invalid-target" });
-    return yield* resolveSources(project.value, yield* savedSettings, refresh);
+    return yield* resolveSources(project.value, yield* savedSettings, refresh, refreshRepository);
   });
   const validSource = (source: IssueSource) =>
     source.provider === "meituan"
       ? /^[1-9]\d*$/u.test(source.scope) && source.host === "mep.sankuai.com"
       : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) && /^[\w.-]+$/u.test(source.host);
-  const resolveAll = Effect.fn("IssueService.resolveAll")(function* (input: IssueTarget) {
-    const resolved = yield* projectSources(input.projectId);
+  const resolveAll = Effect.fn("IssueService.resolveAll")(function* (
+    input: IssueTarget,
+    refreshRepository = false,
+  ) {
+    const resolved = yield* projectSources(input.projectId, false, refreshRepository);
     const sources = resolved.sources.filter(
       (source) =>
         source.provider === input.provider &&
@@ -266,8 +271,11 @@ export const make = Effect.gen(function* () {
       return yield* new RequirementIssueError({ operation: "provider", reason: "unsupported" });
     return sources.map((source) => ({ cwd: resolved.cwd, source, board: provider.issueBoard! }));
   });
-  const resolve = Effect.fn("IssueService.resolve")(function* (input: IssueTarget) {
-    const targets = yield* resolveAll(input);
+  const resolve = Effect.fn("IssueService.resolve")(function* (
+    input: IssueTarget,
+    refreshRepository = false,
+  ) {
+    const targets = yield* resolveAll(input, refreshRepository);
     if (targets.length !== 1)
       return yield* new RequirementIssueError({ operation: "resolve", reason: "invalid-target" });
     return targets[0]!;
@@ -420,11 +428,11 @@ export const make = Effect.gen(function* () {
       return yield* target.board.metadata({ ...input, ...target });
     }),
     create: Effect.fn("IssueService.create")(function* (input) {
-      const target = yield* resolve(input);
+      const target = yield* resolve(input, true);
       return yield* target.board.create({ ...input, ...target });
     }),
     setState: Effect.fn("IssueService.setState")(function* (input) {
-      const target = yield* resolve(input);
+      const target = yield* resolve(input, true);
       return yield* target.board.setState({ ...input, ...target });
     }),
   });

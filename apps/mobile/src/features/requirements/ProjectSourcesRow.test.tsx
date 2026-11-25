@@ -83,7 +83,7 @@ function setup() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement("div");
   const root = createRoot(container);
-  const render = (allowed: boolean, saved: IssueSource[] = sources) =>
+  const render = (allowed: boolean, saved: IssueSource[] = sources, singleProvider = true) =>
     act(() =>
       root.render(
         <ProjectSourcesRow
@@ -92,7 +92,8 @@ function setup() {
           title="server"
           repository="acme/app"
           saved={saved}
-          sources={saved}
+          singleProvider={singleProvider}
+          sources={saved.filter((source) => source.provider === saved[0]?.provider)}
           provider={saved[0]?.provider}
           error={undefined}
           discovery="ready"
@@ -150,4 +151,21 @@ it("keeps MEP spaces readable without offering a GitHub binding", () => {
   expect(details.textContent).not.toContain("Not configured");
   expect(details.textContent).toContain(space.scope);
   expect(details.querySelector("button, input")).toBeNull();
+});
+
+it("removes a legacy binding without losing either same-platform repository", async () => {
+  update.mockReset().mockResolvedValue({ _tag: "Success" });
+  using screen = setup();
+  const legacy = [first, space, second];
+  screen.render(true, legacy, false);
+  act(() => screen.button("Edit server").click());
+  expect(screen.container.textContent).toContain(space.scope);
+  await act(async () => screen.button("Remove incompatible sources").click());
+  expect(update).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      expectedIssueProjectSources: { [projectId]: legacy },
+      patch: { issueProjectSources: { [projectId]: sources } },
+    },
+  });
 });

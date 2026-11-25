@@ -40,6 +40,14 @@ export function mergeProjectIssueSources(
 }
 
 export const IssueProjectSources = Schema.Record(ProjectId, Schema.Array(IssueSource));
+export function importProjectIssueSources(
+  incoming: readonly IssueSource[],
+  saved: readonly IssueSource[],
+  repositoryKind?: string,
+) {
+  if (!incoming.some((source) => source.provider !== incoming[0]?.provider)) return incoming;
+  return mergeProjectIssueSources([], incoming, projectIssueProvider(repositoryKind, saved));
+}
 export const IssueTarget = Schema.Struct({
   projectId: ProjectId,
   provider: IssueProvider,

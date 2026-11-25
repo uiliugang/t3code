@@ -1,5 +1,6 @@
 import {
   parseMepSpaceIds,
+  legacyIssueSourceCleanup,
   projectIssueSourceEdit,
   withGithubRepositoryOverride,
   withMepSpaceOverrides,
@@ -30,6 +31,7 @@ export function ProjectSourcesRow({
   saved,
   sources,
   provider,
+  singleProvider,
   error,
   discovery,
   mep,
@@ -42,6 +44,7 @@ export function ProjectSourcesRow({
   saved: readonly IssueSource[];
   sources: readonly IssueSource[];
   provider: IssueProvider | undefined;
+  singleProvider: boolean;
   error: string | undefined;
   discovery: "pending" | "failed" | "ready";
   mep: boolean;
@@ -60,6 +63,7 @@ export function ProjectSourcesRow({
   const spaces = sources.filter((s) => s.provider === "meituan").map((s) => s.scope);
   const manual = saved.some((s) => s.provider === "meituan");
   const github = githubSources[0];
+  const legacy = legacyIssueSourceCleanup(singleProvider, projectId, provider, saved);
   const canChoose = provider !== undefined || discovery === "ready";
   const showGithub = canChoose && provider !== "meituan";
   const showMep = canChoose && mep && provider !== "github";
@@ -95,11 +99,24 @@ export function ProjectSourcesRow({
   };
   const close = () => setView("closed");
   const open = () => {
-    if (allowed && showGithub && !showMep && githubSources.length <= 1)
+    if (allowed && !legacy && showGithub && !showMep && githubSources.length <= 1)
       edit({ provider: "github", source: github });
     else setView("sources");
   };
-  const save = async (restore: boolean) => {
+  const persist = async (input: ReturnType<typeof projectIssueSourceEdit>) => {
+    if (!allowed || busy) return;
+    if (!input) {
+      setFailure(t("Project sources have changed. Reopen the editor and try again."));
+      return;
+    }
+    setBusy(true);
+    setFailure(null);
+    const result = await update({ environmentId, input });
+    if (result._tag === "Success") close();
+    else setFailure(t("Could not save project sources. Reopen the editor and try again."));
+    setBusy(false);
+  };
+  const save = (restore: boolean) => {
     if (
       !editing ||
       busy ||
@@ -110,7 +127,7 @@ export function ProjectSourcesRow({
       return;
     const input = projectIssueSourceEdit(
       projectId,
-      editing.provider,
+      singleProvider ? editing.provider : undefined,
       saved,
       editing.saved,
       (latest) =>
@@ -118,17 +135,7 @@ export function ProjectSourcesRow({
           ? withMepSpaceOverrides(restore ? [] : (parseMepSpaceIds(draft) ?? []))
           : withGithubRepositoryOverride(latest, editing.source, restore ? null : draft.trim()),
     );
-    if (!input) {
-      setFailure(t("Project sources have changed. Reopen the editor and try again."));
-      return;
-    }
-    setBusy(true);
-    setFailure(null);
-    const result = await update({ environmentId, input });
-    if (result._tag === "Success") {
-      close();
-    } else setFailure(t("Could not save project sources. Reopen the editor and try again."));
-    setBusy(false);
+    return persist(input);
   };
   return (
     <>
@@ -179,6 +186,27 @@ export function ProjectSourcesRow({
             {error ? (
               <Text accessibilityRole="alert" className="text-danger">
                 {error}
+              </Text>
+            ) : null}
+            {legacy && !editing ? (
+              <View className="gap-2">
+                <Text textRole="footnote">
+                  {t("Legacy sources: {sources}", { sources: legacy.scopes })}
+                </Text>
+                {allowed ? (
+                  <Button
+                    size="compact"
+                    tone="text"
+                    label={t("Remove incompatible sources")}
+                    disabled={busy}
+                    onPress={() => void persist(legacy.input)}
+                  />
+                ) : null}
+              </View>
+            ) : null}
+            {failure && !editing ? (
+              <Text accessibilityRole="alert" className="text-danger">
+                {failure}
               </Text>
             ) : null}
             {editing && allowed ? (

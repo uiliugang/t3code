@@ -721,13 +721,14 @@ describe("settings transfer", () => {
       },
     };
     const issueSources = [{ provider: "github" as const, host: "github.com", scope: "team/repo" }];
+    const legacySources = [
+      { provider: "meituan" as const, host: "mep.sankuai.com", scope: "42" },
+      ...issueSources,
+    ];
     const source = {
       ...settings(),
       issueProjectSources: {
-        [sourceProject.id]: [
-          { provider: "meituan" as const, host: "mep.sankuai.com", scope: "42" },
-          ...issueSources,
-        ],
+        [sourceProject.id]: legacySources,
       },
       projectSettingsFolded: true,
       projectSettingsOverrides: {
@@ -752,6 +753,9 @@ describe("settings transfer", () => {
       projectSettingsOverrides: { [destination.id]: { defaultAutoPull: true } },
     };
     const patch = projectSettingsImportPatch(file, destination, target);
+    expect(
+      projectSettingsImportPatch({ ...file, issueSources: legacySources }, destination, target),
+    ).toEqual(patch);
     expect(patch.projectSettingsOverrides).toEqual({
       [destination.id]: {
         defaultModelSelection: null,

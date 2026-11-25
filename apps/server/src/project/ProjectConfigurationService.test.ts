@@ -697,6 +697,15 @@ describe("ProjectConfigurationService", () => {
             [imported.id]: project.issueSources,
           });
           yield* service.start({
+            id: "mixed-settings-import",
+            projects: [{ ...project, issueSources: [...keptSources, ...project.issueSources!] }],
+            destinationDirectory: `${test.baseDir}/clones`,
+          });
+          yield* service.drain;
+          expect(
+            (yield* snapshot()).find((entry) => entry.id === "mixed-settings-import")?.phase,
+          ).toBe("done");
+          yield* service.start({
             id: "legacy-settings-import",
             projects: [Struct.omit(project, ["issueSources"])],
             destinationDirectory: `${test.baseDir}/clones`,

@@ -11,18 +11,40 @@ export const issueSourceProjectIdBatches = (projectIds: readonly ProjectId[]) =>
 
 export function projectIssueSourceEdit(
   projectId: ProjectId,
-  provider: IssueProvider,
+  provider: IssueProvider | undefined,
   current: readonly IssueSource[],
   expected: readonly IssueSource[],
   edit: (saved: readonly IssueSource[]) => readonly IssueSource[],
 ) {
   if (!issueSourcesMatch(current, expected)) return null;
   return {
-    issueSourceProvider: provider,
+    ...(provider ? { issueSourceProvider: provider } : {}),
     expectedIssueProjectSources: { [projectId]: expected },
     patch: {
       issueProjectSources: {
         [projectId]: edit(current),
+      },
+    },
+  };
+}
+
+export function legacyIssueSourceCleanup(
+  singleProvider: boolean,
+  projectId: ProjectId,
+  provider: IssueProvider | undefined,
+  saved: readonly IssueSource[],
+) {
+  if (singleProvider || !provider) return null;
+  const incompatible = saved.filter((source) => source.provider !== provider);
+  if (!incompatible.length) return null;
+  return {
+    scopes: incompatible.map((source) => `${source.host}/${source.scope}`).join(", "),
+    input: {
+      expectedIssueProjectSources: { [projectId]: saved },
+      patch: {
+        issueProjectSources: {
+          [projectId]: saved.filter((source) => source.provider === provider),
+        },
       },
     },
   };

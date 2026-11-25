@@ -2,6 +2,7 @@ import {
   CommandId,
   defaultInstanceIdForDriver,
   mergeProjectIssueSources,
+  importProjectIssueSources,
   ProjectConfigurationExportInput,
   ProjectImportDefinition,
   ProjectImportError,
@@ -571,7 +572,12 @@ const make = Effect.gen(function* () {
             ...(definition.issueSources !== undefined
               ? {
                   issueProjectSources: {
-                    [project.id]: definition.issueSources,
+                    [project.id]: importProjectIssueSources(
+                      definition.issueSources,
+                      server.issueProjectSources[project.id] ?? [],
+                      (yield* identities.resolve(project.workspaceRoot, { refresh: true }))
+                        ?.provider,
+                    ),
                   },
                 }
               : {}),

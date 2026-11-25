@@ -5,6 +5,7 @@ import {
   KeybindingsConfig,
   IssueSource,
   mergeProjectIssueSources,
+  importProjectIssueSources,
   MAX_KEYBINDINGS_COUNT,
   ProjectSettingsOverrides,
   ProjectTransferWorkspace,
@@ -651,7 +652,11 @@ export function projectSettingsImportPatch(
       ? {}
       : {
           issueProjectSources: {
-            [project.id]: file.issueSources,
+            [project.id]: importProjectIssueSources(
+              file.issueSources,
+              target.issueProjectSources[project.id] ?? [],
+              project.repositoryIdentity?.provider,
+            ),
           },
         }),
     projectSettingsOverrides: {

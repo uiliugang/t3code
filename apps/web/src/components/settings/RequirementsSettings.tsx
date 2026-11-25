@@ -44,6 +44,7 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   parseMepSpaceIds,
+  legacyIssueSourceCleanup,
   projectIssueSourceEdit,
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
@@ -288,6 +289,9 @@ function ProjectSourceRow({
   const kind = result?.provider ?? project.repositoryIdentity?.provider;
   const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
   const provider = projectIssueProvider(kind, sources);
+  const singleProvider =
+    group.environment.serverConfig?.environment.capabilities.singleProjectIssueProvider === true;
+  const legacy = legacyIssueSourceCleanup(singleProvider, project.id, provider, saved);
   const githubSources = sources.filter((entry) => entry.provider === "github");
   const manualGithub = saved.some((entry) => entry.provider === "github");
   const discovery = error || result?.error ? "failed" : result ? "ready" : "pending";
@@ -302,11 +306,8 @@ function ProjectSourceRow({
   const [saving, setSaving] = useState(false);
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const inputId = `mep-spaces-${projectKey(project)}`;
-  const submit = async (ids: string[] | null) => {
-    if (!ids || !draft || saving || disabled || !showMepEditor) return;
-    const input = projectIssueSourceEdit(project.id, "meituan", saved, draft.saved, () =>
-      withMepSpaceOverrides(ids),
-    );
+  const persist = async (input: ReturnType<typeof projectIssueSourceEdit>) => {
+    if (saving || disabled) return;
     if (!input) {
       setFailure(t("Project sources have changed. Reopen the editor and try again."));
       return;
@@ -320,6 +321,18 @@ function ProjectSourceRow({
     } else setFailure(t("Could not save project sources. Reopen the editor and try again."));
   };
   const invalid = draft !== null && !parseMepSpaceIds(draft.text);
+  const submit = (ids: string[] | null) => {
+    if (ids && draft && showMepEditor)
+      return persist(
+        projectIssueSourceEdit(
+          project.id,
+          singleProvider ? "meituan" : undefined,
+          saved,
+          draft.saved,
+          () => withMepSpaceOverrides(ids),
+        ),
+      );
+  };
   return (
     <tr className="group/project-source grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-3 text-sm lg:table-row">
       <td className="row-span-4 align-top lg:py-4 lg:pr-3">
@@ -346,6 +359,27 @@ function ProjectSourceRow({
         ) : null}
       </td>
       <td className="col-start-2 min-w-0 space-y-1 align-top lg:py-4 lg:pr-3">
+        {legacy ? (
+          <div>
+            <p>{t("Legacy sources: {sources}", { sources: legacy.scopes })}</p>
+            {canEdit ? (
+              <Button
+                variant="ghost-muted"
+                size="xs"
+                disabled={disabled || saving}
+                onClick={() => void persist(legacy.input)}
+              >
+                <Undo2Icon />
+                {t("Remove incompatible sources")}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {failure && !draft ? (
+          <p role="alert" className="text-destructive">
+            {failure}
+          </p>
+        ) : null}
         {githubSources.map((github) => (
           <p
             key={JSON.stringify([github.host, github.scope])}
@@ -617,7 +651,9 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
             expectedIssueProjectSources: Object.fromEntries(
               targets.map((project) => [project.id, saved[project.id] ?? []]),
             ),
-            issueSourceProvider: "github" as const,
+            ...(environment.serverConfig!.environment.capabilities.singleProjectIssueProvider
+              ? { issueSourceProvider: "github" as const }
+              : {}),
           },
         });
         return {

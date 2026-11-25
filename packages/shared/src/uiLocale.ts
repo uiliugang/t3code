@@ -1060,6 +1060,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Set override": "设置覆盖",
   "GitHub override": "GitHub 覆盖",
   "Restore GitHub automatic": "恢复 GitHub 自动",
+  "Legacy sources: {sources}": "历史来源：{sources}",
+  "Remove incompatible sources": "移除不兼容的来源",
   "Restore automatic": "恢复自动",
   "Restore MEP automatic": "恢复 MEP 自动关联",
   "Save override": "保存覆盖",

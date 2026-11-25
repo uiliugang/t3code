@@ -170,6 +170,7 @@ describe("IssueService", () => {
         const searched: string[] = [];
         const resolved: string[] = [];
         let discovered = false;
+        let movedToGithub = false;
         let discoveries = 0;
         sources[projects[0]!.id]!.push({
           provider: "meituan",
@@ -397,6 +398,25 @@ describe("IssueService", () => {
               id: "1",
             })).title,
           ).toBe("789");
+          movedToGithub = true;
+          const stale = { provider: "meituan" as const, projectId: projects[0]!.id, scope: "789" };
+          expect(
+            (yield* service
+              .create({
+                ...stale,
+                title: "Test",
+                type: "DEVTASK",
+                subtype: "",
+                body: "",
+                assignees: [],
+                fields: {},
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid-target");
+          expect(
+            (yield* service.setState({ ...stale, id: "1", state: "done" }).pipe(Effect.flip))
+              .reason,
+          ).toBe("invalid-target");
         }).pipe(
           Effect.provide(
             Layer.effect(Service.IssueService, Service.make).pipe(
@@ -409,9 +429,26 @@ describe("IssueService", () => {
               ),
               Layer.provide(
                 Layer.mock(Projects.ProjectService)({
-                  getShell: (id) =>
+                  getShell: (id, _cwd, refresh) =>
                     Effect.succeed(
-                      Option.fromUndefinedOr(projects.find((project) => project.id === id)),
+                      Option.fromUndefinedOr(projects.find((project) => project.id === id)).pipe(
+                        Option.map((project) =>
+                          refresh && movedToGithub
+                            ? {
+                                ...project,
+                                repositoryIdentity: {
+                                  provider: SourceControlProviderKind.make("github"),
+                                  canonicalKey: "github.com/acme/moved",
+                                  locator: {
+                                    source: "git-remote" as const,
+                                    remoteName: "origin",
+                                    remoteUrl: "https://github.com/acme/moved.git",
+                                  },
+                                },
+                              }
+                            : project,
+                        ),
+                      ),
                     ),
                   listShells: (options) =>
                     Effect.succeed(
