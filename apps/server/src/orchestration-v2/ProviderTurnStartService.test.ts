@@ -526,6 +526,50 @@ effectIt.effect("records task-folder recreation only when a checkout was missing
       expect(yield* takeRecreated(threadA.id, { action: "peek" })).toBeUndefined();
     }).pipe(Effect.provide(buildRestoreLayer()));
 
+    yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      yield* takeRecreated(threadB.id, { action: "start-setup", worktreePath: worktreeB });
+    }).pipe(Effect.provide(buildRestoreLayer()));
+
+    const pendingFile = (yield* Path.Path).join(stateDir, "recreated-worktree-setup.json");
+    const completionWriteFailed = yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      return yield* takeRecreated(threadB.id, {
+        action: "clear",
+        worktreePath: worktreeB,
+        setupCompleted: true,
+      }).pipe(Effect.flip);
+    }).pipe(
+      Effect.provide(
+        buildRestoreLayer({
+          ...fileSystem,
+          rename: (source, target) =>
+            target === pendingFile
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "rename",
+                    pathOrDescriptor: target,
+                  }),
+                )
+              : fileSystem.rename(source, target),
+        }),
+      ),
+    );
+    expect(completionWriteFailed._tag).toBe("WorktreeRecreateError");
+
+    yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      const retry = yield* takeRecreated(threadB.id, {
+        action: "start-setup",
+        worktreePath: worktreeB,
+      }).pipe(Effect.flip);
+      expect(retry.message).toContain("Verify or finish setup manually");
+      expect(retry.message).toContain(threadB.id);
+      expect(retry.message).toContain(pendingFile);
+    }).pipe(Effect.provide(buildRestoreLayer()));
+
     const clearFailed = yield* Effect.gen(function* () {
       const { takeRecreated } = yield* ThreadWorktreeRestore;
       return yield* takeRecreated(threadB.id, {
@@ -1570,6 +1614,7 @@ function makeLocalCommandHarness(input: {
   const recreatedBeforeDispatch = {
     pending: input.recreatedBeforeDispatch === true,
     failClearOnce: input.failClearRecreatedOnce === true,
+    setupStarted: false,
     setupCompleted: false,
   };
   const layer = ProviderTurnStart.layer.pipe(
@@ -1609,7 +1654,25 @@ function makeLocalCommandHarness(input: {
             return Effect.suspend(() => {
               if (options?.action === "record") {
                 recreatedBeforeDispatch.pending = true;
+                recreatedBeforeDispatch.setupStarted = false;
                 recreatedBeforeDispatch.setupCompleted = false;
+                return Effect.undefined;
+              }
+              if (options?.action === "start-setup") {
+                if (recreatedBeforeDispatch.setupStarted) {
+                  return Effect.fail(
+                    new WorktreeRecreateError({
+                      worktreePath: targetWorktreePath,
+                      branch: "feature/restore",
+                      cause: "Setup outcome unknown",
+                    }),
+                  );
+                }
+                recreatedBeforeDispatch.setupStarted = true;
+                return Effect.undefined;
+              }
+              if (options?.action === "reset-setup") {
+                recreatedBeforeDispatch.setupStarted = false;
                 return Effect.undefined;
               }
               if (options?.action === "clear") {
@@ -2632,7 +2695,7 @@ effectIt.effect("runs setup for a worktree a send recreated before dispatch", ()
 );
 
 effectIt.effect.each([{ async: false }, { async: true }])(
-  "retains pending setup across interruption before setup starts/completes (async=$async) and runs it on retry",
+  "does not repeat setup after interruption while the result is unknown (async=$async)",
   ({ async: isAsync }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -2646,26 +2709,21 @@ effectIt.effect.each([{ async: false }, { async: true }])(
       const neverReady = yield* Deferred.make<boolean>();
       const neverFinish =
         yield* Deferred.make<ProjectSetupScriptRunner.ProjectSetupScriptCompletion>();
-      let firstAttempt = true;
-      const runSetup = vi.fn(() => {
-        if (firstAttempt) {
-          firstAttempt = false;
-          return Deferred.succeed(setupEntered, undefined).pipe(
-            Effect.as({
-              status: "started" as const,
-              scriptId: "setup",
-              scriptName: "Setup",
-              scriptCommand: "setup",
-              terminalId: "setup-restart-test",
-              cwd: worktreePath,
-              async: isAsync,
-              commandWritten: Deferred.await(neverReady),
-              completion: Deferred.await(neverFinish),
-            }),
-          );
-        }
-        return Effect.succeed({ status: "no-script" as const });
-      });
+      const runSetup = vi.fn(() =>
+        Deferred.succeed(setupEntered, undefined).pipe(
+          Effect.as({
+            status: "started" as const,
+            scriptId: "setup",
+            scriptName: "Setup",
+            scriptCommand: "setup",
+            terminalId: "setup-restart-test",
+            cwd: worktreePath,
+            async: isAsync,
+            commandWritten: Deferred.await(neverReady),
+            completion: Deferred.await(neverFinish),
+          }),
+        ),
+      );
       const harness = makeLocalCommandHarness({
         text: "Continue",
         worktreesDir,
@@ -2681,11 +2739,10 @@ effectIt.effect.each([{ async: false }, { async: true }])(
       yield* Fiber.interrupt(interrupted);
       expect(harness.open).not.toHaveBeenCalled();
 
-      // Re-starting after interruption (simulating server restart before command write / completion)
-      // still sees the pending setup record and runs setup before opening the provider session.
       yield* harness.start;
-      expect(runSetup).toHaveBeenCalledTimes(2);
-      expect(harness.open).toHaveBeenCalledTimes(1);
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 

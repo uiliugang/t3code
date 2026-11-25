@@ -18,7 +18,12 @@ import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess } from "effect/process";
 
-import { assertIsolatedDevStartup } from "./lib/dev-db-safety.ts";
+import {
+  assertIsolatedDevStartup,
+  expectedDevHomePath,
+  resolveFilesystemPath,
+  selectWorktreeDevHome,
+} from "./lib/dev-db-safety.ts";
 import { defaultDevMemoryLimitBytes, enforceDevMemoryLimit } from "./lib/dev-memory-limit.ts";
 import { type DevShareError, shareDevServer, unshareDevServer } from "./lib/dev-share.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
@@ -837,7 +842,16 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   const ambientHome = hostEnvironment.T3CODE_HOME?.trim() || undefined;
   const resolvedAmbientHome =
     ambientHome === undefined ? undefined : yield* resolveBaseDir(ambientHome);
-  const ambientSharedHome = resolvedAmbientHome === worktreeHome ? undefined : resolvedAmbientHome;
+  const selectedWorktreeHome = yield* selectWorktreeDevHome(baseDir, worktreeHome);
+  const ambientSharedHome =
+    resolvedAmbientHome !== undefined &&
+    worktreeHome !== undefined &&
+    Option.contains(
+      yield* resolveFilesystemPath(resolvedAmbientHome),
+      yield* expectedDevHomePath(worktreeHome),
+    )
+      ? undefined
+      : resolvedAmbientHome;
   const defaultHome = yield* DEFAULT_T3_HOME;
   const verifyStartupHome =
     worktreeHome !== undefined && input.mode !== "dev:web"
@@ -845,7 +859,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
           baseDir,
           stateSubdir: env.T3CODE_HOME === undefined ? "dev" : "userdata",
           protectedHomes: [...new Set([defaultHome, ambientSharedHome ?? defaultHome])],
-          defaultWorktreeHome: baseDir === worktreeHome ? worktreeHome : undefined,
+          defaultWorktreeHome: selectedWorktreeHome,
         })
       : Effect.succeed(baseDir);
   yield* verifyStartupHome;
@@ -945,7 +959,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   yield* prepareFirstStart({
     mode: input.mode,
     seed: input.seed !== false,
-    worktreeHome: baseDir === worktreeHome ? worktreeHome : undefined,
+    worktreeHome: selectedWorktreeHome,
     env,
     seedEnv,
   });

@@ -1071,6 +1071,31 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
     }),
   );
 
+  it.effect("refuses an explicit worktree home redirected to a stopped server", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const sharedHome = yield* fs.makeTempDirectoryScoped();
+      const stoppedHome = yield* fs.makeTempDirectoryScoped();
+      const aliasParent = yield* fs.makeTempDirectoryScoped();
+      const source = yield* createFixtureSource(sharedHome);
+      const stoppedDb = yield* createFixtureSource(stoppedHome);
+      yield* fs.writeFileString(path.join(root, ".git"), "gitdir: /repo/.git/worktrees/feature\n");
+      yield* fs.symlink(stoppedHome, path.join(root, ".t3"));
+      yield* fs.symlink(root, path.join(aliasParent, "worktree"));
+
+      for (const baseDir of [path.join(root, ".t3"), path.join(aliasParent, "worktree", ".t3")]) {
+        const error = yield* runMigrateDevDb(
+          { baseDir, source, projects: 1, threadsPerProject: 1 },
+          { cwd: root, sharedHome },
+        ).pipe(Effect.flip);
+        assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+        assert.isFalse(yield* fs.exists(path.join(path.dirname(stoppedDb), "server-owner.sqlite")));
+      }
+    }),
+  );
+
   it.effect("retains an independent source hard-linked to the snapshot", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

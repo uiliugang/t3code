@@ -15,9 +15,13 @@ export class WorktreeRecreateError extends Schema.TaggedError<
   worktreePath: Schema.String,
   branch: Schema.String,
   cause: Schema.Defect(),
+  detail: Schema.optionalKey(Schema.String),
 }) {
   override get message(): string {
-    return `Could not recreate the worktree for branch '${this.branch}' at ${this.worktreePath}.`;
+    return (
+      this.detail ??
+      `Could not recreate the worktree for branch '${this.branch}' at ${this.worktreePath}.`
+    );
   }
 }
 
@@ -42,6 +46,7 @@ export class WorktreeMetadataMissingError extends Schema.TaggedError<
 export interface RecreatedWorktree {
   readonly project: Project;
   readonly worktreePath: string;
+  readonly setupStarted?: true;
   readonly setupCompleted?: true;
 }
 
@@ -52,6 +57,21 @@ export type WorktreeThread = Pick<
   Partial<
     Pick<OrchestrationV2ThreadShell, "lineage" | "delegatedFrom" | "forkedFrom" | "linkOrigin">
   >;
+
+export type RecreatedWorktreeAction =
+  | { readonly action?: "take" | "peek" }
+  | { readonly action: "start-setup" | "reset-setup"; readonly worktreePath: string }
+  | {
+      readonly action: "clear";
+      readonly worktreePath?: string;
+      readonly setupCompleted?: true;
+    }
+  | {
+      readonly action: "record";
+      readonly projectId: ProjectId;
+      readonly worktreePath: string;
+      readonly project?: Project;
+    };
 
 export class ThreadWorktreeRestore extends Context.Service<
   ThreadWorktreeRestore,
@@ -64,19 +84,7 @@ export class ThreadWorktreeRestore extends Context.Service<
     >;
     readonly takeRecreated: (
       threadId: ThreadId,
-      options?:
-        | { readonly action?: "take" | "peek" }
-        | {
-            readonly action: "clear";
-            readonly worktreePath?: string;
-            readonly setupCompleted?: true;
-          }
-        | {
-            readonly action: "record";
-            readonly projectId: ProjectId;
-            readonly worktreePath: string;
-            readonly project?: Project;
-          },
+      options?: RecreatedWorktreeAction,
     ) => Effect.Effect<RecreatedWorktree | undefined, WorktreeRecreateError>;
   }
 >()("t3/workspace/ThreadWorktreeRestore") {}

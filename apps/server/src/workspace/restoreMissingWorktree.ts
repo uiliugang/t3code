@@ -32,6 +32,7 @@ import {
   WorktreeRecreateError,
   WorktreeRecreateNoBaseError,
   type RecreatedWorktree,
+  type RecreatedWorktreeAction,
   type WorktreeThread,
 } from "./ThreadWorktreeRestore.ts";
 import { worktreeDependencyEnvironment } from "./worktreeDependencyEnvironment.ts";
@@ -337,6 +338,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
 const PersistedRecreatedEntry = Schema.Struct({
   projectId: ProjectId,
   worktreePath: Schema.String,
+  setupStarted: Schema.optionalKey(Schema.Literal(true)),
   setupCompleted: Schema.optionalKey(Schema.Literal(true)),
 });
 type PersistedRecreatedEntry = typeof PersistedRecreatedEntry.Type;
@@ -406,6 +408,44 @@ export const layerThreadWorktreeRestore = Layer.effect(
           if (resolved !== undefined) recreated.set(threadId, resolved);
         }),
       );
+    const markSetup = Effect.fn("ThreadWorktreeRestore.markSetup")(function* (
+      threadId: ThreadId,
+      worktreePath: string,
+      starting: boolean,
+    ) {
+      yield* stateLock.withPermit(
+        Effect.gen(function* () {
+          const cached = recreated.get(threadId);
+          const entries = yield* readPersisted(worktreePath);
+          const persisted = entries[threadId];
+          const current = pendingPath === null ? cached : persisted;
+          if (!current || current.worktreePath !== worktreePath || current.setupCompleted) {
+            if (!starting) return;
+            return yield* persistenceError(worktreePath)("Pending setup changed before startup.");
+          }
+          if (starting && current.setupStarted) {
+            return yield* new WorktreeRecreateError({
+              worktreePath,
+              branch: "",
+              cause: "Setup outcome unknown",
+              detail:
+                `Setup in '${worktreePath}' may already have run. Verify or finish setup manually. ` +
+                (pendingPath === null
+                  ? "Restart the server before retrying."
+                  : `Then stop the server, remove only the entry for thread '${threadId}' from '${pendingPath}', and restart.`),
+            });
+          }
+          const update = <Entry extends { readonly setupStarted?: true }>(entry: Entry) => {
+            const { setupStarted: _previous, ...rest } = entry;
+            return starting ? { ...rest, setupStarted: true as const } : rest;
+          };
+          if (persisted) {
+            yield* writePersisted({ ...entries, [threadId]: update(persisted) }, worktreePath);
+          }
+          if (cached?.worktreePath === worktreePath) recreated.set(threadId, update(cached));
+        }),
+      );
+    });
     const clearRecreated = Effect.fn("ThreadWorktreeRestore.clearRecreated")(function* (
       threadId: ThreadId,
       expectedWorktreePath?: string,
@@ -470,6 +510,7 @@ export const layerThreadWorktreeRestore = Layer.effect(
           const resolved: RecreatedWorktree = {
             project,
             worktreePath: persisted.worktreePath,
+            ...(persisted.setupStarted ? { setupStarted: true } : {}),
             ...(persisted.setupCompleted ? { setupCompleted: true } : {}),
           };
           recreated.set(threadId, resolved);
@@ -510,19 +551,7 @@ export const layerThreadWorktreeRestore = Layer.effect(
       }),
       takeRecreated: Effect.fn("ThreadWorktreeRestore.takeRecreated")(function* (
         threadId: ThreadId,
-        options?:
-          | { readonly action?: "take" | "peek" }
-          | {
-              readonly action: "clear";
-              readonly worktreePath?: string;
-              readonly setupCompleted?: true;
-            }
-          | {
-              readonly action: "record";
-              readonly projectId: ProjectId;
-              readonly worktreePath: string;
-              readonly project?: Project;
-            },
+        options?: RecreatedWorktreeAction,
       ) {
         if (options?.action === "record") {
           yield* recordRecreated({
@@ -531,6 +560,10 @@ export const layerThreadWorktreeRestore = Layer.effect(
             worktreePath: options.worktreePath,
             ...(options.project === undefined ? {} : { project: options.project }),
           });
+          return undefined;
+        }
+        if (options?.action === "start-setup" || options?.action === "reset-setup") {
+          yield* markSetup(threadId, options.worktreePath, options.action === "start-setup");
           return undefined;
         }
         if (options?.action === "clear") {

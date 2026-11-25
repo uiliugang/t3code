@@ -873,6 +873,47 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         }).pipe(Effect.scoped),
       );
 
+      it.effect("allows an ambient alias of the same isolated worktree home", () =>
+        Effect.gen(function* () {
+          const root = yield* makeWorktree;
+          const alias = NodePath.join(root, "alias");
+          NodeFS.symlinkSync(root, alias, "junction");
+          assert.equal(
+            yield* spawnedHome({
+              t3Home: undefined,
+              cwd: root,
+              ambientHome: NodePath.join(alias, ".t3"),
+              seed: false,
+            }),
+            NodePath.join(root, ".t3"),
+          );
+        }).pipe(Effect.scoped),
+      );
+
+      it.effect("starts implicit dev state when the default home is explicitly selected", () =>
+        Effect.gen(function* () {
+          const root = yield* makeWorktree;
+          const defaultHome = NodePath.join(root, "home", ".t3");
+          const userdata = NodePath.join(defaultHome, "userdata");
+          NodeFS.mkdirSync(userdata, { recursive: true });
+          const db = NodePath.join(userdata, "statev2.sqlite");
+          NodeFS.writeFileSync(db, "preserve userdata");
+          const input = { t3Home: "~/.t3", cwd: root, ambientHome: defaultHome, seed: false };
+          assert.isUndefined(yield* spawnedHome(input));
+
+          const dev = NodePath.join(defaultHome, "dev");
+          NodeFS.symlinkSync(userdata, dev, "junction");
+          const linkedDir = yield* spawnedHome(input).pipe(Effect.flip);
+          assert.match(linkedDir.message, /Refusing to modify a live T3 Code database/);
+          NodeFS.unlinkSync(dev);
+          NodeFS.mkdirSync(dev);
+          NodeFS.linkSync(db, NodePath.join(dev, "statev2.sqlite"));
+          const linkedFile = yield* spawnedHome(input).pipe(Effect.flip);
+          assert.match(linkedFile.message, /Refusing to modify a live T3 Code database/);
+          assert.equal(NodeFS.readFileSync(db, "utf8"), "preserve userdata");
+        }).pipe(Effect.scoped),
+      );
+
       it.effect.each([{ runArgs: ["--base-dir", "/other"] }, { runArgs: ["--base-dir=/other"] }])(
         "refuses a passthrough base-dir override: $runArgs",
         ({ runArgs }) =>

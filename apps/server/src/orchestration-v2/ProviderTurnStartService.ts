@@ -912,35 +912,50 @@ export const layer: Layer.Layer<
           worktreeSetup: Effect.gen(function* () {
             const setupResult = yield* Effect.result(
               Effect.gen(function* () {
-                const setup = setupCompleted
-                  ? undefined
-                  : yield* setupScripts.runForThread({
+                const threadId = projection.thread.id;
+                const resetSetup = worktreeRestore.takeRecreated(threadId, {
+                  action: "reset-setup",
+                  worktreePath,
+                });
+                if (!setupCompleted) {
+                  yield* worktreeRestore.takeRecreated(threadId, {
+                    action: "start-setup",
+                    worktreePath,
+                  });
+                  const setup = yield* setupScripts
+                    .runForThread({
                       threadId: projection.thread.id,
                       projectId: project.id,
                       projectCwd: project.workspaceRoot,
                       worktreePath,
                       project,
                       observeCompletion: {},
-                    });
-                if (setup?.status === "started") {
-                  const written =
-                    setup.commandWritten === undefined ? true : yield* setup.commandWritten;
-                  if (setup.async) {
-                    if (setup.completion) {
-                      yield* setup.completion.pipe(Effect.forkDetach);
-                    }
+                    })
+                    .pipe(Effect.tapError(() => resetSetup));
+                  if (setup.status === "started") {
+                    const written =
+                      setup.commandWritten === undefined ? true : yield* setup.commandWritten;
                     if (!written) {
+                      yield* resetSetup;
                       return yield* new WorktreeSetupCommandNotWrittenError({ worktreePath });
                     }
-                  } else if (!written) {
-                    return yield* new WorktreeSetupCommandNotWrittenError({ worktreePath });
-                  } else if (setup.completion) {
-                    const { exitCode } = yield* setup.completion;
-                    if (exitCode !== 0)
-                      return yield* new WorktreeSetupScriptFailedError({ worktreePath, exitCode });
+                    if (setup.completion) {
+                      if (setup.async) {
+                        yield* setup.completion.pipe(Effect.forkDetach);
+                      } else {
+                        const { exitCode } = yield* setup.completion;
+                        if (exitCode !== 0) {
+                          if (exitCode !== null) yield* resetSetup;
+                          return yield* new WorktreeSetupScriptFailedError({
+                            worktreePath,
+                            exitCode,
+                          });
+                        }
+                      }
+                    }
                   }
                 }
-                yield* worktreeRestore.takeRecreated(projection.thread.id, {
+                yield* worktreeRestore.takeRecreated(threadId, {
                   action: "clear",
                   worktreePath,
                   setupCompleted: true,

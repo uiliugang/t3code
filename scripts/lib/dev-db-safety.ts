@@ -198,12 +198,17 @@ export const inspectPath = Effect.fn("inspectMigrationPath")(function* (file: st
 
 export const inspectProtectedHomes = Effect.fn("inspectProtectedMigrationHomes")(function* (
   homes: readonly string[],
+  allowedDevHome?: string,
 ) {
   const path = yield* Path.Path;
-  const stateDirs = homes.flatMap((home) => [path.join(home, "userdata"), path.join(home, "dev")]);
+  const homeStats = yield* Effect.forEach(homes, inspectPath);
+  const stateDirs = homes.flatMap((home, index) => [
+    path.join(home, "userdata"),
+    ...(homeStats[index]?.canonical === allowedDevHome ? [] : [path.join(home, "dev")]),
+  ]);
   const databases = stateDirs.flatMap((dir) => stateDatabasePaths(dir, path));
   return yield* Effect.all({
-    homes: Effect.forEach(homes, inspectPath),
+    homes: Effect.succeed(homeStats),
     stateDirs: Effect.forEach(stateDirs, inspectPath),
     databases: Effect.forEach(databases, inspectPath),
   });
@@ -234,21 +239,45 @@ export const assertUnlinkedDatabaseFiles = Effect.fn("assertUnlinkedDevDatabaseF
 export const comparableDevDbPath = (resolved: string, platform: NodeJS.Platform) =>
   platform === "linux" ? resolved : resolved.toLowerCase();
 
+export const expectedDevHomePath = Effect.fn("expectedDevHomePath")(function* (home: string) {
+  const path = yield* Path.Path;
+  const parent = yield* inspectPath(path.dirname(home));
+  return path.join(parent.canonical, path.basename(home));
+});
+
+export const selectWorktreeDevHome = Effect.fn("selectWorktreeDevHome")(function* (
+  candidate: string,
+  worktreeHome: string | undefined,
+) {
+  if (worktreeHome === undefined) return undefined;
+  const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const comparable = (file: string) => comparableDevDbPath(file, platform);
+  if (comparable(path.resolve(candidate)) === comparable(worktreeHome)) return worktreeHome;
+  let split = splitPathParentAndLeaf(candidate, platform);
+  while (split?.leaf === ".") split = splitPathParentAndLeaf(split.parent, platform);
+  if (split === undefined || comparable(split.leaf) !== comparable(path.basename(worktreeHome))) {
+    return undefined;
+  }
+  const parent = yield* resolveFilesystemPath(split.parent);
+  const expected = yield* expectedDevHomePath(worktreeHome);
+  return Option.exists(parent, (resolved) => resolved === path.dirname(expected))
+    ? worktreeHome
+    : undefined;
+});
+
 export const inspectIsolatedDevDirectory = Effect.fn("inspectIsolatedDevDirectory")(function* (
   baseDir: string,
   stateSubdir: "userdata" | "dev",
-  defaultWorktreeHome?: string,
+  expectedHome?: string,
 ) {
   const path = yield* Path.Path;
   const base = yield* inspectPath(baseDir);
   const stateDir = path.join(base.canonical, stateSubdir);
   const state = yield* inspectPath(stateDir);
   if (state.canonical !== stateDir) return yield* new MigrateDevDbSharedHomeError();
-  if (defaultWorktreeHome !== undefined) {
-    const worktree = yield* inspectPath(path.dirname(defaultWorktreeHome));
-    if (base.canonical !== path.join(worktree.canonical, path.basename(defaultWorktreeHome))) {
-      return yield* new MigrateDevDbSharedHomeError();
-    }
+  if (expectedHome !== undefined && base.canonical !== (yield* expectedDevHomePath(expectedHome))) {
+    return yield* new MigrateDevDbSharedHomeError();
   }
   return { base, state };
 });
@@ -264,9 +293,12 @@ export const assertIsolatedDevStartup = Effect.fn("assertIsolatedDevStartup")(fu
   const { base, state } = yield* inspectIsolatedDevDirectory(
     input.baseDir,
     input.stateSubdir,
-    input.defaultWorktreeHome,
+    input.stateSubdir === "dev" ? input.baseDir : input.defaultWorktreeHome,
   );
-  const protectedPaths = yield* inspectProtectedHomes(input.protectedHomes);
+  const protectedPaths = yield* inspectProtectedHomes(
+    input.protectedHomes,
+    input.stateSubdir === "dev" ? base.canonical : undefined,
+  );
   const files = stateDatabasePaths(state.canonical, path);
   yield* assertUnlinkedDatabaseFiles(files);
   const databasePaths = yield* Effect.forEach(files, inspectPath);
