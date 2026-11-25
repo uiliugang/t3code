@@ -35,7 +35,7 @@ export class RepositoryIdentityResolver extends Context.Service<
   {
     readonly resolve: (
       cwd: string,
-      options?: { readonly refresh?: boolean },
+      options?: { readonly refresh?: boolean; readonly fallbackOnUnavailable?: RepositoryIdentity },
     ) => Effect.Effect<RepositoryIdentity | null>;
   }
 >()("t3/project/RepositoryIdentityResolver") {}
@@ -320,7 +320,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   "RepositoryIdentityResolver.resolveFromCacheKey",
 )(function* (
   cacheKey: RepositoryIdentityCacheKey,
-): Effect.fn.Return<RepositoryIdentity | null, never, ProcessRunner.ProcessRunner> {
+): Effect.fn.Return<RepositoryIdentity | null | undefined, never, ProcessRunner.ProcessRunner> {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const env = gitEnv(yield* HostProcess.Platform);
   const runGit = (args: ReadonlyArray<string>) =>
@@ -336,8 +336,12 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     [runGit(["remote", "-v"]), runGit(["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"])],
     { concurrency: "unbounded" },
   );
-  if (remoteResult._tag === "None" || remoteResult.value.code !== 0) {
-    return null;
+  if (
+    remoteResult._tag === "None" ||
+    remoteResult.value.code !== 0 ||
+    remoteResult.value.timedOut
+  ) {
+    return undefined;
   }
 
   const remotes = parseRemoteFetchUrls(remoteResult.value.stdout);
@@ -374,7 +378,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   const timeToLive = (exit: Exit.Exit<unknown>) =>
     Exit.match(exit, {
       onSuccess: (value) =>
-        value === null ? DEFAULT_NEGATIVE_CACHE_TTL : DEFAULT_POSITIVE_CACHE_TTL,
+        value == null ? DEFAULT_NEGATIVE_CACHE_TTL : DEFAULT_POSITIVE_CACHE_TTL,
       onFailure: () => Duration.zero,
     });
 
@@ -390,13 +394,13 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 
   const repositoryIdentityCache = yield* Cache.makeWith<
     RepositoryIdentityCacheKey,
-    RepositoryIdentity | null
+    RepositoryIdentity | null | undefined
   >(
     (cacheKey) =>
       resolveRepositoryIdentityFromCacheKey(cacheKey).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
         Effect.filterOrElse(
-          (identity): identity is null => identity === null,
+          (identity): identity is null | undefined => identity == null,
           (identity) => refine(identity).pipe(Effect.orElseSucceed(() => identity)),
         ),
       ),
@@ -407,9 +411,10 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
     function* (cwd, options) {
       if (options?.refresh) yield* Cache.invalidate(repositoryRootCache, cwd);
       const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
-      if (cacheKey === null) return null;
+      if (cacheKey === null) return options?.fallbackOnUnavailable ?? null;
       if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
-      return yield* Cache.get(repositoryIdentityCache, cacheKey);
+      const identity = yield* Cache.get(repositoryIdentityCache, cacheKey);
+      return identity === undefined ? (options?.fallbackOnUnavailable ?? null) : identity;
     },
   );
 

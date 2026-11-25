@@ -173,6 +173,7 @@ const harness = Effect.fn("test.ProjectConfigurationService.harness")(function* 
     resolve: (cwd, options) =>
       Effect.gen(function* () {
         if (options?.refresh) cachedIdentities.delete(cwd);
+        if (!(yield* fs.exists(cwd))) return options?.fallbackOnUnavailable ?? null;
         const cached = cachedIdentities.get(cwd);
         if (cached) return cached;
         const known = knownIdentities.get(cwd);
@@ -617,6 +618,12 @@ describe("ProjectConfigurationService", () => {
           .configuration;
         expect(removed.issueSources).toEqual([mep]);
         expect(removed.workspace.roots[0]?.remoteUrl).toBeNull();
+        yield* fs.rename(rootPath, `${rootPath}-unmounted`);
+        const unavailable = yield* service
+          .exportProjects({ projectIds: [projectId] })
+          .pipe(Effect.flip);
+        expect(unavailable.operation).toBe("export");
+        expect(unavailable.message).toContain("Restore its checkout");
       }).pipe(Effect.provide(test.layer));
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );

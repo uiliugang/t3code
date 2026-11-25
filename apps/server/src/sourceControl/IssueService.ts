@@ -130,7 +130,12 @@ export const make = Effect.gen(function* () {
     const { id: projectId, workspaceRoot: cwd } = project;
     const manual = saved.issueProjectSources[projectId] ?? [];
     const automatic: IssueSource[] = [];
-    const locator = project.repositoryIdentity?.locator;
+    const identity = project.repositoryIdentity;
+    const originUrl = identity?.origin?.remoteUrl;
+    const locator =
+      originUrl && sourceControlDefinitions.recognizeRemote(originUrl)?.kind === identity?.provider
+        ? { remoteName: "origin", remoteUrl: originUrl }
+        : identity?.locator;
     const host = locator && sourceControlDefinitions.recognizeRemote(locator.remoteUrl);
     const handle = yield* providers
       .resolveHandle({
@@ -224,7 +229,7 @@ export const make = Effect.gen(function* () {
     refreshRepository = refresh,
   ) {
     const project = yield* projects
-      .getShell(id, undefined, refreshRepository)
+      .getShell(id, undefined, refreshRepository ? "refresh" : "resolve")
       .pipe(
         Effect.mapError(
           (cause) =>

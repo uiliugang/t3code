@@ -361,6 +361,12 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const mixedIdentity = yield* resolver.resolve(mixedDir);
       expect(mixedIdentity?.locator.remoteName).toBe("mirror");
       expect(mixedIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
+      const backup = { refresh: true, fallbackOnUnavailable: mixedIdentity! };
+      yield* git(mixedDir, ["remote", "remove", "mirror"]);
+      expect(yield* resolver.resolve(mixedDir, backup)).toBeNull();
+      yield* fileSystem.remove(mixedDir, { recursive: true });
+      expect(yield* resolver.resolve(mixedDir, backup)).toEqual(mixedIdentity);
+      expect(yield* resolver.resolve(mixedDir)).toBeNull();
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 

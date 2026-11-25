@@ -21,9 +21,95 @@ import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Settings from "../serverSettings.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
 import * as Provider from "@t3tools/source-control-core/server/SourceControlProvider";
+import { fakeSourceControlProvider } from "@t3tools/source-control-testing/fakeSourceControlDriver";
 import * as Service from "./IssueService.ts";
 
 describe("IssueService", () => {
+  it.effect("creates a fork issue in the repository offered on the first lookup", () =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("fork");
+      const origin = { remoteName: "origin", remoteUrl: "https://github.com/me/fork.git" };
+      const provider = fakeSourceControlProvider("github", {
+        issueBoard: {
+          search: () => Effect.die("unexpected search"),
+          read: () => Effect.die("unexpected read"),
+          people: () => Effect.die("unexpected people"),
+          metadata: () => Effect.die("unexpected metadata"),
+          setState: () => Effect.die("unexpected state change"),
+          create: ({ source, title }) =>
+            Effect.succeed({
+              id: "1",
+              url: `https://${source.host}/${source.scope}/issues/1`,
+              title,
+              state: "open",
+              stateCategory: "todo",
+              type: "",
+              assignees: [],
+              priority: "",
+              updatedAt: "",
+            }),
+        },
+      });
+      const github = { kind: provider.kind, name: "GitHub", baseUrl: "https://github.com" };
+      const service = yield* Service.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            KeyValueStore.layerMemory,
+            NodeCrypto.layer,
+            Settings.ServerSettingsService.layerTest({}),
+            Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+              namedProjectsRoot: "/projects",
+            }),
+            Layer.mock(Projects.ProjectService)({
+              getShell: (_id, _cwd, lookup) =>
+                Effect.succeedSome({
+                  id: projectId,
+                  title: "fork",
+                  workspaceRoot: "/fork",
+                  scripts: [],
+                  defaultModelSelection: null,
+                  createdAt: "2026-01-01T00:00:00Z",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                  repositoryIdentity: lookup
+                    ? {
+                        provider: provider.kind,
+                        canonicalKey: "github.com/org/repo",
+                        locator: {
+                          source: "git-remote",
+                          remoteName: "upstream",
+                          remoteUrl: "https://github.com/org/repo.git",
+                        },
+                        origin: { canonicalKey: "github.com/me/fork", remoteUrl: origin.remoteUrl },
+                      }
+                    : null,
+                }),
+            }),
+            Layer.mock(Providers.SourceControlProviderRegistry)({
+              resolveLink: () => undefined,
+              get: () => Effect.succeed(provider),
+              resolveHandle: ({ context }) =>
+                Effect.succeed({ provider, context: context ?? { provider: github, ...origin } }),
+            }),
+          ),
+        ),
+      );
+      const [listed] = yield* service.sources({ projectIds: [projectId] });
+      const source = listed!.sources[0]!;
+      expect(source.scope).toBe("me/fork");
+      const created = yield* service.create({
+        ...source,
+        projectId,
+        title: "Fork issue",
+        type: "DEVTASK",
+        subtype: "",
+        body: "",
+        assignees: [],
+        fields: {},
+      });
+      expect(created.url).toBe("https://github.com/me/fork/issues/1");
+    }),
+  );
+
   it.effect(
     "retries failed discoveries while persisting empty results across service restarts",
     () =>
@@ -433,7 +519,7 @@ describe("IssueService", () => {
                     Effect.succeed(
                       Option.fromUndefinedOr(projects.find((project) => project.id === id)).pipe(
                         Option.map((project) =>
-                          refresh && movedToGithub
+                          refresh === "refresh" && movedToGithub
                             ? {
                                 ...project,
                                 repositoryIdentity: {

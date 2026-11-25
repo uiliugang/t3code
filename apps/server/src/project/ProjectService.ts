@@ -260,7 +260,7 @@ export class ProjectService extends Context.Service<
     readonly getShell: (
       projectId: ProjectId,
       workspaceRoot?: string,
-      refreshRepositoryIdentity?: boolean,
+      repositoryLookup?: "resolve" | "refresh",
     ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ProjectOperationError>;
     readonly listShells: (options?: {
       readonly projectIds?: ReadonlyArray<ProjectId>;
@@ -1006,7 +1006,7 @@ export const make = Effect.gen(function* () {
     );
 
   const getShell: ProjectService["Service"]["getShell"] = Effect.fn("ProjectService.getShell")(
-    function* (projectId, workspaceRoot, refreshRepositoryIdentity) {
+    function* (projectId, workspaceRoot, repositoryLookup) {
       const shell = yield* projects
         .getShell(projectId)
         .pipe(
@@ -1015,15 +1015,13 @@ export const make = Effect.gen(function* () {
           ),
         );
       if (Option.isNone(shell)) return shell;
-      if (refreshRepositoryIdentity)
-        yield* projectEnrichment.refreshRepositoryIdentity(
-          workspaceRoot ?? shell.value.workspaceRoot,
-        );
-      if (workspaceRoot === undefined || workspaceRoot === shell.value.workspaceRoot) {
+      const root = workspaceRoot ?? shell.value.workspaceRoot;
+      if (!repositoryLookup && root === shell.value.workspaceRoot) {
         return Option.some(yield* enrichShell(shell.value));
       }
-      const repositoryIdentity = yield* projectEnrichment.readRepositoryIdentity(workspaceRoot);
-      return Option.some({ ...shell.value, workspaceRoot, repositoryIdentity });
+      if (repositoryLookup === "refresh") yield* projectEnrichment.refreshRepositoryIdentity(root);
+      const repositoryIdentity = yield* projectEnrichment.readRepositoryIdentity(root);
+      return Option.some({ ...shell.value, workspaceRoot: root, repositoryIdentity });
     },
   );
 

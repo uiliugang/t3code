@@ -244,7 +244,7 @@ const make = Effect.gen(function* () {
     (filter.projectId === undefined
       ? projects.listShells()
       : projects
-          .getShell(filter.projectId, undefined, filter.refreshRepository)
+          .getShell(filter.projectId, undefined, filter.refreshRepository ? "refresh" : undefined)
           .pipe(Effect.map(Option.toArray))
     ).pipe(
       Effect.mapError(
