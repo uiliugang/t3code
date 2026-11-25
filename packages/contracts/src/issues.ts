@@ -32,6 +32,24 @@ export function normalizeGithubIssueSource(source: IssueSource): IssueSource {
   return host === undefined || host === source.host ? source : { ...source, host };
 }
 
+export const issueSourceScopeKey = (provider: IssueProvider, scope: string) =>
+  provider === "github" ? scope.toLowerCase() : scope;
+
+export function issueSourceKey(source: IssueSource): string {
+  const { provider, host, scope } = normalizeGithubIssueSource(source);
+  return JSON.stringify([provider, host, issueSourceScopeKey(provider, scope)]);
+}
+
+export function dedupeIssueSources(sources: readonly IssueSource[]): IssueSource[] {
+  const distinct = new Set<string>();
+  return sources.filter((source) => {
+    const key = issueSourceKey(source);
+    if (distinct.has(key)) return false;
+    distinct.add(key);
+    return true;
+  });
+}
+
 export function issueSourcesMatch(
   current: readonly IssueSource[],
   expected: readonly IssueSource[],

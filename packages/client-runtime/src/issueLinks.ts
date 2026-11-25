@@ -9,6 +9,7 @@ import {
   type IssueTrackerConnectionList,
   type RepositoryIdentity,
   type ServerSettings,
+  type ThreadIssueLink,
 } from "@t3tools/contracts";
 import {
   LINEAR_HOST,
@@ -63,6 +64,28 @@ function linkAuthority(url: string): string | null {
     return link.protocol === "https:" ? (normalizeGithubIssueHost(host) ?? host) : host;
   } catch {
     return null;
+  }
+}
+
+export function canOpenLinkedIssue(
+  link: ThreadIssueLink,
+  capabilities:
+    | { readonly issues?: boolean; readonly githubIssueSourcePorts?: boolean }
+    | undefined,
+): boolean {
+  if (capabilities?.issues !== true) return false;
+  if (link.tracker !== "github") return true;
+  try {
+    const url = new URL(link.url);
+    const host = normalizeGithubIssueHost(url.host);
+    return (
+      url.protocol === "https:" &&
+      host !== undefined &&
+      normalizeGithubIssueHost(link.host) === host &&
+      (capabilities.githubIssueSourcePorts === true || !host.includes(":"))
+    );
+  } catch {
+    return false;
   }
 }
 

@@ -17,6 +17,8 @@ import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   issuesSupported: false,
+  issuePortsSupported: false,
+  linkedIssueDetail: vi.fn(() => null),
   isDraft: false,
   headSha: "shown-head",
   status: "success" as PullRequestCheck["status"],
@@ -44,14 +46,22 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
     new Map([
       [
         EnvironmentId.make("environment"),
-        { environment: { capabilities: { pullRequests: true, issues: state.issuesSupported } } },
+        {
+          environment: {
+            capabilities: {
+              pullRequests: true,
+              issues: state.issuesSupported,
+              githubIssueSourcePorts: state.issuePortsSupported,
+            },
+          },
+        },
       ],
     ])) as never,
   useProjects: (() => state.projects) as never,
   useQuietThreadShell: ((ref: unknown) =>
     ref === null ? null : { branch: null, pullRequests: state.pullRequests }) as never,
 }));
-vi.mock(import("~/state/issues"), () => ({ useLinkedIssueDetail: () => null }));
+vi.mock(import("~/state/issues"), () => ({ useLinkedIssueDetail: state.linkedIssueDetail }));
 
 const queryData = () => ({
   projectId: ProjectId.make("project"),
@@ -274,6 +284,8 @@ async function setup() {
   state.updateToast.mockReset();
 
   state.issuesSupported = false;
+  state.issuePortsSupported = false;
+  state.linkedIssueDetail.mockClear();
   state.headSha = "shown-head";
   state.isDraft = false;
   state.status = "success";
@@ -461,6 +473,49 @@ it("names the first linked issue and reveals more issues on demand", async () =>
   await screen.getByRole("button", { name: "Show less" }).click();
   await expect.element(extra).not.toBeInTheDocument();
 });
+
+it.each([
+  ["http://github.com/owner/repo/issues/123", "github.com", true, false],
+  ["https://github.example:8443/owner/repo/issues/123", "github.example:8443", false, false],
+  ["https://github.example:8443/owner/repo/issues/123", "github.example:8443", true, true],
+  ["https://github.com:443/owner/repo/issues/123", "github.com:443", false, true],
+] as const)(
+  "routes the saved issue %s for its server capabilities",
+  async (url, host, ports, internal) => {
+    await using screen = await setup();
+    state.issuesSupported = true;
+    state.issuePortsSupported = ports;
+    const onOpen = vi.fn();
+    const issue: ThreadIssueLink = {
+      tracker: IssueTrackerKind.make("github"),
+      host,
+      scope: "owner/repo",
+      key: "123",
+      projectId: ProjectId.make("repository"),
+      url,
+      source: "manual",
+      linkedAt: "2026-10-30T00:00:00.000Z",
+      displayKey: "#123",
+      title: "Saved issue",
+    };
+    await screen.rerender(
+      <ThreadDetailsIssueRows links={[issue]} threadRef={threadRef} onOpen={onOpen} />,
+    );
+    const row = screen.container.querySelector("a")!;
+    expect(row.getAttribute("href")).toBe(url);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(() => {
+      row.dispatchEvent(click);
+    });
+    expect(click.defaultPrevented).toBe(internal);
+    expect(onOpen).toHaveBeenCalledTimes(internal ? 1 : 0);
+    expect(state.linkedIssueDetail).toHaveBeenLastCalledWith(
+      threadRef.environmentId,
+      internal ? issue : undefined,
+      "thread-details",
+    );
+  },
+);
 
 it("keeps Ready pending when refreshed detail becomes mergeable before the action settles", async () => {
   await using screen = await setup();

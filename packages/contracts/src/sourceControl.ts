@@ -1,6 +1,33 @@
 import * as Schema from "effect/Schema";
 import { GitRefName, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { normalizeGithubIssueHost } from "./issues.ts";
+import type { SettingsSecretValue } from "./settingsSecretValue.ts";
 import { VcsDriverKind } from "./vcs.ts";
+
+export function sourceControlTokenHost(kind: string, host: string): string {
+  const text = host.trim().toLowerCase();
+  return kind === "github" ? (normalizeGithubIssueHost(text) ?? text) : text;
+}
+
+export function isConfiguredSourceControlToken(token: SettingsSecretValue | undefined): boolean {
+  return typeof token === "string" ? token.trim() !== "" : token !== undefined;
+}
+
+export function sourceControlTokenForHost(
+  kind: string,
+  tokens: Readonly<Record<string, SettingsSecretValue>>,
+  host: string,
+): SettingsSecretValue | undefined {
+  const target = sourceControlTokenHost(kind, host);
+  const exact = Object.hasOwn(tokens, target) ? tokens[target] : undefined;
+  if (isConfiguredSourceControlToken(exact)) return exact;
+  return kind === "github"
+    ? Object.entries(tokens).find(
+        ([key, token]) =>
+          isConfiguredSourceControlToken(token) && sourceControlTokenHost(kind, key) === target,
+      )?.[1]
+    : undefined;
+}
 
 /** Accept unknown hosts so clients can fall back to generic presentation. */
 export const SourceControlProviderKind = TrimmedNonEmptyString.check(

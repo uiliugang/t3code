@@ -4,14 +4,17 @@ import { isSourceControlProviderOffered } from "@t3tools/client-runtime/operatio
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   readHostCredentialSettings,
+  configuredSourceControlTokenHosts,
   sourceControlClients,
+  withSourceControlHostToken,
   type SourceControlDefinition,
   type SourceControlHostCredentials,
 } from "@t3tools/client-runtime/source-control-clients";
 import {
   isMeituanServiceEnabled,
+  sourceControlTokenForHost,
+  sourceControlTokenHost,
   type EnvironmentId,
-  type SettingsSecretValue,
   type SourceControlProviderDiscoveryItem,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -40,9 +43,6 @@ const saveFailure = (result: Parameters<typeof squashAtomCommandFailure>[0]) => 
   const error = squashAtomCommandFailure(result);
   return error instanceof Error ? error.message : m(msg("The settings could not be saved."));
 };
-
-const hasToken = (token: SettingsSecretValue | undefined) =>
-  typeof token === "string" ? token.length > 0 : token !== undefined;
 
 export const sourceControlProviderReady = (item: SourceControlProviderDiscoveryItem) =>
   item.status === "available" && item.auth.status === "authenticated";
@@ -231,11 +231,9 @@ export function SourceControlTokenForm(props: {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const target = host.trim().toLowerCase();
-  const saved = hasToken(tokens[target]);
-  const savedHosts = Object.entries(tokens)
-    .filter(([, value]) => hasToken(value))
-    .map(([name]) => name);
+  const target = sourceControlTokenHost(definition.kind, host);
+  const saved = sourceControlTokenForHost(definition.kind, tokens, target) !== undefined;
+  const savedHosts = configuredSourceControlTokenHosts(definition.kind, tokens);
 
   const save = async (token: string) => {
     if (!target) return;
@@ -246,7 +244,11 @@ export function SourceControlTokenForm(props: {
       // Send the whole map; other tokens' redaction markers preserve their values.
       input: {
         patch: {
-          sourceControlHosts: { [definition.kind]: { tokens: { ...tokens, [target]: token } } },
+          sourceControlHosts: {
+            [definition.kind]: {
+              tokens: withSourceControlHostToken(definition.kind, tokens, target, token),
+            },
+          },
         },
       },
     });

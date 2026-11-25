@@ -41,6 +41,15 @@ describe("IssueService", () => {
     ([host, remoteUrl, remoteName, legacyAliases]) =>
       Effect.gen(function* () {
         const projectId = ProjectId.make("fork");
+        const otherId = ProjectId.make("other-checkout");
+        const project = {
+          title: "fork",
+          workspaceRoot: "/fork",
+          scripts: [],
+          defaultModelSelection: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        };
         const originHost = remoteUrl.startsWith("https:")
           ? new URL(remoteUrl).host
           : remoteUrl.includes("unresolved.test")
@@ -49,7 +58,7 @@ describe("IssueService", () => {
         const fork = { remoteName, remoteUrl };
         const provider = fakeSourceControlProvider("github", {
           issueBoard: {
-            search: () => Effect.die("unexpected search"),
+            search: () => Effect.succeed({ issues: [], hasMore: false }),
             read: () => Effect.die("unexpected read"),
             people: () => Effect.die("unexpected people"),
             metadata: () => Effect.die("unexpected metadata"),
@@ -80,25 +89,28 @@ describe("IssueService", () => {
                       issueProjectSources: {
                         [projectId]: [
                           { provider: "github", host, scope: "me/fork" },
-                          { provider: "github", host: host.toUpperCase(), scope: "me/fork" },
+                          {
+                            provider: "github",
+                            host: `${host.toUpperCase()}:443`,
+                            scope: "Me/Fork",
+                          },
                         ],
+                        [otherId]: [{ provider: "github", host, scope: "ME/FORK" }],
                       },
                     }
                   : {},
               ),
               Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
                 namedProjectsRoot: "/projects",
+                scratchRoot: Effect.succeedNone,
               }),
               Layer.mock(Projects.ProjectService)({
-                getShell: (_id, _cwd, lookup) =>
+                listShells: () =>
+                  Effect.succeed([projectId, otherId].map((id) => ({ ...project, id }))),
+                getShell: (id, _cwd, lookup) =>
                   Effect.succeedSome({
-                    id: projectId,
-                    title: "fork",
-                    workspaceRoot: "/fork",
-                    scripts: [],
-                    defaultModelSelection: null,
-                    createdAt: "2026-01-01T00:00:00Z",
-                    updatedAt: "2026-01-01T00:00:00Z",
+                    ...project,
+                    id,
                     repositoryIdentity: lookup
                       ? {
                           provider: provider.kind,
@@ -184,6 +196,7 @@ describe("IssueService", () => {
         const created = yield* service.create({
           provider: "github",
           projectId,
+          ...(legacyAliases ? { scope: "mE/fOrK", host: `${host}:443` } : {}),
           title: "Fork issue",
           type: "DEVTASK",
           subtype: "",
@@ -192,6 +205,16 @@ describe("IssueService", () => {
           fields: {},
         });
         expect(created.url).toBe(`https://${host}/me/fork/issues/1`);
+        if (legacyAliases) {
+          const result = yield* service.list({
+            provider: "github",
+            assignee: "all",
+            query: "",
+            page: 1,
+          });
+          expect(result.failures).toEqual([]);
+          expect(result.groups).toMatchObject([{ source, projectIds: [projectId, otherId] }]);
+        }
       }),
   );
 

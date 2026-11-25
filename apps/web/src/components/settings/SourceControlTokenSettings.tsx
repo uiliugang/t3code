@@ -1,6 +1,8 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import {
   isSecretReference,
+  sourceControlTokenForHost,
+  sourceControlTokenHost,
   type EnvironmentId,
   type SecretReference,
   type SettingsSecretValue,
@@ -12,6 +14,8 @@ import { useState } from "react";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import {
   readHostCredentialSettings,
+  configuredSourceControlTokenHosts,
+  withSourceControlHostToken,
   type SourceControlDefinition,
   type SourceControlHostCredentials,
 } from "@t3tools/client-runtime/source-control-clients";
@@ -21,9 +25,6 @@ import { Button, InlineButton } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { SecretSourceInput, useSecretSources } from "./SecretSourceInput";
-
-const hasToken = (token: SettingsSecretValue | undefined) =>
-  typeof token === "string" ? token.length > 0 : token !== undefined;
 
 export function SourceControlTokenSettings({
   environmentId,
@@ -52,12 +53,10 @@ export function SourceControlTokenSettings({
     readonly draft: string | SecretReference;
   } | null>(null);
   const [saving, setSaving] = useState(false);
-  const normalizedHost = host.trim().toLowerCase();
-  const savedToken = tokens[normalizedHost];
-  const isSaved = hasToken(savedToken);
-  const savedHosts = Object.entries(tokens)
-    .filter(([, value]) => hasToken(value))
-    .map(([saved]) => saved);
+  const normalizedHost = sourceControlTokenHost(definition.kind, host);
+  const savedToken = sourceControlTokenForHost(definition.kind, tokens, normalizedHost);
+  const isSaved = savedToken !== undefined;
+  const savedHosts = configuredSourceControlTokenHosts(definition.kind, tokens);
   const sourceKey = JSON.stringify([normalizedHost, savedToken ?? ""]);
   const draft =
     pending?.key === sourceKey ? pending.draft : isSecretReference(savedToken) ? savedToken : "";
@@ -70,7 +69,11 @@ export function SourceControlTokenSettings({
       // Send the whole map; other tokens' redaction markers preserve their values.
       input: {
         patch: {
-          sourceControlHosts: { [definition.kind]: { tokens: { ...tokens, [target]: token } } },
+          sourceControlHosts: {
+            [definition.kind]: {
+              tokens: withSourceControlHostToken(definition.kind, tokens, target, token),
+            },
+          },
         },
       },
     });

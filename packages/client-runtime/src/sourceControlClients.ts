@@ -1,11 +1,17 @@
 import { builtInSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
 import {
+  isConfiguredSourceControlToken,
   HostCredentialSettings,
   readSourceControlHostSettings,
   type SourceControlAppSignIn,
   type SourceControlDefinition,
 } from "@t3tools/source-control-core/shared/definition";
-import type { ServerSettings, SourceControlAppAccessInput } from "@t3tools/contracts";
+import {
+  sourceControlTokenHost,
+  type ServerSettings,
+  type SettingsSecretValue,
+  type SourceControlAppAccessInput,
+} from "@t3tools/contracts";
 import { parseGitRemoteRepository } from "@t3tools/shared/git";
 
 export {
@@ -33,6 +39,35 @@ export function readHostCredentialSettings(
   kind: string,
 ): HostCredentialSettings {
   return readSourceControlHostSettings(HostCredentialSettings, settings.sourceControlHosts[kind]);
+}
+
+export function withSourceControlHostToken(
+  kind: string,
+  tokens: HostCredentialSettings["tokens"],
+  host: string,
+  token: SettingsSecretValue,
+): HostCredentialSettings["tokens"] {
+  const target = sourceControlTokenHost(kind, host);
+  const next = { ...tokens };
+  if (kind === "github") {
+    for (const key of Object.keys(tokens)) {
+      if (sourceControlTokenHost(kind, key) === target) next[key] = "";
+    }
+  }
+  return { ...next, [target]: token };
+}
+
+export function configuredSourceControlTokenHosts(
+  kind: string,
+  tokens: HostCredentialSettings["tokens"],
+): string[] {
+  return [
+    ...new Set(
+      Object.entries(tokens)
+        .filter(([, value]) => isConfiguredSourceControlToken(value))
+        .map(([host]) => sourceControlTokenHost(kind, host)),
+    ),
+  ];
 }
 
 /** A host's change request term where it opens a sentence: "Merge request merged". */

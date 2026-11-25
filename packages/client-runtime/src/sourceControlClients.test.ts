@@ -1,7 +1,25 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind, sourceControlTokenForHost } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { appSignInTargetForRemote, sourceControlClients } from "./sourceControlClients.ts";
+import {
+  appSignInTargetForRemote,
+  sourceControlClients,
+  withSourceControlHostToken,
+} from "./sourceControlClients.ts";
+
+it("replaces or clears a GitHub credential across its HTTPS aliases only", () => {
+  const tokens = { "code.example": "", "code.example:443": "legacy", "code.example:8443": "other" };
+  expect(sourceControlTokenForHost("github", tokens, "code.example")).toBe("legacy");
+  const updated = withSourceControlHostToken("github", tokens, "Code.Example:443", "replacement");
+  expect(updated).toEqual({
+    "code.example": "replacement",
+    "code.example:443": "",
+    "code.example:8443": "other",
+  });
+  const removed = withSourceControlHostToken("github", tokens, "code.example", "");
+  expect(sourceControlTokenForHost("github", removed, "code.example:443")).toBeUndefined();
+  expect(sourceControlTokenForHost("github", removed, "code.example:8443")).toBe("other");
+});
 
 const parse = (url: string) => {
   const parsed = sourceControlClients.parseChangeRequestUrl(url);

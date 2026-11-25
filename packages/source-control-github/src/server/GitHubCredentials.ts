@@ -19,6 +19,7 @@ import { readSourceControlHostSettings } from "@t3tools/source-control-core/shar
 import {
   normalizeGithubIssueHost,
   requireSettingsSecretLiteral,
+  sourceControlTokenForHost,
   type ServerSettings,
   type SettingsSecretUnresolvedError,
 } from "@t3tools/contracts";
@@ -233,7 +234,7 @@ export const make = Effect.gen(function* () {
   const savedToken = (host: string) =>
     sourceControlHost.settings.getWithSecrets(GitHubClient.definition.kind).pipe(
       Effect.map((settings) => ({
-        token: hostSetting(readSettings(settings).tokens, host),
+        token: sourceControlTokenForHost("github", readSettings(settings).tokens, host),
         secretProviders: settings.secretProviders,
       })),
       Effect.orElseSucceed(() => ({ token: undefined, secretProviders: {} })),

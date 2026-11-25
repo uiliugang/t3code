@@ -1,7 +1,10 @@
 import {
+  dedupeIssueSources,
   RequirementIssueError,
   normalizeGithubIssueHost,
   normalizeGithubIssueSource,
+  issueSourceKey,
+  issueSourceScopeKey,
   isMeituanServiceEnabled,
   mergeProjectIssueSources,
   projectIssueProvider,
@@ -23,7 +26,6 @@ import {
   type IssueSourcesInput,
   type IssueSourcesResult,
 } from "@t3tools/contracts";
-import * as Array from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
@@ -265,11 +267,7 @@ export const make = Effect.gen(function* () {
       : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) &&
         normalizeGithubIssueHost(source.host) !== undefined;
   const normalizedSources = (sources: readonly IssueSource[]) =>
-    Array.dedupeWith(
-      sources.map(normalizeGithubIssueSource),
-      (left, right) =>
-        left.provider === right.provider && left.host === right.host && left.scope === right.scope,
-    );
+    dedupeIssueSources(sources).map(normalizeGithubIssueSource);
   const resolveAll = Effect.fn("IssueService.resolveAll")(function* (
     input: IssueTarget,
     refreshRepository = false,
@@ -279,10 +277,11 @@ export const make = Effect.gen(function* () {
       input.host && input.provider === "github"
         ? (normalizeGithubIssueHost(input.host) ?? input.host)
         : input.host;
+    const scope = input.scope && issueSourceScopeKey(input.provider, input.scope);
     const sources = resolved.sources.filter(
       (source) =>
         source.provider === input.provider &&
-        (!input.scope || source.scope === input.scope) &&
+        (!scope || issueSourceScopeKey(source.provider, source.scope) === scope) &&
         (!host || source.host === host),
     );
     for (const source of sources) {
@@ -430,7 +429,7 @@ export const make = Effect.gen(function* () {
         }
         const { projectId, targets: resolvedTargets } = entry.success;
         for (const target of resolvedTargets) {
-          const key = `${target.source.provider}\n${target.source.host}\n${target.source.scope}`;
+          const key = issueSourceKey(target.source);
           const existing = distinct.get(key);
           if (existing) {
             if (!existing.projectIds.includes(projectId)) existing.projectIds.push(projectId);

@@ -1,4 +1,6 @@
 import {
+  dedupeIssueSources,
+  issueSourceKey,
   issueSourcesMatch,
   mergeProjectIssueSources,
   normalizeGithubIssueHost,
@@ -52,9 +54,13 @@ export function listedProjectIssueSources(
   saved: readonly IssueSource[],
   repositoryKind?: string,
 ) {
-  if (singleProvider) return mergeProjectIssueSources(automatic, saved, repositoryKind);
+  if (singleProvider)
+    return dedupeIssueSources(mergeProjectIssueSources(automatic, saved, repositoryKind));
   const overridden = new Set(saved.map((source) => source.provider));
-  return [...automatic.filter((source) => !overridden.has(source.provider)), ...saved];
+  return dedupeIssueSources([
+    ...automatic.filter((source) => !overridden.has(source.provider)),
+    ...saved,
+  ]);
 }
 
 export function projectIssueSourceEdit(
@@ -138,7 +144,8 @@ export function withGithubRepositoryOverride(
   const authority = (host: string) => normalizeGithubIssueHost(host) ?? host;
   const host = authority(current?.host ?? "github.com");
   const matches = (source: IssueSource, repository: string | undefined) =>
-    authority(source.host) === host && source.scope === repository;
+    repository !== undefined &&
+    issueSourceKey(source) === issueSourceKey({ provider: "github", host, scope: repository });
   const index = saved.findIndex((source) => matches(source, current?.scope));
   const next =
     scope && !saved.some((source) => !matches(source, current?.scope) && matches(source, scope))

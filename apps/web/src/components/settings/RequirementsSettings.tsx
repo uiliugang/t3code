@@ -3,7 +3,6 @@ import {
   normalizeGithubIssueHost,
   isMeituanServiceEnabled,
   issueSourcesMatch,
-  mergeProjectIssueSources,
   projectIssueProvider,
   MAX_WORK_ITEM_DISCOVERY_LIMIT,
   WorkItemDiscoveryLimit,
@@ -296,7 +295,7 @@ function ProjectSourceRow({
   const saved = settings.issueProjectSources[project.id] ?? [];
   const enabled = isMeituanServiceEnabled(settings, "requirements");
   const kind = detectedProjectIssueKind(project.repositoryIdentity, result);
-  const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
+  const sources = listedProjectIssueSources(true, result?.sources ?? [], saved, kind);
   const provider = projectIssueProvider(kind, sources);
   const singleProvider =
     group.environment.serverConfig?.environment.capabilities.singleProjectIssueProvider === true;

@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { type StaticScreenProps, useNavigation } from "@react-navigation/native";
-import { mergeProjectIssueSources, projectIssueProvider } from "@t3tools/contracts";
+import { projectIssueProvider } from "@t3tools/contracts";
 import {
   detectedProjectIssueKind,
   listedProjectIssueSources,
@@ -116,7 +116,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
     const result = byId.get(project.id);
     const saved = settings.issueProjectSources[project.id] ?? [];
     const kind = detectedProjectIssueKind(project.repositoryIdentity, result);
-    const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
+    const sources = listedProjectIssueSources(true, result?.sources ?? [], saved, kind);
     return {
       project,
       result,

@@ -218,6 +218,7 @@ describe("GitHubCredentials", () => {
 
   it.effect("reads a saved HTTPS default-port alias without borrowing another port's token", () => {
     const { layer, calls } = harness({ "off.example:443": { enabled: false } }, [], {
+      "code.example": "",
       "code.example:443": "legacy-token",
       "code.example:8443": "other-token",
     });

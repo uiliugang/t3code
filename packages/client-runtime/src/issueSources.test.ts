@@ -59,15 +59,17 @@ describe("mergeProjectIssueSources", () => {
       { ...second, scope: "team/next" },
     ]);
     expect(withGithubRepositoryOverride(saved, first, null)).toEqual([second]);
-    const legacy = [{ ...first, host: "GitHub.com:443" }, first, second];
+    const legacy = [{ ...first, host: "GitHub.com:443", scope: "Team/App" }, first, second];
     expect(withGithubRepositoryOverride(legacy, first, null)).toEqual([second]);
     expect(withGithubRepositoryOverride(legacy, first, first.scope)).toEqual([first, second]);
+    expect(listedProjectIssueSources(true, [], legacy, "github")).toEqual([legacy[0], second]);
+    expect(listedProjectIssueSources(false, [], legacy, "github")).toEqual([legacy[0], second]);
     expect(withGithubRepositoryOverride([space], second, "team/new")).toEqual([
       { ...second, scope: "team/new" },
     ]);
     expect(withGithubRepositoryOverride([], undefined, first.scope)).toEqual([first]);
     const renamed = { ...first, scope: "team/next" };
-    expect(withGithubRepositoryOverride([first, renamed, space], first, renamed.scope)).toEqual([
+    expect(withGithubRepositoryOverride([first, renamed, space], first, "TEAM/next")).toEqual([
       renamed,
     ]);
   });
