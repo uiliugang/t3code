@@ -187,6 +187,37 @@ const nativeRealPath = (targetPath: string) =>
     catch: (cause) => new NativeRealPathError({ cause }),
   });
 
+const resolveFilesystemPath = Effect.fn("resolveFilesystemPath")(function* (rawPath: string) {
+  const path = yield* Path.Path;
+  const direct = yield* nativeRealPath(rawPath).pipe(Effect.option);
+  if (Option.isSome(direct)) return direct;
+  const missingTail: Array<string> = [];
+  let cursor = rawPath;
+  while (true) {
+    const trimmed = cursor.replace(/[\\/]+$/, "");
+    if (trimmed.length === 0) return Option.none<string>();
+    const slashIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+    const base = slashIndex === -1 ? trimmed : trimmed.slice(slashIndex + 1);
+    if (base === "" || base === "." || base === "..") {
+      return Option.none<string>();
+    }
+    missingTail.unshift(base);
+    cursor =
+      slashIndex === -1
+        ? "."
+        : slashIndex === 0
+          ? trimmed.slice(0, 1)
+          : trimmed.slice(0, slashIndex);
+    const resolvedParent = yield* nativeRealPath(cursor).pipe(Effect.option);
+    if (Option.isSome(resolvedParent)) {
+      return Option.some(path.join(resolvedParent.value, ...missingTail));
+    }
+    if (cursor === "." || cursor === "/" || /^[A-Za-z]:[\\/]?$/.test(cursor)) {
+      return Option.none<string>();
+    }
+  }
+});
+
 // A custom T3CODE_HOME or installed service home holds secrets, settings, or service state beside userdata/statev2.sqlite.
 // Unreadable markers count as present so a permission or I/O error never lets a live database pass as a dev copy.
 const looksLikeLiveDatabase = Effect.fn("looksLikeLiveDatabase")(function* (databasePath: string) {
@@ -794,47 +825,58 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   }
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const comparable = (resolved: string) =>
+    platform === "linux" ? resolved : resolved.toLowerCase();
+  const samePath = (left: string, right: string) => comparable(left) === comparable(right);
 
   const env = yield* HostProcess.Environment;
   const sharedHome = path.resolve(options.sharedHome ?? path.join(NodeOS.homedir(), ".t3"));
   const ambientHome = (options.ambientHome ?? env.T3CODE_HOME)?.trim();
-  const sourcePath = path.resolve(
-    input.source ?? path.join(sharedHome, "userdata", "statev2.sqlite"),
-  );
+  const rawSourcePath = input.source ?? path.join(sharedHome, "userdata", "statev2.sqlite");
 
-  const baseDir =
+  const resolvedBaseDir =
     input.baseDir !== undefined
-      ? path.resolve(input.baseDir)
-      : yield* resolveWorktreeT3Home(process.cwd());
-  if (baseDir === undefined) {
-    return yield* new MigrateDevDbNotInWorktreeError();
+      ? yield* resolveFilesystemPath(input.baseDir)
+      : Option.fromUndefinedOr(yield* resolveWorktreeT3Home(process.cwd()));
+  if (Option.isNone(resolvedBaseDir)) {
+    return yield* input.baseDir !== undefined
+      ? new MigrateDevDbSharedHomeError()
+      : new MigrateDevDbNotInWorktreeError();
   }
+  const canonicalBaseDir = resolvedBaseDir.value;
+  const lexicalBaseDir =
+    input.baseDir !== undefined ? path.resolve(input.baseDir) : canonicalBaseDir;
+  const baseDir =
+    input.baseDir !== undefined &&
+    Option.exists(yield* resolveFilesystemPath(lexicalBaseDir), (lexicalResolved) =>
+      samePath(lexicalResolved, canonicalBaseDir),
+    )
+      ? lexicalBaseDir
+      : canonicalBaseDir;
   const stateDir = path.join(baseDir, "userdata");
   const databasePath = path.join(stateDir, "statev2.sqlite");
   const snapshotPath = `${databasePath}.migrate-dev-db-tmp`;
 
-  if (!(yield* fs.exists(sourcePath))) {
-    return yield* new MigrateDevDbSourceMissingError({ sourcePath });
+  const resolvedSourcePath = Option.getOrUndefined(
+    yield* nativeRealPath(rawSourcePath).pipe(Effect.option),
+  );
+  if (resolvedSourcePath === undefined || !(yield* fs.exists(resolvedSourcePath))) {
+    return yield* new MigrateDevDbSourceMissingError({
+      sourcePath: input.source ?? path.resolve(rawSourcePath),
+    });
   }
+  const sourcePath = resolvedSourcePath;
   const protectedHomes = [sharedHome, ...(ambientHome ? [path.resolve(ambientHome)] : [])];
   const resolveTargetPath = (file: string) =>
-    nativeRealPath(file).pipe(
-      Effect.catch(() =>
-        nativeRealPath(path.dirname(file)).pipe(
-          Effect.map((dir) => path.join(dir, path.basename(file))),
-        ),
-      ),
-      Effect.orElseSucceed(() => path.resolve(file)),
+    resolveFilesystemPath(file).pipe(
+      Effect.map((resolved) => Option.getOrElse(resolved, () => path.resolve(file))),
     );
-  const [canonicalBaseDir, canonicalProtectedHomes, resolvedStateDir, resolvedDestinationDb] =
-    yield* Effect.all([
-      nativeRealPath(baseDir).pipe(Effect.orElseSucceed(() => baseDir)),
-      Effect.forEach(protectedHomes, (home) =>
-        nativeRealPath(home).pipe(Effect.orElseSucceed(() => home)),
-      ),
-      nativeRealPath(stateDir).pipe(Effect.orElseSucceed(() => stateDir)),
-      resolveTargetPath(databasePath),
-    ]);
+  const [canonicalProtectedHomes, resolvedStateDir, resolvedDestinationDb] = yield* Effect.all([
+    Effect.forEach(protectedHomes, resolveTargetPath),
+    resolveTargetPath(stateDir),
+    resolveTargetPath(databasePath),
+  ]);
   const stateDirHome =
     path.basename(resolvedStateDir).toLowerCase() === "userdata"
       ? path.dirname(resolvedStateDir)
@@ -844,10 +886,11 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
       ? path.dirname(path.dirname(resolvedDestinationDb))
       : undefined;
   if (
-    canonicalProtectedHomes.includes(canonicalBaseDir) ||
-    (stateDirHome !== undefined && canonicalProtectedHomes.includes(stateDirHome)) ||
+    canonicalProtectedHomes.some((home) => samePath(home, canonicalBaseDir)) ||
+    (stateDirHome !== undefined &&
+      canonicalProtectedHomes.some((home) => samePath(home, stateDirHome))) ||
     (resolvedDestinationHome !== undefined &&
-      canonicalProtectedHomes.includes(resolvedDestinationHome)) ||
+      canonicalProtectedHomes.some((home) => samePath(home, resolvedDestinationHome))) ||
     (yield* looksLikeInstalledHome(baseDir)) ||
     (yield* looksLikeInstalledHome(canonicalBaseDir)) ||
     (stateDirHome !== undefined && (yield* looksLikeInstalledHome(stateDirHome))) ||
@@ -857,15 +900,12 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     return yield* new MigrateDevDbSharedHomeError();
   }
   // Both destination and snapshot are deleted below; reject sources resolving to either.
-  const canonicalSourcePath = yield* nativeRealPath(sourcePath).pipe(
-    Effect.orElseSucceed(() => sourcePath),
-  );
   for (const destination of [databasePath, snapshotPath]) {
-    const canonicalDestination = yield* nativeRealPath(destination).pipe(
-      Effect.orElseSucceed(() => destination),
-    );
-    if (canonicalSourcePath === canonicalDestination) {
-      return yield* new MigrateDevDbSourceIsDestinationError({ sourcePath });
+    const canonicalDestination = yield* resolveTargetPath(destination);
+    if (samePath(sourcePath, canonicalDestination)) {
+      return yield* new MigrateDevDbSourceIsDestinationError({
+        sourcePath: input.source ?? sourcePath,
+      });
     }
   }
 

@@ -416,17 +416,17 @@ describe("ProjectSetupScriptRunner", () => {
   );
 
   it.effect(
-    "reports commandWritten=false when the terminal session is already exited at write time",
+    "reports commandWritten=false and unsubscribes all listeners without awaiting completion when the terminal is already exited",
     () =>
       Effect.gen(function* () {
-        const { result, writes, emit, completion, markExitedWithoutEvent } = yield* setup();
+        const { result, writes, emit, listeners, markExitedWithoutEvent } = yield* setup();
         yield* markExitedWithoutEvent;
         yield* emit({ ...event, type: "output", data: "\x1b[?2004h" });
         expect(result.status).toBe("started");
         if (result.status === "started") {
           expect(yield* result.commandWritten!).toBe(false);
         }
-        expect(yield* completion).toMatchObject({ exitCode: null });
+        expect(listeners.size).toBe(0);
         expect(yield* Queue.size(writes)).toBe(0);
       }),
   );

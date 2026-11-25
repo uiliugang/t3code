@@ -8,6 +8,7 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { runMigrations } from "../src/persistence/Migrations.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { dropResumableFamilies, runMigrateDevDb } from "./migrate-dev-db.ts";
 
@@ -457,57 +458,58 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         );
         assert.equal(preservedThreads, 10);
 
-        // Directory symlink + `..`: path.resolve() collapses `dir-link/..` to stagingDir/decoy.sqlite,
-        // whereas raw lstat/open sees nestedTargetDir/../decoy.sqlite. Never clean a database other than the raw target.
-        const nestedParentDir = yield* fs.makeTempDirectoryScoped({
-          prefix: "migrate-dev-db-dotdot-",
-        });
-        const nestedTargetDir = path.join(nestedParentDir, "sub");
-        yield* fs.makeDirectory(nestedTargetDir, { recursive: true });
-        const decoyCopy = yield* createFixtureSource(stagingDir);
-        const decoyDb = path.join(stagingDir, "decoy.sqlite");
-        yield* fs.rename(decoyCopy, decoyDb);
-        yield* fs.symlink(nestedTargetDir, path.join(stagingDir, "dir-link"));
-        const dotDotPath = `${path.join(stagingDir, "dir-link")}${path.sep}..${path.sep}decoy.sqlite`;
-        const refusedDotDot = yield* Effect.flip(dropResumableFamilies(dotDotPath, { sharedHome }));
-        assert.equal(refusedDotDot._tag, "MigrateDevDbSourceMissingError");
-        const decoyThreads = yield* withDatabase(
-          decoyDb,
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient;
-            const [row] = yield* sql<{ n: number }>`
-              SELECT COUNT(*) AS n FROM orchestration_v2_projection_threads`;
-            return Number(row?.n ?? 0);
-          }),
-        );
-        assert.equal(decoyThreads, 10);
-
-        // Even when nestedParentDir/userdata/statev2.sqlite exists, raw lstat sees nestedParentDir/userdata/statev2.sqlite
-        // while lexical path.resolve(dotDotLivePath) would see stagingDir/userdata/statev2.sqlite: verify the live marker
-        // on nestedParentDir is caught and refused.
-        const liveInParent = yield* createFixtureSource(nestedParentDir);
-        yield* fs.makeDirectory(path.join(nestedParentDir, "runtime"), { recursive: true });
-        yield* fs.writeFileString(
-          path.join(nestedParentDir, "runtime", "service-state.json"),
-          "{}",
-        );
-        const dotDotLivePath = `${path.join(stagingDir, "dir-link")}${path.sep}..${path.sep}userdata${path.sep}statev2.sqlite`;
-        const refusedDotDotLive = yield* Effect.flip(
-          dropResumableFamilies(dotDotLivePath, { sharedHome }),
-        );
-        assert.equal(refusedDotDotLive._tag, "MigrateDevDbSharedHomeError");
-        assert.equal(
-          yield* withDatabase(
-            liveInParent,
+        // POSIX resolves directory symlinks before `..`, whereas Windows normalizes `..` lexically first.
+        const platform = yield* HostProcess.Platform;
+        if (platform !== "win32") {
+          const nestedParentDir = yield* fs.makeTempDirectoryScoped({
+            prefix: "migrate-dev-db-dotdot-",
+          });
+          const nestedTargetDir = path.join(nestedParentDir, "sub");
+          yield* fs.makeDirectory(nestedTargetDir, { recursive: true });
+          const decoyCopy = yield* createFixtureSource(stagingDir);
+          const decoyDb = path.join(stagingDir, "decoy.sqlite");
+          yield* fs.rename(decoyCopy, decoyDb);
+          yield* fs.symlink(nestedTargetDir, path.join(stagingDir, "dir-link"));
+          const dotDotPath = `${path.join(stagingDir, "dir-link")}${path.sep}..${path.sep}decoy.sqlite`;
+          const refusedDotDot = yield* Effect.flip(
+            dropResumableFamilies(dotDotPath, { sharedHome }),
+          );
+          assert.equal(refusedDotDot._tag, "MigrateDevDbSourceMissingError");
+          const decoyThreads = yield* withDatabase(
+            decoyDb,
             Effect.gen(function* () {
               const sql = yield* SqlClient.SqlClient;
               const [row] = yield* sql<{ n: number }>`
                 SELECT COUNT(*) AS n FROM orchestration_v2_projection_threads`;
               return Number(row?.n ?? 0);
             }),
-          ),
-          10,
-        );
+          );
+          assert.equal(decoyThreads, 10);
+
+          const liveInParent = yield* createFixtureSource(nestedParentDir);
+          yield* fs.makeDirectory(path.join(nestedParentDir, "runtime"), { recursive: true });
+          yield* fs.writeFileString(
+            path.join(nestedParentDir, "runtime", "service-state.json"),
+            "{}",
+          );
+          const dotDotLivePath = `${path.join(stagingDir, "dir-link")}${path.sep}..${path.sep}userdata${path.sep}statev2.sqlite`;
+          const refusedDotDotLive = yield* Effect.flip(
+            dropResumableFamilies(dotDotLivePath, { sharedHome }),
+          );
+          assert.equal(refusedDotDotLive._tag, "MigrateDevDbSharedHomeError");
+          assert.equal(
+            yield* withDatabase(
+              liveInParent,
+              Effect.gen(function* () {
+                const sql = yield* SqlClient.SqlClient;
+                const [row] = yield* sql<{ n: number }>`
+                  SELECT COUNT(*) AS n FROM orchestration_v2_projection_threads`;
+                return Number(row?.n ?? 0);
+              }),
+            ),
+            10,
+          );
+        }
 
         const missingDb = path.join(stagingDir, "typo.sqlite");
         const refusedMissing = yield* Effect.flip(dropResumableFamilies(missingDb, { sharedHome }));
@@ -924,6 +926,29 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           refreshed.databasePath,
           path.join(devWorktreeHome, "userdata", "statev2.sqlite"),
         );
+
+        const platform = yield* HostProcess.Platform;
+        if (platform !== "win32") {
+          // On POSIX, `dirA/link/..` resolves to `dirB` (because `dirA/link -> dirB/sub`), never `dirA`.
+          const dirA = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-base-a-" });
+          const dirB = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-base-b-" });
+          yield* fs.makeDirectory(path.join(dirB, "sub"), { recursive: true });
+          yield* fs.symlink(path.join(dirB, "sub"), path.join(dirA, "link"));
+          const dbInA = path.join(dirA, "userdata", "statev2.sqlite");
+          yield* fs.makeDirectory(path.dirname(dbInA), { recursive: true });
+          yield* fs.writeFileString(dbInA, "unintended-dev-db-in-a");
+
+          const dotDotBaseDir = `${path.join(dirA, "link")}${path.sep}..`;
+          const migratedDotDot = yield* runMigrateDevDb(
+            { baseDir: dotDotBaseDir, source, projects: 5, threadsPerProject: 2 },
+            { sharedHome: sourceDir },
+          );
+          assert.equal(
+            migratedDotDot.databasePath,
+            path.join(yield* fs.realPath(dirB), "userdata", "statev2.sqlite"),
+          );
+          assert.equal(yield* fs.readFileString(dbInA), "unintended-dev-db-in-a");
+        }
       }),
   );
 });

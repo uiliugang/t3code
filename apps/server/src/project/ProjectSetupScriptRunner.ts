@@ -373,7 +373,8 @@ export const make = Effect.gen(function* () {
         lineBuffer = "";
         return handleLine(partial);
       });
-      const abandon = settle(null).pipe(
+      const abandon = Effect.sync(() => unsubscribe()).pipe(
+        Effect.andThen(settle(null)),
         Effect.andThen(Deferred.succeed(promptReturned, undefined)),
       );
       return { completion, unsubscribe, flushPartialLine, abandon };
@@ -583,7 +584,6 @@ export const make = Effect.gen(function* () {
     });
     const { completionShell, commandLine } = yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
-        let terminalOpened = false;
         const shell = yield* restore(
           terminalManager.open({
             threadId: input.threadId,
@@ -595,11 +595,6 @@ export const make = Effect.gen(function* () {
             env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
           }),
         ).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              terminalOpened = true;
-            }),
-          ),
           Effect.andThen(() =>
             restore(terminalManager.getShell({ threadId: input.threadId, terminalId })).pipe(
               Effect.catchTags({ TerminalNotRunningError: () => Effect.succeed(null) }),
@@ -608,13 +603,7 @@ export const make = Effect.gen(function* () {
           Effect.onError(() =>
             cleanupListeners.pipe(
               Effect.andThen(observed?.abandon ?? Effect.void),
-              Effect.andThen(
-                Effect.suspend(() =>
-                  terminalOpened
-                    ? terminalManager.close({ threadId: input.threadId, terminalId })
-                    : Effect.void,
-                ),
-              ),
+              Effect.andThen(terminalManager.close({ threadId: input.threadId, terminalId })),
               Effect.ignore,
             ),
           ),
@@ -628,6 +617,7 @@ export const make = Effect.gen(function* () {
           ),
         );
         if (shell === null) {
+          yield* cleanupListeners;
           yield* observed?.abandon ?? Effect.void;
           return { completionShell: null, commandLine: null };
         }
@@ -636,6 +626,7 @@ export const make = Effect.gen(function* () {
         if (observe && completionToken) {
           if (completionShell === null) {
             yield* cleanupListeners;
+            yield* observed?.abandon ?? Effect.void;
             yield* terminalManager.closeIdle({ threadId: input.threadId, terminalId });
             return yield* new ProjectSetupScriptUnsupportedShellError({ shell });
           }
@@ -659,7 +650,7 @@ export const make = Effect.gen(function* () {
       ).pipe(
         Effect.flatMap((shell) =>
           shell === "exited" || commandLine === null
-            ? Effect.succeed(false)
+            ? (observed?.abandon ?? Effect.void).pipe(Effect.as(false))
             : terminalManager
                 .write(
                   {

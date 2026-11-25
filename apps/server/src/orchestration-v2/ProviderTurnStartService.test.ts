@@ -2780,6 +2780,70 @@ effectIt.effect(
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
+effectIt.effect(
+  "automatically retries pre-execution setup operation errors under EffectWorker before running the script",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-pre-setup-retry-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      let calls = 0;
+      const runSetup = vi.fn(() => {
+        calls += 1;
+        if (calls === 1) {
+          return Effect.fail(
+            new ProjectSetupScriptRunner.ProjectSetupScriptOperationError({
+              threadId: "native-account-thread",
+              worktreePath,
+              operation: "readSettings",
+              cause: "transient read failure",
+            }),
+          );
+        }
+        return Effect.succeed({
+          status: "started" as const,
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "setup",
+          terminalId: "setup-pre-retry",
+          cwd: worktreePath,
+          async: false,
+          commandWritten: Effect.succeed(true),
+          completion: Effect.succeed({ exitCode: 0, durationMs: 0 }),
+        });
+      });
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        runSetup,
+      });
+
+      yield* Effect.gen(function* () {
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const { storedEffect } = yield* enqueueStart(harness.projection());
+        expect(yield* worker.drain()).toBe(1);
+        expect(yield* storedEffect).toMatchObject({ status: "pending", attemptCount: 1 });
+        expect(harness.projection().runs.at(-1)?.status).toBe("starting");
+
+        yield* TestClock.adjust("100 millis");
+        expect(yield* worker.drain()).toBe(1);
+        expect(yield* storedEffect).toMatchObject({ status: "succeeded", attemptCount: 2 });
+      }).pipe(Effect.provide(layerStartEffectWorker(harness)));
+
+      expect(runSetup).toHaveBeenCalledTimes(2);
+      expect(harness.open).toHaveBeenCalledTimes(1);
+      expect(harness.projection().runs.at(-1)?.status).toBe("running");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
 effectIt.effect("does not read recreated-worktree setup state for threads without a worktree", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

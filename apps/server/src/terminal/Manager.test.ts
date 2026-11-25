@@ -3636,4 +3636,139 @@ it.layer(
         expect(process.writes).toEqual([]);
       }),
   );
+
+  it.effect(
+    "does not let an older PTY output drain clear a newer PTY's queued exit or allow strict writes",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const { manager, ptyAdapter, baseDir } = yield* createManager();
+        const nextCwd = path.join(baseDir, "next-cwd");
+        yield* fileSystem.makeDirectory(nextCwd, { recursive: true });
+        const input = openInput();
+        yield* manager.open(input);
+        const firstProcess = ptyAdapter.processes[0]!;
+
+        const oldOutputBlocked = yield* Deferred.make<void>();
+        const releaseOldOutput = yield* Deferred.make<void>();
+        const newOutputBlocked = yield* Deferred.make<void>();
+        const releaseNewOutput = yield* Deferred.make<void>();
+        const newExitedDelivered = yield* Deferred.make<void>();
+        const unsubscribe = yield* manager.subscribe((event) => {
+          if (event.type === "output" && event.data === "old-output\n") {
+            return Deferred.succeed(oldOutputBlocked, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseOldOutput)),
+            );
+          }
+          if (event.type === "output" && event.data === "new-output\n") {
+            return Deferred.succeed(newOutputBlocked, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseNewOutput)),
+            );
+          }
+          if (event.type === "exited") {
+            return Deferred.succeed(newExitedDelivered, undefined).pipe(Effect.asVoid);
+          }
+          return Effect.void;
+        });
+        yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+        firstProcess.emitData("old-output\n");
+        yield* Deferred.await(oldOutputBlocked);
+
+        // Reopen the same terminal in a new cwd, spawning a new PTY while old drain fiber is suspended.
+        yield* manager.open({ ...input, cwd: nextCwd });
+        const secondProcess = ptyAdapter.processes[1]!;
+
+        secondProcess.emitData("new-output\n");
+        yield* Deferred.await(newOutputBlocked);
+        secondProcess.emitExit({ exitCode: 1, signal: 0 });
+
+        const rejectedBeforeOldDrain = yield* manager
+          .write({ ...input, data: "setup\r" }, undefined, { requireRunning: true })
+          .pipe(Effect.flip);
+        expect(rejectedBeforeOldDrain._tag).toBe("TerminalNotRunningError");
+
+        // Unblock the old PTY's drain loop: it sees a mismatched pid and must not touch the new PTY's queue.
+        yield* Deferred.succeed(releaseOldOutput, undefined);
+        yield* Effect.yieldNow;
+
+        const rejectedAfterOldDrain = yield* manager
+          .write({ ...input, data: "setup\r" }, undefined, { requireRunning: true })
+          .pipe(Effect.flip);
+        expect(rejectedAfterOldDrain._tag).toBe("TerminalNotRunningError");
+        expect(secondProcess.writes).toEqual([]);
+
+        yield* Deferred.succeed(releaseNewOutput, undefined);
+        yield* Deferred.await(newExitedDelivered);
+      }),
+  );
+
+  it.effect(
+    "closes the already-spawned setup terminal when ProjectSetupScriptRunner is interrupted during started event fanout",
+    () =>
+      Effect.gen(function* () {
+        const { manager, ptyAdapter, baseDir } = yield* createManager();
+        const startedBlocked = yield* Deferred.make<void>();
+        const releaseStarted = yield* Deferred.make<void>();
+        const unsubscribe = yield* manager.subscribe((event) =>
+          event.type === "started" && event.threadId === "thread-cancel-started"
+            ? Deferred.succeed(startedBlocked, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseStarted)),
+              )
+            : Effect.void,
+        );
+        yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+        const runner = yield* ProjectSetupScriptRunner.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.succeed(TerminalManager.TerminalManager, manager),
+              Layer.mock(ProjectService.ProjectService)({}),
+              Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                getThreadShell: () => Effect.succeed(null),
+              }),
+              ServerSettings.layerTest(),
+            ),
+          ),
+        );
+
+        const running = yield* runner
+          .runForThread({
+            threadId: "thread-cancel-started",
+            worktreePath: baseDir,
+            project: {
+              id: ProjectId.make("project-cancel-started"),
+              workspaceRoot: baseDir,
+              scripts: [
+                {
+                  id: "setup",
+                  name: "Setup",
+                  command: "echo should-not-run",
+                  icon: "play",
+                  runOnWorktreeCreate: true,
+                },
+              ],
+            },
+            observeCompletion: {},
+          })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+
+        yield* Deferred.await(startedBlocked);
+        // Interrupt the setup runner while open() has already spawned and registered the PTY,
+        // and release the started fanout so open()'s thread lock finishes and close() can run.
+        const interrupting = yield* Fiber.interrupt(running).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(releaseStarted, undefined);
+        yield* Fiber.join(interrupting);
+
+        expect(ptyAdapter.processes[0]?.killed).toBe(true);
+        const shellLookup = yield* manager
+          .getShell({ threadId: "thread-cancel-started", terminalId: "setup-setup" })
+          .pipe(Effect.flip);
+        expect(shellLookup._tag).toBe("TerminalSessionLookupError");
+      }),
+  );
 });

@@ -941,6 +941,15 @@ export const layer: Layer.Layer<
               }),
             );
             if (setupResult._tag === "Failure") {
+              if (
+                input.willRetry === true &&
+                setupResult.failure._tag !== "WorktreeSetupCommandNotWrittenError" &&
+                setupResult.failure._tag !== "WorktreeSetupScriptFailedError" &&
+                setupResult.failure._tag !== "ProjectSetupScriptProjectNotFoundError" &&
+                setupResult.failure._tag !== "ProjectSetupScriptUnsupportedShellError"
+              ) {
+                return yield* setupResult.failure;
+              }
               yield* settleStartFailure({
                 signal: "worktree-setup-failure",
                 title: "Couldn't set up restored workspace",
