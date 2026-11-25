@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import { make } from "./DesktopCloudSandbox.ts";
@@ -63,16 +64,51 @@ it.effect("reads legacy credentials and updates or removes only the selected end
     const legacy = { hostname: "sandbox.example.test", port: 22 };
     const second = { hostname: legacy.hostname, port: 2222 };
     const target = { ...legacy, alias: "sandbox", username: "root" };
-    const encrypted = yield* safeStorage.encryptString(
-      JSON.stringify({ ...legacy, password: "legacy-password" }),
-    );
-    yield* fs.writeFile(path.join(dir, "cloud-sandbox-ssh"), encrypted);
+    const credential = Schema.Struct({
+      hostname: Schema.NonEmptyString,
+      port: Schema.Int,
+      password: Schema.RedactedFromValue(Schema.NonEmptyString),
+    });
+    const legacyFormat = Schema.fromJsonString(credential);
+    const multiple = Schema.Array(credential);
+    const file = path.join(dir, "cloud-sandbox-ssh");
+    const readLegacy = fs
+      .readFile(file)
+      .pipe(
+        Effect.flatMap(safeStorage.decryptString),
+        Effect.flatMap(Schema.decodeEffect(legacyFormat)),
+      );
+    const contents = yield* Schema.encodeEffect(legacyFormat)({
+      ...legacy,
+      password: Redacted.make("legacy-password"),
+    });
+    yield* fs.writeFile(file, yield* safeStorage.encryptString(contents));
     const sandbox = yield* make(dir);
     assert.deepEqual(yield* sandbox.get, [legacy]);
+    yield* sandbox.save({
+      host: legacy.hostname,
+      previous: legacy,
+      password: Redacted.make("updated-password"),
+    });
+    assert.equal(Redacted.value((yield* readLegacy).password), "updated-password");
     yield* sandbox.save({ host: "sandbox.example.test:2222", password: Redacted.make("second") });
+    const rollback = yield* fs
+      .readFile(file)
+      .pipe(
+        Effect.flatMap(safeStorage.decryptString),
+        Effect.flatMap(
+          Schema.decodeEffect(Schema.fromJsonString(Schema.Union([multiple, credential]))),
+        ),
+      );
+    const entries = "hostname" in rollback ? [rollback] : rollback;
+    const edited = entries.map((entry) =>
+      entry.port === legacy.port ? { ...entry, password: Redacted.make("rollback-edit") } : entry,
+    );
+    const arrayContents = yield* Schema.encodeEffect(Schema.fromJsonString(multiple))(edited);
+    yield* fs.writeFile(file, yield* safeStorage.encryptString(arrayContents));
     const restarted = yield* make(dir);
     assert.deepEqual(yield* restarted.get, [legacy, second]);
-    assert.equal(Redacted.value((yield* restarted.passwordFor(target))!), "legacy-password");
+    assert.equal(Redacted.value((yield* restarted.passwordFor(target))!), "rollback-edit");
     assert.equal(
       Redacted.value((yield* restarted.passwordFor({ ...target, ...second }))!),
       "second",
@@ -93,6 +129,32 @@ it.effect("reads legacy credentials and updates or removes only the selected end
     assert.isUndefined(yield* restarted.passwordFor(target));
     yield* restarted.clear(second);
     assert.deepEqual(yield* restarted.get, [{ hostname: "other.example.test", port: 22 }]);
+    assert.equal(Redacted.value((yield* readLegacy).password), "replacement");
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, storage("keychain")))),
+);
+
+it.effect("reads the array format and promotes the remaining endpoint after removal", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const dir = yield* fs.makeTempDirectoryScoped();
+    const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
+    const first = { hostname: "one.example.test", port: 22 };
+    const second = { hostname: "two.example.test", port: 2222 };
+    const encrypted = yield* safeStorage.encryptString(
+      JSON.stringify([
+        { ...first, password: "first" },
+        { ...second, password: "second" },
+      ]),
+    );
+    yield* fs.writeFile(path.join(dir, "cloud-sandbox-ssh"), encrypted);
+    const sandbox = yield* make(dir);
+    assert.deepEqual(yield* sandbox.get, [first, second]);
+    yield* sandbox.clear(first);
+    const restarted = yield* make(dir);
+    assert.deepEqual(yield* restarted.get, [second]);
+    const target = { ...second, alias: "two", username: "root" };
+    assert.equal(Redacted.value((yield* restarted.passwordFor(target))!), "second");
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, storage("keychain")))),
 );
 

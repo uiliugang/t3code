@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   isMeituanServiceEnabled,
+  mergeProjectIssueSources,
+  projectIssueProvider,
   MAX_WORK_ITEM_DISCOVERY_LIMIT,
   WorkItemDiscoveryLimit,
   type IssueSource,
@@ -41,8 +43,11 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
-  mergeProjectIssueSources,
   parseMepSpaceIds,
+  canBindUndetectedProject,
+  detectedProjectIssueKind,
+  listedProjectIssueSources,
+  projectIssueSourceCleanup,
   projectIssueSourceEdit,
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
@@ -73,15 +78,22 @@ type SourceProviderFilter = "all" | "github" | "meituan";
 type SourceModeFilter = "all" | "automatic" | "manual";
 
 function matchesProjectSourceFilters(
-  title: string,
-  automatic: readonly IssueSource[],
+  project: Project,
+  singleProvider: boolean,
+  result: (typeof IssueSourcesResult.Type)[number] | undefined,
   saved: readonly IssueSource[],
   filters: { name: string; provider: SourceProviderFilter; mode: SourceModeFilter },
 ) {
-  if (!title.toLocaleLowerCase().includes(filters.name.trim().toLocaleLowerCase())) return false;
+  if (!project.title.toLocaleLowerCase().includes(filters.name.trim().toLocaleLowerCase()))
+    return false;
   if (filters.provider === "all" && filters.mode === "all") return true;
   const overridden = new Set(saved.map((source) => source.provider));
-  return mergeProjectIssueSources(automatic, saved).some(
+  return listedProjectIssueSources(
+    singleProvider,
+    result?.sources ?? [],
+    saved,
+    detectedProjectIssueKind(project.repositoryIdentity, result),
+  ).some(
     (source) =>
       (filters.provider === "all" || source.provider === filters.provider) &&
       (filters.mode === "all" ||
@@ -224,15 +236,16 @@ function EnvironmentTrackers({
   const enabled = isMeituanServiceEnabled(settings, "requirements");
   const caps = environment.serverConfig!.environment.capabilities;
   const query = useProjectSources({ environment, projects: enabled ? projects : [] });
-  const associated = new Set(
-    query.data
-      ?.filter((row) => row.sources.some((source) => source.provider === "meituan"))
-      .map((row) => row.projectId),
-  );
-  for (const project of projects) {
-    if (settings.issueProjectSources[project.id]?.some((source) => source.provider === "meituan"))
-      associated.add(project.id);
-  }
+  const byId = new Map(query.data?.map((row) => [row.projectId, row]));
+  const associated = projects.filter((project) => {
+    const row = byId.get(project.id);
+    return listedProjectIssueSources(
+      caps.singleProjectIssueProvider === true,
+      row?.sources ?? [],
+      settings.issueProjectSources[project.id] ?? [],
+      detectedProjectIssueKind(project.repositoryIdentity, row),
+    ).some((source) => source.provider === "meituan");
+  });
   return (
     <IssueTrackerSettings
       environmentId={environmentId}
@@ -247,7 +260,7 @@ function EnvironmentTrackers({
           environmentId={environmentId}
           label={label}
           supported={caps.meituanTools === true}
-          projects={meituanAssociationCountLabel(projects.length, query, associated.size, t)}
+          projects={meituanAssociationCountLabel(projects.length, query, associated.length, t)}
         />
       ) : null}
     </IssueTrackerSettings>
@@ -279,7 +292,12 @@ function ProjectSourceRow({
   const settings = useEnvironmentSettings(project.environmentId, (value) => value);
   const saved = settings.issueProjectSources[project.id] ?? [];
   const enabled = isMeituanServiceEnabled(settings, "requirements");
-  const sources = mergeProjectIssueSources(result?.sources ?? [], saved);
+  const kind = detectedProjectIssueKind(project.repositoryIdentity, result);
+  const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
+  const provider = projectIssueProvider(kind, sources);
+  const singleProvider =
+    group.environment.serverConfig?.environment.capabilities.singleProjectIssueProvider === true;
+  const cleanup = projectIssueSourceCleanup(singleProvider, project.id, provider, saved, enabled);
   const githubSources = sources.filter((entry) => entry.provider === "github");
   const manualGithub = saved.some((entry) => entry.provider === "github");
   const discovery = error || result?.error ? "failed" : result ? "ready" : "pending";
@@ -287,16 +305,17 @@ function ProjectSourceRow({
     .filter((entry) => entry.provider === "meituan")
     .map((entry) => entry.scope);
   const manual = saved.some((entry) => entry.provider === "meituan");
+  const showMepEditor =
+    enabled &&
+    provider !== "github" &&
+    (provider === "meituan" || canBindUndetectedProject(singleProvider, discovery, result?.error));
   const [draft, setDraft] = useState<{ text: string; saved: typeof saved } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const inputId = `mep-spaces-${projectKey(project)}`;
-  const submit = async (ids: string[] | null) => {
-    if (!ids || !draft || saving || disabled || !enabled) return;
-    const input = projectIssueSourceEdit(project.id, "meituan", saved, draft.saved, (latest) =>
-      withMepSpaceOverrides(latest, ids),
-    );
+  const persist = async (input: ReturnType<typeof projectIssueSourceEdit>) => {
+    if (saving || disabled) return;
     if (!input) {
       setFailure(t("Project sources have changed. Reopen the editor and try again."));
       return;
@@ -310,6 +329,18 @@ function ProjectSourceRow({
     } else setFailure(t("Could not save project sources. Reopen the editor and try again."));
   };
   const invalid = draft !== null && !parseMepSpaceIds(draft.text);
+  const submit = (ids: string[] | null) => {
+    if (ids && draft && showMepEditor)
+      return persist(
+        projectIssueSourceEdit(
+          project.id,
+          singleProvider ? "meituan" : undefined,
+          saved,
+          draft.saved,
+          () => withMepSpaceOverrides(ids),
+        ),
+      );
+  };
   return (
     <tr className="group/project-source grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-3 text-sm lg:table-row">
       <td className="row-span-4 align-top lg:py-4 lg:pr-3">
@@ -336,6 +367,31 @@ function ProjectSourceRow({
         ) : null}
       </td>
       <td className="col-start-2 min-w-0 space-y-1 align-top lg:py-4 lg:pr-3">
+        {cleanup ? (
+          <div>
+            <p>
+              {cleanup.disabledMep
+                ? `${t("Manual override")} · ${cleanup.scopes}`
+                : t("Legacy sources: {sources}", { sources: cleanup.scopes })}
+            </p>
+            {canEdit ? (
+              <Button
+                variant="ghost-muted"
+                size="xs"
+                disabled={disabled || saving}
+                onClick={() => void persist(cleanup.input)}
+              >
+                <Undo2Icon />
+                {t(cleanup.disabledMep ? "Restore automatic" : "Remove incompatible sources")}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {failure && !draft ? (
+          <p role="alert" className="text-destructive">
+            {failure}
+          </p>
+        ) : null}
         {githubSources.map((github) => (
           <p
             key={JSON.stringify([github.host, github.scope])}
@@ -349,7 +405,7 @@ function ProjectSourceRow({
             </span>
           </p>
         ))}
-        {enabled && (spaces.length > 0 || manual || githubSources.length === 0) ? (
+        {showMepEditor ? (
           <>
             <div className="flex min-w-0 items-center gap-1.5">
               <p className="flex min-w-0 flex-1 items-center gap-1.5 text-xs wrap-anywhere">
@@ -521,14 +577,19 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
       })),
     ),
   );
-  const discoveredSources = new Map<string, readonly IssueSource[]>();
+  const discoveredSources = new Map<string, (typeof IssueSourcesResult.Type)[number]>();
   for (const entry of sourceResults) {
     if (entry.result?._tag !== "Success") continue;
     for (const source of entry.result.value) {
-      discoveredSources.set(`${entry.environmentId}/${source.projectId}`, source.sources);
+      discoveredSources.set(`${entry.environmentId}/${source.projectId}`, source);
     }
   }
   const savedSources = new Map<string, readonly IssueSource[]>();
+  const singleProviderEnvironments = new Set(
+    connectedEnvironments
+      .filter((entry) => entry.serverConfig?.environment.capabilities.singleProjectIssueProvider)
+      .map((entry) => entry.environmentId),
+  );
   for (const group of groups) {
     for (const project of group.projects) {
       savedSources.set(
@@ -542,8 +603,9 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
       ...group,
       projects: group.projects.filter((project) =>
         matchesProjectSourceFilters(
-          project.title,
-          discoveredSources.get(projectKey(project)) ?? [],
+          project,
+          singleProviderEnvironments.has(project.environmentId),
+          discoveredSources.get(projectKey(project)),
           savedSources.get(projectKey(project)) ?? [],
           { name: nameFilter, provider: providerFilter, mode: modeFilter },
         ),
@@ -555,17 +617,30 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const refresh = useAtomCommand(sourceControlEnvironment.refreshIssueSources);
   const writable = visibleProjects.filter((project) => permissions.get(project.environmentId));
   const chosen = writable.filter((project) => selected.includes(projectKey(project)));
-  const githubChosen = chosen.filter((project) =>
-    matchesProjectSourceFilters(
-      project.title,
-      discoveredSources.get(projectKey(project)) ?? [],
-      savedSources.get(projectKey(project)) ?? [],
-      { name: "", provider: "github", mode: modeFilter },
-    ),
+  const githubChosen = chosen.filter((project) => {
+    const key = projectKey(project);
+    const result = discoveredSources.get(key);
+    const provider = projectIssueProvider(
+      detectedProjectIssueKind(project.repositoryIdentity, result),
+      result?.sources.length ? result.sources : (savedSources.get(key) ?? []),
+    );
+    return (
+      provider === "github" ||
+      (!provider &&
+        canBindUndetectedProject(
+          singleProviderEnvironments.has(project.environmentId),
+          result?.error ? "failed" : result ? "ready" : "pending",
+          result?.error,
+        ))
+    );
+  });
+  const githubOverrides = githubChosen.filter((project) =>
+    savedSources.get(projectKey(project))?.some((source) => source.provider === "github"),
   );
   const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && /^[\w.-]+$/u.test(host.trim());
   const run = async (action: "refresh" | "save" | "reset") => {
-    const actionTargets = action === "refresh" ? chosen : githubChosen;
+    const actionTargets =
+      action === "refresh" ? chosen : action === "reset" ? githubOverrides : githubChosen;
     if (!actionTargets.length || busy || (action === "save" && !valid)) return;
     setBusy(true);
     setMessage("");
@@ -591,11 +666,8 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
           targets.map((project) => [
             project.id,
             action === "reset"
-              ? (saved[project.id] ?? []).filter((source) => source.provider !== "github")
-              : [
-                  ...(saved[project.id] ?? []).filter((source) => source.provider !== "github"),
-                  { provider: "github" as const, scope: scope.trim(), host: host.trim() },
-                ],
+              ? []
+              : [{ provider: "github" as const, scope: scope.trim(), host: host.trim() }],
           ]),
         );
         const result = await update({
@@ -605,7 +677,9 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
             expectedIssueProjectSources: Object.fromEntries(
               targets.map((project) => [project.id, saved[project.id] ?? []]),
             ),
-            issueSourceProvider: "github" as const,
+            ...(environment.serverConfig!.environment.capabilities.singleProjectIssueProvider
+              ? { issueSourceProvider: "github" as const }
+              : {}),
           },
         });
         return {
@@ -716,11 +790,13 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               {t("GitHub override")}
               <span className="text-xs text-muted-foreground">{githubChosen.length}</span>
             </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void run("reset")}>
-              <Undo2Icon />
-              {t("Restore GitHub automatic")}
-              <span className="text-xs text-muted-foreground">{githubChosen.length}</span>
-            </Button>
+            {githubOverrides.length > 0 ? (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void run("reset")}>
+                <Undo2Icon />
+                {t("Restore GitHub automatic")}
+                <span className="text-xs text-muted-foreground">{githubOverrides.length}</span>
+              </Button>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -737,7 +813,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               <h3 className="text-sm font-medium">{t("GitHub Issue repository override")}</h3>
               <p className="text-xs text-muted-foreground">
                 {t(
-                  "Only changes the selected projects' GitHub Issue sources. MEP ONES spaces are not affected.",
+                  "Saving or restoring GitHub sources removes previously saved MEP spaces from the selected projects.",
                 )}
               </p>
             </div>

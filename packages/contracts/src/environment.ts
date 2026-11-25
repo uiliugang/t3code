@@ -98,6 +98,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   pullRequests: Schema.optionalKey(Schema.Boolean),
   pullRequestChecks: Schema.optionalKey(Schema.Boolean),
   issues: Schema.optionalKey(Schema.Boolean),
+  singleProjectIssueProvider: Schema.optionalKey(Schema.Boolean),
   /** Side chats: hidden `lineage.sideChat` forks. Older servers ignore the fork flag. */
   sideChats: Schema.optionalKey(Schema.Boolean),
   vcsBranchStatus: Schema.optionalKey(Schema.Boolean),
@@ -274,19 +275,31 @@ export const RepositoryOrigin = Schema.Struct({
 });
 export type RepositoryOrigin = typeof RepositoryOrigin.Type;
 
-export const RepositoryIdentity = Schema.Struct({
+const GitRepository = Schema.Struct({
   canonicalKey: TrimmedNonEmptyString,
   locator: RepositoryIdentityLocator,
   webUrl: Schema.optionalKey(TrimmedNonEmptyString),
-  /** Work tree root, or the git dir for a bare repository. */
-  rootPath: Schema.optionalKey(TrimmedNonEmptyString),
   displayName: Schema.optionalKey(TrimmedNonEmptyString),
   provider: Schema.optionalKey(SourceControlProviderKind),
+});
+
+export const RepositoryIdentity = Schema.Struct({
+  ...GitRepository.fields,
+  /** Work tree root, or the git dir for a bare repository. */
+  rootPath: Schema.optionalKey(TrimmedNonEmptyString),
   owner: Schema.optionalKey(TrimmedNonEmptyString),
   name: Schema.optionalKey(TrimmedNonEmptyString),
   origin: Schema.optionalKey(RepositoryOrigin),
+  issueRepository: Schema.optionalKey(Schema.NullOr(GitRepository)),
+  hasLocalOrigin: Schema.optionalKey(Schema.Literal(true)),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;
+
+export function repositoryIssueKind(identity: RepositoryIdentity | null | undefined) {
+  return identity?.issueRepository === undefined
+    ? identity?.provider
+    : identity.issueRepository?.provider;
+}
 
 export function repositoryGroupingKeyOf(identity: RepositoryIdentity): string {
   return identity.origin?.canonicalKey ?? identity.canonicalKey;

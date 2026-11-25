@@ -1,5 +1,5 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -359,6 +359,38 @@ it.effect("falls back to a non-origin remote when origin is not configured", () 
   }),
 );
 
+it.effect("uses a grouping hint only for the selected issue remote", () =>
+  Effect.gen(function* () {
+    const upstream = { name: "upstream", url: "git@work.alias:vendor/product.git" };
+    const issueRemoteHint = {
+      remoteName: upstream.name,
+      remoteUrl: upstream.url,
+      provider: { kind: kind("github"), name: "GitHub", baseUrl: "https://github.com" },
+    };
+    const fork = { name: "work", url: "https://gitlab.com/team/fork.git" };
+    const remotes = [upstream, fork];
+    const registry = yield* makeRegistry({ remotes });
+    const lookup = registry.resolveHandle({ cwd: "/repo", issueRemoteHint, refresh: true });
+    expect((yield* lookup).context).toMatchObject({
+      remoteUrl: fork.url,
+      provider: { kind: "gitlab" },
+    });
+    const namedFork = { name: "work", url: "https://github.com/team/fork.git" };
+    remotes.splice(
+      0,
+      2,
+      { name: "upstream", url: "https://gitlab.com/vendor/product.git" },
+      namedFork,
+    );
+    expect((yield* lookup).context?.remoteUrl).toBe(namedFork.url);
+    remotes.splice(0, 2, upstream, fork);
+    remotes.push({ name: "backup", url: "https://github.com/other/repo.git" });
+    expect((yield* lookup).context).toBeNull();
+    remotes.splice(1);
+    expect((yield* lookup).context).toEqual(issueRemoteHint);
+  }),
+);
+
 it.effect(
   "routes linked subjects to the host that serves them, independently of the checkout",
   () =>
@@ -529,6 +561,21 @@ it.effect("asks again after a check that could not answer", () =>
     yield* resolveUnknown(registry, "b");
     assert.strictEqual(asks, 2);
     assert.strictEqual(managedAsks, 2);
+    const strict = yield* registry
+      .resolveRepositoryContext({
+        cwd: "/repo",
+        context: {
+          provider: {
+            kind: kind("unknown"),
+            name: "forge.example.test",
+            baseUrl: "https://forge.example.test",
+          },
+          remoteName: "origin",
+          remoteUrl: "https://forge.example.test/team/web.git",
+        },
+      })
+      .pipe(Effect.result);
+    assert.strictEqual(strict._tag, "Failure");
   }),
 );
 

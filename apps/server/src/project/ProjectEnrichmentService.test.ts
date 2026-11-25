@@ -190,6 +190,69 @@ it.effect(
     }),
 );
 
+it.effect("keeps the last identity on inspection failure but publishes a confirmed removal", () =>
+  Effect.gen(function* () {
+    const root = "/fork";
+    let state: "ready" | "offline" | "moved" | "removed" = "ready";
+    const metadata = Layer.merge(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: (cwd, options) =>
+          Effect.suspend(() =>
+            state === "offline" || state === "moved"
+              ? (options?.onUnavailable?.(
+                  state === "moved" ? identity(cwd, 2) : cwd === "/cold" ? identity(cwd) : null,
+                ) ?? Effect.succeed(null))
+              : Effect.succeed(state === "ready" ? identity(cwd) : null),
+          ),
+      }),
+      Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        invalidate: () => Effect.void,
+        resolvePath: () => Effect.succeed(null),
+      }),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectEnrichment.ProjectEnrichmentService;
+      assert.deepEqual(yield* service.readRepositoryIdentity(root), identity(root));
+      const changes = yield* service.subscribeChanges;
+      state = "offline";
+      yield* service.request("/cold");
+      const cold = yield* PubSub.take(changes);
+      assert.isTrue(cold.repositoryIdentityResolved);
+      assert.deepEqual(cold.enrichment.repositoryIdentity, identity("/cold"));
+      assert.deepEqual((yield* service.peek("/cold")).repositoryIdentity, identity("/cold"));
+      assert.equal(
+        (yield* service.readRepositoryIdentity("/cold").pipe(Effect.result))._tag,
+        "Failure",
+      );
+      const refresh = yield* service.refreshRepositoryIdentity(root).pipe(Effect.result);
+      assert.equal(refresh._tag, "Failure");
+      assert.deepEqual((yield* service.peek(root)).repositoryIdentity, identity(root));
+      yield* TestClock.adjust(Duration.seconds(61));
+      yield* service.request(root);
+      const offline = yield* PubSub.take(changes);
+      assert.isFalse(offline.repositoryIdentityResolved);
+      assert.deepEqual(offline.enrichment.repositoryIdentity, identity(root));
+      state = "moved";
+      assert.equal(
+        (yield* service.refreshRepositoryIdentity(root).pipe(Effect.result))._tag,
+        "Failure",
+      );
+      assert.deepEqual((yield* service.peek(root)).repositoryIdentity, identity(root, 2));
+      const moved = yield* PubSub.take(changes);
+      assert.deepEqual(moved.enrichment.repositoryIdentity, identity(root, 2));
+      assert.equal(
+        (yield* service.readRepositoryIdentity(root).pipe(Effect.result))._tag,
+        "Failure",
+      );
+      state = "removed";
+      yield* service.refreshRepositoryIdentity(root);
+      const removed = yield* PubSub.take(changes);
+      assert.isTrue(removed.repositoryIdentityResolved);
+      assert.isNull(removed.enrichment.repositoryIdentity);
+    }).pipe(Effect.provide(layer(metadata)));
+  }),
+);
+
 it.effect("deduplicates requests, bounds pending work, and reloads invalidated roots", () =>
   Effect.gen(function* () {
     const firstStarted = yield* Deferred.make<void>();

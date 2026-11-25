@@ -1,5 +1,4 @@
 import { useAtomValue } from "@effect/atom-react";
-import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import {
   meituanAssociationCountLabel,
   meituanToolIdsForSection,
@@ -13,6 +12,7 @@ import {
   type ServerSettings,
   type SkillSource,
 } from "@t3tools/contracts";
+import { listedProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import { useState, type ComponentType } from "react";
 import {
   ArrowLeftIcon,
@@ -102,6 +102,7 @@ function useMeituanProjectAssociations(
   environmentId: EnvironmentId,
   settings: ServerSettings,
   enabled: boolean,
+  singleProvider: boolean,
 ) {
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
@@ -116,17 +117,17 @@ function useMeituanProjectAssociations(
   );
   const entries = projects
     .map((project) => {
-      const saved = (settings.issueProjectSources[project.id] ?? []).filter(
-        (source) => source.provider === "meituan",
-      );
-      const automatic =
-        query.data
-          ?.find((result) => result.projectId === project.id)
-          ?.sources.filter((source) => source.provider === "meituan") ?? [];
+      const saved = settings.issueProjectSources[project.id] ?? [];
+      const result = query.data?.find((row) => row.projectId === project.id);
       return {
         project,
-        manual: saved.length > 0,
-        sources: mergeProjectIssueSources(automatic, saved),
+        manual: saved.some((source) => source.provider === "meituan"),
+        sources: listedProjectIssueSources(
+          singleProvider,
+          result?.sources ?? [],
+          saved,
+          result?.provider ?? project.repositoryIdentity?.provider,
+        ).filter((source) => source.provider === "meituan"),
       };
     })
     .filter((entry) => entry.sources.length > 0);
@@ -272,6 +273,7 @@ function EnvironmentMeituanSettings({
     environmentId,
     settings,
     issuesEnabled && shouldDiscoverMeituanProjectSources(active),
+    capabilities.singleProjectIssueProvider === true,
   );
   const skillQuery = useEnvironmentQuery(serverEnvironment.skills({ environmentId, input: {} }));
   const mutateSkills = useAtomCommand(serverEnvironment.mutateSkills);

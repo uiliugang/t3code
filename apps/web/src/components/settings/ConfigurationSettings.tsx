@@ -5,6 +5,7 @@ import {
   createApplicationSettingsFile,
   createProjectSettingsFile,
   projectSettingsImportPatch,
+  projectImportSourceContext,
   projectTransferIdentity,
   settingsKeybindingsForExport,
   settingsKeybindingsToImport,
@@ -303,6 +304,9 @@ export function ProjectConfigurationSettings({
             serverEnvironment.settingsValueAtom(project.environmentId),
           );
           if (!current) throw new Error(t("Reconnect this environment before importing."));
+          const targetConfig = appAtomRegistry.get(
+            serverEnvironment.configValueAtom(project.environmentId),
+          );
           const result = await update({
             environmentId: project.environmentId,
             input: {
@@ -310,9 +314,15 @@ export function ProjectConfigurationSettings({
                 file,
                 project,
                 current,
+                await projectImportSourceContext(
+                  file,
+                  project,
+                  targetConfig?.environment.capabilities,
+                  appAtomRegistry,
+                  sourceControlEnvironment.refreshIssueSources,
+                ),
                 t,
-                appAtomRegistry.get(serverEnvironment.configValueAtom(project.environmentId))
-                  ?.providers,
+                targetConfig?.providers,
                 await importGeneratorCatalog(
                   file,
                   current,

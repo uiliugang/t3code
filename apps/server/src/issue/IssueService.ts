@@ -12,6 +12,8 @@ import {
   type IssueTrackerAccountId,
   SourceControlProviderKind,
   issueTrackerBindingScopes,
+  projectIssueProvider,
+  repositoryIssueKind,
   type IssueCandidates,
   type IssueCommentInput,
   type IssueCommentsPage,
@@ -98,7 +100,15 @@ interface SupportedProject extends ProjectTrackerBinding {
 function resolveGitHostBindings(
   project: OrchestrationProjectShell,
 ): ReadonlyArray<ProjectTrackerBinding> {
-  return sourceControlDefinitions.issueBindings(project.repositoryIdentity).map((binding) => ({
+  const identity = project.repositoryIdentity;
+  const selected = identity?.issueRepository;
+  const grouped = sourceControlDefinitions.issueBindings(identity);
+  const bindings =
+    selected === undefined ||
+    (grouped.length > 1 && selected && selected.provider === identity?.provider)
+      ? grouped
+      : sourceControlDefinitions.issueBindings(selected);
+  return bindings.map((binding) => ({
     ...binding,
     tracker: IssueTrackerKind.make(binding.tracker),
     accountId: null,
@@ -234,6 +244,8 @@ const make = Effect.gen(function* () {
 
   const listProjects = (filter: {
     readonly projectId?: IssueListInput["projectId"];
+    readonly refreshRepository?: boolean;
+    readonly standaloneOnly?: boolean;
     readonly activeOnly?: boolean;
     readonly excludeProjectIds?: IssueListInput["excludeProjectIds"];
     readonly host?: string | undefined;
@@ -242,7 +254,9 @@ const make = Effect.gen(function* () {
   }) =>
     (filter.projectId === undefined
       ? projects.listShells()
-      : projects.getShell(filter.projectId).pipe(Effect.map(Option.toArray))
+      : projects
+          .getShell(filter.projectId, undefined, filter.refreshRepository ? "refresh" : undefined)
+          .pipe(Effect.map(Option.toArray))
     ).pipe(
       Effect.mapError(
         (cause) =>
@@ -265,41 +279,33 @@ const make = Effect.gen(function* () {
           const errors: IssueListProjectError[] = [];
           if (shells.length === 0) return { supported, unimplemented, errors };
           const bound = yield* standaloneBindings(filter.projectId);
-          const requirements = yield* requirementIssues.trackerSources.pipe(
-            Effect.mapError(
-              (cause) =>
-                new IssueOperationError({
-                  operation: "listProjects",
-                  detail: cause.message,
-                  cause,
-                }),
-            ),
-          );
+          const requirements = filter.standaloneOnly
+            ? undefined
+            : yield* requirementIssues.trackerSources.pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new IssueOperationError({
+                      operation: "listProjects",
+                      detail: cause.message,
+                      cause,
+                    }),
+                ),
+              );
           const candidates = yield* Effect.forEach(
             shells.filter(
               (project) =>
                 !filter.activeOnly ||
                 (!project.archivedAt &&
-                  !Option.contains(requirements.scratchRoot, project.workspaceRoot)),
+                  !(
+                    requirements && Option.contains(requirements.scratchRoot, project.workspaceRoot)
+                  )),
             ),
             (project) =>
               Effect.gen(function* () {
-                const repositoryIdentity =
-                  project.repositoryIdentity ??
-                  (yield* repositoryIdentities.resolve(project.workspaceRoot));
-                const shell = { ...project, repositoryIdentity };
-                const gitBindings = resolveGitHostBindings(shell);
                 const binding = bound.get(project.id);
                 const api = binding && registry.get(binding.tracker);
-                const { sources, failure } = yield* requirements.forProject(shell);
-                if (failure)
-                  errors.push({
-                    projectId: project.id,
-                    projectTitle: project.title,
-                    message: failure.message,
-                  });
-                return [
-                  ...(binding && api && isStandaloneIssueTracker(api)
+                const standalone =
+                  binding && api && isStandaloneIssueTracker(api)
                     ? issueTrackerBindingScopes(binding).map((scope) => ({
                         project,
                         tracker: binding.tracker,
@@ -307,10 +313,26 @@ const make = Effect.gen(function* () {
                         scope,
                         accountId: binding.accountId ?? null,
                       }))
-                    : []),
-                  ...gitBindings
-                    .filter((git) => !sources.some((source) => source.provider === git.tracker))
-                    .map((git) => ({ project, ...git })),
+                    : [];
+                if (!requirements) return standalone;
+                const repositoryIdentity =
+                  project.repositoryIdentity ??
+                  (yield* repositoryIdentities.resolve(project.workspaceRoot));
+                const shell = { ...project, repositoryIdentity };
+                const gitBindings = resolveGitHostBindings(shell);
+                const { sources, failure } = yield* requirements.forProject(shell);
+                const requirementProvider = projectIssueProvider(
+                  repositoryIssueKind(repositoryIdentity),
+                  sources,
+                );
+                if (failure)
+                  errors.push({
+                    projectId: project.id,
+                    projectTitle: project.title,
+                    message: failure.message,
+                  });
+                return [
+                  ...standalone,
                   ...sources.map(({ provider, host, scope }) => ({
                     project,
                     tracker: IssueTrackerKind.make(provider),
@@ -318,6 +340,14 @@ const make = Effect.gen(function* () {
                     scope,
                     accountId: null,
                   })),
+                  ...gitBindings
+                    .filter(
+                      ({ tracker }) =>
+                        (tracker !== "github" && tracker !== "meituan") ||
+                        ((!requirementProvider || tracker === requirementProvider) &&
+                          !sources.length),
+                    )
+                    .map((git) => ({ project, ...git })),
                 ];
               }),
             { concurrency: SCOPE_CONCURRENCY },
@@ -373,11 +403,12 @@ const make = Effect.gen(function* () {
     writeOperation?: string,
   ): Effect.fn.Return<SupportedProject & { readonly writable: boolean }, IssueError> {
     const standalone = ref.url ? findStandaloneIssueUrl(registry.standalone, ref.url) : null;
+    const standaloneTracker = registry.standalone.some((api) => api.kind === ref.tracker);
     if (
       writeOperation !== undefined &&
       ref.url !== undefined &&
       ref.key !== undefined &&
-      registry.standalone.some((api) => api.kind === ref.tracker) &&
+      standaloneTracker &&
       (standalone === null ||
         standalone.tracker !== ref.tracker ||
         standalone.link.key.toLowerCase() !== ref.key.trim().toLowerCase() ||
@@ -391,7 +422,11 @@ const make = Effect.gen(function* () {
     }
     if (standalone !== null && standalone.tracker === ref.tracker) {
       const authority = new URL(ref.url!).host.toLowerCase();
-      const { supported } = yield* listProjects({ host: standalone.link.host, authority });
+      const { supported } = yield* listProjects({
+        host: standalone.link.host,
+        authority,
+        standaloneOnly: true,
+      });
       const onHost = supported.filter((project) => project.tracker === standalone.tracker);
       const onAuthority = onHost.filter((project) => project.host === authority);
       const onTracker = onAuthority.length > 0 ? onAuthority : onHost;
@@ -458,7 +493,11 @@ const make = Effect.gen(function* () {
       );
     }
 
-    const { supported } = yield* listProjects({ projectId: ref.projectId });
+    const { supported } = yield* listProjects({
+      projectId: ref.projectId,
+      standaloneOnly: standaloneTracker,
+      refreshRepository: writeOperation !== undefined && !standaloneTracker,
+    });
     const host = ref.host?.trim().toLowerCase();
     const candidates = supported.filter(
       (candidate) =>

@@ -16,13 +16,51 @@ export type IssueSource = typeof IssueSource.Type;
 export function issueSourcesMatch(
   current: readonly IssueSource[],
   expected: readonly IssueSource[],
-  provider?: IssueProvider,
 ) {
-  const relevant = (source: IssueSource) => !provider || source.provider === provider;
-  return Equal.equals(current.filter(relevant), expected.filter(relevant));
+  return Equal.equals(current, expected);
+}
+
+export function projectIssueProvider(
+  repositoryKind: string | null | undefined,
+  sources: readonly IssueSource[],
+): IssueProvider | undefined {
+  return repositoryKind === "github" || repositoryKind === "meituan"
+    ? repositoryKind
+    : sources[0]?.provider;
+}
+
+export function mergeProjectIssueSources(
+  automatic: readonly IssueSource[],
+  saved: readonly IssueSource[],
+  repositoryKind?: string,
+) {
+  const provider = projectIssueProvider(repositoryKind, automatic.length ? automatic : saved);
+  const manual = saved.filter((source) => source.provider === provider);
+  return manual.length ? manual : automatic.filter((source) => source.provider === provider);
 }
 
 export const IssueProjectSources = Schema.Record(ProjectId, Schema.Array(IssueSource));
+export function projectIssueSourcesForTransfer(
+  sources: readonly IssueSource[] | undefined,
+  repositoryKind?: string,
+) {
+  if (!sources?.length) return sources;
+  const compatible = mergeProjectIssueSources([], sources, repositoryKind);
+  return compatible.length ? compatible : undefined;
+}
+
+export function importProjectIssueSources(
+  projectId: ProjectId,
+  incoming: readonly IssueSource[] | undefined,
+  saved: readonly IssueSource[],
+  repositoryKind?: string,
+) {
+  const compatible = projectIssueSourcesForTransfer(
+    incoming,
+    projectIssueProvider(repositoryKind, saved),
+  );
+  return compatible === undefined ? {} : { issueProjectSources: { [projectId]: compatible } };
+}
 export const IssueTarget = Schema.Struct({
   projectId: ProjectId,
   provider: IssueProvider,
@@ -35,6 +73,7 @@ export const IssueSourcesInput = Schema.Struct({
 });
 export const IssueProjectSource = Schema.Struct({
   projectId: ProjectId,
+  provider: Schema.optionalKey(IssueProvider),
   repository: Schema.NullOr(Schema.String),
   sources: Schema.Array(IssueSource),
   manual: Schema.Boolean,

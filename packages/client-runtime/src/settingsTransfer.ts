@@ -1,9 +1,14 @@
+import { detectedProjectIssueKind } from "./issueSources.ts";
 import {
   ClientSettingsPatch,
   ClientServerSettingsPatch,
   CustomModelSetting,
   KeybindingsConfig,
   IssueSource,
+  type IssueSourcesResult,
+  type IssueSourcesInput,
+  projectIssueSourcesForTransfer,
+  importProjectIssueSources,
   MAX_KEYBINDINGS_COUNT,
   ProjectSettingsOverrides,
   ProjectTransferWorkspace,
@@ -19,6 +24,7 @@ import {
   WorkspaceRootId,
   type ClientSettings,
   type EnvironmentId,
+  type ExecutionEnvironmentCapabilities,
   type ListTextGeneratorModelsResult,
   type Project,
   type ResolvedKeybindingsConfig,
@@ -45,6 +51,7 @@ import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { getProviderClient } from "./providerClients.ts";
+import { sourceControlClients } from "./sourceControlClients.ts";
 
 export const MAX_SETTINGS_FILE_BYTES = 1024 * 1024;
 
@@ -477,6 +484,10 @@ export function createProjectSettingsFile(
 ): ProjectSettingsFile {
   const settings = resolveProjectSettings(server, project.id).overrides;
   const virtualModels = projectVirtualModels(settings, server);
+  const saved = server.issueProjectSources[project.id];
+  const provider = detectedProjectIssueKind(project.repositoryIdentity);
+  const issueSources =
+    !provider || provider === "unknown" ? saved : projectIssueSourcesForTransfer(saved, provider);
   return {
     format: "t3-code-settings",
     version: 1,
@@ -489,9 +500,7 @@ export function createProjectSettingsFile(
     repositories: Object.fromEntries(
       (project.workspaceConfig?.roots ?? []).map((root) => [root.id, root.alias]),
     ),
-    ...(Object.hasOwn(server.issueProjectSources, project.id)
-      ? { issueSources: server.issueProjectSources[project.id]! }
-      : {}),
+    ...(issueSources === undefined ? {} : { issueSources }),
   };
 }
 
@@ -608,15 +617,69 @@ export function applicationSettingsImportPatch(
   };
 }
 
+type IssueImportCapabilities = Pick<ExecutionEnvironmentCapabilities, "singleProjectIssueProvider">;
+type IssueDiscovery = Pick<
+  (typeof IssueSourcesResult.Type)[number],
+  "sources" | "provider" | "error"
+>;
+
+export async function projectImportSourceContext<E>(
+  file: ProjectSettingsFile,
+  project: TransferProject,
+  capabilities: IssueImportCapabilities | undefined,
+  registry: AtomRegistry.AtomRegistry,
+  command: AtomCommand<
+    { environmentId: EnvironmentId; input: typeof IssueSourcesInput.Type },
+    typeof IssueSourcesResult.Type,
+    E
+  >,
+) {
+  if (capabilities?.singleProjectIssueProvider || !file.issueSources?.length) return capabilities;
+  const rows = await Effect.runPromise(
+    command.run(registry, {
+      environmentId: project.environmentId,
+      input: { projectIds: [project.id], refresh: true },
+    }),
+  );
+  const row = rows.find((entry) => entry.projectId === project.id);
+  if (!row) throw new Error("This project is no longer available.");
+  return { ...capabilities, discovery: row };
+}
+
 export function projectSettingsImportPatch(
   file: ProjectSettingsFile,
   project: TransferProject,
   target: ServerSettings,
+  capabilities: IssueImportCapabilities & { readonly discovery?: IssueDiscovery } = {},
   t: UiTranslator = translateUi.bind(null, "en"),
   providers?: readonly ServerProvider[],
   generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
 ): ServerSettingsPatch {
   checkProviders(file, target, t);
+  const saved = target.issueProjectSources[project.id] ?? [];
+  const discovery = capabilities.discovery;
+  const failedDiscovery = discovery?.error !== undefined;
+  const provider = failedDiscovery
+    ? detectedProjectIssueKind(null, { sources: discovery.sources })
+    : detectedProjectIssueKind(project.repositoryIdentity, discovery);
+  const incoming =
+    !capabilities.singleProjectIssueProvider &&
+    failedDiscovery &&
+    !provider &&
+    file.issueSources?.length
+      ? undefined
+      : file.issueSources;
+  const ambiguousLegacyRestore =
+    !capabilities.singleProjectIssueProvider &&
+    incoming?.length &&
+    (!provider || provider === "unknown") &&
+    [...saved, ...incoming].some((source) => source.provider !== incoming[0]?.provider);
+  if (ambiguousLegacyRestore && saved.length === 0)
+    throw new Error(
+      t(
+        "This backup contains both GitHub and MEP sources. Keep one platform in the backup or update the destination server before importing.",
+      ),
+    );
   const scripts = file.settings.defaultProjectScripts?.map((script) => ({
     ...script,
     ...(script.repositoryRootIds
@@ -639,13 +702,11 @@ export function projectSettingsImportPatch(
   }));
   return {
     ...importedVirtualModels(file, target, providers, generators),
-    ...(file.issueSources === undefined
+    ...(incoming === undefined || ambiguousLegacyRestore
       ? {}
-      : {
-          issueProjectSources: {
-            [project.id]: file.issueSources,
-          },
-        }),
+      : capabilities.singleProjectIssueProvider
+        ? { issueProjectSources: { [project.id]: incoming } }
+        : importProjectIssueSources(project.id, incoming, saved, provider)),
     projectSettingsOverrides: {
       [project.id]:
         Object.keys(file.settings).length === 0
@@ -664,19 +725,48 @@ export function projectSettingsImportPatch(
 
 export function projectConfigurationsForImport(
   file: SettingsFile,
+  capabilities?: IssueImportCapabilities,
 ): ReadonlyArray<ProjectImportDefinition> {
-  if (file.scope === "application") return file.projects ?? [];
-  if (!file.workspace) return [];
-  return [
-    {
-      name: file.name,
-      settings: file.settings,
-      providers: file.providers,
-      ...(file.virtualModels ? { virtualModels: file.virtualModels } : {}),
-      workspace: file.workspace,
-      ...(file.issueSources === undefined ? {} : { issueSources: file.issueSources }),
-    },
-  ];
+  const definitions =
+    file.scope === "application"
+      ? (file.projects ?? [])
+      : !file.workspace
+        ? []
+        : [
+            {
+              name: file.name,
+              settings: file.settings,
+              providers: file.providers,
+              ...(file.virtualModels ? { virtualModels: file.virtualModels } : {}),
+              workspace: file.workspace,
+              ...(file.issueSources === undefined ? {} : { issueSources: file.issueSources }),
+            },
+          ];
+  if (!capabilities || capabilities.singleProjectIssueProvider) return definitions;
+  return definitions.map((definition) => {
+    const { issueSources, workspace } = definition;
+    if (!issueSources?.length) return definition;
+    const remote = workspace.roots.find((root) => root.id === workspace.primaryRootId)?.remoteUrl;
+    const provider = remote ? sourceControlClients.recognizeRemote(remote)?.kind : undefined;
+    if (
+      !provider ||
+      provider === "unknown" ||
+      (provider !== "github" &&
+        provider !== "meituan" &&
+        issueSources.some((source) => source.provider !== issueSources[0]?.provider))
+    ) {
+      throw new Error(
+        "The destination server cannot confirm the issue platform for this clone. Update the server or import the bindings from project settings after cloning.",
+      );
+    }
+    if (provider !== "github" && provider !== "meituan") {
+      return Struct.omit(definition, ["issueSources"]);
+    }
+    const compatible = projectIssueSourcesForTransfer(issueSources, provider);
+    return compatible
+      ? { ...definition, issueSources: compatible }
+      : Struct.omit(definition, ["issueSources"]);
+  });
 }
 
 function keybindingCondition(node: KeybindingWhenNode): string {

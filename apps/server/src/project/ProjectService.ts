@@ -260,6 +260,7 @@ export class ProjectService extends Context.Service<
     readonly getShell: (
       projectId: ProjectId,
       workspaceRoot?: string,
+      repositoryLookup?: "resolve" | "refresh",
     ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ProjectOperationError>;
     readonly listShells: (options?: {
       readonly projectIds?: ReadonlyArray<ProjectId>;
@@ -1005,7 +1006,7 @@ export const make = Effect.gen(function* () {
     );
 
   const getShell: ProjectService["Service"]["getShell"] = Effect.fn("ProjectService.getShell")(
-    function* (projectId, workspaceRoot) {
+    function* (projectId, workspaceRoot, repositoryLookup) {
       const shell = yield* projects
         .getShell(projectId)
         .pipe(
@@ -1014,11 +1015,23 @@ export const make = Effect.gen(function* () {
           ),
         );
       if (Option.isNone(shell)) return shell;
-      if (workspaceRoot === undefined || workspaceRoot === shell.value.workspaceRoot) {
+      const root = workspaceRoot ?? shell.value.workspaceRoot;
+      if (!repositoryLookup && root === shell.value.workspaceRoot) {
         return Option.some(yield* enrichShell(shell.value));
       }
-      const repositoryIdentity = yield* projectEnrichment.readRepositoryIdentity(workspaceRoot);
-      return Option.some({ ...shell.value, workspaceRoot, repositoryIdentity });
+      const readIdentity = projectEnrichment.readRepositoryIdentity(root);
+      const repositoryIdentity = yield* (
+        repositoryLookup === "refresh"
+          ? projectEnrichment.refreshRepositoryIdentity(root).pipe(Effect.andThen(readIdentity))
+          : repositoryLookup === "resolve"
+            ? readIdentity
+            : readIdentity.pipe(Effect.catch((error) => Effect.succeed(error.remote)))
+      ).pipe(
+        Effect.mapError(
+          (cause) => new ProjectOperationError({ operation: "read-project", projectId, cause }),
+        ),
+      );
+      return Option.some({ ...shell.value, workspaceRoot: root, repositoryIdentity });
     },
   );
 
@@ -1060,9 +1073,10 @@ export const make = Effect.gen(function* () {
             Effect.filterOrElse(
               (project) => project.repositoryIdentity !== null,
               (project) =>
-                projectEnrichment
-                  .readRepositoryIdentity(project.workspaceRoot)
-                  .pipe(Effect.map((repositoryIdentity) => ({ ...project, repositoryIdentity }))),
+                projectEnrichment.readRepositoryIdentity(project.workspaceRoot).pipe(
+                  Effect.catch((error) => Effect.succeed(error.remote)),
+                  Effect.map((repositoryIdentity) => ({ ...project, repositoryIdentity })),
+                ),
             ),
           ),
         { concurrency: 8 },
@@ -1086,7 +1100,9 @@ export const make = Effect.gen(function* () {
       (row) =>
         Effect.all({
           root: physicalRoot(row.workspaceRoot),
-          identity: projectEnrichment.readRepositoryIdentity(row.workspaceRoot),
+          identity: projectEnrichment
+            .readRepositoryIdentity(row.workspaceRoot, "remoteOnly")
+            .pipe(Effect.orElseSucceed(() => null)),
           id: Effect.succeed(row.projectId),
         }),
       { concurrency: 4 },
@@ -1110,7 +1126,9 @@ export const make = Effect.gen(function* () {
           if (Result.isFailure(normalized)) return { ...base, error: normalized.failure.message };
           const root = yield* physicalRoot(normalized.success);
           const existing = known.find((entry) => entry.root === root);
-          const identity = yield* projectEnrichment.readRepositoryIdentity(normalized.success);
+          const identity = yield* projectEnrichment
+            .readRepositoryIdentity(normalized.success, "remoteOnly")
+            .pipe(Effect.orElseSucceed(() => null));
           const key = identity ? repositoryGroupingKeyOf(identity) : null;
           const sameRepository = key
             ? known.find(

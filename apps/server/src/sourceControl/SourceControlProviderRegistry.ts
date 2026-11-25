@@ -15,7 +15,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as BuiltInDrivers from "./builtInDrivers.ts";
-import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
+import { selectRequirementRemote, sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import {
   probeSourceControlProvider,
@@ -49,6 +49,13 @@ export class SourceControlProviderRegistry extends Context.Service<
   SourceControlProviderRegistry,
   {
     readonly resolveLink: SourceControlProvider.ResolveSourceControlLink;
+    readonly resolveRepositoryContext: (input: {
+      readonly cwd: string;
+      readonly context: SourceControlProvider.SourceControlProviderContext;
+    }) => Effect.Effect<
+      SourceControlProvider.SourceControlProviderContext | null,
+      SourceControlProviderError
+    >;
     readonly get: (
       kind: SourceControlProviderKind,
     ) => Effect.Effect<
@@ -58,6 +65,8 @@ export class SourceControlProviderRegistry extends Context.Service<
     readonly resolveHandle: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProvider.SourceControlProviderContext;
+      readonly issueRemoteHint?: SourceControlProvider.SourceControlProviderContext | null;
+      readonly refresh?: boolean;
     }) => Effect.Effect<SourceControlProviderHandle, SourceControlProviderError>;
     readonly resolve: (input: {
       readonly cwd: string;
@@ -323,7 +332,11 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
     const refineContext = (
       cwd: string,
       context: SourceControlProvider.SourceControlProviderContext | null,
-    ): Effect.Effect<SourceControlProvider.SourceControlProviderContext | null> =>
+      requireSettled = false,
+    ): Effect.Effect<
+      SourceControlProvider.SourceControlProviderContext | null,
+      SourceControlProviderError
+    > =>
       context === null || context.provider.kind !== "unknown"
         ? Effect.succeed(context)
         : Cache.get(
@@ -332,9 +345,22 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               context,
               refineUnknownRemoteProvider({ specs: discoverySpecs, process, cwd, context }),
             ),
-          ).pipe(Effect.map(({ provider }) => (provider ? { ...context, provider } : context)));
+          ).pipe(
+            Effect.flatMap(({ provider, settled }) =>
+              requireSettled && !settled
+                ? Effect.fail(
+                    new SourceControlProviderError({
+                      provider: context.provider.kind,
+                      operation: "detectProvider",
+                      cwd,
+                      detail: "Could not confirm the repository provider.",
+                    }),
+                  )
+                : Effect.succeed(provider ? { ...context, provider } : context),
+            ),
+          );
 
-    const detectProviderContext = Effect.fn("SourceControlProviderRegistry.detectProviderContext")(
+    const readProviderRemotes = Effect.fn("SourceControlProviderRegistry.readProviderRemotes")(
       function* (cwd: string) {
         const handle = yield* vcsRegistry.resolve({ cwd }).pipe(
           Effect.mapError(
@@ -360,7 +386,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               }),
           ),
         );
-        const targets = yield* Effect.filter(
+        return yield* Effect.filter(
           remotes.remotes,
           (remote) =>
             sourceControlDefinitions.recognizeRemote(remote.url)?.kind === "tanstack-source"
@@ -381,7 +407,33 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               : Effect.succeed(true),
           { concurrency: "unbounded" },
         );
-        return yield* refineContext(cwd, selectProviderContext(targets));
+      },
+    );
+
+    const issueRemotes = yield* Cache.makeWith(readProviderRemotes, {
+      capacity: PROVIDER_DETECTION_CACHE_CAPACITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? PROVIDER_DETECTION_CACHE_TTL : Duration.zero),
+    });
+    const detectIssueContext = Effect.fn("SourceControlProviderRegistry.detectIssueContext")(
+      function* (
+        cwd: string,
+        hint: SourceControlProvider.SourceControlProviderContext | null,
+        refresh = false,
+      ) {
+        if (refresh) yield* Cache.invalidate(issueRemotes, cwd);
+        const remotes = yield* Cache.get(issueRemotes, cwd);
+        const selected = selectRequirementRemote(remotes);
+        if (!selected) return null;
+        const context =
+          hint?.remoteUrl === selected.remoteUrl
+            ? { ...selected, provider: hint.provider }
+            : selected;
+        return yield* refineContext(cwd, context);
+      },
+    );
+    const detectProviderContext = Effect.fn("SourceControlProviderRegistry.detectProviderContext")(
+      function* (cwd: string) {
+        return yield* refineContext(cwd, selectProviderContext(yield* readProviderRemotes(cwd)));
       },
     );
 
@@ -395,9 +447,13 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
     });
 
     const resolveHandle: SourceControlProviderRegistry["Service"]["resolveHandle"] = (input) =>
-      (input.context === undefined
-        ? Cache.get(providerContextCache, input.cwd)
-        : refineContext(input.cwd, input.context)
+      (input.issueRemoteHint !== undefined
+        ? detectIssueContext(input.cwd, input.issueRemoteHint, input.refresh)
+        : input.context === undefined
+          ? (input.refresh ? Cache.invalidate(providerContextCache, input.cwd) : Effect.void).pipe(
+              Effect.andThen(Cache.get(providerContextCache, input.cwd)),
+            )
+          : refineContext(input.cwd, input.context)
       ).pipe(
         Effect.flatMap((context) => {
           const kind = context?.provider.kind ?? SourceControlProviderKind.make("unknown");
@@ -414,6 +470,9 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       );
 
     return SourceControlProviderRegistry.of({
+      resolveRepositoryContext: Effect.fn("SourceControlProviderRegistry.resolveRepositoryContext")(
+        ({ cwd, context }) => refineContext(cwd, context, true),
+      ),
       resolveLink: (input) => {
         if (input.url.protocol !== "https:" || input.url.username || input.url.password) {
           return undefined;

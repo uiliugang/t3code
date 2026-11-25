@@ -296,6 +296,10 @@ connect to repeatedly, save its host and SSH password under **Settings → Meitu
 integration → Cloud Sandbox**. The desktop app uses that password only when the
 resolved host and port match. The SSH host key must already be trusted. If the
 saved password is rejected, update it in settings or enter a password manually.
+Before rolling back to a desktop version that supports only one Cloud Sandbox,
+keep just the server you want to use and save it in the current version. The
+single-server version cannot read a list of credentials. Versions with multi-server
+support can read and edit all saved servers.
 
 The remote host must be Linux or an Apple Silicon Mac with `curl` or `wget`,
 `tar`, `sha256sum` or `shasum`, and [provider setup](./install.md#providers).

@@ -18,7 +18,10 @@ import {
   ServerSettingsError,
   type ServerSettingsPatch,
   type IssueProvider,
+  importProjectIssueSources,
   issueSourcesMatch,
+  projectIssueProvider,
+  repositoryIssueKind,
   type ManagedPolicySummary,
   globalIdleCompaction,
   isSecretReference,
@@ -53,6 +56,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as ServerConfig from "./config.ts";
+import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import {
@@ -94,6 +98,7 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
   settingsPath: string,
   issueSourceProvider?: IssueProvider,
   expectedIssueProjectSources?: ServerSettings["issueProjectSources"],
+  repositoryKinds?: ReadonlyMap<string, string | undefined>,
 ) {
   for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
     if (
@@ -111,7 +116,7 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
   }
   for (const [id, expected] of Object.entries(expectedIssueProjectSources ?? {})) {
     const saved = current.issueProjectSources[ProjectId.make(id)] ?? [];
-    if (!issueSourcesMatch(saved, expected, issueSourceProvider)) {
+    if (!issueSourcesMatch(saved, expected)) {
       return yield* new ServerSettingsError({
         settingsPath,
         operation: "write-file",
@@ -119,21 +124,67 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
       });
     }
   }
-  if (issueSourceProvider && patch.issueProjectSources) {
-    const sources = Object.fromEntries(
-      Object.entries(patch.issueProjectSources).map(([id, next]) => [
-        id,
-        [
-          ...(current.issueProjectSources[ProjectId.make(id)] ?? []).filter(
-            (s) => s.provider !== issueSourceProvider,
+  if (!patch.issueProjectSources) return applyServerSettingsPatch(current, patch);
+  const { issueProjectSources, ...settings } = patch;
+  if (!issueSourceProvider && !expectedIssueProjectSources && settings.projectSettingsOverrides) {
+    const targets = Object.keys(settings.projectSettingsOverrides);
+    if (
+      targets.length === 1 &&
+      Object.keys(issueProjectSources).length === 1 &&
+      Object.keys(settings).every(
+        (key) => key === "projectSettingsOverrides" || key === "importVirtualModels",
+      )
+    ) {
+      const id = ProjectId.make(targets[0]!);
+      if (Object.hasOwn(issueProjectSources, id))
+        return applyServerSettingsPatch(current, {
+          ...settings,
+          ...importProjectIssueSources(
+            id,
+            issueProjectSources[id],
+            current.issueProjectSources[id] ?? [],
+            repositoryKinds?.get(id),
           ),
-          ...next.filter((s) => s.provider === issueSourceProvider),
-        ],
-      ]),
-    );
-    return applyServerSettingsPatch(current, { ...patch, issueProjectSources: sources });
+        });
+    }
   }
-  return applyServerSettingsPatch(current, patch);
+  const sources = { ...issueProjectSources };
+  for (const [key, next] of Object.entries(sources)) {
+    if (!next.length && !issueSourceProvider) continue;
+    const id = ProjectId.make(key);
+    const saved = current.issueProjectSources[id] ?? [];
+    const provider = issueSourceProvider ?? next[0]?.provider;
+    const bound = projectIssueProvider(repositoryKinds?.get(id), saved);
+    const other = next.filter((source) => source.provider !== provider);
+    if (
+      issueSourceProvider &&
+      expectedIssueProjectSources?.[id] &&
+      other.length > 0 &&
+      other.length === next.length &&
+      issueSourcesMatch(next, saved)
+    )
+      continue;
+    if (
+      (bound && bound !== provider) ||
+      (other.length &&
+        !(
+          issueSourceProvider &&
+          expectedIssueProjectSources?.[id] &&
+          issueSourcesMatch(
+            other,
+            saved.filter((source) => source.provider !== provider),
+          )
+        ))
+    ) {
+      return yield* new ServerSettingsError({
+        settingsPath,
+        operation: "write-file",
+        detail: "A project can use only one requirement provider.",
+      });
+    }
+    if (other.length) sources[id] = next.filter((source) => source.provider === provider);
+  }
+  return applyServerSettingsPatch(current, { ...patch, issueProjectSources: sources });
 });
 
 const textEncoder = new TextEncoder();
@@ -947,6 +998,37 @@ const make = Effect.gen(function* () {
   const pathService = yield* Path.Path;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
   const sql = yield* SqlClient.SqlClient;
+  const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+  const repositoryKind = Effect.fn("ServerSettings.issueRepositoryKind")(function* (id: ProjectId) {
+    const [row] = yield* sql<{
+      workspaceRoot: string;
+    }>`SELECT workspace_root AS workspaceRoot FROM projection_projects WHERE project_id = ${id} AND deleted_at IS NULL`.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(
+        (cause) => new ServerSettingsError({ settingsPath, operation: "write-file", cause }),
+      ),
+    );
+    if (!row) return undefined;
+    const resolver = yield* Effect.serviceOption(
+      RepositoryIdentityResolver.RepositoryIdentityResolver,
+    );
+    const identity = yield* Option.getOrElse(resolver, () => repositoryIdentities).resolve(
+      row.workspaceRoot,
+      {
+        refresh: true,
+        onUnavailable: () =>
+          Effect.fail(
+            new ServerSettingsError({
+              settingsPath,
+              operation: "write-file",
+              detail:
+                "Could not inspect the project repository. Restore its checkout or Git configuration before saving requirement sources.",
+            }),
+          ),
+      },
+    );
+    return repositoryIssueKind(identity);
+  });
   const {
     settings: managed,
     providers: managedProviders,
@@ -1497,13 +1579,28 @@ const make = Effect.gen(function* () {
     );
   };
 
-  const updateAndPersistSettings = (
+  const updateAndPersistSettings = Effect.fn("ServerSettings.updateAndPersistSettings")(function* (
     patch: ServerSettingsPatch,
-    update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
+    update: (
+      current: ServerSettings,
+      kinds: ReadonlyMap<string, string | undefined>,
+    ) => Effect.Effect<ServerSettings, ServerSettingsError>,
     validateOnly = false,
     connectionSwitchInstanceId?: ProviderInstanceId,
-  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-    writeSemaphore.withPermits(1)(
+    issueSourceProvider?: IssueProvider,
+  ) {
+    const targets = Object.entries(patch.issueProjectSources ?? {}).filter(
+      ([, sources]) => sources.length || issueSourceProvider,
+    );
+    const repositoryKinds = new Map(
+      yield* Effect.forEach(
+        targets,
+        ([id]) =>
+          repositoryKind(ProjectId.make(id)).pipe(Effect.map((kind) => [id, kind] as const)),
+        { concurrency: 4 },
+      ),
+    );
+    return yield* writeSemaphore.withPermits(1)(
       Effect.gen(function* () {
         const { settings: current, parseFailure } = yield* reloadSettings;
         if (Option.isSome(parseFailure)) {
@@ -1517,7 +1614,7 @@ const make = Effect.gen(function* () {
         // a removed provider's reference is cleared below rather than restored by persistence.
         const updated = withoutRedirectedSimlockTokens(
           current,
-          withEchoedSecretReferences(current, yield* update(current)),
+          withEchoedSecretReferences(current, yield* update(current, repositoryKinds)),
         );
         for (const [id, instance] of Object.entries(updated.providerInstances)) {
           if (
@@ -1590,6 +1687,7 @@ const make = Effect.gen(function* () {
         return resolved;
       }),
     );
+  });
 
   const withSettingsSnapshot: ServerSettingsService["Service"]["withSettingsSnapshot"] = (
     use,
@@ -1764,7 +1862,7 @@ const make = Effect.gen(function* () {
   ) =>
     updateAndPersistSettings(
       patch,
-      (current) =>
+      (current, repositoryKinds) =>
         Effect.gen(function* () {
           yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
           yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
@@ -1774,6 +1872,9 @@ const make = Effect.gen(function* () {
               : current,
             patch,
             settingsPath,
+            undefined,
+            undefined,
+            repositoryKinds,
           );
           return applyProviderInstanceMutation(patched, mutation);
         }),
@@ -1795,18 +1896,24 @@ const make = Effect.gen(function* () {
       ),
     ),
     updateSettings: (patch, issueSourceProvider, expectedIssueProjectSources) =>
-      updateAndPersistSettings(patch, (current) =>
-        ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
-          Effect.andThen(() =>
-            applyCheckedSettingsPatch(
-              current,
-              patch,
-              settingsPath,
-              issueSourceProvider,
-              expectedIssueProjectSources,
+      updateAndPersistSettings(
+        patch,
+        (current, repositoryKinds) =>
+          ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
+            Effect.andThen(() =>
+              applyCheckedSettingsPatch(
+                current,
+                patch,
+                settingsPath,
+                issueSourceProvider,
+                expectedIssueProjectSources,
+                repositoryKinds,
+              ),
             ),
           ),
-        ),
+        false,
+        undefined,
+        issueSourceProvider,
       ),
     updateProviderInstance,
     validateProviderInstanceMutation: (mutation, patch) =>
@@ -1823,4 +1930,6 @@ const make = Effect.gen(function* () {
   } satisfies ServerSettingsService["Service"];
 });
 
-export const layer = Layer.effect(ServerSettingsService, make);
+export const layer = Layer.effect(ServerSettingsService, make).pipe(
+  Layer.provide(RepositoryIdentityResolver.layer),
+);

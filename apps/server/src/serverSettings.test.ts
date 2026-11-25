@@ -37,6 +37,7 @@ import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import { sourceControlHostSecretName } from "./sourceControl/sourceControlHostSecrets.ts";
 import * as ServerConfig from "./config.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
+import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerSettingsModule from "./serverSettings.ts";
 import { SECRET_REDACTED } from "./settingsSecrets.ts";
@@ -435,27 +436,32 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       }).pipe(Effect.provide(layerServerSettings())),
   );
   it.effect(
-    "preserves concurrent overrides of other issue providers when saving and restoring spaces",
+    "allows only one requirement provider even for concurrent or whole-project writes",
     () =>
       Effect.gen(function* () {
         const service = yield* ServerSettingsModule.ServerSettingsService;
         const id = ProjectId.make("project");
         const github = { provider: "github", host: "github.com", scope: "acme/repo" } as const;
         const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
-        yield* Effect.all(
+        const writes = yield* Effect.all(
           [
-            service.updateSettings({ issueProjectSources: { [id]: [github] } }, "github"),
-            service.updateSettings({ issueProjectSources: { [id]: [mep] } }, "meituan"),
+            service
+              .updateSettings({ issueProjectSources: { [id]: [github] } }, "github")
+              .pipe(Effect.result),
+            service
+              .updateSettings({ issueProjectSources: { [id]: [mep] } }, "meituan")
+              .pipe(Effect.result),
           ],
           { concurrency: 2 },
         );
-        const saved = yield* service.getSettings;
-        assert.sameDeepMembers([...(saved.issueProjectSources[id] ?? [])], [github, mep]);
-        const restored = yield* service.updateSettings(
-          { issueProjectSources: { [id]: [] } },
-          "meituan",
+        assert.strictEqual(writes.filter((result) => result._tag === "Success").length, 1);
+        const saved = (yield* service.getSettings).issueProjectSources[id];
+        assert.lengthOf(saved!, 1);
+        yield* Effect.flip(
+          service.updateSettings({ issueProjectSources: { [id]: [github, mep] } }),
         );
-        assert.deepStrictEqual(restored.issueProjectSources[id], [github]);
+        assert.deepStrictEqual((yield* service.getSettings).issueProjectSources[id], saved);
+        yield* service.updateSettings({ issueProjectSources: { [id]: [] } });
         const second = { ...github, scope: "acme/mobile" };
         const renamed = { ...github, scope: "acme/web" };
         const expected = { [id]: [github, second] };
@@ -475,6 +481,77 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         ]);
       }).pipe(Effect.provide(ServerSettingsModule.ServerSettingsService.layerTest())),
   );
+  it.effect("restores a legacy project backup without writing incompatible sources", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const id = ProjectId.make("project");
+      const github = { provider: "github", host: "github.com", scope: "acme/web" } as const;
+      const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
+      const renamed = { ...github, scope: "acme/mobile" };
+      yield* service.updateSettings({ issueProjectSources: { [id]: [github] } });
+      const overrides = { [id]: { defaultAutoPull: true } };
+      const backup = {
+        projectSettingsOverrides: overrides,
+        importVirtualModels: { team: { name: "Team", binding: null } },
+        issueProjectSources: { [id]: [mep, renamed] },
+      };
+      yield* Effect.flip(
+        service.updateSettings({
+          ...backup,
+          projectSettingsOverrides: { [ProjectId.make("other")]: null },
+        }),
+      );
+      yield* Effect.flip(service.updateSettings({ ...backup, defaultAutoPull: true }));
+      yield* Effect.flip(service.updateSettings(backup, "github", { [id]: [github] }));
+      const restored = yield* service.updateSettings(backup);
+      assert.deepEqual(restored.issueProjectSources[id], [renamed]);
+      assert.deepEqual(restored.projectSettingsOverrides[id], overrides[id]);
+      assert.deepEqual(restored.virtualModels?.team, backup.importVirtualModels.team);
+      const incompatible = yield* service.updateSettings({
+        projectSettingsOverrides: { [id]: null },
+        issueProjectSources: { [id]: [mep] },
+      });
+      assert.deepEqual(incompatible.issueProjectSources[id], [renamed]);
+      assert.isUndefined(incompatible.projectSettingsOverrides[id]);
+      const cleared = yield* service.updateSettings({
+        ...backup,
+        issueProjectSources: { [id]: [] },
+      });
+      assert.deepEqual(cleared.issueProjectSources[id] ?? [], []);
+    }).pipe(Effect.provide(ServerSettingsModule.ServerSettingsService.layerTest())),
+  );
+  it.effect("accepts unchanged legacy sources echoed by a scoped edit or reset", () => {
+    const edit = ProjectId.make("edit");
+    const reset = ProjectId.make("reset");
+    const automatic = ProjectId.make("automatic");
+    const github = { provider: "github", host: "github.com", scope: "acme/repo" } as const;
+    const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
+    const mixed = [github, mep];
+    const expected = { [edit]: mixed, [reset]: mixed, [automatic]: [mep] };
+    return Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const renamed = { ...github, scope: "acme/next" };
+      yield* Effect.flip(
+        service.updateSettings(
+          { issueProjectSources: { [edit]: [renamed, { ...mep, scope: "18" }] } },
+          "github",
+          expected,
+        ),
+      );
+      const result = yield* service.updateSettings(
+        { issueProjectSources: { [edit]: [mep, renamed], [reset]: [mep], [automatic]: [mep] } },
+        "github",
+        expected,
+      );
+      assert.deepEqual(result.issueProjectSources[edit], [renamed]);
+      assert.deepEqual(result.issueProjectSources[reset] ?? [], []);
+      assert.deepEqual(result.issueProjectSources[automatic], [mep]);
+    }).pipe(
+      Effect.provide(
+        ServerSettingsModule.ServerSettingsService.layerTest({ issueProjectSources: expected }),
+      ),
+    );
+  });
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
@@ -2835,6 +2912,72 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       const persisted = yield* decodeServerSettings(JSON.parse(raw));
       assert.isTrue(persisted.projectSettingsFolded);
       assert.isUndefined(persisted.projectSettingsOverrides[legacyProject]);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect(
+    "preserves the entire project backup target when its repository cannot be inspected",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const sql = yield* SqlClient.SqlClient;
+        const fs = yield* FileSystem.FileSystem;
+        const config = yield* ServerConfig.ServerConfig;
+        const id = ProjectId.make("unreadable");
+        const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
+        const github = { provider: "github", host: "github.com", scope: "acme/old" } as const;
+        const saved = { issueProjectSources: { [id]: [mep, github] } };
+        yield* fs.writeFileString(config.settingsPath, JSON.stringify(saved));
+        const folder = yield* fs.makeTempDirectoryScoped();
+        yield* sql`INSERT INTO projection_projects
+        (project_id, title, workspace_root, auto_pull, scripts_json, created_at, updated_at)
+        VALUES (${id}, 'Offline', ${`${folder}/missing`}, 0, '[]', '2026-08-25', '2026-08-25')`;
+        const backup = {
+          issueProjectSources: { [id]: [mep, { ...github, scope: "acme/new" }] },
+          projectSettingsOverrides: { [id]: { defaultAutoPull: true } },
+        };
+        const before = yield* service.getSettings;
+        const result = yield* service.updateSettings(backup).pipe(Effect.result);
+        assert.equal(result._tag, "Failure");
+        assert.deepEqual(yield* service.getSettings, before);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("does not hold the settings lock while detecting issue repositories", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const sql = yield* SqlClient.SqlClient;
+      const id = ProjectId.make("project:issue-probe");
+      yield* sql`INSERT INTO projection_projects
+        (project_id, title, workspace_root, auto_pull, scripts_json, created_at, updated_at)
+        VALUES (${id}, 'Probe', '/probe', 1, '[]', '2026-08-25', '2026-08-25')`;
+      const started = yield* Deferred.make<void>();
+      const resume = yield* Deferred.make<void>();
+      const writer = yield* service
+        .updateSettings({
+          issueProjectSources: {
+            [id]: [{ provider: "github", host: "github.com", scope: "acme/repo" }],
+          },
+        })
+        .pipe(
+          Effect.provideService(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+            resolve: () =>
+              Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Deferred.await(resume)),
+                Effect.as(null),
+              ),
+          }),
+          Effect.forkChild,
+        );
+      yield* Deferred.await(started);
+      const snapshot = yield* service
+        .withSettingsSnapshot(() => Effect.void, { tryTrusted: true })
+        .pipe(Effect.result);
+      if (snapshot._tag === "Success") yield* service.updateSettings({ defaultAutoPull: true });
+      yield* Deferred.succeed(resume, undefined);
+      const saved = yield* Fiber.join(writer);
+      assert.equal(snapshot._tag, "Success");
+      assert.isTrue(saved.defaultAutoPull);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 

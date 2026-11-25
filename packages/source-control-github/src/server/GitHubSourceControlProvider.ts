@@ -375,14 +375,17 @@ const refineRepositoryIdentity: NonNullable<
 }) {
   if (!identity.rootPath || (identity.provider !== undefined && identity.provider !== "unknown"))
     return identity;
-  const remote = parseGitRemoteHost(identity.locator.remoteUrl);
+  const remoteUrl = isSshRemoteUrl(identity.locator.remoteUrl)
+    ? `https://${identity.canonicalKey}`
+    : identity.locator.remoteUrl;
+  const remote = parseGitRemoteHost(remoteUrl);
   if (remote === null) return identity;
   const context = yield* resolveContext({
     cwd: identity.rootPath,
     context: {
       provider: unknownRemoteProvider(remote),
       remoteName: identity.locator.remoteName,
-      remoteUrl: identity.locator.remoteUrl,
+      remoteUrl,
     },
   });
   return context?.provider.kind === "github"

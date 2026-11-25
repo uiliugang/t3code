@@ -457,8 +457,7 @@ const layerRepositoryIdentityResolver = Layer.effect(
           if (provider.refineRepositoryIdentity === undefined) continue;
           const refined = yield* provider.refineRepositoryIdentity({
             identity,
-            resolveContext: (input) =>
-              registry.resolveHandle(input).pipe(Effect.map((handle) => handle.context)),
+            resolveContext: registry.resolveRepositoryContext,
           });
           if (refined !== identity) return refined;
         }

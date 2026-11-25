@@ -122,6 +122,12 @@ describe("GitHub remotes", () => {
       name: "GitHub",
       baseUrl: "https://github.com",
     });
+    for (const remote of [
+      "ssh://git@ssh.github.com:443/owner/repo.git",
+      "https://ssh.github.com/owner/repo",
+    ]) {
+      expect(recognize(remote)).toEqual(recognize("https://github.com/owner/repo"));
+    }
     expect(recognize("https://acme.ghe.com/owner/repo.git")).toEqual({
       kind: "github",
       name: "GitHub Self-Hosted",
