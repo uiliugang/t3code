@@ -426,7 +426,10 @@ describe("IssueService", () => {
               repositoryIdentity: {
                 ...repoProject.repositoryIdentity,
                 provider: SourceControlProviderKind.make("gitlab"),
-                issueProvider: SourceControlProviderKind.make("github"),
+                issueRepository: {
+                  ...repoProject.repositoryIdentity,
+                  provider: SourceControlProviderKind.make("github"),
+                },
               },
             })).sources,
           ).toEqual([{ provider: "github", host: "github.com", scope: "acme/legacy" }]);

@@ -459,7 +459,8 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     hasLocalOrigin,
     rootPath: cacheKey.rootPath,
   });
-  if (remote.remoteName === "origin" || hasLocalOrigin) return { identity };
+  if (hasLocalOrigin) return { identity, issueIdentity: null };
+  if (remote.remoteName === "origin") return { identity };
   for (const line of resolved.split("\n")) {
     const mark = /^remote\.(.+)\.t3-private-pr-companion\s+(.+)$/u.exec(line);
     if (!mark) continue;
@@ -476,11 +477,15 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
   const selected = selectRequirementRemote(
     Array.from(fetchRemotes, ([name, url]) => ({ name, url })),
   );
-  if (!selected || selected.remoteUrl === remote.remoteUrl) return { identity };
+  if (!selected) return { identity, issueIdentity: null };
+  if (selected.remoteUrl === remote.remoteUrl) return { identity };
   const issueIdentity = buildRepositoryIdentity({
     remoteName: selected.remoteName,
     remoteUrl: selected.remoteUrl,
-    keyUrl: selected.remoteUrl === originUrl ? originKeyUrl : selected.remoteUrl,
+    keyUrl:
+      selected.remoteUrl === originUrl
+        ? originKeyUrl
+        : yield* sshResolvedRemoteUrl(selected.remoteUrl, remotes),
     originUrl: undefined,
     originKeyUrl: undefined,
     hasLocalOrigin: false,
@@ -560,13 +565,16 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
           }
           const result = yield* Cache.get(providerIdentityCache, identity);
           const issue = issueIdentity && (yield* Cache.get(providerIdentityCache, issueIdentity));
-          if (result === unconfirmedProvider || issue === unconfirmedProvider) {
-            const display = issueIdentity?.provider
-              ? { ...identity, issueProvider: issueIdentity.provider }
-              : identity;
-            return yield* options?.onUnavailable?.(display) ?? Effect.succeed(display);
-          }
-          return issue?.provider ? { ...result, issueProvider: issue.provider } : result;
+          const grouping = result === unconfirmedProvider ? identity : result;
+          const selected = issue === unconfirmedProvider ? issueIdentity : issue;
+          const resolved =
+            selected === undefined ? grouping : { ...grouping, issueRepository: selected };
+          if (
+            issue === unconfirmedProvider ||
+            (issue === undefined && result === unconfirmedProvider)
+          )
+            return yield* options?.onUnavailable?.(resolved) ?? Effect.succeed(resolved);
+          return resolved;
         }
       }
       return yield* options?.onUnavailable?.(null) ?? Effect.succeed(null);

@@ -609,6 +609,19 @@ describe("ProjectConfigurationService", () => {
         expect(roots[0]!.setupScript).toEqual(setupScript);
         expect(roots[1]!.defaultBaseRef).toBe("develop");
         expect(roots.every((root) => !("sourcePath" in root))).toBe(true);
+        yield* git(rootPath, "remote", "rename", "origin", "work");
+        const renamed = (yield* service.exportProjects({ projectIds: [projectId] }))[0]!
+          .configuration;
+        expect(renamed.workspace.roots[0]?.remoteUrl).toEqual(roots[0]!.remoteUrl);
+        expect(renamed.issueSources).toEqual([github]);
+        yield* git(rootPath, "remote", "set-url", "work", "https://gitlab.com/team/fork.git");
+        yield* git(rootPath, "remote", "set-url", "upstream", "https://github.com/vendor/web.git");
+        expect(
+          (yield* service.exportProjects({ projectIds: [projectId] }))[0]!.configuration
+            .issueSources,
+        ).toEqual([mep]);
+        yield* git(rootPath, "remote", "rename", "work", "origin");
+        yield* git(rootPath, "remote", "set-url", "origin", "https://github.com/team/web.git");
         yield* git(rootPath, "remote", "remove", "upstream");
         const previous = (yield* identities.resolve(webPath))!;
         const config = `${rootPath}/.git/config`;

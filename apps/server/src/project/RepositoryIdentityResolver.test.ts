@@ -209,7 +209,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const resolver = yield* RepositoryIdentityResolver.make({
         refine: (identity) => {
           probes++;
-          return offline
+          return offline && identity.provider !== "github"
             ? Effect.fail(
                 new SourceControlProviderError({
                   provider: SourceControlProviderKind.make("unknown"),
@@ -235,6 +235,12 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         (yield* resolver.resolve(cwd, { remoteOnly: true, refresh: true }))?.canonicalKey,
       ).toBe("forge.example.test/team/new");
       expect((yield* resolver.resolve(cwd, strict))?.canonicalKey).toBe(
+        "forge.example.test/team/new",
+      );
+      yield* git(cwd, ["remote", "rename", "origin", "upstream"]);
+      yield* git(cwd, ["remote", "add", "origin", "https://github.com/team/fork.git"]);
+      offline = true;
+      expect((yield* resolver.resolve(cwd, { ...strict, refresh: true }))?.canonicalKey).toBe(
         "forge.example.test/team/new",
       );
     }).pipe(Effect.provide(ProcessRunner.layer)),

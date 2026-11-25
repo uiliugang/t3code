@@ -375,6 +375,15 @@ it.effect("uses a grouping hint only for the selected issue remote", () =>
       remoteUrl: fork.url,
       provider: { kind: "gitlab" },
     });
+    const namedFork = { name: "work", url: "https://github.com/team/fork.git" };
+    remotes.splice(
+      0,
+      2,
+      { name: "upstream", url: "https://gitlab.com/vendor/product.git" },
+      namedFork,
+    );
+    expect((yield* lookup).context?.remoteUrl).toBe(namedFork.url);
+    remotes.splice(0, 2, upstream, fork);
     remotes.push({ name: "backup", url: "https://github.com/other/repo.git" });
     expect((yield* lookup).context).toBeNull();
     remotes.splice(1);

@@ -100,7 +100,15 @@ interface SupportedProject extends ProjectTrackerBinding {
 function resolveGitHostBindings(
   project: OrchestrationProjectShell,
 ): ReadonlyArray<ProjectTrackerBinding> {
-  return sourceControlDefinitions.issueBindings(project.repositoryIdentity).map((binding) => ({
+  const identity = project.repositoryIdentity;
+  const selected = identity?.issueRepository;
+  const grouped = sourceControlDefinitions.issueBindings(identity);
+  const bindings =
+    selected === undefined ||
+    (grouped.length > 1 && selected && selected.provider === identity?.provider)
+      ? grouped
+      : sourceControlDefinitions.issueBindings(selected);
+  return bindings.map((binding) => ({
     ...binding,
     tracker: IssueTrackerKind.make(binding.tracker),
     accountId: null,
@@ -325,6 +333,13 @@ const make = Effect.gen(function* () {
                   });
                 return [
                   ...standalone,
+                  ...sources.map(({ provider, host, scope }) => ({
+                    project,
+                    tracker: IssueTrackerKind.make(provider),
+                    host,
+                    scope,
+                    accountId: null,
+                  })),
                   ...gitBindings
                     .filter(
                       ({ tracker }) =>
@@ -333,13 +348,6 @@ const make = Effect.gen(function* () {
                           !sources.length),
                     )
                     .map((git) => ({ project, ...git })),
-                  ...sources.map(({ provider, host, scope }) => ({
-                    project,
-                    tracker: IssueTrackerKind.make(provider),
-                    host,
-                    scope,
-                    accountId: null,
-                  })),
                 ];
               }),
             { concurrency: SCOPE_CONCURRENCY },

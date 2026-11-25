@@ -265,7 +265,8 @@ const make = Effect.gen(function* () {
                   ...(root.defaultBaseRef ? { defaultBaseRef: root.defaultBaseRef } : {}),
                   ...(root.setupScript ? { setupScript: root.setupScript } : {}),
                   remoteUrl: safeCloneUrl(
-                    identity?.origin ? identity.origin.remoteUrl : identity?.locator.remoteUrl,
+                    identity?.issueRepository?.locator.remoteUrl ??
+                      (identity?.origin ? identity.origin.remoteUrl : identity?.locator.remoteUrl),
                   ),
                   directory,
                 };

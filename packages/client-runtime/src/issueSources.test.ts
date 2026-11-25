@@ -3,6 +3,7 @@ import { ProjectId, mergeProjectIssueSources } from "@t3tools/contracts";
 
 import {
   canBindUndetectedProject,
+  detectedProjectIssueKind,
   listedProjectIssueSources,
   issueSourceProjectIdBatches,
   parseMepSpaceIds,
@@ -20,6 +21,7 @@ describe("mergeProjectIssueSources", () => {
     ] as const;
 
     expect(mergeProjectIssueSources([], sources, "github")).toEqual([sources[0]]);
+    expect(detectedProjectIssueKind(undefined, { sources: sources.slice(1) })).toBe("meituan");
     expect(mergeProjectIssueSources([], sources, "meituan")).toEqual(sources.slice(1));
     expect(mergeProjectIssueSources([], sources)).toEqual([sources[0]]);
     expect(mergeProjectIssueSources([sources[0]], sources.slice(1))).toEqual([sources[0]]);

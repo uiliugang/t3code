@@ -1,3 +1,4 @@
+import { detectedProjectIssueKind } from "./issueSources.ts";
 import {
   ClientSettingsPatch,
   ClientServerSettingsPatch,
@@ -5,7 +6,6 @@ import {
   KeybindingsConfig,
   IssueSource,
   projectIssueSourcesForTransfer,
-  repositoryIssueKind,
   importProjectIssueSources,
   MAX_KEYBINDINGS_COUNT,
   ProjectSettingsOverrides,
@@ -475,19 +475,6 @@ export function createApplicationSettingsFile(input: {
   };
 }
 
-function hasUnconfirmedProvider(project: TransferProject) {
-  const identity = project.repositoryIdentity;
-  const provider = repositoryIssueKind(identity);
-  return (
-    !provider ||
-    provider === "unknown" ||
-    identity?.issueProvider === "unknown" ||
-    (!identity?.issueProvider &&
-      identity?.origin !== undefined &&
-      identity.canonicalKey.split("/", 1)[0] !== identity.origin.canonicalKey.split("/", 1)[0])
-  );
-}
-
 export function createProjectSettingsFile(
   project: TransferProject,
   server: ServerSettings,
@@ -495,9 +482,9 @@ export function createProjectSettingsFile(
   const settings = resolveProjectSettings(server, project.id).overrides;
   const virtualModels = projectVirtualModels(settings, server);
   const saved = server.issueProjectSources[project.id];
-  const issueSources = hasUnconfirmedProvider(project)
-    ? saved
-    : projectIssueSourcesForTransfer(saved, repositoryIssueKind(project.repositoryIdentity));
+  const provider = detectedProjectIssueKind(project.repositoryIdentity);
+  const issueSources =
+    !provider || provider === "unknown" ? saved : projectIssueSourcesForTransfer(saved, provider);
   return {
     format: "t3-code-settings",
     version: 1,
@@ -639,10 +626,11 @@ export function projectSettingsImportPatch(
   checkProviders(file, target, t);
   const saved = target.issueProjectSources[project.id] ?? [];
   const incoming = file.issueSources;
+  const provider = detectedProjectIssueKind(project.repositoryIdentity);
   const ambiguousLegacyRestore =
     !capabilities.singleProjectIssueProvider &&
     incoming?.length &&
-    hasUnconfirmedProvider(project) &&
+    (!provider || provider === "unknown") &&
     [...saved, ...incoming].some((source) => source.provider !== incoming[0]?.provider);
   if (ambiguousLegacyRestore && saved.length === 0)
     throw new Error(
@@ -676,12 +664,7 @@ export function projectSettingsImportPatch(
       ? {}
       : capabilities.singleProjectIssueProvider
         ? { issueProjectSources: { [project.id]: incoming } }
-        : importProjectIssueSources(
-            project.id,
-            incoming,
-            saved,
-            repositoryIssueKind(project.repositoryIdentity),
-          )),
+        : importProjectIssueSources(project.id, incoming, saved, provider)),
     projectSettingsOverrides: {
       [project.id]:
         Object.keys(file.settings).length === 0

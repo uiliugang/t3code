@@ -1,12 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { type StaticScreenProps, useNavigation } from "@react-navigation/native";
+import { mergeProjectIssueSources, projectIssueProvider } from "@t3tools/contracts";
 import {
-  mergeProjectIssueSources,
-  projectIssueProvider,
-  repositoryIssueKind,
-} from "@t3tools/contracts";
-import { listedProjectIssueSources } from "@t3tools/client-runtime/issueSources";
+  detectedProjectIssueKind,
+  listedProjectIssueSources,
+} from "@t3tools/client-runtime/issueSources";
 import {
   meituanAssociationCountLabel,
   mepAccountLabel,
@@ -115,7 +114,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
   const rows = projects.map((project) => {
     const result = byId.get(project.id);
     const saved = settings.issueProjectSources[project.id] ?? [];
-    const kind = result?.provider ?? repositoryIssueKind(project.repositoryIdentity);
+    const kind = detectedProjectIssueKind(project.repositoryIdentity, result);
     const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
     return {
       project,

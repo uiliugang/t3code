@@ -267,7 +267,12 @@ describe("IssueService", () => {
             ...upstream,
             repositoryIdentity: {
               ...upstream.repositoryIdentity!,
-              issueProvider: SourceControlProviderKind.make("meituan"),
+              issueRepository: project({
+                id: "fork",
+                repository: "acme/fork",
+                provider: "meituan",
+                host: "git.sankuai.com",
+              }).repositoryIdentity!,
               origin: { canonicalKey: "git.sankuai.com/acme/fork" },
             },
           },
@@ -287,6 +292,20 @@ describe("IssueService", () => {
           state: "closed",
         }),
       );
+      const otherForge = yield* makeService({
+        projects: [
+          project({ id: "p", provider: "gitlab", host: "gitlab.com", repository: "vendor/app" }),
+        ],
+        trackers: [
+          fakeTracker({ kind: IssueTrackerKind.make("gitlab") }),
+          fakeTracker({ kind: ones }),
+        ],
+        spaces: ["42"],
+      });
+      expect(yield* otherForge.projectScope(upstream.id)).toMatchObject({
+        tracker: ones,
+        scope: "42",
+      });
       const failure = new RequirementIssueError({ operation: "discovery", reason: "unavailable" });
       const isolated = yield* makeService({
         projects: [project({ id: "p" })],
@@ -391,6 +410,28 @@ describe("IssueService", () => {
         body: "ok",
       });
       expect(writes).toEqual(["acme/web#1", "me/web#1"]);
+      const enterpriseFork = project({
+        id: "fork",
+        host: "code.acme.test",
+        repository: "me/web",
+      }).repositoryIdentity!;
+      const crossHost = yield* makeService({
+        projects: [
+          {
+            ...fork,
+            repositoryIdentity: {
+              ...fork.repositoryIdentity!,
+              origin: { canonicalKey: enterpriseFork.canonicalKey },
+              issueRepository: enterpriseFork,
+            },
+          },
+        ],
+        trackers: [fakeTracker()],
+      });
+      expect(yield* crossHost.projectScope(fork.id)).toMatchObject({
+        host: "code.acme.test",
+        scope: "me/web",
+      });
 
       // Another host is not reachable through this project's credentials at all.
       const elsewhere = yield* Effect.flip(service.detail({ ...own, host: "ghe.example.test" }));

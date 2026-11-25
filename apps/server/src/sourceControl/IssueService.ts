@@ -134,8 +134,13 @@ export const make = Effect.gen(function* () {
     const automatic: IssueSource[] = [];
     const identity = project.repositoryIdentity;
     const originUrl = identity?.origin?.remoteUrl;
-    const remote = originUrl ? { remoteName: "origin", remoteUrl: originUrl } : identity?.locator;
-    const key = originUrl ? identity?.origin?.canonicalKey : identity?.canonicalKey;
+    const selected = identity?.issueRepository;
+    const remote =
+      selected?.locator ??
+      (originUrl ? { remoteName: "origin", remoteUrl: originUrl } : identity?.locator);
+    const key =
+      selected?.canonicalKey ??
+      (originUrl ? identity?.origin?.canonicalKey : identity?.canonicalKey);
     const host =
       remote &&
       sourceControlDefinitions.recognizeRemote(
@@ -149,15 +154,18 @@ export const make = Effect.gen(function* () {
             provider: host,
           }
         : null;
-    const handle = identity?.hasLocalOrigin
-      ? undefined
-      : yield* providers
-          .resolveHandle({
-            cwd,
-            refresh: refreshRepository,
-            ...(context?.remoteName === "origin" ? { context } : { issueRemoteHint: context }),
-          })
-          .pipe(Effect.result);
+    const handle =
+      identity?.hasLocalOrigin || selected === null
+        ? undefined
+        : yield* providers
+            .resolveHandle({
+              cwd,
+              refresh: refreshRepository,
+              ...(context && (selected || context.remoteName === "origin")
+                ? { context }
+                : { issueRemoteHint: context }),
+            })
+            .pipe(Effect.result);
     let repository: string | null = null;
     let failure: RequirementIssueError | undefined;
     if (handle?._tag === "Success" && handle.success.context) {

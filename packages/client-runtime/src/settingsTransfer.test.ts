@@ -748,7 +748,7 @@ describe("settings transfer", () => {
           repositoryIdentity: {
             ...sourceProject.repositoryIdentity,
             provider: SourceControlProviderKind.make("gitlab"),
-            issueProvider: SourceControlProviderKind.make("github"),
+            issueRepository: sourceProject.repositoryIdentity,
           },
         },
         source,
@@ -794,6 +794,19 @@ describe("settings transfer", () => {
         origin: { canonicalKey: "github.com/team/repo" },
       },
     };
+    const legacyMepFork = {
+      ...destination,
+      repositoryIdentity: {
+        ...destination.repositoryIdentity,
+        origin: { canonicalKey: "git.sankuai.com/team/fork" },
+      },
+    };
+    const mepBackup = { ...file, issueSources: legacySources.slice(0, 1) };
+    expect(
+      projectSettingsImportPatch(mepBackup, legacyMepFork, settings()).issueProjectSources?.[
+        destination.id
+      ],
+    ).toEqual(mepBackup.issueSources);
     for (const legacyProject of [
       unknownProject,
       legacyFork,

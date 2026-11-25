@@ -1,6 +1,8 @@
 import {
   issueSourcesMatch,
   mergeProjectIssueSources,
+  repositoryIssueKind,
+  type RepositoryIdentity,
   RequirementIssueError,
   type IssueProvider,
   type IssueSource,
@@ -10,6 +12,22 @@ import * as Array from "effect/Array";
 
 export const issueSourceProjectIdBatches = (projectIds: readonly ProjectId[]) =>
   Array.chunksOf(projectIds, 500);
+
+export function detectedProjectIssueKind(
+  identity: RepositoryIdentity | null | undefined,
+  result?: { readonly provider?: IssueProvider; readonly sources: readonly IssueSource[] },
+) {
+  if (result?.provider) return result.provider;
+  const first = result?.sources[0]?.provider;
+  if (first && result?.sources.every((source) => source.provider === first)) return first;
+  if (
+    identity?.issueRepository === undefined &&
+    identity?.origin &&
+    identity.canonicalKey.split("/", 1)[0] !== identity.origin.canonicalKey.split("/", 1)[0]
+  )
+    return undefined;
+  return repositoryIssueKind(identity);
+}
 
 const legacyRepositoryError = new RequirementIssueError({
   operation: "repository",
