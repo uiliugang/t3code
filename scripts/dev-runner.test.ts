@@ -778,6 +778,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         readonly t3Home: string | undefined;
         readonly cwd: string;
         readonly ambientHome: string | undefined;
+        readonly seed?: boolean;
       }) =>
         Effect.gen(function* () {
           let captured: Record<string, string | undefined> | undefined;
@@ -793,7 +794,11 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             }),
           );
 
-          yield* runDevRunnerWithInput({ ...devServerInput, t3Home: input.t3Home }).pipe(
+          yield* runDevRunnerWithInput({
+            ...devServerInput,
+            t3Home: input.t3Home,
+            seed: input.seed,
+          }).pipe(
             Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
             Effect.provideService(HostProcess.Platform, "linux"),
             Effect.provideService(HostProcess.WorkingDirectory, input.cwd),
@@ -845,6 +850,30 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           });
           assert.equal(home, path.join(path.resolve(root), ".t3"));
         }).pipe(Effect.scoped),
+      );
+
+      it.effect(
+        "refuses a worktree whose seeded userdata aliases the live home even with --no-seed",
+        () =>
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const root = yield* makeWorktree;
+            const liveState = path.join(root, "home", ".t3", "userdata");
+            const worktreeHome = path.join(root, ".t3");
+            yield* fs.makeDirectory(liveState, { recursive: true });
+            yield* fs.writeFileString(path.join(liveState, "statev2.sqlite"), "live data");
+            yield* fs.makeDirectory(worktreeHome, { recursive: true });
+            NodeFS.symlinkSync(liveState, path.join(worktreeHome, "userdata"), "junction");
+
+            const error = yield* spawnedHome({
+              t3Home: undefined,
+              cwd: root,
+              ambientHome: undefined,
+              seed: false,
+            }).pipe(Effect.flip);
+            assert.match(error.message, /Refusing to modify a live T3 Code database/);
+          }).pipe(Effect.scoped),
       );
 
       it.effect("seeds a worktree database from ~/.t3 only when it has none", () =>

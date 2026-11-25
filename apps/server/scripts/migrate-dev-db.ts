@@ -1,10 +1,7 @@
 #!/usr/bin/env node
-// @effect-diagnostics nodeBuiltinImport:off - realpath.native resolves symlinks before `..` as OS open/lstat do; Effect realPath normalizes `..` lexically first.
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeFSP from "node:fs/promises";
-import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import * as Console from "effect/Console";
@@ -23,6 +20,17 @@ import { rebuildMessageSearch } from "../src/orchestration-v2/messageSearchIndex
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import {
+  assertUnlinkedDatabaseFiles,
+  comparableDevDbPath,
+  databaseFamilyPaths,
+  inspectPath,
+  inspectProtectedHomes,
+  looksLikeInstalledHome,
+  looksLikeLiveDatabase,
+  MigrateDevDbSharedHomeError,
+  resolveFilesystemPath,
+} from "../../../scripts/lib/dev-db-safety.ts";
 
 export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<
   MigrateDevDbNotInWorktreeError,
@@ -30,15 +38,6 @@ export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<
 >()("MigrateDevDbNotInWorktreeError", {}) {
   override get message(): string {
     return "Not inside a linked git worktree. Pass --base-dir to target an isolated .t3 directory.";
-  }
-}
-
-export class MigrateDevDbSharedHomeError extends Schema.TaggedError<
-  MigrateDevDbSharedHomeError,
-  { readonly brand: unique symbol }
->()("MigrateDevDbSharedHomeError", {}) {
-  override get message(): string {
-    return "Refusing to modify a live T3 Code database (such as ~/.t3, T3CODE_HOME, or an installed service home). Use an isolated dev copy.";
   }
 }
 
@@ -134,184 +133,10 @@ export interface RunMigrateDevDbOptions {
   readonly cwd?: string | undefined;
 }
 
-// Markers written only by installed service or packaged desktop homes.
-const STRICT_INSTALLED_MARKERS = [
-  ["runtime", "service-state.json"],
-  ["runtime", "versions"],
-  ["userdata", "logs", "boot-service.log"],
-  ["bin", "t3"],
-  ["bin", "t3.cmd"],
-  ["userdata", "cli-command-first-launch"],
-] as const;
-
-// Desktop markers written to `userdata/` by packaged desktop or explicit-T3CODE_HOME desktop.
-const DESKTOP_USERDATA_MARKERS = [
-  ["userdata", "desktop-settings.json"],
-  ["userdata", "desktop-host-scope"],
-  ["userdata", "desktop-last-started-version"],
-  ["userdata", "connection-catalog.json"],
-] as const;
-
-// Additional markers that any live or initialized server home writes, which `--drop-resumable`
-// (intended only for freshly copied standalone SQLite seed files) must also refuse.
-const DROP_RESUMABLE_EXTRA_MARKERS = [
-  ["userdata", "secrets"],
-  ["userdata", "settings.json"],
-] as const;
-
-const hasAnyMarker = Effect.fn("hasAnyMarker")(function* (
-  baseDir: string,
-  markers: ReadonlyArray<readonly [string, ...Array<string>]>,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const present = yield* Effect.forEach(markers, (segments) =>
-    fs.exists(path.join(baseDir, ...segments)).pipe(Effect.orElseSucceed(() => true)),
-  );
-  return present.some(Boolean);
-});
-
-const looksLikeInstalledHome = Effect.fn("looksLikeInstalledHome")(function* (baseDir: string) {
-  const path = yield* Path.Path;
-  const resolved = path.resolve(baseDir);
-  if (yield* hasAnyMarker(resolved, STRICT_INSTALLED_MARKERS)) return true;
-  if ((yield* resolveWorktreeT3Home(resolved)) === resolved) return false;
-  return yield* hasAnyMarker(resolved, DESKTOP_USERDATA_MARKERS);
-});
-
-class NativeRealPathError extends Schema.TaggedError<
-  NativeRealPathError,
-  { readonly brand: unique symbol }
->()("NativeRealPathError", { cause: Schema.Defect() }) {}
-
-const nativeRealPath = (targetPath: string) =>
-  Effect.tryPromise({
-    try: () => NodeFSP.realpath(targetPath),
-    catch: (cause) => new NativeRealPathError({ cause }),
-  });
-
-export const splitPathParentAndLeaf = (
-  rawPath: string,
-  platform: NodeJS.Platform,
-): { readonly parent: string; readonly leaf: string } | undefined => {
-  const pathOps = platform === "win32" ? NodePath.win32 : NodePath.posix;
-  const separatorPattern = platform === "win32" ? /[\\/]+$/ : /\/+$/;
-  const parsedRoot = pathOps.parse(rawPath).root;
-  let trimmed = rawPath;
-  if (trimmed.length > parsedRoot.length) {
-    trimmed = trimmed.replace(separatorPattern, "");
-    if (trimmed.length < parsedRoot.length) {
-      trimmed = parsedRoot;
-    }
-  }
-  if (trimmed.length === 0 || trimmed === parsedRoot) {
-    return undefined;
-  }
-  const afterRoot = trimmed.slice(parsedRoot.length);
-  const slashIndex =
-    platform === "win32"
-      ? Math.max(afterRoot.lastIndexOf("/"), afterRoot.lastIndexOf("\\"))
-      : afterRoot.lastIndexOf("/");
-  const leaf = slashIndex === -1 ? afterRoot : afterRoot.slice(slashIndex + 1);
-  const parent =
-    slashIndex === -1
-      ? parsedRoot.length > 0
-        ? parsedRoot
-        : "."
-      : `${parsedRoot}${afterRoot.slice(0, slashIndex)}` || parsedRoot || ".";
-  if (leaf === "" || leaf === "..") {
-    return undefined;
-  }
-  if (leaf === "." && parent === trimmed) {
-    return undefined;
-  }
-  return { parent, leaf };
-};
-
-const resolveFilesystemPath = Effect.fn("resolveFilesystemPath")(function* (rawPath: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
-  const direct = yield* nativeRealPath(rawPath).pipe(Effect.option);
-  if (Option.isSome(direct)) return direct;
-  const missingTail: Array<string> = [];
-  let cursor = rawPath;
-  while (true) {
-    // A dangling symlink or unreadable entry exists at lstat time and must fail closed.
-    const cursorStat = yield* fs.lstat(cursor).pipe(
-      Effect.as("present" as const),
-      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("missing" as const)),
-      Effect.option,
-    );
-    if (!Option.exists(cursorStat, (state) => state === "missing")) {
-      return Option.none<string>();
-    }
-    const split = splitPathParentAndLeaf(cursor, platform);
-    if (split === undefined) {
-      return Option.none<string>();
-    }
-    if (split.leaf !== ".") {
-      missingTail.unshift(split.leaf);
-    }
-    cursor = split.parent;
-    const resolvedParent = yield* nativeRealPath(cursor).pipe(Effect.option);
-    if (Option.isSome(resolvedParent)) {
-      return Option.some(path.join(resolvedParent.value, ...missingTail));
-    }
-  }
-});
-
-// A custom T3CODE_HOME or installed service home holds secrets, settings, or service state beside userdata/statev2.sqlite.
-// Unreadable markers count as present so a permission or I/O error never lets a live database pass as a dev copy.
-const looksLikeLiveDatabase = Effect.fn("looksLikeLiveDatabase")(function* (databasePath: string) {
-  const path = yield* Path.Path;
-  const rawStateDir = path.dirname(databasePath);
-  const resolvedStateDir = yield* nativeRealPath(rawStateDir).pipe(Effect.option);
-  if (Option.isNone(resolvedStateDir)) return true;
-  const candidateStateDirs = [...new Set([path.resolve(rawStateDir), resolvedStateDir.value])];
-  for (const stateDir of candidateStateDirs) {
-    if (path.basename(stateDir).toLowerCase() !== "userdata") continue;
-    const baseDir = path.dirname(stateDir);
-    if (
-      yield* hasAnyMarker(baseDir, [
-        ...STRICT_INSTALLED_MARKERS,
-        ...DESKTOP_USERDATA_MARKERS,
-        ...DROP_RESUMABLE_EXTRA_MARKERS,
-      ])
-    ) {
-      return true;
-    }
-  }
-  return false;
-});
-
 interface KeptProject {
   readonly title: string;
   readonly threads: number;
 }
-
-const DATABASE_FILE_SUFFIXES = ["", "-wal", "-shm"] as const;
-
-const databaseFamilyPaths = (databasePath: string): ReadonlyArray<string> =>
-  DATABASE_FILE_SUFFIXES.map((suffix) => `${databasePath}${suffix}`);
-
-const fileIdentity = (info: FileSystem.File.Info) =>
-  Option.map(info.ino, (ino) => `${info.dev}:${ino}`);
-
-const inspectPath = Effect.fn("inspectMigrationPath")(function* (file: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const canonical = yield* resolveFilesystemPath(file);
-  if (Option.isNone(canonical)) return yield* new MigrateDevDbSharedHomeError();
-  const info = yield* fs.stat(file).pipe(
-    Effect.asSome,
-    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeedNone),
-    Effect.mapError(() => new MigrateDevDbSharedHomeError()),
-  );
-  const identity = Option.flatMap(info, fileIdentity);
-  if (Option.isSome(info) && Option.isNone(identity))
-    return yield* new MigrateDevDbSharedHomeError();
-  return { canonical: canonical.value, identity };
-});
 
 const migrationHomes = Effect.fn("migrationHomes")(function* (options: RunMigrateDevDbOptions) {
   const env = yield* HostProcess.Environment;
@@ -323,24 +148,13 @@ const migrationHomes = Effect.fn("migrationHomes")(function* (options: RunMigrat
   };
 });
 
-const inspectProtectedHomes = Effect.fn("inspectProtectedMigrationHomes")(function* (
-  homes: readonly string[],
+const removeDatabaseFiles = Effect.fn("removeDatabaseFiles")(function* (
+  databasePath: string,
+  keepMain = false,
 ) {
-  const path = yield* Path.Path;
-  const stateDirs = homes.map((home) => path.join(home, "userdata"));
-  const databases = stateDirs.flatMap((dir) =>
-    databaseFamilyPaths(path.join(dir, "statev2.sqlite")),
-  );
-  return yield* Effect.all({
-    homes: Effect.forEach(homes, inspectPath),
-    stateDirs: Effect.forEach(stateDirs, inspectPath),
-    databases: Effect.forEach(databases, inspectPath),
-  });
-});
-
-const removeDatabaseFiles = Effect.fn("removeDatabaseFiles")(function* (databasePath: string) {
   const fs = yield* FileSystem.FileSystem;
   for (const candidate of databaseFamilyPaths(databasePath)) {
+    if (keepMain && candidate === databasePath) continue;
     yield* fs
       .remove(candidate)
       .pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.void));
@@ -616,63 +430,29 @@ export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(fun
   databasePath: string,
   options: RunMigrateDevDbOptions = {},
 ) {
-  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
-  const comparable = (resolved: string) =>
-    platform === "linux" ? resolved : resolved.toLowerCase();
-  const rawStatResult = yield* fs.lstat(databasePath).pipe(
-    Effect.map((info) => ({ missing: false as const, info })),
-    Effect.catchReason("PlatformError", "NotFound", () =>
-      Effect.succeed({ missing: true as const, info: undefined }),
-    ),
-    Effect.option,
-  );
-  if (Option.exists(rawStatResult, ({ missing }) => missing)) {
+  yield* assertUnlinkedDatabaseFiles([databasePath]);
+  const main = yield* inspectPath(databasePath);
+  if (Option.isNone(main.identity)) {
     return yield* new MigrateDevDbSourceMissingError({ sourcePath: databasePath });
   }
-  const rawInputUnverifiedOrSymlink = Option.match(rawStatResult, {
-    onNone: () => true,
-    onSome: ({ info }) => info === undefined || info.type !== "File",
-  });
-  const rawIdentity = Option.flatMap(rawStatResult, ({ info }) =>
-    info === undefined ? Option.none() : Option.map(info.ino, (ino) => `${info.dev}:${ino}`),
+  const target = main.canonical;
+  const files = databaseFamilyPaths(target);
+  yield* assertUnlinkedDatabaseFiles(files);
+  const family = yield* Effect.forEach(files, inspectPath);
+  const directory = yield* inspectPath(path.dirname(target));
+  const { stateDirs, databases } = yield* inspectProtectedHomes(
+    (yield* migrationHomes(options)).homes,
   );
-  const targetResult = yield* nativeRealPath(databasePath).pipe(Effect.option);
-  if (Option.isNone(targetResult)) return yield* new MigrateDevDbSharedHomeError();
-  const target = targetResult.value;
-  const targetStatResult = yield* fs.stat(target).pipe(
-    Effect.map((info) => ({ missing: false as const, info })),
-    Effect.catchReason("PlatformError", "NotFound", () =>
-      Effect.succeed({ missing: true as const, info: undefined }),
-    ),
-    Effect.option,
-  );
-  if (Option.exists(targetStatResult, ({ missing }) => missing)) {
-    return yield* new MigrateDevDbSourceMissingError({ sourcePath: databasePath });
-  }
-  const targetUnverifiedOrLinked = Option.match(targetStatResult, {
-    onNone: () => true,
-    onSome: ({ info }) =>
-      info === undefined ||
-      info.type !== "File" ||
-      !Option.exists(info.nlink, (nlink) => nlink === 1n),
-  });
-  const targetIdentity = Option.flatMap(targetStatResult, ({ info }) =>
-    info === undefined ? Option.none() : Option.map(info.ino, (ino) => `${info.dev}:${ino}`),
-  );
-  const targetMismatchesRawInput =
-    Option.isNone(rawIdentity) ||
-    Option.isNone(targetIdentity) ||
-    rawIdentity.value !== targetIdentity.value;
-  const { databases } = yield* inspectProtectedHomes((yield* migrationHomes(options)).homes);
+  const matches = (target: typeof main, candidate: typeof main) =>
+    comparableDevDbPath(target.canonical, platform) ===
+      comparableDevDbPath(candidate.canonical, platform) ||
+    Option.exists(target.identity, (identity) => Option.contains(candidate.identity, identity));
   if (
-    rawInputUnverifiedOrSymlink ||
-    targetUnverifiedOrLinked ||
-    targetMismatchesRawInput ||
-    databases.some((live) => comparable(target) === comparable(live.canonical)) ||
-    (Option.isSome(targetIdentity) &&
-      databases.some(({ identity }) => Option.contains(identity, targetIdentity.value))) ||
+    !Option.contains(family[0]!.identity, main.identity.value) ||
+    stateDirs.some((live) => matches(directory, live)) ||
+    databases.some((live) => family.some((file) => matches(file, live))) ||
     (yield* looksLikeLiveDatabase(databasePath)) ||
     (yield* looksLikeLiveDatabase(target))
   ) {
@@ -890,8 +670,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
-  const comparable = (resolved: string) =>
-    platform === "linux" ? resolved : resolved.toLowerCase();
+  const comparable = (resolved: string) => comparableDevDbPath(resolved, platform);
   const samePath = (left: string, right: string) => comparable(left) === comparable(right);
 
   const { shared: sharedHome, homes } = yield* migrationHomes(options);
@@ -919,7 +698,8 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   )
     ? lexicalBaseDir
     : canonicalBaseDir;
-  const stateDir = path.join(canonicalBaseDir, "userdata");
+  const stateDirStat = yield* inspectPath(path.join(canonicalBaseDir, "userdata"));
+  const stateDir = stateDirStat.canonical;
   const databasePath = path.join(stateDir, "statev2.sqlite");
   const displayDatabasePath = path.join(displayBaseDir, "userdata", "statev2.sqlite");
   const snapshotPath = `${databasePath}.migrate-dev-db-tmp`;
@@ -940,7 +720,6 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     databases: protectedDatabaseStats,
   } = yield* inspectProtectedHomes(homes);
   const baseDirStat = yield* inspectPath(canonicalBaseDir);
-  const stateDirStat = yield* inspectPath(stateDir);
   const destinationFileStats = yield* Effect.forEach(destinationRewriteFiles, inspectPath);
   const canonicalProtectedHomes = protectedHomeStats.map((entry) => entry.canonical);
   const canonicalProtectedStateDirs = protectedStateDirStats.map((entry) => entry.canonical);
@@ -1008,6 +787,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
       sourcePath: input.source ?? sourcePath,
     });
   }
+  yield* assertUnlinkedDatabaseFiles(destinationRewriteFiles);
 
   yield* fs.makeDirectory(stateDir, { recursive: true });
 
@@ -1059,29 +839,36 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
       wrapPhase("prune", snapshotPath),
     );
 
+    const stagingDir = yield* fs.makeTempDirectoryScoped({
+      directory: stateDir,
+      prefix: ".migrate-dev-db-",
+    });
+    const replacement = path.join(stagingDir, "replacement.sqlite");
     yield* Console.log(`Compacting into ${databasePath}...`);
-    // A server may have started during pruning; re-check before replacing its database.
-    yield* ensureNotInUse(databasePath);
-    yield* removeDatabaseFiles(databasePath);
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* sql`VACUUM INTO ${databasePath}`;
+      yield* sql`VACUUM INTO ${replacement}`;
     }).pipe(
       Effect.provide(NodeSqliteClient.layer({ filename: snapshotPath })),
       wrapPhase("compact", databasePath),
     );
-    return { executedMigrations: executed, pruned: result };
-  }).pipe(Effect.ensuring(removeDatabaseFiles(snapshotPath).pipe(Effect.ignore)));
-  yield* fs.chmod(databasePath, 0o600);
+    yield* fs.chmod(replacement, 0o600);
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      // VACUUM INTO loses WAL mode; restore the server boot setting.
+      yield* sql.unsafe("PRAGMA journal_mode = WAL").unprepared;
+    }).pipe(
+      Effect.provide(NodeSqliteClient.layer({ filename: replacement })),
+      wrapPhase("compact", databasePath),
+    );
 
-  yield* Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    // VACUUM INTO loses WAL mode; restore the server boot setting.
-    yield* sql.unsafe("PRAGMA journal_mode = WAL").unprepared;
-  }).pipe(
-    Effect.provide(NodeSqliteClient.layer({ filename: databasePath })),
-    wrapPhase("compact", databasePath),
-  );
+    // A server may have started during pruning; re-check before replacing its database.
+    yield* assertUnlinkedDatabaseFiles(databaseFamilyPaths(databasePath));
+    yield* ensureNotInUse(databasePath);
+    yield* removeDatabaseFiles(databasePath, true);
+    yield* fs.rename(replacement, databasePath);
+    return { executedMigrations: executed, pruned: result };
+  }).pipe(Effect.scoped, Effect.ensuring(removeDatabaseFiles(snapshotPath).pipe(Effect.ignore)));
 
   const size = (yield* fs.stat(databasePath)).size;
   return {

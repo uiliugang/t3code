@@ -8,14 +8,11 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { splitPathParentAndLeaf } from "../../../scripts/lib/dev-db-safety.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import {
-  dropResumableFamilies,
-  runMigrateDevDb,
-  splitPathParentAndLeaf,
-} from "./migrate-dev-db.ts";
+import { dropResumableFamilies, runMigrateDevDb } from "./migrate-dev-db.ts";
 
 const withDatabase = <A, E, R>(
   databasePath: string,
@@ -397,6 +394,27 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         }),
       );
       assert.equal(threads, 10, "the shared database is untouched");
+    }),
+  );
+
+  it.effect("refuses to open an isolated copy with a linked SQLite sidecar", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const sharedHome = yield* fs.makeTempDirectoryScoped();
+      const fixtureHome = yield* fs.makeTempDirectoryScoped();
+      const live = yield* createFixtureSource(sharedHome);
+      const copy = yield* createFixtureSource(fixtureHome);
+      for (const suffix of ["-wal", "-shm", "-journal"]) {
+        const liveSidecar = `${live}${suffix}`;
+        const copySidecar = `${copy}${suffix}`;
+        yield* fs.writeFileString(liveSidecar, "must remain untouched");
+        yield* fs.link(liveSidecar, copySidecar);
+        const error = yield* dropResumableFamilies(copy, { sharedHome }).pipe(Effect.flip);
+        assert.equal(error._tag, "MigrateDevDbSharedHomeError", suffix);
+        assert.equal(yield* fs.readFileString(liveSidecar), "must remain untouched", suffix);
+        yield* fs.remove(copySidecar);
+        yield* fs.remove(liveSidecar);
+      }
     }),
   );
 
@@ -892,6 +910,56 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         ambientHome: unresolved,
       }).pipe(Effect.flip);
       assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+    }),
+  );
+
+  it.effect("preserves the old database if a sidecar cannot be removed before replacement", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sharedHome = yield* fs.makeTempDirectoryScoped();
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const source = yield* createFixtureSource(sharedHome);
+      const destination = path.join(baseDir, "userdata", "statev2.sqlite");
+      yield* fs.makeDirectory(path.dirname(destination), { recursive: true });
+      yield* withDatabase(
+        destination,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`CREATE TABLE retained (value TEXT)`;
+          yield* sql`INSERT INTO retained VALUES ('old data')`;
+        }),
+      );
+      const sidecar = `${destination}-shm`;
+      const denied = PlatformError.systemError({
+        _tag: "PermissionDenied",
+        module: "FileSystem",
+        method: "remove",
+        pathOrDescriptor: sidecar,
+      });
+      const error = yield* runMigrateDevDb(
+        { baseDir, source, projects: 1, threadsPerProject: 1 },
+        { sharedHome },
+      ).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          remove: (file, options) =>
+            path.basename(file) === path.basename(sidecar)
+              ? Effect.fail(denied)
+              : fs.remove(file, options),
+        }),
+        Effect.flip,
+      );
+      assert.equal(error, denied);
+      assert.isTrue(yield* fs.exists(destination));
+      const rows = yield* withDatabase(
+        destination,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          return yield* sql`SELECT value FROM retained`;
+        }),
+      );
+      assert.deepStrictEqual(rows, [{ value: "old data" }]);
     }),
   );
 
