@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   RequirementIssueError,
+  type IssueSource,
   ProjectId,
   SourceControlProviderKind,
   SourceControlProviderError,
@@ -150,7 +151,7 @@ describe("IssueService", () => {
           createdAt: "2026-01-01T00:00:00Z",
           updatedAt: "2026-01-01T00:00:00Z",
         }));
-        const sources = Object.fromEntries(
+        const sources: Record<string, IssueSource[]> = Object.fromEntries(
           projects.slice(0, 4).map((project, index) => [
             project.id,
             [
@@ -171,6 +172,11 @@ describe("IssueService", () => {
           provider: "meituan",
           host: "mep.sankuai.com",
           scope: "456",
+        });
+        sources[projects[0]!.id]!.unshift({
+          provider: "github",
+          host: "github.com",
+          scope: "acme/legacy",
         });
         const provider = yield* Provider.SourceControlProvider.pipe(
           Effect.provide(
@@ -227,6 +233,32 @@ describe("IssueService", () => {
         );
         yield* Effect.gen(function* () {
           const service = yield* Service.IssueService;
+          const repoProject = {
+            ...projects[0]!,
+            repositoryIdentity: {
+              provider: SourceControlProviderKind.make("meituan"),
+              canonicalKey: "git.sankuai.com/team/shared",
+              locator: {
+                source: "git-remote" as const,
+                remoteName: "origin",
+                remoteUrl: "https://git.sankuai.com/team/shared.git",
+              },
+            },
+          };
+          const expectedSpaces = sources[repoProject.id]!.filter(
+            (source) => source.provider === "meituan",
+          );
+          expect((yield* (yield* service.trackerSources).forProject(repoProject)).sources).toEqual(
+            expectedSpaces,
+          );
+          expect((yield* service.sources({ projectIds: [repoProject.id] }))[0]?.sources).toEqual(
+            expectedSpaces,
+          );
+          expect(
+            (yield* service
+              .read({ provider: "github", projectId: repoProject.id, id: "1" })
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid-target");
           const result = yield* service.list({
             provider: "meituan",
             assignee: "all",

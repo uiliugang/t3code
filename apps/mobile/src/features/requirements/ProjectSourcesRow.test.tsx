@@ -77,7 +77,7 @@ const projectId = ProjectId.make("project");
 const first: IssueSource = { provider: "github", host: "github.com", scope: "acme/app" };
 const second: IssueSource = { provider: "github", host: "git.example.test", scope: "acme/app" };
 const space: IssueSource = { provider: "meituan", host: "mep.sankuai.com", scope: "19002" };
-const sources = [first, second, space];
+const sources = [first, second];
 
 function setup() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -93,6 +93,7 @@ function setup() {
           repository="acme/app"
           saved={saved}
           sources={saved}
+          provider={saved[0]?.provider}
           error={undefined}
           discovery="ready"
           mep
@@ -113,10 +114,11 @@ it("opens one project editor and saves only the chosen host when repositories sh
   screen.render(true);
   expect(screen.container.querySelectorAll("button")).toHaveLength(1);
   expect(screen.container.textContent).toContain("2 GitHub repositories");
-  expect(screen.container.textContent).toContain("19002");
   act(() => screen.container.querySelector("span")!.click());
   expect(screen.container.querySelector("section")).toBeNull();
   act(() => screen.button("Edit server").click());
+  expect(screen.button("Not configured")).toBeUndefined();
+  expect(screen.button("No MEP")).toBeUndefined();
   act(() => screen.button("git.example.test").click());
   const input = screen.container.querySelector("input")!;
   expect(input.value).toBe("acme/app");
@@ -132,21 +134,20 @@ it("opens one project editor and saves only the chosen host when repositories sh
       issueSourceProvider: "github",
       expectedIssueProjectSources: { [projectId]: sources },
       patch: {
-        issueProjectSources: { [projectId]: [first, { ...second, scope: "qa/reviewed" }, space] },
+        issueProjectSources: { [projectId]: [first, { ...second, scope: "qa/reviewed" }] },
       },
     },
   });
   expect(screen.container.querySelector("section")).toBeNull();
 });
 
-it("keeps all hosts and space IDs readable without granting write access", () => {
+it("keeps MEP spaces readable without offering a GitHub binding", () => {
   using screen = setup();
-  screen.render(false);
+  screen.render(false, [space]);
   expect(screen.button("Edit server")).toBeUndefined();
   act(() => screen.button("server").click());
   const details = screen.container.querySelector("section")!;
-  expect(details.textContent).toContain(first.host);
-  expect(details.textContent).toContain(second.host);
+  expect(details.textContent).not.toContain("Not configured");
   expect(details.textContent).toContain(space.scope);
   expect(details.querySelector("button, input")).toBeNull();
 });

@@ -2758,13 +2758,20 @@ export const layerWsRpc = (
                 )
               : undefined;
             const nextPatch = { ...patch, ...(deviceHosts ? { deviceHosts } : {}) };
-            const settings = yield* providerInstanceMutation === undefined
-              ? serverSettings.updateSettings(
-                  nextPatch,
-                  issueSourceProvider,
-                  expectedIssueProjectSources,
-                )
-              : providerInstanceService.update(providerInstanceMutation, nextPatch);
+            const settings = yield* (
+              providerInstanceMutation === undefined
+                ? serverSettings.updateSettings(
+                    nextPatch,
+                    issueSourceProvider,
+                    expectedIssueProjectSources,
+                  )
+                : providerInstanceService.update(providerInstanceMutation, nextPatch)
+            ).pipe(
+              Effect.provideService(
+                RepositoryIdentityResolver.RepositoryIdentityResolver,
+                repositoryIdentityResolver,
+              ),
+            );
             return ServerSettings.redactServerSettingsForClient(settings, settingsClient);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,

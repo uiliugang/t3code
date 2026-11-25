@@ -19,6 +19,7 @@ import {
   type ServerSettingsPatch,
   type IssueProvider,
   issueSourcesMatch,
+  projectIssueProvider,
   type ManagedPolicySummary,
   globalIdleCompaction,
   isSecretReference,
@@ -53,6 +54,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as ServerConfig from "./config.ts";
+import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import {
@@ -94,6 +96,7 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
   settingsPath: string,
   issueSourceProvider?: IssueProvider,
   expectedIssueProjectSources?: ServerSettings["issueProjectSources"],
+  repositoryKind?: (id: ProjectId) => Effect.Effect<string | undefined, ServerSettingsError>,
 ) {
   for (const [id, change] of Object.entries(patch.virtualModels ?? {})) {
     if (
@@ -111,7 +114,7 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
   }
   for (const [id, expected] of Object.entries(expectedIssueProjectSources ?? {})) {
     const saved = current.issueProjectSources[ProjectId.make(id)] ?? [];
-    if (!issueSourcesMatch(saved, expected, issueSourceProvider)) {
+    if (!issueSourcesMatch(saved, expected)) {
       return yield* new ServerSettingsError({
         settingsPath,
         operation: "write-file",
@@ -119,19 +122,20 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
       });
     }
   }
-  if (issueSourceProvider && patch.issueProjectSources) {
-    const sources = Object.fromEntries(
-      Object.entries(patch.issueProjectSources).map(([id, next]) => [
-        id,
-        [
-          ...(current.issueProjectSources[ProjectId.make(id)] ?? []).filter(
-            (s) => s.provider !== issueSourceProvider,
-          ),
-          ...next.filter((s) => s.provider === issueSourceProvider),
-        ],
-      ]),
-    );
-    return applyServerSettingsPatch(current, { ...patch, issueProjectSources: sources });
+  for (const [key, next] of Object.entries(patch.issueProjectSources ?? {})) {
+    if (!next.length && !issueSourceProvider) continue;
+    const id = ProjectId.make(key);
+    const saved = current.issueProjectSources[id] ?? [];
+    const provider = issueSourceProvider ?? next[0]?.provider;
+    const kind = repositoryKind ? yield* repositoryKind(id) : undefined;
+    const bound = projectIssueProvider(kind, saved);
+    if ((bound && bound !== provider) || next.some((source) => source.provider !== provider)) {
+      return yield* new ServerSettingsError({
+        settingsPath,
+        operation: "write-file",
+        detail: "A project can use only one requirement provider.",
+      });
+    }
   }
   return applyServerSettingsPatch(current, patch);
 });
@@ -947,6 +951,27 @@ const make = Effect.gen(function* () {
   const pathService = yield* Path.Path;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
   const sql = yield* SqlClient.SqlClient;
+  const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+  const repositoryKind = Effect.fn("ServerSettings.issueRepositoryKind")(function* (id: ProjectId) {
+    const [row] = yield* sql<{
+      workspaceRoot: string;
+    }>`SELECT workspace_root AS workspaceRoot FROM projection_projects WHERE project_id = ${id} AND deleted_at IS NULL`.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(
+        (cause) => new ServerSettingsError({ settingsPath, operation: "write-file", cause }),
+      ),
+    );
+    if (!row) return undefined;
+    const resolver = yield* Effect.serviceOption(
+      RepositoryIdentityResolver.RepositoryIdentityResolver,
+    );
+    return (yield* Option.getOrElse(resolver, () => repositoryIdentities).resolve(
+      row.workspaceRoot,
+      {
+        refresh: true,
+      },
+    ))?.provider;
+  });
   const {
     settings: managed,
     providers: managedProviders,
@@ -1774,6 +1799,9 @@ const make = Effect.gen(function* () {
               : current,
             patch,
             settingsPath,
+            undefined,
+            undefined,
+            repositoryKind,
           );
           return applyProviderInstanceMutation(patched, mutation);
         }),
@@ -1804,6 +1832,7 @@ const make = Effect.gen(function* () {
               settingsPath,
               issueSourceProvider,
               expectedIssueProjectSources,
+              repositoryKind,
             ),
           ),
         ),
@@ -1823,4 +1852,6 @@ const make = Effect.gen(function* () {
   } satisfies ServerSettingsService["Service"];
 });
 
-export const layer = Layer.effect(ServerSettingsService, make);
+export const layer = Layer.effect(ServerSettingsService, make).pipe(
+  Layer.provide(RepositoryIdentityResolver.layer),
+);

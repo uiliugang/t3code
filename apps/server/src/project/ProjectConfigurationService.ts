@@ -580,7 +580,13 @@ const make = Effect.gen(function* () {
                     },
             },
           })
-          .pipe(Effect.mapError(() => "settings_failed" as const));
+          .pipe(
+            Effect.provideService(
+              RepositoryIdentityResolver.RepositoryIdentityResolver,
+              identities,
+            ),
+            Effect.mapError(() => "settings_failed" as const),
+          );
       }),
     );
     yield* update(id, (entry) => ({

@@ -9,14 +9,6 @@ import * as Array from "effect/Array";
 export const issueSourceProjectIdBatches = (projectIds: readonly ProjectId[]) =>
   Array.chunksOf(projectIds, 500);
 
-export function mergeProjectIssueSources(
-  automatic: readonly IssueSource[],
-  saved: readonly IssueSource[],
-) {
-  const overridden = new Set(saved.map((entry) => entry.provider));
-  return [...automatic.filter((entry) => !overridden.has(entry.provider)), ...saved];
-}
-
 export function projectIssueSourceEdit(
   projectId: ProjectId,
   provider: IssueProvider,
@@ -24,11 +16,15 @@ export function projectIssueSourceEdit(
   expected: readonly IssueSource[],
   edit: (saved: readonly IssueSource[]) => readonly IssueSource[],
 ) {
-  if (!issueSourcesMatch(current, expected, provider)) return null;
+  if (!issueSourcesMatch(current, expected)) return null;
   return {
     issueSourceProvider: provider,
     expectedIssueProjectSources: { [projectId]: expected },
-    patch: { issueProjectSources: { [projectId]: edit(current) } },
+    patch: {
+      issueProjectSources: {
+        [projectId]: edit(current),
+      },
+    },
   };
 }
 
@@ -45,13 +41,14 @@ export function parseMepSpaceIds(text: string): string[] | null {
 }
 
 export function withGithubRepositoryOverride(
-  saved: readonly IssueSource[],
+  sources: readonly IssueSource[],
   current: IssueSource | undefined,
   scope: string | null,
 ): IssueSource[] {
+  const saved = sources.filter((source) => source.provider === "github");
   const host = current?.host ?? "github.com";
   const matches = (source: IssueSource, repository: string | undefined) =>
-    source.provider === "github" && source.host === host && source.scope === repository;
+    source.host === host && source.scope === repository;
   const index = saved.findIndex((source) => matches(source, current?.scope));
   const next =
     scope && !saved.some((source, i) => i !== index && matches(source, scope))
@@ -62,12 +59,6 @@ export function withGithubRepositoryOverride(
     : saved.flatMap((source, i) => (i === index ? next : [source]));
 }
 
-export function withMepSpaceOverrides(
-  saved: readonly IssueSource[],
-  ids: readonly string[],
-): IssueSource[] {
-  return [
-    ...saved.filter((source) => source.provider !== "meituan"),
-    ...ids.map((scope) => ({ provider: "meituan" as const, host: "mep.sankuai.com", scope })),
-  ];
+export function withMepSpaceOverrides(ids: readonly string[]): IssueSource[] {
+  return ids.map((scope) => ({ provider: "meituan", host: "mep.sankuai.com", scope }));
 }

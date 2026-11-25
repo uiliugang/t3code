@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, isMeituanServiceEnabled, type SkillSource } from "@t3tools/contracts";
-import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
+import { mergeProjectIssueSources } from "@t3tools/contracts";
 import {
   meituanAssociationCountLabel,
   meituanToolIdsForSection,
@@ -164,14 +164,12 @@ function EnvironmentIntegration({
       : null,
   );
   const associatedProjectCount = projects.filter((project) => {
-    const saved = (settings.issueProjectSources[project.id] ?? []).filter(
-      (source) => source.provider === "meituan",
-    );
-    const automatic =
-      associationsQuery.data
-        ?.find((result) => result.projectId === project.id)
-        ?.sources.filter((source) => source.provider === "meituan") ?? [];
-    return mergeProjectIssueSources(automatic, saved).length > 0;
+    const result = associationsQuery.data?.find((row) => row.projectId === project.id);
+    return mergeProjectIssueSources(
+      result?.sources ?? [],
+      settings.issueProjectSources[project.id] ?? [],
+      result?.provider ?? project.repositoryIdentity?.provider,
+    ).some((source) => source.provider === "meituan");
   }).length;
   const canToggle = environment.serverConfig.environment.capabilities.meituanIntegration === true;
   const needsLegacyRescan =

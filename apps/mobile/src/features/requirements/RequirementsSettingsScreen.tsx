@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { type StaticScreenProps, useNavigation } from "@react-navigation/native";
-import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
+import { mergeProjectIssueSources, projectIssueProvider } from "@t3tools/contracts";
 import {
   meituanAssociationCountLabel,
   mepAccountLabel,
@@ -109,11 +109,14 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
   const rows = projects.map((project) => {
     const result = byId.get(project.id);
     const saved = settings.issueProjectSources[project.id] ?? [];
+    const kind = result?.provider ?? project.repositoryIdentity?.provider;
+    const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
     return {
       project,
       result,
       saved,
-      sources: mergeProjectIssueSources(result?.sources ?? [], saved),
+      sources,
+      provider: projectIssueProvider(kind, sources),
     };
   });
   return (
@@ -151,15 +154,16 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
         {!rows.length ? (
           <Text className="p-3 text-foreground-muted">{t("No matching projects.")}</Text>
         ) : null}
-        {rows.map(({ project, result, saved, sources }) => (
+        {rows.map(({ project, result, saved, sources, provider }) => (
           <ProjectSourcesRow
-            key={JSON.stringify([project.id, enabled])}
+            key={JSON.stringify([project.id, enabled, provider])}
             environmentId={environmentId}
             projectId={project.id}
             title={project.title}
             repository={result?.repository ?? null}
             saved={saved}
             sources={sources}
+            provider={provider}
             error={result?.error ?? query.error ?? undefined}
             discovery={query.error || result?.error ? "failed" : result ? "ready" : "pending"}
             mep={enabled}

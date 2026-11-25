@@ -435,27 +435,32 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       }).pipe(Effect.provide(layerServerSettings())),
   );
   it.effect(
-    "preserves concurrent overrides of other issue providers when saving and restoring spaces",
+    "allows only one requirement provider even for concurrent or whole-project writes",
     () =>
       Effect.gen(function* () {
         const service = yield* ServerSettingsModule.ServerSettingsService;
         const id = ProjectId.make("project");
         const github = { provider: "github", host: "github.com", scope: "acme/repo" } as const;
         const mep = { provider: "meituan", host: "mep.sankuai.com", scope: "17" } as const;
-        yield* Effect.all(
+        const writes = yield* Effect.all(
           [
-            service.updateSettings({ issueProjectSources: { [id]: [github] } }, "github"),
-            service.updateSettings({ issueProjectSources: { [id]: [mep] } }, "meituan"),
+            service
+              .updateSettings({ issueProjectSources: { [id]: [github] } }, "github")
+              .pipe(Effect.result),
+            service
+              .updateSettings({ issueProjectSources: { [id]: [mep] } }, "meituan")
+              .pipe(Effect.result),
           ],
           { concurrency: 2 },
         );
-        const saved = yield* service.getSettings;
-        assert.sameDeepMembers([...(saved.issueProjectSources[id] ?? [])], [github, mep]);
-        const restored = yield* service.updateSettings(
-          { issueProjectSources: { [id]: [] } },
-          "meituan",
+        assert.strictEqual(writes.filter((result) => result._tag === "Success").length, 1);
+        const saved = (yield* service.getSettings).issueProjectSources[id];
+        assert.lengthOf(saved!, 1);
+        yield* Effect.flip(
+          service.updateSettings({ issueProjectSources: { [id]: [github, mep] } }),
         );
-        assert.deepStrictEqual(restored.issueProjectSources[id], [github]);
+        assert.deepStrictEqual((yield* service.getSettings).issueProjectSources[id], saved);
+        yield* service.updateSettings({ issueProjectSources: { [id]: [] } });
         const second = { ...github, scope: "acme/mobile" };
         const renamed = { ...github, scope: "acme/web" };
         const expected = { [id]: [github, second] };

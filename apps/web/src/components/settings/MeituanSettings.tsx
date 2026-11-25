@@ -1,5 +1,4 @@
 import { useAtomValue } from "@effect/atom-react";
-import { mergeProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import {
   meituanAssociationCountLabel,
   meituanToolIdsForSection,
@@ -8,6 +7,7 @@ import {
 } from "@t3tools/client-runtime/meituanSettings";
 import {
   isMeituanServiceEnabled,
+  mergeProjectIssueSources,
   type EnvironmentId,
   type ExecutionEnvironmentCapabilities,
   type ServerSettings,
@@ -116,17 +116,16 @@ function useMeituanProjectAssociations(
   );
   const entries = projects
     .map((project) => {
-      const saved = (settings.issueProjectSources[project.id] ?? []).filter(
-        (source) => source.provider === "meituan",
-      );
-      const automatic =
-        query.data
-          ?.find((result) => result.projectId === project.id)
-          ?.sources.filter((source) => source.provider === "meituan") ?? [];
+      const saved = settings.issueProjectSources[project.id] ?? [];
+      const result = query.data?.find((row) => row.projectId === project.id);
       return {
         project,
-        manual: saved.length > 0,
-        sources: mergeProjectIssueSources(automatic, saved),
+        manual: saved.some((source) => source.provider === "meituan"),
+        sources: mergeProjectIssueSources(
+          result?.sources ?? [],
+          saved,
+          result?.provider ?? project.repositoryIdentity?.provider,
+        ).filter((source) => source.provider === "meituan"),
       };
     })
     .filter((entry) => entry.sources.length > 0);

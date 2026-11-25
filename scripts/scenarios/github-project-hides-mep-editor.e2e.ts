@@ -43,8 +43,12 @@ test("GitHub issue sources do not offer the MEP space editor", WEB, async ({ t3,
         Effect.map(Option.getOrThrow),
       );
       const manualProject = snapshot.projects.find((project) => project.workspaceRoot === manual);
+      const githubProject = snapshot.projects.find(
+        (project) => project.workspaceRoot === automatic,
+      );
       const mepProject = snapshot.projects.find((project) => project.workspaceRoot === mep);
-      if (!manualProject || !mepProject) throw new Error("Scenario projects missing");
+      if (!manualProject || !mepProject || !githubProject)
+        throw new Error("Scenario projects missing");
       const readFlags = client["server.getSettings"]({}).pipe(
         Effect.map(({ meituanIntegrationEnabled, meituanRequirementsEnabled }) => ({
           meituanIntegrationEnabled,
@@ -62,12 +66,36 @@ test("GitHub issue sources do not offer the MEP space editor", WEB, async ({ t3,
           },
         },
       }).pipe(
+        Effect.andThen(
+          client["server.updateSettings"]({
+            patch: {
+              issueProjectSources: {
+                [githubProject.id]: [
+                  { provider: "meituan", host: "mep.sankuai.com", scope: "4102" },
+                ],
+              },
+            },
+          }).pipe(Effect.result),
+        ),
+        Effect.tap((result) =>
+          Effect.promise(async () => {
+            await expect(
+              result._tag === "Failure" && result.failure._tag === "ServerSettingsError"
+                ? result.failure.detail
+                : null,
+            ).toEqual("A project can use only one requirement provider.");
+          }),
+        ),
         Effect.andThen(Effect.promise(exercise)),
         Effect.ensuring(
           client["server.updateSettings"]({
             patch: {
               ...before,
-              issueProjectSources: { [manualProject.id]: [], [mepProject.id]: [] },
+              issueProjectSources: {
+                [manualProject.id]: [],
+                [mepProject.id]: [],
+                [githubProject.id]: [],
+              },
             },
           }).pipe(Effect.orDie),
         ),
