@@ -143,7 +143,7 @@ const IPV4 = /^[\d.]+$/u;
 
 // Keys an SSH remote by the host its ssh config alias (`Host github.com-personal`) points at.
 // A dotted host may have a separate SSH endpoint; only a public forge or another configured
-// remote's web host confirms the replacement. `ssh -G` opens no connection.
+// remote's host confirms the replacement. `ssh -G` opens no connection.
 const sshResolvedRemoteUrl = Effect.fn("RepositoryIdentityResolver.sshResolvedRemoteUrl")(
   function* (remoteUrl: string, remotes: ReadonlyMap<string, string>) {
     const match = isSshRemoteUrl(remoteUrl) ? SSH_REMOTE.exec(remoteUrl.trim()) : null;
@@ -176,7 +176,9 @@ const sshResolvedRemoteUrl = Effect.fn("RepositoryIdentityResolver.sshResolvedRe
       (host.includes(".") &&
         !sourceControlDefinitions.findByPublicHost(hostName) &&
         !Array.from(remotes.values()).some(
-          (url) => /^https?:\/\//iu.test(url) && parseGitRemoteHost(url)?.host === hostName,
+          (url) =>
+            (/^https?:\/\//iu.test(url) || isSshRemoteUrl(url)) &&
+            parseGitRemoteHost(url)?.host === hostName,
         ))
     ) {
       return remoteUrl;
@@ -281,12 +283,31 @@ const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.
         let directory = physical.value;
         for (let depth = 0; depth < levels; depth++) {
           if (yield* hasEntry(path.join(directory, ".git"))) return true;
+          const config = path.join(directory, "config");
           if (
-            (yield* hasEntry(path.join(directory, "objects"))) &&
-            (yield* hasEntry(path.join(directory, "refs"))) &&
-            (yield* hasEntry(path.join(directory, "config")))
-          )
-            return true;
+            yield* fileSystem.stat(config).pipe(
+              Effect.map((info) => info.type === "File"),
+              Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+              Effect.orElseSucceed(() => true),
+            )
+          ) {
+            const bare = yield* processRunner
+              .run({
+                command: "git",
+                args: ["config", "--no-includes", "--file", config, "--bool", "--get", "core.bare"],
+                env,
+                timeoutBehavior: "timedOutResult",
+              })
+              .pipe(Effect.option);
+            if (bare._tag === "None" || bare.value.timedOut || bare.value.stdout.trim() === "true")
+              return true;
+            if (
+              bare.value.code !== 0 &&
+              (yield* hasEntry(path.join(directory, "objects"))) &&
+              (yield* hasEntry(path.join(directory, "refs")))
+            )
+              return true;
+          }
           const parent = path.dirname(directory);
           if (parent === directory) return false;
           directory = parent;

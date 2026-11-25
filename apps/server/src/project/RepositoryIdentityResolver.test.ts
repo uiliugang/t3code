@@ -146,17 +146,18 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(aliasIdentity?.canonicalKey).toBe(plainIdentity?.canonicalKey);
       expect(aliasIdentity?.provider).toBe(plainIdentity?.provider);
       expect(aliasIdentity?.locator.remoteUrl).toBe("git@work:owner/repo.git");
-      yield* git(aliasDir, [
-        "remote",
-        "set-url",
-        "origin",
-        "https://forge.example.test/me/fork.git",
-      ]);
       yield* git(aliasDir, ["remote", "add", "upstream", "git@work.alias:org/parent.git"]);
-      const fork = yield* resolver.resolve(aliasDir, { refresh: true });
-      expect(fork?.canonicalKey).toBe("forge.example.test/org/parent");
-      expect(fork?.locator.remoteUrl).toBe("git@work.alias:org/parent.git");
-      expect(fork?.origin?.canonicalKey).toBe("forge.example.test/me/fork");
+      for (const origin of [
+        "https://forge.example.test/me/fork.git",
+        "git@forge.example.test:me/fork.git",
+        "ssh://git@forge.example.test/me/fork.git",
+      ]) {
+        yield* git(aliasDir, ["remote", "set-url", "origin", origin]);
+        const fork = yield* resolver.resolve(aliasDir, { refresh: true });
+        expect(fork?.canonicalKey).toBe("forge.example.test/org/parent");
+        expect(fork?.locator.remoteUrl).toBe("git@work.alias:org/parent.git");
+        expect(fork?.origin?.canonicalKey).toBe("forge.example.test/me/fork");
+      }
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
@@ -340,9 +341,9 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
-  it.effect(
-    "does not inherit a parent repository or report no remote for a damaged bare clone",
-    () =>
+  it.effect.each(["HEAD", "objects", "refs"])(
+    "does not inherit a parent repository or report no remote for a bare clone missing %s",
+    (entry) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -359,13 +360,13 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
         const strict = { refresh: true, onUnavailable: Effect.fail("unavailable") };
         expect((yield* resolver.resolve(bare, strict))?.provider).toBe("github");
-        yield* fs.rename(path.join(bare, "HEAD"), path.join(bare, "HEAD.offline"));
+        yield* fs.rename(path.join(bare, entry), path.join(bare, `${entry}.offline`));
         const standalone = yield* resolver.resolve(bare, strict).pipe(Effect.result);
         yield* git(parent, ["init"]);
         yield* git(parent, ["remote", "add", "origin", "https://git.sankuai.com/team/parent.git"]);
         const nested = yield* resolver.resolve(bare, strict).pipe(Effect.result);
         expect([standalone._tag, nested._tag]).toEqual(["Failure", "Failure"]);
-        yield* fs.rename(path.join(bare, "HEAD.offline"), path.join(bare, "HEAD"));
+        yield* fs.rename(path.join(bare, `${entry}.offline`), path.join(bare, entry));
         expect((yield* resolver.resolve(bare, strict))?.provider).toBe("github");
       }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
@@ -402,7 +403,13 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         expect(yield* resolver.resolve(path.join(nonGitDir, "deleted"))).toBeNull();
         expect(runs).toEqual([]);
 
-        expect(yield* resolver.resolve(nonGitDir)).toBeNull();
+        yield* fileSystem.writeFileString(
+          path.join(nonGitDir, "config"),
+          "ordinary project configuration\n",
+        );
+        expect(
+          yield* resolver.resolve(nonGitDir, { onUnavailable: Effect.fail("unavailable") }),
+        ).toBeNull();
         expect(bareProbes()).toEqual([]);
 
         expect(yield* resolver.resolve(gitDir)).toBeNull();

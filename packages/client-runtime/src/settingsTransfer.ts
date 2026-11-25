@@ -474,16 +474,21 @@ export function createApplicationSettingsFile(input: {
   };
 }
 
+function hasUnidentifiedRemote(project: TransferProject) {
+  const identity = project.repositoryIdentity;
+  return !!identity?.locator.remoteUrl && (!identity.provider || identity.provider === "unknown");
+}
+
 export function createProjectSettingsFile(
   project: TransferProject,
   server: ServerSettings,
 ): ProjectSettingsFile {
   const settings = resolveProjectSettings(server, project.id).overrides;
   const virtualModels = projectVirtualModels(settings, server);
-  const issueSources = projectIssueSourcesForTransfer(
-    server.issueProjectSources[project.id],
-    project.repositoryIdentity?.provider,
-  );
+  const saved = server.issueProjectSources[project.id];
+  const issueSources = hasUnidentifiedRemote(project)
+    ? saved
+    : projectIssueSourcesForTransfer(saved, project.repositoryIdentity?.provider);
   return {
     format: "t3-code-settings",
     version: 1,
@@ -623,6 +628,13 @@ export function projectSettingsImportPatch(
   generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
 ): ServerSettingsPatch {
   checkProviders(file, target, t);
+  const saved = target.issueProjectSources[project.id] ?? [];
+  const incoming = file.issueSources;
+  const ambiguousLegacyRestore =
+    !capabilities.singleProjectIssueProvider &&
+    incoming?.length &&
+    hasUnidentifiedRemote(project) &&
+    [...saved, ...incoming].some((source) => source.provider !== incoming[0]?.provider);
   const scripts = file.settings.defaultProjectScripts?.map((script) => ({
     ...script,
     ...(script.repositoryRootIds
@@ -645,14 +657,14 @@ export function projectSettingsImportPatch(
   }));
   return {
     ...importedVirtualModels(file, target, providers, generators),
-    ...(file.issueSources === undefined
+    ...(incoming === undefined || ambiguousLegacyRestore
       ? {}
       : capabilities.singleProjectIssueProvider
-        ? { issueProjectSources: { [project.id]: file.issueSources } }
+        ? { issueProjectSources: { [project.id]: incoming } }
         : importProjectIssueSources(
             project.id,
-            file.issueSources,
-            target.issueProjectSources[project.id] ?? [],
+            incoming,
+            saved,
             project.repositoryIdentity?.provider,
           )),
     projectSettingsOverrides: {
