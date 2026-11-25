@@ -13,6 +13,7 @@ import {
   type AuthEnvironmentScope,
   type EnvironmentId,
   type ClientGuardedRpcTag,
+  type DaxiangApprovalState,
   ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
 } from "@t3tools/contracts";
@@ -609,14 +610,14 @@ export const subscribeSourceControlTools = (
     toolStreamFor("sourceControlToolMaintenance"),
     retryingTools,
   );
-const retryingDaxiangApproval = {
+const retryingDaxiangApproval: { retryValue: DaxiangApprovalState } = {
   retryValue: {
-    status: "disabled" as const,
+    status: "disabled",
     loggedIn: false,
     uid: null,
     expiresAt: null,
     error: null,
-    records: [] as const,
+    records: [],
   },
 };
 export const subscribeDaxiangApproval = (
@@ -624,7 +625,7 @@ export const subscribeDaxiangApproval = (
 ) =>
   subscribeDynamicMapped(
     WS_METHODS.daxiangApprovalSubscribe,
-    () => Effect.succeed({ ...input, input: { includeKms: true } }),
+    () => Effect.succeed({ ...input, includeKms: input.includeKms ?? true }),
     (session, _input, stream) =>
       Stream.unwrap(
         sessionCapabilities(session).pipe(

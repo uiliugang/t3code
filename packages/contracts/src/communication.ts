@@ -103,6 +103,7 @@ export class DaxiangApprovalError extends Schema.TaggedError<
 
 export const DaxiangApprovalState = Schema.Struct({
   status: DaxiangApprovalStatus,
+  enhancementFailed: Schema.optionalKey(Schema.Boolean),
   loggedIn: Schema.Boolean,
   uid: Schema.NullOr(Schema.String),
   expiresAt: Schema.NullOr(Schema.String),

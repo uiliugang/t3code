@@ -1731,6 +1731,7 @@ export const ServerSettings = Schema.Struct({
     clientSecret: secretSetting(Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("")))),
     approvalMonitor: Schema.Struct({
       enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+      enhanceDumboWeb: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
       chromeCdpPort: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })).pipe(
         Schema.withDecodingDefault(Effect.succeed(9224)),
       ),
@@ -2218,6 +2219,7 @@ export const ServerSettingsPatch = Schema.Struct({
       approvalMonitor: Schema.optionalKey(
         Schema.Struct({
           enabled: Schema.optionalKey(Schema.Boolean),
+          enhanceDumboWeb: Schema.optionalKey(Schema.Boolean),
           chromeCdpPort: Schema.optionalKey(
             Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })),
           ),

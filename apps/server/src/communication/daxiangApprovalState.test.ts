@@ -171,6 +171,17 @@ it.effect("restarts the listener only for settings it actually consumes", () =>
       approvalWatchSettingsKey(settings),
       approvalWatchSettingsKey(behaviorChange),
     );
+    assert.isTrue(settings.daxiang.approvalMonitor.enhanceDumboWeb);
+    assert.notStrictEqual(
+      approvalWatchSettingsKey(settings),
+      approvalWatchSettingsKey({
+        ...settings,
+        daxiang: {
+          ...settings.daxiang,
+          approvalMonitor: { ...settings.daxiang.approvalMonitor, enhanceDumboWeb: false },
+        },
+      }),
+    );
     assert.notStrictEqual(
       approvalWatchSettingsKey(settings),
       approvalWatchSettingsKey({

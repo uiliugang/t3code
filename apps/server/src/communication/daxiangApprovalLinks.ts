@@ -194,7 +194,7 @@ export function parseApprovalLink(rawUrl: string): ParsedApprovalTarget | null {
     host === "kms.mws.sankuai.com" &&
     url.protocol === "https:" &&
     url.port === "" &&
-    url.pathname === "/workflow"
+    url.pathname === "/key-management/workflow"
   ) {
     const workflowIds = url.searchParams.getAll("uid");
     const [workflowId] = workflowIds;
@@ -202,7 +202,7 @@ export function parseApprovalLink(rawUrl: string): ParsedApprovalTarget | null {
       return {
         kind: "kms",
         key: `kms:${host}:${workflowId}`,
-        url: `${url.origin}/workflow?uid=${workflowId}`,
+        url: `${url.origin}${url.pathname}?uid=${workflowId}`,
         workflowId,
       };
     }
