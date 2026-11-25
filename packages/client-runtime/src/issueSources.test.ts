@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProjectId, mergeProjectIssueSources } from "@t3tools/contracts";
 
 import {
+  canBindUndetectedProject,
+  listedProjectIssueSources,
   issueSourceProjectIdBatches,
   parseMepSpaceIds,
   projectIssueSourceEdit,
@@ -21,6 +23,12 @@ describe("mergeProjectIssueSources", () => {
     expect(mergeProjectIssueSources([], sources, "meituan")).toEqual(sources.slice(1));
     expect(mergeProjectIssueSources([], sources)).toEqual([sources[0]]);
     expect(mergeProjectIssueSources([sources[0]], sources.slice(1))).toEqual([sources[0]]);
+    expect(listedProjectIssueSources(false, [sources[0]], sources.slice(1), "github")).toEqual(
+      sources,
+    );
+    expect(listedProjectIssueSources(true, [sources[0]], sources.slice(1), "github")).toEqual([
+      sources[0],
+    ]);
     expect(parseMepSpaceIds("2， 3, 2")).toEqual(["2", "3"]);
     for (const invalid of ["", "0", "1, x", "01", "1".repeat(201)])
       expect(parseMepSpaceIds(invalid)).toBeNull();
@@ -29,6 +37,14 @@ describe("mergeProjectIssueSources", () => {
       { ...sources[1], scope: "42" },
     ]);
     expect(mergeProjectIssueSources(sources, [], "meituan")).toEqual(sources.slice(1));
+  });
+  it("allows first-time binding after the legacy server's non-repository response only", () => {
+    const error =
+      "Could not resolve this project's repository. Check that its workspace exists and is a Git repository.";
+    expect(canBindUndetectedProject(false, "failed", error)).toBe(true);
+    expect(canBindUndetectedProject(true, "failed", error)).toBe(false);
+    expect(canBindUndetectedProject(false, "failed", "Connection lost")).toBe(false);
+    expect(canBindUndetectedProject(false, "pending")).toBe(false);
   });
   it("edits one GitHub repository and keeps only scopes on the same platform", () => {
     const first = { provider: "github", host: "github.com", scope: "team/app" } as const;

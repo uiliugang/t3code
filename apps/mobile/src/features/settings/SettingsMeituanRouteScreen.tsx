@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, isMeituanServiceEnabled, type SkillSource } from "@t3tools/contracts";
-import { mergeProjectIssueSources } from "@t3tools/contracts";
+import { listedProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import {
   meituanAssociationCountLabel,
   meituanToolIdsForSection,
@@ -165,7 +165,8 @@ function EnvironmentIntegration({
   );
   const associatedProjectCount = projects.filter((project) => {
     const result = associationsQuery.data?.find((row) => row.projectId === project.id);
-    return mergeProjectIssueSources(
+    return listedProjectIssueSources(
+      environment.serverConfig.environment.capabilities.singleProjectIssueProvider === true,
       result?.sources ?? [],
       settings.issueProjectSources[project.id] ?? [],
       result?.provider ?? project.repositoryIdentity?.provider,

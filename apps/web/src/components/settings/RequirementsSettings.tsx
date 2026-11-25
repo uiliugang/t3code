@@ -44,6 +44,8 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   parseMepSpaceIds,
+  canBindUndetectedProject,
+  listedProjectIssueSources,
   legacyIssueSourceCleanup,
   projectIssueSourceEdit,
   withMepSpaceOverrides,
@@ -76,6 +78,7 @@ type SourceModeFilter = "all" | "automatic" | "manual";
 
 function matchesProjectSourceFilters(
   project: Project,
+  singleProvider: boolean,
   result: (typeof IssueSourcesResult.Type)[number] | undefined,
   saved: readonly IssueSource[],
   filters: { name: string; provider: SourceProviderFilter; mode: SourceModeFilter },
@@ -84,7 +87,8 @@ function matchesProjectSourceFilters(
     return false;
   if (filters.provider === "all" && filters.mode === "all") return true;
   const overridden = new Set(saved.map((source) => source.provider));
-  return mergeProjectIssueSources(
+  return listedProjectIssueSources(
+    singleProvider,
     result?.sources ?? [],
     saved,
     result?.provider ?? project.repositoryIdentity?.provider,
@@ -234,7 +238,8 @@ function EnvironmentTrackers({
   const byId = new Map(query.data?.map((row) => [row.projectId, row]));
   const associated = projects.filter((project) => {
     const row = byId.get(project.id);
-    return mergeProjectIssueSources(
+    return listedProjectIssueSources(
+      caps.singleProjectIssueProvider === true,
       row?.sources ?? [],
       settings.issueProjectSources[project.id] ?? [],
       row?.provider ?? project.repositoryIdentity?.provider,
@@ -300,7 +305,9 @@ function ProjectSourceRow({
     .map((entry) => entry.scope);
   const manual = saved.some((entry) => entry.provider === "meituan");
   const showMepEditor =
-    enabled && provider !== "github" && (provider === "meituan" || discovery === "ready");
+    enabled &&
+    provider !== "github" &&
+    (provider === "meituan" || canBindUndetectedProject(singleProvider, discovery, result?.error));
   const [draft, setDraft] = useState<{ text: string; saved: typeof saved } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -573,6 +580,11 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
     }
   }
   const savedSources = new Map<string, readonly IssueSource[]>();
+  const singleProviderEnvironments = new Set(
+    connectedEnvironments
+      .filter((entry) => entry.serverConfig?.environment.capabilities.singleProjectIssueProvider)
+      .map((entry) => entry.environmentId),
+  );
   for (const group of groups) {
     for (const project of group.projects) {
       savedSources.set(
@@ -587,6 +599,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
       projects: group.projects.filter((project) =>
         matchesProjectSourceFilters(
           project,
+          singleProviderEnvironments.has(project.environmentId),
           discoveredSources.get(projectKey(project)),
           savedSources.get(projectKey(project)) ?? [],
           { name: nameFilter, provider: providerFilter, mode: modeFilter },
@@ -606,7 +619,15 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
       result?.provider ?? project.repositoryIdentity?.provider,
       result?.sources.length ? result.sources : (savedSources.get(key) ?? []),
     );
-    return provider === "github" || (!provider && result !== undefined && !result.error);
+    return (
+      provider === "github" ||
+      (!provider &&
+        canBindUndetectedProject(
+          singleProviderEnvironments.has(project.environmentId),
+          result?.error ? "failed" : result ? "ready" : "pending",
+          result?.error,
+        ))
+    );
   });
   const githubOverrides = githubChosen.filter((project) =>
     savedSources.get(projectKey(project))?.some((source) => source.provider === "github"),

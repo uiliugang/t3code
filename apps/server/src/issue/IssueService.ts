@@ -234,6 +234,7 @@ const make = Effect.gen(function* () {
 
   const listProjects = (filter: {
     readonly projectId?: IssueListInput["projectId"];
+    readonly refreshRepository?: boolean;
     readonly activeOnly?: boolean;
     readonly excludeProjectIds?: IssueListInput["excludeProjectIds"];
     readonly host?: string | undefined;
@@ -242,7 +243,9 @@ const make = Effect.gen(function* () {
   }) =>
     (filter.projectId === undefined
       ? projects.listShells()
-      : projects.getShell(filter.projectId).pipe(Effect.map(Option.toArray))
+      : projects
+          .getShell(filter.projectId, undefined, filter.refreshRepository)
+          .pipe(Effect.map(Option.toArray))
     ).pipe(
       Effect.mapError(
         (cause) =>
@@ -458,7 +461,10 @@ const make = Effect.gen(function* () {
       );
     }
 
-    const { supported } = yield* listProjects({ projectId: ref.projectId });
+    const { supported } = yield* listProjects({
+      projectId: ref.projectId,
+      refreshRepository: writeOperation !== undefined,
+    });
     const host = ref.host?.trim().toLowerCase();
     const candidates = supported.filter(
       (candidate) =>

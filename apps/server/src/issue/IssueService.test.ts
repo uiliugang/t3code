@@ -167,6 +167,7 @@ function fakeTracker(overrides: Partial<IssueTrackerApi> = {}): IssueTrackerApi 
 
 function makeService(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
+  readonly refreshedProject?: () => OrchestrationProjectShell;
   readonly trackers: ReadonlyArray<IssueTrackerApi>;
   readonly bindings?: Record<string, IssueTrackerProjectBinding>;
   readonly bindingsFailure?: PersistenceSqlError;
@@ -215,9 +216,12 @@ function makeService(input: {
             ),
             Layer.mock(ProjectService.ProjectService)({
               listShells: () => Effect.succeed(input.projects),
-              getShell: (projectId) =>
+              getShell: (projectId, _root, refresh) =>
                 Effect.succeed(
-                  Option.fromNullishOr(input.projects.find((p) => p.id === projectId)),
+                  Option.fromNullishOr(
+                    (refresh && input.refreshedProject?.()) ||
+                      input.projects.find((p) => p.id === projectId),
+                  ),
                 ),
             }),
             Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
@@ -405,8 +409,10 @@ describe("IssueService", () => {
   it.effect("refuses what the tracker did not declare before calling it", () =>
     Effect.gen(function* () {
       let calls = 0;
+      let remote = "acme/web";
       const service = yield* makeService({
-        projects: [project({ id: "web", repository: "acme/web" })],
+        projects: [project({ id: "web", repository: remote })],
+        refreshedProject: () => project({ id: "web", repository: remote }),
         trackers: [
           fakeTracker({
             setState: () =>
@@ -428,7 +434,11 @@ describe("IssueService", () => {
         service.react({ ...ref, content: "heart", reacted: true }),
       );
       expect(reaction._tag).toBe("IssueOperationError");
+      remote = "acme/moved";
+      yield* Effect.flip(service.setState({ ...ref, state: "Closed" }));
       expect(calls).toBe(1);
+      yield* service.setState({ ...ref, scope: remote, state: "Closed" });
+      expect(calls).toBe(2);
     }),
   );
 

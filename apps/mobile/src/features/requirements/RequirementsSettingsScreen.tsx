@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { type StaticScreenProps, useNavigation } from "@react-navigation/native";
 import { mergeProjectIssueSources, projectIssueProvider } from "@t3tools/contracts";
+import { listedProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import {
   meituanAssociationCountLabel,
   mepAccountLabel,
@@ -106,6 +107,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
       : null,
   );
   const byId = new Map(query.data?.map((row) => [row.projectId, row]));
+  const singleProvider = serverConfig.environment.capabilities.singleProjectIssueProvider === true;
   const rows = projects.map((project) => {
     const result = byId.get(project.id);
     const saved = settings.issueProjectSources[project.id] ?? [];
@@ -116,6 +118,10 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
       result,
       saved,
       sources,
+      associated: (singleProvider
+        ? sources
+        : listedProjectIssueSources(false, result?.sources ?? [], saved, kind)
+      ).some((source) => source.provider === "meituan"),
       provider: projectIssueProvider(kind, sources),
     };
   });
@@ -128,7 +134,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
             projects={meituanAssociationCountLabel(
               projects.length,
               query,
-              rows.filter((row) => row.sources.some((s) => s.provider === "meituan")).length,
+              rows.filter((row) => row.associated).length,
               t,
             )}
           />
@@ -162,9 +168,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
             title={project.title}
             repository={result?.repository ?? null}
             saved={saved}
-            singleProvider={
-              serverConfig.environment.capabilities.singleProjectIssueProvider === true
-            }
+            singleProvider={singleProvider}
             sources={sources}
             provider={provider}
             error={result?.error ?? query.error ?? undefined}

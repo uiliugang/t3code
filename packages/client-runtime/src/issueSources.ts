@@ -1,5 +1,7 @@
 import {
   issueSourcesMatch,
+  mergeProjectIssueSources,
+  RequirementIssueError,
   type IssueProvider,
   type IssueSource,
   type ProjectId,
@@ -8,6 +10,33 @@ import * as Array from "effect/Array";
 
 export const issueSourceProjectIdBatches = (projectIds: readonly ProjectId[]) =>
   Array.chunksOf(projectIds, 500);
+
+const legacyRepositoryError = new RequirementIssueError({
+  operation: "repository",
+  reason: "unavailable",
+}).message;
+
+export function canBindUndetectedProject(
+  singleProvider: boolean,
+  discovery: "pending" | "failed" | "ready",
+  error?: string,
+) {
+  return (
+    discovery === "ready" ||
+    (!singleProvider && discovery === "failed" && error === legacyRepositoryError)
+  );
+}
+
+export function listedProjectIssueSources(
+  singleProvider: boolean,
+  automatic: readonly IssueSource[],
+  saved: readonly IssueSource[],
+  repositoryKind?: string,
+) {
+  if (singleProvider) return mergeProjectIssueSources(automatic, saved, repositoryKind);
+  const overridden = new Set(saved.map((source) => source.provider));
+  return [...automatic.filter((source) => !overridden.has(source.provider)), ...saved];
+}
 
 export function projectIssueSourceEdit(
   projectId: ProjectId,

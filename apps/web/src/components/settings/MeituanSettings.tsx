@@ -7,12 +7,12 @@ import {
 } from "@t3tools/client-runtime/meituanSettings";
 import {
   isMeituanServiceEnabled,
-  mergeProjectIssueSources,
   type EnvironmentId,
   type ExecutionEnvironmentCapabilities,
   type ServerSettings,
   type SkillSource,
 } from "@t3tools/contracts";
+import { listedProjectIssueSources } from "@t3tools/client-runtime/issueSources";
 import { useState, type ComponentType } from "react";
 import {
   ArrowLeftIcon,
@@ -102,6 +102,7 @@ function useMeituanProjectAssociations(
   environmentId: EnvironmentId,
   settings: ServerSettings,
   enabled: boolean,
+  singleProvider: boolean,
 ) {
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
@@ -121,7 +122,8 @@ function useMeituanProjectAssociations(
       return {
         project,
         manual: saved.some((source) => source.provider === "meituan"),
-        sources: mergeProjectIssueSources(
+        sources: listedProjectIssueSources(
+          singleProvider,
           result?.sources ?? [],
           saved,
           result?.provider ?? project.repositoryIdentity?.provider,
@@ -271,6 +273,7 @@ function EnvironmentMeituanSettings({
     environmentId,
     settings,
     issuesEnabled && shouldDiscoverMeituanProjectSources(active),
+    capabilities.singleProjectIssueProvider === true,
   );
   const skillQuery = useEnvironmentQuery(serverEnvironment.skills({ environmentId, input: {} }));
   const mutateSkills = useAtomCommand(serverEnvironment.mutateSkills);

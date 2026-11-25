@@ -1,4 +1,5 @@
 import {
+  canBindUndetectedProject,
   parseMepSpaceIds,
   legacyIssueSourceCleanup,
   projectIssueSourceEdit,
@@ -64,7 +65,8 @@ export function ProjectSourcesRow({
   const manual = saved.some((s) => s.provider === "meituan");
   const github = githubSources[0];
   const legacy = legacyIssueSourceCleanup(singleProvider, projectId, provider, saved);
-  const canChoose = provider !== undefined || discovery === "ready";
+  const canChoose =
+    provider !== undefined || canBindUndetectedProject(singleProvider, discovery, error);
   const showGithub = canChoose && provider !== "meituan";
   const showMep = canChoose && mep && provider !== "github";
   const space = mep ? spaces[0] : undefined;

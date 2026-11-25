@@ -122,21 +122,36 @@ const applyCheckedSettingsPatch = Effect.fn("ServerSettings.applyCheckedPatch")(
       });
     }
   }
-  for (const [key, next] of Object.entries(patch.issueProjectSources ?? {})) {
+  if (!patch.issueProjectSources) return applyServerSettingsPatch(current, patch);
+  const sources = { ...patch.issueProjectSources };
+  for (const [key, next] of Object.entries(sources)) {
     if (!next.length && !issueSourceProvider) continue;
     const id = ProjectId.make(key);
     const saved = current.issueProjectSources[id] ?? [];
     const provider = issueSourceProvider ?? next[0]?.provider;
     const bound = projectIssueProvider(repositoryKinds?.get(id), saved);
-    if ((bound && bound !== provider) || next.some((source) => source.provider !== provider)) {
+    const other = next.filter((source) => source.provider !== provider);
+    if (
+      (bound && bound !== provider) ||
+      (other.length &&
+        !(
+          issueSourceProvider &&
+          expectedIssueProjectSources?.[id] &&
+          issueSourcesMatch(
+            other,
+            saved.filter((source) => source.provider !== provider),
+          )
+        ))
+    ) {
       return yield* new ServerSettingsError({
         settingsPath,
         operation: "write-file",
         detail: "A project can use only one requirement provider.",
       });
     }
+    if (other.length) sources[id] = next.filter((source) => source.provider === provider);
   }
-  return applyServerSettingsPatch(current, patch);
+  return applyServerSettingsPatch(current, { ...patch, issueProjectSources: sources });
 });
 
 const textEncoder = new TextEncoder();
