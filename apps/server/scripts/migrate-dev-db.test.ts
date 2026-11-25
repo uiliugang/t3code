@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { runMigrations } from "../src/persistence/Migrations.ts";
@@ -863,6 +864,110 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { sharedHome: sourceDir },
       ).pipe(Effect.flip);
       assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+    }),
+  );
+
+  it.effect("protects the configured home in both migration modes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped();
+      const live = path.join(home, "cli");
+      const source = yield* createFixtureSource(live);
+      const options = { sharedHome: path.join(home, ".t3"), ambientHome: " ~/cli " };
+      const migrate = runMigrateDevDb(
+        { baseDir: live, source, projects: 1, threadsPerProject: 1 },
+        options,
+      );
+      const [migration, drop] = yield* Effect.all([
+        Effect.flip(migrate),
+        Effect.flip(dropResumableFamilies(source, options)),
+      ]).pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+      assert.equal(migration._tag, "MigrateDevDbSharedHomeError");
+      assert.equal(drop._tag, "MigrateDevDbSharedHomeError");
+      const unresolved = path.join(home, "unresolved");
+      yield* fs.symlink(path.join(home, "absent"), unresolved);
+      const error = yield* dropResumableFamilies(source, {
+        ...options,
+        ambientHome: unresolved,
+      }).pipe(Effect.flip);
+      assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+    }),
+  );
+
+  it.effect("stops if an existing snapshot cannot be removed", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sharedHome = yield* fs.makeTempDirectoryScoped();
+      const source = yield* createFixtureSource(sharedHome);
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const stateDir = path.join(baseDir, "userdata");
+      const database = path.join(stateDir, "statev2.sqlite");
+      const snapshot = `${database}.migrate-dev-db-tmp`;
+      yield* fs.makeDirectory(stateDir);
+      yield* fs.writeFileString(snapshot, "previous snapshot");
+      const denied = PlatformError.systemError({
+        _tag: "PermissionDenied",
+        module: "FileSystem",
+        method: "remove",
+        pathOrDescriptor: snapshot,
+      });
+      const error = yield* runMigrateDevDb(
+        { baseDir, source, projects: 1, threadsPerProject: 1 },
+        { sharedHome },
+      ).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          remove: (file, options) =>
+            path.basename(file) === path.basename(snapshot)
+              ? Effect.fail(denied)
+              : fs.remove(file, options),
+        }),
+        Effect.flip,
+      );
+      assert.equal(error, denied);
+      assert.equal(yield* fs.readFileString(snapshot), "previous snapshot");
+      assert.isFalse(yield* fs.exists(database));
+    }),
+  );
+
+  it.effect("retains an independent source hard-linked to the snapshot", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sharedHome = yield* fs.makeTempDirectoryScoped();
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const stateDir = path.join(baseDir, "userdata");
+      const source = path.join(baseDir, "backup.sqlite");
+      const snapshot = path.join(stateDir, "statev2.sqlite.migrate-dev-db-tmp");
+      yield* fs.makeDirectory(stateDir);
+      yield* fs.writeFileString(source, "backup");
+      yield* fs.link(source, snapshot);
+      let reads = 0;
+      const error = yield* runMigrateDevDb(
+        { baseDir, source, projects: 1, threadsPerProject: 1 },
+        { sharedHome },
+      ).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          stat: (file) =>
+            path.basename(file) === "backup.sqlite" && ++reads > 1
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "stat",
+                    pathOrDescriptor: file,
+                  }),
+                )
+              : fs.stat(file),
+        }),
+        Effect.flip,
+      );
+      assert.equal(error._tag, "MigrateDevDbSourceIsDestinationError");
+      assert.equal(yield* fs.readFileString(source), "backup");
+      assert.equal(yield* fs.readFileString(snapshot), "backup");
     }),
   );
 

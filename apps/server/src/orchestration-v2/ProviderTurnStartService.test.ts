@@ -1424,6 +1424,7 @@ function makeLocalCommandHarness(input: {
                     providerSession,
                     ensureThread: () => Effect.succeed(providerThread),
                     resumeThread: () => Effect.succeed(projection.providerThreads[0]),
+                    startTurn,
                   } as never)
                 : Effect.die("A local command must not open a native session."),
   );
@@ -1432,7 +1433,7 @@ function makeLocalCommandHarness(input: {
       input: RunExecutionService.RunExecutionServiceV2StartRootRunInput,
     ) => Effect.Effect<void, RunExecutionService.RunExecutionServiceV2Error>
   >((runInput) =>
-    input.sideChat !== undefined
+    input.sideChat !== undefined || input.failClearRecreatedOnce === true
       ? (runInput.resume
           ? runInput.session.resumeTurn!({
               ...runInput,
@@ -1654,11 +1655,16 @@ function makeLocalCommandHarness(input: {
           getTurnStartContext,
           getRuntimeRecoveryProjection,
           getRun,
-          getTurnStartHistory: () =>
+          getTurnStartHistory: (_, runIds) =>
             input.sideChat !== undefined ||
             input.previousTurn !== undefined ||
             input.failClearRecreatedOnce === true
-              ? Effect.succeed([])
+              ? Effect.succeed(
+                  projection.turnItems.filter(
+                    (item) =>
+                      runIds === undefined || (item.runId !== null && runIds.includes(item.runId)),
+                  ),
+                )
               : Effect.fail(
                   new ProjectionStore.ProjectionStoreReadError({
                     threadId,
@@ -2894,6 +2900,45 @@ effectIt.effect(
         failClearRecreatedOnce: true,
         runSetup,
       });
+      const initial = harness.projection();
+      const message = initial.messages[0]!;
+      const item = {
+        type: "user_message",
+        id: TurnItemId.make("missed-setup-request"),
+        threadId: initial.thread.id,
+        runId: message.runId,
+        nodeId: message.nodeId,
+        providerThreadId: initial.runs[0]!.providerThreadId,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "completed",
+        title: null,
+        startedAt: initial.updatedAt,
+        completedAt: initial.updatedAt,
+        updatedAt: initial.updatedAt,
+        createdBy: "user",
+        creationSource: "server",
+        messageId: message.id,
+        text: message.text,
+        inputIntent: "turn_start",
+        attachments: [],
+      } as const;
+      harness.setProjection({ ...initial, turnItems: [item] });
+      harness.prepareProviderHandoff.mockImplementation((handoff) =>
+        Effect.succeed({
+          ...handoff,
+          id: ContextHandoffId.make("retry-setup-handoff"),
+          createdByProviderInstanceId: handoff.toProviderInstanceId,
+          status: "ready",
+          summaryMessageId: null,
+          summaryText: handoff.items
+            .flatMap((entry) => (entry.type === "user_message" ? [entry.text] : []))
+            .join("\n"),
+          updatedAt: handoff.createdAt,
+        }),
+      );
 
       yield* Effect.gen(function* () {
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
@@ -2906,6 +2951,7 @@ effectIt.effect(
       expect(harness.open).not.toHaveBeenCalled();
       expect(harness.projection().runs.at(-1)?.status).toBe("failed");
       expect(harness.projection().turnItems).toMatchObject([
+        item,
         {
           type: "error",
           title: "Couldn't set up restored workspace",
@@ -3000,6 +3046,13 @@ effectIt.effect(
 
       expect(runSetup).toHaveBeenCalledTimes(2);
       expect(harness.open).toHaveBeenCalledTimes(1);
+      expect(harness.prepareProviderHandoff.mock.calls[0]?.[0]).toMatchObject({
+        targetRunId: nextRunId,
+        items: expect.arrayContaining([item]),
+      });
+      const prompt = harness.startTurn.mock.calls[0]?.[0].message.text;
+      expect(prompt).toContain(item.text);
+      expect(prompt).toContain("Retry after fixing disk");
       expect(
         harness.projection().runs.map((candidate) => [candidate.id, candidate.status]),
       ).toEqual([

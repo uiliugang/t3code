@@ -282,7 +282,7 @@ const resolveBaseDir = Effect.fn("dev-runner.resolveBaseDir")(function* (
     return path.join(yield* HostProcess.HomeDirectory, configured.slice(2));
   }
   if (configured) {
-    return path.resolve(configured);
+    return path.resolve(yield* HostProcess.WorkingDirectory, configured);
   }
 
   return yield* DEFAULT_T3_HOME;
@@ -909,7 +909,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   if (ambientHome === undefined) {
     delete seedEnv.T3CODE_HOME;
   } else {
-    seedEnv.T3CODE_HOME = path.resolve(cwd, ambientHome);
+    seedEnv.T3CODE_HOME = yield* resolveBaseDir(ambientHome);
   }
   // After sharing, so the warm step sees the same bundled-dev env as Vite.
   yield* prepareFirstStart({
