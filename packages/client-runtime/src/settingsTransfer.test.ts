@@ -15,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import { AtomRegistry } from "effect/reactivity";
 import * as Struct from "effect/Struct";
 
 import {
@@ -23,6 +24,7 @@ import {
   createProjectSettingsFile,
   MAX_SETTINGS_FILE_BYTES,
   parseSettingsFile,
+  projectImportSourceContext,
   projectSettingsImportPatch,
   projectTransferIdentity,
   projectConfigurationsForImport,
@@ -695,6 +697,22 @@ describe("settings transfer", () => {
     ).toEqual([configuration]);
     const cleared = { ...configuration, issueSources: [] };
     expect(projectConfigurationsForImport({ ...file, projects: [cleared] }, {})).toEqual([cleared]);
+    const gitlab = {
+      ...configuration,
+      workspace: {
+        ...configuration.workspace,
+        roots: configuration.workspace.roots.map((root) => ({
+          ...root,
+          remoteUrl: "https://gitlab.com/team/repo.git",
+        })),
+      },
+    };
+    expect(
+      projectConfigurationsForImport(
+        { ...file, projects: [{ ...gitlab, issueSources: [github] }] },
+        {},
+      ),
+    ).toEqual([gitlab]);
     const unknown = {
       ...mixed,
       workspace: {
@@ -939,6 +957,49 @@ describe("settings transfer", () => {
     expect(() =>
       parseSettingsFile(JSON.stringify({ ...file, settings: { defaultRuntimeMode: "invalid" } })),
     ).toThrow();
+  });
+
+  it("restores legacy project settings when source discovery reports a partial failure", async () => {
+    const destination = project();
+    const oldMep = { provider: "meituan" as const, host: "mep.sankuai.com", scope: "42" };
+    const newMep = { ...oldMep, scope: "43" };
+    const github = { provider: "github" as const, host: "github.com", scope: "team/override" };
+    const target = {
+      ...settings(),
+      issueProjectSources: { [destination.id]: [oldMep] },
+    };
+    const backup = {
+      ...createProjectSettingsFile(destination, target),
+      settings: { defaultAutoPull: true },
+      issueSources: [newMep, github],
+    };
+    const registry = AtomRegistry.make();
+    try {
+      for (const sources of [[oldMep], []]) {
+        const context = await projectImportSourceContext(backup, destination, {}, registry, {
+          label: "Discover legacy issue sources",
+          run: () =>
+            Effect.succeed([
+              {
+                projectId: destination.id,
+                repository: "team/repo",
+                sources,
+                manual: sources.length > 0,
+                error: "MEP discovery failed",
+              },
+            ]),
+        });
+        const patch = projectSettingsImportPatch(backup, destination, target, context);
+        const restored = applyServerSettingsPatch(target, patch);
+        expect(restored.projectSettingsOverrides[destination.id]?.defaultAutoPull).toBe(true);
+        expect(restored.issueProjectSources[destination.id]).toEqual(
+          sources.length ? [newMep] : [oldMep],
+        );
+        if (!sources.length) expect(patch).not.toHaveProperty("issueProjectSources");
+      }
+    } finally {
+      registry.dispose();
+    }
   });
 
   it("remaps action repositories by alias and rejects missing repositories and incompatible providers", () => {

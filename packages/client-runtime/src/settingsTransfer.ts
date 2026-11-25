@@ -618,7 +618,10 @@ export function applicationSettingsImportPatch(
 }
 
 type IssueImportCapabilities = Pick<ExecutionEnvironmentCapabilities, "singleProjectIssueProvider">;
-type IssueDiscovery = Pick<(typeof IssueSourcesResult.Type)[number], "sources" | "provider">;
+type IssueDiscovery = Pick<
+  (typeof IssueSourcesResult.Type)[number],
+  "sources" | "provider" | "error"
+>;
 
 export async function projectImportSourceContext<E>(
   file: ProjectSettingsFile,
@@ -639,7 +642,7 @@ export async function projectImportSourceContext<E>(
     }),
   );
   const row = rows.find((entry) => entry.projectId === project.id);
-  if (!row || row.error) throw new Error(row?.error ?? "This project is no longer available.");
+  if (!row) throw new Error("This project is no longer available.");
   return { ...capabilities, discovery: row };
 }
 
@@ -654,8 +657,19 @@ export function projectSettingsImportPatch(
 ): ServerSettingsPatch {
   checkProviders(file, target, t);
   const saved = target.issueProjectSources[project.id] ?? [];
-  const incoming = file.issueSources;
-  const provider = detectedProjectIssueKind(project.repositoryIdentity, capabilities.discovery);
+  const discovery = capabilities.discovery;
+  const failedDiscovery = discovery?.error !== undefined;
+  const provider = detectedProjectIssueKind(
+    failedDiscovery ? null : project.repositoryIdentity,
+    discovery,
+  );
+  const incoming =
+    !capabilities.singleProjectIssueProvider &&
+    failedDiscovery &&
+    !provider &&
+    file.issueSources?.length
+      ? undefined
+      : file.issueSources;
   const ambiguousLegacyRestore =
     !capabilities.singleProjectIssueProvider &&
     incoming?.length &&
@@ -745,6 +759,9 @@ export function projectConfigurationsForImport(
       throw new Error(
         "The destination server cannot confirm the issue platform for this clone. Update the server or import the bindings from project settings after cloning.",
       );
+    }
+    if (provider !== "github" && provider !== "meituan") {
+      return Struct.omit(definition, ["issueSources"]);
     }
     const compatible = projectIssueSourcesForTransfer(issueSources, provider);
     return compatible
