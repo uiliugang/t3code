@@ -99,6 +99,7 @@ function LinkRowImpl({
   line,
   threadRef,
   projectId,
+  mergePreferenceProjectId,
   speedMode,
   onUnlink,
   onSetWatching,
@@ -107,6 +108,7 @@ function LinkRowImpl({
   line: PullRequestListLine;
   threadRef: ScopedThreadRef;
   projectId: ProjectId | null;
+  mergePreferenceProjectId: ProjectId | null;
   speedMode: boolean;
   onUnlink: (link: ThreadPullRequestLink) => void;
   onSetWatching: ((link: ThreadPullRequestLink, watching: boolean) => void) | null;
@@ -303,6 +305,7 @@ function LinkRowImpl({
       {actionEntry !== null ? (
         <PullRequestSpeedActions
           entry={actionEntry}
+          mergePreferenceProjectId={mergePreferenceProjectId}
           hostActions={linkHostActions}
           terminology={linkHost.changeRequest}
         />
@@ -549,6 +552,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
               <LinkRow
                 line={line}
                 threadRef={threadRef}
+                mergePreferenceProjectId={thread?.projectId ?? null}
                 projectId={
                   capabilities !== undefined && parsed !== null
                     ? (findProjectOnChangeRequestHost(

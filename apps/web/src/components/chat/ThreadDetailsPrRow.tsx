@@ -109,7 +109,7 @@ export function ThreadDetailsPrRow({
   reference?: Pick<PullRequestRef, "host" | "target" | "repository" | "number"> | null;
   status: PrStatusIndicator | null;
   project: EnvironmentProject | null;
-  mergePreferenceProjectId?: ProjectId | undefined;
+  mergePreferenceProjectId?: ProjectId | null | undefined;
   label: string;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   onActed?: () => void;
@@ -191,7 +191,8 @@ export function ThreadDetailsPrRow({
   const lastSelectedMergeMethod = useUiStateStore((state) => state.pullRequestMergeMethod);
   const resolveProjectDefaultMergeMethod = usePullRequestDefaultMergeMethodResolver(
     environmentId,
-    mergePreferenceProjectId ?? project?.id ?? null,
+    mergePreferenceProjectId === undefined ? (project?.id ?? null) : mergePreferenceProjectId,
+    linkedReference ?? undefined,
   );
   const [confirmingMerge, setConfirmingMerge] = useState(false);
 

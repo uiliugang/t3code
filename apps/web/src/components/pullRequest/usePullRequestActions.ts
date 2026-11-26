@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -23,6 +24,7 @@ import {
   type ChangeRequestTerminology,
 } from "@t3tools/client-runtime/source-control-clients";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { parseUrl } from "@t3tools/shared/url";
 import { useClientSettings, useEnvironmentSettings } from "~/hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -30,7 +32,7 @@ import {
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
 import { buildPhysicalToLogicalProjectKeyMap } from "~/sidebarProjectGrouping";
-import { useProjects } from "~/state/entities";
+import { useProjects, useServerConfigs } from "~/state/entities";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
@@ -55,15 +57,39 @@ import { changeRequestTermKind } from "./changeRequestTerm";
 
 export function usePullRequestDefaultMergeMethodResolver(
   environmentId: EnvironmentId,
-  projectId: ProjectId | null,
+  fallbackProjectId: ProjectId | null,
+  reference?: Pick<PullRequestRef, "repository" | "number" | "target">,
 ) {
+  const projects = useProjects();
+  const supportsWebTargets =
+    useServerConfigs().get(environmentId)?.environment.capabilities.pullRequestWebTargets === true;
+  const origin = parseUrl(reference?.target?.origin ?? "");
+  const projectId =
+    (origin !== null && reference?.target !== undefined
+      ? findProjectForChangeRequest(
+          projects
+            .filter((project) => project.environmentId === environmentId)
+            .toSorted(
+              (left, right) =>
+                Number(right.id === fallbackProjectId) - Number(left.id === fallbackProjectId),
+            ),
+          {
+            host: origin.hostname,
+            ...(origin.port === "" ? {} : { authority: origin.host }),
+            repository: reference.repository,
+            repositoryUrl: origin.origin,
+            number: reference.number,
+          },
+          reference.target.provider,
+          () => supportsWebTargets,
+        )?.id
+      : undefined) ?? fallbackProjectId;
   const projectDefault = useEnvironmentSettings(
     environmentId,
     (settings) => resolveProjectSettings(settings, projectId).settings.pullRequestMergeMethod,
   );
   const legacyOverrides = useClientSettings((settings) => settings.pullRequestMergeMethodOverrides);
   const grouping = useClientSettings(selectProjectGroupingSettings);
-  const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   return () => {
     if (projectDefault != null) return projectDefault;

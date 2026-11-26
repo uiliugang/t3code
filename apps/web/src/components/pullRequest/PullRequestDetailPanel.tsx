@@ -72,7 +72,7 @@ import { usePreparePullRequestThreadAction } from "~/state/sourceControlActions"
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
-import { useProjects, useServerConfigs } from "~/state/entities";
+import { useProjects, useQuietThreadShell, useServerConfigs } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
@@ -557,9 +557,11 @@ export function PullRequestDetailPanel({
   }, [condensed, tab]);
   const lastSelectedMergeMethod = useUiStateStore((state) => state.pullRequestMergeMethod);
   const setLastSelectedMergeMethod = useUiStateStore((state) => state.setPullRequestMergeMethod);
+  const thread = useQuietThreadShell(threadRef?.environmentId === environmentId ? threadRef : null);
   const resolveProjectDefaultMergeMethod = usePullRequestDefaultMergeMethodResolver(
     environmentId,
-    reference.projectId,
+    thread?.projectId ?? reference.projectId,
+    { ...reference, target: reference.target ?? changeRequestWebTarget(reference, detail?.url) },
   );
   const projectDefaultMergeMethod = resolveProjectDefaultMergeMethod();
   const [mergeMethodSelection, setMergeMethodSelection] = useState<{

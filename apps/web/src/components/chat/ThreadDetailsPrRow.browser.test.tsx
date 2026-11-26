@@ -53,6 +53,7 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
               pullRequests: true,
               issues: state.issuesSupported,
               githubIssueSourcePorts: state.issuePortsSupported,
+              pullRequestWebTargets: state.webTargetsSupported,
             },
           },
         },
@@ -126,11 +127,25 @@ vi.mock(import("~/state/query"), async (importOriginal) => ({
     isPending: false,
   })) as never,
 }));
-vi.mock(import("../pullRequest/usePullRequestActions"), async (importOriginal) => ({
-  ...(await importOriginal()),
-  usePullRequestDefaultMergeMethodResolver: ((_environmentId: unknown, projectId: unknown) => () =>
-    state.projectMergeMethods[String(projectId)]) as never,
-}));
+vi.mock(import("~/hooks/useSettings"), async (original) => {
+  const { DEFAULT_SERVER_SETTINGS } = await import("@t3tools/contracts/settings");
+  return {
+    ...(await original()),
+    useEnvironmentSettings: ((
+      _environmentId: unknown,
+      select: (settings: typeof DEFAULT_SERVER_SETTINGS) => unknown,
+    ) =>
+      select({
+        ...DEFAULT_SERVER_SETTINGS,
+        projectSettingsOverrides: Object.fromEntries(
+          Object.entries(state.projectMergeMethods).map(([id, method]) => [
+            id,
+            { pullRequestMergeMethod: method },
+          ]),
+        ),
+      })) as never,
+  };
+});
 
 vi.mock(import("~/hooks/useHandleNewThread"), async (original) => ({
   ...(await original()),
@@ -409,9 +424,23 @@ it.each([
     gitlab: true,
     sibling: true,
   },
+  {
+    name: "the thread's clone first in an expanded row",
+    thread: repositoryClone,
+    repository: "owner/repo",
+    expected: "merge",
+    expanded: true,
+  },
+  {
+    name: "the thread's preference for an expanded row without a matching checkout",
+    thread: scratchProject,
+    repository: "owner/other",
+    expected: "squash",
+    expanded: true,
+  },
 ])(
   "merges a linked pull request with $name",
-  async ({ thread, repository, expected, gitlab, sibling }) => {
+  async ({ thread, repository, expected, gitlab, sibling, expanded }) => {
     await using screen = await setup();
     state.mergeMethods = ["merge", "squash", "rebase"];
     state.webTargetsSupported = gitlab === true;
@@ -434,12 +463,30 @@ it.each([
         stack: null,
       },
     ];
+    if (expanded) {
+      state.pullRequests.push({
+        host: "github.com",
+        repository: "owner/repo",
+        number: 2,
+        url: "https://github.com/owner/repo/pull/2",
+        source: "manual",
+        linkedAt: "2026-10-31T00:00:00.000Z",
+        snapshot: null,
+        stack: null,
+      });
+    }
     await act(async () => {
       await screen.rerender(
         <ThreadDetailsThreadPrRows threadRef={threadRef} project={thread as never} />,
       );
     });
-    await clickButton(screen.container, "Merge");
+    if (expanded) await clickButton(screen.container, "Show 1 more");
+    await clickButton(
+      expanded
+        ? screen.container.querySelector("[data-thread-details-pr-list]")!
+        : screen.container,
+      "Merge",
+    );
     const dialog = document.querySelector('[role="alertdialog"]')!;
     expect(dialog.textContent).toContain(`using ${expected}`);
     await clickButton(dialog, "Merge");
@@ -447,6 +494,7 @@ it.each([
       expect.objectContaining({
         input: expect.objectContaining({
           action: "merge",
+          number: 1,
           mergeMethod: expected,
           ...(sibling ? { projectId: gitlabSibling.id } : {}),
         }),

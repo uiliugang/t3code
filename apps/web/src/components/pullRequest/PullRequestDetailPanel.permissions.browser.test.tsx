@@ -7,6 +7,7 @@ import {
   type PullRequestDetailView,
   type PullRequestRef,
 } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import appCss from "~/index.css?inline";
@@ -22,8 +23,45 @@ const { command, permissions, reads, shown } = vi.hoisted(() => ({
   command: vi.fn(),
   permissions: { checkout: true, operate: true },
   reads: { diff: [] as unknown[] },
-  shown: { detail: null as PullRequestDetailView | null, error: null as string | null },
+  shown: {
+    detail: null as PullRequestDetailView | null,
+    error: null as string | null,
+    projects: [] as ReadonlyArray<EnvironmentProject>,
+  },
 }));
+
+vi.mock(import("~/hooks/useSettings"), async (original) => {
+  const { DEFAULT_SERVER_SETTINGS } = await import("@t3tools/contracts/settings");
+  return {
+    ...(await original()),
+    useEnvironmentSettings: ((
+      _environmentId: unknown,
+      select: (settings: typeof DEFAULT_SERVER_SETTINGS) => unknown,
+    ) =>
+      select({
+        ...DEFAULT_SERVER_SETTINGS,
+        projectSettingsOverrides: {
+          [ProjectId.make("route")]: { pullRequestMergeMethod: "merge" },
+          [ProjectId.make("owner")]: { pullRequestMergeMethod: "squash" },
+        },
+      })) as never,
+  };
+});
+vi.mock(import("~/state/entities"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    useProjects: () => shown.projects,
+    useServerConfigs: (() => {
+      const configs = actual.useServerConfigs();
+      return shown.projects.length === 0
+        ? configs
+        : new Map([
+            ["environment", { environment: { capabilities: { pullRequestWebTargets: true } } }],
+          ]);
+    }) as never,
+  };
+});
 
 vi.mock(import("~/state/session"), async (original) => ({
   ...(await original()),
@@ -162,6 +200,7 @@ function setup() {
   reads.diff = [];
   shown.detail = detail;
   shown.error = null;
+  shown.projects = [];
   command.mockReset();
   useComposerDraftStore.setState({ draftsByThreadKey: {} });
 }
@@ -178,6 +217,58 @@ it("keeps the original pull request URL available when detail cannot load", asyn
   await expect
     .element(screen.getByRole("link", { name: "Open on GitHub" }))
     .toHaveAttribute("href", sourceUrl);
+});
+
+it("uses the MR repository preference without changing the merge route", async () => {
+  setup();
+  command.mockResolvedValue({ _tag: "Success", value: undefined });
+  const provider = SourceControlProviderKind.make("gitlab");
+  const route = ProjectId.make("route");
+  shown.projects = (
+    [
+      [route, "owner/sibling", "http://forge.test/owner/sibling.git"],
+      [ProjectId.make("owner"), "owner/repo", "git@forge.test:owner/repo.git"],
+    ] as const
+  ).map(([id, repository, remoteUrl]) => ({
+    id,
+    environmentId,
+    title: repository,
+    workspaceRoot: `/workspace/${id}`,
+    defaultModelSelection: null,
+    scripts: [],
+    createdAt: detail.createdAt,
+    updatedAt: detail.updatedAt,
+    repositoryIdentity: {
+      provider,
+      canonicalKey: `forge.test/${repository}`,
+      displayName: repository,
+      locator: { source: "git-remote", remoteName: "origin", remoteUrl },
+    },
+  }));
+  shown.detail = {
+    ...detail,
+    projectId: route,
+    provider,
+    url: "http://forge.test/owner/repo/-/merge_requests/1",
+    mergeability: "mergeable",
+    mergeCapabilities: { merge: true, squash: true, rebase: false },
+    capabilities: { ...detail.capabilities, actions: ["merge"], mergeMethods: ["merge", "squash"] },
+    viewerPermissions: { ...detail.viewerPermissions, actions: ["merge"] },
+  };
+  const target = { provider, origin: "http://forge.test" };
+  await using screen = await render(panel(false, { ...shown.detail, host: "forge.test", target }));
+  await screen.getByRole("button", { name: "Squash and merge" }).click();
+  await screen.getByRole("button", { name: "Confirm merge?" }).click();
+  expect(command).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: expect.objectContaining({
+        projectId: route,
+        target,
+        action: "merge",
+        mergeMethod: "squash",
+      }),
+    }),
+  );
 });
 
 it.each([
