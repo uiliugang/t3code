@@ -7,6 +7,7 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  changeRequestFallback,
   findProjectForChangeRequest,
   findProjectOnChangeRequestHost,
   projectChangeRequestUrl,
@@ -29,11 +30,15 @@ describe("findProjectForChangeRequest", () => {
       }),
     ];
     expect(
-      findProjectForChangeRequest(projects, {
-        host: "gitlab.com",
-        repository: "t3tools/platform/t3code",
-        number: 42,
-      }),
+      findProjectForChangeRequest(
+        projects,
+        {
+          host: "gitlab.com",
+          repository: "t3tools/platform/t3code",
+          number: 42,
+        },
+        "gitlab",
+      ),
     ).toBe(projects[0]);
   });
 
@@ -47,11 +52,15 @@ describe("findProjectForChangeRequest", () => {
       }),
     ];
     expect(
-      findProjectForChangeRequest(projects, {
-        host: "github.com-evil.test",
-        repository: "pingdotgg/t3code",
-        number: 1,
-      }),
+      findProjectForChangeRequest(
+        projects,
+        {
+          host: "github.com-evil.test",
+          repository: "pingdotgg/t3code",
+          number: 1,
+        },
+        "github",
+      ),
     ).toBeUndefined();
   });
 });
@@ -74,22 +83,56 @@ describe("findProjectOnChangeRequestHost", () => {
 
   it("prefers the project checked out from the link's own repository", () => {
     expect(
-      findProjectOnChangeRequestHost([frontend, backend], {
-        host: "github.com",
-        repository: "acme/backend",
-        number: 7,
-      }),
+      findProjectOnChangeRequestHost(
+        [frontend, backend],
+        {
+          host: "github.com",
+          repository: "acme/backend",
+          number: 7,
+        },
+        "github",
+      ),
     ).toBe(backend);
   });
 
   it("lends any project on the host to a repository nobody has checked out", () => {
     expect(
-      findProjectOnChangeRequestHost([frontend], {
-        host: "github.com",
-        repository: "acme/backend",
-        number: 7,
-      }),
+      findProjectOnChangeRequestHost(
+        [frontend],
+        {
+          host: "github.com",
+          repository: "acme/backend",
+          number: 7,
+        },
+        "github",
+      ),
     ).toBe(frontend);
+  });
+});
+
+describe("changeRequestFallback", () => {
+  const gitlab = (remoteUrl: string): RepositoryIdentity => ({
+    canonicalKey: "forge.test/acme/app",
+    provider: SourceControlProviderKind.make("gitlab"),
+    displayName: "acme/app",
+    locator: { source: "git-remote", remoteName: "origin", remoteUrl },
+  });
+  const ref = { host: "forge.test", repository: "acme/app", number: 7 };
+  const checkout = gitlab("https://forge.test/acme/app.git");
+
+  it("uses the verified GitHub target when the originating project uses GitLab", () => {
+    const url = "https://enterprise.test:8443/acme/app/pull/7";
+    expect(
+      changeRequestFallback({ ...ref, host: "enterprise.test:8443" }, checkout, url),
+    ).toMatchObject({ url, definition: { kind: "github" } });
+  });
+
+  it("does not confuse GitLab HTTP and HTTPS origins", () => {
+    const url = "http://forge.test/acme/app/-/merge_requests/7";
+    const httpCheckout = gitlab("http://forge.test/acme/app.git");
+    expect(changeRequestFallback(ref, checkout, url)).toBeNull();
+    expect(changeRequestFallback(ref, httpCheckout, url)?.url).toBe(url);
+    expect(changeRequestFallback({ ...ref, host: "forge.test:80" }, httpCheckout)).toBeNull();
   });
 });
 
@@ -141,6 +184,54 @@ describe("resolveChangeRequestLinkTarget", () => {
     expect(resolve("forge.test:8443", [standard, ssh])).toBeNull();
     expect(resolve("forge.test", [custom, standard])).toMatchObject({ project: standard });
     expect(resolve("forge.test", [custom])).toBeNull();
+  });
+
+  it("does not open or preview a GitHub PR through a GitLab checkout on the same authority", () => {
+    const github = project("github", local, "forge.test/acme/app");
+    const gitlab = {
+      ...github,
+      id: ProjectId.make("gitlab"),
+      repositoryIdentity: {
+        ...github.repositoryIdentity,
+        provider: SourceControlProviderKind.make("gitlab"),
+      },
+    };
+    const enterpriseUrl = "https://forge.test/acme/app/pull/7";
+    expect(
+      resolveChangeRequestLinkTarget({
+        url: enterpriseUrl,
+        projects: [gitlab],
+        configLoaded: loaded,
+        lendHostProject: true,
+      }),
+    ).toBeNull();
+    expect(
+      resolvePullRequestPreviewTarget({
+        url: enterpriseUrl,
+        projects: [gitlab, github],
+        environmentId: local,
+        pullRequestsEnabled: true,
+      })?.input.projectId,
+    ).toBe(github.id);
+  });
+
+  it("does not borrow an HTTPS GitLab checkout for an HTTP MR link", () => {
+    const https = project("https", local, "forge.test/acme/app");
+    const gitlab = {
+      ...https,
+      repositoryIdentity: {
+        ...https.repositoryIdentity,
+        provider: SourceControlProviderKind.make("gitlab"),
+      },
+    };
+    expect(
+      resolveChangeRequestLinkTarget({
+        url: "http://forge.test/acme/app/-/merge_requests/7",
+        projects: [gitlab],
+        configLoaded: loaded,
+        lendHostProject: true,
+      }),
+    ).toBeNull();
   });
 
   it("opens a mirror's link in its own environment under a project on the link's host", () => {

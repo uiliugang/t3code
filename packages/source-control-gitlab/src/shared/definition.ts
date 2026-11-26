@@ -29,6 +29,11 @@ const REPOSITORY_PAGE_PATH = /^\/([^/]+(?:\/[^/]+)+?)\/-\//u;
 
 const KIND = SourceControlProviderKind.make("gitlab");
 
+function changeRequestHost(identity: Parameters<typeof projectChangeRequestHost>[0]): string {
+  const host = projectChangeRequestHost(identity, KIND);
+  return parseUrl(remoteWebOrigin(host, identity?.locator?.remoteUrl))?.host ?? host;
+}
+
 export const definition = defineSourceControl({
   kind: KIND,
   label: "GitLab",
@@ -82,11 +87,8 @@ export const definition = defineSourceControl({
   reviewSummaryRequired: () => false,
   checkoutCommandArgument: (input) => CHECKOUT_COMMAND.exec(input)?.[1]?.trim() ?? null,
   isChangeRequestReference: (url) => CHANGE_REQUEST_REFERENCE.test(url),
-  checkoutChangeRequestHost: () => null,
-  changeRequestHost: (identity) => {
-    const host = projectChangeRequestHost(identity, KIND);
-    return parseUrl(remoteWebOrigin(host, identity?.locator?.remoteUrl))?.host ?? host;
-  },
+  checkoutChangeRequestHost: changeRequestHost,
+  changeRequestHost,
   changeRequestHeadRef: (number) => `refs/merge-requests/${number}/head`,
   recognizeRemote: ({ host, hostname }) =>
     hostname === "gitlab.com" || hostname.split(".").includes("gitlab")

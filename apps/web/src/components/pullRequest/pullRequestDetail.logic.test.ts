@@ -1943,6 +1943,30 @@ describe("cached pull request detail", () => {
     ).toBeNull();
   });
 
+  it("does not show an old default-port MR snapshot after the remote moves to another port", () => {
+    const storage = makeStorage();
+    writePullRequestDetailSnapshot(
+      storage,
+      "env-1",
+      reference,
+      detail({
+        provider: SourceControlProviderKind.make("gitlab"),
+        url: "https://forge.test/acme/web/-/merge_requests/7",
+      }),
+    );
+    const resolved = resolvePullRequestReferenceHost(reference, {
+      canonicalKey: "forge.test/acme/web",
+      locator: {
+        source: "git-remote",
+        remoteName: "origin",
+        remoteUrl: "https://forge.test:8443/acme/web.git",
+      },
+      provider: SourceControlProviderKind.make("gitlab"),
+    });
+    expect(resolved.host).toBe("forge.test:8443");
+    expect(readPullRequestDetailSnapshot(storage, "env-1", resolved)).toBeNull();
+  });
+
   it.each(["github", "gitlab"] as const)(
     "shows a %s snapshot only at the matching web port",
     (providerName) => {

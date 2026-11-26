@@ -53,13 +53,14 @@ function ThreadDetailsPrLinkRow({
 }) {
   const m = useMessages();
   const projects = useProjects();
-  const parsed = sourceControlClients.parseChangeRequestUrl(link.url)?.link;
+  const parsed = sourceControlClients.parseChangeRequestUrl(link.url);
   const project =
-    parsed === undefined
+    parsed === null
       ? null
       : (findProjectOnChangeRequestHost(
           projects.filter((candidate) => candidate.environmentId === environmentId),
-          parsed,
+          parsed.link,
+          parsed.definition.kind,
         ) ?? null);
   const linked = linkedPullRequestSnapshotStatus(link);
   const pr = linked?.pr ?? null;
@@ -171,17 +172,18 @@ export function ThreadDetailsThreadPrRows({
   const { currentLink, pr, number, url } = displayed;
   const projects = useProjects();
   const parsed =
-    currentLink === null
-      ? undefined
-      : sourceControlClients.parseChangeRequestUrl(currentLink.url)?.link;
+    currentLink === null ? null : sourceControlClients.parseChangeRequestUrl(currentLink.url);
   // Merge settings belong to the project holding the linked repository, the thread's own first.
   const rowProject =
-    parsed === undefined || (project !== null && findProjectForChangeRequest([project], parsed))
+    parsed === null ||
+    (project !== null &&
+      findProjectForChangeRequest([project], parsed.link, parsed.definition.kind))
       ? project
       : (findProjectForChangeRequest(
           projects.filter((candidate) => candidate.environmentId === threadRef.environmentId),
-          parsed,
-        ) ?? project);
+          parsed.link,
+          parsed.definition.kind,
+        ) ?? null);
   if (number === undefined || url === undefined) return null;
   return (
     <ThreadDetailsPrRows

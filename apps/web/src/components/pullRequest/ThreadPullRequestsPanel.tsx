@@ -28,7 +28,7 @@ import {
   encodePullRequestDragPayload,
 } from "~/components/chat/composerMentionDrag";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
+import { findProjectOnChangeRequestHost } from "@t3tools/client-runtime/change-request-links";
 import { pullRequestLinkPanelTarget, useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useClientSettings } from "~/hooks/useSettings";
 import { usePrimaryEnvironmentId } from "~/state/environments";
@@ -555,24 +555,29 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
               </>
             ) : null
           }
-          renderItem={({ item: line }) => (
-            <LinkRow
-              line={line}
-              threadRef={threadRef}
-              projectId={
-                capabilities !== undefined
-                  ? (findProjectForChangeRequest(environmentProjects, line.link)?.id ??
-                    thread?.projectId ??
-                    null)
-                  : null
-              }
-              speedMode={speedMode}
-              onUnlink={handleUnlink}
-              onSetWatching={supportsWatch ? handleSetWatching : null}
-              onIntent={intendLink}
-              canStartWatch={canStartWatch}
-            />
-          )}
+          renderItem={({ item: line }) => {
+            const parsed = sourceControlClients.parseChangeRequestUrl(line.link.url);
+            return (
+              <LinkRow
+                line={line}
+                threadRef={threadRef}
+                projectId={
+                  capabilities !== undefined && parsed !== null
+                    ? (findProjectOnChangeRequestHost(
+                        environmentProjects,
+                        parsed.link,
+                        parsed.definition.kind,
+                      )?.id ?? null)
+                    : null
+                }
+                speedMode={speedMode}
+                onUnlink={handleUnlink}
+                onSetWatching={supportsWatch ? handleSetWatching : null}
+                onIntent={intendLink}
+                canStartWatch={canStartWatch}
+              />
+            );
+          }}
           estimatedItemSize={44}
           drawDistance={440}
           className="min-h-0 flex-1 overscroll-contain p-1.5"

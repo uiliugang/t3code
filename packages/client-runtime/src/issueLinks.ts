@@ -86,20 +86,15 @@ export function issueLinkedPullRequestTarget(
   target: { readonly url: string; readonly repository: string; readonly number: number },
 ) {
   const { repository, number, url } = target;
-  if (sourceControlClients.find(issue.tracker) === undefined) return null;
-  if (issue.tracker !== "github")
-    return { repository, number, url, ...(issue.host ? { host: issue.host } : {}) };
-  const host = githubLinkHost(target.url);
   const parsed = sourceControlClients.parseChangeRequestUrl(target.url);
   if (
-    host === undefined ||
-    parsed?.definition.kind !== "github" ||
-    (parsed.link.authority ?? parsed.link.host) !== host ||
+    parsed === null ||
+    parsed.definition.kind !== issue.tracker ||
     parsed.link.repository.toLowerCase() !== repository.toLowerCase() ||
     parsed.link.number !== number
   )
     return null;
-  return { repository, number, host, url };
+  return { repository, number, host: parsed.link.authority ?? parsed.link.host, url };
 }
 
 export function issueReferenceHost(

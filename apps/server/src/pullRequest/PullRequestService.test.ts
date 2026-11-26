@@ -2255,6 +2255,27 @@ it.effect("routes a hosted reference to another repository through a project on 
 );
 
 it.effect.each(["github", "gitlab"] as const)(
+  "keeps an explicit %s authority when the checkout uses another port",
+  (provider) =>
+    Effect.gen(function* () {
+      const checkout = project({
+        id: "custom",
+        title: "Custom port",
+        workspaceRoot: "/custom",
+        host: "forge.test",
+        repository: "acme/app",
+        remoteUrl: "https://forge.test:8443/acme/app.git",
+        provider,
+      });
+      const target = { repository: "acme/app", number: 7 };
+      assert.strictEqual((yield* resolveTarget(target, checkout)).host, "forge.test:8443");
+      const explicit = yield* resolveTarget({ ...target, host: "forge.test" }, checkout);
+      assert.strictEqual(explicit.host, "forge.test");
+      assert.strictEqual(new URL(explicit.url).origin, "https://forge.test");
+    }),
+);
+
+it.effect.each(["github", "gitlab"] as const)(
   "routes the same %s repository and change request number to the requested HTTPS authority",
   (provider) =>
     Effect.gen(function* () {
@@ -2982,6 +3003,71 @@ it.effect("a refused merge notifies readers so they re-read the conflicting stat
     );
     yield* Effect.flip(service.runAction({ ...reference, action: "merge" }));
     assert.strictEqual(Option.getOrThrow(yield* Fiber.join(refreshed)).mergeability, "conflicting");
+  }),
+);
+
+it.effect("a refused merge refreshes a borrowed detail without evicting the other port", () =>
+  Effect.gen(function* () {
+    let mergeable = true;
+    const standard = project({
+      id: "standard",
+      title: "Default port",
+      workspaceRoot: "/standard",
+      host: "forge.test",
+      repository: "acme/web",
+    });
+    const custom = project({
+      id: "custom",
+      title: "Custom port",
+      workspaceRoot: "/custom",
+      host: "forge.test",
+      repository: "acme/web",
+      remoteUrl: "https://forge.test:8443/acme/web.git",
+    });
+    const reads: Array<string> = [];
+    const service = yield* makeService({
+      projects: [standard, custom],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          getChangeRequest: ({ host }) => {
+            reads.push(host);
+            return Effect.succeed({
+              ...changeRequest(1, "2026-09-16T00:00:00.000Z"),
+              mergeability: mergeable || host === "forge.test" ? "mergeable" : "conflicting",
+            });
+          },
+          runAction: () =>
+            Effect.suspend(() => {
+              mergeable = false;
+              return Effect.fail(
+                new PullRequestProviderError({
+                  provider: SourceControlProviderKind.make("github"),
+                  operation: "runAction",
+                  reason: "failed",
+                  detail: "Pull Request has merge conflicts",
+                }),
+              );
+            }),
+        }),
+      ],
+    });
+    const defaultRef = {
+      projectId: standard.id,
+      host: "forge.test",
+      repository: "acme/web",
+      number: 1,
+      allowStale: false,
+    };
+    const borrowed = { ...defaultRef, host: "forge.test:8443" };
+    assert.strictEqual((yield* service.detail(defaultRef)).mergeability, "mergeable");
+    const before = yield* service.detail(borrowed);
+    assert.strictEqual(before.projectId, custom.id);
+    assert.strictEqual(before.mergeability, "mergeable");
+    yield* Effect.flip(service.runAction({ ...borrowed, action: "merge" }));
+    const refused = yield* service.detail(borrowed);
+    assert.strictEqual(refused.mergeability, "conflicting");
+    assert.strictEqual((yield* service.detail(defaultRef)).mergeability, "mergeable");
+    assert.strictEqual(reads.filter((host) => host === "forge.test").length, 1);
   }),
 );
 

@@ -5,7 +5,7 @@ import {
   resolvePullRequestReviewAnchor,
   type PullRequestAnchor,
 } from "@t3tools/shared/pullRequestAnchor";
-import { projectChangeRequestUrl } from "@t3tools/client-runtime/change-request-links";
+import { changeRequestFallback } from "@t3tools/client-runtime/change-request-links";
 import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
@@ -27,7 +27,6 @@ import {
   type PullRequestReviewGuideStop,
   type PullRequestSummary,
   resolveEnvironmentMachineKind,
-  sourceControlTokenHost,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
@@ -274,11 +273,13 @@ function pullRequestStackReference(
   reference: PullRequestRef,
   supportsThreadPullRequests: boolean,
 ) {
+  const link =
+    detail === null ? undefined : sourceControlClients.parseChangeRequestUrl(detail.url)?.link;
   return detail === null || detail.capabilities.stacks !== true || !supportsThreadPullRequests
     ? null
     : {
         ...reference,
-        host: reference.host ?? sourceControlClients.parseChangeRequestUrl(detail.url)?.link.host,
+        host: reference.host ?? link?.authority ?? link?.host,
       };
 }
 
@@ -368,30 +369,7 @@ export function PullRequestDetailPanel({
     supportsThreadPullRequests,
   );
   const loadingCheckoutCommand = loadingPullRequestCheckoutCommand(reference, repositoryIdentity);
-  const projectHostUrl = projectChangeRequestUrl(
-    repositoryIdentity,
-    reference.repository,
-    reference.number,
-  );
-  const candidateHostUrl = sourceUrl ?? projectHostUrl;
-  const candidate = sourceControlClients.parseChangeRequestUrl(candidateHostUrl ?? "");
-  const projectLink =
-    requestedReference.host === undefined
-      ? sourceControlClients.parseChangeRequestUrl(projectHostUrl ?? "")?.link
-      : undefined;
-  const expectedHost = requestedReference.host ?? projectLink?.authority ?? projectLink?.host;
-  const unavailableHostUrl =
-    candidate &&
-    expectedHost !== undefined &&
-    (repositoryIdentity?.provider === undefined ||
-      repositoryIdentity.provider === "unknown" ||
-      candidate.definition.kind === repositoryIdentity.provider) &&
-    (candidate.link.authority ?? candidate.link.host) ===
-      sourceControlTokenHost(candidate.definition.kind, expectedHost) &&
-    candidate.link.repository.toLowerCase() === reference.repository.toLowerCase() &&
-    candidate.link.number === reference.number
-      ? candidateHostUrl
-      : null;
+  const fallback = changeRequestFallback(reference, repositoryIdentity, sourceUrl);
   const pullRequestKey = pullRequestRefKey(reference);
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&
@@ -402,7 +380,7 @@ export function PullRequestDetailPanel({
       ? listEntry
       : null;
   const linkedReference = sourceControlClients.parseChangeRequestUrl(
-    matchingListEntry?.url ?? unavailableHostUrl ?? "",
+    matchingListEntry?.url ?? fallback?.url ?? "",
   )?.link;
   useEnvironmentQuery(
     context === "page" &&
@@ -2048,15 +2026,11 @@ export function PullRequestDetailPanel({
               : { error: detailQuery.error })}
             refreshing={detailQuery.isPending}
             onRetry={refreshDetail}
-            {...(unavailableHostUrl
+            {...(fallback
               ? {
                   host: {
-                    url: unavailableHostUrl,
-                    openLabel: openOnHostLabel(
-                      candidate?.definition ??
-                        sourceControlClients.get(repositoryIdentity?.provider),
-                      t,
-                    ),
+                    url: fallback.url,
+                    openLabel: openOnHostLabel(fallback.definition, t),
                   },
                 }
               : {})}

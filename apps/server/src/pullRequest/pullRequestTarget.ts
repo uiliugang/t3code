@@ -149,7 +149,10 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
       host,
       repository,
       number: input.number,
-      remoteUrl: project?.repositoryIdentity?.locator.remoteUrl,
+      remoteUrl:
+        input.host === undefined || host === projectHost.host
+          ? project?.repositoryIdentity?.locator.remoteUrl
+          : undefined,
     }) ?? null;
   if (url === null) {
     // A known forge returns no URL when the repository is not in its shape.

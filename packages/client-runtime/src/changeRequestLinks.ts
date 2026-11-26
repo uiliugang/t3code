@@ -1,10 +1,16 @@
-import type {
-  EnvironmentId,
-  ProjectId,
-  PullRequestRef,
-  RepositoryIdentity,
+import {
+  sourceControlTokenHost,
+  type EnvironmentId,
+  type ProjectId,
+  type PullRequestRef,
+  type RepositoryIdentity,
 } from "@t3tools/contracts";
-import type { ChangeRequestLink } from "@t3tools/source-control-core/shared/definition";
+import {
+  remoteWebOrigin,
+  type ChangeRequestLink,
+  type ParsedChangeRequestUrl,
+} from "@t3tools/source-control-core/shared/definition";
+import { parseUrl } from "@t3tools/shared/url";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 
@@ -14,15 +20,29 @@ interface ChangeRequestProject {
   readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
 }
 
+type ProjectChangeRequestLink = ChangeRequestLink &
+  Partial<Pick<ParsedChangeRequestUrl, "repositoryUrl">>;
+
+function matchesChangeRequestProtocol(
+  identity: RepositoryIdentity,
+  link: ProjectChangeRequestLink,
+): boolean {
+  if (identity.provider !== "gitlab" || link.repositoryUrl === undefined) return true;
+  const origin = remoteWebOrigin(link.authority ?? link.host, identity.locator.remoteUrl);
+  return parseUrl(link.repositoryUrl)?.origin === origin;
+}
+
 /** The project whose own repository holds the change request, not just one on its host. */
 export function findProjectForChangeRequest<Project extends ChangeRequestProject>(
   projects: ReadonlyArray<Project>,
-  link: ChangeRequestLink,
+  link: ProjectChangeRequestLink,
+  provider: string,
 ): Project | undefined {
   return projects.find((project) => {
     const identity = project.repositoryIdentity;
     return (
-      identity?.provider !== undefined &&
+      identity?.provider === provider &&
+      matchesChangeRequestProtocol(identity, link) &&
       sourceControlClients.get(identity.provider).isChangeRequestInRepository(identity, link)
     );
   });
@@ -31,14 +51,16 @@ export function findProjectForChangeRequest<Project extends ChangeRequestProject
 /** Prefers the project checked out from the link's repository, else lends any project on its host. */
 export function findProjectOnChangeRequestHost<Project extends ChangeRequestProject>(
   projects: ReadonlyArray<Project>,
-  link: ChangeRequestLink,
+  link: ProjectChangeRequestLink,
+  provider: string,
 ): Project | undefined {
   return (
-    findProjectForChangeRequest(projects, link) ??
+    findProjectForChangeRequest(projects, link, provider) ??
     projects.find((project) => {
       const identity = project.repositoryIdentity;
       return (
-        identity?.provider !== undefined &&
+        identity?.provider === provider &&
+        matchesChangeRequestProtocol(identity, link) &&
         sourceControlClients.get(identity.provider).canReadChangeRequestOnHost(identity, link)
       );
     })
@@ -74,8 +96,9 @@ export function resolveChangeRequestLinkTarget<Project extends ChangeRequestProj
   readonly number: number;
   readonly host?: string;
 } | null {
-  const link = sourceControlClients.parseChangeRequestUrl(url)?.link;
-  if (link === undefined) return null;
+  const parsed = sourceControlClients.parseChangeRequestUrl(url);
+  if (parsed === null) return null;
+  const { definition, link } = parsed;
   // Matching remotes do not make project ids usable outside the link's environment.
   const candidates = (
     environmentId === undefined
@@ -88,8 +111,10 @@ export function resolveChangeRequestLinkTarget<Project extends ChangeRequestProj
         Number(left.environmentId === primaryEnvironmentId),
   );
   const project =
-    findProjectForChangeRequest(candidates, link) ??
-    (lendHostProject ? findProjectOnChangeRequestHost(candidates, link) : undefined);
+    findProjectForChangeRequest(candidates, link, definition.kind) ??
+    (lendHostProject
+      ? findProjectOnChangeRequestHost(candidates, link, definition.kind)
+      : undefined);
   if (project === undefined || !configLoaded(project.environmentId)) return null;
   return {
     project,
@@ -111,21 +136,23 @@ export function resolvePullRequestPreviewTarget({
   url: string;
 }): { environmentId: EnvironmentId; input: PullRequestRef } | null {
   if (!pullRequestsEnabled || environmentId === null) return null;
-  const parsed = sourceControlClients.parseChangeRequestUrl(url)?.link;
-  if (parsed === undefined) return null;
+  const parsed = sourceControlClients.parseChangeRequestUrl(url);
+  if (parsed === null) return null;
+  const { definition, link } = parsed;
   const project = findProjectForChangeRequest(
     projects.filter((candidate) => candidate.environmentId === environmentId),
-    parsed,
+    link,
+    definition.kind,
   );
   if (project === undefined) return null;
   return {
     environmentId,
     input: {
       projectId: project.id,
-      host: parsed.authority ?? parsed.host,
+      host: link.authority ?? link.host,
       repository:
-        sourceControlClients.repositorySelector(project.repositoryIdentity) ?? parsed.repository,
-      number: parsed.number,
+        sourceControlClients.repositorySelector(project.repositoryIdentity) ?? link.repository,
+      number: link.number,
     },
   };
 }
@@ -147,6 +174,35 @@ export function projectChangeRequestUrl(
     remoteUrl: identity.locator.remoteUrl.trim(),
     ...(ownRepository && identity.webUrl !== undefined ? { webUrl: identity.webUrl } : {}),
   });
+}
+
+export function changeRequestFallback(
+  reference: Pick<PullRequestRef, "host" | "repository" | "number">,
+  identity: RepositoryIdentity | null | undefined,
+  sourceUrl?: string,
+) {
+  const projectUrl = projectChangeRequestUrl(identity, reference.repository, reference.number);
+  const projectLink = sourceControlClients.parseChangeRequestUrl(projectUrl ?? "");
+  const url = sourceUrl ?? projectUrl;
+  if (url === null) return null;
+  const parsed = sourceControlClients.parseChangeRequestUrl(url);
+  if (parsed === null) return null;
+  const host = parsed.link.authority ?? parsed.link.host;
+  const projectHost = projectLink?.link.authority ?? projectLink?.link.host;
+  const expectedHost = reference.host ?? projectHost;
+  if (
+    expectedHost === undefined ||
+    host !== sourceControlTokenHost(parsed.definition.kind, expectedHost) ||
+    parsed.link.repository.toLowerCase() !== reference.repository.toLowerCase() ||
+    parsed.link.number !== reference.number
+  )
+    return null;
+  const projectProtocol =
+    projectLink?.definition.kind === parsed.definition.kind && projectHost === host
+      ? parseUrl(projectLink.link.repositoryUrl)?.protocol
+      : undefined;
+  if (parseUrl(url)?.protocol !== (projectProtocol ?? "https:")) return null;
+  return { url, definition: parsed.definition };
 }
 
 export function projectCommitUrl(

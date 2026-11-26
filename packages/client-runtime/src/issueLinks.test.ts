@@ -44,6 +44,17 @@ it("uses the linked GitHub pull request's authority, not the issue's authority",
   ).toBeNull();
 });
 
+it("uses the linked GitLab merge request's authority, not the issue's authority", () => {
+  const issue = { tracker: "gitlab", host: "forge.test" };
+  const link = {
+    repository: "acme/team/app",
+    number: 12,
+    url: "https://forge.test:8443/acme/team/app/-/merge_requests/12",
+  };
+  expect(issueLinkedPullRequestTarget(issue, link)).toEqual({ ...link, host: "forge.test:8443" });
+  expect(issueLinkedPullRequestTarget(issue, { ...link, number: 13 })).toBeNull();
+});
+
 it("requires port support and an HTTPS authority match before reading restored GitHub links", () => {
   const ported = { tracker: "github", url: "https://forge.test:8443/acme/web/issues/7" };
   const supportsPorts = { githubIssueSourcePorts: true };
