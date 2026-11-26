@@ -3,7 +3,7 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { isStandaloneIssueLink } from "@t3tools/client-runtime/issue-links";
+import { isStandaloneIssueLink, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
 import {
   EnvironmentId,
   IssueTrackerKind,
@@ -447,7 +447,8 @@ function requirementIssueSurfaceId(
       ? target.scope
       : `${workspace}/${target.scope === undefined ? "" : target.scope}`;
   const scope = rawScope === undefined ? "" : `${encodeURIComponent(rawScope)}:`;
-  const host = target.host ? `${encodeURIComponent(target.host)}:` : "";
+  const referenceHost = issueReferenceHost(target.provider, target.host, target.url);
+  const host = referenceHost ? `${encodeURIComponent(referenceHost)}:` : "";
   return `requirement-issue:${environment}${encodeURIComponent(target.projectId)}:${target.provider}:${host}${scope}${encodeURIComponent(target.issueId)}`;
 }
 
@@ -505,7 +506,9 @@ export interface IssueSurfaceTarget {
 function issueSurfaceId(target: IssueSurfaceTarget): IssueSurface["id"] {
   const environment =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
-  const host = target.host === undefined ? "" : `${encodeURIComponent(target.host.toLowerCase())}:`;
+  const referenceHost = issueReferenceHost(target.tracker, target.host, target.url);
+  const host =
+    referenceHost === undefined ? "" : `${encodeURIComponent(referenceHost.toLowerCase())}:`;
   const workspace = standaloneIssueWorkspace({
     tracker: IssueTrackerKind.make(target.tracker),
     ...(target.url === undefined ? {} : { url: target.url }),

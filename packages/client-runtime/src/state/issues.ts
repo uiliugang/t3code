@@ -62,7 +62,7 @@ export function normalizeIssueDetailInput({
   key,
   url,
 }: IssueRef): IssueRef {
-  const referenceHost = issueReferenceHost(tracker, host);
+  const referenceHost = issueReferenceHost(tracker, host, url);
   let canonicalLinearUrl: string | null = null;
   if (tracker === "linear" && url !== undefined) {
     try {

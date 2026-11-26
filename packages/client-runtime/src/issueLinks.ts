@@ -67,10 +67,39 @@ function linkAuthority(url: string): string | null {
   }
 }
 
-export function issueReferenceHost(tracker: string, host: string | undefined): string | undefined {
-  return tracker === "github" && host !== undefined
-    ? (normalizeGithubIssueHost(host) ?? host)
-    : host;
+function githubLinkHost(url: string): string | undefined {
+  try {
+    const link = new URL(url);
+    return link.protocol === "https:" ? normalizeGithubIssueHost(link.host) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function issueReferenceHost(
+  tracker: string,
+  host: string | undefined,
+  url?: string,
+): string | undefined {
+  if (tracker !== "github") return host;
+  if (host !== undefined) return normalizeGithubIssueHost(host) ?? host;
+  return url === undefined ? undefined : githubLinkHost(url);
+}
+
+export function issueReferenceCompatible(
+  link: {
+    readonly tracker: string;
+    readonly host?: string | undefined;
+    readonly url?: string | undefined;
+  },
+  capabilities: { readonly githubIssueSourcePorts?: boolean } | undefined,
+): boolean {
+  if (link.tracker !== "github") return true;
+  const host = issueReferenceHost(link.tracker, link.host, link.url);
+  if (link.url !== undefined && (host === undefined || githubLinkHost(link.url) !== host)) {
+    return false;
+  }
+  return host?.includes(":") !== true || capabilities?.githubIssueSourcePorts === true;
 }
 
 export function canOpenLinkedIssue(
@@ -79,20 +108,7 @@ export function canOpenLinkedIssue(
     | { readonly issues?: boolean; readonly githubIssueSourcePorts?: boolean }
     | undefined,
 ): boolean {
-  if (capabilities?.issues !== true) return false;
-  if (link.tracker !== "github") return true;
-  try {
-    const url = new URL(link.url);
-    const host = normalizeGithubIssueHost(url.host);
-    return (
-      url.protocol === "https:" &&
-      host !== undefined &&
-      normalizeGithubIssueHost(link.host ?? url.host) === host &&
-      (capabilities.githubIssueSourcePorts === true || !host.includes(":"))
-    );
-  } catch {
-    return false;
-  }
+  return capabilities?.issues === true && issueReferenceCompatible(link, capabilities);
 }
 
 /** A host whose hostname does not name it, such as GitHub Enterprise Server, is vouched for by a project on it. */

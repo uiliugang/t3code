@@ -1878,6 +1878,7 @@ function IssueCreateFormBody({
         loading={busy}
         disabled={
           generating ||
+          !destination ||
           !platformSelected ||
           !allowed ||
           !title.trim() ||

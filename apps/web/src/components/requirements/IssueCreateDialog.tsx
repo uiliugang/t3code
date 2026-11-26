@@ -5,6 +5,7 @@ import type {
   Issue,
   IssueProvider,
   IssueMetadataInput,
+  IssueSource,
   ProjectId,
 } from "@t3tools/contracts";
 import { useState } from "react";
@@ -129,7 +130,7 @@ export function IssueCreateDialog({
   projects: ReadonlyArray<{ id: ProjectId; title: string }>;
   initialProjectId?: ProjectId;
   close: () => void;
-  created: (issue: Issue, projectId: ProjectId) => void;
+  created: (issue: Issue, target: IssueSource & { readonly projectId: ProjectId }) => void;
 }) {
   const t = useUiTranslation();
   const [projectId, setProjectId] = useState(initialProjectId ?? projects[0]?.id);
@@ -216,7 +217,7 @@ export function IssueCreateDialog({
       },
     });
     setBusy(false);
-    if (result._tag === "Success") created(result.value, projectId);
+    if (result._tag === "Success") created(result.value, { projectId, ...destination });
     else {
       const failure = squashAtomCommandFailure(result);
       setError(failure instanceof Error ? t(failure.message) : t("Could not create issue."));

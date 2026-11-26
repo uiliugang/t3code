@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { issueReferenceCompatible, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
 import {
   BranchIssueError,
   IssueTrackerKind,
@@ -25,7 +26,10 @@ import { refreshIssueLists } from "../../state/issues";
 import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 import { ProjectTag } from "./ProjectTag";
 
-import { IssueDetailPanel as TrackerDetailPanel } from "../issue/IssueDetailPanel";
+import {
+  IssueDetailPanel as TrackerDetailPanel,
+  IssueLinkUnavailable,
+} from "../issue/IssueDetailPanel";
 import { PullRequestSection } from "../pullRequest/PullRequestSummaryTab";
 import type { RequirementTracker } from "@t3tools/client-runtime/work-item";
 import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "../../rightPanelStore";
@@ -53,7 +57,16 @@ export function IssueDetailPanel(
   },
 ) {
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
-  const { provider, scope, url, ...target } = props.target;
+  const { provider, scope, url, host: rawHost, ...rest } = props.target;
+  if (
+    !issueReferenceCompatible(
+      { tracker: provider, host: rawHost, url },
+      config?.environment.capabilities,
+    )
+  )
+    return <IssueLinkUnavailable url={url} />;
+  const host = issueReferenceHost(provider, rawHost, url);
+  const target = { ...rest, ...(host === undefined ? {} : { host }) };
   const legacy =
     provider === "github" || provider === "meituan"
       ? ({ ...target, ...(scope ? { scope } : {}), provider } satisfies IssueTarget)

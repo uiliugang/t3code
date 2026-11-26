@@ -52,15 +52,17 @@ vi.mock(import("../../state/sourceControl"), async (original) => {
 });
 vi.mock(import("./DraftFillButton"), () => ({ DraftFillButton: () => <></> }));
 
-it("sends the selected GitHub authority for metadata, people and issue creation", async () => {
-  calls.create.mockResolvedValue({ _tag: "Success", value: {} });
+it("uses the selected GitHub authority for requests and the newly created issue", async () => {
+  const created = vi.fn();
+  const issue = { id: "7", url: "https://forge.example.test:8443/team/repo/issues/7" };
+  calls.create.mockResolvedValue({ _tag: "Success", value: issue });
   await using screen = await render(
     <IssueCreateDialog
       environmentId={environmentId}
       provider="github"
       projects={[{ id: projectId, title: "Example" }]}
       close={vi.fn()}
-      created={vi.fn()}
+      created={created}
     />,
   );
   await userEvent.click(screen.getByRole("combobox", { name: "GitHub repository" }));
@@ -74,4 +76,5 @@ it("sends the selected GitHub authority for metadata, people and issue creation"
   expect(calls.metadata).toHaveBeenLastCalledWith(selected);
   expect(calls.people).toHaveBeenLastCalledWith(selected);
   expect(calls.create).toHaveBeenCalledWith(selected);
+  expect(created).toHaveBeenCalledWith(issue, selected.input);
 });

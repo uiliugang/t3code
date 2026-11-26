@@ -131,6 +131,22 @@ describe("rightPanelStore", () => {
     expect(migratedState.activeSurfaceId).toContain("acme");
   });
 
+  it("keeps old GitHub issue tabs with distinct HTTPS authorities separate", () => {
+    const store = useRightPanelStore.getState();
+    const reference = { projectId: "project-1", tracker: "github", scope: "acme/app", key: "7" };
+    store.openIssue(refA, { ...reference, url: "https://forge.test/acme/app/issues/7" });
+    store.openIssue(refA, { ...reference, url: "https://forge.test:8443/acme/app/issues/7" });
+    store.openIssue(refA, { ...reference, host: "forge.test:443" });
+    const { surfaces } = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      refA,
+    );
+    expect(surfaces.map((surface) => surface.id)).toEqual([
+      "issue:project-1:github:forge.test:acme%2Fapp:7",
+      "issue:project-1:github:forge.test%3A8443:acme%2Fapp:7",
+    ]);
+  });
+
   it("reopens the active tab first after a bulk close", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "files");

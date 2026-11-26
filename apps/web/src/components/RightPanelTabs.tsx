@@ -2,6 +2,7 @@ import { msg, useGT, useMessages } from "gt-react";
 import { contextMenuSourceOf } from "../contextMenuSource";
 import { m, type MessageResolver } from "../i18n/messages";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { issueReferenceCompatible } from "@t3tools/client-runtime/issue-links";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   threadRuntimeIsActive,
@@ -830,14 +831,18 @@ function IssueSurfaceIcon({
   const scope = surface.scope;
   const key = surface.kind === "issue" ? surface.key : surface.issueId;
   const tracker = surface.kind === "issue" ? surface.tracker : surface.provider;
+  const config = resolvedEnvironmentId === null ? undefined : configs.get(resolvedEnvironmentId);
+  const compatible = issueReferenceCompatible(
+    { tracker, host: surface.host, url: surface.url },
+    config?.environment.capabilities,
+  );
   const trackerSupported =
     surface.kind === "issue" ||
     surface.provider === "gitlab" ||
     surface.provider === "linear" ||
-    (resolvedEnvironmentId !== null &&
-      configs.get(resolvedEnvironmentId)?.requirementIssueTrackers === true);
+    config?.requirementIssueTrackers === true;
   const detail = useEnvironmentQuery(
-    resolvedEnvironmentId === null || scope === undefined || !trackerSupported
+    resolvedEnvironmentId === null || scope === undefined || !trackerSupported || !compatible
       ? null
       : issueEnvironment.detail({
           environmentId: resolvedEnvironmentId,

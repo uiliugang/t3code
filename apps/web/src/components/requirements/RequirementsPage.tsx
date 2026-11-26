@@ -4,7 +4,6 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
 import {
   IssueTrackerKind,
-  parseBranchIssueUrl,
   standaloneIssueWorkspace,
   type IssueProvider,
   type ProjectId,
@@ -1642,16 +1641,13 @@ export function RequirementBoard({
               setCreatingIssue(null);
               setCreatingEnvironmentId(null);
             }}
-            created={(issue, projectId) => {
-              const issueScope = parseBranchIssueUrl(issue.url)?.repository;
+            created={(issue, target) => {
               setCreatingIssue(null);
               setCreatingEnvironmentId(null);
               refresh();
               useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
                 environmentId,
-                projectId,
-                provider: creatingIssue,
-                ...(issueScope ? { scope: issueScope } : {}),
+                ...target,
                 issueId: issue.id,
                 url: issue.url,
                 title: issue.title,

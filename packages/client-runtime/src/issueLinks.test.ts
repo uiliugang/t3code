@@ -7,7 +7,30 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveIssueLinkTarget } from "./issueLinks.ts";
+import { issueReferenceCompatible, resolveIssueLinkTarget } from "./issueLinks.ts";
+
+it("requires port support and an HTTPS authority match before reading restored GitHub links", () => {
+  const ported = { tracker: "github", url: "https://forge.test:8443/acme/web/issues/7" };
+  const supportsPorts = { githubIssueSourcePorts: true };
+  expect(issueReferenceCompatible(ported, undefined)).toBe(false);
+  expect(issueReferenceCompatible(ported, supportsPorts)).toBe(true);
+  expect(issueReferenceCompatible({ ...ported, host: "forge.test" }, supportsPorts)).toBe(false);
+  expect(issueReferenceCompatible({ tracker: "github", host: "forge.test:8443" }, undefined)).toBe(
+    false,
+  );
+  expect(
+    issueReferenceCompatible(
+      { ...ported, url: ported.url.replace("https:", "http:") },
+      supportsPorts,
+    ),
+  ).toBe(false);
+  expect(
+    issueReferenceCompatible(
+      { tracker: "github", host: "forge.test:443", url: "https://forge.test/acme/web/issues/7" },
+      undefined,
+    ),
+  ).toBe(true);
+});
 
 const project = (id: string, repository: string, origin?: string) =>
   ({

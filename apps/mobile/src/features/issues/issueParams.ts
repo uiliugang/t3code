@@ -24,7 +24,7 @@ export type IssueParams = {
 
 export function issueTarget(params: IssueParams) {
   const url = params.url ?? params.initialSummary?.url;
-  const host = issueReferenceHost(params.tracker, params.host);
+  const host = issueReferenceHost(params.tracker, params.host, url);
   const input: IssueRef = {
     projectId: ProjectId.make(params.projectId),
     tracker: IssueTrackerKind.make(params.tracker),
@@ -61,7 +61,7 @@ export function issueParamsKey(
   return [
     params.environmentId,
     params.projectId,
-    (params.host ?? "").toLowerCase(),
+    (issueReferenceHost(params.tracker ?? "", params.host, params.url) ?? "").toLowerCase(),
     scope,
     params.issueKey,
   ].join("\u0000");

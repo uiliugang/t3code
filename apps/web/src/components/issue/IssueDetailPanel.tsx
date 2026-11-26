@@ -1,6 +1,6 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { issueEventSentence, issueWriteAccess } from "@t3tools/client-runtime/issue-presentation";
-import { issueReferenceHost } from "@t3tools/client-runtime/issue-links";
+import { issueReferenceCompatible, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
 import { createIssueCommentPager } from "@t3tools/client-runtime/state/issues";
 import {
   issueAssigneeHeld,
@@ -45,6 +45,7 @@ import { m } from "~/i18n/messages";
 import { issueEnvironment, refreshIssueLists } from "~/state/issues";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
+import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -408,16 +409,7 @@ function IssueEventText({
   );
 }
 
-export function IssueDetailPanel({
-  environmentId,
-  reference: rawReference,
-  threadRef = null,
-  listEntry = null,
-  onSelectPullRequest,
-  onSelectIssue,
-  renderSupplement,
-  onIssueChanged,
-}: {
+type IssueDetailPanelProps = {
   renderSupplement?: ((detail: IssueDetail) => ReactNode) | undefined;
   onIssueChanged?: (() => void) | undefined;
   environmentId: EnvironmentId;
@@ -429,8 +421,43 @@ export function IssueDetailPanel({
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
   /** Opens a referenced issue beside this one; absent, the link goes to the host. */
   onSelectIssue?: ((reference: IssueRef & { readonly url: string }) => void) | undefined;
-}) {
-  const referenceHost = issueReferenceHost(rawReference.tracker, rawReference.host);
+};
+
+export function IssueLinkUnavailable({ url }: { url?: string | undefined }) {
+  const gt = useGT();
+  return (
+    <PullRequestsUnavailableState
+      title={gt("Issues unavailable")}
+      error={gt("Update this environment's T3 Code server to browse issues.")}
+      {...(url && /^https?:\/\//i.test(url) && URL.canParse(url)
+        ? { host: { url, openLabel: gt("Open in browser") } }
+        : {})}
+    />
+  );
+}
+
+export function IssueDetailPanel(props: IssueDetailPanelProps) {
+  const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
+  if (!issueReferenceCompatible(props.reference, config?.environment.capabilities))
+    return <IssueLinkUnavailable url={props.reference.url} />;
+  return <IssueDetailContent {...props} />;
+}
+
+function IssueDetailContent({
+  environmentId,
+  reference: rawReference,
+  threadRef = null,
+  listEntry = null,
+  onSelectPullRequest,
+  onSelectIssue,
+  renderSupplement,
+  onIssueChanged,
+}: IssueDetailPanelProps) {
+  const referenceHost = issueReferenceHost(
+    rawReference.tracker,
+    rawReference.host,
+    rawReference.url,
+  );
   const reference =
     referenceHost === undefined || referenceHost === rawReference.host
       ? rawReference

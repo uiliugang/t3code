@@ -135,6 +135,17 @@ it("refreshes the same issue detail regardless of how a surface orders the refer
   expect(acmeLinear === globexLinear).toBe(false);
 });
 
+it("keeps hostless GitHub links on distinct HTTPS authorities", () => {
+  const { projectId, tracker, scope, key } = entry({ key: "7" });
+  const reference = { projectId, tracker, scope, key };
+  expect(
+    normalizeIssueDetailInput({ ...reference, url: "https://forge.test/acme/app/issues/7" }),
+  ).toEqual({ ...reference, host: "forge.test" });
+  expect(
+    normalizeIssueDetailInput({ ...reference, url: "https://forge.test:8443/acme/app/issues/7" }),
+  ).toEqual({ ...reference, host: "forge.test:8443" });
+});
+
 describe("mergeIssueListPage", () => {
   it("keeps rows from scopes the page did not continue and orders by update", () => {
     const held = [
