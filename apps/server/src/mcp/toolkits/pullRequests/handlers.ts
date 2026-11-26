@@ -739,20 +739,18 @@ const make = Effect.gen(function* () {
             : {};
         const project = yield* projectOf(thread, PullRequestLinkFailedError);
         const target = yield* resolveTarget(input, project);
+        const identity = identityOf(target);
         const existing = threadPullRequestsOf(thread).find((link) =>
           threadPullRequestKeysEqual(link, target),
         );
         if (existing && existing.source !== "stack-dismissed")
-          return { ...target, alreadyLinked: true, ...next };
+          return { ...identity, alreadyLinked: true, ...next };
         const alreadyLinked = yield* engine
           .dispatch({
             type: "thread.pull-request.link",
             commandId: yield* commandId("mcp-pr-link", thread.id),
             threadId: thread.id,
-            host: target.host,
-            repository: target.repository,
-            number: target.number,
-            url: target.url,
+            ...identity,
             source: "agent",
           })
           .pipe(
@@ -760,7 +758,7 @@ const make = Effect.gen(function* () {
 
             Effect.catchCause(dispatchFailure(PullRequestLinkFailedError)),
           );
-        return { ...target, alreadyLinked, ...next };
+        return { ...identity, alreadyLinked, ...next };
       }),
     ),
     link_pull_requests: writesThread((input) =>

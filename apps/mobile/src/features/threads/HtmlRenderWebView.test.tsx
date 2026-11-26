@@ -39,6 +39,7 @@ vi.mock("../../state/assets", () => ({
   useAssetUrlState: () => ({ _tag: "Initial" }),
   useRefreshAssetUrl: () => async () => null,
 }));
+vi.mock("../../state/session", () => ({ usePreparedConnection: () => ({ _tag: "None" }) }));
 vi.mock("../../native/useOpenPullRequest", () => ({
   useOpenPullRequest: () => async (url: string) => {
     harness.openedLinks.push(url);

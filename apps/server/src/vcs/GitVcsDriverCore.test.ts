@@ -521,16 +521,25 @@ it.effect.each([
     Effect.scoped(
       Effect.gen(function* () {
         const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const path = yield* Path.Path;
+        const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "created");
         const spawnedArgs: Array<ReadonlyArray<string>> = [];
-        let invalidationFailure = "none";
+        let worktreeAddStarted = false;
         const spawner = ChildProcessSpawner.make((command) =>
           Effect.gen(function* () {
             if (!ChildProcess.isStandardCommand(command)) {
               return yield* Effect.die("expected a standard Git command");
             }
             spawnedArgs.push(command.args.map(String));
-            if (invalidationFailure !== "none" && command.args.includes("--git-common-dir")) {
-              if (invalidationFailure === "non-repository") return makeNonRepositoryHandle();
+            if (command.args.includes("add") && command.args.includes(worktreePath)) {
+              worktreeAddStarted = true;
+            }
+            if (
+              worktreeAddStarted &&
+              commonDirFailure !== "none" &&
+              command.args.includes("--git-common-dir")
+            ) {
+              if (commonDirFailure === "non-repository") return makeNonRepositoryHandle();
               return ChildProcessSpawner.makeHandle({
                 ...makeNonRepositoryHandle(),
                 stderr: Stream.encodeText(Stream.make("fatal: could not read repository metadata")),
@@ -544,7 +553,6 @@ it.effect.each([
         );
         const cwd = yield* makeTmpDir();
         const { initialBranch } = yield* initRepoWithCommit(cwd);
-        const path = yield* Path.Path;
         const fs = yield* FileSystem.FileSystem;
         const siblingPath = path.join(yield* makeTmpDir("git-worktrees-"), "sibling");
         yield* git(cwd, ["worktree", "add", "-b", "cache-sibling", siblingPath, "HEAD"]);
@@ -566,9 +574,7 @@ it.effect.each([
             `exit ${hookExitCode}\n`,
         );
         yield* fs.chmod(path.join(cwd, ".git/hooks/post-checkout"), 0o755);
-        const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "created");
         spawnedArgs.length = 0;
-        invalidationFailure = commonDirFailure;
 
         const created = yield* driver
           .createWorktree({
@@ -588,10 +594,10 @@ it.effect.each([
         const metadataQueries = spawnedArgs.filter((args) => args.includes("--git-common-dir"));
         assert.deepStrictEqual(
           metadataQueries,
-          Array.from({ length: 2 }, () => ["rev-parse", "--git-common-dir"]),
+          Array.from({ length: 3 }, () => ["rev-parse", "--git-common-dir"]),
         );
         assert.isFalse(spawnedArgs.some((args) => args.includes("symbolic-ref")));
-        invalidationFailure = "none";
+        worktreeAddStarted = false;
 
         spawnedArgs.length = 0;
         const creatorStatus = yield* driver.statusDetailsLocal(cwd);
@@ -689,7 +695,7 @@ it.effect.each(["branch", "detached", "nested", "aliased-root", "aliased-nested"
           newRefName: "feature/cold",
         });
 
-        assert.equal(spawnedArgs.filter((args) => args.includes("--git-common-dir")).length, 2);
+        assert.equal(spawnedArgs.filter((args) => args.includes("--git-common-dir")).length, 3);
         assert.isFalse(spawnedArgs.some((args) => args.includes("--show-toplevel")));
         assert.isFalse(spawnedArgs.some((args) => args.includes("symbolic-ref")));
         spawnedArgs.length = 0;
@@ -753,7 +759,7 @@ it.effect.each(["bare", "unborn"] as const)(
         }
         assert.equal(
           spawnedArgs.filter((args) => args.includes("--git-common-dir")).length,
-          state === "bare" ? 2 : 1,
+          state === "bare" ? 3 : 2,
         );
         assert.isFalse(spawnedArgs.some((args) => args[0] === "symbolic-ref"));
         spawnedArgs.length = 0;
@@ -1420,12 +1426,21 @@ it.effect("invalidates cached metadata after interrupted worktree creation", () 
     Effect.gen(function* () {
       const cwd = yield* makeTmpDir();
       yield* initRepoWithCommit(cwd);
+      const path = yield* Path.Path;
+      const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "interrupted");
       const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
       const discoveryComplete = yield* Deferred.make<void>();
       const releaseDiscovery = yield* Deferred.make<void>();
       let holdDiscovery = false;
       const spawner = ChildProcessSpawner.make((command) =>
         Effect.gen(function* () {
+          if (
+            ChildProcess.isStandardCommand(command) &&
+            command.args.includes("add") &&
+            command.args.includes(worktreePath)
+          ) {
+            holdDiscovery = true;
+          }
           const handle = yield* delegate.spawn(command);
           if (
             !holdDiscovery ||
@@ -1447,9 +1462,6 @@ it.effect("invalidates cached metadata after interrupted worktree creation", () 
       yield* driver.listRefs({ cwd, refresh: true });
       yield* driver.statusDetailsLocal(cwd);
       yield* git(cwd, ["checkout", "-b", "creator-current"]);
-      const path = yield* Path.Path;
-      const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "interrupted");
-      holdDiscovery = true;
       const creation = yield* driver
         .createWorktree({
           cwd,

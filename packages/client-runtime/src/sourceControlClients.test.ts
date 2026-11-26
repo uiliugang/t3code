@@ -209,8 +209,8 @@ describe("sourceControlClients project hosts", () => {
     locator: { remoteUrl: "http://forge.example:3000/team/repo.git" },
   };
 
-  it("falls back to the kind without a key", () => {
-    expect(sourceControlClients.changeRequestHost(identity, "gitlab")).toBe("forge.example");
+  it("keeps the GitLab HTTP port and falls back to the kind without a key", () => {
+    expect(sourceControlClients.changeRequestHost(identity, "gitlab")).toBe("forge.example:3000");
     expect(sourceControlClients.changeRequestHost(identity, undefined)).toBe("forge.example");
     expect(
       sourceControlClients.changeRequestHost(

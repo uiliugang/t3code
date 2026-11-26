@@ -913,6 +913,7 @@ describe("source control tools", () => {
         host: "github.com",
         repository: "t3tools/t3code",
         number: 42,
+        target: { provider: "github", origin: "https://github.com" },
         allowStale: false,
       });
       expect(result.body).toBe("Adds tools.");
