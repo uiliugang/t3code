@@ -250,6 +250,8 @@ export const make = (dependencies: Dependencies) => {
     string,
     { readonly gate: Semaphore.Semaphore; pending: number }
   >();
+  const filesViewedGateKey = (project: SupportedProject, number: number) =>
+    JSON.stringify(filesViewedScope(project, number, null));
 
   const inFilesViewedOrder = (
     project: SupportedProject,
@@ -258,7 +260,7 @@ export const make = (dependencies: Dependencies) => {
   ) =>
     // Atomically find, register and queue on gates; yielding during creation lets concurrent presses use separate gates.
     Effect.suspend(() => {
-      const key = JSON.stringify(filesViewedScope(project, number, null));
+      const key = filesViewedGateKey(project, number);
       const held = filesViewedGates.get(key);
       const entry = held ?? { gate: Semaphore.makeUnsafe(1), pending: 0 };
       if (held === undefined) filesViewedGates.set(key, entry);

@@ -4823,7 +4823,7 @@ it.effect("keeps environment viewed marks separate for HTTP and HTTPS on the sam
     const ref = { projectId: ProjectId.make("https"), host, repository, number: 1 };
     const http = { ...ref, target: { provider, origin: `http://${host}` } };
     const https = { ...ref, target: { provider, origin: `https://${host}` } };
-    const marked = [{ path: "src/a.ts", state: "viewed" }];
+    const marked = [{ path: "src/a.ts", state: "viewed" }] as const;
 
     yield* service.setFilesViewed({ ...http, files: [{ path: "src/a.ts", viewed: true }] });
     assert.deepStrictEqual((yield* service.filesViewed(https)).files, []);
