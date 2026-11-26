@@ -1336,7 +1336,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       },
     }),
     filesViewed: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:pull-requests:files-viewed",
+      label: "environment-data:pull-requests:files-viewed:v2",
       ...(onAnswer.filesViewed === undefined ? {} : { onAnswer: onAnswer.filesViewed }),
       persistence: persistQuery(PullRequestFilesViewedResult),
       tag: WS_METHODS.pullRequestsFilesViewed,

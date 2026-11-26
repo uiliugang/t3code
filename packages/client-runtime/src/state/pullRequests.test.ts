@@ -2137,6 +2137,69 @@ it.effect("shares checks reads across reference property order", () =>
   }),
 );
 
+it.effect("ignores legacy files-viewed cache entries but restores new answers offline", () =>
+  Effect.gen(function* () {
+    const target = {
+      environmentId: TARGET.environmentId,
+      input: {
+        projectId: ProjectId.make("project-1"),
+        host: "forge.test",
+        repository: "acme/web",
+        number: 7,
+      },
+    };
+    const legacyKey = queryPersistenceKey(
+      "environment-data:pull-requests:files-viewed",
+      target.input,
+    );
+    const legacy = JSON.stringify({
+      files: [{ path: "old.ts", state: "viewed" }],
+      truncated: false,
+    });
+    const saved = new Map([[legacyKey, legacy]]);
+    const savedAnswer = yield* Latch.make();
+    const fresh = { files: [{ path: "new.ts", state: "viewed" }], truncated: false };
+    const client = {
+      [WS_METHODS.pullRequestsFilesViewed]: () => Effect.succeed(fresh),
+    } as unknown as WsRpcProtocolClient;
+    const queryStore: typeof EnvironmentQueryStore.Service = {
+      load: (_environmentId, key) => Effect.sync(() => Option.fromUndefinedOr(saved.get(key))),
+      save: (_environmentId, key, payload) =>
+        Effect.sync(() => saved.set(key, payload)).pipe(Effect.andThen(savedAnswer.open)),
+    };
+    const readOffline = Effect.fnUntraced(function* () {
+      const { atoms, registry, supervisor } = yield* makeTestRuntime(
+        client,
+        undefined,
+        false,
+        {},
+        queryStore,
+      );
+      yield* SubscriptionRef.update(supervisor.state, (state) => ({
+        ...state,
+        phase: "offline" as const,
+        network: "offline" as const,
+      }));
+      return yield* AtomRegistry.getResult(registry, atoms.filesViewed(target));
+    });
+
+    expect(yield* Effect.result(readOffline())).toMatchObject({
+      _tag: "Failure",
+      failure: { _tag: "EnvironmentRpcUnavailableError" },
+    });
+    const { atoms, registry } = yield* makeTestRuntime(client, undefined, false, {}, queryStore);
+    const query = atoms.filesViewed(target);
+    const unmount = registry.mount(query);
+    yield* Effect.addFinalizer(() => Effect.sync(unmount));
+    expect(yield* AtomRegistry.getResult(registry, query, { suspendOnWaiting: true })).toEqual(
+      fresh,
+    );
+    yield* savedAnswer.await;
+    expect(yield* readOffline()).toEqual(fresh);
+    expect(saved.get(legacyKey)).toBe(legacy);
+  }),
+);
+
 it.effect("keeps live detail reads separate from reads that allow stale data", () =>
   Effect.gen(function* () {
     let reads = 0;
