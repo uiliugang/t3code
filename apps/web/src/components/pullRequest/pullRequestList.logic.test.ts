@@ -23,6 +23,7 @@ import {
   pullRequestStatsKeysToRequest,
   pullRequestStatsRefreshBatches,
   mergePullRequestDiffStats,
+  withDiffStat,
   partitionPullRequestsWithPriority,
   pullRequestAuthorChoices,
   selectedPullRequestAuthor,
@@ -88,6 +89,7 @@ describe("visible pull request line-count targets", () => {
       {
         environmentId: ENV_1,
         projectId: "project-1",
+        repository: "pingdotgg/t3code",
         number: 1,
         additions: 1,
         deletions: 1,
@@ -105,6 +107,45 @@ describe("visible pull request line-count targets", () => {
       { projectId: "project-1", repository: "pingdotgg/t3code", number: 2 },
     ]);
   });
+
+  it.each(["explicit", "legacy"] as const)(
+    "keeps same-numbered PR stats separate by repository (%s source)",
+    (source) => {
+      const target = {
+        provider: SourceControlProviderKind.make("gitlab"),
+        origin: "https://git.example:8443",
+      };
+      const own = entry({
+        repository: "team/first",
+        number: 42,
+        additions: 0,
+        deletions: 0,
+        ...(source === "explicit"
+          ? { provider: target.provider, host: "git.example", target }
+          : {}),
+      });
+      const key = pullRequestEntryKey(own);
+      const entriesByKey = new Map([[key, own]]);
+      const stats = mergePullRequestDiffStats(new Map(), [
+        { ...own, repository: "team/second", additions: 120, deletions: 2 },
+        ...(source === "explicit"
+          ? [{ ...own, target: { ...target, origin: "https://git.example:9443" }, additions: 99 }]
+          : []),
+      ]);
+
+      expect(withDiffStat(own, stats)).toEqual(own);
+      expect([...pullRequestStatsKeysToRequest(entriesByKey, new Set([key]), [], stats)]).toEqual([
+        key,
+      ]);
+
+      const updated = mergePullRequestDiffStats(stats, [
+        { ...own, repository: "Team/First", additions: 7, deletions: 1 },
+        { ...own, repository: "team/second", additions: 126, deletions: 3 },
+      ]);
+      expect(withDiffStat(own, updated)).toMatchObject({ additions: 7, deletions: 1 });
+      expect(pullRequestStatsKeysToRequest(entriesByKey, new Set([key]), [], updated).size).toBe(0);
+    },
+  );
 
   it("keeps every per-environment batch within the stats contract limit", () => {
     const entries = Array.from({ length: 501 }, (_, index) =>

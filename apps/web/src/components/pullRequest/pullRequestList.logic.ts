@@ -498,17 +498,17 @@ export type PullRequestDiffStats = ReadonlyMap<
   { readonly additions: number; readonly deletions: number }
 >;
 
+type PullRequestDiffStatIdentity = {
+  readonly environmentId: string;
+  readonly projectId: string;
+} & Pick<PullRequestDiffStat, "repository" | "target" | "number">;
+
 /** New stats queries must not blank existing counts. */
 export function mergePullRequestDiffStats(
   previous: PullRequestDiffStats,
-  stats: ReadonlyArray<{
-    readonly environmentId: string;
-    readonly projectId: string;
-    readonly target?: PullRequestRef["target"];
-    readonly number: number;
-    readonly additions: number;
-    readonly deletions: number;
-  }>,
+  stats: ReadonlyArray<
+    PullRequestDiffStatIdentity & Pick<PullRequestDiffStat, "additions" | "deletions">
+  >,
 ): PullRequestDiffStats {
   if (stats.length === 0) return previous;
   const next = new Map(previous);
@@ -521,13 +521,15 @@ export function mergePullRequestDiffStats(
   return next;
 }
 
-export const pullRequestDiffStatKey = (row: {
-  readonly environmentId: string;
-  readonly projectId: string;
-  readonly target?: PullRequestRef["target"];
-  readonly number: number;
-}) =>
-  `${row.environmentId} ${row.projectId} ${row.number}${row.target ? ` ${row.target.provider} ${row.target.origin}` : ""}`;
+export const pullRequestDiffStatKey = (row: PullRequestDiffStatIdentity) =>
+  JSON.stringify([
+    row.environmentId,
+    row.projectId,
+    row.target?.provider,
+    row.target?.origin,
+    row.repository.trim().toLowerCase(),
+    row.number,
+  ]);
 
 export interface MergedPullRequestList {
   readonly viewers: PullRequestViewers;
