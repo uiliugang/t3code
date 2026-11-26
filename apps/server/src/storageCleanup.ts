@@ -2429,7 +2429,7 @@ const make = Effect.gen(function* () {
               const latestProjects = yield* projectStore.listShells();
               const worktreePath = branch.worktreePath;
               const workspaceReferences = yield* sql<{
-                workspacePath: string;
+                workspacePath: string | null;
                 commonDir: string | null;
                 branch: string | null;
               }>`
@@ -2452,23 +2452,27 @@ const make = Effect.gen(function* () {
                 FROM projection_projects p, json_each(p.workspace_config_json, '$.roots') r
                 WHERE p.deleted_at IS NULL
               `.pipe(NodeSqliteClient.readOnly);
+              const commonKey = pathKey(common);
               for (const reference of workspaceReferences) {
                 if (
                   reference.commonDir !== null &&
-                  pathKey(reference.commonDir) === pathKey(common) &&
+                  pathKey(reference.commonDir) === commonKey &&
                   reference.branch === branch.name
                 )
                   return "branch is retained by a multi-repository workspace";
-                if (
-                  worktreePath !== null &&
-                  (yield* containsProjectRoot(yield* worktreePaths(worktreePath), [
-                    { workspaceRoot: reference.workspacePath },
-                  ]))
-                )
-                  return "worktree belongs to a multi-repository workspace";
               }
               if (worktreePath !== null) {
-                if (yield* containsProjectRoot(yield* worktreePaths(worktreePath), latestProjects))
+                const resolvedWorktreePaths = yield* worktreePaths(worktreePath);
+                const uniqueWorkspaceRoots = [
+                  ...new Set(
+                    workspaceReferences.flatMap((reference) =>
+                      typeof reference.workspacePath === "string" ? [reference.workspacePath] : [],
+                    ),
+                  ),
+                ].map((workspaceRoot) => ({ workspaceRoot }));
+                if (yield* containsProjectRoot(resolvedWorktreePaths, uniqueWorkspaceRoots))
+                  return "worktree belongs to a multi-repository workspace";
+                if (yield* containsProjectRoot(resolvedWorktreePaths, latestProjects))
                   return "contains a project checkout";
                 if (yield* hasTerminal(worktreePath)) return "open terminal";
                 if (!(yield* fs.exists(worktreePath))) return "worktree path is missing";
