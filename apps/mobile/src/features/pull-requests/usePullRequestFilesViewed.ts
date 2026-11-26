@@ -33,7 +33,11 @@ export function usePullRequestFilesViewed(params: PullRequestParams, pr: PullReq
   );
   const connected = usePullRequestConnected(params.environmentId);
   const allowed = connected && permission && (!requiresAccount || viewer !== null);
-  const query = useEnvironmentQuery(supported ? composerPullRequests.filesViewed(target) : null);
+  const query = useEnvironmentQuery(
+    supported && (!requiresAccount || viewer !== null)
+      ? composerPullRequests.filesViewed(target)
+      : null,
+  );
   const { refresh } = query;
   const headSha = pr?.headSha;
   const previousHead = useRef(headSha);

@@ -14,7 +14,6 @@ import {
 
 export interface PullRequestFilesViewedView {
   readonly enabled: boolean;
-  readonly editable: boolean;
   readonly isViewed: (path: string) => boolean;
   readonly isStale: (path: string) => boolean;
   readonly setViewed: (path: string, viewed: boolean, revision?: string) => void;
@@ -35,22 +34,19 @@ export function usePullRequestFilesViewed(options: {
   readonly environmentId: EnvironmentId;
   readonly reference: PullRequestRef;
   readonly enabled: boolean;
-  readonly editable: boolean;
 }): PullRequestFilesViewedView {
-  const { environmentId, reference, enabled, editable } = options;
+  const { environmentId, reference, enabled } = options;
   const query = useEnvironmentQuery(
     enabled ? pullRequestEnvironment.filesViewed({ environmentId, input: reference }) : null,
     useMessages(),
   );
   const states = toFileViewedStates(query.data);
   // Stable per scope: `setViewed` is handed to every file header the viewer draws.
-  const scope =
-    enabled && editable ? filesViewedScope({ environmentId, reference }) : DISABLED_SCOPE;
+  const scope = enabled ? filesViewedScope({ environmentId, reference }) : DISABLED_SCOPE;
   const overlay = useSyncExternalStore(scope.subscribe, scope.getSnapshot);
 
   return {
     enabled,
-    editable: enabled && editable,
     isViewed: (path: string) => isFileViewed(path, states, overlay),
     isStale: (path: string) => !overlay.has(path) && isStaleViewedState(states?.get(path)),
     setViewed: scope.setViewed,

@@ -633,8 +633,7 @@ function PullRequestCodeTab({
   const filesViewed = usePullRequestFilesViewed({
     environmentId,
     reference: accountedReference,
-    enabled: viewedFilesStore !== undefined,
-    editable: detail.provider !== "github" || viewer !== null,
+    enabled: viewedFilesStore !== undefined && (detail.provider !== "github" || viewer !== null),
   });
   const {
     setViewed,
@@ -990,7 +989,7 @@ function PullRequestCodeTab({
         foldsAsViewed(path),
       );
       const viewedMark = filesViewedEnabled
-        ? `e${filesViewed.editable ? "w" : ""}${isFileViewed(path) ? "v" : ""}${isFileViewedStale(path) ? "s" : ""}`
+        ? `e${isFileViewed(path) ? "v" : ""}${isFileViewedStale(path) ? "s" : ""}`
         : "";
       return {
         id: fileKey,
@@ -1067,7 +1066,7 @@ function PullRequestCodeTab({
     }
   };
   const fileViewedToggle = {
-    enabled: filesViewed.editable,
+    enabled: filesViewedEnabled,
     isViewed: isFileViewed,
     isStale: isFileViewedStale,
     setFileViewed,

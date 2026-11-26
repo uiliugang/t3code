@@ -30,6 +30,11 @@ export const withWorkspaceLeases = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
   [...new Set(paths)].sort().reduceRight((next, cwd) => withWorkspaceLease(cwd, next), effect);
 
+export const withGitWorktreeRegistrationLease = <A, E, R>(
+  commonDir: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> => withWorkspaceLease(`git-worktree-registration:${commonDir}`, effect);
+
 // A restore rewrites files under its directory, so it must exclude provider
 // startup in any overlapping workspace: symlink aliases, parents, and children.
 // Kept apart from withWorkspaceLease because that lease is non-reentrant and

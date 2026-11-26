@@ -44,7 +44,10 @@ import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts
 import * as TerminalManager from "./terminal/Manager.ts";
 import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { ServerActivation } from "./serverActivation.ts";
-import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
+import {
+  withGitWorktreeRegistrationLease,
+  withWorkspaceLease,
+} from "./workspace/workspaceLease.ts";
 import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
 import { workspaceFixture } from "./orchestration-v2/testkit/workspaceFixtures.ts";
 import { describe, expect, it } from "@effect/vitest";
@@ -4311,22 +4314,35 @@ describe("storage cleanup reports and local file policies", () => {
             ]),
           );
           fixture.setThreads([]);
-          const sweep = yield* withWorkspaceLease(
-            mode === "same-repository" ? fixture.repo : leasePath,
-            Effect.gen(function* () {
-              const cleanup = yield* fixture.service.runNow.pipe(Effect.forkChild);
-              yield* Deferred.await(recordRead);
-              yield* fixture.command(fixture.repo, ["worktree", "prune"]);
-              yield* fixture.command(fixture.repo, [
-                "worktree",
-                "add",
-                fixture.worktree,
-                "feature",
-              ]);
-              yield* Deferred.succeed(restored, undefined);
-              return cleanup;
-            }),
-          );
+          const source = mode === "same-repository" ? `${fixture.repo}-linked` : fixture.repo;
+          const replacement =
+            mode === "same-repository"
+              ? `${fixture.config.worktreesDir}/alternate/feature`
+              : fixture.worktree;
+          if (mode === "same-repository") {
+            yield* fixture.command(fixture.repo, [
+              "worktree",
+              "add",
+              "-b",
+              "recovery-source",
+              source,
+            ]);
+            yield* fixture.fs.makeDirectory(`${fixture.config.worktreesDir}/alternate`, {
+              recursive: true,
+            });
+          }
+          const recover = Effect.gen(function* () {
+            const cleanup = yield* fixture.service.runNow.pipe(Effect.forkChild);
+            yield* Deferred.await(recordRead);
+            yield* fixture.command(source, ["worktree", "prune"]);
+            yield* fixture.command(source, ["worktree", "add", replacement, "feature"]);
+            yield* Deferred.succeed(restored, undefined);
+            return cleanup;
+          });
+          const commonDir = yield* fixture.fs.realPath(`${fixture.repo}/.git`);
+          const sweep = yield* mode === "same-repository"
+            ? withGitWorktreeRegistrationLease(commonDir, recover)
+            : withWorkspaceLease(leasePath, recover);
           yield* Fiber.join(sweep);
           expect(checkedBeforeRestore).toBe(false);
           expect(yield* fixture.fs.exists(adminDir)).toBe(true);

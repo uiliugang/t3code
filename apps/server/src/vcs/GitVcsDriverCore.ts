@@ -60,7 +60,10 @@ import { gitConfigEnv, serverGitConfigEnv, unsetInheritedRepositoryEnv } from ".
 import { makeWorktreeCheckoutCache } from "./worktreeCheckoutCache.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import {
+  withGitWorktreeRegistrationLease,
+  withWorkspaceLease,
+} from "../workspace/workspaceLease.ts";
 import {
   parseRemoteNames,
   parseRemoteNamesInGitOrder,
@@ -6185,6 +6188,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       });
     }
     // Read before the branch exists, so a missing pattern file leaves nothing behind.
+    const commonDir = yield* readGitCommonDir(input.cwd);
     const sparsePatterns = yield* readWorktreeSparsePatterns(input.cwd, input.refName);
     let newRefName = input.newRefName;
     if (newRefName) {
@@ -6213,7 +6217,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
     let worktreePath = input.path;
     if (worktreePath == null) {
-      const identity = `${yield* readGitCommonDir(input.cwd)}\0${targetBranch}`;
+      const identity = `${commonDir}\0${targetBranch}`;
       const hash = yield* digest.digest(Digest.sha256, new TextEncoder().encode(identity));
       // UTF-8 bytes bound UTF-16 length too, leaving room for files on Windows.
       let prefix = "";
@@ -6346,18 +6350,19 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     // Set inside the claim's uninterruptible region: a pending cancel still surfaces as it ends.
     let claimed = false;
     const onWorktreeClaimed = progress?.onWorktreeClaimed;
+    const checkout = fastCheckout
+      ? checkoutCache
+          .create({
+            cwd: input.cwd,
+            worktreePath,
+            refName: checkoutRef,
+            checkoutWorkers,
+            lockReason,
+          })
+          .pipe(Effect.flatMap((cloned) => (cloned ? Effect.void : stockCheckout)))
+      : stockCheckout;
     yield* (
-      fastCheckout
-        ? checkoutCache
-            .create({
-              cwd: input.cwd,
-              worktreePath,
-              refName: checkoutRef,
-              checkoutWorkers,
-              lockReason,
-            })
-            .pipe(Effect.flatMap((cloned) => (cloned ? Effect.void : stockCheckout)))
-        : stockCheckout
+      commonDir === null ? checkout : withGitWorktreeRegistrationLease(commonDir, checkout)
     ).pipe(
       Effect.andThen(sparseCheckout),
       Effect.andThen(

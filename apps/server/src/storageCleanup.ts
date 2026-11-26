@@ -72,7 +72,10 @@ import { isNonRepositoryGitStderr } from "./vcs/GitVcsDriverCore.ts";
 import { makeWorktreeFileInspection } from "./vcs/worktreeFileInspection.ts";
 import { isLinkedWorktree, removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
-import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
+import {
+  withGitWorktreeRegistrationLease,
+  withWorkspaceLease,
+} from "./workspace/workspaceLease.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { isNetworkPath } from "@t3tools/shared/path";
@@ -90,7 +93,6 @@ const decodeWorktreeLeftovers = Schema.decodeUnknownEffect(
         adminDir: Schema.String,
         entry: StorageCleanupReportEntry,
         leasePath: Schema.optionalKey(Schema.String),
-        repositoryPath: Schema.optionalKey(Schema.String),
       }),
     ),
   ),
@@ -869,9 +871,6 @@ const make = Effect.gen(function* () {
       ),
   );
 
-  const repositoryFromGitDir = (gitDir: string) =>
-    path.basename(gitDir) === ".git" ? path.dirname(gitDir) : gitDir;
-
   // A worktree can outlive its project moving to another clone. Git removes a
   // worktree through the repository that registered it, not through the
   // project's current checkout, so resolve the owning repository first.
@@ -884,7 +883,7 @@ const make = Effect.gen(function* () {
       args: ["rev-parse", "--git-common-dir"],
     });
     const resolved = path.resolve(worktreePath, commonDir.stdout.trim());
-    return repositoryFromGitDir(resolved);
+    return path.basename(resolved) === ".git" ? path.dirname(resolved) : resolved;
   });
 
   const { localChangesReason } = yield* makeWorktreeFileInspection;
@@ -1042,7 +1041,6 @@ const make = Effect.gen(function* () {
       readonly adminDir: string;
       readonly entry: StorageCleanupReportEntry;
       readonly leasePath?: string;
-      readonly repositoryPath?: string;
     }>,
   ) =>
     leftovers.length === 0
@@ -1062,18 +1060,13 @@ const make = Effect.gen(function* () {
     return gitDir.stdout.trim();
   });
   const noteLeftover = Effect.fn("StorageCleanup.noteLeftover")(
-    function* (
-      adminDir: string,
-      entry: StorageCleanupReportEntry,
-      leasePath: string,
-      repositoryPath: string,
-    ) {
+    function* (adminDir: string, entry: StorageCleanupReportEntry, leasePath: string) {
       if (entry.path === null || path.basename(path.dirname(adminDir)) !== "worktrees") return;
       // A removal Git refused keeps its checkout, and the next sweep looks at it again.
       if (yield* fs.exists(entry.path).pipe(Effect.orElseSucceed(() => true))) return;
       if (!(yield* fs.exists(adminDir).pipe(Effect.orElseSucceed(() => true)))) return;
       const others = (yield* readLeftovers).filter((leftover) => leftover.adminDir !== adminDir);
-      yield* writeLeftovers([...others, { adminDir, entry, leasePath, repositoryPath }]);
+      yield* writeLeftovers([...others, { adminDir, entry, leasePath }]);
     },
     Effect.catch((error) =>
       Effect.logWarning("storage cleanup could not record leftover git metadata", { error }),
@@ -1106,13 +1099,15 @@ const make = Effect.gen(function* () {
         continue;
       }
       const checkout = path.resolve(leftover.leasePath ?? entry.path);
-      const repository = path.resolve(
-        leftover.repositoryPath ?? repositoryFromGitDir(path.dirname(path.dirname(adminDir))),
-      );
-      const remove = removeLeftover(adminDir);
+      const commonDir = path.dirname(path.dirname(adminDir));
       const failure = yield* withWorkspaceLease(
         checkout,
-        checkout === repository ? remove : withWorkspaceLease(repository, remove),
+        fs.realPath(commonDir).pipe(
+          Effect.orElseSucceed(() => commonDir),
+          Effect.flatMap((canonical) =>
+            withGitWorktreeRegistrationLease(canonical, removeLeftover(adminDir)),
+          ),
+        ),
       ).pipe(
         Effect.map((outcome) => {
           if (outcome === "locked") {
@@ -2090,7 +2085,7 @@ const make = Effect.gen(function* () {
               if (blockedSinceLease !== null) return keep(blockedSinceLease);
               if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
               const checkoutBytes = new Map<string, number | null>();
-              const adminDirs = new Map<string, { adminDir: string; repositoryPath: string }>();
+              const adminDirs = new Map<string, string>();
               // Each checkout passes the checks a single worktree does, or it stays.
               const result = yield* taskFolders.remove({
                 root: taskFolder.root,
@@ -2099,12 +2094,7 @@ const make = Effect.gen(function* () {
                 projectCommands: TaskFolders.linkRunsProjectCommands(thread.linkOrigin),
                 inspect: (checkout) =>
                   worktreeAdminDir(checkout.worktreePath).pipe(
-                    Effect.map((adminDir) =>
-                      adminDirs.set(checkout.worktreePath, {
-                        adminDir,
-                        repositoryPath: checkout.repositoryPath,
-                      }),
-                    ),
+                    Effect.map((adminDir) => adminDirs.set(checkout.worktreePath, adminDir)),
                     Effect.ignore,
                     Effect.andThen(
                       inspectCheckout(
@@ -2135,13 +2125,12 @@ const make = Effect.gen(function* () {
                   path: keptCheckout.path,
                   reason: sentence(keptCheckout.reason),
                 });
-                const location = adminDirs.get(keptCheckout.path);
-                if (location !== undefined)
+                const adminDir = adminDirs.get(keptCheckout.path);
+                if (adminDir !== undefined)
                   yield* noteLeftover(
-                    location.adminDir,
+                    adminDir,
                     { ...entry, path: keptCheckout.path },
                     worktreePath,
-                    location.repositoryPath,
                   );
               }
               if (result.kept.length > 0 && deleted && settings.worktreeOnDelete)
@@ -2231,7 +2220,7 @@ const make = Effect.gen(function* () {
               force: submodules.force,
               execute: git.execute,
               run: (args) => cleanupGit(repository, [...args], "git worktree remove"),
-            }).pipe(Effect.tapError(() => noteLeftover(adminDir, entry, worktreePath, repository)));
+            }).pipe(Effect.tapError(() => noteLeftover(adminDir, entry, worktreePath)));
             entries.push({ ...entry, outcome: "removed", reason: sentence(removalReason), bytes });
             yield* gitManager.invalidateStatus(project.workspaceRoot);
             // Preserve branch/path so ProviderTurnStartService can recreate the checkout on resume.

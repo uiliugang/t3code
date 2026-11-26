@@ -109,7 +109,6 @@ vi.mock(import("./usePullRequestFilesViewed"), async () => {
       const viewedPaths = useSyncExternalStore(subscribe, () => mocks.viewedPaths);
       return {
         enabled: viewedPaths !== null,
-        editable: viewedPaths !== null,
         isViewed: (path: string) => viewedPaths?.has(path) === true,
         isStale: () => false,
         setViewed: (path: string, viewed: boolean) => {
