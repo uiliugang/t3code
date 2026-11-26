@@ -11075,6 +11075,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           delta: { stop_reason: "end_turn", stop_sequence: null },
           usage: { output_tokens: 80 },
         }),
+        usageSnapshotFrame("msg_empty_second", "00000000-0000-4000-8000-000000000678", {
+          ...zeroUsage,
+          output_tokens: 85,
+        }),
         usageStreamFrame({
           type: "message_start",
           message: { id: "msg_null_usage", usage: null },
@@ -11106,8 +11110,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           { usedTokens: 12_345, inputTokens: 12_345, outputTokens: 0, cachedInputTokens: 0 },
           { usedTokens: 12_500, inputTokens: 12_500, outputTokens: 0, cachedInputTokens: 0 },
           { usedTokens: 12_580, inputTokens: 12_500, outputTokens: 80, cachedInputTokens: 0 },
+          { usedTokens: 12_585, inputTokens: 12_500, outputTokens: 85, cachedInputTokens: 0 },
           { usedTokens: 12_640, inputTokens: 12_600, outputTokens: 40, cachedInputTokens: 0 },
         ],
+      );
+      assert.deepEqual(
+        tokenUsages.map((usage) => usage.turnOutputTokens),
+        [undefined, undefined, 80, 85, 125],
       );
     }).pipe(
       Effect.provide(
