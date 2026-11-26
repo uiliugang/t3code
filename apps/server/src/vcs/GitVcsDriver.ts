@@ -20,6 +20,7 @@ import {
   VcsCheckpointStorageError,
   VcsProcessExitError,
   VcsUnsupportedOperationError,
+  type VcsError,
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
   type VcsCreateRefInput,
@@ -2233,22 +2234,44 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       yield* Effect.addFinalizer((exit) =>
         mutationStarted && Exit.hasInterrupts(exit) ? resetIndex.pipe(Effect.ignore) : Effect.void,
       );
+      const isIndexLock = (error: VcsError) =>
+        error._tag === "VcsProcessExitError" &&
+        error.retryable === true &&
+        error.detail === VcsProcess.GIT_INDEX_LOCKED_DETAIL;
+      // A restore that could not acquire the index lock has not written files or staging.
+      // Retry only that subprocess; do not repeat cleanup or reset unrelated user changes.
+      const restoreFromCheckpoint = Effect.fn("GitVcsDriver.restoreCheckpoint.restoreIndex")(
+        function* (args: ReadonlyArray<string>, stdin?: string) {
+          for (let attempt = 0; ; attempt++) {
+            const previouslyMutated = mutationStarted;
+            const locked = yield* execute({
+              operation,
+              cwd: input.cwd,
+              args,
+              ...(stdin === undefined ? {} : { stdin }),
+              onSpawn,
+            }).pipe(
+              Effect.as(undefined),
+              Effect.catchIf(isIndexLock, (error) => Effect.succeed(error)),
+            );
+            if (locked === undefined) return;
+            mutationStarted = previouslyMutated;
+            if (attempt === 2) return yield* locked;
+            yield* Effect.sleep("75 millis");
+          }
+        },
+      );
       // An empty index and checkpoint have nothing for git restore's pathspec to match.
       if (tracked.stdout.length > 0) {
         const restore = [...longPaths, "restore", "--source", commitOid, "--worktree", "--staged"];
         // restore leaves skip-worktree paths alone. Outside a sparse checkout every such bit was
         // set by hand and capture recorded the file, so override them all.
-        yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: [
-            ...restore,
-            ...(sparseCheckout ? [] : ["--ignore-skip-worktree-bits"]),
-            "--",
-            ...scope,
-          ],
-          onSpawn,
-        });
+        yield* restoreFromCheckpoint([
+          ...restore,
+          ...(sparseCheckout ? [] : ["--ignore-skip-worktree-bits"]),
+          "--",
+          ...scope,
+        ]);
         if (sparseCheckout) {
           // Sparse exclusions stay excluded; only skip-worktree paths the rules select are manual.
           const manual = yield* Effect.gen(function* () {
@@ -2305,17 +2328,15 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             Effect.orElseSucceed((): string[] => []),
           );
           if (manual.length > 0) {
-            yield* execute({
-              operation,
-              cwd: input.cwd,
-              args: [
+            yield* restoreFromCheckpoint(
+              [
                 ...restore,
                 "--ignore-skip-worktree-bits",
                 "--pathspec-from-file=-",
                 "--pathspec-file-nul",
               ],
-              stdin: manual.map((entry) => `:(top,literal)${entry}\0`).join(""),
-            });
+              manual.map((entry) => `:(top,literal)${entry}\0`).join(""),
+            );
           }
         }
       }

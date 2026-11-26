@@ -664,6 +664,95 @@ it.effect.each(["chmod", "link"] as const)(
     }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 
+it.live.each(["retry", "cancel"] as const)(
+  "handles %s after Git refuses the checkpoint index lock",
+  (action) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const driver = yield* GitVcsDriver.makeVcsDriverShape();
+      const liveProcess = yield* VcsProcess.VcsProcess;
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-restore-index-lock-" });
+      const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
+      yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+      const file = path.join(cwd, "file.txt");
+      yield* fs.writeFileString(file, "later\n");
+      yield* git(["add", "file.txt"]);
+      const lock = path.resolve(
+        cwd,
+        (yield* git(["rev-parse", "--git-path", "index.lock"])).stdout.trim(),
+      );
+      yield* fs.writeFileString(lock, "");
+      let restoreAttempts = 0;
+      const retryDriver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
+        Effect.provideService(VcsProcess.VcsProcess, {
+          run: (input) => {
+            if (
+              input.operation !== "GitVcsDriver.checkpoints.restoreCheckpoint" ||
+              !input.args.includes("--staged")
+            ) {
+              return liveProcess.run(input);
+            }
+            return Effect.suspend(() => {
+              restoreAttempts += 1;
+              return liveProcess.run(input).pipe(
+                Effect.tapError((error) =>
+                  Effect.gen(function* () {
+                    if (error._tag !== "VcsProcessExitError") return yield* error;
+                    assert.strictEqual(error.detail, VcsProcess.GIT_INDEX_LOCKED_DETAIL);
+                    assert.strictEqual(yield* fs.readFileString(file), "later\n");
+                    // Release the fixture's lock only after a real Git subprocess hit it.
+                    yield* fs.remove(lock);
+                  }).pipe(Effect.orDie),
+                ),
+              );
+            });
+          },
+        }),
+      );
+      const restore = retryDriver.checkpoints.restoreCheckpoint({ cwd, checkpointRef });
+      if (action === "cancel") {
+        const waiting = yield* Deferred.make<void>();
+        const clock = yield* Clock.Clock;
+        const fiber = yield* restore.pipe(
+          Effect.provideService(Clock.Clock, {
+            currentTimeMillis: clock.currentTimeMillis,
+            currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe(),
+            currentTimeNanos: clock.currentTimeNanos,
+            currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
+            monotonicTimeNanos: clock.monotonicTimeNanos,
+            monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+            sleep: (duration) =>
+              Duration.toMillis(duration) === 75
+                ? Deferred.succeed(waiting, undefined).pipe(Effect.andThen(Effect.never))
+                : clock.sleep(duration),
+          }),
+          Effect.exit,
+          Effect.forkScoped,
+        );
+        yield* Effect.raceFirst(
+          Deferred.await(waiting),
+          Fiber.join(fiber).pipe(
+            Effect.flatMap((result) =>
+              Exit.isFailure(result)
+                ? Effect.failCause(result.cause)
+                : Effect.die("restore ended before waiting for the index lock"),
+            ),
+          ),
+        );
+        yield* Fiber.interrupt(fiber);
+        assert.strictEqual(restoreAttempts, 1);
+        assert.strictEqual(yield* fs.readFileString(file), "later\n");
+        assert.strictEqual((yield* git(["show", ":file.txt"])).stdout, "later\n");
+        return;
+      }
+      assert.isTrue(yield* restore);
+      assert.strictEqual(restoreAttempts, 2);
+      assert.strictEqual(yield* fs.readFileString(file), "unstaged\n");
+      assert.strictEqual((yield* git(["diff", "--cached", "--name-only"])).stdout, "");
+    }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+);
+
 it.effect.each([
   { stop: "before git restore spawns", gate: "restore", index: "staged", file: "later\n" },
   { stop: "after git restore ran", gate: "clean", index: "head", file: "unstaged\n" },
