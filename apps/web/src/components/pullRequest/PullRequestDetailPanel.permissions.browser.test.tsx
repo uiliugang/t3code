@@ -173,8 +173,8 @@ it("keeps the original pull request URL available when detail cannot load", asyn
   await using screen = await render(panel(false, detail, sourceUrl));
   await expect.element(screen.getByText("Unable to read this instance")).toBeVisible();
   await expect
-    .element(page.getByRole("link").and(page.elementLocator(`a[href="${sourceUrl}"]`)))
-    .toBeVisible();
+    .element(screen.getByRole("link", { name: "Open on GitHub" }))
+    .toHaveAttribute("href", sourceUrl);
 });
 
 it.each([AuthSourceControlWriteScope, AuthOrchestrationOperateScope])(
