@@ -1,10 +1,25 @@
 import type { NavigationState } from "@react-navigation/native";
 import { changeRequestWebTarget } from "@t3tools/client-runtime/change-request-links";
-import { PullRequestWebTarget } from "@t3tools/contracts";
+import {
+  PullRequestWebTarget,
+  type PullRequestListEntry,
+  type PullRequestSummary,
+} from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { pullRequestListKey } from "./pullRequestList";
-import type { PullRequestParams } from "./usePullRequestDiff";
+
+export type PullRequestParams = {
+  readonly environmentId: string;
+  readonly projectId: string;
+  readonly repository: string;
+  readonly number: number;
+  readonly host?: string;
+  readonly target?: PullRequestWebTarget;
+  readonly navigationUrl?: string;
+  readonly navigationId?: number;
+  readonly initialSummary?: PullRequestListEntry | PullRequestSummary;
+};
 
 export function pullRequestParamsWebTarget(params: PullRequestParams) {
   return (

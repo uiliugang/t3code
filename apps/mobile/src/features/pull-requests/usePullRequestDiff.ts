@@ -1,11 +1,5 @@
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
-import {
-  EnvironmentId,
-  ProjectId,
-  type PullRequestListEntry,
-  type PullRequestSummary,
-  type PullRequestWebTarget,
-} from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Atom, type AsyncResult } from "effect/reactivity";
 import { useLocale, useMessages } from "gt-react-native";
@@ -21,19 +15,9 @@ import {
   type PullRequestDiffPage,
   type WithheldFileLoad,
 } from "./pullRequestDiffPages";
-import { pullRequestParamsWebTarget } from "./pullRequestSelection";
+import { pullRequestParamsWebTarget, type PullRequestParams } from "./pullRequestSelection";
 
-export type PullRequestParams = {
-  readonly environmentId: string;
-  readonly projectId: string;
-  readonly repository: string;
-  readonly number: number;
-  readonly host?: string;
-  readonly target?: PullRequestWebTarget;
-  readonly navigationUrl?: string;
-  readonly navigationId?: number;
-  readonly initialSummary?: PullRequestListEntry | PullRequestSummary;
-};
+export type { PullRequestParams } from "./pullRequestSelection";
 
 export type PullRequestDiffParams = PullRequestParams & { readonly commit?: string };
 
