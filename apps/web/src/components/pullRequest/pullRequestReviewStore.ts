@@ -19,6 +19,7 @@ export function pullRequestReviewKey(reference: PullRequestRef): string {
     reference.host?.toLowerCase() ?? null,
     reference.repository.toLowerCase(),
     reference.number,
+    ...(reference.target === undefined ? [] : [reference.target.provider, reference.target.origin]),
   ]);
 }
 

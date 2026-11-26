@@ -282,6 +282,9 @@ export function PullRequestsPage() {
           ...(next.environmentId ? { environmentId: next.environmentId } : {}),
           ...(next.host ? { host: next.host } : {}),
           ...(next.selectedHost ? { selectedHost: next.selectedHost } : {}),
+          ...(next.selectedUrl ? { selectedUrl: next.selectedUrl } : {}),
+          ...(next.selectedTarget ? { selectedTarget: next.selectedTarget } : {}),
+          ...(next.selectedReveal === false ? { selectedReveal: false } : {}),
           ...(next.selectedProjectId ? { selectedProjectId: next.selectedProjectId } : {}),
           ...(next.selectedEnvironmentId
             ? { selectedEnvironmentId: next.selectedEnvironmentId }
@@ -303,6 +306,9 @@ export function PullRequestsPage() {
     selectedProjectId: undefined,
     selectedEnvironmentId: undefined,
     selectedHost: undefined,
+    selectedUrl: undefined,
+    selectedTarget: undefined,
+    selectedReveal: undefined,
   };
   const updateListScope = (patch: PullRequestListPreferencePatch) => {
     const currentPreferences = pullRequestListPreferences({
@@ -1121,8 +1127,7 @@ export function PullRequestsPage() {
     if (rightPanelState.isOpen) setMaximized((value) => !value);
   };
   const onGuideShown = () => setMaximized(true);
-  // updateSearch leaves selectedUrl out, so a reload does not reveal the link again.
-  const consumeLinkedUrl = useEffectEvent(() => updateSearch({}));
+  const consumeLinkedUrl = useEffectEvent(() => updateSearch({ selectedReveal: false }));
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the URL-linked pull request in the right panel store
   useEffect(() => {
     if (!pullRequestsSupported || rightPanelRef === null || linkedSelection === null) return;
@@ -1136,6 +1141,7 @@ export function PullRequestsPage() {
           environmentId: activePullRequestSurface.environmentId,
           repository: activePullRequestSurface.repository,
           number: activePullRequestSurface.number,
+          target: activePullRequestSurface.target,
           projectId: activePullRequestSurface.projectId as ProjectId,
           host:
             activePullRequestSurface.host ??
@@ -1157,6 +1163,9 @@ export function PullRequestsPage() {
             number: surface.number,
             selectedProjectId: surface.projectId as ProjectId,
             selectedHost: surface.host,
+            selectedUrl: surface.url,
+            selectedTarget: surface.target,
+            selectedReveal: false,
             ...(surface.environmentId === undefined
               ? {}
               : { selectedEnvironmentId: surface.environmentId as EnvironmentId }),
@@ -1197,6 +1206,9 @@ export function PullRequestsPage() {
       selectedProjectId: entry.projectId,
       selectedEnvironmentId: entry.environmentId,
       selectedHost: entry.host,
+      selectedUrl: entry.url,
+      selectedTarget: entry.target,
+      selectedReveal: false,
     });
   };
 
@@ -1656,12 +1668,16 @@ export function PullRequestsPage() {
                   repository: reference.repository,
                   number: reference.number,
                   ...(reference.host ? { host: reference.host } : {}),
+                  ...(reference.target ? { target: reference.target } : {}),
                   environmentId: panelEnvironmentId,
                 });
                 updateSearch({
                   repository: reference.repository,
                   number: reference.number,
                   selectedHost: reference.host,
+                  selectedUrl: undefined,
+                  selectedTarget: reference.target,
+                  selectedReveal: false,
                   selectedProjectId: reference.projectId,
                   selectedEnvironmentId: panelEnvironmentId,
                 });

@@ -541,6 +541,7 @@ export function RequirementBoard({
         repository: pullRequest.repository,
         number: pullRequest.number,
         ...(pullRequest.host ? { host: pullRequest.host } : {}),
+        ...(pullRequest.target ? { target: pullRequest.target } : {}),
         ...(pullRequest.url ? { url: pullRequest.url } : {}),
       });
     else if (selectActiveRightPanelSurface(panels.byThreadKey, rightPanelRef))
@@ -1576,11 +1577,7 @@ export function RequirementBoard({
                   }}
                   onSelectPullRequest={(reference) => {
                     useRightPanelStore.getState().openPullRequest(rightPanelRef, {
-                      projectId: reference.projectId,
-                      repository: reference.repository,
-                      number: reference.number,
-                      ...(reference.host ? { host: reference.host } : {}),
-                      url: reference.url,
+                      ...reference,
                       environmentId: panelEnvironmentId,
                     });
                     selectOpened();
@@ -1606,6 +1603,7 @@ export function RequirementBoard({
                     repository: renderedSurface.repository,
                     number: renderedSurface.number,
                     ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
+                    ...(renderedSurface.target ? { target: renderedSurface.target } : {}),
                   }}
                 />
               ) : null}

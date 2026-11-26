@@ -96,6 +96,7 @@ export function requirementSelection(surface: RightPanelSurface | null): Require
           repository: surface.repository,
           number: surface.number,
           ...(surface.host ? { host: surface.host } : {}),
+          ...(surface.target ? { target: surface.target } : {}),
           ...(surface.url ? { url: surface.url } : {}),
         },
       };

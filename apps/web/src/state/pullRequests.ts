@@ -112,11 +112,12 @@ export function pullRequestListEntryToSummary(entry: PullRequestListEntry): Pull
   };
 }
 
-// Project ids pin the remote host; omit host so legacy, URL, and list references share entries.
 function pullRequestSummaryKey(environmentId: EnvironmentId, reference: PullRequestRef): string {
   return JSON.stringify([
     environmentId,
     reference.projectId,
+    reference.target?.provider ?? null,
+    reference.target?.origin ?? reference.host?.toLowerCase() ?? null,
     reference.repository.toLowerCase(),
     reference.number,
   ]);
@@ -531,7 +532,7 @@ export function threadPullRequestLinkToSummary(
 
 function savedPullRequestKey(
   environmentId: EnvironmentId,
-  reference: Pick<PullRequestRef, "host" | "repository" | "number">,
+  reference: Pick<PullRequestRef, "host" | "target" | "repository" | "number"> & { url?: string },
 ): string {
   return reference.host === undefined
     ? ""

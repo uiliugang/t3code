@@ -9,6 +9,7 @@ import { ChildProcessSpawner } from "effect/process";
 import { VcsProcessExitError } from "@t3tools/contracts";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { PullRequestWebOrigin } from "@t3tools/source-control-core/server/PullRequestProvider";
 import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as GitLabCli from "./GitLabCli.ts";
@@ -37,6 +38,52 @@ afterEach(() => {
 });
 
 layer("GitLabCli.layer", (it) => {
+  it.effect("does not run an MR mutation through a differently configured protocol", () =>
+    Effect.gen(function* () {
+      mockedRun.mockImplementation(({ args }) =>
+        Effect.succeed(processOutput(args[2] === "api_protocol" ? "https\n" : "")),
+      );
+      const glab = yield* GitLabCli.GitLabCli;
+      const run = glab.execute({
+        cwd: "/repo",
+        host: "forge.test",
+        args: ["mr", "close", "7", "--repo", "acme/app"],
+      });
+      const rejected = yield* run.pipe(
+        Effect.provideService(PullRequestWebOrigin, "http://forge.test"),
+        Effect.flip,
+      );
+      expect(rejected._tag).toBe("GitLabCliCommandError");
+      expect(mockedRun.mock.calls.map(([command]) => command.args)).toEqual([
+        ["config", "get", "api_protocol", "--host", "forge.test"],
+      ]);
+
+      yield* run.pipe(Effect.provideService(PullRequestWebOrigin, "https://forge.test"));
+      expect(mockedRun.mock.calls.at(-1)?.[0]).toMatchObject({
+        args: ["mr", "close", "7", "--repo", "acme/app"],
+        env: {
+          GITLAB_HOST: "forge.test",
+          GLAB_API_PROTOCOL: "https",
+          GITLAB_API_HOST: "forge.test",
+        },
+      });
+
+      mockedRun.mockClear();
+      mockedRun.mockImplementation(({ args }) =>
+        Effect.succeed(processOutput(args[2] === "api_host" ? "forge.test:8443" : "")),
+      );
+      const wrongApiHost = yield* run.pipe(
+        Effect.provideService(PullRequestWebOrigin, "https://forge.test"),
+        Effect.flip,
+      );
+      expect(wrongApiHost._tag).toBe("GitLabCliCommandError");
+      expect(mockedRun.mock.calls.map(([command]) => command.args[0])).toEqual([
+        "config",
+        "config",
+      ]);
+    }).pipe(Effect.provideService(HostProcess.Environment, {})),
+  );
+
   it.effect("parses merge request view output", () =>
     Effect.gen(function* () {
       mockedRun.mockReturnValueOnce(

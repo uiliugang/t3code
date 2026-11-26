@@ -67,9 +67,12 @@ export function pullRequestProjectChoices<
 }
 
 export function pullRequestListKey(
-  item: Pick<PullRequestListEntry, "host" | "repository" | "number">,
+  item: Pick<PullRequestListEntry, "host" | "repository" | "number" | "target">,
 ) {
-  return `${item.host.toLowerCase()}:${item.repository.toLowerCase()}:${item.number}`;
+  const source = item.target
+    ? `${item.target.provider} ${item.target.origin}`
+    : item.host.toLowerCase();
+  return `${source}:${item.repository.toLowerCase()}:${item.number}`;
 }
 
 export type EnvironmentPullRequestListEntry = PullRequestListEntry & {
@@ -80,8 +83,9 @@ export const scopedPullRequestListKey = (entry: EnvironmentPullRequestListEntry)
   `${entry.environmentId}:${pullRequestListKey(entry)}`;
 
 export const pullRequestStatKey = (
-  row: Pick<PullRequestDiffStat, "projectId" | "repository" | "number">,
-) => `${row.projectId}:${row.repository}:${row.number}`;
+  row: Pick<PullRequestDiffStat, "projectId" | "repository" | "number" | "target">,
+) =>
+  `${row.projectId}:${row.repository}:${row.number}${row.target ? ` ${row.target.provider} ${row.target.origin}` : ""}`;
 
 /**
  * Diff stats an environment has answered, the stats query that answered each, and each row's
@@ -109,7 +113,7 @@ export function withListedPullRequests(
   cache: PullRequestStatsCache,
   entries: readonly Pick<
     PullRequestListEntry,
-    "projectId" | "repository" | "number" | "updatedAt"
+    "projectId" | "repository" | "number" | "updatedAt" | "target"
   >[],
 ): {
   readonly cache: PullRequestStatsCache;
@@ -419,7 +423,8 @@ export function filterPullRequestList<
     if (controls.projectId && entry.projectId !== controls.projectId) return false;
     if (controls.projectEnvironmentId && entry.environmentId !== controls.projectEnvironmentId)
       return false;
-    const viewerKey = entry.environmentId ? `${entry.environmentId} ${entry.host}` : entry.host;
+    const source = entry.target ? `${entry.target.provider} ${entry.target.origin}` : entry.host;
+    const viewerKey = entry.environmentId ? `${entry.environmentId} ${source}` : source;
     const viewer = viewers[viewerKey];
     if (controls.involvement === "reviewing" && !entry.viewerReviewRequested) return false;
     if (

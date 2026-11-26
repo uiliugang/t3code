@@ -7,6 +7,7 @@ import { type MouseEvent } from "react";
 import { msg } from "gt-react";
 
 import {
+  changeRequestWebTarget,
   resolveChangeRequestLinkTarget,
   resolvePullRequestPreviewTarget,
 } from "@t3tools/client-runtime/change-request-links";
@@ -120,6 +121,7 @@ export function useOpenChangeRequestLink(
       });
       if (target === null) return false;
       const { project, repository, number, host } = target;
+      const webTarget = changeRequestWebTarget(target, targetUrl);
       const revealUrl = parsePullRequestAnchor(targetUrl) === null ? undefined : targetUrl;
       const pullRequestsSearch = {
         repository,
@@ -127,6 +129,8 @@ export function useOpenChangeRequestLink(
         ...(host === undefined ? {} : { selectedHost: host }),
         selectedProjectId: project.id,
         selectedEnvironmentId: project.environmentId,
+        selectedUrl: targetUrl,
+        ...(webTarget === undefined ? {} : { selectedTarget: webTarget }),
       };
       if (resolvedPanelRef) {
         useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
@@ -136,6 +140,7 @@ export function useOpenChangeRequestLink(
             : { environmentId: project.environmentId }),
           projectId: project.id,
           ...(host === undefined ? {} : { host }),
+          ...(webTarget === undefined ? {} : { target: webTarget }),
           repository,
           url: targetUrl,
           ...(revealUrl === undefined ? {} : { revealUrl }),
@@ -163,6 +168,8 @@ export function useOpenChangeRequestLink(
               ...previous,
               involvement: previous.involvement ?? "all",
               state: previous.state ?? "all",
+              selectedReveal: undefined,
+              selectedTarget: undefined,
               ...pullRequestsSearch,
             }),
             replace: true,
@@ -176,7 +183,6 @@ export function useOpenChangeRequestLink(
           involvement: "all",
           state: "all",
           ...pullRequestsSearch,
-          selectedUrl: targetUrl,
         },
       });
       return true;

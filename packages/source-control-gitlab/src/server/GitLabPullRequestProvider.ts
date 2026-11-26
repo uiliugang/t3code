@@ -16,6 +16,7 @@ import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
 import type { GitLabDiffRefs, GitLabMergeRequestListState } from "./gitLabMergeRequestJson.ts";
 import {
   PullRequestProviderError,
+  PullRequestWebOrigin,
   type PullRequestProviderFailure,
   type ProviderChangeRequestActivity,
   type ProviderChangeRequestDetail,
@@ -133,8 +134,16 @@ export const make = Effect.gen(function* () {
   // checkout's remote and config, so two checkouts may read the same project as different people.
   const mergeRequestDetails = yield* Cache.makeWith(
     (key: string) => {
-      const [cwd, repository, number, host] = JSON.parse(key) as [string, string, number, string];
-      return cli.getMergeRequestDetail({ cwd, repository, number, host });
+      const [cwd, repository, number, host, origin] = JSON.parse(key) as [
+        string,
+        string,
+        number,
+        string,
+        string | null,
+      ];
+      return cli
+        .getMergeRequestDetail({ cwd, repository, number, host })
+        .pipe(Effect.provideService(PullRequestWebOrigin, origin));
     },
     {
       capacity: READ_CACHE_CAPACITY,
@@ -143,9 +152,10 @@ export const make = Effect.gen(function* () {
   );
   const graphqlListSupport = yield* Cache.makeWith(
     (key: string) => {
-      const [cwd, host] = JSON.parse(key) as [string, string | undefined];
+      const [cwd, host, origin] = JSON.parse(key) as [string, string | undefined, string | null];
       // A host whose version read fails keeps failing it; remember REST rather than ask each poll.
       return cli.supportsGraphqlList({ cwd, host }).pipe(
+        Effect.provideService(PullRequestWebOrigin, origin),
         Effect.catchIf(
           (cause) =>
             cause._tag !== "GitLabCliUnavailableError" &&
@@ -162,8 +172,15 @@ export const make = Effect.gen(function* () {
   );
   const projectMergeCapabilities = yield* Cache.makeWith(
     (key: string) => {
-      const [cwd, repository, host] = JSON.parse(key) as [string, string, string];
-      return cli.getProjectMergeCapabilities({ cwd, repository, host });
+      const [cwd, repository, host, origin] = JSON.parse(key) as [
+        string,
+        string,
+        string,
+        string | null,
+      ];
+      return cli
+        .getProjectMergeCapabilities({ cwd, repository, host })
+        .pipe(Effect.provideService(PullRequestWebOrigin, origin));
     },
     {
       capacity: READ_CACHE_CAPACITY,
@@ -171,18 +188,24 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const detailKey = (input: {
-    readonly cwd: string;
-    readonly host: string;
-    readonly repository: string;
-    readonly number: number;
-  }) => JSON.stringify([input.cwd, input.repository, input.number, input.host]);
+  const detailKey = (
+    input: {
+      readonly cwd: string;
+      readonly host: string;
+      readonly repository: string;
+      readonly number: number;
+    },
+    origin: string | null,
+  ) => JSON.stringify([input.cwd, input.repository, input.number, input.host, origin]);
   const mergeRequestDetail = (input: {
     readonly cwd: string;
     readonly host: string;
     readonly repository: string;
     readonly number: number;
-  }) => Cache.get(mergeRequestDetails, detailKey(input));
+  }) =>
+    PullRequestWebOrigin.pipe(
+      Effect.flatMap((origin) => Cache.get(mergeRequestDetails, detailKey(input, origin))),
+    );
 
   // Dropped on both sides, as the service does with its own reads: a read that starts while the
   // write is in flight must not outlive it.
@@ -199,10 +222,13 @@ export const make = Effect.gen(function* () {
     >(
       write: (input: I) => Effect.Effect<A, E>,
     ) =>
-    (input: I): Effect.Effect<A, E> => {
-      const invalidate = Cache.invalidate(mergeRequestDetails, detailKey(input));
-      return invalidate.pipe(Effect.andThen(write(input)), Effect.ensuring(invalidate));
-    };
+    (input: I): Effect.Effect<A, E> =>
+      PullRequestWebOrigin.pipe(
+        Effect.flatMap((origin) => {
+          const invalidate = Cache.invalidate(mergeRequestDetails, detailKey(input, origin));
+          return invalidate.pipe(Effect.andThen(write(input)), Effect.ensuring(invalidate));
+        }),
+      );
 
   const fail = (operation: string) => (error: GitLabPullRequestCli.GitLabPullRequestCliError) =>
     new PullRequestProviderError({
@@ -276,7 +302,10 @@ export const make = Effect.gen(function* () {
     getViewer: (input) => cli.getViewerUsername(input).pipe(Effect.mapError(fail("getViewer"))),
 
     listChangeRequests: (input) =>
-      Cache.get(graphqlListSupport, JSON.stringify([input.cwd, input.host])).pipe(
+      PullRequestWebOrigin.pipe(
+        Effect.flatMap((origin) =>
+          Cache.get(graphqlListSupport, JSON.stringify([input.cwd, input.host, origin])),
+        ),
         // Without a known version the REST list still answers, only with fewer filters.
         Effect.orElseSucceed(() => false),
         Effect.flatMap((graphql) =>
@@ -356,9 +385,13 @@ export const make = Effect.gen(function* () {
       Effect.all(
         [
           mergeRequestWithStats(input, mergeRequestDetail(input)),
-          Cache.get(
-            projectMergeCapabilities,
-            JSON.stringify([input.cwd, input.repository, input.host]),
+          PullRequestWebOrigin.pipe(
+            Effect.flatMap((origin) =>
+              Cache.get(
+                projectMergeCapabilities,
+                JSON.stringify([input.cwd, input.repository, input.host, origin]),
+              ),
+            ),
           ),
         ],
         { concurrency: 2 },

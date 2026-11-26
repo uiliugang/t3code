@@ -12,6 +12,7 @@ import * as Queue from "effect/Queue";
 import * as Tracer from "effect/Tracer";
 import {
   ProjectId,
+  SourceControlProviderKind,
   GitCommandError,
   type PullRequestActivity,
   type PullRequestDetail,
@@ -467,6 +468,14 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
         const result = yield* service.get(reference);
         assert.strictEqual(result.guide?.headSha, repositories.headSha);
         assert.deepStrictEqual(result.guide?.stops[0]?.files, [{ path: "feature.txt" }]);
+        const differentSource = yield* service.get({
+          ...reference,
+          target: {
+            provider: SourceControlProviderKind.make("gitlab"),
+            origin: "https://github.com",
+          },
+        });
+        assert.isNull(differentSource.guide);
       }),
   );
 

@@ -609,7 +609,7 @@ it.effect("says where each repository carries on, and from nothing it has run ou
     const result = yield* service.list({ state: "open" });
 
     assert.deepStrictEqual(result.nextCursors, {
-      "github.com pingdotgg/t3code": "2026-07-02T00:00:00Z|1|1",
+      "github https://github.com pingdotgg/t3code": "2026-07-02T00:00:00Z|1|1",
     });
   }),
 );
@@ -643,7 +643,7 @@ it.effect("uses a provider's raw cursor advance when it consumed malformed rows"
     const result = yield* service.list({ state: "open" });
 
     assert.deepStrictEqual(result.nextCursors, {
-      "gitlab.com acme/web": "2026-07-02T00:00:00Z|4|7",
+      "gitlab https://gitlab.com acme/web": "2026-07-02T00:00:00Z|4|7",
     });
   }),
 );
@@ -739,7 +739,7 @@ it.effect("keeps a row already sent at the boundary instant from arriving twice"
       [8, 9],
     );
     assert.deepStrictEqual(result.nextCursors, {
-      "github.com pingdotgg/t3code": "2026-07-01T00:00:00Z|3|9",
+      "github https://github.com pingdotgg/t3code": "2026-07-01T00:00:00Z|3|9",
     });
   }),
 );
@@ -775,7 +775,7 @@ it.effect("keeps the earlier exclusions when a slice ends on the instant it bega
       [7, 8],
     );
     assert.deepStrictEqual(result.nextCursors, {
-      "github.com pingdotgg/t3code": "2026-07-02T00:00:00Z|3|6,7,8",
+      "github https://github.com pingdotgg/t3code": "2026-07-02T00:00:00Z|3|6,7,8",
     });
   }),
 );
@@ -2040,6 +2040,8 @@ it.effect("keeps two hosts of one provider kind as two accounts", () =>
 
     assert.strictEqual(result.entries.length, 2);
     assert.deepStrictEqual(result.viewers, {
+      "github https://github.com": "bilal",
+      "github https://github.acme.dev": "b.hassan",
       "github.com": "bilal",
       "github.acme.dev": "b.hassan",
     });
@@ -3127,7 +3129,16 @@ it.effect("a refused merge refreshes a borrowed detail without evicting the othe
     const before = yield* service.detail(borrowed);
     assert.strictEqual(before.projectId, custom.id);
     assert.strictEqual(before.mergeability, "mergeable");
-    yield* Effect.flip(service.runAction({ ...borrowed, action: "merge" }));
+    yield* Effect.flip(
+      service.runAction({
+        ...borrowed,
+        target: {
+          provider: SourceControlProviderKind.make("github"),
+          origin: "https://forge.test:8443",
+        },
+        action: "merge",
+      }),
+    );
     const refused = yield* service.detail(borrowed);
     assert.strictEqual(refused.mergeability, "conflicting");
     assert.strictEqual((yield* service.detail(defaultRef)).mergeability, "mergeable");
@@ -3223,8 +3234,8 @@ it.effect("carries every repository of a slice on from the oldest row in it", ()
 
     assert.isTrue(result.truncated);
     assert.deepStrictEqual(result.nextCursors, {
-      "github.com pingdotgg/t3code": "2026-07-02T00:00:00Z|1|2",
-      "github.com acme/web": "2026-07-02T00:00:00Z|2|3",
+      "github https://github.com pingdotgg/t3code": "2026-07-02T00:00:00Z|1|2",
+      "github https://github.com acme/web": "2026-07-02T00:00:00Z|2|3",
     });
   }),
 );
@@ -3266,7 +3277,7 @@ it.effect("carries a slice on without sending the rows it already sent", () =>
       [4],
     );
     assert.deepStrictEqual(result.nextCursors, {
-      "github.com acme/web": "2026-07-02T00:00:00Z|2|3,4",
+      "github https://github.com acme/web": "2026-07-02T00:00:00Z|2|3,4",
     });
   }),
 );
@@ -3422,6 +3433,10 @@ it.effect("fills in the line counts for the rows it is given", () =>
     assert.deepStrictEqual(result.stats, [
       {
         projectId: "p1" as ProjectId,
+        target: {
+          provider: SourceControlProviderKind.make("github"),
+          origin: "https://github.com",
+        },
         repository: "acme/web",
         number: 1,
         additions: 12,
@@ -3817,11 +3832,18 @@ it.effect("notifies linked threads when detail changes draft status in either di
     const events = yield* Stream.runCollect(
       changes.pipe(Stream.takeUntil((event) => event.number === 2, { excludeLast: true })),
     );
-    assert.deepStrictEqual(events, [
-      { host: "github.com", repository: "acme/web", number: 1 },
-      { host: "github.com", repository: "acme/web", number: 1 },
-      { host: "github.com", repository: "acme/web", number: 1 },
-    ]);
+    assert.deepStrictEqual(
+      events,
+      Array.from({ length: 3 }, () => ({
+        host: "github.com",
+        target: {
+          provider: SourceControlProviderKind.make("github"),
+          origin: "https://github.com",
+        },
+        repository: "acme/web",
+        number: 1,
+      })),
+    );
   }),
 );
 
@@ -4904,6 +4926,52 @@ it.effect("keeps continuation cursors separate for repositories with the same na
     seen.length = 0;
     yield* service.list({ state: "open", cursors: { [key]: first.nextCursors[key]! } });
     assert.deepStrictEqual(seen, ["/org-b"]);
+  }),
+);
+
+it.effect("keeps the viewer and continuation cursor scoped to a GitLab origin", () =>
+  Effect.gen(function* () {
+    const reads: Array<{ cwd: string; viewer: string }> = [];
+    const service = yield* makeService({
+      projects: ["http", "https"].map((protocol) =>
+        project({
+          id: protocol,
+          title: protocol,
+          workspaceRoot: `/${protocol}`,
+          repository: "acme/web",
+          provider: "gitlab",
+          host: "forge.test",
+          remoteUrl: `${protocol}://forge.test/acme/web.git`,
+        }),
+      ),
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
+          getViewer: ({ cwd }) => Effect.succeed(cwd.slice(1)),
+          listChangeRequests: ({ cwd, viewer }) =>
+            Effect.sync(() => {
+              reads.push({ cwd, viewer });
+              return {
+                items: [changeRequest(7, "2026-07-02T00:00:00Z")],
+                truncated: true,
+                continues: true,
+              };
+            }),
+        }),
+      ],
+    });
+    const first = yield* service.list({ state: "open", involvement: "authored" });
+    assert.deepStrictEqual(
+      reads.sort((left, right) => left.cwd.localeCompare(right.cwd)),
+      [
+        { cwd: "/http", viewer: "http" },
+        { cwd: "/https", viewer: "https" },
+      ],
+    );
+    assert.lengthOf(Object.keys(first.nextCursors), 2);
+    const key = Object.keys(first.nextCursors).find((key) => key.includes("https://forge.test"))!;
+    reads.length = 0;
+    yield* service.list({ state: "open", cursors: { [key]: first.nextCursors[key]! } });
+    assert.deepStrictEqual(reads, [{ cwd: "/https", viewer: "https" }]);
   }),
 );
 

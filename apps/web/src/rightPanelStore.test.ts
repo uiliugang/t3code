@@ -1,5 +1,11 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  PullRequestWebTarget,
+  RunId,
+  SourceControlProviderKind,
+  ThreadId,
+} from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { useClosedViewStore } from "./closedViewStore";
@@ -1381,6 +1387,39 @@ describe("rightPanelStore", () => {
     expect(pullRequestSurfaceId({ ...first, host: "GITHUB.COM" })).toBe(
       pullRequestSurfaceId(first),
     );
+  });
+
+  it("restores separate pull request tabs for different web targets on the same host", async () => {
+    const reference = {
+      projectId: "project-a",
+      repository: "acme/api",
+      number: 7,
+      host: "forge.test",
+    };
+    const first = {
+      ...reference,
+      target: PullRequestWebTarget.make({
+        provider: SourceControlProviderKind.make("github"),
+        origin: "https://forge.test",
+      }),
+    };
+    const second = {
+      ...reference,
+      target: PullRequestWebTarget.make({
+        provider: SourceControlProviderKind.make("gitlab"),
+        origin: "http://forge.test",
+      }),
+    };
+    useRightPanelStore.getState().openPullRequest(refA, first);
+    useRightPanelStore.getState().openPullRequest(refA, second);
+    await reloadRightPanelStore();
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      pullRequestSurfaceId(first),
+      pullRequestSurfaceId(second),
+    ]);
+    expect(state.activeSurfaceId).toBe(pullRequestSurfaceId(second));
+    expect(state.surfaces[1]).toMatchObject({ target: second.target });
   });
 
   it("keeps the page's panel tabs reachable when the set of connected servers changes", () => {

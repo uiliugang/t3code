@@ -18,6 +18,8 @@ import {
 } from "@t3tools/contracts";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { parseUrl } from "@t3tools/shared/url";
+import { PullRequestWebOrigin } from "@t3tools/source-control-core/server/PullRequestProvider";
 import { parseGitRemoteHost } from "@t3tools/source-control-core/shared/definition";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import {
@@ -135,7 +137,7 @@ export class GitLabCliCommandError extends Schema.TaggedError<
   userFacingDetail: Schema.optional(Schema.String),
 }) {
   get detail(): string {
-    return "GitLab CLI command failed.";
+    return this.userFacingDetail ?? "GitLab CLI command failed.";
   }
 
   override get message(): string {
@@ -553,7 +555,50 @@ export const make = Effect.gen(function* () {
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
     mapError: (error: VcsError) => GitLabCliError,
   ) {
+    const origin = yield* PullRequestWebOrigin;
+    const endpoint = origin === null ? null : parseUrl(origin);
     const namedHosts = [input.host, input.callerNamedHost].filter((host) => host !== undefined);
+    let endpointEnv: Record<string, string> = {};
+    if (origin !== null) {
+      const incompatible = () =>
+        new GitLabCliCommandError({
+          operation: "execute",
+          command: "glab",
+          cwd: input.cwd,
+          userFacingDetail: "GitLab CLI is not configured for this merge request's Web origin.",
+          cause: undefined,
+        });
+      if (
+        endpoint === null ||
+        (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") ||
+        namedHosts.some((host) => hostOf(host) !== endpoint.host)
+      ) {
+        return yield* incompatible();
+      }
+      const configValue = (key: string) =>
+        process
+          .run({
+            operation: "GitLabCli.verifyEndpoint",
+            command: "glab",
+            args: ["config", "get", key, "--host", endpoint.host],
+            cwd: input.cwd,
+            env: WITHOUT_ENVIRONMENT_TOKEN,
+          })
+          .pipe(
+            Effect.map(({ stdout }) => stdout.trim()),
+            Effect.mapError(mapError),
+          );
+      const protocol = endpoint.protocol.slice(0, -1);
+      const configuredProtocol = (yield* configValue("api_protocol")) || "https";
+      if (configuredProtocol !== protocol) return yield* incompatible();
+      const configuredHost = (yield* configValue("api_host")) || endpoint.host;
+      const api = parseUrl(`${endpoint.protocol}//${configuredHost}`);
+      if (api?.origin !== endpoint.origin || api.username || api.password) {
+        return yield* incompatible();
+      }
+      endpointEnv = { GLAB_API_PROTOCOL: protocol, GITLAB_API_HOST: configuredHost };
+      namedHosts.push(endpoint.host);
+    }
     const withholdToken =
       namedHosts.length > 0
         ? namedHosts.some((host) => hostOf(host) !== defaultGitLabHost)
@@ -566,7 +611,10 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         env: {
           // glab may otherwise prefer a different checkout remote.
-          ...(input.host === undefined ? {} : { GITLAB_HOST: input.host }),
+          ...((endpoint?.host ?? input.host) === undefined
+            ? {}
+            : { GITLAB_HOST: endpoint?.host ?? input.host }),
+          ...endpointEnv,
           ...(withholdToken ? WITHOUT_ENVIRONMENT_TOKEN : {}),
         },
         classifyFailure: classifyGlabFailure,

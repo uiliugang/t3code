@@ -365,10 +365,17 @@ export type PullRequestStackMembership = typeof PullRequestStackMembership.Type;
 export const PullRequestVisibility = Schema.Literals(["public", "private"]);
 export type PullRequestVisibility = typeof PullRequestVisibility.Type;
 
+export const PullRequestWebTarget = Schema.Struct({
+  provider: SourceControlProviderKind,
+  origin: TrimmedNonEmptyString,
+});
+export type PullRequestWebTarget = typeof PullRequestWebTarget.Type;
+
 export const PullRequestListEntry = Schema.Struct({
   stack: Schema.optional(PullRequestStackMembership),
   provider: SourceControlProviderKind,
   host: TrimmedNonEmptyString,
+  target: Schema.optional(PullRequestWebTarget),
   projectId: ProjectId,
   projectTitle: TrimmedNonEmptyString,
   repository: TrimmedNonEmptyString,
@@ -451,12 +458,6 @@ export const PullRequestListResult = Schema.Struct({
   nextCursors: PullRequestListCursors,
 });
 export type PullRequestListResult = typeof PullRequestListResult.Type;
-
-export const PullRequestWebTarget = Schema.Struct({
-  provider: SourceControlProviderKind,
-  origin: TrimmedNonEmptyString,
-});
-export type PullRequestWebTarget = typeof PullRequestWebTarget.Type;
 
 export const PullRequestRef = Schema.Struct({
   projectId: ProjectId,
@@ -579,6 +580,7 @@ export type PullRequestStack = typeof PullRequestStack.Type;
 
 export const PullRequestDiffStat = Schema.Struct({
   projectId: ProjectId,
+  target: Schema.optional(PullRequestWebTarget),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,
   additions: NonNegativeInt,

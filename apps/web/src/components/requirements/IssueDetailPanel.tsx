@@ -97,11 +97,7 @@ export function IssueDetailPanel(
         onIssueChanged={props.changed}
         onSelectPullRequest={(reference) => {
           useRightPanelStore.getState().openPullRequest(props.panelRef ?? REQUIREMENTS_PANEL_REF, {
-            projectId: reference.projectId,
-            repository: reference.repository,
-            number: reference.number,
-            url: reference.url,
-            ...(reference.host ? { host: reference.host } : {}),
+            ...reference,
             environmentId: props.environmentId,
           });
           props.onPullRequestOpened?.();

@@ -7,7 +7,6 @@ import type {
   PullRequestListEntry,
   PullRequestListProjectError,
   PullRequestListResult,
-  ProjectId,
   RepositoryIdentity,
   PullRequestAction,
   PullRequestActor,
@@ -17,6 +16,7 @@ import type {
   PullRequestListCursors,
   PullRequestListFilters,
   PullRequestListState,
+  PullRequestRef,
   PullRequestState,
   PullRequestSummary,
 } from "@t3tools/contracts";
@@ -59,8 +59,10 @@ export type PullRequestViewers = PullRequestListResult["viewers"];
 
 type ScopedEntry = PullRequestListEntry & { readonly environmentId?: string };
 
-const pullRequestViewerKey = (entry: ScopedEntry): string =>
-  `${entry.environmentId ?? ""} ${entry.host}`;
+const pullRequestViewerKey = (entry: ScopedEntry): string => {
+  const source = entry.target ? `${entry.target.provider} ${entry.target.origin}` : entry.host;
+  return entry.environmentId === undefined ? source : `${entry.environmentId} ${source}`;
+};
 
 const GROUP_LABELS: Record<PullRequestGroupKey, string> = {
   reviewRequested: msg("Review requested"),
@@ -208,7 +210,9 @@ export function pullRequestEntryViewer(
   entry: ScopedEntry,
   viewers: PullRequestViewers,
 ): string | null {
-  return normalize(viewers[pullRequestViewerKey(entry)] ?? viewers[entry.host]);
+  return normalize(
+    viewers[pullRequestViewerKey(entry)] ?? (entry.target ? undefined : viewers[entry.host]),
+  );
 }
 
 function isAuthoredByViewer(entry: ScopedEntry, viewers: PullRequestViewers): boolean {
@@ -300,17 +304,14 @@ export function groupPullRequestsByInvolvement<Entry extends ScopedEntry>(
 
 export function pullRequestEntryKey(entry: ScopedEntry): string {
   const scope = entry.environmentId === undefined ? "" : `${entry.environmentId}:`;
-  return `${scope}${entry.host}:${entry.repository}#${entry.number}`;
+  const source = entry.target ? `${entry.target.provider} ${entry.target.origin}` : entry.host;
+  return `${scope}${source}:${entry.repository}#${entry.number}`;
 }
 
 export interface PullRequestStatsTarget {
   readonly environmentId: EnvironmentId;
   readonly input: {
-    readonly refs: ReadonlyArray<{
-      readonly projectId: ProjectId;
-      readonly repository: string;
-      readonly number: number;
-    }>;
+    readonly refs: ReadonlyArray<PullRequestRef>;
   };
 }
 
@@ -367,6 +368,7 @@ export function pullRequestStatsBatches(
       key,
       ref: {
         projectId: entry.projectId,
+        ...(entry.target === undefined ? {} : { host: entry.host, target: entry.target }),
         repository: entry.repository,
         number: entry.number,
       },
@@ -500,6 +502,7 @@ export function mergePullRequestDiffStats(
   stats: ReadonlyArray<{
     readonly environmentId: string;
     readonly projectId: string;
+    readonly target?: PullRequestRef["target"];
     readonly number: number;
     readonly additions: number;
     readonly deletions: number;
@@ -519,8 +522,10 @@ export function mergePullRequestDiffStats(
 export const pullRequestDiffStatKey = (row: {
   readonly environmentId: string;
   readonly projectId: string;
+  readonly target?: PullRequestRef["target"];
   readonly number: number;
-}) => `${row.environmentId} ${row.projectId} ${row.number}`;
+}) =>
+  `${row.environmentId} ${row.projectId} ${row.number}${row.target ? ` ${row.target.provider} ${row.target.origin}` : ""}`;
 
 export interface MergedPullRequestList {
   readonly viewers: PullRequestViewers;

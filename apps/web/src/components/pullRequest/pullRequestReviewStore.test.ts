@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 
 import {
   type PendingReviewComment,
@@ -53,6 +53,28 @@ describe("pull request review drafts", () => {
 
     expect(usePullRequestReviewStore.getState().drafts[publicKey]).toEqual([comment("public")]);
     expect(usePullRequestReviewStore.getState().summaries[publicKey]).toBe("Public review");
+  });
+
+  it("keeps drafts for different Web origins on the same host separate", () => {
+    const reference = {
+      projectId: ProjectId.make("project-a"),
+      host: "forge.test",
+      repository: "owner/repo",
+      number: 7,
+    };
+    const secure = pullRequestReviewKey({
+      ...reference,
+      target: { provider: SourceControlProviderKind.make("gitlab"), origin: "https://forge.test" },
+    });
+    const insecure = pullRequestReviewKey({
+      ...reference,
+      target: { provider: SourceControlProviderKind.make("gitlab"), origin: "http://forge.test" },
+    });
+    const store = usePullRequestReviewStore.getState();
+    store.addComment(secure, comment("https comment"));
+    store.setSummary(secure, "HTTPS review");
+    expect(usePullRequestReviewStore.getState().drafts[insecure]).toBeUndefined();
+    expect(usePullRequestReviewStore.getState().summaries[insecure]).toBeUndefined();
   });
 
   it("does not clear a summary revised while submission is in flight", () => {

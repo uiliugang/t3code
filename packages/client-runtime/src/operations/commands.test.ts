@@ -801,6 +801,7 @@ describe("V2 environment commands", () => {
           host: "github.com",
           repository: "pingdotgg/t3code",
           number: 7,
+          target: { provider: "github", origin: "https://github.com" },
           watching: false,
         },
       ]);

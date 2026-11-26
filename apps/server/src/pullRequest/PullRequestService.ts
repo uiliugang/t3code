@@ -101,6 +101,7 @@ import {
   type ProviderChangeRequestWatchFingerprint,
   type PullRequestProviderApi,
   PullRequestProviderError,
+  PullRequestWebOrigin,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 import * as PullRequestReadCache from "./PullRequestReadCache.ts";
 import * as PullRequestProviderRegistry from "./PullRequestProviderRegistry.ts";
@@ -429,8 +430,16 @@ function parseListCursor(raw: string): ListCursor | null {
   };
 }
 
-function listCursorKey(host: string, repository: string): string {
-  return `${host} ${repository.toLowerCase()}`;
+function changeRequestSourceKey(kind: SourceControlProviderKind, origin: string): string {
+  return `${kind} ${origin}`;
+}
+
+function listCursorKey(
+  kind: SourceControlProviderKind,
+  origin: string,
+  repository: string,
+): string {
+  return `${changeRequestSourceKey(kind, origin)} ${repository.toLowerCase()}`;
 }
 
 // Preserve exclusions across slices sharing a timestamp to avoid redelivery.
@@ -514,7 +523,7 @@ function withRateLimitBackoff(
   api: PullRequestProviderApi,
   host: string,
   limits: SourceControlRateLimit.SourceControlRateLimit["Service"],
-  options?: { readonly viewerAllowsPause: boolean },
+  options?: { readonly viewerAllowsPause?: boolean; readonly origin?: string },
 ): PullRequestProviderApi {
   const key = { provider: api.kind, host };
   const protect = <A>(
@@ -538,7 +547,10 @@ function withRateLimitBackoff(
               }),
           ),
           Effect.flatMap((lease) =>
-            effect.pipe(
+            (options?.origin === undefined
+              ? effect
+              : effect.pipe(Effect.provideService(PullRequestWebOrigin, options.origin))
+            ).pipe(
               Effect.provideService(SourceControlRateLimit.Interactive, allowPaused),
               Effect.tap(() => limits.recordSuccess({ ...key, lease })),
               Effect.tapError((error) =>
@@ -1030,21 +1042,21 @@ export const make = Effect.gen(function* () {
           }
           const registered = registry.get(kind);
           const api = registered?.servesHost?.(host) === false ? null : registered;
-          if (api !== null) {
-            const roots = viewerRoots.get(host);
-            if (roots === undefined) viewerRoots.set(host, [project.workspaceRoot]);
-            else if (!roots.includes(project.workspaceRoot)) roots.push(project.workspaceRoot);
-          }
-          const repositoryKey =
-            api?.repositoryKey?.({ canonicalKey: identity.canonicalKey }) ?? null;
           const origin = remoteWebOrigin(
             host,
             kind === "github" ? undefined : identity.locator.remoteUrl,
           );
-          const key = listCursorKey(host, repositoryKey ?? repository);
-          const identityKey = JSON.stringify([kind, origin, key]);
-          if (seen.has(identityKey)) continue;
-          seen.add(identityKey);
+          const source = changeRequestSourceKey(kind, origin);
+          if (api !== null) {
+            const roots = viewerRoots.get(source);
+            if (roots === undefined) viewerRoots.set(source, [project.workspaceRoot]);
+            else if (!roots.includes(project.workspaceRoot)) roots.push(project.workspaceRoot);
+          }
+          const repositoryKey =
+            api?.repositoryKey?.({ canonicalKey: identity.canonicalKey }) ?? null;
+          const key = listCursorKey(kind, origin, repositoryKey ?? repository);
+          if (seen.has(key)) continue;
+          seen.add(key);
           if (api === null) {
             const counted = unimplemented.get(host);
             if (counted === undefined) unimplemented.set(host, { kind, projectCount: 1 });
@@ -1054,7 +1066,7 @@ export const make = Effect.gen(function* () {
           supported.push({
             cursorKey: key,
             project,
-            api: withRateLimitBackoff(api, host, rateLimits),
+            api: withRateLimitBackoff(api, host, rateLimits, { origin }),
             kind,
             repository,
             host,
@@ -1170,7 +1182,7 @@ export const make = Effect.gen(function* () {
                   );
                   if (Option.isSome(selected)) {
                     return {
-                      cursorKey: listCursorKey(host, repository),
+                      cursorKey: listCursorKey(publicHost.kind, `https://${host}`, repository),
                       project: selected.value,
                       api: withRateLimitBackoff(api, host, rateLimits),
                       kind: publicHost.kind,
@@ -1227,9 +1239,7 @@ export const make = Effect.gen(function* () {
       ...input,
       projectId: project.project.id,
       host: project.host,
-      ...(input.target === undefined
-        ? {}
-        : { target: { provider: project.kind, origin: project.origin } }),
+      target: { provider: project.kind, origin: project.origin },
       repository: project.repository,
       ...(input[checkoutRoot] === undefined
         ? {}
@@ -1319,36 +1329,48 @@ export const make = Effect.gen(function* () {
   type ResolvedViewer = {
     readonly host: string;
     readonly kind: SourceControlProviderKind;
+    readonly origin: string;
     readonly viewer: string | null;
     readonly error: PullRequestProviderError | null;
   };
-  const viewersByHost = new Map<string, { readonly at: number; readonly result: ResolvedViewer }>();
+  const viewersBySource = new Map<
+    string,
+    { readonly at: number; readonly result: ResolvedViewer }
+  >();
   const viewerFlights = yield* Cache.makeWith(
     (key: string): Effect.Effect<ResolvedViewer> => {
-      const [host, kind, roots] = JSON.parse(key) as [
+      const [host, kind, origin, roots] = JSON.parse(key) as [
         string,
         SourceControlProviderKind,
+        string,
         ReadonlyArray<string>,
       ];
       const registered = registry.get(kind);
       if (registered === null) {
         return Effect.die(new Error(`Missing pull request provider: ${kind}`));
       }
-      const api = withRateLimitBackoff(registered, host, rateLimits, { viewerAllowsPause: true });
+      const api = withRateLimitBackoff(registered, host, rateLimits, {
+        viewerAllowsPause: true,
+        origin,
+      });
       return Effect.firstSuccessOf(roots.map((cwd) => api.getViewer({ cwd, host }))).pipe(
         Effect.map((viewer) => ({
           host,
           kind,
+          origin,
           viewer: viewer as string | null,
           error: null as PullRequestProviderError | null,
         })),
         Effect.tap((result) =>
-          Effect.map(Clock.currentTimeMillis, (at) => viewersByHost.set(host, { at, result })),
+          Effect.map(Clock.currentTimeMillis, (at) =>
+            viewersBySource.set(changeRequestSourceKey(kind, origin), { at, result }),
+          ),
         ),
         Effect.catch((error) =>
           Effect.succeed({
             host,
             kind,
+            origin,
             viewer: null,
             error,
           }),
@@ -1369,30 +1391,30 @@ export const make = Effect.gen(function* () {
     options?: { readonly allowPaused: boolean },
   ) =>
     Effect.forEach(
-      [...new Set(projects.map(({ host }) => host))],
-      (host) =>
+      [...Map.groupBy(projects, ({ kind, origin }) => changeRequestSourceKey(kind, origin))],
+      ([source, candidates]) =>
         Effect.flatMap(Clock.currentTimeMillis, (now): Effect.Effect<ResolvedViewer> => {
-          const held = viewersByHost.get(host);
+          const held = viewersBySource.get(source);
           if (held !== undefined && now - held.at <= Duration.toMillis(VIEWER_CACHE_TTL)) {
             return Effect.succeed(held.result);
           }
-          const forHost = projects.filter((project) => project.host === host);
-          const api = forHost[0]!.api;
+          const { kind, host, origin } = candidates[0]!;
           // Include deduplicated checkouts too; one unreadable worktree must not mark the whole host signed out.
           const roots =
-            viewerRoots.get(host) ?? forHost.map(({ project }) => project.workspaceRoot);
-          const key = JSON.stringify([host, api.kind, [...new Set(roots)].sort()]);
+            viewerRoots.get(source) ?? candidates.map(({ project }) => project.workspaceRoot);
+          const key = JSON.stringify([host, kind, origin, [...new Set(roots)].sort()]);
           if (options?.allowPaused === true) return Cache.get(viewerFlights, key);
           // Check pauses outside the shared lookup so background reads cannot spawn repeated failing CLIs and extend the pause.
-          return rateLimits.check({ provider: api.kind, host }).pipe(
+          return rateLimits.check({ provider: kind, host }).pipe(
             Effect.flatMap(() => Cache.get(viewerFlights, key)),
             Effect.catch((error) =>
               Effect.succeed<ResolvedViewer>({
                 host,
-                kind: api.kind,
+                kind,
+                origin,
                 viewer: null,
                 error: new PullRequestProviderError({
-                  provider: api.kind,
+                  provider: kind,
                   operation: "getViewer",
                   reason: "rate-limited",
                   detail: error.detail,
@@ -1443,6 +1465,7 @@ export const make = Effect.gen(function* () {
       ...(input.item.stack === undefined ? {} : { stack: input.item.stack }),
       provider: input.project.api.kind,
       host: input.project.host,
+      target: { provider: input.project.kind, origin: input.project.origin },
       projectId: input.project.project.id,
       projectTitle: input.project.project.title,
       repository: input.project.repository,
@@ -1490,26 +1513,31 @@ export const make = Effect.gen(function* () {
       refinedProjectIdsByHost,
     } = yield* listWorkspaceProjects(input, workspaceRoot);
     const projectCounts = new Map<string, number>();
-    for (const { host } of projects) {
-      projectCounts.set(host, (projectCounts.get(host) ?? 0) + 1);
+    for (const { kind, origin } of projects) {
+      const source = changeRequestSourceKey(kind, origin);
+      projectCounts.set(source, (projectCounts.get(source) ?? 0) + 1);
     }
 
     const viewerResults = yield* resolveViewers(projects, viewerRoots);
     const viewers: Record<string, string> = {};
+    const viewerCountByHost = Map.groupBy(viewerResults, ({ host }) => host);
     for (const result of viewerResults) {
-      if (result.viewer !== null) viewers[result.host] = result.viewer;
+      if (result.viewer === null) continue;
+      viewers[changeRequestSourceKey(result.kind, result.origin)] = result.viewer;
+      if (viewerCountByHost.get(result.host)?.length === 1) viewers[result.host] = result.viewer;
     }
+    const viewerOfSource = ({ kind, origin }: SupportedProject) =>
+      viewers[changeRequestSourceKey(kind, origin)];
 
     const providers: ReadonlyArray<PullRequestProviderSummary> = [
       ...viewerResults.map((result) => {
-        const capabilities = projects.find((project) => project.host === result.host)?.api
-          .capabilities;
+        const capabilities = registry.get(result.kind)?.capabilities;
         return {
           host: result.host,
           kind: result.kind,
           searchesOnHost: capabilities?.search ?? false,
           actions: capabilities?.actions ?? [],
-          projectCount: projectCounts.get(result.host) ?? 1,
+          projectCount: projectCounts.get(changeRequestSourceKey(result.kind, result.origin)) ?? 1,
           projectIds: refinedProjectIdsByHost.get(result.host),
           configured: result.viewer !== null,
           detail: result.error === null ? null : providerDetail(requirementOf, result.error),
@@ -1527,13 +1555,24 @@ export const make = Effect.gen(function* () {
       })),
     ];
 
+    const legacyCursorKey = (project: SupportedProject) =>
+      `${project.host} ${(project.repositoryKey ?? project.repository).toLowerCase()}`;
+    const legacyCursorProjects = Map.groupBy(projects, legacyCursorKey);
+    const cursorOf = (project: SupportedProject): ListCursor | undefined => {
+      if (continuation === null) return undefined;
+      const legacy = legacyCursorKey(project);
+      return (
+        continuation.get(project.cursorKey) ??
+        (legacyCursorProjects.get(legacy)?.length === 1 ? continuation.get(legacy) : undefined)
+      );
+    };
     const selected =
       continuation === null
         ? projects
-        : projects.filter(({ cursorKey }) => continuation.has(cursorKey));
-    const readable = selected.filter(({ host }) => viewers[host] !== undefined);
+        : projects.filter((project) => cursorOf(project) !== undefined);
+    const readable = selected.filter((project) => viewerOfSource(project) !== undefined);
     const unreadable = selected
-      .filter(({ host }) => viewers[host] === undefined)
+      .filter((project) => viewerOfSource(project) === undefined)
       .map(({ project, repository }) => ({
         projectId: project.id,
         projectTitle: project.title,
@@ -1549,7 +1588,8 @@ export const make = Effect.gen(function* () {
         nextCursors: {},
       };
       const errors = viewerResults.flatMap((result) =>
-        result.error === null || !selected.some(({ host }) => host === result.host)
+        result.error === null ||
+        !selected.some(({ kind, origin }) => kind === result.kind && origin === result.origin)
           ? []
           : [result.error],
       );
@@ -1565,15 +1605,12 @@ export const make = Effect.gen(function* () {
     }
 
     const limit = input.limit ?? DEFAULT_REPOSITORY_LIST_LIMIT;
-    const cursorOf = (project: SupportedProject): ListCursor | undefined =>
-      continuation?.get(project.cursorKey);
-
     const readSlice = (
       project: SupportedProject,
       cursor: ListCursor | undefined,
     ): Effect.Effect<RepositoryBatch> => {
       {
-        const viewer = viewers[project.host]!;
+        const viewer = viewerOfSource(project)!;
         const key = project.cursorKey;
         return project.api
           .listChangeRequests({
@@ -1686,7 +1723,7 @@ export const make = Effect.gen(function* () {
       const separately = () =>
         Effect.forEach(chunk, readRepository, { concurrency: REPOSITORY_CONCURRENCY });
       if (readAcross === undefined) return separately();
-      const viewer = viewers[first.host]!;
+      const viewer = viewerOfSource(first)!;
       const cursor = cursorOf(first);
       return readAcross({
         cwd: first.project.workspaceRoot,
@@ -1772,7 +1809,7 @@ export const make = Effect.gen(function* () {
         separate.push(project);
         continue;
       }
-      const key = `${project.host}\n${cursorOf(project)?.updatedBefore ?? ""}`;
+      const key = `${changeRequestSourceKey(project.kind, project.origin)}\n${cursorOf(project)?.updatedBefore ?? ""}`;
       const group = together.get(key);
       if (group === undefined) together.set(key, [project]);
       else group.push(project);
@@ -3006,6 +3043,8 @@ export const make = Effect.gen(function* () {
       const project = byProject.get(ref.projectId);
       if (
         project === undefined ||
+        ref.target?.provider !== project.kind ||
+        ref.target.origin !== project.origin ||
         project.api.listChangeRequestStats === undefined ||
         project.repository.toLowerCase() !== ref.repository.trim().toLowerCase()
       ) {
@@ -3013,14 +3052,11 @@ export const make = Effect.gen(function* () {
       }
       wanted.set(`${project.project.id} ${ref.number}`, { project, number: ref.number });
     }
-    const byHost = new Map<string, Array<{ project: SupportedProject; number: number }>>();
-    for (const entry of wanted.values()) {
-      const held = byHost.get(entry.project.host);
-      if (held === undefined) byHost.set(entry.project.host, [entry]);
-      else held.push(entry);
-    }
+    const bySource = Map.groupBy(wanted.values(), ({ project }) =>
+      changeRequestSourceKey(project.kind, project.origin),
+    );
     const stats = yield* Effect.forEach(
-      [...byHost.values()],
+      [...bySource.values()],
       (entries) => {
         const first = entries[0]!;
         const readStats = first.project.api.listChangeRequestStats;
@@ -3049,6 +3085,7 @@ export const make = Effect.gen(function* () {
                 : [
                     {
                       projectId: project.project.id,
+                      target: { provider: project.kind, origin: project.origin },
                       repository: project.repository,
                       number: stat.number,
                       additions: stat.additions,
@@ -3882,10 +3919,10 @@ export const make = Effect.gen(function* () {
 
   const listStatsCache = yield* Cache.makeWith(
     (key: string) => {
-      const [, refs] = JSON.parse(key) as [number, ReadonlyArray<[string, string, number, number]>];
+      const [, refs] = JSON.parse(key) as [number, ReadonlyArray<[PullRequestRef, number]>];
       return listStatsUncached({
-        refs: refs.map(([projectId, repository, number]) => ({ projectId, repository, number })),
-      } as unknown as PullRequestListStatsInput).pipe(
+        refs: refs.map(([ref]) => ref),
+      }).pipe(
         Effect.flatMap((result) =>
           Clock.currentTimeMillis.pipe(Effect.map((at) => ({ result, at }))),
         ),
@@ -3900,10 +3937,11 @@ export const make = Effect.gen(function* () {
     JSON.stringify([
       listingsEpoch,
       [...refs]
-        .map((ref) => [ref.projectId, ref.repository, ref.number, refEpoch(ref)] as const)
-        .toSorted((left, right) =>
-          `${left[0]} ${left[1]} ${left[2]}`.localeCompare(`${right[0]} ${right[1]} ${right[2]}`),
-        ),
+        .toSorted((left, right) => refScope(left).localeCompare(refScope(right)))
+        .map(({ projectId, host, target, repository, number }) => {
+          const ref = { projectId, host, target, repository, number };
+          return [ref, refEpoch(ref)] as const;
+        }),
     ]);
   const listStats: PullRequestService["Service"]["listStats"] = Effect.fn(
     "PullRequestService.listStats",
@@ -3933,6 +3971,8 @@ export const make = Effect.gen(function* () {
       const stat = result.stats.find(
         (stat) =>
           stat.projectId === ref.projectId &&
+          stat.target?.provider === ref.target?.provider &&
+          stat.target?.origin === ref.target?.origin &&
           stat.repository.toLowerCase() === ref.repository.toLowerCase() &&
           stat.number === ref.number,
       );
@@ -3974,7 +4014,7 @@ export const make = Effect.gen(function* () {
       yield* forgetProviderReads();
       listingsEpoch = ++epochCounter;
       everyFileRevisionEpoch = ++epochCounter;
-      viewersByHost.clear();
+      viewersBySource.clear();
       yield* Cache.invalidateAll(viewerFlights);
     }
     if (options?.notifyReaders) {

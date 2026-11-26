@@ -33,7 +33,7 @@ import {
   type GuestMessageId,
 } from "@t3tools/contracts";
 import { derivePendingBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import { normalizeThreadPullRequestKey, visibleThreadPullRequests } from "../threadPullRequests.ts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -1014,9 +1014,7 @@ export const interruptThreadTurn = Effect.fn("EnvironmentCommands.interruptThrea
           type: "thread.pull-request.watch",
           commandId: yield* allocateCommandId(result.sequence === 0 ? input : {}),
           threadId,
-          host: link.host,
-          repository: link.repository,
-          number: link.number,
+          ...normalizeThreadPullRequestKey(link),
           watching: false,
         });
       }

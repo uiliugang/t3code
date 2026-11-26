@@ -183,12 +183,14 @@ export function RightPanelSurfaceContent(props: {
               repository: reference.repository,
               number: reference.number,
               ...(reference.host ? { host: reference.host } : {}),
+              ...(reference.target ? { target: reference.target } : {}),
             });
           }}
           threadRef={threadRef}
           reference={{
             projectId: surface.projectId as ProjectId,
             ...(surface.host ? { host: surface.host } : {}),
+            ...(surface.target ? { target: surface.target } : {}),
             repository: surface.repository,
             number: surface.number,
           }}
@@ -238,14 +240,10 @@ export function RightPanelSurfaceContent(props: {
           threadRef={threadRef}
           onSelectPullRequest={(reference) => {
             useRightPanelStore.getState().openPullRequest(threadRef, {
+              ...reference,
               ...(surface.environmentId === undefined
                 ? {}
                 : { environmentId: surface.environmentId }),
-              projectId: reference.projectId,
-              repository: reference.repository,
-              number: reference.number,
-              ...(reference.host ? { host: reference.host } : {}),
-              url: reference.url,
             });
           }}
           onSelectIssue={({ host, ...reference }) => {

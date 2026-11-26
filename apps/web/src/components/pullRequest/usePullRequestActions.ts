@@ -166,6 +166,8 @@ export function usePullRequestActionRunner({
           environmentId,
           reference.projectId,
           reference.host ?? null,
+          reference.target?.provider ?? null,
+          reference.target?.origin ?? null,
           reference.repository,
           reference.number,
         ]);
@@ -242,6 +244,7 @@ export function usePullRequestCloseBatch(
           input: {
             projectId: entry.projectId,
             host: entry.host,
+            target: entry.target,
             repository: entry.repository,
             number: entry.number,
             action: "close",

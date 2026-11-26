@@ -1,5 +1,6 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestWebTarget } from "@t3tools/client-runtime/change-request-links";
 import { parsePullRequestQuery } from "@t3tools/client-runtime/pull-request-query";
 import {
   type EnvironmentId,
@@ -8,6 +9,7 @@ import {
   type PullRequestListFilters,
   type PullRequestListResult,
   type PullRequestListState,
+  type PullRequestWebTarget,
 } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 
@@ -46,6 +48,8 @@ import { parsePullRequestAnchor } from "@t3tools/shared/pullRequestAnchor";
 
 export interface PullRequestsSearch extends PullRequestListPreferences {
   readonly selectedUrl?: string;
+  readonly selectedTarget?: PullRequestWebTarget | undefined;
+  readonly selectedReveal?: boolean | undefined;
   readonly environmentId?: EnvironmentId;
   readonly projectId?: ProjectId;
   readonly host?: string | undefined;
@@ -168,7 +172,19 @@ export function usePullRequestScope(
           number: search.number,
           projectId: selectedProject.id,
           ...(selectedUrl === undefined ? {} : { url: selectedUrl }),
-          ...(selectedUrl !== undefined && parsePullRequestAnchor(selectedUrl) !== null
+          target:
+            search.selectedTarget ??
+            changeRequestWebTarget(
+              {
+                host: selectedHost,
+                repository: search.repository,
+                number: search.number,
+              },
+              selectedUrl,
+            ),
+          ...(search.selectedReveal !== false &&
+          selectedUrl !== undefined &&
+          parsePullRequestAnchor(selectedUrl) !== null
             ? { revealUrl: selectedUrl }
             : {}),
           ...(selectedHost ? { host: selectedHost } : {}),

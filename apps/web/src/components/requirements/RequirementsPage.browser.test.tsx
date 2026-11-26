@@ -232,8 +232,13 @@ vi.mock(
   import("../pullRequest/PullRequestDetailPanel"),
   () =>
     ({
-      PullRequestDetailPanel: ({ sourceUrl }: { sourceUrl?: string }) => (
-        <div>
+      PullRequestDetailPanel: ({
+        sourceUrl,
+        reference,
+      }: ComponentProps<
+        typeof import("../pullRequest/PullRequestDetailPanel").PullRequestDetailPanel
+      >) => (
+        <div data-testid="linked-pr-detail" data-target-origin={reference.target?.origin}>
           <span>Linked PR detail</span>
           {sourceUrl ? <a href={sourceUrl}>Original PR</a> : null}
         </div>
@@ -975,7 +980,7 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
     .toHaveAttribute("data-issue-url", "https://linear.app/acme/issue/ENG-1");
 });
 
-it("preserves the original PR URL in requirements deep links and tracker issue tabs", async () => {
+it("preserves the PR target and original URL in requirements deep links and tracker issue tabs", async () => {
   using fixture = setup();
   const url = "https://forge.test:8443/acme/app/pull/7";
   const search = new URLSearchParams({
@@ -985,6 +990,7 @@ it("preserves the original PR URL in requirements deep links and tracker issue t
       host: "forge.test:8443",
       repository: "acme/app",
       number: 7,
+      target: { provider: "github", origin: "https://forge.test:8443" },
       url,
     }),
   });
@@ -1010,6 +1016,9 @@ it("preserves the original PR URL in requirements deep links and tracker issue t
   await expect
     .element(screen.getByRole("link", { name: "Original PR" }))
     .toHaveAttribute("href", url);
+  await expect
+    .element(screen.getByTestId("linked-pr-detail"))
+    .toHaveAttribute("data-target-origin", "https://forge.test:8443");
 
   await act(() =>
     router.navigate({

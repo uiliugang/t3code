@@ -97,7 +97,7 @@ function pullRequestMatchesProject(
 function branchPullRequestKey(pullRequest: GitManager.GitBranchPullRequest): string | null {
   const parsed = sourceControlDefinitions.parseChangeRequestUrl(pullRequest.url)?.link;
   if (parsed !== undefined && parsed.number === pullRequest.number) {
-    return threadPullRequestKeyOf(parsed);
+    return threadPullRequestKeyOf({ ...parsed, url: pullRequest.url });
   }
   const separator = pullRequest.repositoryKey?.indexOf("/") ?? -1;
   if (pullRequest.repositoryKey == null || separator <= 0) return null;

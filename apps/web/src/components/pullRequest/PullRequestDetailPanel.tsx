@@ -249,7 +249,10 @@ function resolvePullRequestReference(
   repositoryIdentity: Parameters<typeof resolvePullRequestReferenceHost>[1],
   supportsThreadPullRequests: boolean,
 ): PullRequestRef {
-  if (requestedReference.host !== undefined && !supportsThreadPullRequests)
+  if (
+    (requestedReference.host !== undefined || requestedReference.target !== undefined) &&
+    !supportsThreadPullRequests
+  )
     return requestedReference;
   return supportsThreadPullRequests
     ? resolvePullRequestReferenceHost(requestedReference, repositoryIdentity)
@@ -997,6 +1000,7 @@ export function PullRequestDetailPanel({
             environmentId,
             projectId: reference.projectId,
             ...(reference.host === undefined ? {} : { host: reference.host }),
+            ...(reference.target === undefined ? {} : { target: reference.target }),
             repository: reference.repository,
             number: reference.number,
             url: detail.url,

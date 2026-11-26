@@ -28,9 +28,10 @@ const Search = Schema.Struct({
   issueHost: Schema.optionalKey(Schema.String),
   workItemId: Schema.optionalKey(WorkItemId),
   pullRequest: Schema.optionalKey(
-    PullRequestRef.mapFields(({ projectId, host, repository, number }) => ({
+    PullRequestRef.mapFields(({ projectId, host, target, repository, number }) => ({
       projectId,
       host,
+      target,
       repository,
       number,
       url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_PR_URL_LENGTH))),

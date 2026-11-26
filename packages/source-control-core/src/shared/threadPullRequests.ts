@@ -109,13 +109,12 @@ export function makeThreadPullRequests(
   ): ThreadPullRequestKey {
     const parsed = registry.parseChangeRequestUrl(linked.url)?.link;
     if (!parsed && !fallbackHost) return savedKeys.legacyThreadPullRequestKey(linked);
-    if (parsed && parsed.number === linked.number) {
-      if (
-        parsed.authority !== undefined ||
-        registry.findByRepositoryKey(`${parsed.host}/${parsed.repository}`) !== undefined
-      ) {
-        return normalizeThreadPullRequestKey(parsed);
-      }
+    if (
+      parsed &&
+      parsed.number === linked.number &&
+      parsed.repository === canonicalRepositoryPath(linked.repository.trim())
+    ) {
+      return normalizeThreadPullRequestKey({ ...parsed, url: linked.url });
     }
     let host = fallbackHost;
     if (host === undefined) {

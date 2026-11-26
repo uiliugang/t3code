@@ -50,7 +50,11 @@ export function pullRequestParams(params: PullRequestParams): PullRequestParams 
 }
 
 export function pullRequestTarget(params: PullRequestParams) {
-  const target = changeRequestWebTarget(params, params.navigationUrl ?? params.initialSummary?.url);
+  const summary = params.initialSummary;
+  const target =
+    changeRequestWebTarget(params, params.navigationUrl) ??
+    (summary && "target" in summary ? summary.target : undefined) ??
+    changeRequestWebTarget(params, summary?.url);
   return {
     environmentId: EnvironmentId.make(params.environmentId),
     input: {

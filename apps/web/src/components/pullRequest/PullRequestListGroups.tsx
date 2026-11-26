@@ -79,6 +79,7 @@ export function PullRequestListGroups({
     readonly environmentId: string | undefined;
     readonly repository: string;
     readonly host: string | undefined;
+    readonly target: PullRequestRowTarget["target"];
     readonly number: number;
   } | null;
   showProvider: boolean;
@@ -126,6 +127,8 @@ export function PullRequestListGroups({
                     selected?.environmentId === entry.environmentId &&
                     selected.repository === entry.repository &&
                     selected.host?.toLowerCase() === entry.host.toLowerCase() &&
+                    selected.target?.provider === entry.target?.provider &&
+                    selected.target?.origin === entry.target?.origin &&
                     selected.number === entry.number
                   }
                   onSelect={onSelect}

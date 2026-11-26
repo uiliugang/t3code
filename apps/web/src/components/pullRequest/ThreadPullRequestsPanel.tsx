@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/source-control-clients";
 import {
   type PullRequestListLine,
+  normalizeThreadPullRequestKey,
   pullRequestListLines,
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
@@ -476,9 +477,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
       environmentId: threadRef.environmentId,
       input: {
         threadId: threadRef.threadId,
-        host: link.host,
-        repository: link.repository,
-        number: link.number,
+        ...normalizeThreadPullRequestKey(link),
       },
     });
   };
@@ -487,9 +486,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
       environmentId: threadRef.environmentId,
       input: {
         threadId: threadRef.threadId,
-        host: link.host,
-        repository: link.repository,
-        number: link.number,
+        ...normalizeThreadPullRequestKey(link),
         watching,
       },
     });

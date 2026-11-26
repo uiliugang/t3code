@@ -14,6 +14,7 @@ import {
   RunId,
   standaloneIssueWorkspace,
   ThreadId,
+  type PullRequestRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
@@ -99,6 +100,7 @@ export type RightPanelSurface =
       environmentId?: string;
       projectId: string;
       host?: string;
+      target?: PullRequestRef["target"];
       repository: string;
       number: number;
       url?: string;
@@ -267,7 +269,8 @@ interface RightPanelStoreState {
     target: {
       environmentId?: string;
       projectId: string;
-      host?: string;
+      host?: string | undefined;
+      target?: PullRequestRef["target"];
       repository: string;
       number: number;
       url?: string;
@@ -414,14 +417,18 @@ export type PullRequestSurface = Extract<RightPanelSurface, { kind: "pull-reques
 export function pullRequestSurfaceId(target: {
   environmentId?: string;
   projectId: string;
-  host?: string;
+  host?: string | undefined;
+  target?: PullRequestRef["target"];
   repository: string;
   number: number;
 }): PullRequestSurface["id"] {
   const scope =
     target.environmentId === undefined ? "" : `${encodeURIComponent(target.environmentId)}:`;
   const host = target.host === undefined ? "" : `${encodeURIComponent(target.host.toLowerCase())}:`;
-  return `pull-request:${scope}${encodeURIComponent(target.projectId)}:${host}${encodeURIComponent(target.repository)}:${target.number}`;
+  const endpoint = target.target
+    ? `:${encodeURIComponent(target.target.provider)}:${encodeURIComponent(target.target.origin)}`
+    : "";
+  return `pull-request:${scope}${encodeURIComponent(target.projectId)}:${host}${encodeURIComponent(target.repository)}:${target.number}${endpoint}`;
 }
 
 export type RequirementIssueSurface = Extract<RightPanelSurface, { kind: "requirement-issue" }>;
@@ -563,7 +570,8 @@ export function hasOpenRightPanelSurface(
 export function pullRequestSurface(target: {
   environmentId?: string;
   projectId: string;
-  host?: string;
+  host?: string | undefined;
+  target?: PullRequestRef["target"];
   repository: string;
   number: number;
   url?: string;
@@ -575,6 +583,7 @@ export function pullRequestSurface(target: {
     ...(target.environmentId === undefined ? {} : { environmentId: target.environmentId }),
     projectId: target.projectId,
     ...(typeof target.host === "string" ? { host: target.host.toLowerCase() } : {}),
+    ...(target.target ? { target: target.target } : {}),
     repository: target.repository,
     number: target.number,
     ...(typeof target.url === "string" ? { url: target.url } : {}),

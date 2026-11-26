@@ -3,6 +3,7 @@ import { contextMenuSourceOf } from "../contextMenuSource";
 import { m, type MessageResolver } from "../i18n/messages";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { issueReferenceCompatible } from "@t3tools/client-runtime/issue-links";
+import { changeRequestWebTarget } from "@t3tools/client-runtime/change-request-links";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   threadRuntimeIsActive,
@@ -24,6 +25,7 @@ import type {
   IssueTrackerKind,
   PreviewSessionSnapshot,
   ProjectId,
+  PullRequestRef,
   PullRequestState,
   ResolvedKeybindingsConfig,
   ThreadId,
@@ -59,6 +61,7 @@ import {
   Volume2Icon,
   VolumeOffIcon,
 } from "lucide-react";
+import { resolvePullRequestReferenceHost } from "./pullRequest/pullRequestDetail.logic";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -797,11 +800,11 @@ export function resolvePullRequestTabLink(
   threads: readonly Pick<EnvironmentThreadShell, "environmentId" | "pullRequests">[],
   environmentId: EnvironmentId | null,
   host: string | null,
-  reference: { repository: string; number: number },
+  reference: Pick<PullRequestRef, "repository" | "number" | "target"> & { url?: string },
 ) {
   if (environmentId === null || host === null) return undefined;
   // Keys are cached per object, so one target normalizes once instead of once per link.
-  const target = { host, repository: reference.repository, number: reference.number };
+  const target = { ...reference, host };
   let newest: EnvironmentThreadShell["pullRequests"][number] | undefined;
   for (const thread of threads) {
     if (thread.environmentId !== environmentId) continue;
@@ -894,31 +897,29 @@ function PullRequestSurfaceIcon({
     resolvedEnvironmentId === null
       ? undefined
       : configs.get(resolvedEnvironmentId)?.environment.capabilities;
+  const reference = resolvePullRequestReferenceHost(
+    {
+      projectId: surface.projectId as ProjectId,
+      repository: surface.repository,
+      number: surface.number,
+      ...(host === null ? {} : { host }),
+      target: surface.target ?? changeRequestWebTarget(surface, surface.url),
+    },
+    identity,
+  );
   const linkedSnapshot =
     capabilities !== undefined
-      ? (resolvePullRequestTabLink(threads, resolvedEnvironmentId, host, surface)?.snapshot ?? null)
+      ? (resolvePullRequestTabLink(threads, resolvedEnvironmentId, host, reference)?.snapshot ??
+        null)
       : null;
   const detail = useEnvironmentQuery(
     resolvedEnvironmentId === null || capabilities === undefined || linkedSnapshot !== null
       ? null
       : pullRequestEnvironment.detail({
           environmentId: resolvedEnvironmentId,
-          input: {
-            projectId: surface.projectId as ProjectId,
-            ...(capabilities !== undefined && surface.host !== undefined
-              ? { host: surface.host }
-              : {}),
-            repository: surface.repository,
-            number: surface.number,
-            allowStale: false,
-          },
+          input: { ...reference, allowStale: false },
         }),
   ).data;
-  const reference = {
-    projectId: surface.projectId as ProjectId,
-    repository: surface.repository,
-    number: surface.number,
-  };
   const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference);
   const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {

@@ -18,6 +18,7 @@ import {
   planThreadPullRequestMutation,
 } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { AuthOrchestrationOperateScope, type ThreadPullRequestLink } from "@t3tools/contracts";
 import * as Clipboard from "expo-clipboard";
@@ -206,9 +207,7 @@ export function useLinkedPullRequestActions(input: {
           environmentId: thread.environmentId,
           input: {
             threadId: thread.id,
-            host: link.host,
-            repository: link.repository,
-            number: link.number,
+            ...normalizeThreadPullRequestKey(link),
             watching: link.watch === undefined,
           },
         }),
