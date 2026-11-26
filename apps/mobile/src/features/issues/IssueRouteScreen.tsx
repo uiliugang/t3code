@@ -402,6 +402,7 @@ function useOpenIssueLinkedPullRequest(params: IssueParams) {
   const { environmentId, input } = issueTarget(params);
   const projects = useProjects();
   const config = useEnvironmentServerConfig(environmentId);
+  const supportsWebTargets = config?.environment.capabilities.pullRequestWebTargets === true;
   return (link: Pick<IssueLinkedPullRequest, "url" | "repository" | "number">) => {
     const target = issueLinkedPullRequestTarget(params, link);
     const resolved =
@@ -413,7 +414,8 @@ function useOpenIssueLinkedPullRequest(params: IssueParams) {
             environmentId,
             projectId: input.projectId,
             configLoaded: () => config !== null,
-            lendHostProject: config?.environment.capabilities.pullRequestWebTargets === true,
+            lendHostProject: supportsWebTargets,
+            supportsWebTargets: () => supportsWebTargets,
           });
     if (!target || !resolved) {
       void tryOpenWebLink(link.url, "pull-request");

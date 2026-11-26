@@ -24,7 +24,8 @@ const nativePullRequestDestination = (
   linkContext: typeof context | null,
   linkProjects: typeof projects,
   configLoaded: Parameters<typeof destination>[3] = () => true,
-) => destination(url, linkContext, linkProjects, configLoaded);
+  supportsWebTargets?: Parameters<typeof destination>[4],
+) => destination(url, linkContext, linkProjects, configLoaded, supportsWebTargets);
 
 describe("native PR entry points", () => {
   it("keeps a thread link in its own environment and handles renamed host path shapes", () => {
@@ -41,13 +42,15 @@ describe("native PR entry points", () => {
       number: 12,
       navigationUrl: "https://github.com/org/repo/pull/12/files#diff",
     });
+    const gitlabUrl = "https://git.example/group/sub/repo/-/merge_requests/9";
+    expect(nativePullRequestDestination(gitlabUrl, context, projects)).toBeNull();
     expect(
-      nativePullRequestDestination(
-        "https://git.example/group/sub/repo/-/merge_requests/9",
-        context,
-        projects,
-      ),
-    ).toMatchObject({ projectId: "gitlab", repository: "group/sub/repo" });
+      nativePullRequestDestination(gitlabUrl, context, projects, undefined, () => true),
+    ).toMatchObject({
+      projectId: "gitlab",
+      repository: "group/sub/repo",
+      navigationUrl: gitlabUrl,
+    });
     expect(
       nativePullRequestDestination("http://forgejo.test:3000/org/repo/pulls/3", context, projects),
     ).toBeNull();

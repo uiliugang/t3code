@@ -454,6 +454,7 @@ type MarkdownServerConfigFields = ReturnType<typeof markdownServerConfigFields>;
 function markdownServerConfigFields(config: ServerConfig | null) {
   return {
     pullRequestsEnabled: config !== null,
+    pullRequestWebTargets: config?.environment.capabilities.pullRequestWebTargets === true,
     issuesEnabled: config?.environment.capabilities.issues === true,
     githubIssueSourcePorts: config?.environment.capabilities.githubIssueSourcePorts === true,
     issueProjectSources: config?.settings?.issueProjectSources,
@@ -472,6 +473,7 @@ function markdownServerConfigFieldsEqual(
 ): boolean {
   return (
     previous.pullRequestsEnabled === next.pullRequestsEnabled &&
+    previous.pullRequestWebTargets === next.pullRequestWebTargets &&
     previous.issuesEnabled === next.issuesEnabled &&
     previous.githubIssueSourcePorts === next.githubIssueSourcePorts &&
     previous.issueProjectSources === next.issueProjectSources &&
@@ -730,6 +732,7 @@ function useChatMarkdownState(
   };
   const {
     pullRequestsEnabled,
+    pullRequestWebTargets,
     issuesEnabled,
     githubIssueSourcePorts,
     issueProjectSources,
@@ -1131,6 +1134,7 @@ function useChatMarkdownState(
     resolveThreadPullRequest,
     resolvedTheme,
     pullRequestsEnabled,
+    pullRequestWebTargets,
     issuesEnabled,
     skills,
     threadRef,
@@ -1305,6 +1309,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
       pullRequestsEnabled,
+      pullRequestWebTargets,
       issuesEnabled,
       updateThreadPullRequestLink,
       fileLinkChip,
@@ -1372,6 +1377,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             environmentId,
             projects,
             pullRequestsEnabled,
+            supportsWebTargets: pullRequestWebTargets,
             url: pullRequestCandidateUrl,
           })
         : null;

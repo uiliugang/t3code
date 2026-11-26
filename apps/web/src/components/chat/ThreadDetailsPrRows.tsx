@@ -1,4 +1,5 @@
 import { pipe } from "effect/Function";
+import { useAtomValue } from "@effect/atom-react";
 import { ThreadDetailsMoreButton } from "./ThreadDetailsControl";
 import type {
   EnvironmentId,
@@ -25,6 +26,7 @@ import {
 
 import type { ComposerThreadTarget } from "~/composerDraftStore";
 import { useProjects, useQuietThreadShell } from "~/state/entities";
+import { serverEnvironment } from "~/state/server";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -36,6 +38,13 @@ import {
 } from "../ThreadStatusIndicators";
 
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
+
+function useSupportsWebTargets(environmentId: EnvironmentId) {
+  return useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.pullRequestWebTargets === true,
+  );
+}
 
 function ThreadDetailsPrLinkRow({
   environmentId,
@@ -54,6 +63,7 @@ function ThreadDetailsPrLinkRow({
 }) {
   const m = useMessages();
   const projects = useProjects();
+  const supportsWebTargets = useSupportsWebTargets(environmentId);
   const parsed = sourceControlClients.parseChangeRequestUrl(link.url);
   const project =
     parsed === null
@@ -62,6 +72,7 @@ function ThreadDetailsPrLinkRow({
           projects.filter((candidate) => candidate.environmentId === environmentId),
           parsed.link,
           parsed.definition.kind,
+          () => supportsWebTargets,
         ) ?? null);
   const linked = linkedPullRequestSnapshotStatus(link);
   const pr = linked?.pr ?? null;
@@ -179,6 +190,7 @@ export function ThreadDetailsThreadPrRows({
         candidate.environmentId === threadRef.environmentId && candidate.id !== project?.id,
     ),
   ];
+  const supportsWebTargets = useSupportsWebTargets(threadRef.environmentId);
   const ownProject =
     parsed === null
       ? undefined
@@ -189,7 +201,12 @@ export function ThreadDetailsThreadPrRows({
       : parsed === null
         ? null
         : (ownProject ??
-          findProjectOnChangeRequestHost(candidates, parsed.link, parsed.definition.kind) ??
+          findProjectOnChangeRequestHost(
+            candidates,
+            parsed.link,
+            parsed.definition.kind,
+            () => supportsWebTargets,
+          ) ??
           null);
   if (number === undefined || url === undefined) return null;
   return (

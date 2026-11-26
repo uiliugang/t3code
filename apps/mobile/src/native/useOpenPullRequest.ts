@@ -36,8 +36,13 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
   return async (url: string, context: PullRequestContext | null) => {
     // Read at press time so a config push does not hand every link a new handler.
     const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
-    const destination = nativePullRequestDestination(url, context, projects, (environmentId) =>
-      serverConfigs.has(environmentId),
+    const destination = nativePullRequestDestination(
+      url,
+      context,
+      projects,
+      (environmentId) => serverConfigs.has(environmentId),
+      (environmentId) =>
+        serverConfigs.get(environmentId)?.environment.capabilities.pullRequestWebTargets === true,
     );
     if (!destination) {
       // An issue link from the same text opens the issue; anything else leaves for the browser.

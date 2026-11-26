@@ -530,13 +530,16 @@ function IssueDetailContent({
   ) => {
     const target = issueLinkedPullRequestTarget(reference, source);
     if (!onSelectPullRequest || !target) return null;
+    const supportsWebTargets =
+      serverConfig?.environment.capabilities.pullRequestWebTargets === true;
     const resolved = resolveChangeRequestLinkTarget({
       url: target.url,
       projects,
       configLoaded: () => serverConfig !== null,
       environmentId,
       projectId: reference.projectId,
-      lendHostProject: serverConfig?.environment.capabilities.pullRequestWebTargets === true,
+      lendHostProject: supportsWebTargets,
+      supportsWebTargets: () => supportsWebTargets,
     });
     return resolved === null ? null : { ...target, projectId: resolved.project.id };
   };

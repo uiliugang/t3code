@@ -234,34 +234,80 @@ describe("resolveChangeRequestLinkTarget", () => {
     ).toBeNull();
   });
 
-  it("lets the server verify an HTTP MR link opened from a GitLab SSH checkout", () => {
-    const base = project("ssh", local, "forge.test/acme/app");
-    const gitlab = {
-      ...base,
-      repositoryIdentity: {
-        ...base.repositoryIdentity,
-        provider: SourceControlProviderKind.make("gitlab"),
-        locator: { ...base.repositoryIdentity.locator, remoteUrl: "git@forge.test:acme/app.git" },
-      },
-    };
-    const url = "http://forge.test/acme/app/-/merge_requests/7";
-    expect(
-      resolveChangeRequestLinkTarget({
-        url,
-        projects: [gitlab],
-        configLoaded: loaded,
-        lendHostProject: true,
-      }),
-    ).toMatchObject({ project: gitlab, host: "forge.test", repository: "acme/app", number: 7 });
-    expect(
-      resolvePullRequestPreviewTarget({
-        environmentId: local,
-        projects: [gitlab],
-        pullRequestsEnabled: true,
-        url,
-      })?.input.target,
-    ).toEqual({ provider: "gitlab", origin: "http://forge.test" });
-  });
+  it.each(["http", "https"])(
+    "requires exact routing for a GitLab SSH checkout's %s link",
+    (protocol) => {
+      const base = project("ssh", local, "forge.test/acme/app");
+      const gitlab = {
+        ...base,
+        repositoryIdentity: {
+          ...base.repositoryIdentity,
+          provider: SourceControlProviderKind.make("gitlab"),
+          locator: { ...base.repositoryIdentity.locator, remoteUrl: "git@forge.test:acme/app.git" },
+        },
+      };
+      const url = `${protocol}://forge.test/acme/app/-/merge_requests/7`;
+      const explicit = {
+        ...gitlab,
+        id: ProjectId.make("explicit"),
+        repositoryIdentity: {
+          ...gitlab.repositoryIdentity,
+          locator: {
+            ...gitlab.repositoryIdentity.locator,
+            remoteUrl: `${protocol}://forge.test/acme/app.git`,
+          },
+        },
+      };
+      const navigation = { url, projects: [gitlab], configLoaded: loaded, lendHostProject: true };
+      const preview = { url, projects: [gitlab], environmentId: local, pullRequestsEnabled: true };
+      expect(resolveChangeRequestLinkTarget(navigation)).toBeNull();
+      expect(resolvePullRequestPreviewTarget(preview)).toBeNull();
+      expect(
+        resolveChangeRequestLinkTarget({
+          ...navigation,
+          supportsWebTargets: loaded,
+        }),
+      ).toMatchObject({ project: gitlab, host: "forge.test", repository: "acme/app", number: 7 });
+      expect(
+        resolvePullRequestPreviewTarget({
+          ...preview,
+          supportsWebTargets: true,
+        })?.input.target,
+      ).toEqual({ provider: "gitlab", origin: `${protocol}://forge.test` });
+      expect(
+        resolveChangeRequestLinkTarget({
+          ...navigation,
+          projects: [gitlab, explicit],
+          projectId: gitlab.id,
+          supportsWebTargets: loaded,
+        })?.project.id,
+      ).toBe(explicit.id);
+      expect(
+        resolvePullRequestPreviewTarget({
+          ...preview,
+          projects: [gitlab, explicit],
+          supportsWebTargets: true,
+        })?.input.projectId,
+      ).toBe(explicit.id);
+      const remoteProject = { ...explicit, environmentId: remote };
+      expect(
+        resolveChangeRequestLinkTarget({
+          ...navigation,
+          projects: [gitlab, remoteProject],
+          primaryEnvironmentId: local,
+          supportsWebTargets: loaded,
+        })?.project,
+      ).toBe(remoteProject);
+      expect(
+        resolveChangeRequestLinkTarget({
+          ...navigation,
+          projects: [gitlab, remoteProject],
+          environmentId: local,
+          supportsWebTargets: (environmentId) => environmentId === remote,
+        }),
+      ).toBeNull();
+    },
+  );
 
   it("opens a mirror's link in its own environment under a project on the link's host", () => {
     expect(

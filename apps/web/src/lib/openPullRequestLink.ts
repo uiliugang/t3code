@@ -52,6 +52,7 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
     environmentId,
     projects,
     pullRequestsEnabled: serverConfig !== null,
+    supportsWebTargets: serverConfig?.environment.capabilities.pullRequestWebTargets === true,
     url,
   });
 }
@@ -71,6 +72,8 @@ export function pullRequestLinkPanelTarget(input: {
     url: input.url,
     projects: readProjects(),
     configLoaded: (environmentId) => serverConfigs.has(environmentId),
+    supportsWebTargets: (environmentId) =>
+      serverConfigs.get(environmentId)?.environment.capabilities.pullRequestWebTargets === true,
     environmentId: input.environmentId,
     primaryEnvironmentId: input.primaryEnvironmentId,
     lendHostProject: input.lendHostProject,

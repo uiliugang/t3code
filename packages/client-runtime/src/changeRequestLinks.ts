@@ -40,16 +40,33 @@ interface ChangeRequestProject {
 type ProjectChangeRequestLink = ChangeRequestLink &
   Partial<Pick<ParsedChangeRequestUrl, "repositoryUrl">>;
 
-function matchesChangeRequestProtocol(
-  identity: RepositoryIdentity,
+type SupportsWebTargets = (environmentId: EnvironmentId) => boolean;
+
+function findChangeRequestProject<Project extends ChangeRequestProject>(
+  projects: ReadonlyArray<Project>,
   link: ProjectChangeRequestLink,
-): boolean {
-  if (identity.provider !== "gitlab" || link.repositoryUrl === undefined) return true;
-  const remote = parseUrl(identity.locator.remoteUrl);
-  return (
-    (remote?.protocol !== "http:" && remote?.protocol !== "https:") ||
-    parseUrl(link.repositoryUrl)?.origin === remote.origin
-  );
+  provider: string,
+  match: "isChangeRequestInRepository" | "canReadChangeRequestOnHost",
+  supportsWebTargets?: SupportsWebTargets,
+): Project | undefined {
+  const origin =
+    provider === "gitlab" && link.repositoryUrl !== undefined
+      ? parseUrl(link.repositoryUrl)?.origin
+      : undefined;
+  let inferred: Project | undefined;
+  for (const project of projects) {
+    const identity = project.repositoryIdentity;
+    if (identity?.provider !== provider) continue;
+    if (!sourceControlClients.get(identity.provider)[match](identity, link)) continue;
+    if (origin === undefined) return project;
+    const remote = parseUrl(identity.locator.remoteUrl);
+    if (remote?.protocol === "http:" || remote?.protocol === "https:") {
+      if (remote.origin === origin) return project;
+    } else if (supportsWebTargets?.(project.environmentId)) {
+      inferred ??= project;
+    }
+  }
+  return inferred;
 }
 
 /** The project whose own repository holds the change request, not just one on its host. */
@@ -57,15 +74,15 @@ export function findProjectForChangeRequest<Project extends ChangeRequestProject
   projects: ReadonlyArray<Project>,
   link: ProjectChangeRequestLink,
   provider: string,
+  supportsWebTargets?: SupportsWebTargets,
 ): Project | undefined {
-  return projects.find((project) => {
-    const identity = project.repositoryIdentity;
-    return (
-      identity?.provider === provider &&
-      matchesChangeRequestProtocol(identity, link) &&
-      sourceControlClients.get(identity.provider).isChangeRequestInRepository(identity, link)
-    );
-  });
+  return findChangeRequestProject(
+    projects,
+    link,
+    provider,
+    "isChangeRequestInRepository",
+    supportsWebTargets,
+  );
 }
 
 /** Prefers the project checked out from the link's repository, else lends any project on its host. */
@@ -73,17 +90,21 @@ export function findProjectOnChangeRequestHost<Project extends ChangeRequestProj
   projects: ReadonlyArray<Project>,
   link: ProjectChangeRequestLink,
   provider: string,
+  supportsWebTargets?: SupportsWebTargets,
 ): Project | undefined {
   return (
     findProjectForChangeRequest(projects, link, provider) ??
-    projects.find((project) => {
-      const identity = project.repositoryIdentity;
-      return (
-        identity?.provider === provider &&
-        matchesChangeRequestProtocol(identity, link) &&
-        sourceControlClients.get(identity.provider).canReadChangeRequestOnHost(identity, link)
-      );
-    })
+    findChangeRequestProject(projects, link, provider, "canReadChangeRequestOnHost") ??
+    (supportsWebTargets === undefined
+      ? undefined
+      : (findProjectForChangeRequest(projects, link, provider, supportsWebTargets) ??
+        findChangeRequestProject(
+          projects,
+          link,
+          provider,
+          "canReadChangeRequestOnHost",
+          supportsWebTargets,
+        )))
   );
 }
 
@@ -100,6 +121,7 @@ export function resolveChangeRequestLinkTarget<Project extends ChangeRequestProj
   projectId,
   primaryEnvironmentId,
   lendHostProject,
+  supportsWebTargets,
 }: {
   url: string;
   projects: ReadonlyArray<Project>;
@@ -110,6 +132,7 @@ export function resolveChangeRequestLinkTarget<Project extends ChangeRequestProj
   projectId?: ProjectId | undefined;
   primaryEnvironmentId?: EnvironmentId | null | undefined;
   lendHostProject: boolean;
+  supportsWebTargets?: SupportsWebTargets | undefined;
 }): {
   readonly project: Project;
   readonly repository: string;
@@ -130,11 +153,9 @@ export function resolveChangeRequestLinkTarget<Project extends ChangeRequestProj
       Number(right.environmentId === primaryEnvironmentId) -
         Number(left.environmentId === primaryEnvironmentId),
   );
-  const project =
-    findProjectForChangeRequest(candidates, link, definition.kind) ??
-    (lendHostProject
-      ? findProjectOnChangeRequestHost(candidates, link, definition.kind)
-      : undefined);
+  const project = lendHostProject
+    ? findProjectOnChangeRequestHost(candidates, link, definition.kind, supportsWebTargets)
+    : findProjectForChangeRequest(candidates, link, definition.kind, supportsWebTargets);
   if (project === undefined || !configLoaded(project.environmentId)) return null;
   return {
     project,
@@ -148,11 +169,13 @@ export function resolvePullRequestPreviewTarget({
   environmentId,
   projects,
   pullRequestsEnabled,
+  supportsWebTargets,
   url,
 }: {
   environmentId: EnvironmentId | null;
   projects: ReadonlyArray<ChangeRequestProject>;
   pullRequestsEnabled: boolean;
+  supportsWebTargets?: boolean;
   url: string;
 }): { environmentId: EnvironmentId; input: PullRequestRef } | null {
   if (!pullRequestsEnabled || environmentId === null) return null;
@@ -163,6 +186,7 @@ export function resolvePullRequestPreviewTarget({
     projects.filter((candidate) => candidate.environmentId === environmentId),
     link,
     definition.kind,
+    supportsWebTargets ? () => true : undefined,
   );
   if (project === undefined) return null;
   const host = link.authority ?? link.host;

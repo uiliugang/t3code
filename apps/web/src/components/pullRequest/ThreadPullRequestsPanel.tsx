@@ -558,6 +558,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
                         environmentProjects,
                         parsed.link,
                         parsed.definition.kind,
+                        () => capabilities.pullRequestWebTargets === true,
                       )?.id ?? null)
                     : null
                 }
