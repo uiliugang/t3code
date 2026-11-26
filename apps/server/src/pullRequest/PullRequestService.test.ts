@@ -4979,7 +4979,7 @@ it.effect("keeps continuation cursors separate for repositories with the same na
   }),
 );
 
-it.effect.each(["http", "ssh"] as const)(
+it.effect.each(["http", "ssh", "ssh-fallback"] as const)(
   "keeps the viewer and continuation cursor scoped to a GitLab origin with an %s checkout",
   (remoteTransport) =>
     Effect.gen(function* () {
@@ -4994,7 +4994,7 @@ it.effect.each(["http", "ssh"] as const)(
             provider: "gitlab",
             host: "forge.test",
             remoteUrl:
-              protocol === "http" && remoteTransport === "ssh"
+              protocol === "http" && remoteTransport !== "http"
                 ? "git@forge.test:acme/web.git"
                 : `${protocol}://forge.test/acme/web.git`,
           }),
@@ -5002,13 +5002,20 @@ it.effect.each(["http", "ssh"] as const)(
         providers: [
           fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
             configuredWebOrigin: ({ cwd }: { cwd: string }) =>
-              Effect.succeed(cwd === "/http" ? "http://forge.test" : null),
+              Effect.succeed(
+                cwd === "/http" && remoteTransport === "ssh" ? "http://forge.test" : null,
+              ),
             getViewer: ({ cwd }) => Effect.succeed(cwd.slice(1)),
             listChangeRequests: ({ cwd, viewer }) =>
               Effect.sync(() => {
                 reads.push({ cwd, viewer });
                 return {
-                  items: [changeRequest(7, "2026-07-02T00:00:00Z")],
+                  items: [
+                    {
+                      ...changeRequest(7, "2026-07-02T00:00:00Z"),
+                      url: `${cwd.slice(1)}://forge.test/acme/web/-/merge_requests/7`,
+                    },
+                  ],
                   truncated: true,
                   continues: true,
                 };
@@ -5025,7 +5032,19 @@ it.effect.each(["http", "ssh"] as const)(
         ],
       );
       assert.lengthOf(Object.keys(first.nextCursors), 2);
-      const key = Object.keys(first.nextCursors).find((key) => key.includes("https://forge.test"))!;
+      assert.deepStrictEqual(first.entries.find((entry) => entry.projectId === "http")?.target, {
+        provider: "gitlab",
+        origin: "http://forge.test",
+      });
+      if (remoteTransport === "ssh-fallback") {
+        assert.strictEqual(
+          first.entries.find((entry) => entry.projectId === "http")?.viewerLogin,
+          "http",
+        );
+      }
+      const key = Object.keys(first.nextCursors).find((key) =>
+        key.startsWith("gitlab https://forge.test acme/web"),
+      )!;
       reads.length = 0;
       yield* service.list({ state: "open", cursors: { [key]: first.nextCursors[key]! } });
       assert.deepStrictEqual(reads, [{ cwd: "/https", viewer: "https" }]);

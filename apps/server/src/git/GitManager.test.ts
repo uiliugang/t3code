@@ -2971,6 +2971,54 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
+  it.effect("refreshes a terminal GitLab MR when the SSH remote stays the same", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      const branch = "feature/reused";
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["checkout", "-b", branch]);
+      yield* runGit(repoDir, ["push", "-u", "origin", branch]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "origin",
+        "git@gitlab.example.test:acme/app.git",
+        remoteDir,
+      );
+      const merged = {
+        number: 7,
+        title: "Previous source",
+        url: "http://gitlab.example.test/acme/app/-/merge_requests/7",
+        baseRefName: "main",
+        headRefName: branch,
+        state: "merged" as const,
+      };
+      const open = {
+        ...merged,
+        title: "Current source",
+        url: "https://gitlab.example.test/acme/app/-/merge_requests/7",
+        state: "open" as const,
+      };
+      const { manager } = yield* makeManager({
+        providerScenario: {
+          kind: "gitlab",
+          headBranchProbe: null,
+          prListSequence: [[merged], [open]],
+        },
+      });
+      const input = { cwd: repoDir, branch };
+      expect(yield* manager.branchPullRequest(input, { confirmTerminal: false })).toMatchObject({
+        url: merged.url,
+        state: merged.state,
+      });
+      expect(yield* manager.branchPullRequest(input, { freshGitState: true })).toMatchObject({
+        url: open.url,
+        state: open.state,
+      });
+    }),
+  );
+
   it.effect.each([
     { remoteUrl: "git@gitlab.com:Group/Subgroup/Fork.git", setUpstream: true },
     { remoteUrl: "git@gitlab.com:Group/Subgroup/Fork.git", setUpstream: false },

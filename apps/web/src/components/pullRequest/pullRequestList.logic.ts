@@ -211,7 +211,9 @@ export function pullRequestEntryViewer(
   viewers: PullRequestViewers,
 ): string | null {
   return normalize(
-    viewers[pullRequestViewerKey(entry)] ?? (entry.target ? undefined : viewers[entry.host]),
+    entry.viewerLogin ??
+      viewers[pullRequestViewerKey(entry)] ??
+      (entry.target ? undefined : viewers[entry.host]),
   );
 }
 

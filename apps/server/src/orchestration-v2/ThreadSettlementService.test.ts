@@ -2380,6 +2380,77 @@ describe("ThreadSettlementServiceV2 worker", () => {
       }),
   );
 
+  it.effect("does not settle from a saved branch PR on a previous Web origin", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      const branchPullRequest = {
+        projectId: PROJECT_ID,
+        repository: "owner/repository",
+        number: 42,
+        url: "http://example.test/owner/repository/-/merge_requests/42",
+      };
+      const snapshot = makeSnapshot([
+        makeThread("saved-branch", {
+          branch: "feature",
+          branchPullRequest,
+          latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+        }),
+      ]);
+      const fixture = yield* makeHarness({
+        snapshot,
+        settings: { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: true },
+        branchPullRequest: () => Effect.succeed(null),
+        pullRequestSummary: (input) =>
+          Effect.succeed({
+            ...makePullRequestSummary({ ...input, state: "merged" }),
+            provider: SourceControlProviderKind.make("gitlab"),
+            url: branchPullRequest.url,
+            mergedAt: NOW,
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+        expect(yield* Ref.get(fixture.summaryCalls)).toHaveLength(1);
+        expect(yield* Ref.get(fixture.branchCalls)).toHaveLength(1);
+        expect(yield* Ref.get(fixture.commands)).toEqual([]);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
+  it.effect("refines a self-hosted forge before settling a branch merge request", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      const thread = makeThread("self-hosted", { branch: "feature" });
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([thread]),
+        settings: { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: true },
+        resolveRepositoryIdentity: (_cwd, options) =>
+          Effect.succeed({
+            canonicalKey: "example.test/owner/repository",
+            locator: {
+              source: "git-remote",
+              remoteName: "origin",
+              remoteUrl: "https://example.test/owner/repository.git",
+            },
+            provider: SourceControlProviderKind.make(options?.remoteOnly ? "unknown" : "gitlab"),
+          }),
+        branchPullRequest: () =>
+          Effect.succeed({
+            ...makeBranchPullRequest("merged"),
+            url: "https://example.test/owner/repository/-/merge_requests/42",
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+        expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
+          thread.id,
+        ]);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
   it.effect("a merge does not settle the same numbered request on a different Web origin", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.parse(NOW));

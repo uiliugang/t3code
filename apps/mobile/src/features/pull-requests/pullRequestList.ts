@@ -425,7 +425,7 @@ export function filterPullRequestList<
       return false;
     const source = entry.target ? `${entry.target.provider} ${entry.target.origin}` : entry.host;
     const viewerKey = entry.environmentId ? `${entry.environmentId} ${source}` : source;
-    const viewer = viewers[viewerKey];
+    const viewer = entry.viewerLogin ?? viewers[viewerKey];
     if (controls.involvement === "reviewing" && !entry.viewerReviewRequested) return false;
     if (
       controls.involvement === "authored" &&

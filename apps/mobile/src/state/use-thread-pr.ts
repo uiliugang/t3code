@@ -78,11 +78,12 @@ export function withKnownPullRequestSummary<
     readonly repository: string;
     readonly number: number;
     readonly navigationUrl?: string;
+    readonly target?: PullRequestRef["target"];
   },
 >(params: Params) {
   const environmentId = EnvironmentId.make(params.environmentId);
   const url = params.navigationUrl;
-  const target = changeRequestWebTarget(params, url);
+  const target = params.target ?? changeRequestWebTarget(params, url);
   const initialSummary =
     target === undefined || url === undefined
       ? undefined

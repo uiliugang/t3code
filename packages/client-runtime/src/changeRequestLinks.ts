@@ -5,10 +5,9 @@ import {
   type PullRequestRef,
   type RepositoryIdentity,
 } from "@t3tools/contracts";
-import {
-  remoteWebOrigin,
-  type ChangeRequestLink,
-  type ParsedChangeRequestUrl,
+import type {
+  ChangeRequestLink,
+  ParsedChangeRequestUrl,
 } from "@t3tools/source-control-core/shared/definition";
 import { parseUrl } from "@t3tools/shared/url";
 
@@ -46,8 +45,11 @@ function matchesChangeRequestProtocol(
   link: ProjectChangeRequestLink,
 ): boolean {
   if (identity.provider !== "gitlab" || link.repositoryUrl === undefined) return true;
-  const origin = remoteWebOrigin(link.authority ?? link.host, identity.locator.remoteUrl);
-  return parseUrl(link.repositoryUrl)?.origin === origin;
+  const remote = parseUrl(identity.locator.remoteUrl);
+  return (
+    (remote?.protocol !== "http:" && remote?.protocol !== "https:") ||
+    parseUrl(link.repositoryUrl)?.origin === remote.origin
+  );
 }
 
 /** The project whose own repository holds the change request, not just one on its host. */
@@ -163,12 +165,18 @@ export function resolvePullRequestPreviewTarget({
     definition.kind,
   );
   if (project === undefined) return null;
+  const host = link.authority ?? link.host;
+  const target = changeRequestWebTarget(
+    { host, repository: link.repository, number: link.number },
+    url,
+  );
+  if (target === undefined) return null;
   return {
     environmentId,
     input: {
       projectId: project.id,
-      host: link.authority ?? link.host,
-      target: { provider: definition.kind, origin: new URL(link.repositoryUrl).origin },
+      host,
+      target,
       repository:
         sourceControlClients.repositorySelector(project.repositoryIdentity) ?? link.repository,
       number: link.number,

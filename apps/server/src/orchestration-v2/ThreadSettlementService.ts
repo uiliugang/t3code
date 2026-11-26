@@ -440,12 +440,9 @@ export const make = Effect.gen(function* () {
     ) {
       const project = projects.get(thread.projectId);
       if (project === undefined) return false;
-      const identity =
-        project.repositoryIdentity ??
-        (yield* repositoryIdentities.resolve(project.workspaceRoot, {
-          refresh: true,
-          remoteOnly: true,
-        }));
+      const identity = yield* repositoryIdentities.resolve(project.workspaceRoot, {
+        refresh: true,
+      });
       return GitManager.branchPullRequestMatchesRepository(pullRequest, identity);
     });
     for (const [key, readAtMs] of quietOpenReadAt) {
@@ -713,7 +710,15 @@ export const make = Effect.gen(function* () {
           if (current?.state === "open" && (yield* verifiedBranchRepository(thread, current))) {
             return current;
           }
+          if (thread.linkedPullRequest == null) {
+            return current !== null &&
+              branchPullRequestKey(current) === threadPullRequestKeyOf(key) &&
+              (yield* verifiedBranchRepository(thread, current))
+              ? current
+              : undefined;
+          }
         }
+        if (summary.state !== "open" && thread.linkedPullRequest == null) return undefined;
         return terminal;
       }
       if (thread.branch === null) return null;

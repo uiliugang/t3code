@@ -1589,6 +1589,7 @@ export const make = Effect.gen(function* () {
         ? {}
         : { checksState: input.item.checksState }),
       ...(input.item.visibility === undefined ? {} : { visibility: input.item.visibility }),
+      ...(input.project.inferredOrigin ? { viewerLogin: input.viewer } : {}),
       viewerReviewRequested:
         input.item.author?.login.toLowerCase() !== viewer &&
         input.item.reviewRequestLogins.some((login) => login.toLowerCase() === viewer),

@@ -234,6 +234,35 @@ describe("resolveChangeRequestLinkTarget", () => {
     ).toBeNull();
   });
 
+  it("lets the server verify an HTTP MR link opened from a GitLab SSH checkout", () => {
+    const base = project("ssh", local, "forge.test/acme/app");
+    const gitlab = {
+      ...base,
+      repositoryIdentity: {
+        ...base.repositoryIdentity,
+        provider: SourceControlProviderKind.make("gitlab"),
+        locator: { ...base.repositoryIdentity.locator, remoteUrl: "git@forge.test:acme/app.git" },
+      },
+    };
+    const url = "http://forge.test/acme/app/-/merge_requests/7";
+    expect(
+      resolveChangeRequestLinkTarget({
+        url,
+        projects: [gitlab],
+        configLoaded: loaded,
+        lendHostProject: true,
+      }),
+    ).toMatchObject({ project: gitlab, host: "forge.test", repository: "acme/app", number: 7 });
+    expect(
+      resolvePullRequestPreviewTarget({
+        environmentId: local,
+        projects: [gitlab],
+        pullRequestsEnabled: true,
+        url,
+      })?.input.target,
+    ).toEqual({ provider: "gitlab", origin: "http://forge.test" });
+  });
+
   it("opens a mirror's link in its own environment under a project on the link's host", () => {
     expect(
       resolveChangeRequestLinkTarget({
@@ -312,6 +341,33 @@ describe("resolvePullRequestPreviewTarget", () => {
       },
     });
     expect(target("https://github.com/acme/other/pull/7")).toBeNull();
+  });
+
+  it("previews a Meituan Code browser link through its RPC origin", () => {
+    const meituan = {
+      ...project,
+      repositoryIdentity: {
+        canonicalKey: "git.sankuai.com/sa/web",
+        displayName: "sa/web",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "git@git.sankuai.com:sa/web.git",
+        },
+        provider: SourceControlProviderKind.make("meituan"),
+      } satisfies RepositoryIdentity,
+    };
+    expect(
+      resolvePullRequestPreviewTarget({
+        environmentId,
+        projects: [meituan],
+        pullRequestsEnabled: true,
+        url: "https://dev.sankuai.com/code/repo-detail/SA/Web/pr/22/overview?codeArea=mcode",
+      })?.input,
+    ).toMatchObject({
+      host: "git.sankuai.com",
+      target: { provider: "meituan", origin: "https://git.sankuai.com" },
+    });
   });
 });
 

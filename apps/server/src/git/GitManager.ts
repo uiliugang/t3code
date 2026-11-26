@@ -3736,7 +3736,17 @@ export const make = Effect.gen(function* () {
         detail: `Repository identity for ${branch} could not be verified.`,
       });
     }
-    if (!hasSameIdentity(cached.headContext, currentIdentity)) {
+    const confirmInferredGitLabOrigin =
+      options.freshGitState &&
+      !options.refresh &&
+      cached.latest !== null &&
+      cached.latest.state !== "open" &&
+      sourceControlDefinitions.parseChangeRequestUrl(cached.latest.url)?.definition.kind ===
+        "gitlab" &&
+      [currentIdentity.headRemoteUrlKey, currentIdentity.targetRemoteUrlKey].some(
+        (remoteKey) => remoteKey !== null && !remoteKey.includes("\0"),
+      );
+    if (confirmInferredGitLabOrigin || !hasSameIdentity(cached.headContext, currentIdentity)) {
       yield* Cache.invalidate(prLookupCache, cacheKey);
       cached = yield* withPrLookupGitReads(getPrLookup(cacheKey), cacheCwd);
       const refreshedIdentity = yield* Effect.provideService(
