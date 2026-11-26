@@ -224,6 +224,8 @@ it("selects multiple repositories in the new-thread command palette before start
       ),
     ).toBe(true);
   });
+  // The closing command palette can still restore focus after the draft has rendered.
+  await expect.element(page.getByTestId("command-palette")).not.toBeInTheDocument();
   const trigger = await vi.waitFor(() => {
     const element = document.querySelector<HTMLElement>("[data-draft-project-trigger]");
     if (!element?.textContent.includes("alpha + beta")) {
