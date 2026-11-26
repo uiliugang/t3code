@@ -541,6 +541,7 @@ export function RequirementBoard({
         repository: pullRequest.repository,
         number: pullRequest.number,
         ...(pullRequest.host ? { host: pullRequest.host } : {}),
+        ...(pullRequest.url ? { url: pullRequest.url } : {}),
       });
     else if (selectActiveRightPanelSurface(panels.byThreadKey, rightPanelRef))
       panels.close(rightPanelRef);
@@ -1579,6 +1580,7 @@ export function RequirementBoard({
                       repository: reference.repository,
                       number: reference.number,
                       ...(reference.host ? { host: reference.host } : {}),
+                      url: reference.url,
                       environmentId: panelEnvironmentId,
                     });
                     selectOpened();

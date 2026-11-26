@@ -371,9 +371,15 @@ export function PullRequestDetailPanel({
   const candidateHostUrl =
     sourceUrl ??
     projectChangeRequestUrl(repositoryIdentity, reference.repository, reference.number);
-  const candidateProtocol = candidateHostUrl ? parseUrl(candidateHostUrl)?.protocol : undefined;
+  const candidateUrl = candidateHostUrl ? parseUrl(candidateHostUrl) : null;
   const unavailableHostUrl =
-    candidateProtocol === "https:" || candidateProtocol === "http:" ? candidateHostUrl : null;
+    candidateUrl &&
+    (candidateUrl.protocol === "https:" || candidateUrl.protocol === "http:") &&
+    (sourceUrl !== undefined ||
+      requestedReference.host === undefined ||
+      candidateUrl.host === parseUrl(`${candidateUrl.protocol}//${requestedReference.host}`)?.host)
+      ? candidateHostUrl
+      : null;
   const pullRequestKey = pullRequestRefKey(reference);
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&

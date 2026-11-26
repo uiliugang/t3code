@@ -8,7 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type PullRequestRef } from "@t3tools/contracts";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -201,9 +201,11 @@ vi.mock(import("../issue/IssueDetailPanel"), () => ({
   IssueDetailPanel: ({
     environmentId,
     reference,
+    onSelectPullRequest,
   }: {
     environmentId: string;
     reference: { key: string; url?: string | undefined };
+    onSelectPullRequest?: (reference: PullRequestRef & { url: string }) => void;
   }) => (
     <div
       data-testid={`tracker-detail:${reference.key}`}
@@ -211,6 +213,20 @@ vi.mock(import("../issue/IssueDetailPanel"), () => ({
       data-environment={environmentId}
     >
       Tracker issue {reference.key}
+      <button
+        type="button"
+        onClick={() =>
+          onSelectPullRequest?.({
+            projectId: ProjectId.make("project"),
+            host: "forge.test:8443",
+            repository: "acme/app",
+            number: 8,
+            url: "https://forge.test:8443/acme/app/pull/8",
+          })
+        }
+      >
+        Linked tracker PR
+      </button>
     </div>
   ),
 }));
@@ -218,7 +234,12 @@ vi.mock(
   import("../pullRequest/PullRequestDetailPanel"),
   () =>
     ({
-      PullRequestDetailPanel: () => <div>Linked PR detail</div>,
+      PullRequestDetailPanel: ({ sourceUrl }: { sourceUrl?: string }) => (
+        <div>
+          Linked PR detail
+          {sourceUrl ? <a href={sourceUrl}>Original PR</a> : null}
+        </div>
+      ),
     }) as never,
 );
 vi.mock(
@@ -854,7 +875,10 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
   await act(() => history.forward());
   await screen.getByRole("link", { name: "Linked PR" }).click();
   await expect.element(screen.getByText("Linked PR detail")).toBeVisible();
-  expect(router.state.location.search).toMatchObject({ pullRequest: { number: 7 }, view: "list" });
+  expect(router.state.location.search).toMatchObject({
+    pullRequest: { number: 7, url: "https://github.com/acme/app/pull/7" },
+    view: "list",
+  });
   const listed = fixture.registry.get(issuesAtom);
   await act(() =>
     fixture.registry.set(
@@ -951,6 +975,63 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
   await expect
     .element(screen.getByTestId("tracker-detail:ENG-1"))
     .toHaveAttribute("data-issue-url", "https://linear.app/acme/issue/ENG-1");
+});
+
+it("preserves the original PR URL in requirements deep links and tracker issue tabs", async () => {
+  using fixture = setup();
+  const url = "https://forge.test:8443/acme/app/pull/7";
+  const search = new URLSearchParams({
+    detailEnvironmentId: "local",
+    pullRequest: JSON.stringify({
+      projectId: "project",
+      host: "forge.test:8443",
+      repository: "acme/app",
+      number: 7,
+      url,
+    }),
+  });
+  const root = createRootRoute();
+  const chat = createRoute({ getParentRoute: () => root, id: "_chat" });
+  const requirements = createRoute({
+    getParentRoute: () => chat,
+    path: "requirements",
+    validateSearch: requirementsRoute.options.validateSearch,
+    component: RequirementsPage,
+  });
+  const router = createRouter({
+    routeTree: root.addChildren([chat.addChildren([requirements])]),
+    history: createMemoryHistory({ initialEntries: [`/requirements?${search}`] }),
+  });
+  await using screen = await render(
+    <RegistryContext.Provider value={fixture.registry}>
+      <RouterProvider router={router} />
+    </RegistryContext.Provider>,
+    { router: false },
+  );
+
+  await expect
+    .element(screen.getByRole("link", { name: "Original PR" }))
+    .toHaveAttribute("href", url);
+
+  await act(() =>
+    router.navigate({
+      to: "/requirements",
+      search: {
+        detailEnvironmentId: EnvironmentId.make("local"),
+        issueProjectId: ProjectId.make("project"),
+        issueHost: "forge.test:8443",
+        issueTracker: "github",
+        issueScope: "acme/app",
+        issueId: "42",
+      },
+    }),
+  );
+  await screen.getByRole("button", { name: "Linked tracker PR" }).click();
+  const linkedPrUrl = "https://forge.test:8443/acme/app/pull/8";
+  await expect
+    .element(screen.getByRole("link", { name: "Original PR" }))
+    .toHaveAttribute("href", linkedPrUrl);
+  expect(router.state.location.search).toMatchObject({ pullRequest: { url: linkedPrUrl } });
 });
 
 it.each([

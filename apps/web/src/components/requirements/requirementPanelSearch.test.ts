@@ -104,3 +104,19 @@ it("keeps standalone tracker selections distinct from requirement tracker select
     }),
   ).toMatchObject({ issueProvider: "github", issueTracker: undefined, issueId: "42" });
 });
+
+it("serializes the original pull request URL with its requirements selection", () => {
+  const url = "https://forge.test:8443/acme/app/pull/7";
+  expect(
+    requirementSelection({
+      id: "pull-request:7",
+      kind: "pull-request",
+      environmentId: "env",
+      projectId: "project",
+      host: "forge.test:8443",
+      repository: "acme/app",
+      number: 7,
+      url,
+    }),
+  ).toMatchObject({ pullRequest: { host: "forge.test:8443", url } });
+});

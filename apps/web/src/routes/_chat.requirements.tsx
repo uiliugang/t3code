@@ -32,6 +32,7 @@ const Search = Schema.Struct({
       host,
       repository,
       number,
+      url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_048))),
     })),
   ),
   archived: Schema.optionalKey(Schema.Boolean),
