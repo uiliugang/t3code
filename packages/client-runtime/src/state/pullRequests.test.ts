@@ -16,6 +16,7 @@ import {
   type PullRequestListEntry,
   type PullRequestListInput,
   type PullRequestRef,
+  type PullRequestRoutingResult,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
@@ -2333,7 +2334,7 @@ it.effect("isolates legacy online marks by viewer without sending a repository a
 );
 
 it.effect(
-  "restores the verified GitHub account and its viewed marks on an offline cold start",
+  "restores verified marks offline until the server stops confirming the repository account",
   () =>
     Effect.gen(function* () {
       const host = "github.com";
@@ -2360,29 +2361,41 @@ it.effect(
         ...reference.input,
         legacyViewerId: identity.accountId,
       });
-      const repositoryIdentity = { ...identity, repository: reference.input.repository };
+      let currentIdentity: PullRequestRoutingResult = {
+        ...identity,
+        repository: reference.input.repository,
+      };
       const viewed: PullRequestFilesViewedResult = {
         files: [{ path: "main.ts", state: "viewed" }],
         truncated: false,
         target: reference.input.target,
       };
       const client = {
-        [WS_METHODS.pullRequestsRouting]: () => Effect.succeed(repositoryIdentity),
+        [WS_METHODS.pullRequestsRouting]: () => Effect.sync(() => currentIdentity),
         [WS_METHODS.pullRequestsFilesViewed]: (input: PullRequestRef) =>
           Effect.sync(() => {
-            expect(input.expectedAccountId).toBe(identity.accountId);
+            expect(input.expectedAccountId).toBe(
+              currentIdentity.repository === undefined ? undefined : currentIdentity.accountId,
+            );
             return viewed;
           }),
         [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
       } as unknown as WsRpcProtocolClient;
       const saved = new Map<string, string>();
       const bothSaved = yield* Latch.make();
+      const legacySaved = yield* Latch.make();
+      const identityKey = queryPersistenceKey(
+        "environment-data:pull-requests:routing-identity",
+        reference.input,
+      );
       const queryStore: typeof EnvironmentQueryStore.Service = {
         load: (_environmentId, key) => Effect.sync(() => Option.fromUndefinedOr(saved.get(key))),
         save: (_environmentId, key, payload) =>
           Effect.gen(function* () {
             saved.set(key, payload);
             if (saved.size === 2) yield* bothSaved.open;
+            if (key === identityKey && currentIdentity.repository === undefined)
+              yield* legacySaved.open;
           }),
       };
       const reopen = Effect.fnUntraced(function* (offline: boolean) {
@@ -2417,6 +2430,13 @@ it.effect(
       expect(yield* reopen(false)).toEqual(viewed);
       yield* bothSaved.await;
       expect(yield* reopen(true)).toEqual(viewed);
+      currentIdentity = { ...identity, accountId: "456" };
+      expect((yield* reopen(false)).files).toEqual(viewed.files);
+      yield* legacySaved.await;
+      expect(yield* Effect.result(reopen(true))).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "EnvironmentRpcUnavailableError" },
+      });
     }),
 );
 

@@ -334,12 +334,13 @@ const make = Effect.gen(function* () {
     branch: string,
     baseBranch: string | undefined,
     repositories: ReadonlyArray<string>,
+    registrationRepositories = repositories,
   ) =>
     layoutLocks.withLock(
       taskFolder.projectRoot,
       Effect.gen(function* () {
         const commonDirs = yield* Effect.forEach(
-          [taskFolder.projectRoot, ...repositories],
+          [taskFolder.projectRoot, ...registrationRepositories],
           (repository) =>
             commonGitDir(repository).pipe(
               Effect.flatMap((directory) =>
@@ -1067,6 +1068,7 @@ const make = Effect.gen(function* () {
               branch,
               input.baseBranch,
               taskPlan.repositories.map((repository) => repository.path),
+              taskPlan.trackedRepositories,
             ),
           );
           // Whatever the command checked out where a repository belongs is the thread's. Adopted

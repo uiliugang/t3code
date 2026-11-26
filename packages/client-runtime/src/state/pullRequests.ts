@@ -1241,10 +1241,10 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       tag: WS_METHODS.pullRequestsRouting,
       persistence: {
         ...routingIdentityPersistence,
-        save: (environmentId, key, value) =>
-          value.repository === undefined
-            ? Effect.void
-            : routingIdentityPersistence.save(environmentId, key, value),
+        load: (environmentId, key) =>
+          routingIdentityPersistence
+            .load(environmentId, key)
+            .pipe(Effect.map(Option.filter((identity) => identity.repository !== undefined))),
       },
       staleTimeMs: 0,
       refreshIntervalMs: 60_000,
