@@ -67,8 +67,14 @@ function linkAuthority(url: string): string | null {
   }
 }
 
+export function issueReferenceHost(tracker: string, host: string | undefined): string | undefined {
+  return tracker === "github" && host !== undefined
+    ? (normalizeGithubIssueHost(host) ?? host)
+    : host;
+}
+
 export function canOpenLinkedIssue(
-  link: ThreadIssueLink,
+  link: Pick<ThreadIssueLink, "tracker" | "url"> & { readonly host?: string },
   capabilities:
     | { readonly issues?: boolean; readonly githubIssueSourcePorts?: boolean }
     | undefined,
@@ -81,7 +87,7 @@ export function canOpenLinkedIssue(
     return (
       url.protocol === "https:" &&
       host !== undefined &&
-      normalizeGithubIssueHost(link.host) === host &&
+      normalizeGithubIssueHost(link.host ?? url.host) === host &&
       (capabilities.githubIssueSourcePorts === true || !host.includes(":"))
     );
   } catch {

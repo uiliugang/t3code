@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { isMeituanServiceEnabled } from "@t3tools/contracts";
+import { dedupeIssueSources, isMeituanServiceEnabled, issueSourceKey } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   Issue,
@@ -133,7 +133,7 @@ export function IssueCreateDialog({
 }) {
   const t = useUiTranslation();
   const [projectId, setProjectId] = useState(initialProjectId ?? projects[0]?.id);
-  const [selectedScope, setSelectedScope] = useState("");
+  const [selectedSourceKey, setSelectedSourceKey] = useState("");
   const sourceQuery = useEnvironmentQuery(
     projectId
       ? sourceControlEnvironment.issueSources({ environmentId, input: { projectIds: [projectId] } })
@@ -155,9 +155,13 @@ export function IssueCreateDialog({
     availableProviders.length === 1
       ? availableProviders[0]!
       : (selectedProvider ?? initialProvider);
-  const scopes =
-    sources.filter((source) => source.provider === provider).map((source) => source.scope) ?? [];
-  const scope = scopes.includes(selectedScope) ? selectedScope : scopes[0];
+  const destinations = dedupeIssueSources(sources.filter((source) => source.provider === provider));
+  const destination = selectedSourceKey
+    ? destinations.find((source) => issueSourceKey(source) === selectedSourceKey)
+    : destinations.length === 1
+      ? destinations[0]
+      : undefined;
+  const destinationLabel = provider === "github" ? t("GitHub repository") : t("MEP space ID");
   const [type, setType] = useState<(typeof IssueMetadataInput.Type)["type"]>("REQUIREMENT");
   const [subtype, setSubtype] = useState("");
   const [title, setTitle] = useState("");
@@ -178,23 +182,23 @@ export function IssueCreateDialog({
   );
   const command = useAtomCommand(sourceControlEnvironment.createIssue, { reportFailure: false });
   const metadata = useEnvironmentQuery(
-    projectId && scope && platformSelected
+    projectId && destination && platformSelected
       ? sourceControlEnvironment.issueMetadata({
           environmentId,
-          input: { projectId, provider, type, subtype, query: personQuery, scope },
+          input: { projectId, ...destination, type, subtype, query: personQuery },
         })
       : null,
   );
   const people = useEnvironmentQuery(
-    projectId && scope && platformSelected
+    projectId && destination && platformSelected
       ? sourceControlEnvironment.issuePeople({
           environmentId,
-          input: { projectId, provider, query: personQuery, scope },
+          input: { projectId, ...destination, query: personQuery },
         })
       : null,
   );
   const submit = async () => {
-    if (!projectId || !scope || !title.trim() || generating || !platformSelected) return;
+    if (!projectId || !destination || !title.trim() || generating || !platformSelected) return;
     setBusy(true);
     setError(null);
     setFieldErrors([]);
@@ -202,8 +206,7 @@ export function IssueCreateDialog({
       environmentId,
       input: {
         projectId,
-        scope,
-        provider,
+        ...destination,
         type,
         subtype,
         title,
@@ -300,7 +303,7 @@ export function IssueCreateDialog({
                     onChange={(value) => {
                       setProjectId(value as ProjectId);
                       setProvider(null);
-                      setSelectedScope("");
+                      setSelectedSourceKey("");
                       setAssignee("");
                       setPersonSearch("");
                       setPersonQuery("");
@@ -328,7 +331,7 @@ export function IssueCreateDialog({
                         setAssignee("");
                         setPersonSearch("");
                         setPersonQuery("");
-                        setSelectedScope("");
+                        setSelectedSourceKey("");
                         setSubtype("");
                         setFields({});
                       }}
@@ -336,15 +339,21 @@ export function IssueCreateDialog({
                     />
                   </div>
                 ) : null}
-                {scopes.length > 1 ? (
+                {destinations.length > 1 || (destinations.length === 1 && !destination) ? (
                   <div className="space-y-1.5">
-                    <Label>{t("MEP space ID")}</Label>
+                    <Label>{destinationLabel}</Label>
                     <IssueSelect
-                      label={t("MEP space ID")}
-                      value={scope ?? ""}
-                      options={scopes.map((value) => ({ value, label: value }))}
+                      label={destinationLabel}
+                      value={destination ? issueSourceKey(destination) : ""}
+                      options={destinations.map((source) => ({
+                        value: issueSourceKey(source),
+                        label:
+                          source.provider === "github"
+                            ? `${source.host}/${source.scope}`
+                            : source.scope,
+                      }))}
                       onChange={(value) => {
-                        setSelectedScope(value);
+                        setSelectedSourceKey(value);
                         setAssignee("");
                         setPersonSearch("");
                         setPersonQuery("");
@@ -534,7 +543,7 @@ export function IssueCreateDialog({
                 uncertain ||
                 !title.trim() ||
                 !projectId ||
-                !scope ||
+                !destination ||
                 metadata.isPending ||
                 Boolean(metadata.error) ||
                 metadata.data?.fields.some(

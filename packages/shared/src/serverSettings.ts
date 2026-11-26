@@ -24,6 +24,7 @@ import {
   type ListTextGeneratorModelsResult,
   ServerSettings,
   type ServerSettingsPatch,
+  sourceControlTokenHost,
   withIdleCompaction,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -354,6 +355,20 @@ const byHost = (tokens: unknown) =>
     ]),
   );
 
+function mergeSourceControlTokens(kind: string, stored: unknown, update: unknown) {
+  const saved = byHost(stored);
+  const patch = byHost(update);
+  if (kind === "github") {
+    for (const key of Object.keys(saved)) {
+      const canonical = sourceControlTokenHost(kind, key);
+      if (key !== canonical && patch[canonical] === "" && !Object.hasOwn(patch, key)) {
+        saved[key] = "";
+      }
+    }
+  }
+  return { ...saved, ...patch };
+}
+
 const knownProjectOverrideKeys = new Set(Object.keys(ProjectSettingsOverrides.fields));
 
 function pickOverrideKeys(entry: ProjectSettingsOverrides | undefined, known: boolean) {
@@ -680,10 +695,7 @@ export function applyServerSettingsPatch(
                     // token. An empty map still clears them all.
                     ...(Predicate.isObject(fields.tokens) && Object.keys(fields.tokens).length > 0
                       ? {
-                          tokens: {
-                            ...byHost(saved?.tokens),
-                            ...byHost(fields.tokens),
-                          },
+                          tokens: mergeSourceControlTokens(kind, saved?.tokens, fields.tokens),
                         }
                       : {}),
                   },

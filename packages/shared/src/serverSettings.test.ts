@@ -198,6 +198,22 @@ describe("serverSettings helpers", () => {
     expect(recased.sourceControlHosts.github?.tokens).toEqual({ "github.com": "ghp_new" });
   });
 
+  it("clears a GitHub token alias absent from the client snapshot without changing other ports", () => {
+    const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      sourceControlHosts: {
+        github: { tokens: { "code.example:443": "legacy", "code.example:8443": "newer" } },
+      },
+    });
+    const removed = applyServerSettingsPatch(saved, {
+      sourceControlHosts: { github: { tokens: { "code.example": "" } } },
+    });
+    expect(removed.sourceControlHosts.github?.tokens).toEqual({
+      "code.example": "",
+      "code.example:443": "",
+      "code.example:8443": "newer",
+    });
+  });
+
   it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
     const project = { id: ProjectId.make("project-actions"), scripts: [] };
     const action = {

@@ -121,7 +121,15 @@ const referencedTokenSettings = decodeSettings({
 it.effect.each([
   {
     name: "a readable",
+    host: "github.com",
     token: "resolved-token",
+    status: "authenticated",
+    detail: "the token saved in Settings",
+  },
+  {
+    name: "a legacy default-port",
+    host: "github.com:443",
+    token: "legacy-token",
     status: "authenticated",
     detail: "the token saved in Settings",
   },
@@ -170,7 +178,7 @@ it.effect.each([
                     Effect.succeed(
                       decodeSettings({
                         sourceControlHosts: {
-                          github: { tokens: { "github.com": scenario.token } },
+                          github: { tokens: { [scenario.host ?? "github.com"]: scenario.token } },
                         },
                       }),
                     ),

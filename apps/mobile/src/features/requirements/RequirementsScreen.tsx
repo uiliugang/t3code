@@ -8,7 +8,7 @@ import {
 import { SavedViewsMenu } from "../layout/workspace/SavedViewsMenu";
 import { requirementLabelsAtom } from "../issues/issueListFilters";
 import { Chip } from "../../components/ui/Chip";
-import { isMeituanServiceEnabled } from "@t3tools/contracts";
+import { dedupeIssueSources, isMeituanServiceEnabled, issueSourceKey } from "@t3tools/contracts";
 import {
   trackerCreateTargetKey,
   trackerCreateTargetLabel,
@@ -1540,6 +1540,7 @@ export function IssueCreateScreen({ route }: StaticScreenProps<Target>) {
           projectId={route.params.projectId}
           provider={route.params.provider}
           initialScope={route.params.scope}
+          initialHost={route.params.host}
           allowProjectChange
           onCreated={(target, id) =>
             navigation.dispatch(StackActions.replace("IssueDetail", { ...target, id }))
@@ -1555,6 +1556,7 @@ function IssueCreateFormBody({
   projectId: initialProjectId,
   provider: initialProvider,
   initialScope,
+  initialHost,
   allowProjectChange,
   onBusyChange,
   onCreated,
@@ -1563,12 +1565,13 @@ function IssueCreateFormBody({
   projectId: ProjectId;
   provider: IssueProvider;
   initialScope?: string;
+  initialHost?: string;
   allowProjectChange: boolean;
   onBusyChange?: (busy: boolean) => void;
   onCreated: (target: Target, id: string) => void;
 }) {
   const t = useUiTranslation();
-  const [selectedScope, setSelectedScope] = useState(initialScope ?? "");
+  const [selectedSourceKey, setSelectedSourceKey] = useState<string | null>(null);
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
@@ -1598,12 +1601,25 @@ function IssueCreateFormBody({
     : availableProviders.length === 1
       ? availableProviders[0]!
       : (selectedProvider ?? initialProvider);
-  const scopes =
-    availableSources
-      .filter((source) => source.provider === provider)
-      .map((source) => source.scope) ?? [];
-  const scope = scopes.includes(selectedScope) ? selectedScope : scopes[0];
-  const target: Target = { environmentId, projectId, provider, ...(scope ? { scope } : {}) };
+  const destinations = dedupeIssueSources(
+    availableSources.filter((source) => source.provider === provider),
+  );
+  const sourceKey =
+    selectedSourceKey ??
+    (initialHost && initialScope
+      ? issueSourceKey({ provider: initialProvider, host: initialHost, scope: initialScope })
+      : "");
+  const matchingDestinations =
+    selectedSourceKey === null && !initialHost && initialScope
+      ? destinations.filter((source) => source.scope === initialScope)
+      : destinations;
+  const destination = sourceKey
+    ? destinations.find((source) => issueSourceKey(source) === sourceKey)
+    : matchingDestinations.length === 1
+      ? matchingDestinations[0]
+      : undefined;
+  const target: Target = { environmentId, projectId, provider, ...destination };
+  const destinationLabel = provider === "github" ? t("GitHub repository") : t("MEP space ID");
   const [type, setType] = useState<(typeof IssueMetadataInput.Type)["type"]>("REQUIREMENT");
   const [subtype, setSubtype] = useState("");
   const [title, setTitle] = useState("");
@@ -1620,7 +1636,7 @@ function IssueCreateFormBody({
   );
   const command = useAtomCommand(sourceControlEnvironment.createIssue, { reportFailure: false });
   const metadata = useEnvironmentQuery(
-    scope && platformSelected
+    destination && platformSelected
       ? sourceControlEnvironment.issueMetadata({
           environmentId: target.environmentId,
           input: { ...target, type, subtype, query: personQuery },
@@ -1628,7 +1644,7 @@ function IssueCreateFormBody({
       : null,
   );
   const people = useEnvironmentQuery(
-    scope && platformSelected
+    destination && platformSelected
       ? sourceControlEnvironment.issuePeople({
           environmentId: target.environmentId,
           input: { ...target, query: personQuery },
@@ -1636,7 +1652,7 @@ function IssueCreateFormBody({
       : null,
   );
   const submit = async () => {
-    if (!scope || generating || !platformSelected) return;
+    if (!destination || generating || !platformSelected) return;
     setBusy(true);
     onBusyChange?.(true);
     setError(null);
@@ -1686,7 +1702,7 @@ function IssueCreateFormBody({
             setProvider(null);
             setAssignee("");
             setPersonQuery("");
-            setSelectedScope("");
+            setSelectedSourceKey("");
             setSubtype("");
             setFields({});
           }}
@@ -1705,7 +1721,7 @@ function IssueCreateFormBody({
             setProvider(value === "github" ? "github" : "meituan");
             setAssignee("");
             setPersonQuery("");
-            setSelectedScope("");
+            setSelectedSourceKey("");
             setSubtype("");
             setFields({});
           }}
@@ -1736,13 +1752,16 @@ function IssueCreateFormBody({
           );
         }}
       />
-      {scopes.length > 1 ? (
+      {destinations.length > 1 || (destinations.length === 1 && !destination) ? (
         <IssuePicker
-          label={t("MEP space ID")}
-          value={scope ?? ""}
-          options={scopes.map((value) => ({ value, label: value }))}
+          label={destinationLabel}
+          value={destination ? issueSourceKey(destination) : ""}
+          options={destinations.map((source) => ({
+            value: issueSourceKey(source),
+            label: source.provider === "github" ? `${source.host}/${source.scope}` : source.scope,
+          }))}
           onChange={(value) => {
-            setSelectedScope(value);
+            setSelectedSourceKey(value);
             setAssignee("");
             setPersonQuery("");
             setSubtype("");

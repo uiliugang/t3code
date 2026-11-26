@@ -5,7 +5,7 @@ import {
   appSignInTargetForRemote,
   configuredSourceControlTokenHosts,
   sourceControlClients,
-  withSourceControlHostToken,
+  sourceControlHostTokenPatch,
 } from "./sourceControlClients.ts";
 
 it("replaces or clears a GitHub credential across its HTTPS aliases only", () => {
@@ -15,15 +15,13 @@ it("replaces or clears a GitHub credential across its HTTPS aliases only", () =>
     "code.example",
     "code.example:8443",
   ]);
-  const updated = withSourceControlHostToken("github", tokens, "Code.Example:443", "replacement");
+  const updated = sourceControlHostTokenPatch("github", tokens, "Code.Example:443", "replacement");
   expect(updated).toEqual({
     "code.example": "replacement",
     "code.example:443": "",
-    "code.example:8443": "other",
   });
-  const removed = withSourceControlHostToken("github", tokens, "code.example", "");
-  expect(sourceControlTokenForHost("github", removed, "code.example:443")).toBeUndefined();
-  expect(sourceControlTokenForHost("github", removed, "code.example:8443")).toBe("other");
+  const removed = sourceControlHostTokenPatch("github", tokens, "code.example", "");
+  expect(removed).toEqual({ "code.example": "", "code.example:443": "" });
 });
 
 const parse = (url: string) => {

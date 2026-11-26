@@ -1,5 +1,6 @@
 import { isHostPath, workspaceRelativeFilePath } from "@t3tools/shared/path";
-import { useProjects, useQuietThreadShell } from "../../state/entities";
+import { useProjects, useQuietThreadShell, useServerConfigs } from "../../state/entities";
+import { canOpenLinkedIssue } from "@t3tools/client-runtime/issue-links";
 import { joinHostPath } from "../files/filePath";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useGT } from "gt-react";
@@ -111,6 +112,7 @@ export function RightPanelSurfaceContent(props: {
   const { surface, threadRef, visible, onCloseSurface } = props;
   const workspace = useQuietThreadShell(threadRef)?.workspace;
   const projects = useProjects();
+  const configs = useServerConfigs();
   const t = useUiTranslation();
   const gt = useGT();
   if (surface === null) return null;
@@ -214,7 +216,7 @@ export function RightPanelSurfaceContent(props: {
         />
       );
     }
-    case "issue":
+    case "issue": {
       if (!props.pullRequest.capabilityKnown) return <PullRequestDetailGhost />;
       if (!props.issuesSupported) {
         return (
@@ -224,15 +226,36 @@ export function RightPanelSurfaceContent(props: {
           />
         );
       }
+      const environmentId =
+        (surface.environmentId as EnvironmentId | undefined) ?? props.environmentId;
+      const tracker = surface.tracker as IssueTrackerKind;
+      if (tracker === "github" && surface.url) {
+        const capabilities = configs.get(environmentId)?.environment.capabilities;
+        if (
+          !canOpenLinkedIssue(
+            { tracker, url: surface.url, ...(surface.host ? { host: surface.host } : {}) },
+            capabilities,
+          )
+        ) {
+          const external = /^https?:\/\//i.test(surface.url) && URL.canParse(surface.url);
+          return (
+            <PullRequestsUnavailableState
+              title={gt("Issues unavailable")}
+              error={gt("Update this environment's T3 Code server to browse issues.")}
+              {...(external
+                ? { host: { url: surface.url, openLabel: gt("Open in browser") } }
+                : {})}
+            />
+          );
+        }
+      }
       return (
         <IssueDetailPanel
-          key={`${surface.environmentId ?? props.environmentId}:${surface.id}`}
-          environmentId={
-            (surface.environmentId as EnvironmentId | undefined) ?? props.environmentId
-          }
+          key={`${environmentId}:${surface.id}`}
+          environmentId={environmentId}
           reference={{
             projectId: surface.projectId as ProjectId,
-            tracker: surface.tracker as IssueTrackerKind,
+            tracker,
             ...(surface.host ? { host: surface.host } : {}),
             scope: surface.scope,
             key: surface.key,
@@ -261,6 +284,7 @@ export function RightPanelSurfaceContent(props: {
           }}
         />
       );
+    }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
     case "work-item": {

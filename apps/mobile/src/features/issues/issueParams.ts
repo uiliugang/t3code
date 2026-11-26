@@ -1,4 +1,5 @@
 import type { NavigationState } from "@react-navigation/native";
+import { issueReferenceHost } from "@t3tools/client-runtime/issue-links";
 import {
   EnvironmentId,
   IssueTrackerKind,
@@ -23,10 +24,11 @@ export type IssueParams = {
 
 export function issueTarget(params: IssueParams) {
   const url = params.url ?? params.initialSummary?.url;
+  const host = issueReferenceHost(params.tracker, params.host);
   const input: IssueRef = {
     projectId: ProjectId.make(params.projectId),
     tracker: IssueTrackerKind.make(params.tracker),
-    ...(params.host ? { host: params.host } : {}),
+    ...(host ? { host } : {}),
     scope: params.scope,
     key: params.issueKey,
     ...(url ? { url } : {}),

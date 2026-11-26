@@ -60,6 +60,9 @@ it("refreshes the same issue detail regardless of how a surface orders the refer
   const { projectId, tracker, host, scope, key } = entry({ key: "23" });
   const environmentId = EnvironmentId.make("local");
   const opened = issues.detail({ environmentId, input: { projectId, host, scope, key, tracker } });
+  const legacy = { projectId, tracker, host: "GitHub.com:443", scope, key };
+  expect(normalizeIssueDetailInput(legacy)).toEqual({ ...legacy, host: "github.com" });
+  expect(issues.detail({ environmentId, input: legacy })).toBe(opened);
   expect(
     opened === issues.detail({ environmentId, input: { projectId, tracker, host, scope, key } }),
   ).toBe(true);

@@ -32,6 +32,7 @@ import {
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
+import { issueReferenceHost } from "../issueLinks.ts";
 import { request } from "../rpc/client.ts";
 
 /** One row's identity across list pages and detail reads; hosts compare case-insensitively. */
@@ -61,6 +62,7 @@ export function normalizeIssueDetailInput({
   key,
   url,
 }: IssueRef): IssueRef {
+  const referenceHost = issueReferenceHost(tracker, host);
   let canonicalLinearUrl: string | null = null;
   if (tracker === "linear" && url !== undefined) {
     try {
@@ -75,7 +77,7 @@ export function normalizeIssueDetailInput({
   return {
     projectId,
     tracker,
-    ...(host === undefined ? {} : { host }),
+    ...(referenceHost === undefined ? {} : { host: referenceHost }),
     scope,
     key,
     ...(canonicalLinearUrl === null ? {} : { url: canonicalLinearUrl }),
@@ -320,7 +322,7 @@ export function createIssueEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.projectId, input.scope, input.key, input.cursor]),
+          JSON.stringify([environmentId, normalizeIssueDetailInput(input), input.cursor]),
       },
     }),
     /** Read when the composer opens: what a scope offers a new issue changes with a commit. */

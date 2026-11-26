@@ -15,6 +15,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
   SourceControlProviderError,
+  sourceControlTokenForHost,
   TrimmedNonEmptyString,
   type ChangeRequest,
   type SourceControlProviderDiscoveryItem,
@@ -254,7 +255,10 @@ export const makeDiscovery = Effect.gen(function* () {
         spec: { ...discovery, parseAuth: (input) => parseGitHubAuth(input, settings) },
       });
       const saved = yield* Effect.result(
-        requireSettingsSecretLiteral(settings.tokens["github.com"], current?.secretProviders ?? {}),
+        requireSettingsSecretLiteral(
+          sourceControlTokenForHost("github", settings.tokens, "github.com"),
+          current?.secretProviders ?? {},
+        ),
       );
       if (Result.isFailure(saved) && settings.hosts["github.com"]?.enabled !== false) {
         return offerAppSignIn({

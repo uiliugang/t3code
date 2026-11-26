@@ -6,7 +6,7 @@ import {
   readHostCredentialSettings,
   configuredSourceControlTokenHosts,
   sourceControlClients,
-  withSourceControlHostToken,
+  sourceControlHostTokenPatch,
   type SourceControlDefinition,
   type SourceControlHostCredentials,
 } from "@t3tools/client-runtime/source-control-clients";
@@ -241,12 +241,11 @@ export function SourceControlTokenForm(props: {
     setFailure(null);
     const result = await updateSettings({
       environmentId,
-      // Send the whole map; other tokens' redaction markers preserve their values.
       input: {
         patch: {
           sourceControlHosts: {
             [definition.kind]: {
-              tokens: withSourceControlHostToken(definition.kind, tokens, target, token),
+              tokens: sourceControlHostTokenPatch(definition.kind, tokens, target, token),
             },
           },
         },

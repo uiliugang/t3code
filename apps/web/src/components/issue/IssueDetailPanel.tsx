@@ -1,5 +1,6 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { issueEventSentence, issueWriteAccess } from "@t3tools/client-runtime/issue-presentation";
+import { issueReferenceHost } from "@t3tools/client-runtime/issue-links";
 import { createIssueCommentPager } from "@t3tools/client-runtime/state/issues";
 import {
   issueAssigneeHeld,
@@ -409,7 +410,7 @@ function IssueEventText({
 
 export function IssueDetailPanel({
   environmentId,
-  reference,
+  reference: rawReference,
   threadRef = null,
   listEntry = null,
   onSelectPullRequest,
@@ -429,6 +430,11 @@ export function IssueDetailPanel({
   /** Opens a referenced issue beside this one; absent, the link goes to the host. */
   onSelectIssue?: ((reference: IssueRef & { readonly url: string }) => void) | undefined;
 }) {
+  const referenceHost = issueReferenceHost(rawReference.tracker, rawReference.host);
+  const reference =
+    referenceHost === undefined || referenceHost === rawReference.host
+      ? rawReference
+      : { ...rawReference, host: referenceHost };
   const t = useUiTranslation();
   const language = useClientSettings((settings) => settings.uiLanguage);
   const gt = useGT();

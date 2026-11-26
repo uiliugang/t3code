@@ -15,7 +15,7 @@ import { useEnvironmentSettings } from "../../hooks/useSettings";
 import {
   readHostCredentialSettings,
   configuredSourceControlTokenHosts,
-  withSourceControlHostToken,
+  sourceControlHostTokenPatch,
   type SourceControlDefinition,
   type SourceControlHostCredentials,
 } from "@t3tools/client-runtime/source-control-clients";
@@ -66,12 +66,11 @@ export function SourceControlTokenSettings({
     setSaving(true);
     const result = await updateSettings({
       environmentId,
-      // Send the whole map; other tokens' redaction markers preserve their values.
       input: {
         patch: {
           sourceControlHosts: {
             [definition.kind]: {
-              tokens: withSourceControlHostToken(definition.kind, tokens, target, token),
+              tokens: sourceControlHostTokenPatch(definition.kind, tokens, target, token),
             },
           },
         },

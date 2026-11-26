@@ -41,20 +41,18 @@ export function readHostCredentialSettings(
   return readSourceControlHostSettings(HostCredentialSettings, settings.sourceControlHosts[kind]);
 }
 
-export function withSourceControlHostToken(
+export function sourceControlHostTokenPatch(
   kind: string,
   tokens: HostCredentialSettings["tokens"],
   host: string,
   token: SettingsSecretValue,
 ): HostCredentialSettings["tokens"] {
   const target = sourceControlTokenHost(kind, host);
-  const next = { ...tokens };
-  if (kind === "github") {
-    for (const key of Object.keys(tokens)) {
-      if (sourceControlTokenHost(kind, key) === target) next[key] = "";
-    }
-  }
-  return { ...next, [target]: token };
+  const aliases =
+    kind === "github"
+      ? Object.keys(tokens).filter((key) => sourceControlTokenHost(kind, key) === target)
+      : [];
+  return { ...Object.fromEntries(aliases.map((key) => [key, ""])), [target]: token };
 }
 
 export function configuredSourceControlTokenHosts(
