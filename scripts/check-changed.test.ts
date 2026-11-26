@@ -166,16 +166,22 @@ describe("check:changed", () => {
     }),
   );
 
-  it("runs the .github/scripts node:test files with node --test, not vitest", () => {
+  it("splits node:test, Chromium-backed vitest, and pure unit vitest files", () => {
     assert.deepStrictEqual(
       splitTests([
         "apps/server/src/ws.test.ts",
+        "apps/web/src/components/Sidebar.browser.test.tsx",
+        "apps/server/src/preview/ServerBrowser.test.ts",
         ".github/scripts/ci-changes.test.cjs",
         ".github\\scripts\\thread-transfer-report.test.cjs",
         "scripts/check-changed.test.ts",
       ]),
       {
-        vitestTests: ["apps/server/src/ws.test.ts", "scripts/check-changed.test.ts"],
+        browserTests: [
+          "apps/web/src/components/Sidebar.browser.test.tsx",
+          "apps/server/src/preview/ServerBrowser.test.ts",
+        ],
+        unitTests: ["apps/server/src/ws.test.ts", "scripts/check-changed.test.ts"],
         nodeTests: [
           ".github/scripts/ci-changes.test.cjs",
           ".github\\scripts\\thread-transfer-report.test.cjs",
@@ -605,9 +611,25 @@ it("acquires the repository browser test lock only when changed tests launch Chr
   }
   NodeFS.rmSync(browserLockPath, { force: true });
 
-  // When an apps/web *.browser.test.tsx file changes, check:changed creates and acquires t3-browser-test.sqlite.
+  // When both browser and unit tests change, check:changed runs them as two separate
+  // Vitest invocations and only holds the browser lock for the Chromium-backed step.
   project.write("apps/web/src/Component.browser.test.tsx", "export {};\n");
   const browserResult = project.run();
   expect(browserResult.status, browserResult.stdout + browserResult.stderr).toBe(0);
   expect(NodeFS.existsSync(browserLockPath)).toBe(true);
+  const testCalls = project.calls().filter(({ args }) => args[0] === "test");
+  expect(
+    testCalls.some(
+      ({ args }) =>
+        args.includes("apps/web/src/Component.browser.test.tsx") &&
+        !args.includes("packages/example/example.test.ts"),
+    ),
+  ).toBe(true);
+  expect(
+    testCalls.some(
+      ({ args }) =>
+        args.includes("packages/example/example.test.ts") &&
+        !args.includes("apps/web/src/Component.browser.test.tsx"),
+    ),
+  ).toBe(true);
 });

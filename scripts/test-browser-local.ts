@@ -10,7 +10,12 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { createCLI } from "vite-plus/test/node";
 
 import { vitePlusCommand } from "./check-changed-command.ts";
-import { resolveGitCommonDir, withBrowserTestLock } from "./check-changed-lock.ts";
+import {
+  installSighupForwarding,
+  resolveGitCommonDir,
+  trackDescendantProcessGroups,
+  withBrowserTestLock,
+} from "./check-changed-lock.ts";
 
 const USAGE = "Usage: vp run test:browser:local <test files or directories> [vitest options]";
 
@@ -100,6 +105,7 @@ export const runBrowserTestLocal = Effect.fn("testBrowserLocal.run")(function* (
             forceKillAfter: "5 seconds",
           }),
         );
+        yield* trackDescendantProcessGroups(Number(handle.pid));
         return Number(yield* handle.exitCode);
       }),
     ),
@@ -107,10 +113,13 @@ export const runBrowserTestLocal = Effect.fn("testBrowserLocal.run")(function* (
 });
 
 if (import.meta.main) {
-  Effect.gen(function* () {
-    const argv = yield* HostProcess.Arguments;
-    return yield* runBrowserTestLocal(argv.slice(2));
-  }).pipe(
+  Effect.scoped(
+    Effect.gen(function* () {
+      yield* installSighupForwarding();
+      const argv = yield* HostProcess.Arguments;
+      return yield* runBrowserTestLocal(argv.slice(2));
+    }),
+  ).pipe(
     Effect.catch((message) => Console.error(String(message)).pipe(Effect.as(1))),
     Effect.flatMap((code) =>
       Effect.sync(() => {

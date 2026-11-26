@@ -13,7 +13,12 @@ import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { vitePlusCommand } from "./check-changed-command.ts";
-import { resolveGitCommonDir, withBrowserTestLock } from "./check-changed-lock.ts";
+import {
+  installSighupForwarding,
+  resolveGitCommonDir,
+  trackDescendantProcessGroups,
+  withBrowserTestLock,
+} from "./check-changed-lock.ts";
 
 const HELP = `Usage:
   node scripts/render-metrics.ts run [--out <file>] [--runs <n>]
@@ -78,6 +83,7 @@ export const runOnce = Effect.fn("renderMetrics.runOnce")(function* () {
           forceKillAfter: "5 seconds",
         }),
       );
+      yield* trackDescendantProcessGroups(Number(handle.pid));
       const exitCode = Number(yield* handle.exitCode);
       if (exitCode !== 0) {
         return yield* Effect.fail(`render scenarios failed (exit ${exitCode})`);
@@ -258,29 +264,32 @@ if (import.meta.main) {
   const cliArgs = process.argv[2] === "--" ? process.argv.slice(3) : process.argv.slice(2);
   const [command, ...args] = cliArgs;
   if (command === "run") {
-    Effect.gen(function* () {
-      const { help, runs, out } = yield* Effect.try({
-        try: () => parseRunOptions(args),
-        catch: (error) => (error instanceof Error ? error.message : String(error)),
-      });
-      if (help) {
-        yield* Console.log(HELP);
-        return;
-      }
-      const commonDir = yield* resolveGitCommonDir(root, "report:renders");
-      const results = yield* withBrowserTestLock(
-        commonDir,
-        Effect.forEach(Array.from({ length: runs }), () => runOnce()),
-        {
-          waitingMessage:
-            "report:renders: waiting for another browser test in this repository to finish.",
-        },
-      );
-      yield* Effect.try({
-        try: () => reportResults(results, runs, out),
-        catch: (error) => (error instanceof Error ? error.message : String(error)),
-      });
-    }).pipe(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* installSighupForwarding();
+        const { help, runs, out } = yield* Effect.try({
+          try: () => parseRunOptions(args),
+          catch: (error) => (error instanceof Error ? error.message : String(error)),
+        });
+        if (help) {
+          yield* Console.log(HELP);
+          return;
+        }
+        const commonDir = yield* resolveGitCommonDir(root, "report:renders");
+        const results = yield* withBrowserTestLock(
+          commonDir,
+          Effect.forEach(Array.from({ length: runs }), () => runOnce()),
+          {
+            waitingMessage:
+              "report:renders: waiting for another browser test in this repository to finish.",
+          },
+        );
+        yield* Effect.try({
+          try: () => reportResults(results, runs, out),
+          catch: (error) => (error instanceof Error ? error.message : String(error)),
+        });
+      }),
+    ).pipe(
       Effect.catch((error) =>
         Console.error(String(error)).pipe(
           Effect.andThen(
