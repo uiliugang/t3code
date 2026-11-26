@@ -7,7 +7,42 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { issueReferenceCompatible, resolveIssueLinkTarget } from "./issueLinks.ts";
+import {
+  githubIssueScopeFromUrl,
+  issueLinkedPullRequestTarget,
+  issueReferenceCompatible,
+  resolveIssueLinkTarget,
+} from "./issueLinks.ts";
+
+it("recovers the exact repository and issue from an old enterprise URL", () => {
+  const url = "https://forge.test:8443/Acme/App/issues/7";
+  expect(githubIssueScopeFromUrl(url, "7")).toBe("acme/app");
+  expect(githubIssueScopeFromUrl(url, "8")).toBeUndefined();
+  expect(githubIssueScopeFromUrl(url.replace("https:", "http:"), "7")).toBeUndefined();
+  expect(githubIssueScopeFromUrl("https://forge.test:8443/account", "7")).toBeUndefined();
+});
+
+it("uses the linked GitHub pull request's authority, not the issue's authority", () => {
+  const issue = { tracker: "github", host: "forge.test:8443" };
+  const link = { repository: "acme/app", number: 12, url: "https://forge.test/acme/app/pull/12" };
+  expect(issueLinkedPullRequestTarget(issue, link)).toEqual({
+    host: "forge.test",
+    repository: "acme/app",
+    number: 12,
+  });
+  expect(
+    issueLinkedPullRequestTarget(issue, {
+      ...link,
+      url: link.url.replace(".test/", ".test:8443/"),
+    }),
+  ).toBeNull();
+  expect(
+    issueLinkedPullRequestTarget(issue, { ...link, url: link.url.replace("/12", "/13") }),
+  ).toBeNull();
+  expect(
+    issueLinkedPullRequestTarget(issue, { ...link, url: link.url.replace("https:", "http:") }),
+  ).toBeNull();
+});
 
 it("requires port support and an HTTPS authority match before reading restored GitHub links", () => {
   const ported = { tracker: "github", url: "https://forge.test:8443/acme/web/issues/7" };

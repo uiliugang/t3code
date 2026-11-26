@@ -134,7 +134,9 @@ import Migration0123 from "./Migrations/123_AgentFeedback.ts";
 import Migration0124 from "./Migrations/124_IssueTrackerAccounts.ts";
 import Migration0125 from "./Migrations/125_Workflows.ts";
 import Migration0126 from "./Migrations/126_RemoveAgentFeedback.ts";
-import Migration0127 from "./Migrations/127_SupersededRunAttemptIndex.ts";
+import Migration0127 from "./Migrations/127_ConnectNoiseApproval.ts";
+import Migration0128 from "./Migrations/128_PeerNoisePin.ts";
+import Migration0129 from "./Migrations/129_SupersededRunAttemptIndex.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -264,7 +266,9 @@ const migrationEntries = [
   [124, "IssueTrackerAccounts", Migration0124],
   [125, "Workflows", Migration0125],
   [126, "RemoveAgentFeedback", Migration0126],
-  [127, "SupersededRunAttemptIndex", Migration0127],
+  [127, "ConnectNoiseApproval", Migration0127],
+  [128, "PeerNoisePin", Migration0128],
+  [129, "SupersededRunAttemptIndex", Migration0129],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

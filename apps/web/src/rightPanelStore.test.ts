@@ -147,6 +147,32 @@ describe("rightPanelStore", () => {
     ]);
   });
 
+  it("restores only one tab for equivalent legacy GitHub references", () => {
+    const reference = {
+      kind: "issue",
+      projectId: "project-1",
+      tracker: "github",
+      scope: "acme/app",
+      key: "7",
+    };
+    const url = "https://forge.test:8443/acme/app/issues/7";
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "without-host",
+          surfaces: [
+            { ...reference, id: "without-host", url },
+            { ...reference, id: "with-host", host: "forge.test:8443", url },
+          ],
+        },
+      },
+    });
+    const state = selectThreadRightPanelState(migrated.byThreadKey, refA);
+    expect(state.surfaces).toHaveLength(1);
+    expect(state.activeSurfaceId).toBe(state.surfaces[0]?.id);
+  });
+
   it("reopens the active tab first after a bulk close", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "files");

@@ -2,7 +2,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
-import { environmentSession } from "../../state/session";
+import { environmentSession, usePreparedConnection } from "../../state/session";
 import {
   StackActions,
   useNavigation,
@@ -13,13 +13,19 @@ import { useGT, useMessages } from "gt-react-native";
 import { type ComponentProps, type ReactNode, useId, useState } from "react";
 import { Platform, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
-import { EnvironmentId, type ProjectReadFileResult, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type ProjectReadFileResult,
+  type WorkspaceFileResource,
+  ThreadId,
+} from "@t3tools/contracts";
 import { videoMimeType } from "@t3tools/shared/video";
 import {
   isWorkspaceBrowserPreviewPath,
   isWorkspaceImagePreviewPath,
   mediaMimeTypeFromExtension,
 } from "@t3tools/shared/filePreview";
+import { ARCHIVE_MAX_BYTES } from "@t3tools/client-runtime/zip/bounded-zip";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 
 import { ScreenContent } from "../../components/ui/ScreenContent";
@@ -76,7 +82,9 @@ import {
   needsWorkspaceFileContents,
 } from "./filePath";
 import { useWorkspaceFileAssetUrlState } from "./workspaceFileAssetUrl";
-import { MOBILE_FULL_FILE_MAX_BYTES, useFullFileText } from "./useFullFileText";
+import { encryptedWorkspaceText, useFullFileText } from "./useFullFileText";
+import { MOBILE_FULL_FILE_MAX_BYTES } from "./noiseWorkspaceFileText";
+import { isZipFile, ZipArchiveView } from "./ZipArchiveView";
 
 function FilesBrowserHeader(props: {
   readonly projectName: string;
@@ -637,6 +645,9 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const targetLine = normalizeRouteLine(firstRouteParam(params.line));
   const { cwd, environmentId, projectName, relativePath, selectedThread, threadId } =
     useThreadFilesWorkspace(props.route.params);
+  const prepared = usePreparedConnection(environmentId);
+  const noise = prepared._tag === "Some" && prepared.value.transport === "noise";
+  const sourceOnlyMedia = noise && !prepared.value.mediaOrigins;
   const messages = useMessages();
   const fileAccessSession = useEnvironmentQuery(
     environmentId !== null ? environmentSession.sessionStateAtom(environmentId) : null,
@@ -653,7 +664,17 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   );
   const { canReadFiles } = fileAccess;
   const targetPath =
-    cwd !== null && relativePath !== null ? resolveWorkspaceFilePath(cwd, relativePath) : null;
+    cwd !== null &&
+    relativePath !== null &&
+    (!noise || resolveWorkspaceRelativeFilePath(cwd, relativePath) !== null)
+      ? resolveWorkspaceFilePath(cwd, relativePath)
+      : null;
+  const downloadResource: WorkspaceFileResource | null =
+    noise && canReadFiles && targetPath && cwd
+      ? threadId
+        ? { _tag: "media-file", threadId, path: targetPath, disposition: "attachment" }
+        : { _tag: "draft-workspace-file", cwd, path: targetPath, disposition: "attachment" }
+      : null;
   const metadata = useEnvironmentQuery(
     canReadFiles && environmentId !== null && targetPath !== null
       ? projectEnvironment.fileMetadata({ environmentId, input: { path: targetPath } })
@@ -681,8 +702,16 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     relativePath !== null && !isVideoFile && isWorkspaceBrowserPreviewPath(relativePath);
   const isImageFile =
     relativePath !== null && !isVideoFile && isWorkspaceImagePreviewPath(relativePath);
+  // Decrypted HTML and SVG lack the sandbox headers that constrain a signed preview.
+  const sourceOnly =
+    sourceOnlyMedia &&
+    relativePath !== null &&
+    (/\.html?$/i.test(relativePath) || isSvgImagePreviewFile(relativePath));
+  const isArchive =
+    noise && isZipFile({ name: relativePath ?? "", mimeType: metadata.data?.mimeType ?? "" });
   const canPreview =
     relativePath !== null &&
+    !sourceOnly &&
     (isMarkdownPreviewFile(relativePath) ||
       isBrowserFile ||
       isImageFile ||
@@ -706,12 +735,17 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
       environmentId !== null &&
       cwd !== null &&
       relativePath !== null &&
-      needsFileContents
+      needsFileContents &&
+      !isArchive &&
+      !noise &&
+      prepared._tag === "Some"
       ? projectEnvironment.readFile({
           environmentId,
           input: { cwd, relativePath },
         })
-      : null,
+      : environmentId && downloadResource && needsFileContents && !isArchive
+        ? encryptedWorkspaceText(environmentId, downloadResource)
+        : null,
   );
   const fileData = fileQuery.data as ProjectReadFileResult | null;
   const [fileRefreshCount, setFileRefreshCount] = useState(0);
@@ -719,7 +753,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     environmentId,
     threadId,
     absolutePath:
-      fileData?.truncated === true && fileData.byteLength <= MOBILE_FULL_FILE_MAX_BYTES
+      !noise && fileData?.truncated === true && fileData.byteLength <= MOBILE_FULL_FILE_MAX_BYTES
         ? targetPath
         : null,
     revision: `${fileData?.byteLength ?? 0}:${fileRefreshCount}`,
@@ -730,7 +764,12 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const assetPreviewPath =
     !metadataPending &&
     directoryPath === null &&
-    (isBrowserFile || isImageFile || isVideoFile || isAudioFile)
+    !sourceOnly &&
+    (isBrowserFile ||
+      isImageFile ||
+      isVideoFile ||
+      isAudioFile ||
+      (isArchive && (metadata.data?.byteLength ?? 0) <= ARCHIVE_MAX_BYTES))
       ? relativePath
       : null;
   const assetPreview = useWorkspaceFileAssetUrlState({
@@ -739,27 +778,35 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     relativePath: assetPreviewPath,
     threadId,
     draftCwd: threadId === null ? cwd : null,
+    revision: noise ? String(previewRevision) : undefined,
+    download: isArchive,
   });
   const assetPreviewUri = assetPreview._tag === "Success" ? assetPreview.url : null;
+  const actionResource =
+    downloadResource ?? (isImageFile || isVideoFile ? assetPreview.resource : null);
   const mediaSource: MediaActionsSource | undefined =
-    environmentId !== null &&
-    relativePath !== null &&
-    assetPreview.resource !== null &&
-    "path" in assetPreview.resource &&
-    typeof assetPreview.resource.path === "string" &&
-    (isImageFile || isVideoFile)
+    environmentId !== null && relativePath !== null && actionResource !== null
       ? {
-          reference: mediaFileReference(assetPreview.resource.path, cwd),
+          reference: mediaFileReference(actionResource.path, cwd),
           name: basename(relativePath),
           mimeType:
+            metadata.data?.mimeType ??
             mediaMimeTypeFromExtension(relativePath.slice(relativePath.lastIndexOf("."))) ??
             "application/octet-stream",
           environmentId,
           ...(threadId === null ? {} : { threadId }),
-          resource: assetPreview.resource,
+          resource: actionResource,
         }
       : undefined;
   const mediaActions = useMediaActions(mediaSource);
+  const deviceSave =
+    Platform.OS === "android" && downloadResource !== null
+      ? {
+          title: mediaActions.savingToDevice ? gt("Saving…") : gt("Save to device"),
+          onPress: mediaActions.saveToDevice,
+          disabled: mediaActions.saveToDeviceDisabled,
+        }
+      : null;
   const videoSource: MediaVideoPreviewSource | null =
     environmentId !== null &&
     relativePath !== null &&
@@ -775,7 +822,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         }
       : null;
   const previewUri =
-    assetPreviewUri === null || previewRevision === 0
+    assetPreviewUri === null || previewRevision === 0 || assetPreviewUri.startsWith("file:")
       ? assetPreviewUri
       : `${assetPreviewUri}${assetPreviewUri.includes("?") ? "&" : "?"}revision=${previewRevision}`;
   // Remounting the preview after a re-mint is what makes a failed asset URL retryable.
@@ -887,12 +934,24 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
             onPress: () => setTextSelectionPath(selectingText ? null : relativePath),
           } as const)
         : null,
+      deviceSave
+        ? ({
+            id: "save-to-device",
+            icon: "tray.and.arrow.down",
+            inline: false,
+            ...deviceSave,
+          } as const)
+        : null,
       ...(mediaSource
         ? mediaActions.actions
             .filter(({ id }) => id !== "open-file")
             .map((action) => ({
               id: action.id,
-              title: action.title,
+              title:
+                deviceSave && action.id === "save" && !mediaActions.sharing
+                  ? gt("Share", { $context: "verb, opens the system share sheet" })
+                  : action.title,
+              disabled: action.disabled,
               icon:
                 action.id === "save" ? ("square.and.arrow.up" as const) : ("doc.on.doc" as const),
               inline: false,
@@ -946,7 +1005,12 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
               }),
           } as const)
         : null,
-      isBrowserFile && typeof assetPreviewUri === "string"
+      typeof assetPreviewUri === "string" &&
+      ((!noise && isBrowserFile) ||
+        (noise &&
+          prepared.value.mediaOrigins &&
+          assetPreviewUri.startsWith(prepared.value.mediaOrigins.asset + "/api/assets/") &&
+          (isBrowserFile || (relativePath !== null && isSvgImagePreviewFile(relativePath)))))
         ? ({
             id: "open-browser",
             title: Platform.OS === "ios" ? t("Open in Safari") : t("Open in browser"),
@@ -1012,7 +1076,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
     return withInspector(<FilesUnavailable onBack={handleBack} />);
   }
 
-  if (relativePath === null) {
+  if (relativePath === null || (noise && targetPath === null)) {
     return withInspector(
       <FilesUnavailable
         title={t("File unavailable")}
@@ -1067,6 +1131,27 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
 
   const headerSubtitle = fileHeaderSubtitle(projectName, relativePath);
 
+  if (isArchive && (assetPreview.resource === null || assetPreview._tag !== "Failure")) {
+    return withInspector(
+      <ZipArchiveView
+        key={previewKey}
+        name={basename(relativePath)}
+        subtitle={headerSubtitle}
+        sizeBytes={metadata.data?.byteLength ?? 0}
+        uri={assetPreviewUri}
+        isLocal
+        svgAsSource
+        refresh={assetPreview.refresh}
+        environmentId={environmentId}
+        draftKey={null}
+        maxAttachmentBytes={undefined}
+        onSave={() => void mediaActions.share()}
+        deviceSave={deviceSave}
+        onRemove={null}
+      />,
+    );
+  }
+
   return withInspector(
     <View className="flex-1 bg-sheet">
       <FileHeader
@@ -1079,29 +1164,37 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         actions={fileMenuActions}
       />
       <ScreenContent>
-        <FileContent
-          key={previewKey}
-          activeMode={resolvedActiveMode}
-          cwd={cwd}
-          environmentId={environmentId}
-          previewUri={previewUri}
-          previewFailure={assetPreview._tag === "Failure" ? assetPreview.reason : null}
-          onRetryPreview={handleRetryPreview}
-          videoSource={videoSource}
-          mediaSource={mediaSource}
-          resolveVideoUri={assetPreview.refresh}
-          fileContents={fileContents}
-          fileError={fileQuery.error}
-          initialLine={targetLine}
-          relativePath={relativePath}
-          threadId={threadId}
-          truncated={fileTruncated}
-          selectable={selectingText}
-          onRefresh={() => {
-            setFileRefreshCount((count) => count + 1);
-            return fileQuery.refresh();
-          }}
-        />
+        {isArchive && assetPreview._tag === "Failure" ? (
+          <WorkspaceFilePreviewError
+            environmentId={environmentId}
+            reason={assetPreview.reason}
+            onRetry={handleRetryPreview}
+          />
+        ) : (
+          <FileContent
+            key={previewKey}
+            activeMode={resolvedActiveMode}
+            cwd={cwd}
+            environmentId={environmentId}
+            previewUri={previewUri}
+            previewFailure={assetPreview._tag === "Failure" ? assetPreview.reason : null}
+            onRetryPreview={handleRetryPreview}
+            videoSource={videoSource}
+            mediaSource={mediaSource}
+            resolveVideoUri={assetPreview.refresh}
+            fileContents={fileContents}
+            fileError={fileQuery.error}
+            initialLine={targetLine}
+            relativePath={relativePath}
+            threadId={threadId}
+            truncated={fileTruncated}
+            selectable={selectingText}
+            onRefresh={() => {
+              setFileRefreshCount((count) => count + 1);
+              return fileQuery.refresh();
+            }}
+          />
+        )}
       </ScreenContent>
       <FilePreviewModal
         source={fullScreenPreview}

@@ -4120,6 +4120,7 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   getWorktreeThreadIds: "orchestration.getWorktreeThreadIds",
   getOlderSettledThreads: "orchestration.getOlderSettledThreads",
   getThreadProjection: "orchestration.getThreadProjection",
+  getThreadHistoryPage: "orchestration.getThreadHistoryPage",
   getWorkflowScript: "orchestration.getWorkflowScript",
   getNativeChildWork: "orchestration.getNativeChildWork",
   stopWorkflow: "orchestration.stopWorkflow",
@@ -4821,6 +4822,15 @@ export const OrchestrationV2RpcSchemas = {
   getThreadProjection: {
     input: OrchestrationV2GetThreadProjectionInput,
     output: OrchestrationV2ThreadProjection,
+  },
+  getThreadHistoryPage: {
+    input: Schema.Struct({
+      threadId: ThreadId,
+      cursor: TrimmedNonEmptyString,
+      throughEntryId: Schema.optionalKey(TrimmedNonEmptyString),
+      view: Schema.optionalKey(Schema.Literals(["conversation", "activity", "work"])),
+    }),
+    output: OrchestrationV2ThreadHistoryPage,
   },
   stopWorkflow: {
     input: OrchestrationV2StopWorkflowInput,

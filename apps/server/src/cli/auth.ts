@@ -12,6 +12,8 @@ import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
 
+import { createNoisePin } from "../auth/connectNoise.ts";
+import { LOCAL_NOISE_DEVICE_SUBJECT } from "../auth/SessionStore.ts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 
 import {
@@ -59,6 +61,20 @@ const changeAccess = <A, E, R, E2, R2>(change: {
   readonly viaServer: (client: RunningServer.ServerClient) => Effect.Effect<A, E, R>;
   readonly locally: Effect.Effect<A, E2, R2>;
 }) => RunningServer.changeState({ scopes: [AuthAccessWriteScope], ...change });
+
+const changeDevice = <E, R, E2, R2>(
+  action: "approve" | "deny" | "revoke",
+  target: string,
+  change: {
+    readonly viaServer: (client: RunningServer.ServerClient) => Effect.Effect<boolean, E, R>;
+    readonly locally: Effect.Effect<boolean, E2, R2>;
+  },
+) =>
+  RunningServer.changeState({
+    scopes: [AuthAccessWriteScope],
+    ...change,
+    viaNoise: (origin) => RunningServer.decideNoiseDevice(origin, { action, target }),
+  });
 
 const ttlFlag = Flag.String("ttl").pipe(
   Flag.withSchema(DurationFromString),
@@ -201,9 +217,9 @@ const connectDeviceListCommand = Command.make("list", {
       flags,
       (environmentAuth) =>
         Effect.gen(function* () {
-          const waiting = (yield* environmentAuth.listPairingLinks()).flatMap((link) =>
-            link.connectDeviceRequest ? [link.connectDeviceRequest] : [],
-          );
+          const waiting = (yield* environmentAuth.listPairingLinks({
+            includeNoiseRequests: true,
+          })).flatMap((link) => (link.connectDeviceRequest ? [link.connectDeviceRequest] : []));
           const trusted = yield* environmentAuth.listConnectDevices();
           yield* Console.log(formatConnectDeviceList({ waiting, trusted }, { json: flags.json }));
         }),
@@ -216,37 +232,56 @@ const verificationCodeArgument = Argument.String("code").pipe(
   Argument.withDescription("The code the device shows, such as `K7QM-2XFD`."),
 );
 
-const connectDeviceApproveCommand = Command.make("approve", {
-  ...authLocationFlags,
-  code: verificationCodeArgument,
-}).pipe(
-  Command.withDescription("Approve the waiting T3 Connect device that shows this code."),
-  Command.withHandler((flags) =>
-    runWithEnvironmentAuth(flags, (environmentAuth) =>
-      Effect.gen(function* () {
-        const [pairingLinkId, ...others] = yield* environmentAuth.connectRequestsShowingCode(
-          flags.code,
-        );
-        // Two waiting devices that share a code are ambiguous; approve neither.
-        const approved =
-          pairingLinkId !== undefined &&
-          others.length === 0 &&
-          (yield* changeAccess({
-            viaServer: (client) =>
-              client.auth
-                .approveConnectDevice({ headers: {}, payload: { pairingLinkId } })
-                .pipe(Effect.map((result) => result.approved)),
-            locally: environmentAuth.approveConnectDevice(pairingLinkId),
-          }));
-        yield* Console.log(
-          approved
-            ? `Approved ${flags.code}. The device connects on its next try.\n`
-            : `No device waiting for approval shows ${flags.code}.\n`,
-        );
-      }),
+const decideConnectDeviceCommand = (action: "approve" | "deny") =>
+  Command.make(action, { ...authLocationFlags, code: verificationCodeArgument }).pipe(
+    Command.withDescription(
+      action === "approve"
+        ? "Approve the waiting T3 Connect device that shows this code."
+        : "Deny the waiting T3 Connect device that shows this code.",
     ),
-  ),
-);
+    Command.withHandler((flags) =>
+      runWithEnvironmentAuth(flags, (environmentAuth) =>
+        Effect.gen(function* () {
+          const [pairingLinkId, ...others] = yield* environmentAuth.connectRequestsShowingCode(
+            flags.code,
+          );
+          if (others.length > 0) {
+            return yield* Console.log(`More than one waiting device shows ${flags.code}.\n`);
+          }
+          if (pairingLinkId !== undefined) {
+            if (action === "deny") {
+              const denied = yield* changeDevice(action, pairingLinkId, {
+                viaServer: (client) =>
+                  client.auth
+                    .revokePairingLink({ headers: {}, payload: { id: pairingLinkId } })
+                    .pipe(Effect.map((result) => result.revoked)),
+                locally: environmentAuth.revokePairingLink(pairingLinkId),
+              });
+              if (denied) {
+                return yield* Console.log(`Denied ${flags.code}.\n`);
+              }
+            } else {
+              const approved = yield* changeDevice(action, pairingLinkId, {
+                viaServer: (client) =>
+                  client.auth
+                    .approveConnectDevice({ headers: {}, payload: { pairingLinkId } })
+                    .pipe(Effect.map((result) => result.approved)),
+                locally: environmentAuth.approveConnectDevice(
+                  pairingLinkId,
+                  LOCAL_NOISE_DEVICE_SUBJECT,
+                ),
+              });
+              if (approved)
+                return yield* Console.log(
+                  `Approved ${flags.code}. The device can connect on its next try.\n`,
+                );
+            }
+          }
+          yield* Console.log(`No device waiting for approval shows ${flags.code}.\n`);
+        }),
+      ),
+    ),
+  );
 
 const connectDeviceRevokeCommand = Command.make("revoke", {
   ...authLocationFlags,
@@ -266,7 +301,7 @@ const connectDeviceRevokeCommand = Command.make("revoke", {
           );
         }
         const { proofKeyThumbprint } = device;
-        yield* changeAccess({
+        yield* changeDevice("revoke", proofKeyThumbprint, {
           viaServer: (client) =>
             client.auth
               .revokeConnectDevice({ headers: {}, payload: { proofKeyThumbprint } })
@@ -274,7 +309,7 @@ const connectDeviceRevokeCommand = Command.make("revoke", {
           locally: environmentAuth.revokeConnectDevice(proofKeyThumbprint),
         });
         yield* Console.log(
-          `Revoked ${flags.code}. If approval for new devices is off, it can connect again on its own.\n`,
+          `Revoked ${flags.code}. Ordinary Connect access can resume automatically if approval for new devices is off.\n`,
         );
       }),
     ),
@@ -284,8 +319,19 @@ const connectDeviceRevokeCommand = Command.make("revoke", {
 const connectDeviceCommand = Command.make("connect-device").pipe(
   Command.withDescription("Approve and revoke devices that reach this host through T3 Connect."),
   Command.withSubcommands([
+    Command.make("noise-pin", authLocationFlags).pipe(
+      Command.withDescription(
+        "Print the Noise pairing link to share with your client through a trusted channel.",
+      ),
+      Command.withHandler((flags) =>
+        runWithEnvironmentAuth(flags, () => createNoisePin().pipe(Effect.flatMap(Console.log)), {
+          quietLogs: true,
+        }),
+      ),
+    ),
     connectDeviceListCommand,
-    connectDeviceApproveCommand,
+    decideConnectDeviceCommand("approve"),
+    decideConnectDeviceCommand("deny"),
     connectDeviceRevokeCommand,
   ]),
 );

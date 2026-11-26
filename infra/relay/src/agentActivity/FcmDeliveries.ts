@@ -1,12 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import {
-  RelayAgentActivityState,
-  RelayAgentActivityAggregateState,
   RelayAgentAwarenessPreferences,
   type RelayDeliveryResult,
+  type RelayPublishResponse,
 } from "@t3tools/contracts/relay";
-import * as Digest from "effect/crypto/Digest";
-import type * as PlatformError from "effect/PlatformError";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -18,35 +15,23 @@ import * as RelayConfiguration from "../Config.ts";
 import * as RelayDb from "../db.ts";
 import { relayMobileDevices } from "../persistence/schema.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
-import * as AgentActivityRows from "./AgentActivityRows.ts";
 import * as LiveActivities from "./LiveActivities.ts";
 import * as FcmDeliveryQueueSender from "./FcmDeliveryQueueSender.ts";
 import * as FcmClient from "./FcmClient.ts";
-import { androidActivityData, fitFcmData } from "./fcmPayloads.ts";
-import { makeAggregateState, statusForPhase } from "./agentActivityAggregate.ts";
-import { isExpiredAgentActivityState, notificationForActivity } from "./agentActivityPayloads.ts";
-import {
-  alertForActivityRows,
-  attentionTransitionRows,
-  terminalTransitionRows,
-  shouldAlertForActivity,
-} from "./agentActivityAlerts.ts";
 
 export const FcmDeliveryJob = Schema.Struct({
   userId: Schema.String,
   deviceId: Schema.String,
   token: Schema.String,
-  state: Schema.NullOr(RelayAgentActivityState),
+  kind: Schema.Literal("agent_activity_wake"),
+  environmentId: Schema.String,
+  environmentPublicKey: Schema.String,
   queuedAt: Schema.Number,
-  replay: Schema.optional(Schema.Boolean),
 });
 export type FcmDeliveryJob = typeof FcmDeliveryJob.Type;
 const decodeJob = Schema.decodeUnknownEffect(FcmDeliveryJob);
 const decodePreferences = Schema.decodeUnknownOption(
   Schema.fromJsonString(RelayAgentAwarenessPreferences),
-);
-const decodePreviousActivity = Schema.decodeUnknownOption(
-  Schema.fromJsonString(RelayAgentActivityAggregateState),
 );
 
 export class FcmDeliveryError extends Schema.TaggedError<
@@ -61,80 +46,35 @@ export class FcmDeliveryError extends Schema.TaggedError<
   }
 }
 
-export function androidAlertForState(
-  state: RelayAgentActivityState,
-  preferences: RelayAgentAwarenessPreferences,
-  nowMs: number,
-) {
-  if (!shouldAlertForActivity({ ...state, preferences, nowMs })) return null;
-  const notification = notificationForActivity({ ...state, status: statusForPhase(state.phase) });
-  return {
-    alert_id: JSON.stringify([state.environmentId, state.threadId, state.phase, state.updatedAt]),
-    alert_group: JSON.stringify([state.environmentId, state.threadId]),
-    alert_title: notification.title,
-    alert_body: notification.body,
-    alert_path: notification.deepLink,
-  };
-}
-
-export function androidAlertForAggregate(input: {
-  readonly previousAggregate: RelayAgentActivityAggregateState;
-  readonly nextAggregate: RelayAgentActivityAggregateState;
-  readonly preferences: RelayAgentAwarenessPreferences;
-  readonly nowMs: number;
-}) {
-  if (!input.preferences.notificationsEnabled) return null;
-  const attention = attentionTransitionRows(input);
-  const activities =
-    attention.length > 0
-      ? attention
-      : terminalTransitionRows({ ...input, includeUnobserved: true });
-  const first = activities[0];
-  const alert = alertForActivityRows(activities);
-  if (!first || !alert) return null;
-  if (activities.length === 1) {
-    const notification = notificationForActivity(first);
-    return {
-      alert_id: JSON.stringify([first.environmentId, first.threadId, first.phase, first.updatedAt]),
-      alert_group: JSON.stringify([first.environmentId, first.threadId]),
-      alert_title: notification.title,
-      alert_body: notification.body,
-      alert_path: notification.deepLink,
-    };
-  }
-  return {
-    // Stable group IDs let the native handler deduplicate across jobs, retries, and row orders.
-    alert_id: JSON.stringify(
-      activities
-        .map((row) => [row.environmentId, row.threadId, row.phase, row.updatedAt])
-        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-    ),
-    alert_title: alert.title,
-    alert_body: alert.body,
-    // Target the overview so one visible thread cannot suppress other threads' alerts.
-    alert_path: "/",
-  };
-}
+type WakeError = FcmDeliveryError | FcmClient.FcmClientError;
+export type FcmReplayError = WakeError | EnvironmentLinks.EnvironmentLinkListPersistenceError;
 
 export class FcmDeliveries extends Context.Service<
   FcmDeliveries,
   {
+    readonly wake: (input: {
+      readonly environmentId: string;
+      readonly environmentPublicKey: string;
+    }) => Effect.Effect<
+      RelayPublishResponse,
+      | WakeError
+      | LiveActivities.LiveActivityTargetListPersistenceError
+      | EnvironmentLinks.EnvironmentLinkUserListPersistenceError
+    >;
     readonly enqueue: (input: {
       readonly target: LiveActivities.TargetRow;
-      readonly state: RelayAgentActivityState | null;
-      readonly replay?: boolean;
+      readonly environmentId: string;
+      readonly environmentPublicKey: string;
     }) => Effect.Effect<RelayDeliveryResult | null, FcmDeliveryError>;
+    readonly replayForDevice: (
+      target: LiveActivities.TargetRow,
+    ) => Effect.Effect<void, FcmReplayError>;
     readonly process: (
       body: unknown,
     ) => Effect.Effect<
       void,
-      | FcmDeliveryError
-      | FcmClient.FcmClientError
-      | PlatformError.PlatformError
+      | WakeError
       | LiveActivities.LiveActivityTargetListPersistenceError
-      | LiveActivities.LiveActivityDeliveryMarkPersistenceError
-      | AgentActivityRows.AgentActivityRowListPersistenceError
-      | EnvironmentLinks.EnvironmentLinkLookupPersistenceError
       | EnvironmentLinks.EnvironmentLinkUserListPersistenceError
     >;
   }
@@ -142,15 +82,86 @@ export class FcmDeliveries extends Context.Service<
 
 const make = Effect.gen(function* () {
   const config = yield* RelayConfiguration.RelayConfiguration;
-  const crypto = yield* Digest.Digest;
   const sender = yield* FcmDeliveryQueueSender.FcmDeliveryQueueSender;
   const client = yield* FcmClient.FcmClient;
   const devices = yield* LiveActivities.LiveActivities;
-  const rows = yield* AgentActivityRows.AgentActivityRows;
   const links = yield* EnvironmentLinks.EnvironmentLinks;
   const db = yield* RelayDb.RelayDb;
 
+  const invalidateToken = (job: { userId: string; deviceId: string; token: string }) =>
+    db
+      .update(relayMobileDevices)
+      .set({ pushToken: null })
+      .where(
+        and(
+          eq(relayMobileDevices.userId, job.userId),
+          eq(relayMobileDevices.deviceId, job.deviceId),
+          eq(relayMobileDevices.pushToken, job.token),
+        ),
+      )
+      .pipe(
+        Effect.mapError((cause) => new FcmDeliveryError({ operation: "invalidate-token", cause })),
+      );
+
+  const wakeDevice = Effect.fn("relay.fcm.wakeDevice")(function* (
+    environmentId: string,
+    user: EnvironmentLinks.AgentAwarenessDeliveryUserRecord,
+    target: LiveActivities.TargetRow,
+  ) {
+    if (target.platform !== "android" || target.user_id !== user.userId || !target.push_token)
+      return null;
+    const prefs = Option.getOrNull(decodePreferences(target.preferences_json));
+    if (
+      !prefs ||
+      !(
+        (user.notificationsEnabled && prefs.notificationsEnabled) ||
+        (user.liveActivitiesEnabled && prefs.liveActivitiesEnabled)
+      )
+    )
+      return null;
+    const result = yield* client.sendWake({
+      token: target.push_token,
+      packageName: target.bundle_id,
+      environmentId,
+      deviceId: target.device_id,
+      userId: user.userId,
+    });
+    if (result.unregistered) {
+      yield* invalidateToken({
+        userId: user.userId,
+        deviceId: target.device_id,
+        token: target.push_token,
+      });
+    }
+    return {
+      deviceId: target.device_id,
+      kind: "push_notification",
+      ok: !result.unregistered,
+      apnsStatus: null,
+      apnsId: null,
+      apnsReason: null,
+    } satisfies RelayDeliveryResult;
+  });
+
   return FcmDeliveries.of({
+    wake: Effect.fn("relay.fcm.wake")(function* (input) {
+      const users = yield* links.listDeliveryUsersForEnvironment(input);
+      const targetsByUser = yield* Effect.forEach(
+        users,
+        (user) =>
+          devices
+            .listTargets({ userId: user.userId })
+            .pipe(Effect.map((targets) => targets.map((target) => ({ user, target })))),
+        { concurrency: 4 },
+      );
+      // One rejected token must not interrupt sends to the other registered devices.
+      const deliveries = yield* Effect.validate(
+        targetsByUser.flat(),
+        ({ user, target }) => wakeDevice(input.environmentId, user, target),
+        { concurrency: 4 },
+      ).pipe(Effect.mapError(([failure]) => failure));
+      return { ok: true, deliveries: deliveries.filter((value) => value !== null) };
+    }),
     enqueue: Effect.fn("relay.fcm.enqueue")(function* (input) {
       if (input.target.platform !== "android" || !input.target.push_token) return null;
       if (!config.fcmServiceAccount) {
@@ -170,8 +181,9 @@ const make = Effect.gen(function* () {
           userId: input.target.user_id,
           deviceId: input.target.device_id,
           token: input.target.push_token,
-          state: input.state,
-          ...(input.replay ? { replay: true } : {}),
+          kind: "agent_activity_wake",
+          environmentId: input.environmentId,
+          environmentPublicKey: input.environmentPublicKey,
           queuedAt: now.epochMilliseconds,
         })
         .pipe(Effect.mapError((cause) => new FcmDeliveryError({ operation: "enqueue", cause })));
@@ -185,156 +197,41 @@ const make = Effect.gen(function* () {
         apnsId: null,
       };
     }),
+    replayForDevice: Effect.fn("relay.fcm.replayForDevice")(function* (target) {
+      if (target.platform !== "android" || !target.push_token) return;
+      const environments = yield* links.listForUser({ userId: target.user_id });
+      yield* Effect.validate(
+        environments,
+        (environment) =>
+          environment.activityPreferences
+            ? wakeDevice(
+                environment.environmentId,
+                { userId: target.user_id, ...environment.activityPreferences },
+                target,
+              )
+            : Effect.succeed(null),
+        { concurrency: 4, discard: true },
+      ).pipe(Effect.mapError(([failure]) => failure));
+    }),
     process: Effect.fn("relay.fcm.process")(function* (body) {
+      // Jobs created before wake-only delivery contain thread data and have no signed environment route.
+      if (typeof body === "object" && body !== null && "state" in body) return;
       const job = yield* decodeJob(body).pipe(
         Effect.mapError((cause) => new FcmDeliveryError({ operation: "decode-job", cause })),
       );
       const now = yield* DateTime.now;
       if (now.epochMilliseconds - job.queuedAt > 5 * 60_000) return;
-      const targets = yield* devices.listTargets({ userId: job.userId });
+      const users = yield* links.listDeliveryUsersForEnvironment({
+        environmentId: job.environmentId,
+        environmentPublicKey: job.environmentPublicKey,
+      });
+      const user = users.find((row) => row.userId === job.userId);
+      if (!user) return;
+      const targets = yield* devices.listTargets({ userId: user.userId });
       const target = targets.find(
-        (device) =>
-          device.device_id === job.deviceId &&
-          device.platform === "android" &&
-          device.push_token === job.token,
+        (row) => row.device_id === job.deviceId && row.push_token === job.token,
       );
-      if (!target) return;
-      const preferences = decodePreferences(target.preferences_json);
-      if (Option.isNone(preferences)) return;
-
-      // Re-read at consumption to honor current links, tokens, preferences, and thread states.
-      const states = preferences.value.liveActivitiesEnabled
-        ? yield* rows.listForUser({ userId: job.userId })
-        : [];
-      const aggregate = makeAggregateState({
-        activeStates: states,
-        terminalState: null,
-        nowMs: now.epochMilliseconds,
-      });
-      const previousAggregate = target.last_aggregate_json
-        ? Option.getOrNull(decodePreviousActivity(target.last_aggregate_json))
-        : null;
-      let alert: ReturnType<typeof androidAlertForState | typeof androidAlertForAggregate> = null;
-      // Deletions update the card but must not consume another thread's pending completion alert.
-      let acknowledgeAggregate = job.state !== null || job.replay === true || aggregate === null;
-      if (job.state && preferences.value.notificationsEnabled) {
-        const state = yield* rows.getForUserThread({
-          userId: job.userId,
-          environmentId: job.state.environmentId,
-          threadId: job.state.threadId,
-        });
-        if (
-          !previousAggregate &&
-          (!state || state.phase !== job.state.phase || state.updatedAt !== job.state.updatedAt)
-        )
-          return;
-        const link = yield* links.getForUser({
-          userId: job.userId,
-          environmentId: job.state.environmentId,
-        });
-        const deliveryUsers = link
-          ? yield* links.listDeliveryUsersForEnvironment({
-              environmentId: job.state.environmentId,
-              environmentPublicKey: link.environmentPublicKey,
-            })
-          : [];
-        const deliveryUser = deliveryUsers.find((user) => user.userId === job.userId);
-        // Notification-only jobs must not acknowledge another environment's pending card transitions.
-        acknowledgeAggregate =
-          deliveryUser?.liveActivitiesEnabled === true || !preferences.value.liveActivitiesEnabled;
-        if (
-          deliveryUser?.liveActivitiesEnabled &&
-          preferences.value.liveActivitiesEnabled &&
-          previousAggregate &&
-          aggregate
-        ) {
-          const environmentIds = [...new Set(aggregate.activities.map((row) => row.environmentId))];
-          const allowedEnvironments = new Set<string>();
-          for (const environmentId of environmentIds) {
-            const environmentLink = yield* links.getForUser({
-              userId: job.userId,
-              environmentId,
-            });
-            if (!environmentLink) continue;
-            const users = yield* links.listDeliveryUsersForEnvironment({
-              environmentId,
-              environmentPublicKey: environmentLink.environmentPublicKey,
-            });
-            if (users.some((user) => user.userId === job.userId && user.notificationsEnabled)) {
-              allowedEnvironments.add(environmentId);
-            }
-          }
-          alert = androidAlertForAggregate({
-            previousAggregate,
-            nextAggregate: {
-              ...aggregate,
-              activities: aggregate.activities.filter((row) =>
-                allowedEnvironments.has(row.environmentId),
-              ),
-            },
-            preferences: preferences.value,
-            nowMs: now.epochMilliseconds,
-          });
-        } else if (
-          deliveryUser?.notificationsEnabled &&
-          state?.phase === job.state.phase &&
-          state.updatedAt === job.state.updatedAt &&
-          !isExpiredAgentActivityState(state, now.epochMilliseconds)
-        ) {
-          alert = androidAlertForState(state, preferences.value, now.epochMilliseconds);
-        }
-      }
-      const displayedAggregate = preferences.value.liveActivitiesEnabled ? aggregate : null;
-      const active = (displayedAggregate?.activeCount ?? 0) > 0;
-      if (!displayedAggregate && !alert && !previousAggregate && job.state !== null) return;
-      const data: Record<string, string> = {
-        t3_kind: "agent_activity",
-        device_id: job.deviceId,
-        user_id: job.userId,
-        updated_at: String(now.epochMilliseconds),
-        ...androidActivityData(displayedAggregate),
-        ...alert,
-      };
-      if (alert) {
-        // Hash the full stable group identity to stay within the payload budget.
-        const digest = yield* crypto.digest(
-          Digest.sha256,
-          new TextEncoder().encode(alert.alert_id),
-        );
-        data.alert_id = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
-      }
-      const result = yield* client.send({
-        token: job.token,
-        packageName: target.bundle_id,
-        alert: alert !== null,
-        data: fitFcmData(data),
-      });
-      if (result.unregistered) {
-        yield* db
-          .update(relayMobileDevices)
-          .set({ pushToken: null })
-          .where(
-            and(
-              eq(relayMobileDevices.userId, job.userId),
-              eq(relayMobileDevices.deviceId, job.deviceId),
-              eq(relayMobileDevices.pushToken, job.token),
-            ),
-          )
-          .pipe(
-            Effect.mapError(
-              (cause) => new FcmDeliveryError({ operation: "invalidate-token", cause }),
-            ),
-          );
-      } else if (acknowledgeAggregate) {
-        yield* devices.markDelivery({
-          userId: job.userId,
-          deviceId: job.deviceId,
-          kind: active ? "live_activity_update" : "live_activity_end",
-          // Retain terminal rows as the baseline so finished-card replays cannot alert again.
-          aggregate: preferences.value.liveActivitiesEnabled ? aggregate : null,
-          deliveredAt: DateTime.formatIso(now),
-        });
-      }
+      if (target) yield* wakeDevice(job.environmentId, user, target);
     }),
   });
 });

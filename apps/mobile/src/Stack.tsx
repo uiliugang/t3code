@@ -58,6 +58,7 @@ import {
 import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRouteScreen";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
 import { AttachmentFileScreen } from "./features/files/AttachmentFileScreen";
+import { workspaceFileLinking } from "./lib/appLinking";
 import { ThreadFilesTreeScreen, ThreadFileScreen } from "./features/files/ThreadFilesRouteScreen";
 import { AdaptiveWorkspaceLayout } from "./features/layout/AdaptiveWorkspaceLayout";
 import {
@@ -808,7 +809,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       options: pageRoute({ header: "solid" }),
     }),
     NewTaskFile: createNativeStackScreen({
-      linking: "new/draft/files/:path*",
+      linking: workspaceFileLinking("new/draft"),
       screen: ThreadFileScreen,
       options: pageRoute({ header: "solid" }),
     }),
@@ -863,7 +864,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ThreadFile: createNativeStackScreen({
       screen: ThreadFileScreen,
-      linking: `${THREAD_LINKING_PREFIX}/files/:path*`,
+      linking: workspaceFileLinking(THREAD_LINKING_PREFIX),
       options: pageRoute(),
     }),
     ThreadMcpApp: createNativeStackScreen({

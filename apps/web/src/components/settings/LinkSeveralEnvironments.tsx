@@ -163,7 +163,7 @@ export function LinkSeveralEnvironmentsDialog({
     const results = await runLinkBatch({
       machines: chosen,
       access,
-      mint: mintPairingCodeOn,
+      mint: (id, access, recipientId = environmentId) => mintPairingCodeOn(id, access, recipientId),
       link: async (input) => {
         const result = await link({ environmentId, input });
         return result._tag === "Success"

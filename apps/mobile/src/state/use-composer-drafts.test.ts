@@ -159,7 +159,9 @@ vi.mock("../lib/composerImages", async (importOriginal) => ({
 vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid", randomHex: () => "0000" }));
 vi.mock("./assets", () => ({ assetEnvironment: {} }));
 vi.mock("./attachments", () => ({ attachmentEnvironment: {} }));
-vi.mock("./session", () => ({ environmentSession: {} }));
+vi.mock("./session", () => ({
+  environmentSession: { preparedConnectionValueAtom: () => Atom.make(Option.none()) },
+}));
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
   createEnvironmentRpcCommand: () => Symbol("rpc-command"),
   executeAtomQuery: () => {
@@ -324,7 +326,7 @@ afterEach(() => {
   appAtomRegistry.set(stickyComposerModelSelectionAtom, null);
   appAtomRegistry.set(modelOptionMemoryAtom, {});
   appAtomRegistry.set(threadOutboxManager.queuedMessagesByThreadKeyAtom, {});
-  composerAttachmentCleanupMocks.remove.mockClear();
+  composerAttachmentCleanupMocks.remove.mockReset();
   composerAttachmentCleanupMocks.releaseUploads.mockReset();
   composerAttachmentCleanupMocks.releaseUploads.mockResolvedValue(undefined);
   incomingShareStorageMocks.load.mockReset();
@@ -1369,7 +1371,14 @@ describe("mobile composer drafts", () => {
         }),
       );
       onTestFinished(() => read.resolve());
-      yield* Effect.promise(() => readStarted.promise);
+      yield* Effect.raceFirst(
+        Effect.promise(() => readStarted.promise),
+        Fiber.join(preparing).pipe(
+          Effect.flatMap(() =>
+            Effect.die(new Error("Attachment preparation never read the image")),
+          ),
+        ),
+      );
       clearComposerDraftContent("environment-1:thread-1", { deferAttachmentCleanup: true });
       yield* Effect.promise(() => releaseUnusedComposerAttachmentFiles([image]));
       expect(imageExists).toBe(true);

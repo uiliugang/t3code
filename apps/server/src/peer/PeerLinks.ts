@@ -1,3 +1,6 @@
+import { peerHttpClient } from "./noiseHttpClient.ts";
+export { peerHttpClient } from "./noiseHttpClient.ts";
+import { peerHostPin, PeerTrust } from "./noiseTrust.ts";
 import {
   AuthMcpClientAccess,
   AuthMcpRegistrationError,
@@ -30,12 +33,12 @@ import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
-import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
 import { isLocalLoopbackHost, isTailnetHost } from "@t3tools/shared/hostClassification";
+import * as NoiseTrust from "../auth/noiseTrust.ts";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -140,6 +143,7 @@ export class PeerLinks extends Context.Service<
 interface PeerLinkRow {
   readonly environment_id: string;
   readonly secret_name: string;
+  readonly noise_pin: string | null;
   readonly label: string;
   readonly urls_json: string;
   readonly access: string;
@@ -247,7 +251,38 @@ const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const random = yield* SecureRandom.SecureRandom;
   const digest = yield* Digest.Digest;
-  const httpClient = yield* HttpClient.HttpClient;
+  const httpClient = yield* peerHttpClient;
+  const pins = yield* PeerTrust;
+  for (const peer of pins?.peers ?? []) {
+    yield* sql`UPDATE peer_environment_links SET noise_pin = ${peer.pin}
+      WHERE environment_id = ${peer.environmentId} AND noise_pin IS NULL`.pipe(Effect.orDie);
+  }
+  const trusted = yield* NoiseTrust.peerOrigins;
+  const strictNoise = yield* NoiseTrust.noiseOnly;
+  const allowedUrls = Effect.fn("PeerLinks.allowedUrls")(function* (
+    urls: ReadonlyArray<string>,
+    id?: string,
+    recordedPin?: string | null,
+  ) {
+    const pinned =
+      pins?.peers.find((peer) => peer.environmentId === id) ??
+      pins?.peers.find((peer) => urls.includes(peer.origin));
+    if (recordedPin && pinned?.pin !== recordedPin) return [];
+    if (pinned)
+      return urls.includes(pinned.origin) && (!id || id === pinned.environmentId)
+        ? [pinned.origin]
+        : [];
+    if (trusted === null && !strictNoise && !(yield* NoiseTrust.NoiseCaller)) return urls;
+    return urls.flatMap((value) => {
+      const url = URL.parse(value);
+      return url &&
+        !url.username &&
+        !url.password &&
+        (trusted?.has(url.origin) || pins?.peers.some((peer) => peer.origin === url.origin))
+        ? [url.origin]
+        : [];
+    });
+  });
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const isOwnLoopback = yield* LoopbackHost;
@@ -262,15 +297,9 @@ const make = Effect.gen(function* () {
     Effect.orDie,
   );
 
-  // Only the origin `peerOrigin` checked may receive a pairing code or token:
-  // a redirect could forward them anywhere, including plain http.
-  const peerHttpClient = HttpClient.transform(httpClient, (response) =>
-    Effect.provideService(response, FetchHttpClient.RequestInit, { redirect: "manual" }),
-  );
-
   const clientFor = (origin: string) =>
     HttpApiClient.make(PeerHttpApi, { baseUrl: origin }).pipe(
-      Effect.provideService(HttpClient.HttpClient, peerHttpClient),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
     );
 
   /** The environment answering at `origin`, or why nothing there answers as T3 Code. */
@@ -303,7 +332,7 @@ const make = Effect.gen(function* () {
     return {
       environmentId: EnvironmentId.make(row.environment_id),
       label: row.label,
-      urls: yield* decodeUrls(row.urls_json),
+      urls: yield* allowedUrls(yield* decodeUrls(row.urls_json), row.environment_id, row.noise_pin),
       access: yield* decodeAccess(row.access),
       linkedAt: DateTime.makeUnsafe(row.linked_at),
       // Its token predates link fencing, so the peer would not fence its work:
@@ -514,7 +543,33 @@ const make = Effect.gen(function* () {
     if (!(yield* enabled)) {
       return yield* new PeerLinkError({ reason: "disabled", message: LINKED_ENVIRONMENTS_OFF });
     }
-    const urls = [input.url, ...(input.alternateUrls ?? [])];
+    if (input.expectedNoisePin !== undefined) {
+      const target = pins?.peers.find(
+        (peer) => peer.environmentId === input.expectedEnvironmentId && peer.origin === input.url,
+      );
+      if (
+        !target ||
+        peerHostPin(target) !== input.expectedNoisePin ||
+        input.alternateUrls?.some((url) => url !== target.origin)
+      ) {
+        return yield* new PeerLinkError({
+          reason: "pairing_rejected",
+          message:
+            "The forwarded pairing does not match the Noise host pinned on this environment.",
+        });
+      }
+    }
+    const urls = yield* allowedUrls(
+      [input.url, ...(input.alternateUrls ?? [])],
+      input.expectedEnvironmentId,
+    );
+    if (urls.length === 0) {
+      return yield* new PeerLinkError({
+        reason: "unreachable",
+        message:
+          "Configure the peer’s Noise pin or trusted direct HTTPS origin on this host before pairing.",
+      });
+    }
     // The user picked a machine: link through the addresses that answer as
     // it, so one that now answers as another never receives the pairing code.
     const { primary, peer, origins } =
@@ -525,13 +580,25 @@ const make = Effect.gen(function* () {
             input.expectedEnvironmentId,
             input.expectedLabel ?? input.expectedEnvironmentId,
           );
+    const pinned = pins?.peers.find((target) => target.environmentId === peer.environmentId);
+    if (pinned && primary !== pinned.origin)
+      return yield* new PeerLinkError({
+        reason: "pairing_rejected",
+        message: "Use the pinned Noise address configured for that environment.",
+      });
     const row = yield* readRow(peer.environmentId);
+    if (Option.isSome(row) && row.value.noise_pin && !pinned)
+      return yield* new PeerLinkError({
+        reason: "pairing_rejected",
+        message: "Restore this peer’s Noise configuration before pairing it again.",
+      });
     const stored = Option.isSome(row) ? yield* toLink(row.value) : undefined;
     const current =
       stored !== undefined && DateTime.isGreaterThan(stored.expiresAt, yield* DateTime.now)
         ? stored
         : undefined;
-    if (keepLinked && current !== undefined) return { link: current, alreadyLinked: true };
+    if (keepLinked && current !== undefined && current.urls.includes(primary))
+      return { link: current, alreadyLinked: true };
     // Anything can answer as a linked machine, so an address alone renews its
     // link only where the link already reaches it, and never moves it.
     if (
@@ -582,15 +649,16 @@ const make = Effect.gen(function* () {
       yield* sql`
         INSERT INTO peer_environment_links (
           environment_id, secret_name, label, urls_json, access, linked_at, expires_at,
-          last_reached_at, last_error, fenced
+          last_reached_at, last_error, fenced, noise_pin
         ) VALUES (
           ${linked.environmentId}, ${secretName}, ${linked.label}, ${urlsJson}, ${linked.access},
           ${DateTime.formatIso(linked.linkedAt)}, ${DateTime.formatIso(linked.expiresAt)},
-          ${DateTime.formatIso(now)}, NULL, 1
+          ${DateTime.formatIso(now)}, NULL, 1, ${pinned?.pin ?? null}
         )
         ON CONFLICT (environment_id) DO UPDATE SET
           secret_name = excluded.secret_name,
           fenced = excluded.fenced,
+          noise_pin = excluded.noise_pin,
           label = excluded.label,
           urls_json = excluded.urls_json,
           access = excluded.access,
@@ -669,8 +737,13 @@ const make = Effect.gen(function* () {
 
   /** Best effort: a peer that is gone or too old to revoke lets its session expire instead. */
   const revokeAtPeer = Effect.fn("PeerLinks.revokeAtPeer")(
-    function* (environmentId: EnvironmentId, urlsJson: string, token: string) {
-      const urls = yield* decodeUrls(urlsJson);
+    function* (
+      environmentId: EnvironmentId,
+      urlsJson: string,
+      recordedPin: string | null,
+      token: string,
+    ) {
+      const urls = yield* allowedUrls(yield* decodeUrls(urlsJson), environmentId, recordedPin);
       // A race over no addresses never settles.
       if (urls.length === 0) return false;
       yield* Effect.raceAll(
@@ -698,9 +771,13 @@ const make = Effect.gen(function* () {
 
   const unlink: PeerLinks["Service"]["unlink"] = Effect.fn("PeerLinks.unlink")(
     function* (environmentId) {
-      const deleted = yield* sql<{ secret_name: string; urls_json: string }>`
+      const deleted = yield* sql<{
+        secret_name: string;
+        urls_json: string;
+        noise_pin: string | null;
+      }>`
         DELETE FROM peer_environment_links WHERE environment_id = ${environmentId}
-        RETURNING secret_name, urls_json
+        RETURNING secret_name, urls_json, noise_pin
       `.pipe(Effect.catch(failStorage));
       let endedThere = false;
       for (const row of deleted) {
@@ -719,6 +796,7 @@ const make = Effect.gen(function* () {
           endedThere = yield* revokeAtPeer(
             environmentId,
             row.urls_json,
+            row.noise_pin,
             new TextDecoder().decode(token.value),
           );
         }

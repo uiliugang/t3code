@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Semaphore from "effect/Semaphore";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
@@ -114,10 +115,15 @@ export function blockedAssetUrlState(
 export function assetUrlStateFromResult(
   result: AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>,
   httpBaseUrl: string | null,
+  noiseAssetOrigin?: string,
 ): AssetUrlState {
   if (result._tag === "Failure") return { _tag: "Failure" };
   if (httpBaseUrl === null || result._tag !== "Success") return { _tag: "Loading" };
-  const url = resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
+  const url = noiseAssetOrigin
+    ? result.value.relativeUrl.startsWith("/api/assets/")
+      ? noiseAssetOrigin + result.value.relativeUrl
+      : null
+    : resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
   if (url === null) return { _tag: "Failure" };
   return {
     _tag: "Success",
@@ -157,6 +163,7 @@ function keepUnchangedFile(
   if (
     shown._tag !== "Success" ||
     next._tag !== "Success" ||
+    shown.value.relativeUrl.startsWith("blob:") ||
     next.value.fileRevision === undefined ||
     next.value.fileRevision !== shown.value.fileRevision ||
     shown.value.expiresAt - now <= KEEP_URL_MIN_LIFE_MS
@@ -263,6 +270,8 @@ export function createAssetEnvironmentAtoms<R, E>(
     if (Result.isSuccess(result)) return result.success;
     const error = result.failure;
     const resource = input.resource;
+    const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+    if (Option.isSome(prepared) && prepared.value.transport === "noise") return yield* error;
     const local = localMediaEnvironment
       ? (yield* AtomRegistry.AtomRegistry).get(localMediaEnvironment)
       : null;
@@ -337,9 +346,12 @@ export function createProjectFaviconUrlAtomFamily(input: {
     readonly environmentId: EnvironmentId;
     readonly input: { readonly resource: AssetResource };
   }) => Atom.Atom<AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>>;
-  readonly preparedConnection: (
-    environmentId: EnvironmentId,
-  ) => Atom.Atom<Option.Option<{ readonly httpBaseUrl: string }>>;
+  readonly preparedConnection: (environmentId: EnvironmentId) => Atom.Atom<
+    Option.Option<{
+      readonly httpBaseUrl: string;
+      readonly mediaOrigins?: { readonly asset: string };
+    }>
+  >;
   readonly projectClones?: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<ReadonlyArray<ProjectCloneSnapshot>>;
@@ -374,6 +386,7 @@ export function createProjectFaviconUrlAtomFamily(input: {
       const state = assetUrlStateFromResult(
         result,
         Option.isSome(connection) ? connection.value.httpBaseUrl : null,
+        Option.isSome(connection) ? connection.value.mediaOrigins?.asset : undefined,
       );
       return state._tag === "Success" ? state.url : Option.getOrNull(get.self<string | null>());
     }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));

@@ -8,6 +8,7 @@ import {
   type AuthCreatePairingCredentialInput,
   type AuthMcpClientAccess,
   type AuthPairingCredentialResult,
+  type EnvironmentId,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
@@ -18,7 +19,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import type { PreparedConnection } from "../connection/model.ts";
-import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentRegistry } from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
@@ -27,6 +28,15 @@ import { createEnvironmentCommand } from "./runtime.ts";
 const MINT_TIMEOUT_MS = 8_000;
 const PEER_PAIRING_CODE_LABEL = "T3 Code link";
 const MCP_APPROVAL_CODE_LABEL = "App sign-in";
+
+export function peerPairingChannelsMatch(
+  left: Option.Option<PreparedConnection>,
+  right: Option.Option<PreparedConnection>,
+) {
+  return (
+    Option.isSome(left) && Option.isSome(right) && left.value.transport === right.value.transport
+  );
+}
 
 /** Minting failed; the user can still paste a code from the other environment. */
 export class PeerPairingCodeError extends Schema.TaggedError<
@@ -77,7 +87,10 @@ const mintPairingCredential = Effect.fn("clientRuntime.state.mintPairingCredenti
 });
 
 // Untraced: mintPairingCredential owns the span.
-const mintOnEnvironment = Effect.fnUntraced(function* (payload: AuthCreatePairingCredentialInput) {
+const mintOnEnvironment = Effect.fnUntraced(function* (
+  payload: AuthCreatePairingCredentialInput,
+  recipientId?: EnvironmentId,
+) {
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
   const prepared = yield* SubscriptionRef.get(supervisor.prepared);
   if (Option.isNone(prepared)) {
@@ -95,6 +108,19 @@ const mintOnEnvironment = Effect.fnUntraced(function* (payload: AuthCreatePairin
       cause: "The environment does not support peer-link pairing codes.",
     });
   }
+  if (recipientId !== undefined) {
+    const recipient = yield* (yield* EnvironmentRegistry).run(
+      recipientId,
+      Effect.flatMap(EnvironmentSupervisor.EnvironmentSupervisor, (peer) =>
+        SubscriptionRef.get(peer.prepared),
+      ),
+    );
+    if (!peerPairingChannelsMatch(prepared, recipient))
+      return yield* new PeerPairingCodeError({
+        reason: "unavailable",
+        cause: "Both clients must use the encrypted channel to transfer this pairing code.",
+      });
+  }
   return yield* mintPairingCredential(prepared.value, payload);
 });
 
@@ -107,12 +133,21 @@ export function createPeerPairingCodeCommand<R, E>(
 ) {
   return createEnvironmentCommand(runtime, {
     label: "environment-data:peer-pairing-code:mint",
-    execute: (access: AuthMcpClientAccess) =>
-      mintOnEnvironment({
-        label: PEER_PAIRING_CODE_LABEL,
-        access,
-        purpose: "peer-link",
-      }).pipe(
+    execute: ({
+      access,
+      recipientId,
+    }: {
+      readonly access: AuthMcpClientAccess;
+      readonly recipientId: EnvironmentId;
+    }) =>
+      mintOnEnvironment(
+        {
+          label: PEER_PAIRING_CODE_LABEL,
+          access,
+          purpose: "peer-link",
+        },
+        recipientId,
+      ).pipe(
         Effect.filterOrFail(
           (minted) => minted.purpose === "peer-link" && minted.access === access,
           () =>

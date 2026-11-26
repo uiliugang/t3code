@@ -1,7 +1,5 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
+import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import * as NodeCryptoLayer from "@effect/platform-node/NodeCrypto";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
@@ -14,29 +12,21 @@ import * as FcmDeliveryQueueConsumer from "./FcmDeliveryQueueConsumer.ts";
 import * as RelayConfiguration from "../Config.ts";
 import * as RelayDb from "../db.ts";
 import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
-import * as AgentActivityRows from "./AgentActivityRows.ts";
 import * as LiveActivities from "./LiveActivities.ts";
 import * as FcmDeliveryQueueSender from "./FcmDeliveryQueueSender.ts";
 import * as FcmClient from "./FcmClient.ts";
 import * as FcmDeliveries from "./FcmDeliveries.ts";
-import { androidActivityData, fitFcmData } from "./fcmPayloads.ts";
-import { makeAggregateState } from "./agentActivityAggregate.ts";
-
-const aggregateFor = (states: ReadonlyArray<RelayAgentActivityState>) =>
-  makeAggregateState({ activeStates: states, terminalState: null, nowMs: 0 })!;
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-const state: RelayAgentActivityState = {
-  environmentId: EnvironmentId.make("env"),
-  threadId: ThreadId.make("thread"),
-  projectTitle: "Project",
-  threadTitle: "Fix notifications",
-  phase: "running",
-  headline: "Working",
-  modelTitle: "Codex",
-  updatedAt: "1970-01-01T00:00:00.000Z",
-  deepLink: "/threads/env/thread",
-};
+const environment = { environmentId: "env", environmentPublicKey: "key" };
+const job = {
+  kind: "agent_activity_wake",
+  ...environment,
+  userId: "user",
+  deviceId: "phone",
+  token: "fcm-token",
+  queuedAt: 0,
+} satisfies FcmDeliveries.FcmDeliveryJob;
 const preferences = {
   notificationsEnabled: true,
   liveActivitiesEnabled: true,
@@ -84,545 +74,157 @@ const config = {
 } satisfies RelayConfiguration.RelayConfiguration["Service"];
 
 function harness() {
-  const sent: Array<Parameters<FcmClient.FcmClient["Service"]["send"]>[0]> = [];
+  const sent: Array<Parameters<FcmClient.FcmClient["Service"]["sendWake"]>[0]> = [];
   const queued: FcmDeliveries.FcmDeliveryJob[] = [];
-  const marked: Array<Parameters<LiveActivities.LiveActivities["Service"]["markDelivery"]>[0]> = [];
   const current = {
     target: { ...target },
-    state: { ...state } as RelayAgentActivityState | null,
-    otherStates: [] as RelayAgentActivityState[],
-    mutedEnvironments: [] as string[],
-    notificationOnlyEnvironments: [] as string[],
-    revokedEnvironments: [] as string[],
     linked: true,
+    linkPreferences: { notificationsEnabled: true, liveActivitiesEnabled: true },
     deliveryFailure: null as FcmClient.FcmClientError | null,
   };
-  const layerServices = Layer.mergeAll(
-    NodeCryptoLayer.layer,
-    Layer.succeed(RelayConfiguration.RelayConfiguration, config),
-    Layer.succeed(FcmDeliveryQueueSender.FcmDeliveryQueueSender, {
-      send: (job) =>
-        Effect.sync(() => {
-          queued.push(job);
+  const layer = FcmDeliveries.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(RelayConfiguration.RelayConfiguration, config),
+        Layer.succeed(FcmDeliveryQueueSender.FcmDeliveryQueueSender, {
+          send: (body) =>
+            Effect.sync(() => {
+              queued.push(body);
+            }),
         }),
-    }),
-    Layer.succeed(FcmClient.FcmClient, {
-      send: (input) =>
-        Effect.suspend(() =>
-          current.deliveryFailure
-            ? Effect.fail(current.deliveryFailure)
-            : Effect.sync(() => {
-                sent.push(input);
-                return { unregistered: false };
-              }),
-        ),
-    }),
-    Layer.succeed(LiveActivities.LiveActivities, {
-      register: () => Effect.void,
-      listTargets: () => Effect.sync(() => [current.target]),
-      listIdleArmedTargets: () => Effect.succeed([]),
-      markDelivery: (input) =>
-        Effect.sync(() => {
-          marked.push(input);
-          current.target.last_aggregate_json = input.aggregate ? encodeJson(input.aggregate) : null;
+        Layer.succeed(FcmClient.FcmClient, {
+          sendWake: (input) =>
+            Effect.suspend(() => {
+              if (current.deliveryFailure) return Effect.fail(current.deliveryFailure);
+              sent.push(input);
+              return Effect.succeed({ unregistered: false });
+            }),
         }),
-
-      invalidateDeliveryToken: () => Effect.void,
-    }),
-    Layer.succeed(AgentActivityRows.AgentActivityRows, {
-      upsert: () => Effect.void,
-      remove: () => Effect.void,
-      pruneTerminal: () => Effect.void,
-      listForUser: () =>
-        Effect.sync(() =>
-          current.linked
-            ? [...(current.state ? [current.state] : []), ...current.otherStates].filter(
-                (row) =>
-                  !current.revokedEnvironments.includes(row.environmentId) &&
-                  !current.notificationOnlyEnvironments.includes(row.environmentId),
-              )
-            : [],
-        ),
-      getForUserThread: (input) =>
-        Effect.sync(() =>
-          current.linked
-            ? ([current.state, ...current.otherStates].find(
-                (row) =>
-                  row?.environmentId === input.environmentId && row.threadId === input.threadId,
-              ) ?? null)
-            : null,
-        ),
-    }),
-    Layer.succeed(EnvironmentLinks.EnvironmentLinks, {
-      upsert: () => Effect.void,
-      listDeliveryUsersForEnvironment: (input) =>
-        Effect.sync(() =>
-          current.linked && !current.revokedEnvironments.includes(input.environmentId)
-            ? [
-                {
-                  userId: "user",
-                  notificationsEnabled: !current.mutedEnvironments.includes(input.environmentId),
-                  liveActivitiesEnabled: !current.notificationOnlyEnvironments.includes(
-                    input.environmentId,
-                  ),
-                },
-              ]
-            : [],
-        ),
-      listForUser: () => Effect.succeed([]),
-      findActiveManagedForEnvironment: () => Effect.succeed([]),
-      updateLiveActivityPreference: () => Effect.die("unexpected Live Activity preference update"),
-      setHoldWebhooksWhileOffline: () => Effect.void,
-      revokeForUser: () => Effect.succeed(false),
-      getForUser: (input) =>
-        Effect.sync(() =>
-          current.linked && !current.revokedEnvironments.includes(input.environmentId)
-            ? {
-                environmentId: EnvironmentId.make(input.environmentId),
-                label: "Desktop",
-                environmentPublicKey: "key",
-                linkedAt: state.updatedAt,
-                endpoint: {
-                  httpBaseUrl: "https://env.test",
-                  wsBaseUrl: "wss://env.test",
-                  providerKind: "manual",
-                },
-              }
-            : null,
-        ),
-    }),
-    Layer.succeed(RelayDb.RelayDb, {} as RelayDb.RelayDb["Service"]),
+        Layer.mock(LiveActivities.LiveActivities, {
+          listTargets: ({ userId }) =>
+            Effect.succeed(userId === current.target.user_id ? [current.target] : []),
+        }),
+        Layer.mock(EnvironmentLinks.EnvironmentLinks, {
+          listDeliveryUsersForEnvironment: (input) =>
+            Effect.succeed(
+              current.linked &&
+                input.environmentId === environment.environmentId &&
+                input.environmentPublicKey === environment.environmentPublicKey
+                ? [{ userId: target.user_id, ...current.linkPreferences }]
+                : [],
+            ),
+          listForUser: ({ userId }) =>
+            Effect.succeed(
+              current.linked && userId === current.target.user_id
+                ? ["env", "muted"].map((id) => ({
+                    environmentId: EnvironmentId.make(id),
+                    endpoint: {
+                      httpBaseUrl: "https://host.test",
+                      wsBaseUrl: "wss://host.test",
+                      providerKind: "manual" as const,
+                    },
+                    linkedAt: "2026-01-01T00:00:00.000Z",
+                    label: id,
+                    activityPreferences:
+                      id === "muted"
+                        ? { notificationsEnabled: false, liveActivitiesEnabled: false }
+                        : current.linkPreferences,
+                  }))
+                : [],
+            ),
+        }),
+        Layer.succeed(RelayDb.RelayDb, {} as RelayDb.RelayDb["Service"]),
+      ),
+    ),
   );
-  return {
-    sent,
-    queued,
-    marked,
-    current,
-    layer: FcmDeliveries.layer.pipe(Layer.provide(layerServices)),
-    job: {
-      userId: "user",
-      deviceId: "phone",
-      token: "fcm-token",
-      state,
-      queuedAt: 0,
-    } satisfies FcmDeliveries.FcmDeliveryJob,
-  };
+  return { sent, queued, current, layer };
 }
 
+const expectedWake = {
+  token: job.token,
+  packageName: target.bundle_id,
+  environmentId: environment.environmentId,
+  deviceId: job.deviceId,
+  userId: job.userId,
+};
+
 describe("Android delivery routing", () => {
-  const secondState: RelayAgentActivityState = {
-    ...state,
-    threadId: ThreadId.make("second-thread"),
-    threadTitle: "Second thread",
-    deepLink: "/threads/env/second-thread",
-  };
-
-  it.effect.each([
-    {
-      firstPhase: "waiting_for_approval",
-      secondPhase: "waiting_for_input",
-      title: "2 agents need attention",
-      active: "true",
-    },
-    { firstPhase: "completed", secondPhase: "failed", title: "2 agents finished", active: "false" },
-  ] as const)(
-    "routes grouped $firstPhase and $secondPhase to the overview once across their queued jobs",
-    ({ firstPhase, secondPhase, title, active }) => {
-      const h = harness();
-      h.current.otherStates = [secondState];
-      return Effect.gen(function* () {
-        const delivery = yield* FcmDeliveries.FcmDeliveries;
-        yield* delivery.process(h.job);
-        h.current.state = { ...state, phase: firstPhase };
-        h.current.otherStates = [{ ...secondState, phase: secondPhase }];
-        yield* delivery.process({ ...h.job, state: h.current.state });
-        yield* delivery.process({ ...h.job, state: h.current.otherStates[0] });
-        yield* delivery.process({ ...h.job, state: h.current.state });
-        const alerts = h.sent.filter((message) => message.alert);
-        expect(alerts).toHaveLength(1);
-        expect(alerts[0]?.data).toMatchObject({
-          alert_title: title,
-          alert_body: "Fix notifications, Second thread",
-          alert_path: "/",
-          active,
-        });
-        expect(h.marked.at(-1)?.aggregate?.activities).toHaveLength(2);
-      }).pipe(Effect.provide(h.layer));
-    },
-  );
-
-  it.effect("filters disabled event types before counting a group", () => {
-    const h = harness();
-    h.current.target.last_aggregate_json = encodeJson(aggregateFor([state, secondState]));
-    h.current.target.preferences_json = encodeJson({ ...preferences, notifyOnApproval: false });
-    h.current.state = { ...state, phase: "waiting_for_approval" };
-    h.current.otherStates = [{ ...secondState, phase: "waiting_for_input" }];
-    return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      yield* delivery.process({ ...h.job, state: h.current.state });
-      expect(h.sent[0]?.data).toMatchObject({
-        alert_title: "Second thread",
-        alert_body: "Input: Project",
-        alert_path: "/threads/env/second-thread",
-      });
-    }).pipe(Effect.provide(h.layer));
-  });
-
-  it.effect("excludes already delivered attention and stale completions from groups", () => {
-    const h = harness();
-    h.current.state = { ...state, phase: "waiting_for_approval" };
-    h.current.target.last_aggregate_json = encodeJson(aggregateFor([h.current.state, secondState]));
-    h.current.otherStates = [
-      { ...secondState, phase: "completed", updatedAt: "1969-12-31T23:57:00.000Z" },
-    ];
-    return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      yield* delivery.process({ ...h.job, state: h.current.state });
-      expect(h.sent.every((message) => !message.alert)).toBe(true);
-    }).pipe(Effect.provide(h.layer));
-  });
-
-  it.effect("prioritizes attention over simultaneous completions like iOS", () => {
-    const h = harness();
-    h.current.target.last_aggregate_json = encodeJson(aggregateFor([state, secondState]));
-    h.current.state = { ...state, phase: "completed" };
-    h.current.otherStates = [{ ...secondState, phase: "waiting_for_input" }];
-    return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      yield* delivery.process({ ...h.job, state: h.current.state });
-      expect(h.sent[0]?.data).toMatchObject({
-        alert_title: "Second thread",
-        alert_body: "Input: Project",
-      });
-      yield* delivery.process({ ...h.job, state: h.current.otherStates[0] });
-      expect(h.sent.filter((message) => message.alert)).toHaveLength(1);
-    }).pipe(Effect.provide(h.layer));
-  });
-
-  it.effect.each(["completed", "waiting_for_approval", "waiting_for_input", "failed"] as const)(
-    "deleting one thread preserves another thread's %s alert",
-    (phase) => {
-      const h = harness();
-      h.current.otherStates = [secondState];
-      return Effect.gen(function* () {
-        const delivery = yield* FcmDeliveries.FcmDeliveries;
-        yield* delivery.process(h.job);
-        h.current.otherStates = [];
-        h.current.state = { ...state, phase };
-        yield* delivery.enqueue({ target, state: null });
-        yield* delivery.process(h.queued[0]);
-        expect(h.sent.at(-1)?.alert).toBe(false);
-        yield* delivery.process({ ...h.job, state: h.current.state });
-        expect(h.sent.filter((message) => message.alert)).toHaveLength(1);
-        yield* delivery.process({ ...h.job, state: h.current.state });
-        expect(h.sent.filter((message) => message.alert)).toHaveLength(1);
-      }).pipe(Effect.provide(h.layer));
-    },
-  );
-
-  it.effect("registration replay establishes a baseline without alerting", () => {
-    const h = harness();
-    h.current.state = { ...state, phase: "waiting_for_approval" };
-    h.current.otherStates = [{ ...secondState, phase: "waiting_for_input" }];
-    return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      yield* delivery.enqueue({ target, state: null, replay: true });
-      yield* delivery.process(h.queued[0]);
-      yield* delivery.process({ ...h.job, state: h.current.state });
-      expect(h.sent.every((message) => !message.alert)).toBe(true);
-      expect(h.marked[0]?.aggregate?.activities).toHaveLength(2);
-    }).pipe(Effect.provide(h.layer));
-  });
-
-  it.effect.each(["mutedEnvironments", "revokedEnvironments"] as const)(
-    "excludes %s when forming cross-environment groups",
-    (restriction) => {
-      const h = harness();
-      const other = { ...secondState, environmentId: EnvironmentId.make("other-env") };
-      h.current.target.last_aggregate_json = encodeJson(aggregateFor([state, other]));
-      h.current.state = { ...state, phase: "waiting_for_approval" };
-      h.current.otherStates = [{ ...other, phase: "waiting_for_input" }];
-      h.current[restriction] = [other.environmentId];
-      return Effect.gen(function* () {
-        const delivery = yield* FcmDeliveries.FcmDeliveries;
-        yield* delivery.process({ ...h.job, state: h.current.state });
-        expect(h.sent[0]?.data).toMatchObject({
-          alert_title: "Fix notifications",
-          alert_body: "Approval: Project",
-        });
-      }).pipe(Effect.provide(h.layer));
-    },
-  );
-
-  it("gives a group a stable retry identity independent of row order", () => {
-    const other = {
-      ...secondState,
-      environmentId: EnvironmentId.make("other-env"),
-      threadId: state.threadId,
-    };
-    const input = {
-      previousAggregate: aggregateFor([state, other]),
-      nextAggregate: aggregateFor([
-        { ...state, phase: "completed" },
-        { ...other, phase: "failed" },
-      ]),
-      preferences,
-      nowMs: 0,
-    };
-    const alert = FcmDeliveries.androidAlertForAggregate(input);
-    expect(alert?.alert_title).toBe("2 agents finished");
-    expect(
-      FcmDeliveries.androidAlertForAggregate({
-        ...input,
-        nextAggregate: {
-          ...input.nextAggregate,
-          activities: input.nextAggregate.activities.toReversed(),
-        },
-      })?.alert_id,
-    ).toBe(alert?.alert_id);
-    expect(
-      FcmDeliveries.androidAlertForAggregate({
-        ...input,
-        nextAggregate: {
-          ...input.nextAggregate,
-          activities: input.nextAggregate.activities.map((row) => ({
-            ...row,
-            updatedAt: "1970-01-01T00:00:01.000Z",
-          })),
-        },
-      })?.alert_id,
-    ).not.toBe(alert?.alert_id);
-  });
-
-  it("distinguishes matching thread IDs in different environments", () => {
-    const other = {
-      ...secondState,
-      environmentId: EnvironmentId.make("other-env"),
-      threadId: state.threadId,
-    };
-    const alreadyWaiting = { ...state, phase: "waiting_for_approval" as const };
-    expect(
-      FcmDeliveries.androidAlertForAggregate({
-        previousAggregate: aggregateFor([alreadyWaiting, other]),
-        nextAggregate: aggregateFor([alreadyWaiting, { ...other, phase: "waiting_for_input" }]),
-        preferences,
-        nowMs: 0,
-      }),
-    ).toMatchObject({ alert_title: "Second thread", alert_body: "Input: Project" });
-  });
-
-  it("keeps notification groups distinct when identifiers contain slashes", () => {
-    const left = FcmDeliveries.androidAlertForState(
-      {
-        ...state,
-        environmentId: EnvironmentId.make("a/b"),
-        threadId: ThreadId.make("c"),
-        phase: "completed",
-      },
-      preferences,
-      0,
-    );
-    const right = FcmDeliveries.androidAlertForState(
-      {
-        ...state,
-        environmentId: EnvironmentId.make("a"),
-        threadId: ThreadId.make("b/c"),
-        phase: "completed",
-      },
-      preferences,
-      0,
-    );
-    expect(left?.alert_group).not.toBe(right?.alert_group);
-  });
-
-  it.effect(
-    "queues Android devices and sends the latest aggregate instead of a stale running state",
-    () => {
-      const h = harness();
-      return Effect.gen(function* () {
-        const delivery = yield* FcmDeliveries.FcmDeliveries;
-        yield* delivery.enqueue({ target, state });
-        h.current.state = { ...state, phase: "completed" };
-        yield* delivery.process(h.queued[0]);
-        expect(h.sent).toHaveLength(0);
-        yield* delivery.process({ ...h.job, state: h.current.state });
-        expect(h.sent[0]?.data).toMatchObject({
-          active: "false",
-          alert_title: "Fix notifications",
-          alert_body: "Done: Project",
-          alert_path: "/threads/env/thread",
-        });
-      }).pipe(Effect.provide(h.layer));
-    },
-  );
-
-  it.effect("keeps completion alerts working with ongoing activity disabled", () => {
-    const h = harness();
-    h.current.state = { ...state, phase: "completed" };
-    h.current.target.preferences_json = encodeJson({
-      ...preferences,
-      liveActivitiesEnabled: false,
-    });
-    return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      yield* delivery.process({ ...h.job, state: h.current.state });
-      expect(h.sent[0]?.data).toMatchObject({
-        active: "false",
-        alert_title: "Fix notifications",
-        alert_body: "Done: Project",
-      });
-      expect(h.sent[0]?.data.user_id).toBe("user");
-    }).pipe(Effect.provide(h.layer));
-  });
-
-  it.effect("drops jobs for rotated tokens, expired jobs, and revoked links", () => {
+  it.effect("wakes only linked Android devices with matching notification preferences", () => {
     const h = harness();
     return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      yield* delivery.process({ ...h.job, token: "old-token" });
-      yield* delivery.process({ ...h.job, queuedAt: -400_000 });
+      const service = yield* FcmDeliveries.FcmDeliveries;
       h.current.linked = false;
-      yield* delivery.process(h.job);
-      expect(h.sent).toHaveLength(0);
-    }).pipe(Effect.provide(h.layer));
-  });
-
-  it.effect("ends an existing ongoing notification when the environment stops publishing", () => {
-    const h = harness();
-    h.current.target.last_aggregate_json = encodeJson(aggregateFor([state]));
-    h.current.state = null;
-    return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      yield* delivery.process({ ...h.job, state: null });
-      expect(h.sent[0]?.data).toMatchObject({ active: "false" });
-      expect(h.sent[0]?.alert).toBe(false);
-      expect(h.marked[0]?.kind).toBe("live_activity_end");
-    }).pipe(Effect.provide(h.layer));
-  });
-
-  it.effect("leaves iOS devices on their existing delivery path", () => {
-    const h = harness();
-    return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      expect(yield* delivery.enqueue({ target: { ...target, platform: "ios" }, state })).toBeNull();
-      expect(h.queued).toHaveLength(0);
-    }).pipe(Effect.provide(h.layer));
-  });
-
-  it.effect(
-    "continues ongoing activity when alerts are disabled, with or without a previous card",
-    () => {
-      const h = harness();
-      h.current.state = { ...state, phase: "waiting_for_approval" };
+      yield* service.wake(environment);
+      h.current.linked = true;
+      h.current.target.platform = "ios";
+      yield* service.wake(environment);
+      h.current.target.platform = "android";
+      h.current.linkPreferences.notificationsEnabled = false;
       h.current.target.preferences_json = encodeJson({
         ...preferences,
-        notificationsEnabled: false,
+        liveActivitiesEnabled: false,
       });
+      yield* service.wake(environment);
+      h.current.linkPreferences.notificationsEnabled = true;
+      yield* service.wake(environment);
+      expect(h.sent).toEqual([expectedWake]);
+      expect(h.queued).toEqual([]);
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect("queues only routing data and discards old activity and replay jobs", () => {
+    const h = harness();
+    return Effect.gen(function* () {
+      const service = yield* FcmDeliveries.FcmDeliveries;
+      const input = { target, ...environment, state: { threadId: "thread", headline: "secret" } };
+      yield* service.enqueue(input);
+      expect(h.queued).toEqual([job]);
+      const legacy = { userId: job.userId, deviceId: job.deviceId, token: job.token, queuedAt: 0 };
+      yield* service.process({ ...legacy, state: input.state });
+      yield* service.process({ ...legacy, state: null, replay: true });
+      expect(h.sent).toEqual([]);
+      yield* service.process(h.queued[0]);
+      expect(h.sent).toEqual([expectedWake]);
+    }).pipe(Effect.provide(h.layer));
+  });
+
+  it.effect(
+    "rechecks the environment key, expiry, ownership, token and current settings at dispatch",
+    () => {
+      const h = harness();
       return Effect.gen(function* () {
-        const delivery = yield* FcmDeliveries.FcmDeliveries;
-        yield* delivery.process({ ...h.job, state: h.current.state });
-        expect(h.sent).toHaveLength(1);
-        expect(h.sent[0]?.data.active).toBe("true");
-        expect(h.sent[0]?.alert).toBe(false);
-        expect(h.sent[0]?.data.alert_id).toBeUndefined();
-        h.current.target.preferences_json = encodeJson({ ...preferences, notifyOnApproval: false });
-        h.current.target.last_aggregate_json = encodeJson(aggregateFor([state]));
-        yield* delivery.process({ ...h.job, state: h.current.state });
-        expect(h.sent[1]?.data.active).toBe("true");
-        expect(h.sent[1]?.data.alert_id).toBeUndefined();
-        expect(h.marked.at(-1)?.kind).toBe("live_activity_update");
+        const service = yield* FcmDeliveries.FcmDeliveries;
+        yield* service.process({ ...job, environmentPublicKey: "old-key" });
+        yield* service.process({ ...job, token: "old-token" });
+        yield* service.process({ ...job, queuedAt: -400_000 });
+        yield* service.process({ ...job, userId: "another-user" });
+        yield* service.process({ ...job, deviceId: "another-device" });
+        h.current.linked = false;
+        yield* service.process(job);
+        h.current.linked = true;
+        h.current.target.preferences_json = encodeJson({
+          ...preferences,
+          liveActivitiesEnabled: false,
+          notificationsEnabled: false,
+        });
+        yield* service.process(job);
+        expect(h.sent).toEqual([]);
       }).pipe(Effect.provide(h.layer));
     },
   );
 
-  it.effect("replays an empty card to repair an orphan without a delivery baseline", () => {
+  it.effect("replays routing for the registering device's permitted environments only", () => {
     const h = harness();
-    h.current.state = null;
     return Effect.gen(function* () {
-      const delivery = yield* FcmDeliveries.FcmDeliveries;
-      yield* delivery.process({ ...h.job, state: null });
-      expect(h.sent[0]?.data.activity_expires_at).toBe("0");
-      expect(h.sent[0]?.alert).toBe(false);
+      const service = yield* FcmDeliveries.FcmDeliveries;
+      yield* service.replayForDevice({
+        ...target,
+        last_aggregate_json: "private previous summary",
+      });
+      expect(h.sent).toEqual([expectedWake]);
+      expect(h.queued).toEqual([]);
     }).pipe(Effect.provide(h.layer));
   });
-
-  it("fits five Unicode rows and a grouped alert in the FCM budget without corrupting text or routes", () => {
-    const longTitle = '🤖漢字"\\'.repeat(30);
-    const aggregate = aggregateFor(
-      Array.from({ length: 5 }, (_, i) => ({
-        ...state,
-        threadId: ThreadId.make(`thread-${i}`),
-        threadTitle: longTitle,
-        projectTitle: longTitle,
-      })),
-    );
-    const data = fitFcmData({
-      ...androidActivityData(aggregate),
-      t3_kind: "agent_activity",
-      device_id: "d".repeat(128),
-      user_id: "u".repeat(128),
-      updated_at: "1788780000000",
-      alert_id: "a".repeat(64),
-      alert_title: "5 agents finished",
-      alert_body: Array(5).fill(longTitle).join(", "),
-      alert_path: "/threads/env/thread",
-    });
-    expect(new TextEncoder().encode(JSON.stringify(data)).length).toBeLessThanOrEqual(3800);
-    expect(data.alert_path).toBe("/threads/env/thread");
-    expect(data.activity_path).toBe("/threads/env/thread");
-    expect(data.alert_id).toBe("a".repeat(64));
-    expect(data.activity_line_4).toContain("Working\t");
-    for (const value of Object.values(data))
-      expect(new TextDecoder().decode(new TextEncoder().encode(value))).toBe(value);
-  });
-});
-
-describe("delivery policy regressions", () => {
-  it.effect("alerts a quick completion even with a previous unrelated card", () => {
-    const h = harness();
-    const old = { ...state, threadId: ThreadId.make("old"), phase: "completed" as const };
-    h.current.target.last_aggregate_json = encodeJson(aggregateFor([old]));
-    h.current.otherStates = [old];
-    h.current.state = { ...state, phase: "completed" };
-    return Effect.gen(function* () {
-      const d = yield* FcmDeliveries.FcmDeliveries;
-      yield* d.process(h.job);
-      yield* d.process({ ...h.job, state: h.current.state });
-      expect(h.sent.filter((x) => x.alert)).toHaveLength(1);
-    }).pipe(Effect.provide(h.layer));
-  });
-});
-
-describe("notification-only environments", () => {
-  it.effect("alerts independently while another environment has a live card", () => {
-    const h = harness();
-    const other = {
-      ...state,
-      environmentId: EnvironmentId.make("other"),
-      threadId: ThreadId.make("other"),
-    };
-    h.current.target.last_aggregate_json = encodeJson(aggregateFor([other]));
-    h.current.otherStates = [other];
-    h.current.state = { ...state, phase: "waiting_for_input" };
-    h.current.notificationOnlyEnvironments = [state.environmentId];
-    return Effect.gen(function* () {
-      const deliveries = yield* FcmDeliveries.FcmDeliveries;
-      yield* deliveries.process({ ...h.job, state: h.current.state });
-      expect(h.sent).toHaveLength(1);
-      expect(h.sent[0]?.alert).toBe(true);
-      expect(h.sent[0]?.data.alert_path).toBe(state.deepLink);
-    }).pipe(Effect.provide(h.layer));
-  });
-});
-
-it("stops reducing five-character row fields and fits the remaining alert", () => {
-  const data = fitFcmData({
-    device_id: "x".repeat(3710),
-    activity_line_0: "Approval\taaaaa\tbbbbb",
-    alert_body: "y".repeat(200),
-  });
-  expect(data.activity_line_0).toBe("Approval\taaaaa\tbbbbb");
-  expect(new TextEncoder().encode(encodeJson(data)).length).toBeLessThanOrEqual(3800);
 });
 
 describe("FCM queue message isolation", () => {
@@ -644,8 +246,8 @@ describe("FCM queue message isolation", () => {
         },
       });
       const batch = [
-        message("failed", failure === "invalid-job" ? {} : h.job),
-        message("healthy", h.job),
+        message("failed", failure === "invalid-job" ? {} : job),
+        message("healthy", job),
       ];
       return Effect.gen(function* () {
         yield* Stream.fromIterable(batch).pipe(
@@ -666,7 +268,6 @@ describe("FCM queue message isolation", () => {
           ["healthy", "ack"],
         ]);
         expect(h.sent).toHaveLength(1);
-        expect(h.marked).toHaveLength(1);
       }).pipe(Effect.provide(h.layer));
     },
   );

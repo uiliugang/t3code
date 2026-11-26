@@ -98,6 +98,7 @@ import * as PreviewBrowser from "./PreviewBrowser.ts";
 import * as PreviewBrowserHost from "./PreviewBrowserHost.ts";
 import { presentAsChrome, ServerBrowserContexts } from "./ServerBrowserContexts.ts";
 import { BrowserControlInterrupted, SessionControl } from "./SessionControl.ts";
+import { installNoisePreviewDocument } from "./NoisePreviewDocument.ts";
 import { installPdfDocumentNavigation, isPdfAssetUrl } from "./PdfDocumentNavigation.ts";
 
 const SERVER_HOST_CLIENT_ID = SERVER_BROWSER_AUTOMATION_CLIENT_ID;
@@ -1183,7 +1184,11 @@ const make = Effect.gen(function* () {
         );
     const context = page.context();
     const cdp = await context.newCDPSession(page);
-    await installPdfDocumentNavigation(cdp);
+    const noiseDocument = await runPromise(
+      manager.noiseDocumentFor(snapshot.threadId, snapshot.tabId),
+    );
+    if (noiseDocument) await installNoisePreviewDocument(page, noiseDocument);
+    else await installPdfDocumentNavigation(cdp);
     // The desktop's page is already a normal browser. A popup's first request
     // precedes this override, so its Sec-CH-UA brands still name HeadlessChrome.
     if (!desktop) await presentAsChrome(cdp, host);
@@ -2904,6 +2909,7 @@ const make = Effect.gen(function* () {
           // Electron resizes no hidden guest it does not paint; a pending capture makes the desktop paint it.
           let waiting = true;
           void (async () => {
+            // oxlint-disable-next-line no-unmodified-loop-condition -- the resize waiter clears this flag while screenshot capture is pending
             while (waiting && !tab.closing) {
               await tab.cdp.send("Page.captureScreenshot", DESKTOP_PAINT_CAPTURE);
             }

@@ -200,6 +200,13 @@ function AuthorizedPreviewStream({
       {...props}
       ref={ref}
       configuration={configuration}
+      baseUrl={
+        Platform.OS === "android"
+          ? props.access.encrypted
+            ? new URL(props.access.httpBase).origin + "/"
+            : "https://localhost/"
+          : "file:///"
+      }
       onUnauthorized={() => {
         const refusals = ++unauthorized.current;
         if (refusals >= MAX_REFUSALS) return false;
@@ -228,6 +235,7 @@ function AuthorizedPreviewStream({
 function PreviewStreamDocumentView({
   ref,
   configuration,
+  baseUrl,
   background,
   compact,
   pdfUri,
@@ -244,6 +252,7 @@ function PreviewStreamDocumentView({
   onRecoverProcess,
 }: Omit<NativeStreamBridge, "onUnauthorized" | "onRefused"> & {
   readonly configuration: string;
+  readonly baseUrl: string;
   readonly background: string;
   readonly onUnauthorized: () => boolean;
   readonly onRetry: () => void;
@@ -333,7 +342,7 @@ function PreviewStreamDocumentView({
       previewStreamScript,
       gt("Browser viewer stopped unexpectedly."),
     ),
-    baseUrl: Platform.OS === "android" ? "https://localhost/" : "file:///",
+    baseUrl,
   };
   useImperativeHandle(ref, () => ({
     command,

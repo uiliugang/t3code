@@ -116,6 +116,7 @@ export class ConnectionTransientError extends Schema.TaggedError<
   i18nMessage: Schema.optionalKey(MarkedText),
   traceId: Schema.optionalKey(Schema.String),
   verificationCode: Schema.optionalKey(Schema.String),
+  approvalMethod: Schema.optionalKey(Schema.Literal("host-cli")),
   ...ConnectionFailureFields,
 }) {
   override get message(): string {
@@ -163,7 +164,13 @@ export interface DirectDpopConnection {
   readonly httpBaseUrl: string;
 }
 
+export type NoiseMediaOrigins = Readonly<Record<"asset" | "device" | "browser" | "tunnel", string>>;
+
 export interface PreparedConnection {
+  readonly browserMedia?: import("../device/hubAccess.ts").DeviceMediaTransport;
+  readonly mediaOrigins?: NoiseMediaOrigins;
+  readonly noiseHttpClient?: import("effect/http/HttpClient").HttpClient;
+  readonly transport?: "noise";
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly httpBaseUrl: string;

@@ -157,6 +157,7 @@ export interface AddEnvironmentPrefill {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly host: string | null;
+  readonly noisePin?: string;
 }
 
 export const addEnvironmentPrefillAtom = Atom.make<AddEnvironmentPrefill | null>(null).pipe(
@@ -221,6 +222,7 @@ export function useConnectLinkedEnvironment(
     // Pairing takes a moment; a user who has gone elsewhere since is not moved again.
     const stayed = () => !tabClosed && router.state.location.href === startedOn;
     const outcome = await connectLinkedEnvironment({
+      expectedEnvironmentId: surface.environmentId,
       label: surface.label,
       requestPairing: async () => {
         // Without it the linking environment refuses; the user can still pair by hand.
@@ -266,6 +268,7 @@ export function useConnectLinkedEnvironment(
       environmentId: surface.environmentId,
       label: outcome.label,
       host: outcome.host,
+      ...(outcome.noisePin && { noisePin: outcome.noisePin }),
     };
     setState({ phase: "manual", prefill });
     if (stayed()) addWithCode(prefill);

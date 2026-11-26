@@ -262,7 +262,7 @@ function LinkRequestSheet(props: {
     }
     let code = pairingCode;
     if (canMint && targetId !== null) {
-      const minted = await mintPairingCodeOn(targetId, access);
+      const minted = await mintPairingCodeOn(targetId, access, props.environmentId);
       if (Result.isFailure(minted)) {
         setMintFailed((failed) => new Set(failed).add(targetId));
         setError(linkRequestFailureMessage(minted.failure, m));

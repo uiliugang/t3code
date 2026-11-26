@@ -73,8 +73,10 @@
         // graphqlgen reads its config.
         "graphql.config.ts",
       ],
-      // The generated operations export every selection's class.
-      "ignoreIssues": { "**/*.graphql.ts": ["exports", "types", "namespaceMembers"] },
+      // Keep complete generated GraphQL and wasm-bindgen interfaces.
+      "ignoreIssues": {
+        "**/*.graphql.ts": ["exports", "types", "namespaceMembers"],
+      },
       // Keep the transitive Effect runtime pinned for standalone npm installs.
       // The Vite+ web build prerequisite.
       // Native and disk-loaded provider packages stay external to the bundle; the
@@ -172,6 +174,10 @@
     "packages/*": {
       // These workspace packages are private to this monorepo.
       "includeEntryExports": true,
+    },
+    "packages/shared": {
+      "includeEntryExports": true,
+      "ignoreIssues": { "src/_generated/noise.{js,d.ts}": ["exports"] },
     },
     "packages/effect-acp": {
       "includeEntryExports": true,

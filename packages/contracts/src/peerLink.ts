@@ -42,9 +42,21 @@ export const PeerLinkName = Schema.Struct({
 });
 export type PeerLinkName = typeof PeerLinkName.Type;
 
+const noisePeerOrigin = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(2048));
+export const NoisePeerRequest = Schema.Struct({
+  mode: Schema.Literal("peer"),
+  clientOrigin: noisePeerOrigin,
+  targetOrigin: noisePeerOrigin,
+  token: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{43}$/u)),
+});
+export const NoisePeerReply = Schema.Struct({
+  status: Schema.Literals(["peer-ready", "rejected"]),
+});
+
 export const PeerLinkCreateInput = Schema.Struct({
   /** Where the peer answers: an https, Tailscale, LAN or loopback base URL. */
   url: TrimmedNonEmptyString,
+  expectedNoisePin: Schema.optionalKey(TrimmedNonEmptyString),
   /** More addresses for the same peer, tried after `url`. */
   alternateUrls: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   /** A pairing code from the peer (`t3 pair` there, or its Connections settings). */
@@ -191,6 +203,18 @@ const peerLinkClientPairingTarget = {
  */
 export const PeerLinkClientPairingResult = Schema.Union([
   Schema.Struct({
+    type: Schema.Literal("noise-link"),
+    ...peerLinkClientPairingTarget,
+    hostPin: TrimmedNonEmptyString,
+    credential: TrimmedNonEmptyString,
+    expiresAt: Schema.DateTimeUtc,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("noise"),
+    ...peerLinkClientPairingTarget,
+    hostPin: TrimmedNonEmptyString,
+  }),
+  Schema.Struct({
     type: Schema.Literal("credential"),
     ...peerLinkClientPairingTarget,
     credential: TrimmedNonEmptyString,
@@ -244,6 +268,7 @@ export const PeerLinkRequestAnswerInput = Schema.Struct({
   answer: Schema.Union([
     Schema.Struct({
       type: Schema.Literal("link"),
+      expectedNoisePin: Schema.optionalKey(TrimmedNonEmptyString),
       /** The machine the user picked, when they picked one rather than typing an address. */
       environmentId: Schema.optionalKey(EnvironmentId),
       /** What the client calls that machine. */

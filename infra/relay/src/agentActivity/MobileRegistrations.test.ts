@@ -23,6 +23,8 @@ import * as FcmDeliveries from "./FcmDeliveries.ts";
 const layerPublisher = AgentActivityPublisher.layer.pipe(
   Layer.provide(
     Layer.succeed(FcmDeliveries.FcmDeliveries, {
+      wake: () => Effect.die("unexpected private wake"),
+      replayForDevice: () => Effect.die("unexpected Android replay"),
       enqueue: () => Effect.succeed(null),
       process: () => Effect.void,
     }),

@@ -14,21 +14,13 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { RelayAgentActivityState, RelayAgentAwarenessPhase } from "./agentActivity.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+
+export { RelayAgentActivityState, RelayAgentAwarenessPhase };
 
 export const RelayAgentAwarenessPlatform = Schema.Literals(["ios", "android"]);
 export type RelayAgentAwarenessPlatform = typeof RelayAgentAwarenessPlatform.Type;
-
-export const RelayAgentAwarenessPhase = Schema.Literals([
-  "starting",
-  "running",
-  "waiting_for_approval",
-  "waiting_for_input",
-  "completed",
-  "failed",
-  "stale",
-]);
-export type RelayAgentAwarenessPhase = typeof RelayAgentAwarenessPhase.Type;
 
 export const RelayAgentAwarenessPreferences = Schema.Struct({
   liveActivitiesEnabled: Schema.Boolean,
@@ -115,20 +107,6 @@ export const RelayDeviceUnregistrationParams = Schema.Struct({
   deviceId: TrimmedNonEmptyString,
 });
 export type RelayDeviceUnregistrationParams = typeof RelayDeviceUnregistrationParams.Type;
-
-export const RelayAgentActivityState = Schema.Struct({
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
-  projectTitle: TrimmedNonEmptyString,
-  threadTitle: TrimmedNonEmptyString,
-  phase: RelayAgentAwarenessPhase,
-  headline: TrimmedNonEmptyString,
-  detail: Schema.optional(TrimmedNonEmptyString),
-  modelTitle: TrimmedNonEmptyString,
-  updatedAt: TrimmedNonEmptyString,
-  deepLink: TrimmedNonEmptyString,
-});
-export type RelayAgentActivityState = typeof RelayAgentActivityState.Type;
 
 export const RelayAgentActivityAggregateRow = Schema.Struct({
   environmentId: EnvironmentId,
@@ -258,9 +236,14 @@ export const RelayManagedEndpointRecoveryProofPayload = Schema.Union([
 export type RelayManagedEndpointRecoveryProofPayload =
   typeof RelayManagedEndpointRecoveryProofPayload.Type;
 
-export const RelayAgentActivityPublishProofPayload = Schema.Struct({
+export const RelayAgentActivityWakeProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
   environmentId: EnvironmentId,
+});
+export type RelayAgentActivityWakeProofPayload = typeof RelayAgentActivityWakeProofPayload.Type;
+
+export const RelayAgentActivityPublishProofPayload = Schema.Struct({
+  ...RelayAgentActivityWakeProofPayload.fields,
   threadId: ThreadId,
   state: Schema.NullOr(RelayAgentActivityState),
 });
@@ -754,6 +737,12 @@ export const RelayClientEnvironmentRecord = Schema.Struct({
   label: TrimmedNonEmptyString,
   endpoint: RelayManagedEndpoint,
   linkedAt: TrimmedNonEmptyString,
+  activityPreferences: Schema.optionalKey(
+    Schema.Struct({
+      notificationsEnabled: Schema.Boolean,
+      liveActivitiesEnabled: Schema.Boolean,
+    }),
+  ),
 });
 export type RelayClientEnvironmentRecord = typeof RelayClientEnvironmentRecord.Type;
 
@@ -1289,6 +1278,16 @@ const RelayServerGroup = HttpApiGroup.make("server")
         error: RelayAgentActivityPublishErrors,
       },
     ).annotate(OpenApi.Summary, "Publish agent activity"),
+    HttpApiEndpoint.post(
+      "wakeAgentActivity",
+      "/v1/environments/:environmentId/agent-activity/wake",
+      {
+        params: Schema.Struct({ environmentId: EnvironmentId }),
+        payload: Schema.Struct({ proof: TrimmedNonEmptyString }),
+        success: RelayPublishResponse,
+        error: RelayAgentActivityPublishErrors,
+      },
+    ).annotate(OpenApi.Summary, "Wake Android devices to fetch private agent activity"),
     HttpApiEndpoint.post(
       "updateLinkPreferences",
       "/v1/environments/:environmentId/link-preferences",

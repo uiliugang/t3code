@@ -29,6 +29,8 @@ import { DurableDeferred, WorkflowEngine } from "effect/workflow";
 
 import { checkOutput, rejectionText } from "../orchestration-v2/runOutput.ts";
 import { isMissedFixedTimeRun, nextScheduledRunAt } from "../scheduledTasks/Schedule.ts";
+import { ScheduledTaskWebhookOrigin } from "../scheduledTasks/webhookOrigin.ts";
+import { listHookAddresses, PublishWorkflowHooks } from "./hookDirectory.ts";
 import { constantTimeEquals } from "../scheduledTasks/webhookVerification.ts";
 import {
   END_STEP,
@@ -552,10 +554,12 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
         trigger,
         workflow: definition.name,
         name: trigger.name,
-        path: `/api/hooks/${encodeURIComponent(hookId)}/${token}`,
       };
     }),
   );
+  const readWebhookOrigin = yield* ScheduledTaskWebhookOrigin;
+  const publish = yield* PublishWorkflowHooks;
+  yield* publish(hooks.map(({ workflow, name }) => ({ workflow, name })));
   const hookStarts = new Map<string, ReadonlyArray<number>>();
   const deliver: Workflows["Service"]["deliver"] = Effect.fn("Workflows.deliver")(
     function* (delivery) {
@@ -1017,7 +1021,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
 
   return Workflows.of({
     start,
-    hooks: Effect.succeed(hooks.map(({ workflow, name, path }) => ({ workflow, name, path }))),
+    hooks: Effect.flatMap(readWebhookOrigin, (origin) => listHookAddresses(hooks, origin)),
     // A cancelled run whose cleanup has not worked yet still needs its version to run it.
     unfinished: Effect.map(
       Effect.all([store.unfinished, store.runsToEnd(END_STEP, END_TRIES)]),

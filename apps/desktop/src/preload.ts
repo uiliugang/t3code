@@ -178,6 +178,23 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   dismissSnapShotAnimation: (id) =>
     ipcRenderer.invoke(IpcChannels.DISMISS_SNAP_SHOT_ANIMATION_CHANNEL, id),
   acknowledgeSnapShot: (id) => ipcRenderer.invoke(IpcChannels.ACKNOWLEDGE_SNAP_SHOT_CHANNEL, id),
+  openNoiseMediaListener: async () => {
+    const invoke = (payload: object) =>
+      ipcRenderer.invoke(IpcChannels.NOISE_MEDIA_CHANNEL, payload);
+    const { listener, origins } = await invoke({ op: "open" });
+    return {
+      origins,
+      accept: () => invoke({ op: "accept", listener }),
+      read: (id) => invoke({ op: "read", listener, id }),
+      write: (id, bytes) => invoke({ op: "write", listener, id, bytes }),
+      close: (id) => {
+        void invoke({ op: "close", listener, id }).catch(() => undefined);
+      },
+      release: () => {
+        void invoke({ op: "release", listener }).catch(() => undefined);
+      },
+    };
+  },
   getConnectionCatalog: () => ipcRenderer.invoke(IpcChannels.GET_CONNECTION_CATALOG_CHANNEL),
   setConnectionCatalog: (catalog) =>
     ipcRenderer.invoke(IpcChannels.SET_CONNECTION_CATALOG_CHANNEL, catalog),

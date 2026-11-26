@@ -19,7 +19,7 @@ import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { m } from "../../i18n/messages";
@@ -36,6 +36,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
 import { EnvironmentRoutesSection } from "./EnvironmentRoutesSection";
+import { ConnectDevicesSection } from "./ConnectDevicesSection";
 import { OutdatedServerUpdateSection } from "./OutdatedServerUpdateSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -230,6 +231,12 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                 onUpdate={connections.onUpdateEnvironment}
               />
             </SettingsSection>
+            {connected && Platform.OS === "android" ? (
+              <ConnectDevicesSection
+                environmentId={environmentId}
+                requireApproval={config?.settings.requireConnectDeviceApproval === true}
+              />
+            ) : null}
             {connected && canRename ? (
               <SettingsSection title={t("Environment name")}>
                 <View className="gap-3 p-4">

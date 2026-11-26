@@ -301,6 +301,10 @@ const make = Effect.gen(function* () {
           endpointWsBaseUrl: relayEnvironmentLinks.endpointWsBaseUrl,
           endpointProviderKind: relayEnvironmentLinks.endpointProviderKind,
           createdAt: relayEnvironmentLinks.createdAt,
+          activityPreferences: {
+            notificationsEnabled: relayEnvironmentLinks.notificationsEnabled,
+            liveActivitiesEnabled: relayEnvironmentLinks.liveActivitiesEnabled,
+          },
         })
         .from(relayEnvironmentLinks)
         .where(
@@ -322,6 +326,7 @@ const make = Effect.gen(function* () {
                   row.endpointProviderKind as RelayClientEnvironmentRecord["endpoint"]["providerKind"],
               },
               linkedAt: row.createdAt,
+              activityPreferences: row.activityPreferences,
             })),
           ),
           Effect.mapError(

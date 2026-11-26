@@ -40,6 +40,7 @@ import * as Layer from "effect/Layer";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import { isProviderSignOutPrompt } from "../orchestration-v2/CommandPolicy.ts";
 import { isPrivateBrowserThread } from "../preview/privateBrowserTab.ts";
+import { NoiseCaller } from "./noiseTrust.ts";
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
@@ -64,6 +65,7 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getOlderSettledThreads]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_V2_WS_METHODS.getThreadHistoryPage]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.launchThread]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: AuthOrchestrationReadScope,
@@ -72,6 +74,9 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.subscribePromptSuggestion]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsMutate]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverProbe]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverNoiseHttp]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverNoiseHttpUpload]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverGetAgentActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.skillsSubscribe]: AuthProvidersManageScope,
   [WS_METHODS.serverGetNpmRelease]: AuthOrchestrationReadScope,
@@ -212,8 +217,12 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.agentSessionsScan]: AuthOrchestrationReadScope,
   [WS_METHODS.agentSessionsImport]: AuthOrchestrationOperateScope,
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,
+  [WS_METHODS.assetsReadWorkspaceChunk]: AuthFilesystemReadScope,
   [WS_METHODS.assetsPersistChatAttachments]: AuthOrchestrationOperateScope,
   [WS_METHODS.attachmentsCreateUploadUrl]: AuthOrchestrationOperateScope,
+  [WS_METHODS.attachmentsBeginUpload]: AuthOrchestrationOperateScope,
+  [WS_METHODS.attachmentsWriteChunk]: AuthOrchestrationOperateScope,
+  [WS_METHODS.attachmentsReadChunk]: AuthOrchestrationReadScope,
   [WS_METHODS.attachmentsDelete]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerUploadFeedback]: AuthOrchestrationOperateScope,
   [WS_METHODS.mcpAppsCallTool]: AuthOrchestrationOperateScope,
@@ -334,6 +343,9 @@ const requiredScopesForRpcCall = (
   method: string,
   payload: unknown,
 ): ReadonlyArray<AuthEnvironmentScope> => {
+  // The enclosed HTTP route checks its own scope against the approved socket principal.
+  if (method === WS_METHODS.serverNoiseHttp || method === WS_METHODS.serverNoiseHttpUpload)
+    return [];
   if (
     method.startsWith("preview.") &&
     typeof payload === "object" &&
@@ -386,6 +398,16 @@ const requiredScopesForRpcCall = (
     : scopes;
 };
 
+const rpcMethodsRequiringNoise = new Set<string>([
+  WS_METHODS.serverNoiseHttp,
+  WS_METHODS.serverNoiseHttpUpload,
+  WS_METHODS.serverGetAgentActivity,
+  WS_METHODS.assetsReadWorkspaceChunk,
+  WS_METHODS.attachmentsBeginUpload,
+  WS_METHODS.attachmentsWriteChunk,
+  WS_METHODS.attachmentsReadChunk,
+]);
+
 /**
  * `onAuthorized` runs once after an authorized request succeeds; for a stream
  * RPC, that is when the stream completes. Every RPC passes through here, so it
@@ -393,15 +415,39 @@ const requiredScopesForRpcCall = (
  */
 export const layer = (
   scopes: ReadonlyArray<AuthEnvironmentScope>,
-  onAuthorized?: (method: string, payload: unknown) => Effect.Effect<void>,
+  options?: {
+    readonly onAuthorized?: (method: string, payload: unknown) => Effect.Effect<void>;
+    readonly noiseSession?: boolean;
+  },
 ) =>
   Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) => {
+    const onAuthorized = options?.onAuthorized;
+    if (!options?.noiseSession && rpcMethodsRequiringNoise.has(rpc._tag)) {
+      return Effect.fail(
+        new EnvironmentAuthorizationError({
+          message: "This operation requires an approved Noise channel.",
+          ...authScopeRequiredResponse(requiredScopeForRpcMethod(rpc._tag)),
+        }),
+      );
+    }
+    if (options?.noiseSession && rpc._tag === WS_METHODS.attachmentsCreateUploadUrl) {
+      return Effect.fail(
+        new EnvironmentAuthorizationError({
+          message:
+            "This operation requires a separate connection outside the approved Noise channel.",
+          ...authScopeRequiredResponse(requiredScopeForRpcMethod(rpc._tag)),
+        }),
+      );
+    }
     const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload);
     const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
     if (requiredScope !== undefined) return Effect.fail(rpcAuthorizationError(requiredScope));
+    const authorized = options?.noiseSession
+      ? Effect.provideService(effect, NoiseCaller, true)
+      : effect;
     return onAuthorized === undefined
-      ? effect
-      : Effect.tap(effect, () => onAuthorized(rpc._tag, payload));
+      ? authorized
+      : Effect.tap(authorized, () => onAuthorized(rpc._tag, payload));
   });
 
 /** Retrying can install or restart tools even though ordinary listing is readable. */

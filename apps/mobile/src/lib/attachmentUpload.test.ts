@@ -1,4 +1,8 @@
-import { EnvironmentId, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
+import {
+  ATTACHMENT_TRANSFER_CHUNK_BYTES,
+  EnvironmentId,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+} from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { describe, expect, it } from "@effect/vitest";
 import { beforeEach, vi } from "vite-plus/test";
@@ -17,6 +21,9 @@ const mocks = vi.hoisted(() => ({
   writeFile: vi.fn(),
   deleteFile: vi.fn(),
   readBase64: vi.fn(),
+  openNoiseTransfer: vi.fn(),
+  readBytes: vi.fn(),
+  closeHandle: vi.fn(),
   // Verification and minting run as Effects; tests steer them with the settled results above.
   settledEffect: (
     Effect: typeof import("effect/Effect"),
@@ -60,6 +67,7 @@ vi.mock("../state/attachments", async () => {
   const Effect = await import("effect/Effect");
   return {
     attachmentEnvironment: {
+      openNoiseTransfer: { run: mocks.openNoiseTransfer },
       createUploadUrl: {
         run: (registry: unknown, input: unknown) =>
           mocks.settledEffect(Effect, () =>
@@ -103,6 +111,9 @@ vi.mock("expo-file-system", () => ({
       return mocks.readBase64(this.uri);
     }
 
+    open() {
+      return { readBytes: mocks.readBytes, close: mocks.closeHandle };
+    }
     upload(url: string, options: unknown) {
       return mocks.upload(this.uri, url, options);
     }
@@ -114,6 +125,7 @@ vi.mock("expo-file-system", () => ({
     },
   },
   UploadType: { BINARY_CONTENT: 0 },
+  FileMode: { ReadOnly: "r" },
 }));
 
 import * as Effect from "effect/Effect";
@@ -209,6 +221,9 @@ describe("prepareTurnAttachments", () => {
     mocks.writeFile.mockReset();
     mocks.deleteFile.mockReset();
     mocks.readBase64.mockReset();
+    mocks.openNoiseTransfer.mockReset();
+    mocks.readBytes.mockReset();
+    mocks.closeHandle.mockClear();
     mocks.readBase64.mockResolvedValue("YWJj");
     mocks.readAtom.mockReturnValue(Option.some({ httpBaseUrl: "https://environment.example/" }));
     mocks.runAtomCommand.mockImplementation(async (_registry: unknown, command: unknown) =>
@@ -225,6 +240,125 @@ describe("prepareTurnAttachments", () => {
     );
     mocks.upload.mockResolvedValue({ status: 204, body: "", headers: {} });
   });
+
+  it.effect(
+    "sends file chunks on one approved session and verifies a saved upload without HTTP",
+    () =>
+      Effect.gen(function* () {
+        const beginUpload = vi.fn(() => Effect.succeed({ attachmentId: MINTED_ID }));
+        const writeChunk = vi.fn(() => Effect.void);
+        const readChunk = vi.fn(() =>
+          Effect.succeed({
+            totalBytes: ATTACHMENT_TRANSFER_CHUNK_BYTES + 1,
+            data: new Uint8Array(),
+          }),
+        );
+        const progress = vi.fn();
+        mocks.readAtom.mockReturnValue(Option.some({ transport: "noise" }));
+        mocks.openNoiseTransfer.mockReturnValue(
+          Effect.succeed({ beginUpload, writeChunk, readChunk }),
+        );
+        const first = new Uint8Array(ATTACHMENT_TRANSFER_CHUNK_BYTES).fill(102);
+        const last = Uint8Array.of(255);
+        mocks.readBytes
+          .mockResolvedValueOnce(first)
+          .mockResolvedValueOnce(last)
+          .mockResolvedValueOnce(new Uint8Array());
+        const attachment = { ...file, sizeBytes: first.length + last.length };
+        expect(yield* uploadComposerAttachment(environmentId, attachment, progress)).toBe(
+          MINTED_ID,
+        );
+        expect(mocks.openNoiseTransfer).toHaveBeenCalledTimes(1);
+        expect(writeChunk.mock.calls).toEqual([
+          [{ attachmentId: MINTED_ID, offset: 0, data: first }],
+          [{ attachmentId: MINTED_ID, offset: first.length, data: last }],
+        ]);
+        expect(progress.mock.calls).toEqual([[first.length / attachment.sizeBytes], [1]]);
+        expect(mocks.closeHandle).toHaveBeenCalledOnce();
+        expect(
+          yield* uploadComposerAttachment(environmentId, {
+            ...attachment,
+            uploadedAttachmentId: MINTED_ID,
+            uploadEnvironmentId: environmentId,
+          }),
+        ).toBe(MINTED_ID);
+        expect(readChunk).toHaveBeenCalledExactlyOnceWith({
+          attachmentId: MINTED_ID,
+          offset: 0,
+          length: 0,
+        });
+        expect(beginUpload).toHaveBeenCalledOnce();
+        expect(mocks.createAssetUrl).not.toHaveBeenCalled();
+        expect(mocks.runAtomCommand).not.toHaveBeenCalled();
+        expect(mocks.upload).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "cancels an in-flight encrypted image upload on its original session and releases local files",
+    () =>
+      Effect.gen(function* () {
+        const writing = Promise.withResolvers<void>();
+        const remove = vi.fn(() => Effect.void);
+        mocks.readAtom.mockReturnValue(Option.some({ transport: "noise" }));
+        mocks.openNoiseTransfer.mockReturnValue(
+          Effect.succeed({
+            beginUpload: () => Effect.succeed({ attachmentId: MINTED_ID }),
+            writeChunk: () =>
+              Effect.callback<void>(() => {
+                writing.resolve();
+              }),
+            remove,
+          }),
+        );
+        mocks.readBytes
+          .mockResolvedValueOnce(Uint8Array.of(97, 98, 99))
+          .mockResolvedValueOnce(new Uint8Array());
+        const uploading = yield* Effect.forkChild(prepare({ environmentId, attachments: [image] }));
+        yield* Effect.promise(() => writing.promise);
+        mocks.readAtom.mockReturnValue(Option.some({ httpBaseUrl: "https://other.example" }));
+        yield* Fiber.interrupt(uploading);
+        expect(remove).toHaveBeenCalledExactlyOnceWith({ attachmentId: MINTED_ID });
+        expect(mocks.openNoiseTransfer).toHaveBeenCalledOnce();
+        expect(mocks.closeHandle).toHaveBeenCalledOnce();
+        expect(mocks.deleteFile).toHaveBeenCalledOnce();
+        expect(mocks.upload).not.toHaveBeenCalled();
+        expect(mocks.runAtomCommand).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "rejects an expired upload whose local file has grown before publishing its last chunk",
+    () =>
+      Effect.gen(function* () {
+        const writeChunk = vi.fn(() => Effect.void);
+        const remove = vi.fn(() => Effect.void);
+        mocks.readAtom.mockReturnValue(Option.some({ transport: "noise" }));
+        mocks.openNoiseTransfer.mockReturnValue(
+          Effect.succeed({
+            readChunk: () => Effect.fail({ _tag: "AssetAttachmentNotFoundError" }),
+            beginUpload: () => Effect.succeed({ attachmentId: MINTED_ID }),
+            writeChunk,
+            remove,
+          }),
+        );
+        mocks.readBytes
+          .mockResolvedValueOnce(new Uint8Array(file.sizeBytes))
+          .mockResolvedValueOnce(Uint8Array.of(1));
+        const result = yield* Effect.flip(
+          uploadComposerAttachment(environmentId, {
+            ...file,
+            uploadedAttachmentId: "expired",
+            uploadEnvironmentId: environmentId,
+          }),
+        );
+        expect(result.message).toContain("Upload failed");
+        expect(writeChunk).not.toHaveBeenCalled();
+        expect(remove).toHaveBeenCalledExactlyOnceWith({ attachmentId: MINTED_ID });
+        expect(mocks.runAtomCommand).not.toHaveBeenCalled();
+        expect(mocks.upload).not.toHaveBeenCalled();
+      }),
+  );
 
   it.effect("does not mint or transfer attachments without task operation access", () =>
     Effect.gen(function* () {
@@ -544,6 +678,12 @@ describe("prepareTurnAttachments", () => {
         "https://new-environment.example/api/attachments/upload/signed",
         expect.anything(),
       );
+      mocks.upload.mockClear();
+      mocks.readAtom
+        .mockReturnValueOnce(Option.some({ httpBaseUrl: "https://old-environment.example/" }))
+        .mockReturnValue(Option.some({ transport: "noise" }));
+      yield* Effect.flip(prepare({ environmentId, attachments: [file] }));
+      expect(mocks.upload).not.toHaveBeenCalled();
     }),
   );
 

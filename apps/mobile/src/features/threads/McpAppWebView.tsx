@@ -1,3 +1,4 @@
+import { usePreparedConnection } from "../../state/session";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { Button } from "../../components/ui/Button";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -133,7 +134,7 @@ export function ThreadMcpApp(props: {
   const [height, setHeight] = useState(MCP_APP_INLINE_MAX_HEIGHT);
   const [documentKey, setDocumentKeyState] = useState(0);
   // The view keeps its first URL: a re-minted one would reload the app.
-  const [uri, setUri] = useState<string | null>(null);
+  const [remoteUri, setUri] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [navigatedAway, setNavigatedAway] = useState(false);
   // Equal app content must retain its reference to preserve the live document host.
@@ -171,7 +172,18 @@ export function ThreadMcpApp(props: {
     disposition: "inline" as const,
     renderIntent: "mcp-app" as const,
   };
-  const asset = useAssetUrlState(props.environmentId, resource);
+  const connection = usePreparedConnection(props.environmentId);
+  // Local HTML has no response headers to enforce the renderer's sandbox policy.
+  const requiresSource =
+    connection._tag === "Some" &&
+    connection.value.transport === "noise" &&
+    !connection.value.mediaOrigins;
+  const asset = useAssetUrlState(props.environmentId, requiresSource ? null : resource);
+  const mediaOrigin = connection._tag === "Some" ? connection.value.mediaOrigins?.asset : undefined;
+  const uri =
+    requiresSource || (mediaOrigin && !remoteUri?.startsWith(mediaOrigin + "/api/assets/"))
+      ? null
+      : remoteUri;
   if (uri === null && asset._tag === "Success") setUri(asset.url);
   const [generation, setGeneration] = useState(0);
   const [crashed, setCrashed] = useState(false);
@@ -612,7 +624,7 @@ export function ThreadMcpApp(props: {
             userActive.current = false;
           }}
         />
-      ) : asset._tag === "Failure" || crashed ? (
+      ) : requiresSource || asset._tag === "Failure" || crashed ? (
         <View className="flex-1 items-center justify-center">
           <Text className="text-sm text-foreground-muted">
             {t("Unable to load the {server} app", { server: app.server })}

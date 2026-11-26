@@ -2,6 +2,9 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { AuthSessionId, type WorkflowRun } from "@t3tools/contracts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as NetService from "@t3tools/shared/Net";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
@@ -18,6 +21,14 @@ import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
 } from "../serverRuntimeState.ts";
+import * as ServerConfig from "../config.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import {
+  CLOUD_ENDPOINT_RUNTIME_CONFIG,
+  RELAY_URL_SECRET,
+  encodeEndpointRuntimeConfigJson,
+} from "../cloud/config.ts";
+import { PublishWorkflowHooks, layer as hookDirectoryLayer } from "../workflows/hookDirectory.ts";
 import { workflowCommand } from "./workflow.ts";
 
 vi.mock("../auth/EnvironmentAuth.ts", async (importOriginal) => {
@@ -187,4 +198,88 @@ it.effect("signal sends only one complete address to the server", () =>
       assert.lengthOf(calls, sent ? 1 : 0);
     }
   }),
+);
+
+it.effect(
+  "lists only active workflow hooks from the running Noise-only host without opening MCP",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped();
+      const config = yield* ServerConfig.ServerConfig.pipe(
+        Effect.provide(ServerConfig.layerTest(baseDir, baseDir)),
+      );
+      using mcp = vi
+        .spyOn(McpBridge, "mcpToolSession")
+        .mockReturnValue(Effect.die("Noise-only hooks must stay local"));
+      const state = yield* makePersistedServerRuntimeState({ config, port: 3773, noiseOnly: true });
+      const saveOwner = (ownerId: string) =>
+        persistServerRuntimeState({
+          path: config.serverRuntimeStatePath,
+          state: { ...state, ownerId },
+        });
+      const list = Command.runWith(workflowCommand, { version: "0.0.0" })([
+        "hooks",
+        "--json",
+        "--base-dir",
+        baseDir,
+      ]);
+      yield* saveOwner("current");
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE workflow_hooks (hook_id TEXT PRIMARY KEY, token TEXT NOT NULL)`;
+        yield* sql`INSERT INTO workflow_hooks VALUES ('wf-review.push', 'active-secret'), ('wf-old.push', 'retired-secret')`;
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: config.dbPath })));
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const publish = yield* PublishWorkflowHooks;
+          yield* publish([{ workflow: "review", name: "push" }]);
+          const unlinked = yield* list.pipe(Effect.flip);
+          assert.include(unlinked.message, "Link this host");
+          const secrets = yield* ServerSecretStore.ServerSecretStore;
+          const encoder = new TextEncoder();
+          yield* secrets.set(RELAY_URL_SECRET, encoder.encode("https://relay.example"));
+          yield* secrets.set(
+            CLOUD_ENDPOINT_RUNTIME_CONFIG,
+            encoder.encode(
+              yield* encodeEndpointRuntimeConfigJson({
+                providerKind: "t3_relay",
+                connectorToken: "test",
+                tunnelName: "test-0123456789abcdef",
+              }),
+            ),
+          );
+          yield* list;
+          const decode = Schema.decodeUnknownEffect(
+            Schema.fromJsonString(
+              Schema.Array(
+                Schema.Struct({ workflow: Schema.String, name: Schema.String, url: Schema.String }),
+              ),
+            ),
+          );
+          const hooks = yield* decode((yield* TestConsole.logLines).at(-1));
+          assert.lengthOf(hooks, 1);
+          const url = new URL(hooks[0]!.url);
+          assert.equal(url.protocol, "t3hook:");
+          assert.match(
+            url.pathname,
+            /^\/v1\/hooks\/0123456789abcdef\/[a-zA-Z0-9_-]{43}\/encrypted-v1$/u,
+          );
+          assert.equal(new URLSearchParams(url.hash.slice(1)).get("token"), "active-secret");
+          yield* saveOwner("another");
+          assert.include((yield* list.pipe(Effect.flip)).message, "Workflows are off");
+        }).pipe(
+          Effect.provide(
+            hookDirectoryLayer("current").pipe(Layer.provideMerge(ServerSecretStore.layer)),
+          ),
+          Effect.provideService(ServerConfig.ServerConfig, config),
+        ),
+      );
+      yield* saveOwner("current");
+      assert.include((yield* list.pipe(Effect.flip)).message, "Workflows are off");
+      assert.equal(mcp.mock.calls.length, 0);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer)),
+    ),
 );

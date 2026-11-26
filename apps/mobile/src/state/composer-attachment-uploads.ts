@@ -6,10 +6,9 @@ import {
   attachmentUploadError,
   createAttachmentUploadRegistry,
 } from "@t3tools/client-runtime/state/attachment-uploads";
-import { verifyPersistedAttachmentUpload } from "@t3tools/client-runtime/state/attachments";
 import { Atom } from "effect/reactivity";
 
-import { uploadComposerAttachment } from "../lib/attachmentUpload";
+import { uploadComposerAttachment, verifyComposerAttachmentUpload } from "../lib/attachmentUpload";
 import { retainComposerAttachmentFileForPreview } from "../lib/composerAttachmentPreviewRetention";
 import {
   isFileBackedComposerAttachment,
@@ -22,7 +21,6 @@ import {
   type ComposerAttachmentUploadState,
 } from "../lib/composerAttachmentUploadQueue";
 import { appAtomRegistry } from "./atom-registry";
-import { assetEnvironment } from "./assets";
 import { environmentServerConfigsAtom } from "./server";
 import {
   flattenQueuedThreadMessages,
@@ -279,14 +277,7 @@ export const uploadComposerAttachmentShared = Effect.fn("ComposerAttachments.upl
     const finishedEarlier = uploads.status(key)?.status === "ready";
     const uploadedId = yield* uploads.upload(request);
     if (!finishedEarlier) return uploadedId;
-    const verification = yield* verifyPersistedAttachmentUpload({
-      registry: appAtomRegistry,
-      createAssetUrl: assetEnvironment.createUrl,
-      environmentId,
-      attachmentId: uploadedId,
-    });
-    if (verification.status === "verified") return uploadedId;
-    if (verification.status === "failed") return yield* attachmentUploadError(verification.error);
+    if (yield* verifyComposerAttachmentUpload(environmentId, uploadedId)) return uploadedId;
     // Starting over verifies the saved id again and uploads the bytes when it is gone.
     uploads.restart(key);
     return yield* uploads.upload(request);

@@ -154,7 +154,7 @@ export function ConnectDeviceApprovalSettings({
                         run(device.proofKeyThumbprint, async () =>
                           reportFailure(
                             t,
-                            t("Could not revoke the device"),
+                            t("Could not confirm device revocation"),
                             await revoke({
                               environmentId,
                               input: { proofKeyThumbprint: device.proofKeyThumbprint },

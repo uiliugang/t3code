@@ -17,7 +17,7 @@ export function webhookAddress(
   if (endpoint.url !== null) {
     return { address: endpoint.url, copyable: true, note: null };
   }
-  if (httpBaseUrl === null) {
+  if (httpBaseUrl === null || !/^https?:\/\//i.test(httpBaseUrl)) {
     return {
       address: endpoint.path,
       copyable: false,

@@ -11,17 +11,21 @@ export function setActiveLocale(locale: string): void {
   activeLocale = locale;
 }
 
-function resolve(message: string, variables: Parameters<MessageResolver>[1] = {}): string {
+function resolve(
+  message: string,
+  variables: Parameters<MessageResolver>[1] = {},
+  locale = activeLocale,
+): string {
   const decoded = decodeOptions(message);
   const options = typeof decoded?.$_source === "string" ? decoded : variables;
   const source = typeof decoded?.$_source === "string" ? decoded.$_source : message;
   const target =
-    activeLocale === DEFAULT_LOCALE
+    locale === DEFAULT_LOCALE
       ? undefined
-      : getReactI18nCache().lookupTranslation(activeLocale, source, { ...options, $format: "ICU" });
+      : getReactI18nCache().lookupTranslation(locale, source, { ...options, $format: "ICU" });
   // Untranslated text is English, so it takes English plural rules.
   return typeof target === "string"
-    ? gtFallback(target, { ...options, $locale: activeLocale, $_fallback: source })
+    ? gtFallback(target, { ...options, $locale: locale, $_fallback: source })
     : gtFallback(source, { ...options, $locale: DEFAULT_LOCALE });
 }
 
@@ -31,6 +35,13 @@ function resolve(message: string, variables: Parameters<MessageResolver>[1] = {}
  */
 export const m = ((message, variables) =>
   typeof message === "string" ? resolve(message, variables) : message) as MessageResolver;
+
+/** Headless tasks have no mounted provider to load their saved language. */
+export async function loadMessageResolver(locale: string): Promise<MessageResolver> {
+  if (locale !== DEFAULT_LOCALE) await getReactI18nCache().loadTranslations(locale);
+  return ((message, variables) =>
+    typeof message === "string" ? resolve(message, variables, locale) : message) as MessageResolver;
+}
 
 /**
  * Keeps `msg()` text unresolved, for helpers whose result is cached past a language switch.

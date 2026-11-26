@@ -14,7 +14,7 @@ const PART_PREFIX = "\u001e";
 
 // The RPC client only counts frames that decode to messages as liveness, and
 // ignores pongs, so each held-back part reads to it as one.
-const PART_RECEIVED_FRAME = '{"_tag":"Pong"}';
+export const PART_RECEIVED_FRAME = '{"_tag":"Pong"}';
 
 /** Splits on the UTF-8 size the frame has on the wire, never inside a surrogate pair. */
 export function splitSocketFrame(

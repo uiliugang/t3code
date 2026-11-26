@@ -2,11 +2,20 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
-import { AssetCreateUrlResult, AttachmentCreateUploadUrlResult } from "./assets.ts";
+import {
+  ATTACHMENT_TRANSFER_CHUNK_BYTES,
+  AssetCreateUrlResult,
+  AttachmentCreateUploadUrlResult,
+  AttachmentReadChunkInput,
+  AttachmentReadChunkResult,
+  AttachmentWriteChunkInput,
+  WorkspaceFileReadChunkInput,
+} from "./assets.ts";
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
 import { clientRpcRequiredScopes } from "./clientRpcPermissions.ts";
 import {
+  AuthFilesystemReadScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
@@ -17,6 +26,9 @@ import { RequirementIssueError } from "./issues.ts";
 
 const decodeIssueError = Schema.decodeUnknownSync(RequirementIssueError);
 const encodeIssueError = Schema.encodeSync(RequirementIssueError);
+const decodeReadChunk = Schema.decodeSync(AttachmentReadChunkResult);
+const decodeReadRange = Schema.decodeSync(AttachmentReadChunkInput);
+const decodeWorkspaceRange = Schema.decodeUnknownExit(WorkspaceFileReadChunkInput);
 
 describe("WebSocket RPC contracts", () => {
   it("preserves the private DaXiang login tab while accepting legacy void responses", () => {
@@ -79,6 +91,39 @@ describe("WebSocket RPC contracts", () => {
     expect(clientRpcRequiredScopes(WS_METHODS.workItemsMutate, { type: "move" })).toEqual([
       AuthOrchestrationOperateScope,
     ]);
+  });
+  it("bounds attachment bytes on the JSON wire and permits a zero-length metadata read", () => {
+    const payload = { attachmentId: "pending-1", offset: 0 };
+    const decode = Schema.decodeUnknownExit(AttachmentWriteChunkInput);
+    const encode = Schema.encodeSync(AttachmentWriteChunkInput);
+    const data = Uint8Array.of(0, 128, 255);
+    expect(encode({ ...payload, data })).toEqual({ ...payload, data: "AID/" });
+    expect(decodeReadChunk({ totalBytes: 3, data: "AID/" }).data).toEqual(data);
+    const largest = "AAAA".repeat(ATTACHMENT_TRANSFER_CHUNK_BYTES / 3);
+    expect(Exit.isSuccess(decode({ ...payload, data: largest }))).toBe(true);
+    for (const invalid of ["", "*!?!", largest + "AA=="])
+      expect(Exit.isFailure(decode({ ...payload, data: invalid }))).toBe(true);
+    const metadata = { ...payload, length: 0 };
+    expect(decodeReadRange(metadata)).toEqual(metadata);
+    expect(clientRpcRequiredScopes(WS_METHODS.attachmentsReadChunk, metadata)).toEqual([
+      AuthOrchestrationReadScope,
+    ]);
+    const range = { offset: 10, length: 0, revision: "v1" };
+    const draft = { _tag: "draft-workspace-file", cwd: "/repo", path: "notes.txt" };
+    expect(Exit.isSuccess(decodeWorkspaceRange({ ...range, resource: draft }))).toBe(true);
+    expect(
+      Exit.isFailure(
+        decodeWorkspaceRange({
+          ...range,
+          resource: { _tag: "attachment", attachmentId: "pending-1" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      clientRpcRequiredScopes(WS_METHODS.assetsReadWorkspaceChunk, { ...range, resource: draft }),
+    ).toEqual([AuthFilesystemReadScope]);
+    for (const method of [WS_METHODS.attachmentsBeginUpload, WS_METHODS.attachmentsWriteChunk])
+      expect(clientRpcRequiredScopes(method, undefined)).toEqual([AuthOrchestrationOperateScope]);
   });
   it("only accepts asset and upload URLs on their own server routes", () => {
     const decodeAsset = Schema.decodeUnknownExit(AssetCreateUrlResult);

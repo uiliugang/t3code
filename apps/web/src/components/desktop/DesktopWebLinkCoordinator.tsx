@@ -90,7 +90,7 @@ export function DesktopWebLinkCoordinator() {
   const { scratchEnvironmentId, openScratchProject } = useScratchProject();
   const openThread = useNewThreadHandler();
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
-  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+  const createAssetUrl = useAtomQueryRunner(assetEnvironment.verifyUrl, {
     reportFailure: false,
     refresh: true,
   });

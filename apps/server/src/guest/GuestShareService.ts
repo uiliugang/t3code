@@ -1,3 +1,7 @@
+import { NoiseGuestCall } from "../auth/noiseGuestContext.ts";
+import { noiseHostIdentity } from "../auth/noiseHostIdentity.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as ManagedLimits from "../policy/managedLimits.ts";
 import {
   type ChatAttachment,
   ChatAttachmentId,
@@ -36,6 +40,7 @@ import * as Stream from "effect/Stream";
 
 import { base64UrlDecodeUtf8, base64UrlEncode, timingSafeEqualBase64Url } from "../auth/utils.ts";
 import * as PayloadSigner from "../auth/PayloadSigner.ts";
+import * as NoiseTrust from "../auth/noiseTrust.ts";
 import {
   attachmentFileExtension,
   createAttachmentId,
@@ -151,7 +156,11 @@ export class GuestShareService extends Context.Service<
       GuestShareAccessError
     >;
     /** Succeeds while the session can still open its share. */
-    readonly check: (session: string) => Effect.Effect<void, GuestShareAccessError>;
+    readonly untilRevoked: (session: string) => Effect.Effect<void>;
+    readonly check: (
+      session: string,
+      shareId?: string,
+    ) => Effect.Effect<void, GuestShareAccessError>;
     /** Stores the guest's files as the thread's attachments and records the message with them. */
     readonly submit: (
       session: string,
@@ -227,11 +236,17 @@ const rowWithoutFileText = <Row extends { readonly item: OrchestrationV2TurnItem
 ): Row => ({ ...row, item: withoutFileText(row.item) });
 
 const make = Effect.gen(function* () {
+  const policy = yield* ManagedPolicy.ManagedPolicy;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const commandOutputs = yield* CommandOutputHub.CommandOutputHub;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const managedEndpoint = yield* CloudManagedEndpointRuntime;
+  const directGuestOrigin = yield* NoiseTrust.guestOrigin;
+  const strictNoise = yield* NoiseTrust.noiseOnly;
+  const guestApp = yield* NoiseTrust.guestAppOrigin;
+  const guestRelay = yield* NoiseTrust.guestRelayOrigin;
+  const identityContext = yield* Effect.context<Effect.Services<typeof noiseHostIdentity>>();
   const { attachmentsDir } = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const random = yield* SecureRandom.SecureRandom;
@@ -291,9 +306,23 @@ const make = Effect.gen(function* () {
   const connectHostname = managedEndpoint.inspectConnector.pipe(
     Effect.map((facts) => facts?.hostname ?? null),
   );
+  const guestDestination = Effect.gen(function* () {
+    if (!guestApp) return null;
+    const hostname = guestRelay ? null : yield* connectHostname;
+    const relay = guestRelay ?? (hostname && URL.parse("https://" + hostname)?.origin);
+    return relay && relay !== guestApp
+      ? { app: guestApp, relay, marker: `noise:${guestApp}|${relay}` }
+      : null;
+  });
+  const liveHost = (host: string) =>
+    host.startsWith("noise:")
+      ? Effect.map(guestDestination, (destination) => destination?.marker ?? null)
+      : host.startsWith("https://")
+        ? Effect.succeed(strictNoise ? null : directGuestOrigin)
+        : connectHostname;
   // A beta: while it is off, no link opens and every guest request is refused.
   const sharingEnabled = serverSettings.getSettings.pipe(
-    Effect.map((settings) => settings.guestSharingEnabled),
+    Effect.map((settings) => settings.guestSharingEnabled && ManagedLimits.allowsConnect(policy)),
     Effect.orElseSucceed(() => false),
   );
 
@@ -332,12 +361,13 @@ const make = Effect.gen(function* () {
     if (
       !(yield* sharingEnabled) ||
       !share ||
+      share.host.startsWith("noise:") !== (yield* NoiseGuestCall) ||
       share.id !== claims.value.shareId ||
       thread.archivedAt !== null ||
       thread.deletedAt !== null ||
       DateTime.toEpochMillis(now) >= Date.parse(share.expiresAt) ||
       (kind === "session" && share.guestName === null) ||
-      (yield* connectHostname) !== share.host
+      (yield* liveHost(share.host)) !== share.host
     ) {
       return yield* inactive;
     }
@@ -348,10 +378,20 @@ const make = Effect.gen(function* () {
     if (!(yield* sharingEnabled)) {
       return yield* new GuestShareCreateError({ reason: "disabled" });
     }
-    const host = yield* connectHostname;
+    const encrypted = yield* NoiseTrust.NoiseCaller;
+    const destination = strictNoise || encrypted ? yield* guestDestination : null;
+    if (!destination && (strictNoise || (encrypted && directGuestOrigin === null)))
+      return yield* new GuestShareCreateError({ reason: "direct_unavailable" });
+    const host = destination?.marker ?? (encrypted ? directGuestOrigin : yield* connectHostname);
     if (host === null) {
       return yield* new GuestShareCreateError({ reason: "connect_unavailable" });
     }
+    const identity = destination
+      ? yield* noiseHostIdentity.pipe(
+          Effect.provideContext(identityContext),
+          Effect.mapError(() => new GuestShareCreateError({ reason: "direct_unavailable" })),
+        )
+      : null;
     const shareId = GuestShareId.make(base64UrlEncode(yield* random.randomBytes(SHARE_ID_BYTES)));
     const now = yield* DateTime.now;
     const expiresAt = DateTime.formatIso(DateTime.add(now, { milliseconds: GUEST_SHARE_TTL_MS }));
@@ -372,7 +412,18 @@ const make = Effect.gen(function* () {
       return yield* new GuestShareCreateError({ reason: "changed" });
     }
     const credential = yield* signInvite(shareId);
-    return { url: `https://${host}/guest#${credential}`, share: thread.guestShare };
+    const fragment = destination
+      ? new URLSearchParams({
+          noise: "1",
+          ...identity,
+          relay: destination.relay,
+          invite: credential,
+        }).toString()
+      : credential;
+    return {
+      url: `${destination?.app ?? (encrypted ? host : `https://${host}`)}/guest#${fragment}`,
+      share: thread.guestShare,
+    };
   });
 
   const redeem = Effect.fn("GuestShareService.redeem")(function* (request: GuestRedeemRequest) {
@@ -388,8 +439,9 @@ const make = Effect.gen(function* () {
     return { token, shareId: share.id };
   });
 
-  const check = Effect.fn("GuestShareService.check")(function* (session: string) {
-    yield* authorize(session, "session");
+  const check = Effect.fn("GuestShareService.check")(function* (session: string, shareId?: string) {
+    const state = yield* authorize(session, "session");
+    if (shareId !== undefined && state.share.id !== shareId) return yield* inactive;
   });
 
   const uploadFailed = new GuestShareAccessError({ reason: "rejected" });
@@ -611,7 +663,7 @@ const make = Effect.gen(function* () {
       // keeps the guest in. Turning the beta off closes it the same way. Closing and expiry end
       // it above, with `ended`.
       Stream.interruptWhen(
-        Effect.all([connectHostname, sharingEnabled]).pipe(
+        Effect.all([liveHost(share.host), sharingEnabled]).pipe(
           Effect.repeat({
             schedule: Schedule.spaced(ACCESS_RECHECK_INTERVAL),
             until: ([host, enabled]) => host !== share.host || !enabled,
@@ -777,6 +829,7 @@ const make = Effect.gen(function* () {
     create,
     redeem,
     check,
+    untilRevoked,
     submit,
     stream,
     render,

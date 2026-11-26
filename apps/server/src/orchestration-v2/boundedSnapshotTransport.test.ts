@@ -45,7 +45,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
-import { subscribeOrchestrationV2Thread } from "../ws.ts";
+import { getOrchestrationV2ThreadHistoryPage, subscribeOrchestrationV2Thread } from "../ws.ts";
 import * as OrchestrationHttp from "./http.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -54,9 +54,9 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 const decodeBounded = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.toCodecJson(OrchestrationV2ThreadBoundedSnapshot)),
 );
-const decodeHistoryPage = Schema.decodeUnknownSync(
-  Schema.fromJsonString(Schema.toCodecJson(OrchestrationV2ThreadHistoryPage)),
-);
+const historyJson = Schema.fromJsonString(Schema.toCodecJson(OrchestrationV2ThreadHistoryPage));
+const decodeHistoryPage = Schema.decodeUnknownSync(historyJson);
+const encodeHistoryPage = Schema.encodeSync(historyJson);
 const decodeStreamItem = Schema.decodeUnknownSync(
   Schema.toCodecJson(OrchestrationV2ThreadStreamItem),
 );
@@ -85,10 +85,8 @@ const management = Layer.unwrap(
       getThreadSnapshot: (id) => projections.getThreadSnapshot(id).pipe(Effect.orDie),
       getThreadSnapshotWindow: (id, options) =>
         projections.getThreadSnapshotWindow(id, options).pipe(Effect.orDie),
-      getThreadHistoryPage: (id, cursor, throughEntryId, conversationOnly) =>
-        projections
-          .getThreadHistoryPage(id, cursor, throughEntryId, conversationOnly)
-          .pipe(Effect.orDie),
+      getThreadHistoryPage: (...args) =>
+        projections.getThreadHistoryPage(...args).pipe(Effect.orDie),
       streamStoredEventsFrom: (input) =>
         input?.threadId === BODIES ? Stream.fromIterable(bodiesLiveTail()) : Stream.empty,
     });
@@ -447,6 +445,29 @@ function itemIds(projection: OrchestrationV2ThreadProjection): string[] {
 }
 
 it.layer(TestLayer)("compact bounded snapshot transport", (it) => {
+  it.effect("pages a bounded socket snapshot with the same rows as HTTP", () =>
+    Effect.gen(function* () {
+      const { decoded } = yield* firstSnapshot({ threadId: LONG, acceptBoundedSnapshot: true });
+      const cursor = decoded.historyCursor;
+      if (typeof cursor !== "string") return yield* Effect.die("Missing socket history cursor");
+      const page = yield* getOrchestrationV2ThreadHistoryPage({ threadId: LONG, cursor });
+      const query = new URLSearchParams({ cursor, deferWork: "1", compactIds: "1" });
+      const http = yield* withHttp(async (get) => {
+        const response = await get(
+          `/api/orchestration/threads/${encodeURIComponent(LONG)}/history?${query}`,
+        );
+        return decodeHistoryPage(await response.text());
+      });
+      assert.isAbove(http.items.length, 0);
+      assert.deepStrictEqual(decodeHistoryPage(encodeHistoryPage(page)), http);
+      const invalid = yield* getOrchestrationV2ThreadHistoryPage({
+        threadId: LONG,
+        cursor: "bad cursor",
+      }).pipe(Effect.flip);
+      assert.equal(invalid.message, "Invalid history cursor");
+    }),
+  );
+
   describe.each([
     ["fork", FORK],
     ["long run with a retained interrupt request", LONG],

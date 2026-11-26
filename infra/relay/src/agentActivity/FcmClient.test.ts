@@ -49,8 +49,9 @@ const config = {
 const input = {
   token: "device-token",
   packageName: "com.t3tools.t3code.dev",
-  data: { t3_kind: "agent_activity", active: "true" },
-  alert: false,
+  deviceId: "phone",
+  environmentId: "env",
+  userId: "user",
 };
 
 function layerTest(requests: HttpClientRequest.HttpClientRequest[], responses: Response[]) {
@@ -116,28 +117,34 @@ describe("FCM delivery", () => {
       const requests: HttpClientRequest.HttpClientRequest[] = [];
       return Effect.gen(function* () {
         const client = yield* FcmClient.FcmClient;
-        yield* client.send(input);
-        yield* client.send({ ...input, alert: true });
+        const legacy = { ...input, data: { thread_id: "secret", title: "Private thread" } };
+        yield* client.sendWake(legacy);
+        yield* client.sendWake(input);
         expect(requests.map((request) => request.url)).toEqual([
           "https://oauth2.googleapis.com/token",
           "https://fcm.googleapis.com/v1/projects/test-project/messages:send",
           "https://fcm.googleapis.com/v1/projects/test-project/messages:send",
         ]);
-        expect(requests[1]!.headers.authorization).toBe("Bearer access-token");
-        const body = requests[1]!.body;
-        if (body._tag !== "Uint8Array") throw new Error("Expected encoded FCM body");
-        expect(decodeJson(new TextDecoder().decode(body.body))).toEqual({
-          message: {
-            token: input.token,
-            data: input.data,
-            android: {
-              priority: "HIGH",
-              ttl: "300s",
-              collapse_key: "t3-agent-activity",
-              restricted_package_name: input.packageName,
+        for (const request of requests.slice(1)) {
+          expect(request.headers.authorization).toBe("Bearer access-token");
+          if (request.body._tag !== "Uint8Array") throw new Error("Expected encoded FCM wake");
+          expect(decodeJson(new TextDecoder().decode(request.body.body))).toEqual({
+            message: {
+              token: input.token,
+              data: {
+                t3_kind: "agent_activity_wake",
+                environment_id: input.environmentId,
+                device_id: input.deviceId,
+                user_id: input.userId,
+              },
+              android: {
+                priority: "HIGH",
+                ttl: "300s",
+                restricted_package_name: input.packageName,
+              },
             },
-          },
-        });
+          });
+        }
       }).pipe(
         Effect.provide(
           layerTest(requests, [
@@ -154,9 +161,9 @@ describe("FCM delivery", () => {
     const requests: HttpClientRequest.HttpClientRequest[] = [];
     return Effect.gen(function* () {
       const client = yield* FcmClient.FcmClient;
-      const first = yield* client.send(input).pipe(Effect.flip);
+      const first = yield* client.sendWake(input).pipe(Effect.flip);
       expect(first.status).toBe(401);
-      expect(yield* client.send(input)).toEqual({ unregistered: true });
+      expect(yield* client.sendWake(input)).toEqual({ unregistered: true });
       expect(requests[2]!.url).toBe("https://oauth2.googleapis.com/token");
       expect(requests[3]!.headers.authorization).toBe("Bearer fresh-token");
     }).pipe(
@@ -187,7 +194,7 @@ describe("FCM delivery", () => {
     return Effect.gen(function* () {
       const client = yield* FcmClient.FcmClient;
       const error = yield* client
-        .send({ ...input, data: { body: "漢".repeat(1500) } })
+        .sendWake({ ...input, environmentId: "漢".repeat(1500) })
         .pipe(Effect.flip);
       expect(error.operation).toBe("send");
       expect(requests).toHaveLength(0);

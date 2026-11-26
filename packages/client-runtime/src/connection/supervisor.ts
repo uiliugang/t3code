@@ -669,7 +669,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           break;
         case "Wakeup":
           // An attempt that ran into a long suspension is likely stuck.
-          if (next.reason === "application-active-long") {
+          if (next.reason === "application-active-long" || typeof next.reason === "object") {
             return true;
           }
           if (next.reason === "credentials-changed" && usesRelay) {
@@ -691,6 +691,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     if (next._tag === "DisconnectRequested") {
       return "end" as const;
     }
+    if (next._tag === "Wakeup" && typeof next.reason === "object") return "reset" as const;
     if (next._tag === "BetterRouteAvailable") {
       yield* Ref.set(preferredRouteId, Option.some(next.routeId));
       return "reset" as const;
@@ -1394,6 +1395,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     "wakeup-listener",
     wakeups.changes.pipe(
       Stream.filter(ConnectionWakeups.reachesConnectionSupervisor),
+      Stream.filter(
+        (reason) => typeof reason !== "object" || reason.environmentId === target.environmentId,
+      ),
       Stream.runForEach((reason) =>
         // A long suspension can hide a network change the platform never reported.
         (reason === "network-changed" || reason === "application-active-long"

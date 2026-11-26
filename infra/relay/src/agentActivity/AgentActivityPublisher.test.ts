@@ -24,6 +24,8 @@ import * as ApnsDeliveries from "./ApnsDeliveries.ts";
 const layerPublisher = AgentActivityPublisher.layer.pipe(
   Layer.provide(
     Layer.succeed(FcmDeliveries.FcmDeliveries, {
+      wake: () => Effect.die("unexpected private wake"),
+      replayForDevice: () => Effect.die("unexpected Android replay"),
       enqueue: () => Effect.succeed(null),
       process: () => Effect.void,
     }),
@@ -156,6 +158,7 @@ describe("AgentActivityPublisher", () => {
     const ios = target("ios");
     const fcmCalls: Array<Parameters<FcmDeliveries.FcmDeliveries["Service"]["enqueue"]>[0]> = [];
     const appleDevices: string[] = [];
+    const replayed: string[] = [];
     return Effect.gen(function* () {
       const publisher = yield* AgentActivityPublisher.AgentActivityPublisher;
       yield* publisher.publish({
@@ -169,16 +172,21 @@ describe("AgentActivityPublisher", () => {
         deviceId: android.device_id,
       });
       expect(fcmCalls).toEqual([
-        { target: android, state },
-        { target: android, state: null, replay: true },
+        { target: android, environmentId: state.environmentId, environmentPublicKey: "key" },
       ]);
+      expect(replayed).toEqual([android.device_id]);
       expect(appleDevices).toEqual(["ios"]);
     }).pipe(
       Effect.provide(
         AgentActivityPublisher.layer.pipe(
           Layer.provide(
             Layer.mergeAll(
-              Layer.succeed(AgentActivityRows.AgentActivityRows, makeAgentActivityRows()),
+              Layer.succeed(
+                AgentActivityRows.AgentActivityRows,
+                makeAgentActivityRows({
+                  listForUser: () => Effect.die("Android replay must not read activity"),
+                }),
+              ),
               Layer.succeed(EnvironmentLinks.EnvironmentLinks, makeEnvironmentLinks()),
               Layer.succeed(
                 LiveActivities.LiveActivities,
@@ -195,6 +203,11 @@ describe("AgentActivityPublisher", () => {
                 }),
               ),
               Layer.succeed(FcmDeliveries.FcmDeliveries, {
+                wake: () => Effect.die("unexpected private wake"),
+                replayForDevice: (target) =>
+                  Effect.sync(() => {
+                    replayed.push(target.device_id);
+                  }),
                 enqueue: (input) =>
                   Effect.sync(() => {
                     fcmCalls.push(input);
@@ -266,6 +279,8 @@ describe("AgentActivityPublisher", () => {
                 }),
               ),
               Layer.succeed(FcmDeliveries.FcmDeliveries, {
+                wake: () => Effect.die("unexpected private wake"),
+                replayForDevice: () => Effect.die("unexpected Android replay"),
                 enqueue: () => Effect.succeed(null),
                 process: () => Effect.void,
               }),

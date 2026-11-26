@@ -38,10 +38,13 @@ import * as Persistence from "../platform/persistence.ts";
 import { runCachePersistence } from "./cachePersistence.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import {
+  environmentRpcUnavailable,
   isAuthorizationFailure,
   request,
+  requestInSession,
   subscribeDynamicWithInput,
   subscriptionRetryDelay,
+  type EnvironmentRpcInput,
 } from "../rpc/client.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { applyOrchestrationV2ProjectionEvent } from "./orchestrationV2Projection.ts";
@@ -781,6 +784,28 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     );
   });
 
+  const loadHistoryPage = Effect.fn("EnvironmentThreadState.loadHistoryPage")(function* (
+    input: EnvironmentRpcInput<typeof ORCHESTRATION_V2_WS_METHODS.getThreadHistoryPage>,
+  ) {
+    const session = Option.getOrNull(yield* SubscriptionRef.get(supervisor.session));
+    if (session?.transport === "noise") {
+      return yield* requestInSession(
+        session,
+        ORCHESTRATION_V2_WS_METHODS.getThreadHistoryPage,
+        input,
+      ).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+    }
+    const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
+    if (prepared === null || prepared.transport === "noise" || Option.isNone(httpClient))
+      return yield* environmentRpcUnavailable(supervisor.target);
+    return yield* fetchEnvironmentThreadHistoryPage({
+      ...input,
+      prepared,
+      signer: dpopSigner,
+      remoteAuthorization,
+    }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient.value));
+  });
+
   const loadEarlier = Effect.fn("EnvironmentThreadState.loadEarlier")(function* (
     throughEntryId?: string,
     workAnchorId?: string,
@@ -842,9 +867,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
 
     const runLoad = Effect.gen(function* () {
       while (true) {
-        const preparedOption = yield* SubscriptionRef.get(supervisor.prepared);
-        if (Option.isNone(preparedOption) || Option.isNone(httpClient))
-          return yield* failLoad("Environment is not connected.");
         const views =
           workAnchorId !== undefined
             ? ["work" as const]
@@ -853,15 +875,13 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               : ["conversation" as const, undefined];
         let nextCursor: string | null = null;
         for (const view of views) {
-          const pageResult = yield* fetchEnvironmentThreadHistoryPage({
-            prepared: preparedOption.value,
+          const entryId = workAnchorId ?? throughEntryId;
+          const pageResult = yield* loadHistoryPage({
             threadId,
             cursor: requestCursor,
-            throughEntryId: workAnchorId ?? throughEntryId,
-            view,
-            signer: dpopSigner,
-            remoteAuthorization,
-          }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient.value), Effect.result);
+            ...(entryId !== undefined ? { throughEntryId: entryId } : {}),
+            ...(view !== undefined ? { view } : {}),
+          }).pipe(Effect.result);
           if (Result.isFailure(pageResult))
             return yield* failLoad(formatHistoryError(pageResult.failure));
           const page = pageResult.success;
@@ -1100,14 +1120,17 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
 
         // A server that pages snapshots sends the same bounded window over the
         // socket, so a cold open can skip the HTTP round trip.
+        if (session.transport === "noise" && Option.isSome(historyController))
+          yield* Ref.set(acceptsBoundedSocketSnapshots, true);
         const socketOnly =
+          session.transport !== "noise" &&
           Option.isNone(current.data) &&
           canLoadHistory &&
           Option.exists(config, (value) => value.threadSnapshotPagination === true) &&
           !(yield* Ref.getAndSet(socketOpenTried, true));
         yield* Ref.set(socketOnlyOpen, socketOnly);
 
-        if (Option.isNone(current.data) && !socketOnly) {
+        if (session.transport !== "noise" && Option.isNone(current.data) && !socketOnly) {
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
               Option.match({
@@ -1123,7 +1146,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             ),
           );
           const httpResult: ThreadSnapshotLoader.ThreadSnapshotLoadResult =
-            yield* snapshotLoader.load(prepared, threadId);
+            prepared.transport === "noise"
+              ? { _tag: "unavailable" }
+              : yield* snapshotLoader.load(prepared, threadId);
           switch (httpResult._tag) {
             case "present": {
               httpMisses = 0;

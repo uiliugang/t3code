@@ -1,3 +1,4 @@
+import { savePreviewDownload } from "./savePreviewDownload";
 import {
   createPreviewFramePainter,
   createPreviewStreamClient,
@@ -136,10 +137,7 @@ function offerDownload(download: PreviewStreamDownload) {
       children: m(msg("Save", { $context: "verb, saves a downloaded file" })),
       onClick: () => {
         toastManager.close(id);
-        const anchor = document.createElement("a");
-        anchor.href = download.url;
-        anchor.download = download.fileName;
-        anchor.click();
+        void savePreviewDownload(download.url, download.fileName, download.transport);
       },
     },
   });

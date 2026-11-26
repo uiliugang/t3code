@@ -337,6 +337,10 @@ describe("file embeds in native thread and file Markdown", () => {
     expect(converted.markdown).toBe(source);
     expect(converted.fileHrefs.size).toBe(0);
     expect(resolveMarkdownMediaPreview("./sound.mp3", input)?.kind).toBe("audio");
+    expect(resolveMarkdownMediaPreview("./diagram.svg", input)?.kind).toBe("image");
+    expect(
+      resolveMarkdownMediaPreview("./diagram.svg", { ...input, workspaceSvgAsSource: true })?.kind,
+    ).toBe("file");
   });
 
   it("uses audio filenames in file previews and draft workspaces", () => {
@@ -347,6 +351,19 @@ describe("file embeds in native thread and file Markdown", () => {
     expect(assets(converted.markdown)).toMatchObject([
       { type: "link", url: "./sound.mp3", children: [{ value: "sound.mp3" }] },
     ]);
+    expect(
+      resolveMarkdownMediaPreview("../assets/first.png", {
+        ...draft,
+        workspaceRoot: "/repo/docs/nested",
+        draftWorkspaceRoot: "/repo",
+      })?.source,
+    ).toMatchObject({
+      resource: {
+        _tag: "draft-workspace-file",
+        cwd: "/repo",
+        path: expect.stringContaining("first.png"),
+      },
+    });
     expect(resolveMarkdownMediaPreview("./sound.mp3", draft)?.source).toMatchObject({
       resource: { _tag: "draft-workspace-file", cwd: "/repo/docs", path: "/repo/docs/./sound.mp3" },
     });

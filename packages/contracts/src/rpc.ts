@@ -11,6 +11,8 @@ import {
   WorkItemCreateIssueInput,
   WorkItemRefreshDeliveryInput,
 } from "./workItem.ts";
+import { NoiseHttpError, NoiseHttpPart, NoiseHttpRequest, NoiseHttpUpload } from "./noiseHttp.ts";
+import { RelayAgentActivityState } from "./agentActivity.ts";
 import { WechatError, WechatMutation, WechatSendInput, WechatState } from "./wechat.ts";
 import {
   ResidualWorktreesListResult,
@@ -211,12 +213,19 @@ import {
 } from "./agentSessions.ts";
 import {
   AssetAccessError,
+  AssetAttachmentNotFoundError,
   AssetCreateUrlInput,
   AssetCreateUrlResult,
   AttachmentCreateUploadUrlInput,
   AttachmentCreateUploadUrlResult,
   AttachmentDeleteInput,
+  AttachmentReadChunkInput,
+  AttachmentReadChunkResult,
+  AttachmentTransferError,
+  AttachmentWriteChunkInput,
   AttachmentUploadSigningKeyError,
+  WorkspaceFileReadChunkInput,
+  WorkspaceFileReadChunkResult,
 } from "./assets.ts";
 import {
   PersistChatAttachmentsError,
@@ -621,8 +630,12 @@ export const WS_METHODS = {
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
   assetsCreateUrl: "assets.createUrl",
+  assetsReadWorkspaceChunk: "assets.readWorkspaceChunk",
   assetsPersistChatAttachments: "assets.persistChatAttachments",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
+  attachmentsBeginUpload: "attachments.beginUpload",
+  attachmentsWriteChunk: "attachments.writeChunk",
+  attachmentsReadChunk: "attachments.readChunk",
   attachmentsDelete: "attachments.delete",
 
   mcpAppsCallTool: "mcpApps.callTool",
@@ -750,6 +763,9 @@ export const WS_METHODS = {
   serverLogoutAcpRegistry: "server.logoutAcpRegistry",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
+  serverNoiseHttp: "server.noiseHttp",
+  serverNoiseHttpUpload: "server.noiseHttpUpload",
+  serverGetAgentActivity: "server.getAgentActivity",
   serverGetHostResources: "server.getHostResources",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
@@ -1319,6 +1335,23 @@ const WsServerGetProcessDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetProcessDia
   payload: Schema.Struct({}),
   success: ServerProcessDiagnosticsResult,
   error: EnvironmentAuthorizationError,
+});
+
+const WsServerNoiseHttpRpc = Rpc.make(WS_METHODS.serverNoiseHttp, {
+  payload: NoiseHttpRequest,
+  success: NoiseHttpPart,
+  stream: true,
+  error: Schema.Union([NoiseHttpError, EnvironmentAuthorizationError]),
+});
+const WsServerNoiseHttpUploadRpc = Rpc.make(WS_METHODS.serverNoiseHttpUpload, {
+  payload: NoiseHttpUpload,
+  error: Schema.Union([NoiseHttpError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerGetAgentActivityRpc = Rpc.make(WS_METHODS.serverGetAgentActivity, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(RelayAgentActivityState).check(Schema.isMaxLength(32)),
+  error: Schema.Union([OrchestrationV2GetShellSnapshotError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetHostResourcesRpc = Rpc.make(WS_METHODS.serverGetHostResources, {
@@ -2101,6 +2134,12 @@ const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   error: Schema.Union([AssetAccessError, EnvironmentAuthorizationError]),
 });
 
+const WsAssetsReadWorkspaceChunkRpc = Rpc.make(WS_METHODS.assetsReadWorkspaceChunk, {
+  payload: WorkspaceFileReadChunkInput,
+  success: WorkspaceFileReadChunkResult,
+  error: Schema.Union([AssetAccessError, AttachmentTransferError, EnvironmentAuthorizationError]),
+});
+
 const WsAssetsPersistChatAttachmentsRpc = Rpc.make(WS_METHODS.assetsPersistChatAttachments, {
   payload: PersistChatAttachmentsInput,
   success: PersistChatAttachmentsResult,
@@ -2116,6 +2155,29 @@ const WsAttachmentsCreateUploadUrlRpc = Rpc.make(WS_METHODS.attachmentsCreateUpl
 const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
   payload: AttachmentDeleteInput,
   error: EnvironmentAuthorizationError,
+});
+
+const attachmentTransferErrors = Schema.Union([
+  AttachmentTransferError,
+  EnvironmentAuthorizationError,
+]);
+const WsAttachmentsBeginUploadRpc = Rpc.make(WS_METHODS.attachmentsBeginUpload, {
+  payload: AttachmentCreateUploadUrlInput,
+  success: AttachmentDeleteInput,
+  error: attachmentTransferErrors,
+});
+const WsAttachmentsWriteChunkRpc = Rpc.make(WS_METHODS.attachmentsWriteChunk, {
+  payload: AttachmentWriteChunkInput,
+  error: attachmentTransferErrors,
+});
+const WsAttachmentsReadChunkRpc = Rpc.make(WS_METHODS.attachmentsReadChunk, {
+  payload: AttachmentReadChunkInput,
+  success: AttachmentReadChunkResult,
+  error: Schema.Union([
+    AssetAttachmentNotFoundError,
+    AttachmentTransferError,
+    EnvironmentAuthorizationError,
+  ]),
 });
 
 const WsMcpAppsCallToolRpc = Rpc.make(WS_METHODS.mcpAppsCallTool, {
@@ -2586,6 +2648,15 @@ const WsOrchestrationV2GetThreadProjectionRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationV2GetThreadHistoryPageRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.getThreadHistoryPage,
+  {
+    payload: OrchestrationV2RpcSchemas.getThreadHistoryPage.input,
+    success: OrchestrationV2RpcSchemas.getThreadHistoryPage.output,
+    error: Schema.Union([OrchestrationV2GetThreadProjectionError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationV2StopWorkflowRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.stopWorkflow, {
   payload: OrchestrationV2RpcSchemas.stopWorkflow.input,
   success: OrchestrationV2RpcSchemas.stopWorkflow.output,
@@ -2952,6 +3023,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerLogoutAcpRegistryRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
+  WsServerNoiseHttpRpc,
+  WsServerNoiseHttpUploadRpc,
+  WsServerGetAgentActivityRpc,
   WsServerGetHostResourcesRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,
@@ -3086,8 +3160,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,
+  WsAssetsReadWorkspaceChunkRpc,
   WsAssetsPersistChatAttachmentsRpc,
   WsAttachmentsCreateUploadUrlRpc,
+  WsAttachmentsBeginUploadRpc,
+  WsAttachmentsWriteChunkRpc,
+  WsAttachmentsReadChunkRpc,
   WsAttachmentsDeleteRpc,
   WsMcpAppsCallToolRpc,
   WsMcpAppsToolInfoRpc,
@@ -3174,6 +3252,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2GetWorktreeThreadIdsRpc,
   WsOrchestrationV2GetOlderSettledThreadsRpc,
   WsOrchestrationV2GetThreadProjectionRpc,
+  WsOrchestrationV2GetThreadHistoryPageRpc,
   WsOrchestrationV2LaunchThreadRpc,
   WsOrchestrationV2SubscribeShellRpc,
   WsOrchestrationV2SubscribeThreadRpc,

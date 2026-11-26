@@ -15,7 +15,7 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
-import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { Linking, Platform, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
@@ -35,6 +35,7 @@ import { splitEnvironmentSections } from "./environmentSections";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { NoiseDeviceApproval } from "./NoiseDeviceApproval";
 import { m } from "../../i18n/messages";
 
 type ConnectionsNewRouteParams = {
@@ -57,7 +58,7 @@ export function ConnectionsNewRouteScreen({
   // A new prefill link replaces whatever the form held.
   return (
     <PairingForm
-      key={`${routePairingUrl}:${linked?.environmentId ?? ""}`}
+      key={`${routePairingUrl}:${linked?.environmentId ?? ""}:${linked?.noisePin ?? ""}`}
       routePairingUrl={routePairingUrl}
       routeFor={params.routeFor ?? linked?.environmentId}
       linked={linked}
@@ -72,7 +73,11 @@ function PairingForm({
 }: {
   readonly routePairingUrl: string;
   readonly routeFor: EnvironmentId | undefined;
-  readonly linked: { readonly label: string; readonly host: string | null } | null;
+  readonly linked: {
+    readonly label: string;
+    readonly host: string | null;
+    readonly noisePin?: string;
+  } | null;
 }) {
   const t = useUiTranslation();
   const gt = useGT();
@@ -286,7 +291,9 @@ function PairingForm({
             </Text>
           </View>
 
-          {hasCloudPublicConfig() ? <T3ConnectSection /> : null}
+          {hasCloudPublicConfig() ? (
+            <T3ConnectSection noisePin={linked?.noisePin ?? ""} expectedEnvironmentId={routeFor} />
+          ) : null}
         </View>
       </ScrollView>
     </SettingsScreen>
@@ -389,7 +396,13 @@ function PairingScanCard(props: {
   );
 }
 
-function T3ConnectSection() {
+function T3ConnectSection({
+  noisePin,
+  expectedEnvironmentId,
+}: {
+  readonly noisePin: string;
+  readonly expectedEnvironmentId: EnvironmentId | undefined;
+}) {
   const t = useUiTranslation();
   const gt = useGT();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
@@ -406,6 +419,9 @@ function T3ConnectSection() {
       <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
         {t("Or use the managed relay")}
       </Text>
+      {isSignedIn && Platform.OS === "android" ? (
+        <NoiseDeviceApproval initialLink={noisePin} expectedEnvironmentId={expectedEnvironmentId} />
+      ) : null}
       {isSignedIn ? (
         <CloudEnvironmentRows
           connectedCloudEnvironments={connectedCloudEnvironments}

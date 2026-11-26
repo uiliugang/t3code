@@ -50,6 +50,7 @@ describe("DpopProof", () => {
         method: "post",
         url,
         accessToken: "relay-access-token",
+        nonce: "first-handshake",
         key,
       });
 
@@ -63,6 +64,16 @@ describe("DpopProof", () => {
           nowEpochSeconds: 1_700_000_000,
         }),
       ).toMatchObject({ ok: true, thumbprint });
+      const verifyForConnection = (expectedNonce: string) =>
+        verifyDpopProof({
+          proof,
+          method: "POST",
+          url,
+          nowEpochSeconds: 1_700_000_000,
+          expectedNonce,
+        });
+      expect(verifyForConnection("first-handshake").ok).toBe(true);
+      expect(verifyForConnection("another-handshake").ok).toBe(false);
     }).pipe(Effect.provide(layer)),
   );
 

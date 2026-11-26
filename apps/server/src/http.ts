@@ -44,7 +44,13 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { OtlpTracer, OtlpSerialization } from "effect/observability";
 
 import * as ServerConfig from "./config.ts";
-import { ASSET_ROUTE_PREFIX, readMcpAppHtml, resolveAsset } from "./assets/AssetAccess.ts";
+import { noiseHttpSession } from "./auth/noiseHttp.ts";
+import {
+  ASSET_ROUTE_PREFIX,
+  noiseAssetSigningContext,
+  readMcpAppHtml,
+  resolveAsset,
+} from "./assets/AssetAccess.ts";
 import { sourceControlMediaResponse } from "./assets/sourceControlMediaResponse.ts";
 import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
 import {
@@ -538,9 +544,11 @@ export const layerAssetRoute = HttpRouter.add(
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
 
+    const noisePrincipal = noiseHttpSession(request);
     const asset = yield* resolveAsset(
       suffix.slice(0, separatorIndex),
       suffix.slice(separatorIndex + 1),
+      noisePrincipal && noiseAssetSigningContext(noisePrincipal),
     );
     if (!asset) {
       return HttpServerResponse.text("Not Found", { status: 404 });

@@ -229,6 +229,28 @@ describe("presentConnectionDiagnosis", () => {
     expect(localized?.headline).toBe("Mac mini 正在等待批准此设备");
     expect(localized?.steps[0]).toContain("批准显示验证码 K7QM-2XFD 的设备");
     expect(localized?.steps[1]).toContain("t3 auth connect-device approve K7QM-2XFD");
+
+    const encrypted = backoff(
+      new ConnectionTransientError({
+        reason: "approval-pending",
+        detail: "Waiting for approval",
+        failureCause: "approval_pending",
+        verificationCode: "K7QM-2XFD",
+        approvalMethod: "host-cli",
+        hop: "server",
+        via: "relay",
+      }),
+    );
+    const guidance = diagnose(encrypted)?.steps.join(" ");
+    expect(guidance).toContain("t3 auth connect-device list");
+    expect(guidance).toContain("t3 auth connect-device approve K7QM-2XFD");
+    expect(guidance).not.toContain("Settings");
+    expect(
+      presentConnectionDiagnosis(
+        { hostLabel: "Mac mini", state: encrypted, via: "relay" },
+        translateUi.bind(null, "zh-CN"),
+      )?.steps[0],
+    ).toContain("核对");
   });
 
   it("tells a host that refused this device's login to sign in again, not to start T3 Code", () => {

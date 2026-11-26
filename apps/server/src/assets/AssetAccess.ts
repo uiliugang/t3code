@@ -1,6 +1,12 @@
-import type { AssetResource } from "@t3tools/contracts";
+import type {
+  AssetResource,
+  WorkspaceFileResource,
+  WorkspaceFileReadChunkInput,
+} from "@t3tools/contracts";
 import {
   AssetAttachmentNotFoundError,
+  AttachmentTransferError,
+  ATTACHMENT_TRANSFER_CHUNK_BYTES,
   AssetSourceControlMediaUrlValidationError,
   AssetPreviewTypeValidationError,
   AssetProjectFaviconInspectionError,
@@ -57,7 +63,7 @@ import { findThemeBackground } from "../environmentTheme.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
-import { isWithinRoot } from "../workspace/KnownWorkspaces.ts";
+import { isWithinRoot, KnownWorkspaces } from "../workspace/KnownWorkspaces.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { toHostDrivePath } from "../workspace/hostDrivePath.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
@@ -66,7 +72,8 @@ import { extractIcnsPng } from "./icns.ts";
 import {
   mediaFileRevision,
   openMediaFile,
-  readMediaFileHeader,
+  readMediaFileBytes,
+  statMediaFile,
   type OpenMediaFile,
 } from "./MediaFile.ts";
 import * as WorkspacePreviewRevisions from "./WorkspacePreviewRevisions.ts";
@@ -375,6 +382,101 @@ const resolveCanonicalWorkspaceFile = Effect.fn("AssetAccess.resolveCanonicalWor
   },
 );
 
+const locateNoiseWorkspaceFile = Effect.fn("AssetAccess.locateNoiseWorkspaceFile")(function* (
+  resource: WorkspaceFileResource,
+  workspaceRoot: string | undefined,
+) {
+  const known = yield* KnownWorkspaces;
+  const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
+  if (!workspaceRoot) return yield* new AssetWorkspaceContextNotFoundError({ resource });
+  const home = yield* HostProcess.HomeDirectory;
+  const root = path.resolve(expandHomePath(yield* toHostDrivePath(workspaceRoot), home));
+  // Windows authenticates to a UNC host on realpath; check its named root before touching it.
+  if (isNetworkPath(root) && !(yield* known.contains(root)))
+    return yield* new AssetWorkspaceContextNotFoundError({ resource });
+  const realRoot = yield* fs
+    .realPath(root)
+    .pipe(
+      Effect.mapError((cause) => new AssetWorkspaceRootNormalizationError({ resource, cause })),
+    );
+  if (!(yield* known.contains(realRoot)))
+    return yield* new AssetWorkspaceContextNotFoundError({ resource });
+  const requested = expandHomePath(yield* toHostDrivePath(resource.path), home);
+  const relativePath = path.isAbsolute(requested)
+    ? path.relative(isWithinRoot(path, requested, realRoot) ? realRoot : root, requested)
+    : requested;
+  const inspectError = (cause: unknown) =>
+    new AssetWorkspaceAssetInspectionError({ resource, cause });
+  const filePath = yield* resolveCanonicalWorkspaceFile({
+    workspaceRoot: realRoot,
+    relativePath,
+  }).pipe(Effect.mapError(inspectError));
+  if (!filePath || !isWithinRoot(path, filePath, realRoot))
+    return yield* new AssetWorkspaceAssetNotFoundError({ resource });
+  return { realRoot, relativePath, filePath };
+});
+
+export const issueNoiseWorkspaceUrl = Effect.fn("AssetAccess.issueNoiseWorkspaceUrl")(function* (
+  resource: WorkspaceFileResource,
+  workspaceRoot: string | undefined,
+  context: string,
+) {
+  const { realRoot, relativePath } = yield* locateNoiseWorkspaceFile(resource, workspaceRoot);
+  return yield* issueAssetUrl(
+    {
+      workspaceRoot: realRoot,
+      resource: {
+        _tag: "draft-workspace-file",
+        cwd: realRoot,
+        path: relativePath,
+        ...("disposition" in resource && resource.disposition
+          ? { disposition: resource.disposition }
+          : {}),
+      },
+    },
+    context,
+  );
+});
+
+export const readWorkspaceChunk = Effect.fn("AssetAccess.readWorkspaceChunk")(function* (
+  {
+    resource,
+    offset,
+    length = ATTACHMENT_TRANSFER_CHUNK_BYTES,
+    revision,
+  }: WorkspaceFileReadChunkInput,
+  workspaceRoot: string | undefined,
+) {
+  const { filePath } = yield* locateNoiseWorkspaceFile(resource, workspaceRoot);
+  const inspectError = (cause: unknown) =>
+    new AssetWorkspaceAssetInspectionError({ resource, cause });
+  const file = yield* openMediaFile(filePath).pipe(Effect.mapError(inspectError));
+  if (!file) return yield* new AssetWorkspaceAssetNotFoundError({ resource });
+  const totalBytes = Number(file.info.size);
+  const current = mediaFileRevision(file.info);
+  const changed = () =>
+    new AttachmentTransferError({ message: "Workspace file changed during transfer." });
+  if (revision !== undefined ? revision !== current : offset !== 0) return yield* changed();
+  if (
+    !Number.isSafeInteger(totalBytes) ||
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    offset > totalBytes ||
+    !Number.isSafeInteger(length) ||
+    length < 0 ||
+    length > ATTACHMENT_TRANSFER_CHUNK_BYTES
+  )
+    return yield* new AttachmentTransferError({ message: "Invalid workspace file range." });
+  const count = Math.min(length, totalBytes - offset);
+  const data = yield* readMediaFileBytes(filePath, file, offset, count).pipe(
+    Effect.mapError(inspectError),
+  );
+  const after = yield* statMediaFile(filePath, file).pipe(Effect.mapError(inspectError));
+  if (data.byteLength !== count || mediaFileRevision(after) !== current) return yield* changed();
+  return { data, totalBytes, revision: current };
+}, Effect.scoped);
+
 const resolveCanonicalWorkspaceFileForRequest = (input: {
   readonly workspaceRoot: string;
   readonly relativePath: string;
@@ -394,7 +496,7 @@ const resolveCanonicalWorkspaceFileForRequest = (input: {
 const HEADER_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
 const readImageDimensionsFromOpenFile = (filePath: string, file: OpenMediaFile) =>
-  readMediaFileHeader(filePath, file, IMAGE_DIMENSIONS_HEADER_BYTES).pipe(
+  readMediaFileBytes(filePath, file, 0, IMAGE_DIMENSIONS_HEADER_BYTES).pipe(
     Effect.map(readImageDimensions),
     Effect.orElseSucceed((): ImageDimensions | null => null),
   );
@@ -610,13 +712,23 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
   },
 );
 
-export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (input: {
-  readonly resource: AssetResource;
-  readonly workspaceRoot?: string;
-  readonly projectFaviconPath?: string;
-  /** Where a cloned project's checkout stands, while the clone tracker still knows it. */
-  readonly projectCheckout?: "pending" | "cloned";
+export function noiseAssetSigningContext(session: {
+  readonly proofKeyThumbprint?: string;
+  readonly scopes: readonly string[];
 }) {
+  return JSON.stringify([session.proofKeyThumbprint, [...session.scopes].sort()]);
+}
+
+export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (
+  input: {
+    readonly resource: AssetResource;
+    readonly workspaceRoot?: string;
+    readonly projectFaviconPath?: string;
+    /** Where a cloned project's checkout stands, while the clone tracker still knows it. */
+    readonly projectCheckout?: "pending" | "cloned";
+  },
+  noiseDeviceKey?: string,
+) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
@@ -962,7 +1074,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   const encodedPayload = base64UrlEncode(encodeAssetClaims(claims));
   const signer = yield* AssetSigner.AssetSigner;
   const signature = yield* signer
-    .sign(encodedPayload)
+    .sign(noiseDeviceKey ? `media:${noiseDeviceKey}:${encodedPayload}` : encodedPayload)
     .pipe(
       Effect.mapError((cause) => new AssetSigningKeyLoadError({ resource: input.resource, cause })),
     );
@@ -976,23 +1088,88 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   };
 });
 
-export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
+const verifyAssetClaims = Effect.fn("AssetAccess.verifyClaims")(function* (
   token: string,
-  relativePath: string,
+  noiseDeviceKey?: string,
 ) {
   const [encodedPayload, signature] = token.split(".");
   if (!encodedPayload || !signature) return null;
 
   const signer = yield* AssetSigner.AssetSigner;
-  const verified = yield* signer.verify(encodedPayload, signature).pipe(
-    Effect.tapError((cause) => Effect.logError("Failed to load the asset signing key.", { cause })),
-    Effect.orElseSucceed(() => false),
-  );
+  const verified = yield* signer
+    .verify(
+      noiseDeviceKey ? `media:${noiseDeviceKey}:${encodedPayload}` : encodedPayload,
+      signature,
+    )
+    .pipe(
+      Effect.tapError((cause) =>
+        Effect.logError("Failed to load the asset signing key.", { cause }),
+      ),
+      Effect.orElseSucceed(() => false),
+    );
   if (!verified) return null;
 
   const claims = decodeClaims(encodedPayload);
-  if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) return null;
+  return claims && claims.expiresAt > (yield* Clock.currentTimeMillis) ? claims : null;
+});
 
+const resolveWorkspaceDocument = Effect.fn("AssetAccess.resolveWorkspaceDocument")(function* (
+  claims: Extract<AssetClaims, { kind: "workspace-file" | "workspace-file-exact" }>,
+  decodedPath: string,
+) {
+  const path = yield* Path.Path;
+  if (claims.kind === "workspace-file-exact") {
+    if (decodedPath !== path.basename(claims.relativePath)) return null;
+    const exactWorkspaceFile = yield* resolveCanonicalWorkspaceFileForRequest({
+      workspaceRoot: claims.workspaceRoot,
+      relativePath: claims.relativePath,
+    });
+    // Checked again here: a link can be repointed after its URL was issued.
+    return exactWorkspaceFile && isWorkspacePreviewEntryPath(exactWorkspaceFile)
+      ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
+      : null;
+  }
+  if (!isPreviewDependencyPath(decodedPath, path)) return null;
+  const joinedRelativePath =
+    claims.baseRelativePath === "." ? decodedPath : path.join(claims.baseRelativePath, decodedPath);
+  if (claims.entryFileName !== undefined) {
+    // Before the file is resolved and read, so the recorded state is never newer than the response.
+    const revisions = yield* WorkspacePreviewRevisions.WorkspacePreviewRevisions;
+    yield* revisions.observe(
+      {
+        workspaceRoot: claims.workspaceRoot,
+        entryRelativePath: path.join(claims.baseRelativePath, claims.entryFileName),
+      },
+      joinedRelativePath,
+    );
+  }
+  const workspaceFile = yield* resolveCanonicalWorkspaceFileForRequest({
+    workspaceRoot: claims.workspaceRoot,
+    relativePath: joinedRelativePath,
+    previewBaseRelativePath: claims.baseRelativePath,
+  });
+  return workspaceFile
+    ? ({ kind: "file", path: workspaceFile, renderIntent: "file-preview" } satisfies ResolvedAsset)
+    : null;
+});
+
+export const resolveNoisePreviewDocument = Effect.fn("AssetAccess.resolveNoisePreviewDocument")(
+  function* (token: string, relativePath: string, context: string) {
+    const claims = yield* verifyAssetClaims(token, context);
+    const decoded = decodeRelativePath(relativePath);
+    if (!decoded || (claims?.kind !== "workspace-file" && claims?.kind !== "workspace-file-exact"))
+      return null;
+    return yield* resolveWorkspaceDocument(claims, decoded);
+  },
+);
+
+export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
+  token: string,
+  relativePath: string,
+  noiseDeviceKey?: string,
+) {
+  const claims = yield* verifyAssetClaims(token, noiseDeviceKey);
+  if (!claims) return null;
   if (claims.kind === "attachment") {
     const config = yield* ServerConfig.ServerConfig;
     const attachmentPath = resolveAttachmentPathById({
@@ -1125,37 +1302,5 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
         } satisfies ResolvedAsset)
       : null;
   }
-  if (claims.kind === "workspace-file-exact") {
-    if (decodedPath !== path.basename(claims.relativePath)) return null;
-    const exactWorkspaceFile = yield* resolveCanonicalWorkspaceFileForRequest({
-      workspaceRoot: claims.workspaceRoot,
-      relativePath: claims.relativePath,
-    });
-    // Checked again here: a link can be repointed after its URL was issued.
-    return exactWorkspaceFile && isWorkspacePreviewEntryPath(exactWorkspaceFile)
-      ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
-      : null;
-  }
-  if (!isPreviewDependencyPath(decodedPath, path)) return null;
-  const joinedRelativePath =
-    claims.baseRelativePath === "." ? decodedPath : path.join(claims.baseRelativePath, decodedPath);
-  if (claims.entryFileName !== undefined) {
-    // Before the file is resolved and read, so the recorded state is never newer than the response.
-    const revisions = yield* WorkspacePreviewRevisions.WorkspacePreviewRevisions;
-    yield* revisions.observe(
-      {
-        workspaceRoot: claims.workspaceRoot,
-        entryRelativePath: path.join(claims.baseRelativePath, claims.entryFileName),
-      },
-      joinedRelativePath,
-    );
-  }
-  const workspaceFile = yield* resolveCanonicalWorkspaceFileForRequest({
-    workspaceRoot: claims.workspaceRoot,
-    relativePath: joinedRelativePath,
-    previewBaseRelativePath: claims.baseRelativePath,
-  });
-  return workspaceFile
-    ? ({ kind: "file", path: workspaceFile, renderIntent: "file-preview" } satisfies ResolvedAsset)
-    : null;
+  return yield* resolveWorkspaceDocument(claims, decodedPath);
 });

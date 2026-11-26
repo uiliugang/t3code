@@ -230,6 +230,7 @@ type BatchMachine = Pick<LinkableMachine, "environmentId" | "label" | "urls">;
 type MintPairingCode = (
   environmentId: EnvironmentId,
   access: AuthMcpClientAccess,
+  recipientId?: EnvironmentId,
 ) => Promise<Result.Result<string, unknown>>;
 
 /**
@@ -299,7 +300,7 @@ export async function runLinkBatch(input: {
       back: await linkWithMintedCode({
         machine: back.source,
         access,
-        mint,
+        mint: (id, access) => mint(id, access, machine.environmentId),
         link: (create) => back.link(machine.environmentId, create),
       }),
     };

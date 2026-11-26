@@ -15,7 +15,10 @@ import {
 } from "@t3tools/shared/desktopBootstrapToken";
 
 import * as ServerConfig from "../config.ts";
-import { MCP_APPROVAL_SUBJECT_PREFIX } from "../persistence/AuthPairingLinks.ts";
+import {
+  MCP_APPROVAL_SUBJECT_PREFIX,
+  NOISE_APPROVAL_SUBJECT,
+} from "../persistence/AuthPairingLinks.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 
@@ -149,6 +152,91 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStor
     }).pipe(Effect.provide(layerPairingGrantStore())),
   );
 
+  it.effect("reports a regular Connect device approval only once", () =>
+    Effect.gen(function* () {
+      const grants = yield* PairingGrantStore.PairingGrantStore;
+      const request = yield* grants.issueOneTimeToken({
+        subject: "cloud-connect",
+        proofKeyThumbprint: "device-proof",
+        requiresConnectApproval: true,
+      });
+      expect(yield* grants.approveConnectRequest(request.id)).toBe(true);
+      expect(yield* grants.approveConnectRequest(request.id)).toBe(false);
+    }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
+  it.effect(
+    "requires local approval for a Noise-bound Connect grant and honors denial and revocation",
+    () =>
+      Effect.gen(function* () {
+        const grants = yield* PairingGrantStore.PairingGrantStore;
+        const finger = "device-proof";
+        const issue = () =>
+          grants.issueOneTimeToken({ subject: "cloud-connect", proofKeyThumbprint: finger });
+        const first = yield* issue();
+        const concurrentMint = yield* issue();
+        yield* grants.trustConnectDevice(finger, { deviceType: "mobile" });
+        expect(yield* grants.exchangeNoise(first.credential, "other")).toBe("rejected");
+        expect(yield* grants.exchangeNoise(first.credential, finger)).toBe("pending");
+        for (const input of [
+          { proofKeyThumbprint: finger },
+          { proofKeyThumbprint: finger, allowedSubject: NOISE_APPROVAL_SUBJECT },
+        ]) {
+          expect((yield* Effect.flip(grants.consume(first.credential, input)))._tag).toBe(
+            "UnavailableBootstrapCredentialError",
+          );
+        }
+        expect(
+          yield* Effect.isFailure(
+            grants.consume(concurrentMint.credential, { proofKeyThumbprint: finger }),
+          ),
+        ).toBe(true);
+        expect(yield* grants.approveConnectRequest(first.id)).toBe(false);
+        expect(yield* grants.revoke(first.id)).toBe(true);
+        expect(yield* grants.approveNoiseRequest(first.id)).toBe(false);
+        expect(yield* grants.exchangeNoise(first.credential, finger)).toBe("rejected");
+        const duplicate = yield* issue();
+        expect(yield* grants.exchangeNoise(duplicate.credential, finger)).toBe("rejected");
+        expect(
+          yield* Effect.isFailure(
+            grants.consume(duplicate.credential, { proofKeyThumbprint: finger }),
+          ),
+        ).toBe(true);
+        yield* TestClock.adjust("1 hour");
+        const current = yield* issue();
+        expect(yield* grants.exchangeNoise(current.credential, finger)).toBe("pending");
+        expect(yield* grants.approveNoiseRequest(current.id)).toBe(true);
+        expect(yield* grants.approveNoiseRequest(current.id)).toBe(false);
+        expect(
+          yield* Effect.isFailure(
+            grants.consume(current.credential, { proofKeyThumbprint: finger }),
+          ),
+        ).toBe(true);
+        const simultaneous = yield* Effect.all(
+          [
+            grants.exchangeNoise(current.credential, finger),
+            grants.exchangeNoise(current.credential, finger),
+          ],
+          { concurrency: "unbounded" },
+        );
+        expect(simultaneous).toEqual(
+          expect.arrayContaining([{ scopes: AuthStandardClientScopes }, "rejected"]),
+        );
+        const next = yield* issue();
+        expect(
+          yield* Effect.isFailure(grants.consume(next.credential, { proofKeyThumbprint: finger })),
+        ).toBe(true);
+        expect(yield* grants.exchangeNoise(next.credential, finger)).toEqual({
+          scopes: AuthStandardClientScopes,
+        });
+        const beforeRevoke = yield* issue();
+        yield* grants.revokeConnectDevice(finger);
+        expect(yield* grants.exchangeNoise(beforeRevoke.credential, finger)).toBe("rejected");
+        const afterRevoke = yield* issue();
+        expect(yield* grants.exchangeNoise(afterRevoke.credential, finger)).toBe("pending");
+      }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
   it.effect("matches a seeded desktop bootstrap credential exactly", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
@@ -240,6 +328,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStor
       yield* grants.consume(approval.credential, {
         allowedSubject: `${MCP_APPROVAL_SUBJECT_PREFIX}auto`,
       });
+      const noise = yield* grants.issueOneTimeToken({
+        subject: "cloud-connect",
+        proofKeyThumbprint: "phone",
+      });
+      expect((yield* Queue.take(changes)).type).toBe("pairingLinkUpserted");
+      expect(yield* grants.exchangeNoise(noise.credential, "phone")).toBe("pending");
+      const ordinary = yield* grants.issueOneTimeToken();
+      expect(yield* Queue.take(changes)).toEqual({ type: "noiseRequestPending", id: noise.id });
+      expect((yield* Queue.take(changes)).type).toBe("pairingLinkUpserted");
+      yield* grants.consume(ordinary.credential);
+      expect(yield* Queue.take(changes)).toEqual({ type: "pairingLinkRemoved", id: ordinary.id });
       for (const input of [{}, { label: "Synthetic phone" }]) {
         const issued = yield* grants.issueOneTimeToken(input);
         const change = yield* Queue.take(changes);

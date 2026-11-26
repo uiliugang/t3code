@@ -60,6 +60,7 @@ export function useConnectLinkedEnvironment(target: LinkedThreadTarget) {
   const connect = async () => {
     setState({ phase: "connecting" });
     const outcome = await connectLinkedEnvironment({
+      expectedEnvironmentId: target.environmentId,
       label: target.label,
       requestPairing: async () => {
         // Without it the linking environment refuses; the user can still pair by hand.
@@ -88,7 +89,12 @@ export function useConnectLinkedEnvironment(target: LinkedThreadTarget) {
         : { phase: "idle" },
     );
     if (outcome.type === "manual") {
-      setPrefill({ environmentId: target.environmentId, label: outcome.label, host: outcome.host });
+      setPrefill({
+        environmentId: target.environmentId,
+        label: outcome.label,
+        host: outcome.host,
+        ...(outcome.noisePin && { noisePin: outcome.noisePin }),
+      });
     }
     return outcome;
   };

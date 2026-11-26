@@ -1,7 +1,12 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { issueEventSentence, issueWriteAccess } from "@t3tools/client-runtime/issue-presentation";
-import { issueReferenceCompatible, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
+import {
+  issueLinkedPullRequestTarget,
+  issueReferenceCompatible,
+  issueReferenceHost,
+} from "@t3tools/client-runtime/issue-links";
 import { createIssueCommentPager } from "@t3tools/client-runtime/state/issues";
+import { parseUrl } from "@t3tools/shared/url";
 import {
   issueAssigneeHeld,
   issueAssigneesAfterPicks,
@@ -425,11 +430,12 @@ type IssueDetailPanelProps = {
 
 export function IssueLinkUnavailable({ url }: { url?: string | undefined }) {
   const gt = useGT();
+  const protocol = url ? parseUrl(url)?.protocol : undefined;
   return (
     <PullRequestsUnavailableState
       title={gt("Issues unavailable")}
       error={gt("Update this environment's T3 Code server to browse issues.")}
-      {...(url && /^https?:\/\//i.test(url) && URL.canParse(url)
+      {...(url && (protocol === "https:" || protocol === "http:")
         ? { host: { url, openLabel: gt("Open in browser") } }
         : {})}
     />
@@ -515,23 +521,26 @@ function IssueDetailContent({
   const tracker = issueTrackerPresentation(detail.tracker);
   const currentState = issueStatePresentation(detail.state);
 
-  const host = reference.host === undefined ? {} : { host: reference.host };
+  const openLinkedPullRequest = (
+    source: Pick<IssueLinkedPullRequest, "url" | "repository" | "number">,
+  ) => {
+    const target = issueLinkedPullRequestTarget(reference, source);
+    if (!onSelectPullRequest || !target) return false;
+    onSelectPullRequest({ projectId: reference.projectId, ...target });
+    return true;
+  };
   const openEventSource = (source: IssueEventReference) => {
-    if (source.kind === "pull-request") {
-      if (!onSelectPullRequest) return false;
-      onSelectPullRequest({
-        projectId: reference.projectId,
-        ...host,
-        repository: source.repository,
-        number: source.number,
-      });
-      return true;
-    }
+    if (source.kind === "pull-request") return openLinkedPullRequest(source);
     if (!onSelectIssue) return false;
+    const host = issueReferenceHost(
+      reference.tracker,
+      reference.tracker === "github" ? undefined : reference.host,
+      source.url,
+    );
     onSelectIssue({
       projectId: reference.projectId,
       tracker: reference.tracker,
-      ...host,
+      ...(host ? { host } : {}),
       scope: source.repository,
       key: String(source.number),
       url: source.url,
@@ -873,24 +882,21 @@ function IssueDetailContent({
         {detail.linkedPullRequests.length > 0 ? (
           <PullRequestSection key={`linked:${detail.url}`} title={t("Linked pull requests")}>
             <div className="flex flex-col gap-1">
-              {detail.linkedPullRequests.map((link) => (
-                <LinkedPullRequestRow
-                  key={`${link.repository}#${link.number}`}
-                  link={link}
-                  scope={detail.scope}
-                  onSelect={
-                    onSelectPullRequest
-                      ? () =>
-                          onSelectPullRequest({
-                            projectId: reference.projectId,
-                            ...(reference.host === undefined ? {} : { host: reference.host }),
-                            repository: link.repository,
-                            number: link.number,
-                          })
-                      : null
-                  }
-                />
-              ))}
+              {detail.linkedPullRequests.map((link) => {
+                const target = onSelectPullRequest && issueLinkedPullRequestTarget(reference, link);
+                return (
+                  <LinkedPullRequestRow
+                    key={link.url}
+                    link={link}
+                    scope={detail.scope}
+                    onSelect={
+                      target && onSelectPullRequest
+                        ? () => onSelectPullRequest({ projectId: reference.projectId, ...target })
+                        : null
+                    }
+                  />
+                );
+              })}
             </div>
           </PullRequestSection>
         ) : null}

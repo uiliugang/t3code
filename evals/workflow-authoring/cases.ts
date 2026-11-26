@@ -147,6 +147,7 @@ export const cases: ReadonlyArray<Case> = [
               if (defined(world, "deploy-watch") === undefined) return missing("deploy-watch");
               const hook = (yield* workflows.hooks).find((entry) => entry.name === "deploys");
               if (hook === undefined) return ["It has no webhook named deploys."];
+              if (!("path" in hook)) return ["The local webhook has no direct path."];
               const [hookId, token] = hook.path.split("/").slice(-2).map(decodeURIComponent);
               const deliver = (delivery: string, body: string) =>
                 workflows

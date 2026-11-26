@@ -99,7 +99,7 @@ vi.mock(import("~/state/assets"), async (original) => {
     ...actual,
     assetEnvironment: {
       ...actual.assetEnvironment,
-      createUrl: ((target: { input: { resource: { path: string } } }) =>
+      verifyUrl: ((target: { input: { resource: { path: string } } }) =>
         createUrl(target.input.resource.path)) as never,
     },
   };

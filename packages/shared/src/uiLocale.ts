@@ -427,7 +427,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "A device wants to connect to {environment}": "有设备请求连接 {environment}",
   "{device}. Approve only if it shows code {code}.":
     "{device}。仅当该设备显示验证码 {code} 时批准。",
-  "Could not revoke the device": "无法撤销此设备的访问权限",
+  "Could not confirm device revocation": "未能确认设备访问权限是否已撤销",
   "T3 Connect devices": "T3 Connect 设备",
   "Waiting for approval": "等待批准",
   "Failed to connect. Reconnecting... Reason: {error}": "连接失败，正在重新连接… 原因：{error}",
@@ -450,6 +450,8 @@ const zhCN: Readonly<Record<string, string>> = {
     "在已连接到 {host} 的设备上，打开“设置 > 共享与访问”，批准显示验证码 {code} 的设备。",
   "On a device already connected to {host}, open Settings > Sharing & access and approve this device.":
     "在已连接到 {host} 的设备上，打开“设置 > 共享与访问”并批准此设备。",
+  "On {host}, run `t3 auth connect-device list` and check that the pending device shows {code}. If it matches, run `t3 auth connect-device approve {code}`.":
+    "在 {host} 上运行 `t3 auth connect-device list`，核对待批准设备的验证码是否为 {code}。如果一致，请运行 `t3 auth connect-device approve {code}`。",
   "Or run `t3 auth connect-device approve {code}` on {host}.":
     "也可以在 {host} 上运行 `t3 auth connect-device approve {code}`。",
   "Waiting for approval on the host": "等待主机批准",

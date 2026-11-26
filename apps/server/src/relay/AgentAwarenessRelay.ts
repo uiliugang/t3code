@@ -10,7 +10,7 @@ import {
 } from "@t3tools/contracts";
 import {
   RelayApi,
-  type RelayAgentActivityPublishProofPayload,
+  type RelayAgentActivityWakeProofPayload,
   type RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
 import {
@@ -21,7 +21,7 @@ import {
 } from "@t3tools/shared/agentAwareness";
 import { turnItemUpdateCanEndBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
-import { normalizeRelayIssuer, RELAY_ACTIVITY_PUBLISH_TYP } from "@t3tools/shared/relayJwt";
+import { normalizeRelayIssuer, RELAY_ACTIVITY_WAKE_TYP } from "@t3tools/shared/relayJwt";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -34,6 +34,8 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as Semaphore from "effect/Semaphore";
+import type { OrchestratorV2Error } from "../orchestration-v2/Orchestrator.ts";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
@@ -58,6 +60,12 @@ export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
   {
     readonly publishThread: (threadId: ThreadId) => Effect.Effect<void>;
+    readonly readActivity: () => Effect.Effect<
+      ReadonlyArray<RelayAgentActivityState>,
+      | ProjectService.ProjectOperationError
+      | OrchestratorV2Error
+      | ServerSecretStore.SecretStoreError
+    >;
     readonly drain: Effect.Effect<void>;
     readonly requestCatchUp: () => Effect.Effect<void>;
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
@@ -203,6 +211,7 @@ function resolveAgentActivityPublishingStartupState(input: {
 }
 
 const RELAY_AGENT_ACTIVITY_DETAIL_MAX_LENGTH = 160;
+const TERMINAL_ACTIVITY_TTL_MS = 15 * 60_000;
 const REDACTED_RELAY_AGENT_FAILURE_DETAIL = "The agent run failed.";
 const RELAY_AGENT_ACTIVITY_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 // Nothing else re-queues a thread when the network returns, so a lost terminal state is retried until it lands.
@@ -219,7 +228,19 @@ function sanitizeRelayAgentActivityState(
     ?.trim()
     .slice(0, RELAY_AGENT_ACTIVITY_DETAIL_MAX_LENGTH)
     .trim();
-  return detail ? { ...rest, detail } : rest;
+  return {
+    ...rest,
+    projectTitle: rest.projectTitle.slice(0, 120).trimEnd(),
+    threadTitle: rest.threadTitle.slice(0, 120).trimEnd(),
+    modelTitle: rest.modelTitle.slice(0, 120).trimEnd(),
+    ...(detail ? { detail } : {}),
+  };
+}
+
+function activityPriority(state: RelayAgentActivityState) {
+  if (state.phase === "waiting_for_input" || state.phase === "waiting_for_approval") return 0;
+  if (state.phase === "completed" || state.phase === "failed") return 2;
+  return 1;
 }
 
 function relayEnvironmentClient(token: string) {
@@ -265,11 +286,9 @@ function deliveryStats(
   };
 }
 
-const makePublishProof = Effect.fn("makePublishProof")(function* (input: {
+const makeWakeProof = Effect.fn("AgentAwarenessRelay.makeWakeProof")(function* (input: {
   readonly relayIssuer: string;
-  readonly environmentId: string;
-  readonly threadId: ThreadId;
-  readonly state: RelayAgentActivityState | null;
+  readonly environmentId: EnvironmentId;
   readonly jti: string;
 }) {
   const now = yield* DateTime.now;
@@ -281,12 +300,10 @@ const makePublishProof = Effect.fn("makePublishProof")(function* (input: {
     jti: input.jti,
     iat: Math.floor(now.epochMilliseconds / 1_000),
     exp: Math.floor(expiresAt.epochMilliseconds / 1_000),
-    environmentId: input.environmentId as RelayAgentActivityPublishProofPayload["environmentId"],
-    threadId: input.threadId,
-    state: input.state,
-  } satisfies RelayAgentActivityPublishProofPayload;
+    environmentId: input.environmentId,
+  } satisfies RelayAgentActivityWakeProofPayload;
   const signingKey = yield* EnvironmentSigningKey;
-  return yield* signingKey.sign({ typ: RELAY_ACTIVITY_PUBLISH_TYP, payload });
+  return yield* signingKey.sign({ typ: RELAY_ACTIVITY_WAKE_TYP, payload });
 });
 
 function describeThreadShellForAwareness(
@@ -424,6 +441,7 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
 
 /** @public */
 export const make = Effect.gen(function* () {
+  const httpClient = yield* HttpClient.HttpClient;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -433,6 +451,10 @@ export const make = Effect.gen(function* () {
   const scope = yield* Effect.scope;
   const startedAt = (yield* DateTime.now).epochMilliseconds;
   const catchUpRequests = yield* Queue.dropping<void>(1);
+  const activityBootstrap = yield* Semaphore.make(1);
+  const activityDetails = new Map<ThreadId, RelayAgentActivityState | null>();
+  let activityInitialized = false;
+  const unconfirmedWakes = new Set<ThreadId>();
   const publishedStateByThreadRef = yield* Ref.make(new Map<ThreadId, string>());
   // Android keys alerts by phase and time, so a child's unchanged request keeps
   // its first alert time through parent renames, relinks and the parent's own requests.
@@ -467,10 +489,10 @@ export const make = Effect.gen(function* () {
     readonly url: string;
     readonly environmentCredential: string;
   }) =>
-    HttpApiClient.make(RelayApi, {
+    HttpApiClient.makeWith(RelayApi, {
       baseUrl: relayConfig.url,
-      transformClient: relayEnvironmentClient(relayConfig.environmentCredential),
-    }).pipe(Effect.provide(FetchHttpClient.layer));
+      httpClient: relayEnvironmentClient(relayConfig.environmentCredential)(httpClient),
+    });
 
   let cachedRelayClient: Effect.Success<ReturnType<typeof makeRelayClient>> | undefined;
   let publishedRelayConfig: NonNullable<Effect.Success<typeof readRelayConfig>> | undefined;
@@ -494,12 +516,31 @@ export const make = Effect.gen(function* () {
   );
   let schedulePublishRetry: (threadId: ThreadId) => Effect.Effect<void> = () => Effect.void;
   let enqueueTopLevelPublish: (threadId: ThreadId) => Effect.Effect<void> = () => Effect.void;
+  const clearActivityDetails = () => {
+    activityInitialized = false;
+    activityDetails.clear();
+  };
   const resetPublishedConnection = Effect.gen(function* () {
     publishedRelayConfig = undefined;
     cachedRelayClient = undefined;
     publishConfirmDeadlines.clear();
     heldCompletions.clear();
+    unconfirmedWakes.clear();
+    yield* activityBootstrap.withPermit(Effect.sync(clearActivityDetails));
     yield* Ref.set(publishedStateByThreadRef, new Map());
+  });
+
+  const selectRelayConfig = Effect.fn("AgentAwarenessRelay.selectRelayConfig")(function* (
+    relayConfig: NonNullable<Effect.Success<typeof readRelayConfig>>,
+  ) {
+    if (
+      publishedRelayConfig?.url !== relayConfig.url ||
+      publishedRelayConfig.issuer !== relayConfig.issuer ||
+      publishedRelayConfig.environmentCredential !== relayConfig.environmentCredential
+    ) {
+      if (publishedRelayConfig !== undefined) yield* resetPublishedConnection;
+      publishedRelayConfig = relayConfig;
+    }
   });
 
   const publishThreadUnsafe = Effect.fn("publishThreadUnsafe")(function* (threadId: ThreadId) {
@@ -521,14 +562,7 @@ export const make = Effect.gen(function* () {
       });
       return;
     }
-    if (
-      publishedRelayConfig?.url !== relayConfig.url ||
-      publishedRelayConfig.issuer !== relayConfig.issuer ||
-      publishedRelayConfig.environmentCredential !== relayConfig.environmentCredential
-    ) {
-      yield* resetPublishedConnection;
-      publishedRelayConfig = relayConfig;
-    }
+    yield* selectRelayConfig(relayConfig);
     const environmentId = yield* serverEnvironment.getEnvironmentId;
 
     const publishState = Effect.fn("relay.agent_activity.publish")(function* (input: {
@@ -540,11 +574,9 @@ export const make = Effect.gen(function* () {
         cachedRelayClient = yield* makeRelayClient(relayConfig);
       }
       const relayClient = cachedRelayClient;
-      const proof = yield* makePublishProof({
+      const proof = yield* makeWakeProof({
         relayIssuer: relayConfig.issuer,
         environmentId,
-        threadId,
-        state: input.state,
         jti: yield* random.uuidV4(),
       }).pipe(Effect.provideService(EnvironmentSigningKey, signingKey));
 
@@ -557,19 +589,15 @@ export const make = Effect.gen(function* () {
         reason: input.reason,
       });
 
+      // A phone can fetch as soon as FCM accepts the wake, before the relay returns its response.
+      if (input.state === null && activityInitialized) activityDetails.delete(threadId);
+      else activityDetails.set(threadId, input.state);
+      unconfirmedWakes.add(threadId);
       const response = yield* relayClient.server
-        .publishAgentActivity({
-          params: {
-            environmentId,
-            threadId,
-          },
-          payload: {
-            state: input.state,
-            proof,
-          },
-        })
+        .wakeAgentActivity({ params: { environmentId }, payload: { proof } })
         .pipe(Effect.timeout("10 seconds"));
 
+      unconfirmedWakes.delete(threadId);
       yield* Effect.logInfo("agent activity publish completed", {
         environmentId,
         threadId,
@@ -612,6 +640,7 @@ export const make = Effect.gen(function* () {
     }
     if (
       publishedStateByThread.get(threadId) === publishIdentity &&
+      !unconfirmedWakes.has(threadId) &&
       // A held completion settled after an earlier clear still has to alert.
       !(snapshot.state === null && heldCompletions.has(threadId))
     ) {
@@ -854,6 +883,94 @@ export const make = Effect.gen(function* () {
     }
   });
 
+  const readActivitySnapshot = Effect.fn("AgentAwarenessRelay.readActivitySnapshot")(function* () {
+    const projectSnapshot = yield* projects.snapshot;
+    const activitySnapshot = yield* threads.getAgentAwarenessSnapshot();
+    const liveChildren = yield* Effect.forEach(
+      (yield* threads.listActiveShellIndex()).filter(
+        (thread) => thread.lineage.relationshipToParent === "subagent" && thread.mayBeLive,
+      ),
+      (thread) => readAwarenessThread(thread.id),
+    );
+    return {
+      projects: projectSnapshot.projects,
+      threads: [...activitySnapshot.threads, ...liveChildren.filter((thread) => thread !== null)],
+    };
+  });
+
+  const seedActivity = Effect.fn("AgentAwarenessRelay.seedActivity")(function* (
+    environmentId: EnvironmentId,
+    snapshot: Effect.Success<ReturnType<typeof readActivitySnapshot>>,
+  ) {
+    if (activityInitialized) return;
+    const projectById = new Map(snapshot.projects.map((project) => [project.id, project]));
+    const waits = new Map<ThreadId, SubagentRequestAwareness>();
+    for (const child of snapshot.threads) {
+      const requestId = waitingApprovalId(child);
+      if (requestId === undefined) continue;
+      const parentId = yield* findTopLevelThreadId(child);
+      if (parentId === null) continue;
+      const prior = waits.get(parentId);
+      if (!prior || DateTime.isGreaterThan(child.updatedAt, prior.updatedAt)) {
+        waits.set(parentId, {
+          requestId,
+          updatedAt: child.updatedAt,
+          waitsForInput: child.pendingRuntimeRequest?.kind === "user_input",
+        });
+      }
+    }
+    for (const thread of snapshot.threads) {
+      if (activityDetails.has(thread.id) || thread.archivedAt !== null) continue;
+      const { state } = resolveAgentAwarenessRelayPublishSnapshot({
+        environmentId,
+        thread: Option.some(thread),
+        project: Option.fromUndefinedOr(projectById.get(thread.projectId)),
+        pendingSubagentRequest: waits.get(thread.id) ?? null,
+      });
+      if (state !== null) activityDetails.set(thread.id, state);
+    }
+    activityInitialized = true;
+  });
+
+  const readActivity = Effect.fn("AgentAwarenessRelay.readActivity")(function* () {
+    if (!(yield* readPublishAgentActivityEnabled)) {
+      yield* activityBootstrap.withPermit(Effect.sync(clearActivityDetails));
+      return [];
+    }
+    if (!activityInitialized) {
+      yield* activityBootstrap.withPermit(
+        Effect.gen(function* () {
+          if (activityInitialized) return;
+          yield* seedActivity(
+            yield* serverEnvironment.getEnvironmentId,
+            yield* readActivitySnapshot(),
+          );
+        }),
+      );
+    }
+    const now = (yield* DateTime.now).epochMilliseconds;
+    const current: RelayAgentActivityState[] = [];
+    for (const [id, state] of activityDetails) {
+      if (
+        state === null ||
+        ((state.phase === "completed" || state.phase === "failed") &&
+          Date.parse(state.updatedAt) + TERMINAL_ACTIVITY_TTL_MS < now)
+      ) {
+        activityDetails.delete(id);
+      } else {
+        current.push(state);
+      }
+    }
+    return current
+      .sort(
+        (a, b) =>
+          activityPriority(a) - activityPriority(b) ||
+          b.updatedAt.localeCompare(a.updatedAt) ||
+          a.threadId.localeCompare(b.threadId),
+      )
+      .slice(0, 32);
+  });
+
   const publishActiveThreadsUnsafe = Effect.gen(function* () {
     const relayUrl = yield* readSecretString(RELAY_URL_SECRET).pipe(
       Effect.orElseSucceed(() => null),
@@ -866,6 +983,7 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
     if (!publishAgentActivity) {
+      yield* activityBootstrap.withPermit(Effect.sync(clearActivityDetails));
       yield* Effect.logDebug("agent activity snapshot skipped; publication disabled");
       return "disabled" as const;
     }
@@ -875,20 +993,13 @@ export const make = Effect.gen(function* () {
       return "unlinked" as const;
     }
     const environmentId = yield* serverEnvironment.getEnvironmentId;
-    const projectSnapshot = yield* projects.snapshot;
-    const activitySnapshot = yield* threads.getAgentAwarenessSnapshot();
-    // Live children aren't listed, but a waiting one makes its top-level thread wait.
-    const liveChildren = yield* Effect.forEach(
-      (yield* threads.listActiveShellIndex()).filter(
-        (thread) => thread.lineage.relationshipToParent === "subagent" && thread.mayBeLive,
-      ),
-      (thread) => readAwarenessThread(thread.id),
-    );
+    yield* selectRelayConfig(relayConfig);
+    const snapshot = yield* readActivitySnapshot();
+    yield* activityBootstrap.withPermit(seedActivity(environmentId, snapshot));
     const activeThreadIds = resolveAgentAwarenessRelayActiveThreadIds({
       environmentId,
       startedAt,
-      projects: projectSnapshot.projects,
-      threads: [...activitySnapshot.threads, ...liveChildren.filter((thread) => thread !== null)],
+      ...snapshot,
     });
     if (activeThreadIds.length === 0) {
       yield* Effect.logDebug("agent activity snapshot has no publishable threads");
@@ -995,6 +1106,7 @@ export const make = Effect.gen(function* () {
 
   return AgentAwarenessRelay.of({
     publishThread,
+    readActivity,
     drain: worker.drain,
     requestCatchUp: Effect.fn("AgentAwarenessRelay.requestCatchUp")(function () {
       return Queue.offer(catchUpRequests, undefined).pipe(Effect.asVoid);
@@ -1003,4 +1115,6 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(AgentAwarenessRelay, make);
+export const layer = Layer.effect(AgentAwarenessRelay, make).pipe(
+  Layer.provide(FetchHttpClient.layer),
+);

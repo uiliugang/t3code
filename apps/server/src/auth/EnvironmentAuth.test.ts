@@ -311,6 +311,36 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
       }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" }))),
     );
 
+    it.effect("allows a Noise session to approve a waiting Noise device", () =>
+      Effect.gen(function* () {
+        const auth = yield* EnvironmentAuth.EnvironmentAuth;
+        const proofKeyThumbprint = "new-device";
+        const grant = yield* auth.issueConnectCredential({
+          proofKeyThumbprint,
+          requireApproval: true,
+        });
+        expect(yield* auth.openNoiseSession(grant.credential, proofKeyThumbprint)).toBe("pending");
+        expect(yield* auth.listPairingLinks()).toEqual([]);
+        const [request] = yield* auth.listPairingLinks({ includeNoiseRequests: true });
+        expect(request?.connectDeviceRequest?.verificationCode).toBe(
+          connectDeviceVerificationCode(proofKeyThumbprint),
+        );
+        expect(
+          yield* auth.approveConnectDevice(request!.id, EnvironmentAuth.CLOUD_CONNECT_SUBJECT),
+        ).toBe(false);
+        expect(
+          yield* auth.approveConnectDevice(request!.id, SessionStore.NOISE_SESSION_SUBJECT),
+        ).toBe(true);
+        expect(yield* auth.openNoiseSession(grant.credential, proofKeyThumbprint)).toMatchObject({
+          subject: SessionStore.NOISE_SESSION_SUBJECT,
+          proofKeyThumbprint,
+        });
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" })),
+      ),
+    );
+
     it.effect(
       "holds an untrusted T3 Connect device until it is approved, and revocation cuts it off",
       () =>
@@ -1110,6 +1140,20 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         );
         expect(onMedia._tag).toBe("ServerAuthInvalidCredentialError");
 
+        const channel = yield* sessions.issue({ subject: SessionStore.NOISE_SESSION_SUBJECT });
+        const channelSession = yield* sessions.verify(channel.token);
+        for (const use of ["rpc", "media"] as const) {
+          expect(
+            (yield* serverAuth.issueWebSocketTicket(channelSession, { use }).pipe(Effect.flip))
+              ._tag,
+          ).toBe("ServerAuthWebSocketTokenIssueError");
+          const ticket = yield* sessions.issueWebSocketToken(channelSession.sessionId, {
+            audience: use,
+          });
+          expect((yield* upgrade(ticket.token, use).pipe(Effect.flip))._tag).toBe(
+            "ServerAuthInvalidCredentialError",
+          );
+        }
         const media = yield* serverAuth.issueWebSocketTicket(session, { use: "media" });
         expect((yield* upgrade(Redacted.value(media.ticket), "media")).sessionId).toBe(
           session.sessionId,

@@ -33,6 +33,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { engineTag, text, type WorkflowDefinition } from "./workflow.ts";
+import { PublishWorkflowHooks } from "./hookDirectory.ts";
 import type * as WorkflowEngine from "./WorkflowEngine.ts";
 import * as WorkflowAgentThreads from "./WorkflowAgentThreads.ts";
 import * as WorkflowForge from "./WorkflowForge.ts";
@@ -303,6 +304,7 @@ export const make = Effect.fn("WorkflowRuntime.make")(function* <E, R>(
   yield* Effect.ignore(fileSystem.makeDirectory(directory, { recursive: true }));
   const outer = yield* Scope.Scope;
   const services = yield* Effect.context<R | Path.Path>();
+  const publishHooks = yield* PublishWorkflowHooks;
 
   // One reload at a time, and callers during one wait for the engine that comes out of it.
   const lock = yield* Semaphore.make(1);
@@ -376,6 +378,8 @@ export const make = Effect.fn("WorkflowRuntime.make")(function* <E, R>(
       engineScope = undefined;
       running = [];
       if (definitions.length === 0 && !imported && !(yield* kept)) {
+        engineScope = yield* Scope.fork(outer);
+        yield* publishHooks([]).pipe(Effect.provideService(Scope.Scope, engineScope));
         yield* Deferred.succeed(next, Workflows.disabled);
         return null;
       }

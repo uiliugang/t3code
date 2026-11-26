@@ -6,6 +6,7 @@ import type {
   PreviewSessionSnapshot,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import { NOISE_PREVIEW_ORIGIN } from "@t3tools/shared/preview";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 import {
   type AtomCommandResult,
@@ -150,7 +151,8 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
   if (assetResult._tag === "Failure") {
     return AsyncResult.failure(assetResult.cause);
   }
-  const assetUrl = resolveAssetUrl(input.httpBaseUrl, assetResult.value.relativeUrl);
+  const base = input.httpBaseUrl.startsWith("t3noise:") ? NOISE_PREVIEW_ORIGIN : input.httpBaseUrl;
+  const assetUrl = resolveAssetUrl(base, assetResult.value.relativeUrl);
   if (assetUrl === null) {
     return AsyncResult.failure(
       Cause.die(new Error("The environment returned an invalid asset URL.")),

@@ -1,13 +1,17 @@
 import {
   type AuthClientPresentationMetadata,
+  type AuthSessionState,
   type DesktopSshEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import type * as Option from "effect/Option";
+import * as Option from "effect/Option";
+import type * as Scope from "effect/Scope";
+import type * as Socket from "effect/socket/Socket";
 
+import { encryptedConnectionRequiredError } from "../connection/errors.ts";
 import type { ConnectionAttemptError } from "../connection/model.ts";
 
 export interface PreparedSshEnvironment {
@@ -83,3 +87,43 @@ export class SshEnvironmentGateway extends Context.Service<
     ) => Effect.Effect<void, ConnectionAttemptError>;
   }
 >()("@t3tools/client-runtime/platform/capabilities/SshEnvironmentGateway") {}
+
+export interface ApprovedNoiseConnection {
+  readonly socket: Socket.Socket;
+  readonly authSessionState: AuthSessionState;
+}
+
+export class NoiseConnections extends Context.Service<
+  NoiseConnections,
+  {
+    readonly openBrowserMedia?: (
+      environmentId: EnvironmentId,
+      key: Uint8Array,
+    ) => Effect.Effect<import("../device/hubAccess.ts").DeviceMediaTransport, never, Scope.Scope>;
+    readonly openMediaOrigins?: (
+      environmentId: EnvironmentId,
+      key: Uint8Array,
+    ) => Effect.Effect<
+      import("../connection/model.ts").NoiseMediaOrigins | undefined,
+      never,
+      Scope.Scope
+    >;
+    readonly readPin: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<Uint8Array | null, ConnectionAttemptError>;
+    readonly open: (
+      environmentId: EnvironmentId,
+      key: Uint8Array,
+      mode?: "rpc" | "media",
+    ) => Effect.Effect<ApprovedNoiseConnection, ConnectionAttemptError, Scope.Scope>;
+  }
+>()("@t3tools/client-runtime/platform/capabilities/NoiseConnections") {}
+
+export const assertOrdinaryConnectionAllowed = Effect.fn(
+  "NoiseConnections.assertOrdinaryConnectionAllowed",
+)(function* (environmentId: EnvironmentId) {
+  const noise = yield* Effect.serviceOption(NoiseConnections);
+  if (Option.isSome(noise) && (yield* noise.value.readPin(environmentId)) !== null) {
+    return yield* encryptedConnectionRequiredError();
+  }
+});

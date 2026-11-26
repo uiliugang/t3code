@@ -184,6 +184,14 @@ function steps(
     case "approval_pending": {
       const code =
         failure?._tag === "ConnectionTransientError" ? failure.verificationCode : undefined;
+      if (failure?._tag === "ConnectionTransientError" && failure.approvalMethod === "host-cli") {
+        return [
+          t(
+            "On {host}, run `t3 auth connect-device list` and check that the pending device shows {code}. If it matches, run `t3 auth connect-device approve {code}`.",
+            { host, code: code ?? "<code>" },
+          ),
+        ];
+      }
       return [
         code
           ? t(

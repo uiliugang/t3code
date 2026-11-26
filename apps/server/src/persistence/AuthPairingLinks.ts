@@ -1,3 +1,4 @@
+import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
@@ -23,7 +24,17 @@ import {
 export const MCP_APPROVAL_SUBJECT_PREFIX = "mcp-approval:";
 export const PEER_LINK_PAIRING_SUBJECT_PREFIX = `${MCP_APPROVAL_SUBJECT_PREFIX}peer-link:`;
 
+export const NOISE_APPROVAL_SUBJECT = `${MCP_APPROVAL_SUBJECT_PREFIX}connect-noise-v1`;
+export const CLOUD_CONNECT_SUBJECT = "cloud-connect";
+
 const SqliteFlag = Schema.Literals([0, 1]);
+
+const NoiseExchange = Schema.Struct({
+  id: Schema.String,
+  approved: SqliteFlag,
+  scopes: Schema.fromJsonString(AuthEnvironmentScopes),
+});
+const decodeNoiseExchange = Schema.decodeUnknownEffect(Schema.Array(NoiseExchange));
 
 export const AuthPairingLinkRecord = Schema.Struct({
   id: Schema.String,
@@ -93,6 +104,7 @@ export const GetActiveAuthPairingLinkByIdInput = Schema.Struct({
 export type GetActiveAuthPairingLinkByIdInput = typeof GetActiveAuthPairingLinkByIdInput.Type;
 
 export const FindPendingConnectPairingLinkInput = Schema.Struct({
+  noiseOnly: Schema.optionalKey(Schema.Boolean),
   proofKeyThumbprint: Schema.String,
   now: Schema.DateTimeUtcFromString,
 });
@@ -138,6 +150,16 @@ const decodeAuthPairingLinkDbRow = Schema.decodeUnknownEffect(AuthPairingLinkRec
 export class AuthPairingLinkRepository extends Context.Service<
   AuthPairingLinkRepository,
   {
+    readonly exchangeNoise: (
+      credential: string,
+      thumbprint: string,
+      now: DateTime.Utc,
+    ) => Effect.Effect<Option.Option<typeof NoiseExchange.Type>, AuthPairingLinkRepositoryError>;
+    readonly approveConnectRequest: (
+      id: string,
+      subject: typeof CLOUD_CONNECT_SUBJECT | typeof NOISE_APPROVAL_SUBJECT,
+      now: DateTime.Utc,
+    ) => Effect.Effect<boolean, AuthPairingLinkRepositoryError>;
     readonly create: (
       input: CreateAuthPairingLinkInput,
     ) => Effect.Effect<void, AuthPairingLinkRepositoryError>;
@@ -189,6 +211,64 @@ function toPersistenceSqlOrDecodeError(
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
+  const exchangeNoise: AuthPairingLinkRepository["Service"]["exchangeNoise"] = (
+    credential,
+    thumbprint,
+    now,
+  ) => {
+    const time = DateTime.formatIso(now);
+    return sql`
+      UPDATE auth_pairing_links SET subject = ${NOISE_APPROVAL_SUBJECT}, requires_connect_approval = 1,
+        consumed_at = CASE WHEN EXISTS (
+          SELECT 1 FROM auth_connect_devices WHERE proof_key_thumbprint = ${thumbprint} AND noise_approved_at IS NOT NULL
+        ) THEN ${time} ELSE NULL END
+      WHERE credential = ${credential} AND proof_key_thumbprint = ${thumbprint}
+        AND subject IN (${CLOUD_CONNECT_SUBJECT}, ${NOISE_APPROVAL_SUBJECT})
+        AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ${time}
+        AND NOT EXISTS (
+          SELECT 1 FROM auth_pairing_links AS prior
+          WHERE prior.id <> auth_pairing_links.id AND prior.subject = ${NOISE_APPROVAL_SUBJECT}
+            AND prior.proof_key_thumbprint = ${thumbprint} AND prior.requires_connect_approval = 1 AND prior.consumed_at IS NULL
+            AND prior.expires_at > ${time} AND (prior.revoked_at IS NULL OR prior.connect_denied = 1)
+        )
+      RETURNING id, consumed_at IS NOT NULL AS approved, scopes
+    `.pipe(
+      Effect.flatMap(decodeNoiseExchange),
+      Effect.map((rows) => Option.fromNullishOr(rows[0])),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "AuthPairingLinks.exchangeNoise",
+          "AuthPairingLinks.exchangeNoise",
+        ),
+      ),
+    );
+  };
+
+  const approveConnectRequest: AuthPairingLinkRepository["Service"]["approveConnectRequest"] = (
+    id,
+    subject,
+    now,
+  ) => {
+    const time = DateTime.formatIso(now);
+    return sql`
+      INSERT INTO auth_connect_devices (proof_key_thumbprint, client_json, approved_at, noise_approved_at)
+      SELECT proof_key_thumbprint, requested_client_json, ${time}, ${subject === NOISE_APPROVAL_SUBJECT ? time : null} FROM auth_pairing_links
+      WHERE id = ${id} AND subject = ${subject} AND requires_connect_approval = 1 AND proof_key_thumbprint IS NOT NULL
+        AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ${time}
+      ON CONFLICT(proof_key_thumbprint) DO UPDATE SET
+        noise_approved_at = excluded.noise_approved_at,
+        client_json = COALESCE(excluded.client_json, auth_connect_devices.client_json)
+      WHERE excluded.noise_approved_at IS NOT NULL AND auth_connect_devices.noise_approved_at IS NULL
+      RETURNING proof_key_thumbprint
+    `.pipe(
+      Effect.map((rows) => rows.length === 1),
+      Effect.mapError(
+        (cause) =>
+          new PersistenceSqlError({ operation: "AuthPairingLinks.approveConnectRequest", cause }),
+      ),
+    );
+  };
+
   const createPairingLinkRow = SqlSchema.void({
     Request: CreateAuthPairingLinkInput,
     execute: (input) =>
@@ -224,6 +304,28 @@ export const make = Effect.gen(function* () {
       `,
   });
 
+  const columns = sql`
+    id AS "id",
+    credential AS "credential",
+    method AS "method",
+    scopes AS "scopes",
+    subject AS "subject",
+    label AS "label",
+    proof_key_thumbprint AS "proofKeyThumbprint",
+    created_at AS "createdAt",
+    expires_at AS "expiresAt",
+    consumed_at AS "consumedAt",
+    revoked_at AS "revokedAt",
+    requires_connect_approval AS "requiresConnectApproval",
+    EXISTS (
+      SELECT 1 FROM auth_connect_devices
+      WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
+      AND (auth_pairing_links.subject <> ${NOISE_APPROVAL_SUBJECT} OR noise_approved_at IS NOT NULL)
+    ) AS "connectApproved",
+    requested_client_json AS "requestedClient"
+  `;
+  const selectRow = sql`SELECT ${columns} FROM auth_pairing_links`;
+
   const consumeAvailablePairingLinkRow = SqlSchema.findOneOption({
     Request: ConsumeAuthPairingLinkInput,
     Result: AuthPairingLinkRawDbRow,
@@ -243,6 +345,17 @@ export const make = Effect.gen(function* () {
           AND revoked_at IS NULL
           AND consumed_at IS NULL
           AND expires_at > ${now}
+          AND subject <> ${NOISE_APPROVAL_SUBJECT}
+          AND (subject <> ${CLOUD_CONNECT_SUBJECT} OR NOT EXISTS (
+            SELECT 1 FROM auth_connect_devices
+            WHERE proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint AND noise_approved_at IS NOT NULL
+            UNION ALL
+            SELECT 1 FROM auth_pairing_links AS pending
+            WHERE pending.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
+              AND pending.subject = ${NOISE_APPROVAL_SUBJECT} AND pending.requires_connect_approval = 1
+              AND pending.consumed_at IS NULL AND pending.expires_at > ${now}
+              AND (pending.revoked_at IS NULL OR pending.connect_denied = 1)
+          ))
           AND (
             subject NOT LIKE ${`${MCP_APPROVAL_SUBJECT_PREFIX}%`}
             OR subject = ${allowedSubject ?? null}
@@ -269,24 +382,7 @@ export const make = Effect.gen(function* () {
               SELECT value FROM json_each(auth_pairing_links.scopes)
             )
           )
-        RETURNING
-          id AS "id",
-          credential AS "credential",
-          method AS "method",
-          scopes AS "scopes",
-          subject AS "subject",
-          label AS "label",
-          proof_key_thumbprint AS "proofKeyThumbprint",
-          created_at AS "createdAt",
-          expires_at AS "expiresAt",
-          consumed_at AS "consumedAt",
-          revoked_at AS "revokedAt",
-          requires_connect_approval AS "requiresConnectApproval",
-          EXISTS (
-            SELECT 1 FROM auth_connect_devices
-            WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
-          ) AS "connectApproved",
-          requested_client_json AS "requestedClient"
+        RETURNING ${columns}
       `,
   });
 
@@ -295,25 +391,7 @@ export const make = Effect.gen(function* () {
     Result: AuthPairingLinkRawDbRow,
     execute: ({ now }) =>
       sql`
-        SELECT
-          id AS "id",
-          credential AS "credential",
-          method AS "method",
-          scopes AS "scopes",
-          subject AS "subject",
-          label AS "label",
-          proof_key_thumbprint AS "proofKeyThumbprint",
-          created_at AS "createdAt",
-          expires_at AS "expiresAt",
-          consumed_at AS "consumedAt",
-          revoked_at AS "revokedAt",
-          requires_connect_approval AS "requiresConnectApproval",
-          EXISTS (
-            SELECT 1 FROM auth_connect_devices
-            WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
-          ) AS "connectApproved",
-          requested_client_json AS "requestedClient"
-        FROM auth_pairing_links
+        ${selectRow}
         WHERE revoked_at IS NULL
           AND consumed_at IS NULL
           AND expires_at > ${now}
@@ -336,7 +414,10 @@ export const make = Effect.gen(function* () {
           -- An approved request is answered; denying it now would leave the device trusted.
           AND NOT (
             requires_connect_approval = 1
-            AND proof_key_thumbprint IN (SELECT proof_key_thumbprint FROM auth_connect_devices)
+            AND proof_key_thumbprint IN (
+              SELECT proof_key_thumbprint FROM auth_connect_devices
+              WHERE auth_pairing_links.subject <> ${NOISE_APPROVAL_SUBJECT} OR noise_approved_at IS NOT NULL
+            )
           )
         RETURNING id AS "id"
       `,
@@ -347,50 +428,10 @@ export const make = Effect.gen(function* () {
     Result: AuthPairingLinkRawDbRow,
     execute: ({ credential }) =>
       sql`
-        SELECT
-          id AS "id",
-          credential AS "credential",
-          method AS "method",
-          scopes AS "scopes",
-          subject AS "subject",
-          label AS "label",
-          proof_key_thumbprint AS "proofKeyThumbprint",
-          created_at AS "createdAt",
-          expires_at AS "expiresAt",
-          consumed_at AS "consumedAt",
-          revoked_at AS "revokedAt",
-          requires_connect_approval AS "requiresConnectApproval",
-          EXISTS (
-            SELECT 1 FROM auth_connect_devices
-            WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
-          ) AS "connectApproved",
-          requested_client_json AS "requestedClient"
-        FROM auth_pairing_links
+        ${selectRow}
         WHERE credential = ${credential}
       `,
   });
-
-  const selectRow = sql`
-    SELECT
-      id AS "id",
-      credential AS "credential",
-      method AS "method",
-      scopes AS "scopes",
-      subject AS "subject",
-      label AS "label",
-      proof_key_thumbprint AS "proofKeyThumbprint",
-      created_at AS "createdAt",
-      expires_at AS "expiresAt",
-      consumed_at AS "consumedAt",
-      revoked_at AS "revokedAt",
-      requires_connect_approval AS "requiresConnectApproval",
-      EXISTS (
-        SELECT 1 FROM auth_connect_devices
-        WHERE auth_connect_devices.proof_key_thumbprint = auth_pairing_links.proof_key_thumbprint
-      ) AS "connectApproved",
-      requested_client_json AS "requestedClient"
-    FROM auth_pairing_links
-  `;
 
   const getActivePairingLinkRowById = SqlSchema.findOneOption({
     Request: GetActiveAuthPairingLinkByIdInput,
@@ -408,17 +449,18 @@ export const make = Effect.gen(function* () {
   const findPendingConnectPairingLinkRow = SqlSchema.findOneOption({
     Request: FindPendingConnectPairingLinkInput,
     Result: AuthPairingLinkRawDbRow,
-    execute: ({ proofKeyThumbprint, now }) =>
+    execute: ({ proofKeyThumbprint, now, noiseOnly }) =>
       sql`
         ${selectRow}
         WHERE proof_key_thumbprint = ${proofKeyThumbprint}
+          AND (${noiseOnly ? 1 : 0} = 0 OR subject = ${NOISE_APPROVAL_SUBJECT})
           AND requires_connect_approval = 1
           -- A denied request stays the device's answer until it expires, so retries get a
           -- dead credential back instead of prompting the approver again.
           AND (revoked_at IS NULL OR connect_denied = 1)
           AND consumed_at IS NULL
           AND expires_at > ${now}
-        ORDER BY created_at DESC, id DESC
+        ORDER BY (subject = ${NOISE_APPROVAL_SUBJECT}) DESC, created_at DESC, id DESC
         LIMIT 1
       `,
   });
@@ -432,6 +474,7 @@ export const make = Effect.gen(function* () {
         SET requested_client_json = ${client}
         WHERE id = ${id}
           AND requires_connect_approval = 1
+          AND subject = ${CLOUD_CONNECT_SUBJECT}
           AND requested_client_json IS NULL
         RETURNING id AS "id"
       `,
@@ -625,6 +668,8 @@ export const make = Effect.gen(function* () {
 
   return {
     create,
+    exchangeNoise,
+    approveConnectRequest,
     consumeAvailable,
     listActive,
     revoke,

@@ -14,6 +14,7 @@ vi.mock(import("../../hooks/useUiTranslation"), async () => {
 });
 
 const mocks = vi.hoisted(() => ({
+  enroll: vi.fn(),
   connectSshEnvironment: vi.fn<() => Promise<AtomCommandResult<void, Error>>>(async () =>
     AsyncResult.success(undefined),
   ),
@@ -27,6 +28,7 @@ vi.mock(import("../../state/use-atom-command"), async (original) => ({
 vi.mock(import("~/connection/onboarding"), async (original) => ({
   ...(await original()),
   connectSshEnvironment: mocks.connectSshEnvironment as never,
+  enrollEncryptedRelay: mocks.enroll as never,
 }));
 vi.mock(import("~/state/query"), async (original) => ({
   ...(await original()),
@@ -118,6 +120,33 @@ describe("AddEnvironmentDialog", () => {
 
     await userEvent.click(remoteCard());
     await expect.element(page.getByText(/connection refused/)).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation before replacing a pinned host key in a trusted pairing link", async () => {
+    using _bridge = setup();
+    mocks.enroll
+      .mockReset()
+      .mockResolvedValueOnce(AsyncResult.success({ status: "changed" }))
+      .mockResolvedValueOnce(AsyncResult.success({ status: "enrolled" }));
+    await using _screen = await render(<Owner />);
+    await userEvent.click(page.getByRole("button", { name: "Add environment" }));
+    const pin = new Uint8Array(32).fill(1);
+    const key = btoa(String.fromCharCode(...pin)).replace(/=+$/, "");
+    await userEvent.fill(
+      page.getByPlaceholder("backend.example.com"),
+      `t3noise://pair#env=host&pin=${key}`,
+    );
+    await userEvent.click(page.getByRole("button", { name: "Connect with end-to-end encryption" }));
+    await expect.element(page.getByText(/The host key changed/)).toBeInTheDocument();
+    expect(mocks.enroll).toHaveBeenNthCalledWith(1, {
+      pin: { environmentId: "host", key: pin },
+      replacePin: false,
+    });
+    await userEvent.click(page.getByRole("button", { name: "Use the new host key" }));
+    expect(mocks.enroll).toHaveBeenNthCalledWith(2, {
+      pin: { environmentId: "host", key: pin },
+      replacePin: true,
+    });
   });
 
   it("clears the form after dismissing it on SSH", async () => {

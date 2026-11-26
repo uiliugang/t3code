@@ -1,13 +1,24 @@
 import { WorkflowHook, WorkflowRunStatus } from "@t3tools/contracts";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { Argument, Command, Flag } from "effect/cli";
+import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
 
 import * as Workflows from "../workflows/Workflows.ts";
 import { WorkflowRun, WorkflowStep } from "../workflows/WorkflowStore.ts";
-import { projectLocationFlags } from "./config.ts";
+import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
+import { readLiveServerRuntimeState } from "../serverRuntimeState.ts";
+import * as ServerConfig from "../config.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { NoiseCaller } from "../auth/noiseTrust.ts";
+import {
+  ScheduledTaskWebhookOrigin,
+  layerScheduledTaskWebhookOrigin,
+} from "../scheduledTasks/webhookOrigin.ts";
+import { readLocalHooks } from "../workflows/hookDirectory.ts";
 import {
   jsonFlag,
   printJson,
@@ -304,20 +315,48 @@ const hooksCommand = Command.make("hooks", {
   ...projectLocationFlags,
   json: jsonFlag,
 }).pipe(
-  Command.withDescription(
-    "List the URL paths that start runs. Each holds its hook's secret; add the server's origin.",
-  ),
+  Command.withDescription("List the secret addresses that start workflow runs."),
   Command.withHandler((flags) =>
-    withThreadTools(
-      flags,
-      Effect.fn("cli.workflow.hooks")(function* (tools) {
-        const { hooks } = yield* tools.call("t3_workflow", { action: "hooks" }, HooksResult);
-        if (flags.json) return yield* printJson(hooks);
-        for (const hook of hooks) {
-          yield* Console.log(`${hook.workflow}  ${hook.name}  ${hook.path}`);
-        }
-      }),
-    ).pipe(reportThreadErrors),
+    Effect.gen(function* () {
+      const config = yield* resolveCliAuthConfig(flags, yield* GlobalFlag.LogLevel, {
+        quietLogs: flags.json,
+      });
+      const state = yield* readLiveServerRuntimeState(config.serverRuntimeStatePath);
+      const host = Option.getOrUndefined(state);
+      const hooks = host?.noiseOnly
+        ? yield* Effect.gen(function* () {
+            if (!host.ownerId)
+              return yield* new ThreadUsageError({
+                detail: "Restart the host to list its encrypted webhook addresses.",
+              });
+            const origin = yield* yield* ScheduledTaskWebhookOrigin;
+            return yield* readLocalHooks(host.ownerId, origin);
+          }).pipe(
+            Effect.provide(
+              Layer.merge(
+                layerScheduledTaskWebhookOrigin.pipe(Layer.provideMerge(ServerSecretStore.layer)),
+                NodeSqliteClient.layer({ filename: config.dbPath, readonly: true }),
+              ),
+            ),
+            Effect.provideService(ServerConfig.ServerConfig, config),
+            Effect.provideService(NoiseCaller, true),
+            Effect.catchTags({
+              WorkflowInputError: (error) =>
+                Effect.fail(new ThreadUsageError({ detail: error.message })),
+            }),
+          )
+        : (yield* withThreadTools(
+            flags,
+            (tools) => tools.call("t3_workflow", { action: "hooks" }, HooksResult),
+            config,
+          )).hooks;
+      if (flags.json) return yield* printJson(hooks);
+      for (const hook of hooks) {
+        yield* Console.log(
+          `${hook.workflow}  ${hook.name}  ${"url" in hook ? hook.url : hook.path}`,
+        );
+      }
+    }).pipe(reportThreadErrors),
   ),
 );
 

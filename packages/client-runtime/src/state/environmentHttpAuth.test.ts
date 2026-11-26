@@ -1,3 +1,4 @@
+import * as NodeZlib from "node:zlib";
 import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -5,6 +6,8 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION_TEXT,
   ProjectId,
   ThreadId,
+  WS_METHODS,
+  type NoiseHttpRequest,
   type AuthSessionState,
   type OrchestrationV2ShellSnapshot,
   OrchestrationV2ThreadDetailSnapshot,
@@ -20,6 +23,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import type { HttpClient } from "effect/http";
 import { AsyncResult } from "effect/reactivity";
@@ -34,6 +38,7 @@ import {
 import * as ManagedRelay from "../relay/managedRelay.ts";
 import { type RemoteEnvironmentRequestError } from "../rpc/http.ts";
 import * as RpcHttp from "../rpc/http.ts";
+import { makeNoiseHttpClient } from "../rpc/noiseHttp.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import { fetchEnvironmentSessionState, sessionDeniesScope } from "./session.ts";
 import { fetchEnvironmentShellSnapshot } from "./shellSnapshotHttp.ts";
@@ -275,6 +280,71 @@ const LOADERS: ReadonlyArray<{
 ];
 
 describe("authenticated environment HTTP requests", () => {
+  it.effect(
+    "loads the next PR patch page and complete handoff transcript over the approved socket",
+    () =>
+      Effect.gen(function* () {
+        const direct = makeHarness(() => {
+          throw new Error("Unexpected cleartext request");
+        });
+        const requests: Array<typeof NoiseHttpRequest.Type> = [];
+        const noiseHttpClient = makeNoiseHttpClient({
+          [WS_METHODS.serverNoiseHttpUpload]: () => Effect.die("Unexpected upload"),
+          [WS_METHODS.serverNoiseHttp]: (request) => {
+            requests.push(request);
+            const reply =
+              request.method === "POST" ? DIFF_RESULT : encodeThreadTranscript(TRANSCRIPT);
+            const data = new TextEncoder().encode(JSON.stringify(reply));
+            return Stream.make(
+              { status: 200, contentType: "application/json" },
+              request.method === "POST" && request.deflate
+                ? { data: NodeZlib.deflateRawSync(data), originalSize: data.length }
+                : { data },
+            );
+          },
+        });
+        const input = {
+          ...direct.input,
+          prepared: { ...PREPARED, transport: "noise" as const, noiseHttpClient },
+        };
+        const diff = { ...DIFF, cursor: "second-page" };
+        expect(
+          yield* PullRequestDiffLoader.fetchEnvironmentPullRequestDiff({ ...input, diff }).pipe(
+            Effect.provide(direct.httpLayer),
+          ),
+        ).toEqual(DIFF_RESULT);
+        expect(
+          yield* fetchEnvironmentThreadTranscript({ ...input, threadId: TRANSCRIPT.threadId }).pipe(
+            Effect.provide(direct.httpLayer),
+          ),
+        ).toEqual(TRANSCRIPT);
+        expect(JSON.parse(new TextDecoder().decode(requests[0]?.body))).toEqual(diff);
+        expect(requests.map((request) => request.path)).toEqual([
+          "/api/pull-requests/diff",
+          `/api/orchestration/threads/${TRANSCRIPT.threadId}/transcript`,
+        ]);
+        expect(requests[1]?.protocol).toBe(ORCHESTRATION_PROTOCOL_VERSION_TEXT);
+        expect(direct.calls).toEqual([]);
+        expect(direct.authorizations).toEqual([]);
+        expect(direct.proofs).toEqual([]);
+      }),
+  );
+  it.effect.each(LOADERS)("never sends $name over HTTP for a Noise connection", (loader) =>
+    Effect.gen(function* () {
+      const harness = makeHarness(() => Response.json(loader.response));
+      const result = yield* loader
+        .load({
+          ...harness.input,
+          prepared: { ...PREPARED, transport: "noise" },
+        })
+        .pipe(Effect.provide(harness.httpLayer), Effect.result);
+      expect(result._tag).toBe("Failure");
+      expect(harness.calls).toHaveLength(0);
+      expect(harness.authorizations).toHaveLength(0);
+      expect(harness.proofs).toHaveLength(0);
+    }),
+  );
+
   it.effect.each(LOADERS)("rejects an invalid $name response", (loader) =>
     Effect.gen(function* () {
       const harness = makeHarness(() => Response.json({}));

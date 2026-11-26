@@ -71,7 +71,7 @@ import {
 import { mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@t3tools/shared/mediaPreview";
 import { InlineAudioPreview } from "./files/InlineAudioPreview";
-import { HostImageUrlContext } from "./chat/hostImageUrl";
+import { HostImageUrlContext, ResolvedHostImage } from "./chat/hostImageUrl";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -636,6 +636,7 @@ function useChatMarkdownState(
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Leaving the scope invalidates media requests still loading for it.
     [mediaScopeKey],
   );
+  const previewAssetUrl = useAtomQueryRunner(assetEnvironment.verifyUrl, { reportFailure: false });
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -877,7 +878,7 @@ function useChatMarkdownState(
       filePath: path,
       workspaceRoot: cwd,
       httpBaseUrl: preparedConnection.httpBaseUrl,
-      createAssetUrl,
+      createAssetUrl: previewAssetUrl,
       openPreview,
     });
   };
@@ -1804,20 +1805,23 @@ const CHAT_MARKDOWN_COMPONENTS = {
     }
     const hostImageUrl = use(HostImageUrlContext);
     if (imageSource._tag === "WorkspaceFile" && kind === "image" && hostImageUrl !== null) {
-      const hostSrc = hostImageUrl(imageSource.path);
       return (
-        <ChatMarkdownImage
-          key={hostSrc}
-          src={hostSrc}
-          alt={altText}
-          copyMarkdown={copyMarkdown}
-          standalone={standalone}
-          className={className}
-          style={authoredSizeStyle}
-          imageProps={imageProps}
-          actionsSource={{ kind, name: altText || kind, src: hostSrc }}
-          onImageExpand={imageExpand}
-        />
+        <ResolvedHostImage source={hostImageUrl(imageSource.path)}>
+          {(hostSrc) => (
+            <ChatMarkdownImage
+              key={hostSrc}
+              src={hostSrc}
+              alt={altText}
+              copyMarkdown={copyMarkdown}
+              standalone={standalone}
+              className={className}
+              style={authoredSizeStyle}
+              imageProps={imageProps}
+              actionsSource={{ kind, name: altText || kind, src: hostSrc }}
+              onImageExpand={imageExpand}
+            />
+          )}
+        </ResolvedHostImage>
       );
     }
     if (imageSource._tag === "WorkspaceFile" && threadRef) {

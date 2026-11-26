@@ -22,12 +22,12 @@ export class DeviceScreenshotError extends Schema.TaggedError<
 }
 
 export async function captureDeviceScreenshot(target: DeviceStreamTarget, signal: AbortSignal) {
-  const vendor = target.platform === "ios" ? "serve-sim" : "serve-emu";
+  const vendor = target.platform === "ios" || target.serveSimOnly ? "serve-sim" : "serve-emu";
   const url = withDeviceHubQuery(
     `${target.access.httpBase}/vendor/${vendor}/api/screenshot?device=${encodeURIComponent(target.deviceId)}`,
     target.access,
   );
-  const response = await fetch(url, {
+  const response = await (target.access.transport?.fetch ?? fetch)(url, {
     method: "POST",
     credentials: target.access.credentials ? "include" : "omit",
     signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),

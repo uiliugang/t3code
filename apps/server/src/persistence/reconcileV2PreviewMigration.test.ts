@@ -27,6 +27,27 @@ const seedPreview = Effect.gen(function* () {
 });
 
 describe("V2 preview upgrade", () => {
+  it.effect("keeps the published Noise migrations and adds the superseded attempt index", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 128 });
+      assert.deepStrictEqual(yield* runMigrations(), [[129, "SupersededRunAttemptIndex"]]);
+      assert.deepStrictEqual(
+        yield* sql`SELECT name FROM effect_sql_migrations WHERE migration_id >= 127 ORDER BY migration_id`,
+        [
+          { name: "ConnectNoiseApproval" },
+          { name: "PeerNoisePin" },
+          { name: "SupersededRunAttemptIndex" },
+        ],
+      );
+      assert.deepStrictEqual(
+        yield* sql`SELECT name FROM sqlite_master
+          WHERE type = 'index' AND name = 'orchestration_v2_projection_run_attempts_superseded_idx'`,
+        [{ name: "orchestration_v2_projection_run_attempts_superseded_idx" }],
+      );
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
   it.effect("upgrades a published preview without replaying V2 or losing import progress", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -106,7 +127,9 @@ describe("V2 preview upgrade", () => {
         [124, "IssueTrackerAccounts"],
         [125, "Workflows"],
         [126, "RemoveAgentFeedback"],
-        [127, "SupersededRunAttemptIndex"],
+        [127, "ConnectNoiseApproval"],
+        [128, "PeerNoisePin"],
+        [129, "SupersededRunAttemptIndex"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(
@@ -261,7 +284,9 @@ describe("V2 preview upgrade", () => {
         [124, "IssueTrackerAccounts"],
         [125, "Workflows"],
         [126, "RemoveAgentFeedback"],
-        [127, "SupersededRunAttemptIndex"],
+        [127, "ConnectNoiseApproval"],
+        [128, "PeerNoisePin"],
+        [129, "SupersededRunAttemptIndex"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

@@ -1,3 +1,25 @@
+import { connectGuestNoiseClient } from "../auth/connectNoise.testkit.ts";
+import { routeLayer } from "../auth/connectNoise.ts";
+import { serveNoiseMedia } from "../auth/noiseMedia.ts";
+import { NoiseGuestCall } from "../auth/noiseGuestContext.ts";
+import * as NoiseIngress from "../auth/noiseIngress.ts";
+import * as GuestHttp from "./http.ts";
+import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { SessionStore } from "../auth/SessionStore.ts";
+import { PairingGrantStore } from "../auth/PairingGrantStore.ts";
+import * as Context from "effect/Context";
+import { HttpRouter, HttpServer } from "effect/http";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import {
+  CONNECT_NOISE_PATH,
+  type NoiseGuestRequest,
+  decodeNoiseMediaFrame,
+  encodeNoiseMediaControl,
+  encodeNoiseMediaData,
+} from "@t3tools/contracts";
+import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
+import { EnvironmentId } from "@t3tools/contracts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -18,6 +40,8 @@ import {
   TurnItemId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as ConfigProvider from "effect/ConfigProvider";
+import { NoiseCaller } from "../auth/noiseTrust.ts";
 import * as Deferred from "effect/Deferred";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as Effect from "effect/Effect";
@@ -118,6 +142,12 @@ const layerCleanup = Layer.effect(
   Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const layerTest = GuestShareService.layer.pipe(
+  Layer.provideMerge(ManagedPolicy.layerTest()),
+  Layer.provideMerge(
+    Layer.succeed(ServerEnvironmentIdentity, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("guest-host")),
+    }),
+  ),
   Layer.provideMerge(
     CommandOutputHub.layer.pipe(
       Layer.provideMerge(layerOrchestration.pipe(Layer.provide(layerCleanup))),
@@ -126,7 +156,7 @@ const layerTest = GuestShareService.layer.pipe(
   Layer.provide(layerProviders),
   Layer.provideMerge(ServerSettings.layerTest({ guestSharingEnabled: true })),
   Layer.provide(layerConnect),
-  Layer.provide(ServerSecretStore.layer),
+  Layer.provideMerge(ServerSecretStore.layer),
   Layer.provide(DocumentText.layer),
   Layer.provideMerge(layerConfig),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
@@ -134,7 +164,7 @@ const layerTest = GuestShareService.layer.pipe(
 
 const threadId = ThreadId.make("thread:guest-share-service");
 
-const shareThreadFor = Effect.fn(function* (threadId: ThreadId) {
+const makeThread = Effect.fn("test.makeGuestThread")(function* (threadId: ThreadId) {
   yield* Ref.set(hostname, "env.t3.test");
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   yield* orchestrator.dispatch({
@@ -151,6 +181,10 @@ const shareThreadFor = Effect.fn(function* (threadId: ThreadId) {
     createdBy: "user",
     creationSource: "web",
   });
+  return orchestrator;
+});
+const shareThreadFor = Effect.fn(function* (threadId: ThreadId) {
+  const orchestrator = yield* makeThread(threadId);
   const guestShares = yield* GuestShareService.GuestShareService;
   const { url } = yield* guestShares.create({ threadId });
   assert.isTrue(url.startsWith("https://env.t3.test/guest#"));
@@ -270,6 +304,234 @@ it.effect("redeems only a short invite whose signature and share id are both cur
       Exit.isSuccess(yield* Effect.exit(guestShares.redeem({ credential, name: "Sam" }))),
     );
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect.each([
+  { origin: "https://box.team.ts.net:8443", strict: false, allowed: true },
+  { origin: "", strict: false, allowed: false },
+  { origin: "https://relay.example.com", strict: false, allowed: false },
+  { origin: "https://box.team.ts.net", strict: true, allowed: false },
+  {
+    origin: "",
+    strict: true,
+    allowed: false,
+    app: "https://relay.test",
+    relay: "https://relay.test",
+  },
+  {
+    origin: "",
+    strict: true,
+    allowed: false,
+    app: "http://fork.example",
+    relay: "https://relay.test",
+  },
+])(
+  "binds an encrypted owner's guest share to its configured direct origin ($origin, strict=$strict)",
+  ({ origin, strict, allowed, app = "", relay = "" }) =>
+    Effect.gen(function* () {
+      const guestShares = yield* GuestShareService.GuestShareService;
+      if (!allowed) {
+        const refused = yield* guestShares
+          .create({ threadId })
+          .pipe(Effect.provideService(NoiseCaller, true), Effect.flip);
+        assert.equal(refused.reason, "direct_unavailable");
+        return;
+      }
+      const { credential: oldInvite } = yield* shareThread;
+      const result = yield* guestShares
+        .create({ threadId })
+        .pipe(Effect.provideService(NoiseCaller, true));
+      const invite = new URL(result.url);
+      assert.equal(invite.origin, origin);
+      assert.equal(invite.pathname, "/guest");
+      yield* Ref.set(hostname, null);
+      const guest = yield* guestShares.redeem({ credential: invite.hash.slice(1), name: "Sam" });
+      assert.equal(guest.shareId, result.share.id);
+      yield* guestShares.check(guest.token);
+      assert.isTrue(
+        yield* Effect.isFailure(guestShares.redeem({ credential: oldInvite, name: "Sam" })),
+      );
+    }).pipe(
+      Effect.provide(
+        layerTest.pipe(
+          Layer.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  T3CODE_NOISE_GUEST_ORIGIN: origin,
+                  T3CODE_NOISE_GUEST_APP_ORIGIN: app,
+                  T3CODE_NOISE_GUEST_RELAY_ORIGIN: relay,
+                  T3CODE_NOISE_ONLY: String(strict),
+                },
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
+);
+
+it.live(
+  "redeems a strict invite over pinned Noise, fences the guest, and ends access on revocation",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* makeThread(threadId);
+      const shares = yield* GuestShareService.GuestShareService;
+      const invite = yield* shares
+        .create({ threadId })
+        .pipe(Effect.provideService(NoiseCaller, true));
+      const url = new URL(invite.url);
+      const fields = new URLSearchParams(url.hash.slice(1));
+      assert.equal(url.origin, "https://fork.example.com");
+      assert.equal(fields.get("env"), "guest-host");
+      assert.equal(fields.get("relay"), "https://relay.test");
+      const credential = fields.get("invite")!;
+      assert.isTrue(yield* Effect.isFailure(shares.redeem({ credential, name: "Outside" })));
+
+      const guestLayer = Layer.unwrap(
+        Effect.gen(function* () {
+          const router = yield* HttpRouter.HttpRouter;
+          return routeLayer(
+            () => Effect.die("guest entered the environment RPC"),
+            (req, guest, socket) =>
+              serveNoiseMedia(req, guest, socket, router).pipe(
+                Effect.provideService(NoiseGuestCall, true),
+              ),
+          );
+        }),
+      );
+      const runtimes = yield* Layer.build(
+        HttpRouter.serve(Layer.mergeAll(guestLayer, GuestHttp.layer, NoiseIngress.layer), {
+          disableListenLog: true,
+        }).pipe(
+          Layer.provideMerge(NodeHttpServer.layerTest),
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+              Layer.mock(PairingGrantStore)({}),
+              Layer.mock(SessionStore)({ cookieName: "unused", legacyCookieName: undefined }),
+            ),
+          ),
+        ),
+      );
+      const address = HttpServer.formatAddress(
+        Context.get(runtimes, HttpServer.HttpServer).address,
+      );
+      const endpoint = address.replace(/^http/, "ws") + CONNECT_NOISE_PATH;
+      const open = (input: NoiseGuestRequest) => connectGuestNoiseClient(endpoint, url, input);
+      const redeem = yield* open({ mode: "guest-redeem", name: "Guest", credential });
+      if (redeem.reply.status !== "guest-redeemed")
+        return yield* Effect.die("missing guest approval");
+      const { token, shareId } = redeem.reply;
+      assert.deepEqual((yield* open({ mode: "guest-redeem", name: "Guest", credential })).reply, {
+        status: "rejected",
+      });
+      assert.isTrue(yield* Effect.isFailure(shares.check(token)));
+      assert.deepEqual(
+        (yield* open({ mode: "guest-session", token, shareId: "another-thread" })).reply,
+        { status: "rejected" },
+      );
+      const auth = { mode: "guest-session" as const, token, shareId };
+      yield* Effect.gen(function* () {
+        const { socket } = yield* open(auth);
+        const reader = yield* socket.reader;
+        const writer = yield* socket.writer;
+        yield* writer.write(
+          encodeNoiseMediaControl({
+            op: "http",
+            method: "GET",
+            path: "/api/guest/stream?share=" + shareId,
+          }),
+        );
+        let view = "";
+        const decoder = new TextDecoder();
+        while (!/data: [^\n]+\n\n/.test(view)) {
+          for (const bytes of yield* reader.pull) {
+            const frame = typeof bytes === "string" ? null : decodeNoiseMediaFrame(bytes);
+            if (frame?.kind === "binary") view += decoder.decode(frame.bytes, { stream: true });
+            else
+              assert.ok(
+                frame?.kind === "control" &&
+                  frame.control.op === "response" &&
+                  frame.control.status === 200,
+              );
+          }
+        }
+        assert.include(view, '"type":"view"');
+        assert.include(view, "Review me");
+      }).pipe(Effect.scoped);
+      const send = Effect.fn("test.guestHttp")(function* (
+        method: "GET" | "POST",
+        path: string,
+        body?: string,
+      ) {
+        const { socket, reply } = yield* open(auth);
+        assert.deepEqual(reply, { status: "guest-ready" });
+        const reader = yield* socket.reader;
+        const writer = yield* socket.writer;
+        yield* writer.write(
+          encodeNoiseMediaControl({
+            op: "http",
+            method,
+            path,
+            headers: body ? { "content-type": "application/json" } : {},
+          }),
+        );
+        if (body) {
+          yield* writer.write(encodeNoiseMediaData(Buffer.from(body)));
+          yield* writer.write(encodeNoiseMediaControl({ op: "end" }));
+        }
+        const [raw] = yield* reader.pull;
+        return typeof raw === "string" ? null : decodeNoiseMediaFrame(raw);
+      }, Effect.scoped);
+      assert.deepEqual(
+        yield* send("GET", "/api/guest/session?share=" + shareId).pipe(
+          Effect.map((frame) =>
+            frame?.kind === "control" && frame.control.op === "response"
+              ? frame.control.status
+              : null,
+          ),
+        ),
+        204,
+      );
+      const message = yield* send(
+        "POST",
+        "/api/guest/messages?share=" + shareId,
+        JSON.stringify({ shareId, text: "Only this thread" }),
+      );
+      assert.ok(
+        message?.kind === "control" &&
+          message.control.op === "response" &&
+          message.control.status === 204,
+      );
+      const record = yield* orchestrator.getThreadRecords(threadId, []);
+      assert.equal(record.thread.guestShare?.messages[0]?.text, "Only this thread");
+      for (const path of ["/ws", "/api/device-hub/ws", "/api/guest/session?share=another"])
+        assert.isTrue(yield* Effect.isFailure(send("GET", path)));
+      yield* orchestrator.dispatch({
+        type: "thread.guest-share.close",
+        commandId: CommandId.make("strict-revoke"),
+        threadId,
+      });
+      assert.deepEqual((yield* open(auth)).reply, { status: "rejected" });
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        layerTest.pipe(
+          Layer.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  T3CODE_NOISE_ONLY: "true",
+                  T3CODE_NOISE_GUEST_APP_ORIGIN: "https://fork.example.com",
+                  T3CODE_NOISE_GUEST_RELAY_ORIGIN: "https://relay.test",
+                },
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
 );
 
 it.effect("refuses guest requests once T3 Connect no longer serves the link's host", () =>

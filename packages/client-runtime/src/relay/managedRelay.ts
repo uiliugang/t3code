@@ -54,6 +54,7 @@ export interface ManagedRelayDpopProofInput {
   readonly method: HttpMethod.HttpMethod;
   readonly url: string;
   readonly accessToken?: string;
+  readonly nonce?: string;
 }
 
 export class ManagedRelayDpopKeyLoadError extends Schema.TaggedError<

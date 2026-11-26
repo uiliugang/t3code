@@ -16,6 +16,7 @@ import {
   LINEAR_KIND,
   parseLinearIssueUrl,
 } from "@t3tools/issue-tracker-linear/shared/issueUrl";
+import { parseUrl } from "@t3tools/shared/url";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 import type { EnvironmentProject } from "./state/shell.ts";
@@ -68,12 +69,37 @@ function linkAuthority(url: string): string | null {
 }
 
 function githubLinkHost(url: string): string | undefined {
-  try {
-    const link = new URL(url);
-    return link.protocol === "https:" ? normalizeGithubIssueHost(link.host) : undefined;
-  } catch {
-    return undefined;
-  }
+  const link = parseUrl(url);
+  return link?.protocol === "https:" && !link.username && !link.password
+    ? normalizeGithubIssueHost(link.host)
+    : undefined;
+}
+
+export function githubIssueScopeFromUrl(url: string | undefined, key: string): string | undefined {
+  if (url === undefined || githubLinkHost(url) === undefined) return undefined;
+  const parsed = sourceControlClients.parseIssueUrl(url, GITHUB);
+  return parsed?.link.key === key ? parsed.link.scope : undefined;
+}
+
+export function issueLinkedPullRequestTarget(
+  issue: { readonly tracker: string; readonly host?: string | undefined },
+  target: { readonly url: string; readonly repository: string; readonly number: number },
+) {
+  const { repository, number } = target;
+  if (sourceControlClients.find(issue.tracker) === undefined) return null;
+  if (issue.tracker !== "github")
+    return { repository, number, ...(issue.host ? { host: issue.host } : {}) };
+  const host = githubLinkHost(target.url);
+  const parsed = sourceControlClients.parseChangeRequestUrl(target.url);
+  if (
+    host === undefined ||
+    parsed?.definition.kind !== "github" ||
+    (parsed.link.authority ?? parsed.link.host) !== host ||
+    parsed.link.repository.toLowerCase() !== repository.toLowerCase() ||
+    parsed.link.number !== number
+  )
+    return null;
+  return { repository, number, host };
 }
 
 export function issueReferenceHost(

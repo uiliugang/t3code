@@ -4,7 +4,10 @@ import {
   type ResolveMediaSourceInput,
 } from "@t3tools/client-runtime/media-source";
 
-export function resolveMobileMarkdownMediaSource(href: string, input: ResolveMediaSourceInput) {
+export function resolveMobileMarkdownMediaSource(
+  href: string,
+  input: ResolveMediaSourceInput & { readonly draftWorkspaceRoot?: string | undefined },
+) {
   const media = resolveMediaSource(href, input);
   if (media?.access !== "unavailable" || !input.workspaceRoot) return media;
   const source = classifyMarkdownImageSource(href, input.workspaceRoot);
@@ -14,7 +17,7 @@ export function resolveMobileMarkdownMediaSource(href: string, input: ResolveMed
     access: "environment" as const,
     resource: {
       _tag: "draft-workspace-file" as const,
-      cwd: input.workspaceRoot,
+      cwd: input.draftWorkspaceRoot ?? input.workspaceRoot,
       path: source.path,
     },
   };

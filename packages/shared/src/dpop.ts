@@ -56,6 +56,7 @@ const DpopJwtPayloadJson = Schema.fromJsonString(
     jti: Schema.String.check(Schema.isNonEmpty()),
     iat: Schema.Int,
     ath: Schema.optionalKey(Schema.String),
+    nonce: Schema.optionalKey(Schema.String),
   }),
 );
 const decodeDpopJwtPayloadJson = Schema.decodeUnknownOption(DpopJwtPayloadJson);
@@ -127,6 +128,7 @@ export function verifyDpopProof(input: {
   readonly nowEpochSeconds: number;
   readonly expectedThumbprint?: string;
   readonly expectedAccessToken?: string;
+  readonly expectedNonce?: string;
   readonly maxAgeSeconds?: number;
 }): DpopVerificationResult {
   if (!input.proof?.trim()) {
@@ -183,6 +185,14 @@ export function verifyDpopProof(input: {
     );
     if (!verified) {
       return { ok: false, code: "invalid_signature", reason: "Invalid DPoP signature." };
+    }
+
+    if (input.expectedNonce !== undefined && payload.value.nonce !== input.expectedNonce) {
+      return {
+        ok: false,
+        code: "invalid_proof",
+        reason: "DPoP nonce does not match this connection.",
+      };
     }
 
     const maxAgeSeconds = input.maxAgeSeconds ?? DPOP_MAX_CLOCK_SKEW_SECONDS;

@@ -24,6 +24,7 @@ import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
 import * as MobileStorage from "../persistence/mobile-storage";
 import { appAtomRegistry } from "../state/atom-registry";
+import { layerNoiseConnections } from "../features/connection/noiseApproval";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
 import * as EnvironmentOwnedDataCleanup from "./environment-owned-data-cleanup";
 import * as ConnectionStorage from "./storage";
@@ -254,7 +255,10 @@ const layerPlatformConnectionSource = Layer.succeed(
 );
 
 const layerProvidedConnectionStorage = ConnectionStorage.layer.pipe(Layer.provide(Runtime.layer));
-const layerProvidedCapabilities = layerCapabilities.pipe(Layer.provide(Runtime.layer));
+const layerProvidedCapabilities = layerNoiseConnections.pipe(
+  Layer.provideMerge(layerCapabilities),
+  Layer.provide(Runtime.layer),
+);
 
 type ConnectionPlatformLayerSource =
   | typeof layerProvidedConnectionStorage

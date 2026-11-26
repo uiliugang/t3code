@@ -1,0 +1,9 @@
+76999351feb2eb2bf6a76159f61b6aa400d7dcb13979597ce0c796bb8922ab8d  src/android.rs
+f5f5cd75d26c9e25b1b5bfad6bf41cbf3d65cf131e25f6579f25cf7fdb678e19  src/lib.rs
+2a0a39558d4e532403b655af53fb9ecc1fd5e8b97f20f5b8131a71de5719c9c9  Cargo.toml
+9141c0ab9f30a9363380dab034c606266ac5e4f413a246be95e57a504b68b610  Cargo.lock
+99b63a5e7514e5c06ce1bd28cdef05d7444e245be6e5cc088ba31f373ed92c11  build-bindings.sh
+af2627f6de413afcacb2b1fbb8df47330438f24554a127eb39180261009cd209  ../../apps/mobile/modules/t3-native-controls/android/src/main/jniLibs/arm64-v8a/libt3_connect_noise.so
+78a62e8751121b632e8187f0320c3c06b4a00747832c352e87cc589d64ec432f  ../../apps/mobile/modules/t3-native-controls/android/src/main/jniLibs/armeabi-v7a/libt3_connect_noise.so
+4411f5d6a9a8bacdb928053508ce35f5d34c1ae9077db50d948c94e43ae81436  ../../apps/mobile/modules/t3-native-controls/android/src/main/jniLibs/x86/libt3_connect_noise.so
+1042e53a786a6858ed41615ef4f6e5e39afaf383f231f63f0b6a151b6894eca0  ../../apps/mobile/modules/t3-native-controls/android/src/main/jniLibs/x86_64/libt3_connect_noise.so

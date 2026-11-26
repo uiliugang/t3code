@@ -1,5 +1,6 @@
 import { EnvironmentId, type ServerConfig, ThreadId, TurnItemId } from "@t3tools/contracts";
 import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
+import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -10,6 +11,7 @@ import type { RelayDiscoveredEnvironment } from "./relay/discovery.ts";
 import {
   ANOTHER_ADDRESS,
   linkableMachines,
+  linkThroughPairing,
   linkedEnvironmentNames,
   linkRequestAnswerInput,
   linkRequestDisplay,
@@ -26,6 +28,43 @@ const item = {
 };
 const asked = { url: "https://box.example.ts.net", label: "Box" };
 const accessLabel = (access: string) => `<${access}>`;
+
+it("forwards a pinned peer code only to a capable encrypted recipient for the named origin", () => {
+  const environmentId = EnvironmentId.make("builder");
+  const hostPin = `t3noise://pair#env=builder&pin=${"A".repeat(43)}`;
+  const reply = {
+    type: "noise-link" as const,
+    urls: [asked.url],
+    environmentId,
+    label: asked.label,
+    hostPin,
+    credential: "one-use-code",
+    expiresAt: DateTime.makeUnsafe(0),
+  };
+  expect(linkThroughPairing(reply, environmentId, true)).toEqual({
+    url: asked.url,
+    expectedNoisePin: hostPin,
+    expectedLabel: asked.label,
+    expectedEnvironmentId: environmentId,
+    pairingCode: reply.credential,
+  });
+  expect(linkThroughPairing(reply, environmentId, false)).toBeNull();
+  expect(linkThroughPairing(reply, EnvironmentId.make("other"), true)).toBeNull();
+  expect(
+    linkThroughPairing(
+      { ...reply, urls: [asked.url, "https://other.example"] },
+      environmentId,
+      true,
+    ),
+  ).toBeNull();
+  expect(
+    linkThroughPairing(
+      { ...reply, hostPin: hostPin.replace("builder", "other") },
+      environmentId,
+      true,
+    ),
+  ).toBeNull();
+});
 
 describe("linkRequestDisplay", () => {
   it("names the environment linked and the access the user chose", () => {

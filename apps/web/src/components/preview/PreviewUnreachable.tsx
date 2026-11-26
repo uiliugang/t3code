@@ -1,3 +1,5 @@
+import type { DeviceMediaTransport } from "@t3tools/client-runtime/device/hub-access";
+import { savePreviewDownload } from "~/browser/savePreviewDownload";
 import { T, useMessages, Var } from "gt-react";
 import { useState } from "react";
 
@@ -18,11 +20,13 @@ export function PreviewFileNotShown({
   url,
   fileName,
   downloadUrl,
+  transport,
   onOpen,
 }: {
   url: string;
   fileName: string;
   downloadUrl: string | null;
+  transport?: DeviceMediaTransport | undefined;
   onOpen: () => void;
 }) {
   const t = useUiTranslation();
@@ -44,7 +48,13 @@ export function PreviewFileNotShown({
             {t("Open in browser")}
           </Button>
           {downloadUrl ? (
-            <Button type="button" size="sm" render={<a href={downloadUrl} download={fileName} />}>
+            <Button
+              type="button"
+              size="sm"
+              {...(transport
+                ? { onClick: () => void savePreviewDownload(downloadUrl, fileName, transport) }
+                : { render: <a href={downloadUrl} download={fileName} /> })}
+            >
               {t("Download")}
             </Button>
           ) : null}

@@ -17,7 +17,8 @@ import type {
   ConnectionTarget,
   PreparedConnection,
 } from "./model.ts";
-import { ConnectionTransientError } from "./model.ts";
+import { NoiseConnections } from "../platform/capabilities.ts";
+import { ConnectionTransientError, RelayConnectionTarget } from "./model.ts";
 import { isHostCredentialRefusal } from "./errors.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import {
@@ -30,6 +31,7 @@ import {
   usableRoutes,
 } from "./routes.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
+import { makeNoiseHttpClient } from "../rpc/noiseHttp.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 
@@ -182,6 +184,7 @@ export const preflightRoute = (
 export const make = Effect.gen(function* () {
   const resolver = yield* ConnectionResolver.ConnectionResolver;
   const sessions = yield* RpcSession.RpcSessionFactory;
+  const noise = Option.getOrNull(yield* Effect.serviceOption(NoiseConnections));
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
   const httpClient = yield* HttpClient.HttpClient;
 
@@ -219,15 +222,17 @@ export const make = Effect.gen(function* () {
   };
 
   const checkHost = (prepared: PreparedConnection) =>
-    checkDescriptor(
-      prepared.httpBaseUrl,
-      prepared.environmentId,
-      prepared.httpBaseUrl.startsWith("https:"),
-    ).pipe(
-      Effect.withSpan("ConnectionDriver.checkHost", {
-        attributes: { "connection.target.kind": prepared.target._tag },
-      }),
-    );
+    prepared.transport === "noise"
+      ? Effect.succeed<RouteCheck>("unchecked")
+      : checkDescriptor(
+          prepared.httpBaseUrl,
+          prepared.environmentId,
+          prepared.httpBaseUrl.startsWith("https:"),
+        ).pipe(
+          Effect.withSpan("ConnectionDriver.checkHost", {
+            attributes: { "connection.target.kind": prepared.target._tag },
+          }),
+        );
 
   const connect = Effect.fn("ConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
@@ -240,6 +245,42 @@ export const make = Effect.gen(function* () {
       "connection.route.count": connectionRoutes(entry).length,
     });
     yield* reportProgress({ stage: "preparing" });
+    if (noise !== null) {
+      const key = yield* noise.readPin(target.environmentId);
+      if (key !== null) {
+        // A pin belongs to the environment, including every alternate route in its catalog entry.
+        const prepared: PreparedConnection = {
+          environmentId: target.environmentId,
+          label: target.label,
+          target: new RelayConnectionTarget({
+            environmentId: target.environmentId,
+            label: target.label,
+          }),
+          transport: "noise",
+          httpBaseUrl: "t3noise://environment",
+          socketUrl: "t3noise://environment",
+          httpAuthorization: null,
+        };
+        yield* reportProgress({ stage: "opening", prepared });
+        const approved = yield* noise.open(target.environmentId, key);
+        const session = yield* sessions.connect(prepared, approved);
+        const mediaOrigins = yield* (
+          noise.openMediaOrigins?.(target.environmentId, key) ?? Effect.undefined
+        );
+        const browserMedia = yield* (
+          noise.openBrowserMedia?.(target.environmentId, key) ?? Effect.undefined
+        );
+        const connected = {
+          ...prepared,
+          ...(browserMedia ? { browserMedia } : {}),
+          ...(mediaOrigins ? { mediaOrigins } : {}),
+          noiseHttpClient: makeNoiseHttpClient(session.client),
+        };
+        yield* reportProgress({ stage: "synchronizing", prepared: connected });
+        yield* session.ready;
+        return { prepared: connected, session, refusedRouteIds: [] };
+      }
+    }
     return yield* connectOverRoutes(
       entry,
       (route) => checkRoute(entry, route),
@@ -272,13 +313,21 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const preflight = (entry: ConnectionCatalogEntry, route: ConnectionRoute) =>
-    preflightRoute(
+  const preflight = Effect.fn("ConnectionDriver.preflight")(function* (
+    entry: ConnectionCatalogEntry,
+    route: ConnectionRoute,
+  ) {
+    if (noise !== null) {
+      const pin = yield* noise.readPin(entry.target.environmentId).pipe(Effect.result);
+      if (pin._tag === "Failure" || pin.success !== null) return "unchecked" as const;
+    }
+    return yield* preflightRoute(
       sendsTokenInClear(connectionRoutes(entry), route)
         ? Effect.succeed("silent" as const)
         : checkRoute(entry, route),
       resolver.prepare(routeEntry(entry, route)),
-    ).pipe(Effect.withSpan("ConnectionDriver.preflight"));
+    );
+  });
 
   return ConnectionDriver.of({ connect, preflight, checkHost });
 });

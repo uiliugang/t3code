@@ -57,6 +57,7 @@ import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type * as RpcSession from "../rpc/session.ts";
 import { createOrchestrationEnvironmentAtoms } from "./orchestration.ts";
+import { createAttachmentEnvironmentAtoms } from "./attachments.ts";
 import { createReviewEnvironmentAtoms } from "./review.ts";
 import { createPreviewEnvironmentAtoms } from "./preview.ts";
 import { createFilesystemEnvironmentAtoms } from "./filesystem.ts";
@@ -707,6 +708,45 @@ describe("finite environment subscription lifecycle", () => {
 });
 
 describe("environment query lifecycle", () => {
+  it.effect(
+    "rejects file transfer chunks after reconnect, including to another Noise session",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeEnvironmentQueryHarness(Effect.void);
+        const { openNoiseTransfer } = createAttachmentEnvironmentAtoms(harness.runtime);
+        const registry = AtomRegistry.make();
+        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+        const open = openNoiseTransfer.run(registry, {
+          environmentId: QUERY_ENVIRONMENT.environmentId,
+          input: undefined,
+        });
+        expect(yield* Effect.flip(open)).toMatchObject({ _tag: "EnvironmentRpcUnavailableError" });
+        const noise = { ...QUERY_RPC_SESSION, transport: "noise" } as const;
+        yield* SubscriptionRef.set(harness.supervisorSession, Option.some(noise));
+        const transfer = yield* open;
+        for (const replacement of [QUERY_RPC_SESSION, { ...noise }]) {
+          yield* SubscriptionRef.set(harness.supervisorSession, Option.some(replacement));
+          expect(
+            yield* Effect.flip(
+              transfer.writeChunk({
+                attachmentId: "pending-1",
+                offset: 0,
+                data: Uint8Array.of(1),
+              }),
+            ),
+          ).toMatchObject({ _tag: "EnvironmentRpcUnavailableError" });
+          expect(
+            yield* Effect.flip(
+              transfer.readWorkspaceChunk({
+                resource: { _tag: "draft-workspace-file", cwd: "/repo", path: "notes.txt" },
+                offset: 5,
+                revision: "before-reconnect",
+              }),
+            ),
+          ).toMatchObject({ _tag: "EnvironmentRpcUnavailableError" });
+        }
+      }),
+  );
   it.effect(
     "terminal metadata retains known sessions until a new snapshot and keeps the manager identity",
     () =>

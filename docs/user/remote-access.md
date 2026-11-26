@@ -63,6 +63,98 @@ approved and appear in that list for you to review. A device that has not
 connected since you updated T3 Code asks for approval like a new one. Older apps
 cannot show the code, so update them before you turn approval on.
 
+### Use an end-to-end encrypted connection
+
+If you treat T3 Connect as untrusted, turn on **Require approval for new
+devices** on the host and review its approved devices. Otherwise a different
+device on the account can still obtain ordinary access to this environment.
+
+On the host, run `t3 auth connect-device noise-pin`. Transfer the link directly to
+your signed-in client through a trusted channel. In your own web build or desktop app,
+open **Settings → Connections → Add environment** and paste the link into **Host**.
+Use a web origin you trust to deliver the application code. In the Android app, open **Add
+environment**, paste it into **Trusted Noise pairing link**, and tap **Connect with
+end-to-end encryption**. Compare the code in the environment’s connection status
+with `t3 auth connect-device list` on the host. If they match, run
+`t3 auth connect-device approve <code>`. The client reconnects automatically.
+For later devices, you can also compare the code and approve the request on a
+phone already connected to this environment through Noise with access management permission.
+Open a thread to chat, attach files, open received attachments, or use its terminal as usual.
+With file read access, open **Files** in the thread to preview a workspace file.
+Use **Save to device** in the file menu to choose a folder for a full copy.
+The host only sends files inside the selected workspace, including when a path
+follows a symbolic link.
+
+Voice input uses the same encrypted connection when you select an environment
+in **Settings → Voice**. Selecting a cloud transcription provider lets the host
+send the recording to that provider.
+
+The host and phone encrypt chat history, attachment transfers, workspace file
+paths and contents, and terminal input and output. T3 Connect can still observe
+connection timing and traffic volume. Chat and pull request images load automatically.
+External image hosts can see requests for public images. Supported private pull request media
+loads through the environment using its source control credentials. In **Files**, open an HTML or
+SVG file and choose **Preview** to view the rendered document through the encrypted connection.
+In a web browser, use **Open file in preview browser** in the Files toolbar for an HTML page
+that loads stylesheets, scripts, or images from the workspace.
+If the host key changes, verify a fresh link directly on the host before choosing
+**Use the new host key**.
+
+For a dedicated host, set `T3CODE_NOISE_ONLY=true` in the server's environment
+and restart it after linking T3 Connect and saving a trusted pairing link.
+This applies to every network interface, including loopback. Connect an approved
+client to use the host. Ordinary web sign-in, cookie-based guest URLs, direct WebSocket clients,
+and plaintext webhook deliveries are refused. The host CLI can still approve or
+revoke devices. To restore ordinary access, unset the variable and restart.
+See [encrypted webhook delivery](./project-settings.md#encrypted-webhook-delivery)
+for scheduled tasks on this host.
+
+To deny a waiting request, run `t3 auth connect-device deny <code>`.
+To disconnect an approved phone and require Noise approval again, run
+`t3 auth connect-device revoke <code>`. On a connected Android phone you can also
+open the environment in **Settings → Environments**, choose the matching code under
+**T3 Connect devices**, and confirm **Revoke**.
+
+### Link two hosts over Noise
+
+Enable **Settings → Labs → Linked environments** on both hosts. Run
+`t3 auth connect-device noise-pin` on each and exchange the environment IDs
+and public keys through a channel you trust. Generate one shared token for
+this pair with `node -p "require('node:crypto').randomBytes(32).toString('base64url')"`.
+
+Set `T3CODE_NOISE_PEERS_FILE` on each host to the path of a private JSON file.
+Use its own Connect origin at the top level and the other host's origin, ID and
+public key in `peers`. The public key identifies the destination, and the shared
+token lets the destination authenticate its caller. The laptop’s file has this shape:
+
+```json
+{
+  "origin": "https://laptop.example.com",
+  "peers": [
+    {
+      "origin": "https://builder.example.com",
+      "environmentId": "<builder environment ID>",
+      "pin": "<builder public key from the pin field>",
+      "token": "<shared token for this pair>"
+    }
+  ]
+}
+```
+
+On the builder, swap the two origins and enter the laptop's ID and public key
+with the same token. Restrict both files to the host account and restart both
+hosts. Create an environment link in **Settings → Connections** at the configured
+origin using a pairing code from the destination. Each link still has its own
+access level. Removing a link revokes its session. Remove the peer entry and
+restart to revoke the host's transport access. Generate a different shared
+token for every pair of hosts.
+
+A device connecting to that peer uses the destination's own device approval.
+Automatic pairing of a third host requires its own matching peer configuration.
+To use a direct LAN or Tailscale HTTPS address, add its origin to the
+comma-separated `T3CODE_NOISE_PEER_ORIGINS` on the linking host and restart.
+An environment with a configured Noise pin uses its pinned origin.
+
 ### Scripts and agents
 
 `t3 up` asks nothing when you name a choice: `--connect`, `--lan`, or their

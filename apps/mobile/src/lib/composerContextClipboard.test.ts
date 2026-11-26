@@ -41,7 +41,7 @@ vi.mock("../state/workspace", () => ({
 vi.mock("../state/session", () => ({
   environmentSession: { preparedConnectionValueAtom: vi.fn() },
 }));
-vi.mock("../state/assets", () => ({ assetEnvironment: { createUrl: (value: unknown) => value } }));
+vi.mock("../state/assets", () => ({ refreshAssetUrl: mocks.execute }));
 vi.mock("../state/threads", () => ({
   environmentThreadShells: { threadShellAtom: (value: unknown) => value },
 }));
@@ -142,7 +142,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.sequence = 0;
   mocks.local.mockReturnValue(undefined);
-  mocks.execute.mockResolvedValue({ _tag: "Success", value: { relativeUrl: "/assets/source" } });
+  mocks.execute.mockResolvedValue("https://host/assets/source");
   mocks.download.mockResolvedValue({ uri: "file:///download.png", dispose: mocks.dispose });
   mocks.persist.mockResolvedValue("file:///owned.png");
   mocks.remove.mockResolvedValue(undefined);

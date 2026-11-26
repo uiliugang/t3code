@@ -32,6 +32,11 @@ export function createPreviewTunnelUrlReader<R, E>(input: {
         // Mid-reconnect, wait for the connection rather than refuse the page; the read times out.
         if (prepared === null) return Effect.never;
         // The proxy cannot send cookies, so only ticketed connections tunnel.
+        if (prepared.mediaOrigins)
+          return Effect.succeed({
+            url: prepared.mediaOrigins.tunnel.replace(/^http/, "ws") + "/api/preview/tunnel",
+            expiresAtMillis: Infinity,
+          });
         if (prepared.httpAuthorization === null) return Effect.succeed(null);
         return mintMediaTicket(prepared).pipe(
           Effect.map((ticket) => {

@@ -19,6 +19,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
+import { ScheduledTaskWebhookOrigin } from "../scheduledTasks/webhookOrigin.ts";
 import { daily, every, Tick, webhook, WebhookRequest } from "./triggers.ts";
 import { issues, pullRequests } from "./forgeApi.ts";
 import { cancel, runs, signalAll, start } from "./stepServices.ts";
@@ -2035,7 +2036,8 @@ it.effect("a request to a hook starts a run, its retry is the same run, and a ba
         const workflows = yield* Workflows.Workflows;
         const [hook] = yield* workflows.hooks;
         assert.equal(hook?.workflow, "inbound");
-        const [hookId, token] = hook!.path.split("/").slice(-2).map(decodeURIComponent);
+        assert.ok(hook && "path" in hook);
+        const [hookId, token] = hook.path.split("/").slice(-2).map(decodeURIComponent);
         const deliver = (body: string, delivery: string, withToken = token!) =>
           workflows.deliver({
             hookId: hookId!,
@@ -2069,11 +2071,28 @@ it.effect("a request to a hook starts a run, its retry is the same run, and a ba
         return token;
       }),
     );
+    const sealed = yield* boot(
+      Effect.flatMap(Workflows.Workflows, (workflows) => workflows.hooks),
+    ).pipe(
+      Effect.provideService(
+        ScheduledTaskWebhookOrigin,
+        Effect.succeed({
+          relayHookBaseUrl: "https://relay.example/v1/hooks/0123456789abcdef",
+          webhookEncryptionPin: "p".repeat(43),
+        }),
+      ),
+    );
+    const address = sealed[0];
+    assert.ok(address && "url" in address);
+    const fragment = new URLSearchParams(new URL(address.url).hash.slice(1));
+    assert.equal(fragment.get("hook"), "wf-inbound.push");
+    assert.equal(fragment.get("token"), token);
     // The URL a sender was given still works after a restart.
     yield* boot(
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
-        assert.isTrue((yield* workflows.hooks)[0]?.path.endsWith(`/${token}`));
+        const [hook] = yield* workflows.hooks;
+        assert.ok(hook && "path" in hook && hook.path.endsWith(`/${token}`));
       }),
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),

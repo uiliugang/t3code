@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { issueReferenceCompatible, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
+import {
+  githubIssueScopeFromUrl,
+  issueReferenceCompatible,
+  issueReferenceHost,
+} from "@t3tools/client-runtime/issue-links";
 import {
   BranchIssueError,
   IssueTrackerKind,
@@ -57,7 +61,7 @@ export function IssueDetailPanel(
   },
 ) {
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
-  const { provider, scope, url, host: rawHost, ...rest } = props.target;
+  const { provider, scope: savedScope, url, host: rawHost, ...rest } = props.target;
   if (
     !issueReferenceCompatible(
       { tracker: provider, host: rawHost, url },
@@ -65,6 +69,9 @@ export function IssueDetailPanel(
     )
   )
     return <IssueLinkUnavailable url={url} />;
+  const scope =
+    savedScope || (provider === "github" ? githubIssueScopeFromUrl(url, props.id) : undefined);
+  if (provider === "github" && !scope) return <IssueLinkUnavailable url={url} />;
   const host = issueReferenceHost(provider, rawHost, url);
   const target = { ...rest, ...(host === undefined ? {} : { host }) };
   const legacy =

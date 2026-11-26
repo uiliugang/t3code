@@ -7,6 +7,8 @@ import { initializeI18n } from "../src/i18n/initializeI18n";
 declare module "vite-plus/test/browser" {
   interface BrowserCommands {
     /** Defined in vite.config.ts. Moves Playwright's mouse off the page. */
+    startGuestRelay: (events: string[]) => Promise<string>;
+    stopGuestRelay: () => Promise<{ posts: string[]; plaintext: boolean }>;
     resetPointer: () => Promise<void>;
   }
 }

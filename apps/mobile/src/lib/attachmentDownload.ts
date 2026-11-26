@@ -1,4 +1,10 @@
-import type { ChatFileAttachment } from "@t3tools/contracts";
+import {
+  ATTACHMENT_TRANSFER_CHUNK_BYTES,
+  type AttachmentReadChunkResult,
+  type ChatFileAttachment,
+} from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import type { Directory } from "expo-file-system";
 import type { SharingOptions } from "expo-sharing";
 import { msg } from "gt-react-native";
@@ -162,6 +168,74 @@ async function createCachedAttachmentFile(attachment: AttachmentFileMetadata) {
   };
 }
 
+class AttachmentReadError extends Schema.TaggedError<
+  AttachmentReadError,
+  { readonly brand: unique symbol }
+>()("AttachmentReadError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}
+const cacheWriteError = (cause: unknown) =>
+  new AttachmentReadError({
+    message: m(msg("Could not download the attachment. Check the connection and try again.")),
+    cause,
+  });
+
+/** The atom owns the file; interrupted and failed transfers never publish a partial URI. */
+export const downloadNoiseFile = Effect.fn("MobileAsset.downloadNoiseFile")(function* <E>(
+  name: string,
+  read: (
+    offset: number,
+  ) => Effect.Effect<AttachmentReadChunkResult & { readonly revision?: string }, E>,
+  expectedRevision?: string,
+) {
+  const cached = yield* Effect.acquireRelease(
+    Effect.tryPromise({
+      try: () => createCachedAttachmentFile({ name, mimeType: "application/octet-stream" }),
+      catch: cacheWriteError,
+    }),
+    ({ preview }) => Effect.sync(preview.dispose),
+  );
+  yield* Effect.scoped(
+    Effect.gen(function* () {
+      const { FileMode } = yield* Effect.promise(() => import("expo-file-system"));
+      const handle = yield* Effect.acquireRelease(
+        Effect.try({
+          try: () => {
+            cached.file.create();
+            return cached.file.open(FileMode.WriteOnly);
+          },
+          catch: cacheWriteError,
+        }),
+        (handle) => Effect.sync(() => handle.close()),
+      );
+      let offset = 0;
+      let size: number | undefined;
+      do {
+        const { data, totalBytes, revision } = yield* read(offset);
+        if (
+          (expectedRevision !== undefined && revision !== expectedRevision) ||
+          !Number.isSafeInteger(totalBytes) ||
+          totalBytes < 0 ||
+          (size !== undefined && totalBytes !== size) ||
+          data.byteLength !== Math.min(ATTACHMENT_TRANSFER_CHUNK_BYTES, totalBytes - offset)
+        ) {
+          return yield* new AttachmentReadError({ message: "Invalid attachment chunk." });
+        }
+        size = totalBytes;
+        if (data.byteLength > 0) {
+          // The native write must finish before interruption can close its descriptor.
+          yield* Effect.uninterruptible(
+            Effect.tryPromise({ try: () => handle.writeBytes(data), catch: cacheWriteError }),
+          );
+        }
+        offset += data.byteLength;
+      } while (offset < size);
+    }),
+  ).pipe(Effect.onError(() => Effect.sync(cached.preview.dispose)));
+  return { uri: cached.preview.uri, exists: () => cached.file.exists };
+});
+
 export function nativeViewerErrorMessage(cause: unknown): string {
   const text = cause instanceof Error ? cause.message : String(cause);
   return /ActivityNotFound|cannot be previewed/i.test(text)
@@ -216,7 +290,11 @@ export async function downloadAttachmentForPreview(input: {
       cached.preview.dispose();
       return null;
     }
-    await File.downloadFileAsync(input.url, cached.file, { signal: input.signal });
+    if (/^(file|content):/.test(input.url)) {
+      await new File(input.url).copy(cached.file);
+    } else {
+      await File.downloadFileAsync(input.url, cached.file, { signal: input.signal });
+    }
     if (input.signal.aborted) {
       cached.preview.dispose();
       return null;

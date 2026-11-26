@@ -21,6 +21,7 @@ describe("webhookAddress", () => {
 
   it("is not copyable and points at T3 Connect when no base URL exists", () => {
     const result = webhookAddress(endpoint, null);
+    expect(webhookAddress(endpoint, "t3noise://environment")).toEqual(result);
     expect(result.address).toBe("/hooks/abc");
     expect(result.copyable).toBe(false);
     expect(result.note).toContain("T3 Connect");

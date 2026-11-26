@@ -68,6 +68,7 @@ const storeFailure = (tag: "AlreadyExists" | "PermissionDenied") =>
 const unusedSecretStoreOperation = () => Effect.die("unused secret-store operation");
 
 const idleAwarenessRelay = AgentAwarenessRelay.AgentAwarenessRelay.of({
+  readActivity: () => Effect.succeed([]),
   publishThread: () => Effect.void,
   drain: Effect.void,
   requestCatchUp: () => Effect.void,

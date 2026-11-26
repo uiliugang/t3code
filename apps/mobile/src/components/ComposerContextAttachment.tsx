@@ -19,6 +19,7 @@ import {
 import { downloadAndShareAttachment } from "../lib/attachmentDownload";
 import { assetImageSource } from "../lib/assetImageSource";
 import { useAssetUrlState, useRefreshAssetUrl } from "../state/assets";
+import { usePreparedConnection } from "../state/session";
 import { AppText as Text } from "./ui/AppText";
 import { FilePreviewModal } from "./ui/FilePreviewModal";
 import { PresentationSource } from "./ui/NativePresentation";
@@ -41,7 +42,10 @@ export function ComposerContextAttachment(props: {
     : undefined;
   const inlineUri = composerAttachmentInlineUri(attachment);
   const remoteEnvironmentId = local || inlineUri ? null : (props.environmentId ?? null);
-  const asset = useAssetUrlState(remoteEnvironmentId, resource);
+  const connection = usePreparedConnection(remoteEnvironmentId);
+  const deferFile =
+    record.kind !== "image" && connection._tag === "Some" && connection.value.transport === "noise";
+  const asset = useAssetUrlState(remoteEnvironmentId, deferFile ? null : resource);
   const refresh = useRefreshAssetUrl(remoteEnvironmentId, resource);
   const localPreview = useLocalAttachmentPreview(local ?? null);
   const error = localPreview.error ? gt("The local file is unavailable. Attach it again.") : null;

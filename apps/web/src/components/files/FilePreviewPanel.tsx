@@ -208,11 +208,10 @@ function WorkspaceImagePreview(props: {
     absolutePath: props.absolutePath,
   });
   const assetUrl = useAssetUrlState(props.environmentId, resource);
-  const revisionSuffix =
-    props.workspaceMutationId === null
-      ? ""
-      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}workspace-revision=${encodeURIComponent(props.workspaceMutationId)}`;
-  const imageUrl = assetUrl._tag === "Success" ? `${assetUrl.url}${revisionSuffix}` : null;
+  const imageUrl =
+    assetUrl._tag === "Success"
+      ? withMediaRevision(assetUrl.url, "workspace-revision", props.workspaceMutationId)
+      : null;
   const actionsSource: MediaActionSource = {
     kind: "image",
     name: props.alt,
@@ -242,6 +241,11 @@ function WorkspaceImagePreview(props: {
       <Spinner size="lg" />
     </div>
   );
+}
+
+function withMediaRevision(url: string, key: string, revision: string | number | null) {
+  if (revision === null || url.startsWith("blob:") || url.startsWith("data:")) return url;
+  return url + (url.includes("?") ? "&" : "?") + key + "=" + encodeURIComponent(revision);
 }
 
 interface HtmlPreviewFrame {
@@ -327,11 +331,6 @@ export function WorkspaceBrowserPreview(props: {
   const revision = pdf ? latestRevision : (frame?.revision ?? latestRevision);
   const url =
     assetUrl._tag !== "Success" ? null : pdf ? assetUrl.url : (frame?.url ?? assetUrl.url);
-  const revisionSuffix =
-    revision === null
-      ? ""
-      : `${url?.includes("?") ? "&" : "?"}${fileRevision !== undefined ? "file" : "workspace"}-revision=${encodeURIComponent(revision)}`;
-
   if (assetUrl._tag === "Failure") {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
@@ -341,6 +340,7 @@ export function WorkspaceBrowserPreview(props: {
   }
   if (
     assetUrl._tag !== "Success" ||
+    url === null ||
     (pdf && assetUrl.fileRevision === undefined && assetUrl.waiting)
   ) {
     return (
@@ -352,7 +352,11 @@ export function WorkspaceBrowserPreview(props: {
   const documentId = `${props.environmentId}:${resource._tag}:${props.threadRef.threadId}:${props.absolutePath}`;
   return (
     <BrowserDocumentFrame
-      src={`${url}${revisionSuffix}`}
+      src={withMediaRevision(
+        url,
+        fileRevision !== undefined ? "file-revision" : "workspace-revision",
+        revision,
+      )}
       documentKey={`${documentId}:${revision}${pdf ? "" : `:${frame?.renewAt}`}`}
       documentId={documentId}
       title={props.title}
@@ -439,11 +443,14 @@ function WorkspaceVideoPreview(props: {
   // goes in the URL, since two mints in the same millisecond sign identical URLs.
   const fileRevision = assetUrl._tag === "Success" ? assetUrl.fileRevision : undefined;
   const revision = fileRevision ?? props.workspaceMutationId;
-  const revisionSuffix =
-    revision === null
-      ? ""
-      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}${fileRevision !== undefined ? "file" : "workspace"}-revision=${encodeURIComponent(revision)}`;
-  const latestUrl = assetUrl._tag === "Success" ? `${assetUrl.url}${revisionSuffix}` : null;
+  const latestUrl =
+    assetUrl._tag === "Success"
+      ? withMediaRevision(
+          assetUrl.url,
+          fileRevision !== undefined ? "file-revision" : "workspace-revision",
+          revision,
+        )
+      : null;
 
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
@@ -494,11 +501,14 @@ function WorkspaceAudioPreview(props: {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const fileRevision = assetUrl._tag === "Success" ? assetUrl.fileRevision : undefined;
   const revision = fileRevision ?? props.workspaceMutationId;
-  const revisionSuffix =
-    revision === null
-      ? ""
-      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}${fileRevision !== undefined ? "file" : "workspace"}-revision=${encodeURIComponent(revision)}`;
-  const url = assetUrl._tag === "Success" ? `${assetUrl.url}${revisionSuffix}` : null;
+  const url =
+    assetUrl._tag === "Success"
+      ? withMediaRevision(
+          assetUrl.url,
+          fileRevision !== undefined ? "file-revision" : "workspace-revision",
+          revision,
+        )
+      : null;
   if (assetUrl._tag === "Failure" || (url !== null && failedUrl === url)) {
     return (
       <FileSurfaceFailure
@@ -1272,7 +1282,7 @@ export default function FilePreviewPanel({
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
   const previewAvailable = usePreviewAvailable(environmentId);
-  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+  const createAssetUrl = useAtomQueryRunner(assetEnvironment.verifyUrl, {
     reportFailure: false,
     refresh: true,
   });
@@ -2091,7 +2101,7 @@ export function WorkspaceLargeTextPreview(props: {
       />
     );
   if (assetUrl._tag !== "Success" || loaded === null) return <FileSurfaceLoading />;
-  const src = `${loaded.url}${loaded.url.includes("?") ? "&" : "?"}revision=${encodeURIComponent(loaded.revision)}`;
+  const src = withMediaRevision(loaded.url, "revision", loaded.revision);
   const retry = () => {
     void refreshAssetUrl()
       .then(() => setRevision((value) => value + 1))

@@ -1,3 +1,4 @@
+import { NoisePeerCall } from "../peer/noiseTrust.ts";
 import {
   AuthAccessWriteScope,
   type AuthMcpApprovalDecision,
@@ -349,6 +350,11 @@ const make = Effect.gen(function* () {
       }
       // RFC 7591 allows ignoring unsupported registration options; all clients use public PKCE.
       const peerLink = metadata.software_id === MCP_PEER_LINK_SOFTWARE_ID;
+      if (!peerLink && (yield* NoisePeerCall))
+        return yield* new AuthMcpRegistrationError({
+          error: "invalid_client_metadata",
+          error_description: "Only environment links can register on this channel.",
+        });
       if (peerLink && !(yield* linksEnabled)) {
         return yield* new AuthMcpRegistrationError({
           error: "invalid_client_metadata",
@@ -379,7 +385,7 @@ const make = Effect.gen(function* () {
     "McpOAuth.validateAuthorization",
   )(function* ({ urls, request }) {
     const client = yield* parseClientId(request.client_id ?? "");
-    if (client === undefined) {
+    if (client === undefined || ((yield* NoisePeerCall) && !client.peerLink)) {
       return yield* new McpOAuthPageError({
         description: "This sign-in link names an unknown app. Start the sign-in again from it.",
       });
@@ -470,6 +476,13 @@ const make = Effect.gen(function* () {
 
   const approve: McpOAuth["Service"]["approve"] = Effect.fn("McpOAuth.approve")(function* (input) {
     const { decision } = input;
+    if (
+      (yield* NoisePeerCall) &&
+      (decision._tag !== "pairing-code" || !input.authorization.client.peerLink)
+    )
+      return yield* new McpOAuthPageError({
+        description: "This channel requires an environment link pairing code.",
+      });
     // Read before the approver is checked: "revoke all others" then ends this sign-in whether
     // it lands before the check or after the code is handed out.
     const approvedAtRevocationCount = yield* environmentAuth.otherSessionRevocationCount;
@@ -558,6 +571,7 @@ const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       if (
         pending === undefined ||
+        ((yield* NoisePeerCall) && !pending.peerLink) ||
         pending.expiresAtMs <= now ||
         pending.clientId !== clientId ||
         pending.redirectUri !== redirectUri ||

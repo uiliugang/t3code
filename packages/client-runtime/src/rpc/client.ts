@@ -40,6 +40,16 @@ export class EnvironmentRpcUnavailableError extends Schema.TaggedError<
   i18nMessage: Schema.optionalKey(MarkedText),
 }) {}
 
+export function environmentRpcUnavailable(target: {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+}) {
+  return new EnvironmentRpcUnavailableError({
+    environmentId: target.environmentId,
+    ...translatableMessage(msg("{host} is not connected.", { host: target.label })),
+  });
+}
+
 export interface EnvironmentRpcRequestObservation {
   readonly environmentId: string;
   readonly environmentLabel: string;
@@ -98,6 +108,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.terminalObserve;
 
 export type EnvironmentStreamCommandRpcTag =
+  | typeof WS_METHODS.serverNoiseHttp
   | typeof WS_METHODS.chatGptHandoffSubscribe
   | typeof WS_METHODS.cloudInstallRelayClient
   | typeof WS_METHODS.serverUpdateServerWithProgress
@@ -180,15 +191,7 @@ export const currentSession = Effect.fn("EnvironmentRpc.currentSession")(functio
   return yield* SubscriptionRef.get(supervisor.session).pipe(
     Effect.flatMap(
       Option.match({
-        onNone: () =>
-          Effect.fail(
-            new EnvironmentRpcUnavailableError({
-              environmentId: supervisor.target.environmentId,
-              ...translatableMessage(
-                msg("{host} is not connected.", { host: supervisor.target.label }),
-              ),
-            }),
-          ),
+        onNone: () => Effect.fail(environmentRpcUnavailable(supervisor.target)),
         onSome: Effect.succeed,
       }),
     ),

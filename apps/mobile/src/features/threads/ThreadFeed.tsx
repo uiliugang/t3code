@@ -115,7 +115,6 @@ import { ComposerContextSheet } from "../../components/ComposerContextSheet";
 import { writeComposerContextClipboard } from "../../lib/composerContextClipboard";
 import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
 import { codexArtifactTemplatePresentationLabel } from "@t3tools/shared/codexArtifactTemplatesCopy";
-import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import {
   executeAtomQuery,
@@ -291,8 +290,7 @@ import { resolveThreadFeedFixedItemSize } from "./thread-feed-item-size";
 import { htmlRenderFrameHeight } from "@t3tools/shared/htmlRender";
 import { htmlRenderRowHeight, ThreadHtmlRender } from "./HtmlRenderWebView";
 import { ThreadMcpApp } from "./McpAppWebView";
-import { assetEnvironment, useAssetUrl, useRefreshAssetUrl } from "../../state/assets";
-import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import { refreshAssetUrl, useAssetUrl, useRefreshAssetUrl } from "../../state/assets";
 import { readEnvironmentScope, usePreparedConnection } from "../../state/session";
 import { environmentProjects, projectEnvironment } from "../../state/projects";
 import {
@@ -807,10 +805,6 @@ function MessageAttachmentFile(props: {
   const sourceIdentifier = useId();
   const navigation = useNavigation();
   const { selectedThread } = useThreadSelection();
-  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
-    refresh: true,
-    reportFailure: false,
-  });
   const preparedConnection = usePreparedConnection(props.environmentId);
   const { attachment } = props;
   const videoType = videoMimeType(attachment);
@@ -852,32 +846,31 @@ function MessageAttachmentFile(props: {
       }
     };
     void (async () => {
-      const result = await createAssetUrl({
-        environmentId: props.environmentId,
-        input: {
-          resource: {
+      let releaseFile: (() => void) | undefined;
+      const shared = await settlePromise(async () => {
+        const url = await refreshAssetUrl(
+          props.environmentId,
+          {
             _tag: "attachment",
             attachmentId: attachment.id,
             fileName: attachment.name,
             mimeType: attachment.mimeType,
           },
-        },
-      });
-      if (controller.signal.aborted) return finish(null);
-      if (result._tag === "Failure") {
-        const error = squashAtomCommandFailure(result);
-        return finish(errorDisplayMessage(error, m) ?? gt("The attachment is unavailable."));
-      }
-      const url = resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
-      if (url === null) return finish(gt("The attachment could not be opened."));
-      const shared = await settlePromise(() =>
-        downloadAndShareAttachment({
+          controller.signal,
+          (release) => {
+            releaseFile = release;
+          },
+        );
+        if (controller.signal.aborted) return;
+        if (url === null) throw new Error(gt("The attachment could not be opened."));
+        await downloadAndShareAttachment({
           url,
           attachment,
           signal: controller.signal,
           sourceIdentifier,
-        }),
-      );
+        });
+      });
+      releaseFile?.();
       if (shared._tag === "Failure") {
         const error = squashAtomCommandFailure(shared);
         return finish(errorDisplayMessage(error, m) ?? gt("The attachment is unavailable."));
@@ -3432,10 +3425,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const closeVideoPreview = () =>
     setPreview((current) => (current === null ? null : { ...current, video: null }));
   const fileShareSourceIdentifier = useId();
+  const prepared = usePreparedConnection(props.environmentId);
+  const noise = prepared._tag === "Some" && prepared.value.transport === "noise";
+  const sourceOnlyMedia = noise && !prepared.value.mediaOrigins;
   const shareFileChip = useFileChipShare(
     props.environmentId,
     props.threadId,
     fileShareSourceIdentifier,
+    noise,
   );
   const horizontalPadding = splitLayout ? 20 : 16;
   const contentLeftInset = props.contentSideInsets?.left ?? 0;
@@ -3635,6 +3632,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       environmentId: props.environmentId,
       threadId: props.threadId,
       workspaceRoot: props.workspaceRoot,
+      workspaceSvgAsSource: sourceOnlyMedia,
       imageEmbed,
     });
     if (media && media.kind !== "file") {
@@ -3716,6 +3714,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           environmentId: props.environmentId,
           threadId: props.threadId,
           workspaceRoot: props.workspaceRoot,
+          workspaceSvgAsSource: sourceOnlyMedia,
         },
         standalone,
       ),
@@ -3761,7 +3760,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         };
       }
       const target = resolveFileChipTarget(href, props.workspaceRoot);
-      return target ? fileChipMenu(target) : undefined;
+      return target ? fileChipMenu(target, noise) : undefined;
     },
     onFileContextMenuAction: (href, actionId, reply) => {
       const skill = enrichedSkillReference(href, props.skills);
@@ -3840,6 +3839,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       environmentId: props.environmentId,
       threadId: props.threadId,
       workspaceRoot: props.workspaceRoot,
+      workspaceSvgAsSource: sourceOnlyMedia,
       imageEmbed: true,
     });
     if (media?.kind === "video") {
@@ -3930,9 +3930,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           environmentId: props.environmentId,
           threadId: props.threadId,
           workspaceRoot: props.workspaceRoot,
+          workspaceSvgAsSource: sourceOnlyMedia,
           imageEmbed: true,
         })
       : null;
+    if (media?.kind === "file") return renderMarkdownImage(image);
     const actionsSource = media?.source.actionsSource;
     return viewedImage ? (
       <ThreadMarkdownImage
@@ -4448,6 +4450,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         environmentId={props.environmentId}
         threadId={props.threadId}
         workspaceRoot={props.workspaceRoot}
+        workspaceSvgAsSource={sourceOnlyMedia}
       >
         <ThreadMediaVisibility rowId={info.item.id} setRetainedRowId={setRetainedMediaRowId}>
           {info.item.type === "message" &&
@@ -4763,13 +4766,19 @@ function MessageImageGalleryScope(props: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
   workspaceRoot: string | null | undefined;
+  workspaceSvgAsSource: boolean;
   children: ReactNode;
 }) {
-  const { entry, environmentId, threadId, workspaceRoot } = props;
+  const { entry, environmentId, threadId, workspaceRoot, workspaceSvgAsSource } = props;
   const images =
     entry.type === "message"
       ? [
-          ...messageImageGallery(entry.message, { environmentId, threadId, workspaceRoot }),
+          ...messageImageGallery(entry.message, {
+            environmentId,
+            threadId,
+            workspaceRoot,
+            workspaceSvgAsSource,
+          }),
           ...composerImageGallery(entry.pendingMessage?.attachments ?? [], environmentId),
         ]
       : [];

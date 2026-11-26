@@ -1,3 +1,9 @@
+import {
+  encryptedWebhookAddress,
+  encryptWebhook,
+  webhookPublicKey,
+  WEBHOOK_KEY_NAME,
+} from "./encryptedWebhook.ts";
 import * as PlatformNodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no generateKeyPairSync.
@@ -131,6 +137,86 @@ const post = (
 ) => new Request(`http://env.local${path}`, { method: "POST", body, headers });
 
 describe("webhook route", () => {
+  it.live(
+    "delivers held encrypted bytes with the sender's original identity and no relay credentials",
+    () =>
+      Effect.gen(function* () {
+        const seed = "x".repeat(32);
+        const pin = yield* Effect.promise(() => webhookPublicKey(new TextEncoder().encode(seed)));
+        const address = encryptedWebhookAddress(
+          "https://connect.invalid/v1/hooks/endpoint",
+          "private-task",
+          "private-token",
+          pin,
+        );
+        const createdAt = yield* Clock.currentTimeMillis;
+        const id = "a83cf87f-2df0-42b7-8f22-34bc9efbe099";
+        const seal = (created: number, destination = address) =>
+          Effect.promise(() =>
+            encryptWebhook(destination, {
+              id,
+              createdAt: created,
+              method: "PATCH",
+              query: "private=query",
+              headers: { "x-private": "secret", Cookie: "discarded" },
+              body: new TextEncoder().encode("private content"),
+            }),
+          );
+        const requests: WebhookTriggerRequest[] = [];
+        const { handler, dispose } = handlerFor(
+          (input) => {
+            requests.push(input);
+            return Effect.succeed({ _tag: "not_found" });
+          },
+          new Map([[WEBHOOK_KEY_NAME, seed]]),
+        );
+        const held = yield* seal(createdAt);
+        const alias = new URL(held.url).pathname.split("/").at(-2)!;
+        expect(alias).toMatch(/^[a-zA-Z0-9_-]{43}$/);
+        const other = new URL(
+          encryptedWebhookAddress(
+            "https://connect.invalid/v1/hooks/endpoint",
+            "other",
+            "rotated",
+            pin,
+          ),
+        ).pathname
+          .split("/")
+          .at(-2)!;
+        expect(other).not.toBe(alias);
+        expect(new URL(held.url).hash).toBe("");
+        expect(held.body).not.toContain("private");
+        const deliver = (body: string, attempt: string, target = alias) =>
+          Effect.promise(() =>
+            handler(
+              post(`/api/hooks/${target}/encrypted-v1`, body, {
+                "x-t3-relay-delivery-id": attempt,
+              }),
+            ),
+          );
+        expect((yield* deliver(held.body, "first")).status).toBe(404);
+        expect((yield* deliver(held.body, "misrouted", other)).status).toBe(400);
+        yield* deliver(held.body, "second");
+        expect(requests.map((request) => request.relayDeliveryId)).toEqual(
+          Array(2).fill(`encrypted:private-task:${id}`),
+        );
+        expect(requests[0]).toMatchObject({
+          hookId: "private-task",
+          token: "private-token",
+          method: "PATCH",
+          query: "private=query",
+          headers: { "x-private": "secret" },
+          bodyText: "private content",
+        });
+        expect(requests[0]?.headers).not.toHaveProperty("cookie");
+        const expired = yield* seal(createdAt - 25 * 3_600_000);
+        expect((yield* deliver(expired.body, "retry")).status).toBe(400);
+        expect((yield* deliver("invalid-ciphertext", "retry")).status).toBe(400);
+        expect(requests).toHaveLength(2);
+        yield* Effect.promise(dispose);
+      }),
+  );
+
   it.live("a workflow's hook starts a run and never reaches the scheduled tasks", () =>
     Effect.gen(function* () {
       let tasks = 0;

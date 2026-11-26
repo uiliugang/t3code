@@ -1,6 +1,7 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
+import { NoiseApproval } from "@t3tools/client-runtime/relay";
 import { ChevronsLeftRightEllipsisIcon, PlusIcon, TerminalIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
@@ -52,6 +53,7 @@ import { AnimatedHeight } from "../AnimatedHeight";
 import { environmentCatalog } from "~/connection/catalog";
 import {
   connectPairing as connectPairingAtom,
+  enrollEncryptedRelay,
   connectSshEnvironment as connectSshEnvironmentAtom,
 } from "~/connection/onboarding";
 import { useEnvironmentQuery } from "~/state/query";
@@ -107,6 +109,7 @@ export function AddEnvironmentDialog({
   const desktopBridge = window.desktopBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
+  const enrollNoise = useAtomCommand(enrollEncryptedRelay, { reportFailure: false });
   const connectSshEnvironment = useAtomCommand(connectSshEnvironmentAtom, {
     reportFailure: false,
   });
@@ -132,7 +135,11 @@ export function AddEnvironmentDialog({
     return keys;
   })();
   const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
-  const [savedBackendHost, setSavedBackendHost] = useState(prefill?.host ?? initialHost);
+  const [savedBackendHost, setSavedBackendHost] = useState(
+    prefill?.noisePin ?? prefill?.host ?? initialHost,
+  );
+  const [pendingHostKey, setPendingHostKey] = useState<string | null>(null);
+  const noiseLink = /^t3noise:/i.test(savedBackendHost.trim()) ? savedBackendHost.trim() : null;
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
   const [savedBackendSshUsername, setSavedBackendSshUsername] = useState("");
@@ -234,6 +241,7 @@ export function AddEnvironmentDialog({
       savedBackendSessionRef.current += 1;
       setSavedBackendMode("remote");
       setSavedBackendHost(initialHost);
+      setPendingHostKey(null);
       setSavedBackendPairingCode("");
       setSavedBackendSshHost("");
       setSavedBackendSshUsername("");
@@ -306,6 +314,41 @@ export function AddEnvironmentDialog({
 
     setIsAddingSavedBackend(true);
     onErrorChange(null);
+    if (noiseLink !== null) {
+      const pin = NoiseApproval.readNoisePin(noiseLink);
+      const expected = routeTarget ?? prefill;
+      if (!pin || (expected && pin.environmentId !== expected.environmentId)) {
+        onErrorChange(
+          gt("Check the pairing link and that the host supports encrypted connections."),
+        );
+        setIsAddingSavedBackend(false);
+        return;
+      }
+      const session = savedBackendSessionRef.current;
+      const reply = await enrollNoise({ pin, replacePin: pendingHostKey === noiseLink });
+      setIsAddingSavedBackend(false);
+      if (session !== savedBackendSessionRef.current) return;
+      if (reply._tag === "Failure") {
+        onErrorChange(gt("Could not enable the encrypted connection."));
+      } else if (reply.value.status === "changed") {
+        setPendingHostKey(noiseLink);
+        onErrorChange(
+          gt(
+            "The host key changed. Verify the new link on the host before replacing its saved key.",
+          ),
+        );
+      } else {
+        handleOpenChange(false);
+        toastManager.add({
+          type: "success",
+          title: t("Backend added"),
+          description: gt(
+            "Check the environment’s connection status below. If it shows a code, compare it on the host and approve this device.",
+          ),
+        });
+      }
+      return;
+    }
     let remotePairingInput: ReturnType<typeof parseRemotePairingFields>;
     try {
       remotePairingInput = parseRemotePairingFields({
@@ -453,6 +496,12 @@ export function AddEnvironmentDialog({
   };
 
   const handleSavedBackendHostChange = (value: string) => {
+    setPendingHostKey(null);
+    if (/^t3noise:/i.test(value.trim())) {
+      setSavedBackendPairingCode("");
+      setSavedBackendHost(value);
+      return;
+    }
     const parsedPairingUrl = parsePairingUrlFields(value);
     if (parsedPairingUrl) {
       setSavedBackendHost(parsedPairingUrl.host);
@@ -524,16 +573,22 @@ export function AddEnvironmentDialog({
           </span>
           <Input
             value={savedBackendPairingCode}
-            onChange={(event) => setSavedBackendPairingCode(event.target.value)}
+            onChange={(event) =>
+              /^t3noise:/i.test(event.target.value.trim())
+                ? handleSavedBackendHostChange(event.target.value)
+                : setSavedBackendPairingCode(event.target.value)
+            }
             placeholder={gt("PAIRCODE")}
-            disabled={isAddingSavedBackend}
+            disabled={isAddingSavedBackend || noiseLink !== null}
             spellCheck={false}
           />
         </label>
       </div>
       <div>
         <span className="mt-1 block text-2xs text-muted-foreground">
-          {t("Paste a full pairing URL here to fill both fields automatically.")}
+          {gt(
+            "Paste a pairing URL, or paste the trusted link from t3 auth connect-device noise-pin to connect with end-to-end encryption.",
+          )}
         </span>
       </div>
     </div>
@@ -603,7 +658,13 @@ export function AddEnvironmentDialog({
         onClick={() => void handleAddSavedBackend()}
       >
         <PlusIcon className="size-3.5" />
-        {t(isAddingSavedBackend ? "Adding…" : routeTarget ? "Add route" : "Add environment")}
+        {isAddingSavedBackend
+          ? t("Adding...")
+          : noiseLink !== null
+            ? pendingHostKey === noiseLink
+              ? gt("Use the new host key")
+              : gt("Connect with end-to-end encryption")
+            : t(routeTarget ? "Add route" : "Add environment")}
       </Button>
     </div>
   );

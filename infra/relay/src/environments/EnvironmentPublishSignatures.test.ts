@@ -7,7 +7,7 @@ import type {
   RelayAgentActivityPublishRequest,
   RelayAgentActivityState,
 } from "@t3tools/contracts/relay";
-import { RELAY_ACTIVITY_PUBLISH_TYP } from "@t3tools/shared/relayJwt";
+import { RELAY_ACTIVITY_PUBLISH_TYP, RELAY_ACTIVITY_WAKE_TYP } from "@t3tools/shared/relayJwt";
 import { stableStringify } from "@t3tools/shared/relaySigning";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
@@ -58,10 +58,12 @@ const isEnvironmentPublishSignatureInvalid = Schema.is(
   EnvironmentPublishSignatures.EnvironmentPublishSignatureInvalid,
 );
 
-function signTestJwt(payload: object, privateKey: string): string {
-  const header = Buffer.from(
-    JSON.stringify({ alg: "EdDSA", typ: RELAY_ACTIVITY_PUBLISH_TYP }),
-  ).toString("base64url");
+function signTestJwt(
+  payload: object,
+  privateKey: string,
+  typ = RELAY_ACTIVITY_PUBLISH_TYP,
+): string {
+  const header = Buffer.from(JSON.stringify({ alg: "EdDSA", typ })).toString("base64url");
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const signingInput = `${header}.${encodedPayload}`;
   return `${signingInput}.${NodeCrypto.sign(null, Buffer.from(signingInput), privateKey).toString("base64url")}`;
@@ -137,6 +139,68 @@ describe("EnvironmentPublishSignatures", () => {
       ),
     );
   });
+
+  it.effect(
+    "accepts an environment wake only under the wake signing purpose and consumes its nonce",
+    () => {
+      const consumed = new Set<string>();
+      return Effect.gen(function* () {
+        const signatures = yield* EnvironmentPublishSignatures.EnvironmentPublishSignatures;
+        const now = Math.floor((yield* DateTime.now).epochMilliseconds / 1000);
+        const claims = {
+          environmentId: state.environmentId,
+          iss: "t3-env:env",
+          aud: config.relayIssuer,
+          sub: "env",
+          iat: now,
+          exp: now + 300,
+          jti: "wake",
+        };
+        const verify = (proof: string) =>
+          signatures.verify({
+            environmentId: "env",
+            environmentPublicKey: keyPair.publicKey,
+            request: { proof },
+          });
+        expect((yield* verify((yield* freshRequest).proof).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentPublishSignatureInvalid",
+        );
+        const proof = signTestJwt(claims, keyPair.privateKey, RELAY_ACTIVITY_WAKE_TYP);
+        yield* verify(proof);
+        expect(yield* verify(proof).pipe(Effect.flip)).toMatchObject({ reason: "replayed_nonce" });
+        expect(
+          yield* verify(
+            signTestJwt(
+              { ...claims, environmentId: "another" },
+              keyPair.privateKey,
+              RELAY_ACTIVITY_WAKE_TYP,
+            ),
+          ).pipe(Effect.flip),
+        ).toMatchObject({ stage: "validate_claims" });
+        expect(
+          yield* signatures
+            .verify({
+              environmentId: "env",
+              environmentPublicKey: keyPair.publicKey,
+              threadId: "thread",
+              request: { proof, state: null },
+            })
+            .pipe(Effect.flip),
+        ).toMatchObject({ stage: "verify_proof" });
+      }).pipe(
+        Effect.provide(
+          layer({
+            consume: ({ jti }) =>
+              Effect.sync(() => {
+                if (consumed.has(jti)) return false;
+                consumed.add(jti);
+                return true;
+              }),
+          }),
+        ),
+      );
+    },
+  );
 
   it.effect("rejects top-level state tampering", () =>
     Effect.gen(function* () {

@@ -1,4 +1,14 @@
-import { type AuthEnvironmentScope, EnvironmentHttpApi } from "@t3tools/contracts";
+import {
+  type AuthEnvironmentScope,
+  AuthAccessWriteScope,
+  EnvironmentHttpApi,
+  type LocalDeviceDecision,
+  LocalDeviceNoiseRequest,
+  LocalDeviceNoiseReply,
+} from "@t3tools/contracts";
+import { LOCAL_NOISE_DEVICE_SUBJECT } from "../auth/SessionStore.ts";
+import { noiseHostIdentity } from "../auth/noiseHostIdentity.ts";
+import { openPinnedNoiseClient } from "../auth/pinnedNoiseClient.ts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -44,16 +54,46 @@ export type ServerClient = HttpApiClient.ForApi<typeof EnvironmentHttpApi>;
 const SESSION_TTL = Duration.minutes(2);
 const REQUEST_TIMEOUT = Duration.seconds(30);
 
+const cliSession = Effect.fn("RunningServer.cliSession")(function* (
+  scopes: ReadonlyArray<AuthEnvironmentScope>,
+  subject: string,
+) {
+  const auth = yield* EnvironmentAuth.EnvironmentAuth;
+  return yield* Effect.acquireRelease(
+    auth.issueSession({ scopes, subject, label: "t3 cli", ttl: SESSION_TTL }),
+    ({ sessionId }) => auth.revokeSession(sessionId).pipe(Effect.ignore({ log: true })),
+  );
+});
+const encodeDecision = Schema.encodeEffect(Schema.fromJsonString(LocalDeviceNoiseRequest));
+const decodeDecision = Schema.decodeEffect(Schema.fromJsonString(LocalDeviceNoiseReply));
+export const decideNoiseDevice = Effect.fn("RunningServer.decideNoiseDevice")(function* (
+  origin: string,
+  decision: LocalDeviceDecision,
+) {
+  const { env, pin } = yield* noiseHostIdentity;
+  const { exchange } = yield* openPinnedNoiseClient(origin, env, pin);
+  const session = yield* cliSession([AuthAccessWriteScope], LOCAL_NOISE_DEVICE_SUBJECT);
+  const request = yield* encodeDecision({
+    mode: "local-device",
+    ...decision,
+    token: session.token,
+  });
+  const reply = yield* decodeDecision(
+    new TextDecoder().decode(yield* exchange(new TextEncoder().encode(request))),
+  );
+  if (reply.status !== "decided")
+    return yield* new RunningServerUnreachableError({
+      origin,
+      cause: "Local device grant rejected",
+    });
+  return reply.changed;
+});
 /** A client of the server at `origin`, signed in as a short-lived session for the scope. */
 export const serverClient = Effect.fn("RunningServer.serverClient")(function* (
   origin: string,
   scopes: ReadonlyArray<AuthEnvironmentScope>,
 ) {
-  const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
-  const session = yield* Effect.acquireRelease(
-    environmentAuth.issueSession({ scopes, subject: "cli", label: "t3 cli", ttl: SESSION_TTL }),
-    ({ sessionId }) => environmentAuth.revokeSession(sessionId).pipe(Effect.ignore({ log: true })),
-  );
+  const session = yield* cliSession(scopes, "cli");
   return yield* HttpApiClient.make(EnvironmentHttpApi, {
     baseUrl: origin,
     transformClient: HttpClient.mapRequest(HttpClientRequest.bearerToken(session.token)),
@@ -88,12 +128,22 @@ const isUnanswered = (cause: unknown) =>
  * Makes a change through the running server, so the server applies it and its clients see it.
  * With no server, makes it locally while holding the ownership lock, so none starts midway.
  */
-export const changeState = Effect.fn("RunningServer.changeState")(function* <A, E, R, E2, R2>({
+export const changeState = Effect.fn("RunningServer.changeState")(function* <
+  A,
+  E,
+  R,
+  E2,
+  R2,
+  E3 = never,
+  R3 = never,
+>({
   scopes,
   viaServer,
+  viaNoise,
   locally,
 }: {
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  readonly viaNoise?: (origin: string) => Effect.Effect<A, E3, R3>;
   readonly viaServer: (client: ServerClient) => Effect.Effect<A, E, R>;
   readonly locally: Effect.Effect<A, E2, R2>;
 }) {
@@ -113,8 +163,11 @@ export const changeState = Effect.fn("RunningServer.changeState")(function* <A, 
   const running = yield* readLiveServerRuntimeState(serverRuntimeStatePath);
   if (Option.isNone(running)) return yield* changeLocally(Effect.fail);
   const { origin } = running.value;
-  return yield* serverClient(origin, scopes).pipe(
-    Effect.flatMap(viaServer),
+  const execute = Effect.gen(function* () {
+    if (running.value.noiseOnly && viaNoise) return yield* viaNoise(origin);
+    return yield* viaServer(yield* serverClient(origin, scopes));
+  });
+  return yield* execute.pipe(
     Effect.timeout(REQUEST_TIMEOUT),
     Effect.scoped,
     // A refused connection reached no server, so the lock decides whether one still runs.

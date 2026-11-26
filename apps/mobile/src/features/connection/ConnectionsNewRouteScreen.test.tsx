@@ -81,6 +81,7 @@ vi.mock("../layout/workspace/workspace-selection-store", () => ({
   workspaceHasColumns: () => false,
 }));
 vi.mock("../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => false }));
+vi.mock("./NoiseDeviceApproval", () => ({ NoiseDeviceApproval: () => null }));
 vi.mock("./CloudEnvironmentRows", () => ({ CloudEnvironmentRows: () => null }));
 vi.mock("./environmentSections", () => ({
   splitEnvironmentSections: () => ({ connectedCloudEnvironments: [] }),

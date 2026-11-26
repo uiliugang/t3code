@@ -1,6 +1,7 @@
 import { msg } from "gt-i18n";
 import { translatableDetail } from "../errors/translatable.ts";
 import {
+  type AuthSessionState,
   type ServerConfig,
   type ServerConfigStreamEvent,
   WsSubscribeServerConfigRpc,
@@ -48,12 +49,18 @@ import {
   type ServerConfigProjection,
   withoutEnvironmentThemes,
 } from "../state/serverConfigProjection.ts";
-import { environmentMismatchError } from "../connection/errors.ts";
+import {
+  encryptedConnectionRequiredError,
+  environmentMismatchError,
+} from "../connection/errors.ts";
+import type { ApprovedNoiseConnection } from "../platform/capabilities.ts";
 import { recordServerClock } from "../clock.ts";
 
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
 
 export interface RpcSession {
+  readonly transport?: "noise";
+  readonly authSessionState?: AuthSessionState;
   readonly client: WsRpcProtocolClient;
   readonly initialConfig: Effect.Effect<ServerConfig, ConnectionAttemptError>;
   readonly subscribeServerConfig: (
@@ -80,6 +87,7 @@ export class RpcSessionFactory extends Context.Service<
   {
     readonly connect: (
       connection: PreparedConnection,
+      approved?: ApprovedNoiseConnection,
     ) => Effect.Effect<RpcSession, ConnectionAttemptError, Scope.Scope>;
   }
 >()("@t3tools/client-runtime/rpc/session/RpcSessionFactory") {}
@@ -197,7 +205,10 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     workspaceSnapshotsOnDemand: true,
   });
 
-  const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {
+  const connect = Effect.fnUntraced(function* (
+    connection: PreparedConnection,
+    approved?: ApprovedNoiseConnection,
+  ) {
     const via = connection.target._tag === "RelayConnectionTarget" ? "relay" : "direct";
     yield* Effect.annotateCurrentSpan({
       "connection.environment.id": connection.environmentId,
@@ -248,19 +259,40 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       });
       return socket;
     };
-    const socketUrl = new URL(connection.socketUrl);
-    socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
-    const layerSocket = Layer.effect(
-      Socket.Socket,
-      Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),
-    ).pipe(
-      Layer.provide(
-        Socket.layerWebSocket(socketUrl.toString(), {
-          openTimeout: SOCKET_OPEN_TIMEOUT,
-        }),
-      ),
-      Layer.provide(Layer.succeed(Socket.WebSocketConstructor, countingWebSocketConstructor)),
-    );
+    if ((connection.transport === "noise") !== (approved !== undefined)) {
+      return yield* encryptedConnectionRequiredError();
+    }
+    const ordinarySocketLayer = () => {
+      const socketUrl = new URL(connection.socketUrl);
+      socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
+      return Layer.effect(
+        Socket.Socket,
+        Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),
+      ).pipe(
+        Layer.provide(
+          Socket.layerWebSocket(socketUrl.toString(), {
+            openTimeout: SOCKET_OPEN_TIMEOUT,
+          }),
+        ),
+        Layer.provide(Layer.succeed(Socket.WebSocketConstructor, countingWebSocketConstructor)),
+      );
+    };
+    const layerSocket = approved
+      ? Layer.succeed(
+          Socket.Socket,
+          Socket.make({
+            writer: approved.socket.writer,
+            reader: Effect.map(approved.socket.reader, (reader) => ({
+              upgrade: reader.upgrade,
+              pull: Effect.tap(reader.pull, (frames) =>
+                Effect.sync(() => {
+                  inboundFrames += frames.length;
+                }),
+              ),
+            })),
+          }),
+        )
+      : ordinarySocketLayer();
     const layerProtocol = Layer.effect(
       RpcClient.Protocol,
       RpcClient.makeProtocolSocket({
@@ -533,6 +565,9 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     );
 
     return {
+      ...(approved
+        ? { transport: "noise" as const, authSessionState: approved.authSessionState }
+        : {}),
       client: protocolClient,
       initialConfig,
       subscribeServerConfig,

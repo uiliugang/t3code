@@ -779,7 +779,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
               const migratedSurfaceIds = new Map<string, string>();
-              const surfaces = Array.isArray(validThreadState?.surfaces)
+              const decodedSurfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     if (!surface || typeof surface !== "object") return [];
                     const kind = (surface as { kind?: string }).kind;
@@ -916,6 +916,9 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     ];
                   })
                 : [];
+              const surfaces = [
+                ...new Map(decodedSurfaces.map((surface) => [surface.id, surface])).values(),
+              ];
               const savedActiveSurfaceId = validThreadState?.activeSurfaceId;
               const rawActiveSurfaceId =
                 typeof savedActiveSurfaceId === "string" &&

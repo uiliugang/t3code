@@ -398,6 +398,9 @@ export const SessionCredentialError = Schema.Union([
 ]);
 export type SessionCredentialError = typeof SessionCredentialError.Type;
 
+export const LOCAL_NOISE_DEVICE_SUBJECT = "local-cli-noise-device";
+export const NOISE_SESSION_SUBJECT = "connect-noise-v1";
+
 export class SessionStore extends Context.Service<
   SessionStore,
   {
@@ -1301,7 +1304,8 @@ const make = Effect.gen(function* () {
             const now = yield* DateTime.now;
             const remaining = current.expiresAt.epochMilliseconds - now.epochMilliseconds;
             if (remaining > 0) yield* Effect.sleep(Duration.millis(remaining));
-            if (renewalKey === undefined) return;
+            if (renewalKey === undefined || original.value.subject === NOISE_SESSION_SUBJECT)
+              return;
             const latest = yield* authSessions
               .latestForProofKey(renewalKey)
               .pipe(

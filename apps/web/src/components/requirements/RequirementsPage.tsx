@@ -2,6 +2,7 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { msg, useGT } from "gt-react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
+import { githubIssueScopeFromUrl, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
 import {
   IssueTrackerKind,
   standaloneIssueWorkspace,
@@ -366,6 +367,12 @@ export function RequirementBoard({
       );
     }
     const surfaceTracker = surface.kind === "issue" ? surface.tracker : surface.provider;
+    const issueKey = surface.kind === "issue" ? surface.key : surface.issueId;
+    const host = issueReferenceHost(surfaceTracker, surface.host, surface.url);
+    const scope =
+      surface.scope ||
+      (surfaceTracker === "github" ? githubIssueScopeFromUrl(surface.url, issueKey) : undefined);
+    if (surfaceTracker === "github" && !scope) return undefined;
     const surfaceWorkspace = surface.url
       ? standaloneIssueWorkspace({
           tracker: IssueTrackerKind.make(surfaceTracker),
@@ -379,16 +386,19 @@ export function RequirementBoard({
         entry.kind === "issue" &&
         entry.projectId === surface.projectId &&
         entry.provider === surfaceTracker &&
-        entry.issue.id === (surface.kind === "issue" ? surface.key : surface.issueId) &&
-        (surface.host === undefined || entry.host === surface.host) &&
-        (surface.scope === undefined || entry.scope === surface.scope) &&
+        entry.issue.id === issueKey &&
+        (host === undefined || issueReferenceHost(surfaceTracker, entry.host) === host) &&
+        (scope === undefined ||
+          (surfaceTracker === "github"
+            ? entry.scope?.toLowerCase() === scope.toLowerCase()
+            : entry.scope === scope)) &&
         (surfaceWorkspace === null ||
           standaloneIssueWorkspace({
             tracker: IssueTrackerKind.make(entry.provider),
             url: entry.issue.url,
           }) === surfaceWorkspace)
       ) {
-        if (surface.host && surface.scope) return entry;
+        if (host && scope) return entry;
         if (match) return undefined;
         match = entry;
       }

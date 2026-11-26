@@ -1,4 +1,5 @@
 import * as AssetSigner from "./AssetSigner.ts";
+import * as AttachmentTransfer from "./AttachmentTransfer.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
@@ -7,10 +8,17 @@ import * as NodePath from "node:path";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { ChatAttachmentId } from "@t3tools/contracts";
+import {
+  ATTACHMENT_TRANSFER_CHUNK_BYTES,
+  ATTACHMENT_UPLOAD_URL_TTL_MS,
+  ChatAttachmentId,
+} from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Scope from "effect/Scope";
+import * as TestClock from "effect/testing/TestClock";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
@@ -62,6 +70,104 @@ const encodeLegacyAttachmentUploadClaims = Schema.encodeEffect(
 );
 
 describe("AttachmentUpload", () => {
+  it.effect(
+    "publishes sequential Noise chunks only after the originating socket completes the file",
+    () =>
+      Effect.gen(function* () {
+        const uploads = yield* AttachmentTransfer.makeUploads(yield* Effect.scope);
+        const other = yield* AttachmentTransfer.makeUploads(yield* Effect.scope);
+        const first = new Uint8Array(ATTACHMENT_TRANSFER_CHUNK_BYTES).fill(0xa5);
+        const tail = Uint8Array.of(0xff, 0, 0x80);
+        const sizeBytes = first.length + tail.length;
+        const { attachmentId } = yield* uploads.begin({
+          type: "file",
+          name: "report.bin",
+          mimeType: "application/octet-stream",
+          sizeBytes,
+        });
+        const read = (offset: number, length?: number) =>
+          AttachmentTransfer.readChunk({
+            attachmentId,
+            offset,
+            ...(length === undefined ? {} : { length }),
+          });
+        expect(
+          (yield* other.write({ attachmentId, offset: 0, data: tail }).pipe(Effect.flip))._tag,
+        ).toBe("AttachmentTransferError");
+        yield* uploads.write({ attachmentId, offset: 0, data: first });
+        expect((yield* read(0, 0).pipe(Effect.flip))._tag).toBe("AssetAttachmentNotFoundError");
+        for (const [offset, data] of [
+          [0, tail],
+          [first.length, first],
+        ] as const) {
+          expect(
+            (yield* uploads.write({ attachmentId, offset, data }).pipe(Effect.flip))._tag,
+          ).toBe("AttachmentTransferError");
+        }
+        yield* uploads.write({ attachmentId, offset: first.length, data: tail });
+        expect(yield* read(0, 0)).toEqual({ data: new Uint8Array(), totalBytes: sizeBytes });
+        expect(Buffer.from((yield* read(0)).data).equals(first)).toBe(true);
+        expect((yield* read(first.length - 1)).data).toEqual(Uint8Array.of(0xa5, ...tail));
+        expect((yield* read(sizeBytes)).data).toHaveLength(0);
+        expect((yield* read(sizeBytes + 1).pipe(Effect.flip))._tag).toBe("AttachmentTransferError");
+      }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect(
+    "releases partially written files and upload slots on cancellation, expiry, and disconnect",
+    () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const socket = yield* Scope.fork(yield* Effect.scope);
+        const uploads = yield* AttachmentTransfer.makeUploads(socket);
+        const active = yield* Effect.forEach(
+          Array.from({ length: 8 }),
+          () => uploads.begin(uploadInput),
+          { concurrency: "unbounded" },
+        );
+        expect((yield* uploads.begin(uploadInput).pipe(Effect.flip))._tag).toBe(
+          "AttachmentTransferError",
+        );
+        const first = active[0]!;
+        const chunk = { ...first, offset: 0, data: Uint8Array.of(1) };
+        yield* uploads.write(chunk);
+        yield* uploads.remove(first.attachmentId);
+        expect((yield* uploads.write(chunk).pipe(Effect.flip))._tag).toBe(
+          "AttachmentTransferError",
+        );
+        const next = yield* uploads.begin(uploadInput);
+        yield* uploads.write({ ...chunk, ...next });
+        yield* TestClock.adjust(ATTACHMENT_UPLOAD_URL_TTL_MS);
+        expect(
+          (yield* uploads.write({ ...next, offset: 1, data: Uint8Array.of(2) }).pipe(Effect.flip))
+            ._tag,
+        ).toBe("AttachmentTransferError");
+        const last = yield* uploads.begin(uploadInput);
+        yield* uploads.write({ ...chunk, ...last });
+        yield* Scope.close(socket, Exit.void);
+        expect(NodeFS.readdirSync(config.attachmentsDir)).toEqual([]);
+        expect(
+          (yield* uploads.write({ ...last, offset: 1, data: Uint8Array.of(2) }).pipe(Effect.flip))
+            ._tag,
+        ).toBe("AttachmentTransferError");
+      }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("reads bounded ranges of existing attachments larger than the upload limit", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const attachmentId = "legacy-image";
+      const path = NodePath.join(config.attachmentsDir, attachmentId + ".bin");
+      const size = 50 * 1024 * 1024 + 3;
+      NodeFS.writeFileSync(path, "");
+      NodeFS.truncateSync(path, size);
+      expect(yield* AttachmentTransfer.readChunk({ attachmentId, offset: size - 2 })).toEqual({
+        data: Uint8Array.of(0, 0),
+        totalBytes: size,
+      });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect.each([false, true])(
     "persists and replays immutable uploads (hard links unsupported: %s)",
     (unsupported) =>

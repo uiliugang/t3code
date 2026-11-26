@@ -953,6 +953,26 @@ describe("EnvironmentSupervisor", () => {
     }),
   );
 
+  it.effect("retires the live session when another window pins this environment", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      const first = yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      yield* harness.wake({ type: "host-key-changed", environmentId: "another-environment" });
+      yield* harness.wake({
+        type: "host-key-changed",
+        environmentId: TARGET_ENTRY.target.environmentId,
+      });
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation > first.generation,
+      );
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+    }),
+  );
+
   it.effect("does not let platform wakeups reset an in-flight attempt", () =>
     Effect.gen(function* () {
       const firstAttemptStarted = yield* Deferred.make<void>();

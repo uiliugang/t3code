@@ -1,4 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - tests inject swaps at the native open boundary.
+import * as Scope from "effect/Scope";
+import * as Exit from "effect/Exit";
+import { makeNoisePreviewDocument } from "../preview/NoisePreviewDocument.ts";
+import { NOISE_PREVIEW_ORIGIN } from "@t3tools/shared/preview";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
@@ -33,9 +37,17 @@ import { makeFakeWslHost } from "../testUtils/fakeWsl.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
+import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { assetFileResponse } from "../http.ts";
-import { ASSET_ROUTE_PREFIX, issueAssetUrl, readMcpAppHtml, resolveAsset } from "./AssetAccess.ts";
+import {
+  ASSET_ROUTE_PREFIX,
+  issueAssetUrl,
+  issueNoiseWorkspaceUrl,
+  readMcpAppHtml,
+  readWorkspaceChunk,
+  resolveAsset,
+} from "./AssetAccess.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
@@ -286,6 +298,21 @@ describe("AssetAccess", () => {
           mimeType,
         });
         yield* fs.writeFileString(path.join(outside, "sibling.png"), "private sibling");
+        if (name === "archive.zip") {
+          const media = yield* issueAssetUrl(
+            {
+              resource: { _tag: "media-file", threadId: ThreadId.make("thread-1"), path: filePath },
+              workspaceRoot: root,
+            },
+            "approved-key",
+          );
+          const deviceToken = media.relativeUrl.split("/").at(-2)!;
+          expect(yield* resolveAsset(deviceToken, name)).toBeNull();
+          expect(yield* resolveAsset(deviceToken, name, "different-key")).toBeNull();
+          expect(yield* resolveAsset(deviceToken, name, "approved-key")).toMatchObject({
+            path: canonicalFile,
+          });
+        }
         expect(yield* resolveAsset(token, "sibling.png")).toBeNull();
         expect(yield* resolveAsset(token, `../${name}`)).toBeNull();
         expect(yield* resolveAsset(`${token}tampered`, name)).toBeNull();
@@ -387,6 +414,109 @@ describe("AssetAccess", () => {
           kind: "file",
           path: yield* fs.realPath(filePath),
         });
+      }
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("reads only one revision of a regular file inside the registered Noise workspace", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const root = path.join(dir, "workspace");
+      const outside = path.join(dir, "other.bin");
+      yield* fs.makeDirectory(root);
+      const realRoot = yield* fs.realPath(root);
+      const known = Layer.mock(KnownWorkspaces.KnownWorkspaces)({
+        contains: (candidate) => Effect.succeed(candidate === realRoot),
+      });
+      const file = path.join(root, "sample.bin");
+      yield* fs.writeFile(file, Uint8Array.of(0, 127, 255));
+      yield* fs.writeFile(outside, Uint8Array.of(42));
+      const resource = { _tag: "draft-workspace-file", cwd: root, path: "sample.bin" } as const;
+      const read = (offset: number, revision?: string) =>
+        readWorkspaceChunk(
+          { resource, offset, length: 2, ...(revision ? { revision } : {}) },
+          root,
+        ).pipe(Effect.provide(known));
+      yield* fs.makeDirectory(path.join(root, "media"));
+      yield* fs.writeFileString(path.join(root, "preview.html"), '<img src="media/icon.svg">');
+      yield* fs.writeFileString(path.join(root, "media/icon.svg"), "<svg/>");
+      const page = yield* issueNoiseWorkspaceUrl(
+        { ...resource, path: "preview.html" },
+        root,
+        "device",
+      ).pipe(Effect.provide(known));
+      const token = page.relativeUrl.split("/").at(-2)!;
+      expect(yield* resolveAsset(token, "preview.html")).toBeNull();
+      expect(yield* resolveAsset(token, "preview.html", "other-device")).toBeNull();
+      expect(yield* resolveAsset(token, "media/icon.svg", "device")).toMatchObject({
+        path: path.join(realRoot, "media/icon.svg"),
+      });
+      expect(yield* resolveAsset(token, "preview.html", "device")).toMatchObject({
+        path: path.join(realRoot, "preview.html"),
+      });
+      const lifetime = yield* Scope.fork(yield* Effect.scope);
+      const document = yield* makeNoisePreviewDocument(
+        new URL(page.relativeUrl, NOISE_PREVIEW_ORIGIN),
+        "device",
+        yield* Effect.abortSignal.pipe(Effect.provideService(Scope.Scope, lifetime)),
+      );
+      if (!document) throw new Error("Missing document");
+      const loaded = yield* Effect.promise(() => document.read(page.relativeUrl, false));
+      expect(loaded?.body.toString()).toContain('<img src="media/icon.svg">');
+      expect(loaded?.headers["content-security-policy"]).toContain("sandbox");
+      const sibling = yield* Effect.promise(() =>
+        document.read("/api/assets/" + token + "/media/icon.svg", false),
+      );
+      expect(sibling?.body.toString()).toBe("<svg/>");
+      expect(
+        yield* Effect.promise(() => document.read("/api/assets/other/media/icon.svg", false)),
+      ).toBeNull();
+      yield* Scope.close(lifetime, Exit.void);
+      yield* Effect.promise(() => expect(document.read(page.relativeUrl, false)).rejects.toThrow());
+      const first = yield* read(0);
+      expect(first.data).toEqual(Uint8Array.of(0, 127));
+      expect(first.totalBytes).toBe(3);
+      const last = yield* read(2, first.revision);
+      expect(last).toEqual({ revision: first.revision, totalBytes: 3, data: Uint8Array.of(255) });
+      expect((yield* read(2).pipe(Effect.flip))._tag).toBe("AttachmentTransferError");
+      yield* fs.writeFile(path.join(root, "replacement"), Uint8Array.of(4, 5, 6));
+      yield* fs.rename(path.join(root, "replacement"), file);
+      expect((yield* read(2, first.revision).pipe(Effect.flip))._tag).toBe(
+        "AttachmentTransferError",
+      );
+      for (const [cwd, requestedPath] of [
+        [dir, "other.bin"],
+        [root, outside],
+        [root, "../other.bin"],
+      ] as const) {
+        expect(
+          (yield* issueNoiseWorkspaceUrl(
+            { ...resource, cwd, path: requestedPath },
+            cwd,
+            "device",
+          ).pipe(Effect.provide(known), Effect.flip))._tag,
+        ).toMatch(/^AssetWorkspace/);
+        expect(
+          (yield* readWorkspaceChunk(
+            { resource: { ...resource, cwd, path: requestedPath }, offset: 0 },
+            cwd,
+          ).pipe(Effect.provide(known), Effect.flip))._tag,
+        ).toMatch(/^AssetWorkspace/);
+      }
+      if (symlinksSupported) {
+        const alias = path.join(root, "alias.bin");
+        yield* fs.symlink(outside, alias);
+        expect(
+          (yield* readWorkspaceChunk(
+            {
+              resource: { _tag: "media-file", threadId: ThreadId.make("thread"), path: alias },
+              offset: 0,
+            },
+            root,
+          ).pipe(Effect.provide(known), Effect.flip))._tag,
+        ).toBe("AssetWorkspaceAssetNotFoundError");
       }
     }).pipe(Effect.provide(layerTest)),
   );
@@ -822,6 +952,23 @@ describe("AssetAccess", () => {
         const error = yield* issueAssetUrl({ resource }).pipe(Effect.flip);
         expect(error._tag).toBe("AssetWorkspaceAssetNotFoundError");
       }
+
+      const registered = yield* fs.realPath(config.baseDir);
+      const denied = yield* readWorkspaceChunk(
+        {
+          resource: { _tag: "draft-workspace-file", cwd: config.baseDir, path: stateFile },
+          offset: 0,
+        },
+        config.baseDir,
+      ).pipe(
+        Effect.provide(
+          Layer.mock(KnownWorkspaces.KnownWorkspaces)({
+            contains: (candidate) => Effect.succeed(candidate === registered),
+          }),
+        ),
+        Effect.flip,
+      );
+      expect(denied._tag).toBe("AssetWorkspaceAssetNotFoundError");
 
       const icon = path.join(config.baseDir, "icon.png");
       yield* fs.symlink(stateFile, icon);

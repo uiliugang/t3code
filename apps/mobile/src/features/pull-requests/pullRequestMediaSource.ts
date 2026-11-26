@@ -6,11 +6,18 @@ export interface PullRequestMediaLocation {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly repository?: string;
+  readonly directImages?: boolean;
+  readonly bridgedImages?: boolean;
 }
 
-/** Keep the original resource identity so previewers can resolve and renew its capability. */
-export function pullRequestMediaSource(url: string, location: PullRequestMediaLocation | null) {
+export function pullRequestMediaSource(
+  url: string,
+  location: PullRequestMediaLocation | null,
+  kind: "image" | "video" | "unknown",
+) {
   const fetchUrl = sourceControlClients.mediaUrl(url)?.fetchUrl;
+  if (kind === "image" && location?.directImages && !location.bridgedImages && fetchUrl)
+    return { uri: fetchUrl };
   return location && fetchUrl
     ? {
         environmentId: location.environmentId,
@@ -28,5 +35,5 @@ export function pullRequestImageSource(
   url: string,
   location: PullRequestMediaLocation | null,
 ): FilePreviewItem {
-  return { kind: "image", ...pullRequestMediaSource(url, location) };
+  return { kind: "image", ...pullRequestMediaSource(url, location, "image") };
 }

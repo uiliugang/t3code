@@ -1,3 +1,7 @@
+import * as DateTime from "effect/DateTime";
+import * as Clock from "effect/Clock";
+import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
+import { WEBHOOK_KEY_NAME, decryptWebhook } from "./encryptedWebhook.ts";
 import { EnvironmentHttpApi } from "@t3tools/contracts";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
@@ -80,7 +84,7 @@ export const layer = HttpApiBuilder.group(
         return yield* tooLarge("body_too_large");
       }
 
-      const headers: Record<string, string> = {};
+      let headers: Record<string, string> = {};
       for (const [name, value] of Object.entries(request.headers)) {
         // Webhook senders do not use cookies, so the request a task reads carries none.
         if (typeof value === "string" && name.toLowerCase() !== "cookie") {
@@ -91,24 +95,66 @@ export const layer = HttpApiBuilder.group(
       // The relay's delivery id and receive time count only with its signed
       // proof; the URL can also be called directly. The receive time matters
       // for requests the relay held while we were offline.
-      const relay = yield* relayDeliveryProof.verify({ headers, hookId: params.hookId });
-      const relayDeliveryId = Option.isSome(relay) ? relay.value.deliveryId : undefined;
-      const relayReceivedAt = Option.isSome(relay) ? relay.value.receivedAt : undefined;
-
-      if (params.hookId.startsWith(Workflows.HOOK_PREFIX)) {
+      let hookId = params.hookId;
+      let token = params.token;
+      let method = request.method;
+      let bytes: Uint8Array = body.value;
+      let query = queryIndex === -1 ? "" : request.url.slice(queryIndex + 1);
+      let relayDeliveryId: string | undefined;
+      let relayReceivedAt: string | undefined;
+      const encrypted = token === "encrypted-v1";
+      if (encrypted) {
+        if (method !== "POST")
+          return json(405, { error: "method_not_allowed" }, "method_not_allowed");
+        const store = yield* Effect.serviceOption(ServerSecretStore);
+        const secret = Option.isSome(store)
+          ? yield* store.value
+              .get(WEBHOOK_KEY_NAME)
+              .pipe(Effect.orElseSucceed(() => Option.none<Uint8Array>()))
+          : Option.none<Uint8Array>();
+        if (Option.isNone(secret)) return json(404, { error: "hook_not_found" }, "not_found");
+        const key = secret.value;
+        const now = yield* Clock.currentTimeMillis;
+        const decrypted = yield* Effect.tryPromise({
+          try: () => decryptWebhook(key, bytes, now, hookId),
+          catch: () => "invalid" as const,
+        }).pipe(Effect.option);
+        if (Option.isNone(decrypted)) return json(400, { error: "invalid_envelope" }, "invalid");
+        const inner = decrypted.value;
+        hookId = inner.hookId;
+        token = inner.token;
+        method = inner.method;
+        bytes = inner.body;
+        query = inner.query;
+        headers = Object.fromEntries(
+          Object.entries(inner.headers)
+            .map(([name, value]) => [name.toLowerCase(), value] as const)
+            .filter(([name]) => name !== "cookie"),
+        );
+        // Only the sender's authenticated id and timestamp survive forwarding and offline replay.
+        relayDeliveryId = `encrypted:${hookId}:${inner.id}`;
+        relayReceivedAt = DateTime.formatIso(DateTime.makeUnsafe(inner.createdAt));
+      } else {
+        const relay = yield* relayDeliveryProof.verify({ headers, hookId });
+        if (Option.isSome(relay)) {
+          relayDeliveryId = relay.value.deliveryId;
+          relayReceivedAt = relay.value.receivedAt;
+        }
+      }
+      if (hookId.startsWith(Workflows.HOOK_PREFIX)) {
         if (ManagedPolicy.deniedBy(managedPolicy, "webhookTasks") !== undefined) {
           return json(403, { error: "blocked_by_policy" }, "blocked_by_policy");
         }
         // Answered only once the run is stored, so a sender that hears nothing may send again.
         const started = yield* workflows
           .deliver({
-            hookId: params.hookId,
-            token: params.token,
+            hookId,
+            token,
             request: {
-              method: request.method,
+              method,
               headers,
-              query: queryIndex === -1 ? "" : request.url.slice(queryIndex + 1),
-              body: new TextDecoder().decode(body.value),
+              query,
+              body: new TextDecoder().decode(bytes),
             },
             ...(relayDeliveryId ? { deliveryId: `relay:${relayDeliveryId}` } : {}),
           })
@@ -117,37 +163,39 @@ export const layer = HttpApiBuilder.group(
           if (started.failure._tag === "WorkflowInputError") {
             return json(
               400,
-              { error: "invalid_request", problem: started.failure.problem },
+              encrypted
+                ? { error: "invalid_request" }
+                : { error: "invalid_request", problem: started.failure.problem },
               "invalid",
             );
           }
           if (started.failure._tag === "WorkflowHookBusyError") {
             return json(429, { error: "rate_limited" }, "rate_limited", { "retry-after": "60" });
           }
-          yield* Effect.logWarning("Workflow hook delivery failed", { hookId: params.hookId });
+          yield* Effect.logWarning("Workflow hook delivery failed", { hookId });
           return json(500, { error: "internal_error" }, "error");
         }
         return Option.isNone(started.success)
           ? json(404, { error: "hook_not_found" }, "not_found")
-          : json(202, { runId: started.success.value.runId }, "accepted");
+          : json(202, encrypted ? {} : { runId: started.success.value.runId }, "accepted");
       }
       const result = yield* scheduledTasks
         .triggerWebhook({
-          hookId: params.hookId,
-          token: params.token,
-          method: request.method,
-          path: `${ScheduledTaskService.WEBHOOK_ROUTE_PREFIX}/${encodeURIComponent(params.hookId)}`,
-          query: queryIndex === -1 ? "" : request.url.slice(queryIndex + 1),
+          hookId,
+          token,
+          method,
+          path: `${ScheduledTaskService.WEBHOOK_ROUTE_PREFIX}/${encodeURIComponent(hookId)}`,
+          query,
           headers,
-          body: body.value,
-          bodyText: new TextDecoder().decode(body.value),
+          body: bytes,
+          bodyText: new TextDecoder().decode(bytes),
           ...(relayDeliveryId ? { relayDeliveryId } : {}),
           ...(relayReceivedAt ? { receivedAt: relayReceivedAt } : {}),
         })
         .pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("Webhook delivery failed").pipe(
-              Effect.annotateLogs({ hookId: params.hookId }),
+              Effect.annotateLogs({ hookId }),
               Effect.andThen(Effect.logDebug("Webhook delivery failure cause", { cause })),
               Effect.as({ _tag: "error" as const }),
             ),
@@ -156,7 +204,7 @@ export const layer = HttpApiBuilder.group(
 
       switch (result._tag) {
         case "accepted":
-          return json(202, { deliveryId: result.deliveryId }, result.outcome);
+          return json(202, encrypted ? {} : { deliveryId: result.deliveryId }, result.outcome);
         case "not_found":
           return json(404, { error: "hook_not_found" }, "not_found");
         case "rejected_signature":

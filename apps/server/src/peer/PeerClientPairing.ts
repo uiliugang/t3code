@@ -1,3 +1,5 @@
+import { NoiseCaller } from "../auth/noiseTrust.ts";
+import { peerHostPin, PeerTrust } from "./noiseTrust.ts";
 import {
   type AuthEnvironmentScope,
   type AuthSessionId,
@@ -157,9 +159,10 @@ const makeIssuer = Effect.gen(function* () {
 export const layerIssuer = Layer.effect(PeerClientPairingIssuer, makeIssuer);
 
 const make = Effect.gen(function* () {
+  const trusted = yield* PeerTrust;
   const links = yield* PeerLinks.PeerLinks;
   const auth = yield* EnvironmentAuth.EnvironmentAuth;
-  const httpClient = yield* HttpClient.HttpClient;
+  const httpClient = yield* PeerLinks.peerHttpClient;
 
   /** What this environment's Connections calls the client that asked. */
   const clientLabelOf = (sessionId: AuthSessionId) =>
@@ -211,12 +214,23 @@ const make = Effect.gen(function* () {
       urls,
       reason,
     });
+    const pinned = trusted?.peers.find(
+      (peer) => peer.environmentId === environmentId && urls.includes(peer.origin),
+    );
+    const request = payload(yield* clientLabelOf(sessionId));
+    if (pinned && (request.link === undefined || !(yield* NoiseCaller)))
+      return {
+        type: "noise" as const,
+        label,
+        environmentId,
+        urls: [pinned.origin],
+        hostPin: peerHostPin(pinned),
+      };
     // The linked environment refuses this too; asking would only spend a round trip.
     if (access !== "full-access") return unsupported("link_access");
     const resolved = yield* links.resolve(input.environmentId).pipe(Effect.option);
     if (Option.isNone(resolved)) return unsupported("unreachable");
     const peer = resolved.value;
-    const request = payload(yield* clientLabelOf(sessionId));
     if (
       peer.capabilities.linkClientPairing !== true ||
       // One from before this would read the request as a client's and pair the client instead.
@@ -235,7 +249,9 @@ const make = Effect.gen(function* () {
       .pipe(
         Effect.timeout(PeerLinks.probeTimeout(peer.url)),
         Effect.map((issued): PeerLinkClientPairingResult => ({
-          type: "credential",
+          ...(pinned
+            ? { type: "noise-link" as const, hostPin: peerHostPin(pinned) }
+            : { type: "credential" as const }),
           environmentId,
           label: peer.link.label,
           urls,
