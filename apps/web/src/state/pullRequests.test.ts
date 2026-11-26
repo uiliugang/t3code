@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import type { PullRequestAnswerHandlers } from "@t3tools/client-runtime/state/pull-requests";
 import {
@@ -14,7 +15,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { vi } from "vite-plus/test";
 
 const listAnswers = vi.hoisted(() => new Map<string, unknown>());
 const answerHandlers = vi.hoisted(
@@ -65,39 +66,41 @@ import {
   usePullRequestList,
 } from "./pullRequests";
 
-it("delivers viewed-file reads only to the matching web origin", ({ onTestFinished }) => {
-  const query = (origin: string) => ({
-    environmentId: EnvironmentId.make("files-viewed"),
-    input: {
-      projectId: ProjectId.make("project"),
-      host: "forge.test",
-      repository: "acme/widget",
-      number: 7,
-      target: { provider: SourceControlProviderKind.make("gitlab"), origin },
-    },
-  });
-  const http = query("http://forge.test");
-  const https = query("https://forge.test");
-  const onHttpAnswer = vi.fn();
-  const onHttpsAnswer = vi.fn();
-  onTestFinished(subscribePullRequestFilesViewedAnswers(http, onHttpAnswer));
-  onTestFinished(subscribePullRequestFilesViewedAnswers(https, onHttpsAnswer));
-  const receive = answerHandlers.filesViewed;
-  if (receive === undefined) throw new Error("Missing viewed-file read handler");
-  const unviewed: PullRequestFilesViewedResult = { files: [], truncated: false };
-  const viewed: PullRequestFilesViewedResult = {
-    files: [{ path: "a.ts", state: "viewed" }],
-    truncated: false,
-  };
+it.effect("delivers viewed-file reads only to the matching web origin", ({ onTestFinished }) =>
+  Effect.gen(function* () {
+    const query = (origin: string) => ({
+      environmentId: EnvironmentId.make("files-viewed"),
+      input: {
+        projectId: ProjectId.make("project"),
+        host: "forge.test",
+        repository: "acme/widget",
+        number: 7,
+        target: { provider: SourceControlProviderKind.make("gitlab"), origin },
+      },
+    });
+    const http = query("http://forge.test");
+    const https = query("https://forge.test");
+    const onHttpAnswer = vi.fn();
+    const onHttpsAnswer = vi.fn();
+    onTestFinished(subscribePullRequestFilesViewedAnswers(http, onHttpAnswer));
+    onTestFinished(subscribePullRequestFilesViewedAnswers(https, onHttpsAnswer));
+    const receive = answerHandlers.filesViewed;
+    if (receive === undefined) throw new Error("Missing viewed-file read handler");
+    const unviewed: PullRequestFilesViewedResult = { files: [], truncated: false };
+    const viewed: PullRequestFilesViewedResult = {
+      files: [{ path: "a.ts", state: "viewed" }],
+      truncated: false,
+    };
 
-  Effect.runSync(receive(https, unviewed, registry));
-  expect(onHttpsAnswer).toHaveBeenCalledExactlyOnceWith(unviewed);
-  expect(onHttpAnswer).not.toHaveBeenCalled();
+    yield* receive(https, unviewed, registry);
+    expect(onHttpsAnswer).toHaveBeenCalledExactlyOnceWith(unviewed);
+    expect(onHttpAnswer).not.toHaveBeenCalled();
 
-  Effect.runSync(receive(http, viewed, registry));
-  expect(onHttpAnswer).toHaveBeenCalledExactlyOnceWith(viewed);
-  expect(onHttpsAnswer).toHaveBeenCalledTimes(1);
-});
+    yield* receive(http, viewed, registry);
+    expect(onHttpAnswer).toHaveBeenCalledExactlyOnceWith(viewed);
+    expect(onHttpsAnswer).toHaveBeenCalledTimes(1);
+  }),
+);
 
 it("observes both typed list failures without changing their status or replaying cached timestamps", () => {
   const listResult: PullRequestListResult = {
