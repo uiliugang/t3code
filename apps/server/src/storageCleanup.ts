@@ -73,7 +73,7 @@ import { makeWorktreeFileInspection } from "./vcs/worktreeFileInspection.ts";
 import { isLinkedWorktree, removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
 import {
-  withGitWorktreeRegistrationLease,
+  withGitWorktreeRegistrationLeases,
   withWorkspaceLease,
 } from "./workspace/workspaceLease.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -1105,7 +1105,7 @@ const make = Effect.gen(function* () {
         fs.realPath(commonDir).pipe(
           Effect.orElseSucceed(() => commonDir),
           Effect.flatMap((canonical) =>
-            withGitWorktreeRegistrationLease(canonical, removeLeftover(adminDir)),
+            withGitWorktreeRegistrationLeases([canonical], removeLeftover(adminDir)),
           ),
         ),
       ).pipe(

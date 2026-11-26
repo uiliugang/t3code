@@ -61,7 +61,7 @@ import { makeWorktreeCheckoutCache } from "./worktreeCheckoutCache.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
-  withGitWorktreeRegistrationLease,
+  withGitWorktreeRegistrationLeases,
   withWorkspaceLease,
 } from "../workspace/workspaceLease.ts";
 import {
@@ -6362,7 +6362,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           .pipe(Effect.flatMap((cloned) => (cloned ? Effect.void : stockCheckout)))
       : stockCheckout;
     yield* (
-      commonDir === null ? checkout : withGitWorktreeRegistrationLease(commonDir, checkout)
+      commonDir === null ? checkout : withGitWorktreeRegistrationLeases([commonDir], checkout)
     ).pipe(
       Effect.andThen(sparseCheckout),
       Effect.andThen(

@@ -8,6 +8,7 @@ import {
   pullRequestPendingEditsFor,
   pullRequestHostAnswer,
   type PullRequestPendingEdit,
+  type PullRequestViewerRef,
 } from "@t3tools/client-runtime/state/pull-requests";
 import {
   PullRequestListResult,
@@ -398,7 +399,7 @@ const filesViewedAnswerListeners = new Map<
   Set<(answer: PullRequestFilesViewedResult) => void>
 >();
 
-export function filesViewedScopeKey(environmentId: EnvironmentId, reference: PullRequestRef) {
+export function filesViewedScopeKey(environmentId: EnvironmentId, reference: PullRequestViewerRef) {
   return JSON.stringify([
     environmentId,
     reference.projectId,
@@ -406,6 +407,7 @@ export function filesViewedScopeKey(environmentId: EnvironmentId, reference: Pul
     reference.target?.provider ?? null,
     reference.target?.origin ?? null,
     reference.expectedAccountId ?? null,
+    reference.legacyViewerId ?? null,
     reference.allowStale ?? null,
     reference.repository,
     reference.number,

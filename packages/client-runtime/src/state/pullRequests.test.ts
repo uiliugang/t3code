@@ -2291,6 +2291,47 @@ it.effect.each(["confirmed", "old-server", "unknown-source", "unknown-account"] 
     }),
 );
 
+it.effect("isolates legacy online marks by viewer without sending a repository account pin", () =>
+  Effect.gen(function* () {
+    const host = "github.com";
+    const provider = SourceControlProviderKind.make("github");
+    const reference = {
+      projectId: ProjectId.make("project-1"),
+      host,
+      repository: "acme/web",
+      target: { provider, origin: `https://${host}` },
+      number: 7,
+    };
+    let accountId = "first";
+    const client = {
+      [WS_METHODS.pullRequestsFilesViewed]: (input: PullRequestRef) =>
+        Effect.sync(() => {
+          expect(input).toEqual(reference);
+          return { files: [{ path: `${accountId}.ts`, state: "viewed" }], truncated: false };
+        }),
+    } as unknown as WsRpcProtocolClient;
+    const { atoms, registry } = yield* makeTestRuntime(client);
+    const read = () =>
+      AtomRegistry.getResult(
+        registry,
+        atoms.filesViewed({
+          environmentId: TARGET.environmentId,
+          input: withPullRequestViewer(reference, {
+            host,
+            provider,
+            viewer: accountId,
+            accountId,
+            projectTitle: "Web",
+            workspaceRoot: "/web",
+          }),
+        }),
+      );
+    expect((yield* read()).files).toEqual([{ path: "first.ts", state: "viewed" }]);
+    accountId = "second";
+    expect((yield* read()).files).toEqual([{ path: "second.ts", state: "viewed" }]);
+  }),
+);
+
 it.effect(
   "restores the verified GitHub account and its viewed marks on an offline cold start",
   () =>
@@ -2315,7 +2356,10 @@ it.effect(
         projectTitle: "Web",
         workspaceRoot: "/web",
       };
-      expect(withPullRequestViewer(reference.input, identity)).toBe(reference.input);
+      expect(withPullRequestViewer(reference.input, identity)).toEqual({
+        ...reference.input,
+        legacyViewerId: identity.accountId,
+      });
       const repositoryIdentity = { ...identity, repository: reference.input.repository };
       const viewed: PullRequestFilesViewedResult = {
         files: [{ path: "main.ts", state: "viewed" }],

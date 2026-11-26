@@ -47,7 +47,7 @@ import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 import { projectFolders, parseGitmodulesPaths } from "./WorkspaceFolders.ts";
-import { withWorkspaceLease } from "./workspaceLease.ts";
+import { withGitWorktreeRegistrationLeases, withWorkspaceLease } from "./workspaceLease.ts";
 import { applyCarriedCheckoutChanges, readCarriedCheckoutChanges } from "./carryCheckoutChanges.ts";
 
 // Each worktree is a checkout: enough at once to finish four repositories together, few enough
@@ -337,26 +337,38 @@ const make = Effect.gen(function* () {
   ) =>
     layoutLocks.withLock(
       taskFolder.projectRoot,
-      processes
-        .run({
-          operation: "TaskFolders.worktreeLayout",
-          command: onWindows ? windowsSystem32Path(hostEnvironment, "cmd.exe") : "sh",
-          args: onWindows ? ["/d", "/s", "/c", command] : ["-c", command],
-          cwd: taskFolder.projectRoot,
-          env: {
-            ...hostEnvironment,
-            // A `GIT_DIR` the server inherited would point the command's Git at another repository.
-            ...VcsProcess.unsetInheritedRepositoryEnv(hostEnvironment, hostPlatform),
-            T3_PROJECT_ROOT: taskFolder.projectRoot,
-            T3_WORKTREE_ROOT: taskFolder.root,
-            T3_WORKTREE_PROJECT_PATH: taskFolder.projectPath,
-            T3_WORKTREE_BRANCH: branch,
-            T3_WORKTREE_BASE: baseBranch ?? "",
-            T3_WORKTREE_REPOSITORIES: repositories.join("\n"),
-          },
-          timeoutMs: LAYOUT_COMMAND_TIMEOUT_MS,
-        })
-        .pipe(Effect.mapError(fail(operation, "The project's worktree layout command failed"))),
+      Effect.gen(function* () {
+        const commonDirs = yield* Effect.forEach(
+          [taskFolder.projectRoot, ...repositories],
+          (repository) =>
+            commonGitDir(repository).pipe(
+              Effect.flatMap((directory) =>
+                fileSystem.realPath(directory).pipe(Effect.orElseSucceed(() => directory)),
+              ),
+            ),
+        );
+        return yield* withGitWorktreeRegistrationLeases(
+          commonDirs,
+          processes.run({
+            operation: "TaskFolders.worktreeLayout",
+            command: onWindows ? windowsSystem32Path(hostEnvironment, "cmd.exe") : "sh",
+            args: onWindows ? ["/d", "/s", "/c", command] : ["-c", command],
+            cwd: taskFolder.projectRoot,
+            env: {
+              ...hostEnvironment,
+              // A `GIT_DIR` the server inherited would point the command's Git at another repository.
+              ...VcsProcess.unsetInheritedRepositoryEnv(hostEnvironment, hostPlatform),
+              T3_PROJECT_ROOT: taskFolder.projectRoot,
+              T3_WORKTREE_ROOT: taskFolder.root,
+              T3_WORKTREE_PROJECT_PATH: taskFolder.projectPath,
+              T3_WORKTREE_BRANCH: branch,
+              T3_WORKTREE_BASE: baseBranch ?? "",
+              T3_WORKTREE_REPOSITORIES: repositories.join("\n"),
+            },
+            timeoutMs: LAYOUT_COMMAND_TIMEOUT_MS,
+          }),
+        ).pipe(Effect.mapError(fail(operation, "The project's worktree layout command failed")));
+      }),
     );
 
   /** Where a folder's `.git` file points, or null when `.git` is a directory or absent. */

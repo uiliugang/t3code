@@ -3,11 +3,8 @@ import {
   isAtomCommandInterrupted,
   runAtomCommand,
 } from "@t3tools/client-runtime/state/runtime";
-import type {
-  EnvironmentId,
-  PullRequestFilesViewedResult,
-  PullRequestRef,
-} from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestFilesViewedResult } from "@t3tools/contracts";
+import type { PullRequestViewerRef } from "@t3tools/client-runtime/state/pull-requests";
 
 import { msg } from "gt-react";
 
@@ -31,7 +28,7 @@ import {
 
 export interface FilesViewedTarget {
   readonly environmentId: EnvironmentId;
-  readonly reference: PullRequestRef;
+  readonly reference: PullRequestViewerRef;
 }
 
 type FilesViewedBatch = ReadonlyArray<{
@@ -227,7 +224,7 @@ const filesViewedStore = createFilesViewedStore({
   flushDelayMs: 400,
   subscribeAnswers: ({ environmentId, reference }, onAnswer) =>
     subscribePullRequestFilesViewedAnswers({ environmentId, input: reference }, onAnswer),
-  send: ({ environmentId, reference }, files) =>
+  send: ({ environmentId, reference: { legacyViewerId: _legacyViewerId, ...reference } }, files) =>
     runAtomCommand(
       appAtomRegistry,
       pullRequestEnvironment.setFilesViewed,

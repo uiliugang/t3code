@@ -684,11 +684,12 @@ function PullRequestCodeTab({
   const codeViewReveal = useCodeViewFileReveal();
   const answeredRevealNonce = useRef<number | null>(null);
 
+  const { legacyViewerId, ...fileContentsReference } = accountedReference;
   const loadDiffFiles = createPullRequestDiffFileContentsLoader(getDiffFileContents, {
     environmentId,
-    reference: accountedReference,
+    reference: fileContentsReference,
     commit,
-    cacheKey: `pull-request:${referenceKey}:${accountedReference.expectedAccountId ?? ""}:${detail.updatedAt}:${commit ?? "all"}`,
+    cacheKey: `pull-request:${referenceKey}:${fileContentsReference.expectedAccountId ?? legacyViewerId ?? ""}:${detail.updatedAt}:${commit ?? "all"}`,
   });
   const completionScope = pullRequestCompletionScope(detail, environmentId, reference);
   const hostReview = detail.capabilities.review;

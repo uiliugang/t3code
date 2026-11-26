@@ -45,7 +45,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { ServerActivation } from "./serverActivation.ts";
 import {
-  withGitWorktreeRegistrationLease,
+  withGitWorktreeRegistrationLeases,
   withWorkspaceLease,
 } from "./workspace/workspaceLease.ts";
 import * as ManagedWorktrees from "./workspace/ManagedWorktrees.ts";
@@ -4341,7 +4341,7 @@ describe("storage cleanup reports and local file policies", () => {
           });
           const commonDir = yield* fixture.fs.realPath(`${fixture.repo}/.git`);
           const sweep = yield* mode === "same-repository"
-            ? withGitWorktreeRegistrationLease(commonDir, recover)
+            ? withGitWorktreeRegistrationLeases([commonDir], recover)
             : withWorkspaceLease(leasePath, recover);
           yield* Fiber.join(sweep);
           expect(checkedBeforeRestore).toBe(false);

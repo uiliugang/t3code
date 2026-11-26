@@ -27,16 +27,15 @@ export function usePullRequestFilesViewed(params: PullRequestParams, pr: PullReq
   );
   const viewer = identity.isSuccess && !identity.isPending ? identity.data : null;
   const target = { ...reference, input: withPullRequestViewer(reference.input, viewer) };
+  const accountReady = !requiresAccount || viewer !== null;
   const scopeKey = filesViewedReadsKey(target);
   const permission = useAtomValue(
     composerPullRequests.setFilesViewed.permissionAtom(target.environmentId),
   );
   const connected = usePullRequestConnected(params.environmentId);
-  const allowed = connected && permission && (!requiresAccount || viewer !== null);
+  const allowed = connected && permission && accountReady;
   const query = useEnvironmentQuery(
-    supported && (!requiresAccount || viewer !== null)
-      ? composerPullRequests.filesViewed(target)
-      : null,
+    supported && accountReady ? composerPullRequests.filesViewed(target) : null,
   );
   const { refresh } = query;
   const headSha = pr?.headSha;
@@ -55,8 +54,8 @@ export function usePullRequestFilesViewed(params: PullRequestParams, pr: PullReq
   const reads = useAtomValue(readsAtom);
   const write = useAtomCommand(composerPullRequests.setFilesViewed, { reportFailure: false });
   const [state, setState] = useState<ViewedState>({ key: scopeKey, presses: {}, error: null });
-  const presses = state.key === scopeKey ? state.presses : {};
-  const error = state.key === scopeKey ? state.error : null;
+  const presses = accountReady && state.key === scopeKey ? state.presses : {};
+  const error = accountReady && state.key === scopeKey ? state.error : null;
   const overlay = viewedOverlay(presses, reads);
   const update = (change: (current: ViewedState) => ViewedState) =>
     setState((current) =>
@@ -74,9 +73,10 @@ export function usePullRequestFilesViewed(params: PullRequestParams, pr: PullReq
       error: null,
       presses: { ...current.presses, [path]: { viewed, version, awaitingReadAfter: undefined } },
     }));
+    const { legacyViewerId: _legacyViewerId, ...writeReference } = target.input;
     const response = await write({
       ...target,
-      input: { ...target.input, files: [{ path, viewed }] },
+      input: { ...writeReference, files: [{ path, viewed }] },
     });
     // A read completed by the time the write lands may predate it; the next one carries it.
     const readsAtWrite = registry.get(readsAtom);

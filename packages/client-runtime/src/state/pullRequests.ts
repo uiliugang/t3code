@@ -371,10 +371,14 @@ function pullRequestReference(input: PullRequestRef): PullRequestRef {
   };
 }
 
+export type PullRequestViewerRef = PullRequestRef & { readonly legacyViewerId?: string };
+
 export function withPullRequestViewer(
   reference: PullRequestRef,
   identity: PullRequestRoutingResult | null,
-): PullRequestRef {
+): PullRequestViewerRef {
+  if (identity !== null && identity.repository === undefined)
+    return { ...reference, legacyViewerId: identity.accountId };
   return identity?.repository?.toLowerCase() === reference.repository.toLowerCase()
     ? { ...reference, host: identity.host, expectedAccountId: identity.accountId }
     : reference;
@@ -1363,7 +1367,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
               ]),
       },
     }),
-    filesViewed: createEnvironmentRpcQueryAtomFamily(runtime, {
+    filesViewed: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:files-viewed:v3",
       ...(onAnswer.filesViewed === undefined ? {} : { onAnswer: onAnswer.filesViewed }),
       persistence: {
@@ -1373,10 +1377,9 @@ export function createPullRequestEnvironmentAtoms<R, E>(
             ? Effect.void
             : filesViewedPersistence.save(environmentId, key, value),
       },
-      tag: WS_METHODS.pullRequestsFilesViewed,
-      execute: (input) =>
+      execute: ({ legacyViewerId: _legacyViewerId, ...input }: PullRequestViewerRef) =>
         routedRequest(WS_METHODS.pullRequestsFilesViewed, input).pipe(
-          Effect.map(({ target, ...result }) =>
+          Effect.map(({ target, ...result }): PullRequestFilesViewedResult =>
             target !== undefined &&
             target.provider === input.target?.provider &&
             target.origin === input.target.origin &&
