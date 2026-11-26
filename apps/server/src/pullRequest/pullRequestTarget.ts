@@ -1,4 +1,8 @@
-import type { OrchestrationProjectShell, SourceControlProviderKind } from "@t3tools/contracts";
+import type {
+  OrchestrationProjectShell,
+  SourceControlProviderKind,
+  ThreadPullRequestKey,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -65,10 +69,7 @@ export type PullRequestTargetError =
   | PullRequestUrlUnavailableError
   | PullRequestRepositoryInvalidError;
 
-export interface ResolvedTarget {
-  readonly host: string;
-  readonly repository: string;
-  readonly number: number;
+export interface ResolvedTarget extends ThreadPullRequestKey {
   readonly url: string;
 }
 
@@ -113,7 +114,7 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
       return yield* new PullRequestUrlInvalidError({});
     }
     return {
-      ...normalizeThreadPullRequestKey(parsed),
+      ...normalizeThreadPullRequestKey({ ...parsed, url: input.url }),
       url: input.url,
     } satisfies ResolvedTarget;
   }

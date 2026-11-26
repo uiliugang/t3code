@@ -136,6 +136,7 @@ const make = Effect.gen(function* () {
           {
             projectId: thread.projectId,
             host: target.host,
+            target: target.target,
             repository: target.repository,
             number: target.number,
             allowStale: false,
@@ -160,6 +161,7 @@ const make = Effect.gen(function* () {
         commandId: CommandId.make(`server:mcp-pr-watch:${thread.id}:${uuid}`),
         threadId: thread.id,
         host: target.host,
+        target: target.target,
         repository: target.repository,
         number: target.number,
         watching,

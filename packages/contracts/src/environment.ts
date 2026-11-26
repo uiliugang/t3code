@@ -97,6 +97,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   ),
   pullRequests: Schema.optionalKey(Schema.Boolean),
   pullRequestChecks: Schema.optionalKey(Schema.Boolean),
+  pullRequestWebTargets: Schema.optionalKey(Schema.Boolean),
   issues: Schema.optionalKey(Schema.Boolean),
   issueProjectSourcesCas: Schema.optionalKey(Schema.Boolean),
   githubIssueSourcePorts: Schema.optionalKey(Schema.Boolean),

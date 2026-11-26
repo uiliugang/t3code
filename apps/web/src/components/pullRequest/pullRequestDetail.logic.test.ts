@@ -1943,7 +1943,11 @@ describe("cached pull request detail", () => {
     ).toBeNull();
   });
 
-  it("does not show an old default-port MR snapshot after the remote moves to another port", () => {
+  it.each([
+    ["gitlab", "https://forge.test:8443/acme/web.git"],
+    ["gitlab", "http://forge.test/acme/web.git"],
+    ["github", "https://forge.test/acme/web.git"],
+  ])("does not show an old HTTPS MR snapshot for a %s checkout at %s", (provider, remoteUrl) => {
     const storage = makeStorage();
     writePullRequestDetailSnapshot(
       storage,
@@ -1959,11 +1963,10 @@ describe("cached pull request detail", () => {
       locator: {
         source: "git-remote",
         remoteName: "origin",
-        remoteUrl: "https://forge.test:8443/acme/web.git",
+        remoteUrl,
       },
-      provider: SourceControlProviderKind.make("gitlab"),
+      provider: SourceControlProviderKind.make(provider),
     });
-    expect(resolved.host).toBe("forge.test:8443");
     expect(readPullRequestDetailSnapshot(storage, "env-1", resolved)).toBeNull();
   });
 

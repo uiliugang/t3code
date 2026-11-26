@@ -1,6 +1,7 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { issueEventSentence } from "@t3tools/client-runtime/issue-presentation";
+import { resolveChangeRequestLinkTarget } from "@t3tools/client-runtime/change-request-links";
 import {
   issueLinkedPullRequestTarget,
   issueReferenceHost,
@@ -44,7 +45,7 @@ import { NativeLayoutObserver } from "../../native/NativeLayoutObserver";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useDeviceType, useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
-import { useEnvironmentServerConfig } from "../../state/entities";
+import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
 import { issueEnvironment, refreshIssueLists } from "../../state/issues";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentThreadShells } from "../../state/threads";
@@ -398,9 +399,23 @@ function IssueCommentCard(props: {
 
 function useOpenIssueLinkedPullRequest(params: IssueParams) {
   const navigation = useNavigation();
+  const { environmentId, input } = issueTarget(params);
+  const projects = useProjects();
+  const config = useEnvironmentServerConfig(environmentId);
   return (link: Pick<IssueLinkedPullRequest, "url" | "repository" | "number">) => {
     const target = issueLinkedPullRequestTarget(params, link);
-    if (!target) {
+    const resolved =
+      target === null
+        ? null
+        : resolveChangeRequestLinkTarget({
+            url: target.url,
+            projects,
+            environmentId,
+            projectId: input.projectId,
+            configLoaded: () => config !== null,
+            lendHostProject: config?.environment.capabilities.pullRequestWebTargets === true,
+          });
+    if (!target || !resolved) {
       void tryOpenWebLink(link.url, "pull-request");
       return;
     }
@@ -408,7 +423,7 @@ function useOpenIssueLinkedPullRequest(params: IssueParams) {
     navigation.dispatch(
       StackActions.push("PullRequest", {
         environmentId: params.environmentId,
-        projectId: params.projectId,
+        projectId: resolved.project.id,
         ...reference,
         navigationUrl: url,
       }),

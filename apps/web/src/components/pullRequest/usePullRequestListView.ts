@@ -42,6 +42,7 @@ import {
 } from "./pullRequestProjectAssignment.logic";
 import { pullRequestFilterProjects } from "@t3tools/client-runtime/pull-request-project-filter";
 import { pullRequestListEntryId } from "./pullRequestListGroups.logic";
+import { parsePullRequestAnchor } from "@t3tools/shared/pullRequestAnchor";
 
 export interface PullRequestsSearch extends PullRequestListPreferences {
   readonly selectedUrl?: string;
@@ -166,7 +167,10 @@ export function usePullRequestScope(
           repository: search.repository,
           number: search.number,
           projectId: selectedProject.id,
-          ...(selectedUrl ? { url: selectedUrl, revealUrl: selectedUrl } : {}),
+          ...(selectedUrl === undefined ? {} : { url: selectedUrl }),
+          ...(selectedUrl !== undefined && parsePullRequestAnchor(selectedUrl) !== null
+            ? { revealUrl: selectedUrl }
+            : {}),
           ...(selectedHost ? { host: selectedHost } : {}),
         }
       : null;

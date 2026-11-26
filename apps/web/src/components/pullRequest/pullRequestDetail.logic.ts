@@ -1,3 +1,7 @@
+import {
+  changeRequestWebTarget,
+  projectChangeRequestUrl,
+} from "@t3tools/client-runtime/change-request-links";
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   parsePullRequestAnchor,
@@ -1655,13 +1659,19 @@ export function resolvePullRequestReferenceHost(
   reference: PullRequestRef,
   identity: RepositoryIdentity | null | undefined,
 ): PullRequestRef {
-  if (reference.host !== undefined || !identity?.provider) return reference;
+  if (!identity?.provider || reference.target !== undefined) return reference;
   const host = sourceControlClients.get(identity.provider).checkoutChangeRequestHost(identity);
-  return host === null ? reference : { ...reference, host };
+  if (host === null || (reference.host !== undefined && reference.host !== host)) return reference;
+  const target = changeRequestWebTarget(
+    { ...reference, host },
+    projectChangeRequestUrl(identity, reference.repository, reference.number) ?? undefined,
+  );
+  return { ...reference, host, ...(target === undefined ? {} : { target }) };
 }
 
 interface PullRequestDetailSnapshotRef {
   readonly host?: string | undefined;
+  readonly target?: PullRequestRef["target"];
   readonly projectId: string;
   readonly repository: string;
   readonly number: number;
@@ -1671,9 +1681,11 @@ const pullRequestDetailSnapshotKey = (
   environmentId: string,
   reference: PullRequestDetailSnapshotRef,
 ) =>
-  reference.host
-    ? `t3.pullRequests.detail:${JSON.stringify([environmentId, reference.projectId, reference.host.toLowerCase(), reference.repository.toLowerCase(), reference.number])}`
-    : `t3.pullRequests.detail:${environmentId}:${reference.projectId}:${reference.repository}#${reference.number}`;
+  reference.target !== undefined
+    ? `t3.pullRequests.detail:${JSON.stringify([environmentId, reference.projectId, reference.target.provider, reference.target.origin, reference.repository.toLowerCase(), reference.number])}`
+    : reference.host
+      ? `t3.pullRequests.detail:${JSON.stringify([environmentId, reference.projectId, reference.host.toLowerCase(), reference.repository.toLowerCase(), reference.number])}`
+      : `t3.pullRequests.detail:${environmentId}:${reference.projectId}:${reference.repository}#${reference.number}`;
 
 const decodeDetailSnapshot = Schema.decodeUnknownOption(PullRequestDetail);
 
@@ -1685,10 +1697,19 @@ export function readPullRequestDetailSnapshot(
   try {
     const raw =
       storage?.getItem(pullRequestDetailSnapshotKey(environmentId, reference)) ??
+      (reference.target === undefined
+        ? null
+        : storage?.getItem(
+            pullRequestDetailSnapshotKey(environmentId, { ...reference, target: undefined }),
+          )) ??
       (reference.host === undefined
         ? null
         : storage?.getItem(
-            pullRequestDetailSnapshotKey(environmentId, { ...reference, host: undefined }),
+            pullRequestDetailSnapshotKey(environmentId, {
+              ...reference,
+              host: undefined,
+              target: undefined,
+            }),
           ));
     if (!raw) return null;
     const decoded = decodeDetailSnapshot(JSON.parse(raw));
@@ -1746,6 +1767,14 @@ export function resolveDisplayedPullRequestDetail(input: {
     input.cached.number !== input.reference.number
   ) {
     return null;
+  }
+  if (input.reference.target !== undefined) {
+    const target = changeRequestWebTarget(input.reference, input.cached.url);
+    return target?.provider === input.reference.target.provider &&
+      target.origin === input.reference.target.origin &&
+      input.cached.provider === target.provider
+      ? input.cached
+      : null;
   }
   if (input.reference.host === undefined) return input.cached;
   const link = sourceControlClients.parseChangeRequestUrl(input.cached.url)?.link;

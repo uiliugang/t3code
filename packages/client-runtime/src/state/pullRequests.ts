@@ -364,10 +364,11 @@ function settleEdit(
 }
 
 function pullRequestReference(input: PullRequestRef): PullRequestRef {
-  const { projectId, host, repository, number, expectedAccountId } = input;
+  const { projectId, host, target, repository, number, expectedAccountId } = input;
   return {
     projectId,
     ...(host === undefined ? {} : { host }),
+    ...(target === undefined ? {} : { target }),
     repository,
     number,
     ...(expectedAccountId === undefined ? {} : { expectedAccountId }),
@@ -410,6 +411,8 @@ function samePullRequest(reader: PullRequestRef, acted: PullRequestRef) {
     reader.projectId === acted.projectId &&
     // A missing host is not a wildcard: one project can reach the same repository on two hosts.
     reader.host?.toLowerCase() === acted.host?.toLowerCase() &&
+    reader.target?.provider === acted.target?.provider &&
+    reader.target?.origin === acted.target?.origin &&
     reader.repository.toLowerCase() === acted.repository.toLowerCase() &&
     reader.number === acted.number &&
     reader.expectedAccountId === acted.expectedAccountId

@@ -1639,6 +1639,7 @@ export function PullRequestsPage() {
               getShortcutContext={getShortcutContext}
               shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
               key={renderedPullRequestSurface.id}
+              sourceUrl={renderedPullRequestSurface.url}
               revealUrl={renderedPullRequestSurface.revealUrl}
               onRevealSettled={(revealUrl) => {
                 if (rightPanelRef === null) return;

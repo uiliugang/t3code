@@ -303,7 +303,13 @@ describe("resolvePullRequestPreviewTarget", () => {
       });
     expect(target("https://github.com/acme/web/pull/7")).toEqual({
       environmentId,
-      input: { projectId: project.id, host: "github.com", repository: "acme/web", number: 7 },
+      input: {
+        projectId: project.id,
+        host: "github.com",
+        target: { provider: "github", origin: "https://github.com" },
+        repository: "acme/web",
+        number: 7,
+      },
     });
     expect(target("https://github.com/acme/other/pull/7")).toBeNull();
   });

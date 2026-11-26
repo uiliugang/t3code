@@ -9,6 +9,7 @@ import type {
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   pullRequestListLines,
+  normalizeThreadPullRequestKey,
   resolveThreadPullRequestChains,
   threadPullRequestKeyOf,
   visibleThreadPullRequests,
@@ -69,7 +70,7 @@ function ThreadDetailsPrLinkRow({
       environmentId={environmentId}
       pr={pr}
       number={link.number}
-      reference={link}
+      reference={normalizeThreadPullRequestKey(link)}
       status={prStatusIndicator(pr, linked?.sourceControlProvider, m)}
       project={project}
       label={`#${link.number}${link.snapshot === null ? "" : `: ${link.snapshot.title}`}`}
@@ -103,9 +104,7 @@ export function ThreadDetailsPrRows({
             environmentId: threadRef.environmentId,
             input: {
               threadId: threadRef.threadId,
-              host: link.host,
-              repository: link.repository,
-              number: link.number,
+              ...normalizeThreadPullRequestKey(link),
               watching: false,
             },
           });
@@ -173,17 +172,25 @@ export function ThreadDetailsThreadPrRows({
   const projects = useProjects();
   const parsed =
     currentLink === null ? null : sourceControlClients.parseChangeRequestUrl(currentLink.url);
-  // Merge settings belong to the project holding the linked repository, the thread's own first.
+  const candidates = [
+    ...(project === null ? [] : [project]),
+    ...projects.filter(
+      (candidate) =>
+        candidate.environmentId === threadRef.environmentId && candidate.id !== project?.id,
+    ),
+  ];
+  const ownProject =
+    parsed === null
+      ? undefined
+      : findProjectForChangeRequest(candidates, parsed.link, parsed.definition.kind);
   const rowProject =
-    parsed === null ||
-    (project !== null &&
-      findProjectForChangeRequest([project], parsed.link, parsed.definition.kind))
+    currentLink === null
       ? project
-      : (findProjectForChangeRequest(
-          projects.filter((candidate) => candidate.environmentId === threadRef.environmentId),
-          parsed.link,
-          parsed.definition.kind,
-        ) ?? null);
+      : parsed === null
+        ? null
+        : (ownProject ??
+          findProjectOnChangeRequestHost(candidates, parsed.link, parsed.definition.kind) ??
+          null);
   if (number === undefined || url === undefined) return null;
   return (
     <ThreadDetailsPrRows
@@ -194,9 +201,10 @@ export function ThreadDetailsThreadPrRows({
       environmentId={threadRef.environmentId}
       pr={pr}
       number={number}
-      reference={currentLink}
+      reference={currentLink === null ? null : normalizeThreadPullRequestKey(currentLink)}
       status={displayed.status}
       project={rowProject}
+      mergePreferenceProjectId={ownProject?.id ?? project?.id}
       label={`#${number}${pr?.title.trim() ? `: ${pr.title}` : ""}`}
       onOpen={(event) => openPrLink(event, url)}
       composerTarget={composerTarget}

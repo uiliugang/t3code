@@ -5,7 +5,10 @@ import {
   resolvePullRequestReviewAnchor,
   type PullRequestAnchor,
 } from "@t3tools/shared/pullRequestAnchor";
-import { changeRequestFallback } from "@t3tools/client-runtime/change-request-links";
+import {
+  changeRequestFallback,
+  changeRequestWebTarget,
+} from "@t3tools/client-runtime/change-request-links";
 import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
@@ -246,7 +249,8 @@ function resolvePullRequestReference(
   repositoryIdentity: Parameters<typeof resolvePullRequestReferenceHost>[1],
   supportsThreadPullRequests: boolean,
 ): PullRequestRef {
-  if (requestedReference.host !== undefined) return requestedReference;
+  if (requestedReference.host !== undefined && !supportsThreadPullRequests)
+    return requestedReference;
   return supportsThreadPullRequests
     ? resolvePullRequestReferenceHost(requestedReference, repositoryIdentity)
     : {
@@ -363,20 +367,27 @@ export function PullRequestDetailPanel({
   );
   const repositoryIdentity = project?.repositoryIdentity;
   const supportsThreadPullRequests = environmentConfigs.get(environmentId) !== undefined;
+  const linkTarget = changeRequestWebTarget(requestedReference, sourceUrl);
   const reference = resolvePullRequestReference(
-    requestedReference,
+    requestedReference.target !== undefined || linkTarget === undefined
+      ? requestedReference
+      : { ...requestedReference, target: linkTarget },
     repositoryIdentity,
     supportsThreadPullRequests,
   );
   const loadingCheckoutCommand = loadingPullRequestCheckoutCommand(reference, repositoryIdentity);
   const fallback = changeRequestFallback(reference, repositoryIdentity, sourceUrl);
   const pullRequestKey = pullRequestRefKey(reference);
+  const listTarget = changeRequestWebTarget(reference, listEntry?.url);
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&
     listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
     (reference.host === undefined ||
       listEntry.host.toLowerCase() === reference.host.toLowerCase()) &&
-    listEntry.number === reference.number
+    listEntry.number === reference.number &&
+    (reference.target === undefined ||
+      (listTarget?.provider === reference.target.provider &&
+        listTarget.origin === reference.target.origin))
       ? listEntry
       : null;
   const linkedReference = sourceControlClients.parseChangeRequestUrl(

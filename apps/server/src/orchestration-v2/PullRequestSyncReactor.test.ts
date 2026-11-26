@@ -683,6 +683,10 @@ describe("PullRequestSyncReactor", () => {
           {
             projectId: PROJECT_ID,
             host: "github.com",
+            target: {
+              provider: SourceControlProviderKind.make("github"),
+              origin: "https://github.com",
+            },
             repository: "owner/repository",
             number: 42,
           },
@@ -694,6 +698,10 @@ describe("PullRequestSyncReactor", () => {
               type: "thread.pull-request-link.sync",
               threadId: ThreadId.make("one"),
               host: "github.com",
+              target: {
+                provider: SourceControlProviderKind.make("github"),
+                origin: "https://github.com",
+              },
               repository: "owner/repository",
               number: 42,
               snapshot: {
@@ -1584,6 +1592,10 @@ describe("PullRequestSyncReactor", () => {
               type: "thread.pull-request.link",
               threadId: ThreadId.make("one"),
               host: "github.com",
+              target: {
+                provider: SourceControlProviderKind.make("github"),
+                origin: "https://github.com",
+              },
               repository: "owner/repository",
               number: 43,
               url: "https://github.com/owner/repository/pull/43",

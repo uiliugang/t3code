@@ -14,6 +14,24 @@ import { parseUrl } from "@t3tools/shared/url";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 
+export function changeRequestWebTarget(
+  reference: Pick<PullRequestRef, "host" | "repository" | "number">,
+  url: string | undefined,
+): PullRequestRef["target"] {
+  if (url === undefined) return undefined;
+  const parsed = sourceControlClients.parseChangeRequestUrl(url);
+  if (parsed === null) return undefined;
+  const origin = parseUrl(parsed.link.repositoryUrl)?.origin;
+  const host = parsed.link.authority ?? parsed.link.host;
+  return origin !== undefined &&
+    (reference.host === undefined ||
+      parseUrl(`${parseUrl(origin)?.protocol}//${reference.host}`)?.host === host) &&
+    parsed.link.repository.toLowerCase() === reference.repository.toLowerCase() &&
+    parsed.link.number === reference.number
+    ? { provider: parsed.definition.kind, origin }
+    : undefined;
+}
+
 interface ChangeRequestProject {
   readonly id: ProjectId;
   readonly environmentId: EnvironmentId;
@@ -150,6 +168,7 @@ export function resolvePullRequestPreviewTarget({
     input: {
       projectId: project.id,
       host: link.authority ?? link.host,
+      target: { provider: definition.kind, origin: new URL(link.repositoryUrl).origin },
       repository:
         sourceControlClients.repositorySelector(project.repositoryIdentity) ?? link.repository,
       number: link.number,
@@ -177,7 +196,7 @@ export function projectChangeRequestUrl(
 }
 
 export function changeRequestFallback(
-  reference: Pick<PullRequestRef, "host" | "repository" | "number">,
+  reference: Pick<PullRequestRef, "host" | "repository" | "number" | "target">,
   identity: RepositoryIdentity | null | undefined,
   sourceUrl?: string,
 ) {
@@ -187,6 +206,13 @@ export function changeRequestFallback(
   if (url === null) return null;
   const parsed = sourceControlClients.parseChangeRequestUrl(url);
   if (parsed === null) return null;
+  if (reference.target !== undefined) {
+    const target = changeRequestWebTarget(reference, url);
+    return target?.provider === reference.target.provider &&
+      target.origin === reference.target.origin
+      ? { url, definition: parsed.definition }
+      : null;
+  }
   const host = parsed.link.authority ?? parsed.link.host;
   const projectHost = projectLink?.link.authority ?? projectLink?.link.host;
   const expectedHost = reference.host ?? projectHost;

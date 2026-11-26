@@ -2272,7 +2272,70 @@ it.effect.each(["github", "gitlab"] as const)(
       const explicit = yield* resolveTarget({ ...target, host: "forge.test" }, checkout);
       assert.strictEqual(explicit.host, "forge.test");
       assert.strictEqual(new URL(explicit.url).origin, "https://forge.test");
+      const defaultPort = yield* resolveTarget({ ...target, host: "forge.test:443" }, checkout);
+      assert.deepStrictEqual(defaultPort, yield* resolveTarget({ url: defaultPort.url }, checkout));
     }),
+);
+
+it.effect("borrows the selected checkout's forge and web origin for a sibling repository", () =>
+  Effect.gen(function* () {
+    const http = project({
+      id: "http",
+      title: "HTTP GitLab",
+      workspaceRoot: "/http",
+      host: "forge.test",
+      repository: "acme/app",
+      remoteUrl: "http://forge.test/acme/app.git",
+      provider: "gitlab",
+    });
+    const github = project({
+      id: "github",
+      title: "GitHub",
+      workspaceRoot: "/github",
+      host: "forge.test",
+      repository: "acme/app",
+    });
+    const gitlab = project({
+      id: "gitlab",
+      title: "HTTPS GitLab",
+      workspaceRoot: "/gitlab",
+      host: "forge.test",
+      repository: "acme/sibling",
+      provider: "gitlab",
+    });
+    const reads: Array<string> = [];
+    const actions: Array<string> = [];
+    const service = yield* makeService({
+      projects: [http, github, gitlab],
+      providers: ["gitlab", "github"].map((provider) =>
+        fakePullRequestProvider(SourceControlProviderKind.make(provider), {
+          getChangeRequest: ({ cwd }) => {
+            reads.push(`${provider}:${cwd}`);
+            return Effect.succeed(hostedChangeRequest("Sibling repository"));
+          },
+          runAction: ({ cwd }) =>
+            Effect.sync(() => {
+              actions.push(`${provider}:${cwd}`);
+            }),
+        }),
+      ),
+    });
+    yield* service.detail({
+      projectId: gitlab.id,
+      host: "forge.test",
+      repository: "acme/app",
+      number: 7,
+    });
+    assert.deepStrictEqual(reads, ["gitlab:/gitlab"]);
+    const target = yield* resolveTarget(
+      { url: "http://forge.test/acme/app/-/merge_requests/7" },
+      gitlab,
+    );
+    const ref = { projectId: github.id, ...target };
+    assert.strictEqual((yield* service.detail(ref)).projectId, http.id);
+    yield* service.runAction({ ...ref, action: "close" });
+    assert.deepStrictEqual(actions, ["gitlab:/http"]);
+  }),
 );
 
 it.effect.each(["github", "gitlab"] as const)(

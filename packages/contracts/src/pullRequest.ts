@@ -452,9 +452,16 @@ export const PullRequestListResult = Schema.Struct({
 });
 export type PullRequestListResult = typeof PullRequestListResult.Type;
 
+export const PullRequestWebTarget = Schema.Struct({
+  provider: SourceControlProviderKind,
+  origin: TrimmedNonEmptyString,
+});
+export type PullRequestWebTarget = typeof PullRequestWebTarget.Type;
+
 export const PullRequestRef = Schema.Struct({
   projectId: ProjectId,
   host: Schema.optional(TrimmedNonEmptyString),
+  target: Schema.optional(PullRequestWebTarget),
   expectedAccountId: Schema.optional(TrimmedNonEmptyString),
   allowStale: Schema.optional(Schema.Boolean),
   repository: TrimmedNonEmptyString,

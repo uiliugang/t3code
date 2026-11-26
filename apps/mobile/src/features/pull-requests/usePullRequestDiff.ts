@@ -1,4 +1,5 @@
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
+import { changeRequestWebTarget } from "@t3tools/client-runtime/change-request-links";
 import {
   EnvironmentId,
   ProjectId,
@@ -49,6 +50,7 @@ export function pullRequestParams(params: PullRequestParams): PullRequestParams 
 }
 
 export function pullRequestTarget(params: PullRequestParams) {
+  const target = changeRequestWebTarget(params, params.navigationUrl ?? params.initialSummary?.url);
   return {
     environmentId: EnvironmentId.make(params.environmentId),
     input: {
@@ -56,6 +58,7 @@ export function pullRequestTarget(params: PullRequestParams) {
       repository: params.repository,
       number: params.number,
       ...(params.host ? { host: params.host } : {}),
+      ...(target === undefined ? {} : { target }),
     },
   };
 }

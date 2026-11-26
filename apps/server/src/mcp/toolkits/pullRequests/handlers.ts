@@ -401,12 +401,10 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const guideReference = (
-    project: OrchestrationProjectShell,
-    target: { readonly host: string; readonly repository: string; readonly number: number },
-  ) => ({
+  const guideReference = (project: OrchestrationProjectShell, target: ResolvedTarget) => ({
     projectId: project.id,
     host: target.host,
+    target: target.target,
     repository: target.repository,
     number: target.number,
   });
@@ -545,12 +543,13 @@ const make = Effect.gen(function* () {
           }
         : branchPullRequest === null
           ? null
-          : { number: branchPullRequest.number, repository: branchPullRequest.repository };
+          : { url: branchPullRequest.url };
     if (named === null) return yield* new PullRequestBranchHasNoneError();
     const target = yield* resolveTarget(named, targetProject);
     const ref: PullRequestService.CheckoutRef = {
       projectId: project.id,
       host: target.host,
+      target: target.target,
       repository: target.repository,
       number: target.number,
       ...(thread.projectWorkspaceRoot === undefined
@@ -835,6 +834,7 @@ const make = Effect.gen(function* () {
             commandId: yield* commandId("mcp-pr-unlink", thread.id),
             threadId: thread.id,
             host: target.host,
+            target: target.target,
             repository: target.repository,
             number: target.number,
           })
@@ -861,15 +861,13 @@ const make = Effect.gen(function* () {
             ? [{ ...normalizeThreadPullRequestKey(link), state }]
             : [];
         });
-        yield* Effect.forEach(matching, ({ host, repository, number }) =>
+        yield* Effect.forEach(matching, ({ state: _state, ...key }) =>
           Effect.gen(function* () {
             yield* engine.dispatch({
               type: "thread.pull-request.unlink",
               commandId: yield* commandId("mcp-pr-unlink", thread.id),
               threadId: thread.id,
-              host,
-              repository,
-              number,
+              ...key,
             });
           }).pipe(Effect.catchCause(dispatchFailure(PullRequestUnlinkFailedError))),
         );

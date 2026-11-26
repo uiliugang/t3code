@@ -5348,7 +5348,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.pull-request-link.sync": {
           const key = normalizeThreadPullRequestKey(command);
           const links = threadPullRequestsOf(thread);
-          const existing = links.find((link) => threadPullRequestKeysEqual(link, key));
+          const matching = links.filter((link) => threadPullRequestKeysEqual(link, key));
+          if (matching.length > 1) return thread;
+          const existing = matching[0];
           let pullRequests = links;
           if (command.type === "thread.pull-request.link") {
             const undismisses =
@@ -5499,9 +5501,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
         case "thread.pull-request.watch":
         case "thread.pull-request-watch.sync": {
-          const key = normalizeThreadPullRequestKey(command);
+          const key = normalizeThreadPullRequestKey(
+            command.type === "thread.pull-request.watch" && command.link !== undefined
+              ? { ...command, url: command.link.url }
+              : command,
+          );
           const startedAt = DateTime.formatIso(now);
           const linked = threadPullRequestsOf(thread);
+          if (linked.filter((link) => threadPullRequestKeysEqual(link, key)).length > 1)
+            return thread;
           const visible = (link: ThreadPullRequestLink) =>
             link.source !== "stack-dismissed" && threadPullRequestKeysEqual(link, key);
           const dismissed = linked.find((link) => threadPullRequestKeysEqual(link, key));

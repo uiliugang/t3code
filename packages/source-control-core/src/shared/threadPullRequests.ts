@@ -7,6 +7,7 @@ import type {
 import { canonicalRepositoryPath } from "@t3tools/shared/git";
 import * as savedKeys from "@t3tools/shared/legacyThreadPullRequestKey";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import { parseUrl } from "@t3tools/shared/url";
 
 import type { SourceControlDefinitionRegistry } from "./definition.ts";
 
@@ -73,23 +74,32 @@ export function makeThreadPullRequests(
     registry.parseChangeRequestUrl(url)?.link ?? savedKeys.parseChangeRequestUrl(url);
 
   function normalizeThreadPullRequestKey(key: ThreadPullRequestKeySource): ThreadPullRequestKey {
-    const parsed = key.url === undefined ? null : parse(key.url);
+    const claimed = key.url === undefined ? null : registry.parseChangeRequestUrl(key.url);
+    const parsed = claimed?.link ?? (key.url === undefined ? null : parse(key.url));
+    const url = key.url === undefined ? null : parseUrl(key.url);
+    const matchesLink =
+      parsed?.repository === canonicalRepositoryPath(key.repository.trim()) &&
+      parsed.number === key.number &&
+      (url === null || parseUrl(`${url.protocol}//${key.host}`)?.hostname === url.hostname);
     const authority =
       key.authority ??
-      (parsed?.repository === canonicalRepositoryPath(key.repository.trim()) &&
-      parsed.number === key.number
-        ? parsed.authority
-        : undefined);
+      (matchesLink ? (parsed.authority ?? (claimed === null ? undefined : url?.host)) : undefined);
     const canonical = savedKeys.canonicalRepositoryKey(
       registry.canonicalRepositoryKey(
         `${(authority ?? key.host).trim().toLowerCase()}/${key.repository.trim().toLowerCase()}`,
       ),
     );
     const separator = canonical.indexOf("/");
+    const target =
+      key.target ??
+      (matchesLink && claimed !== null && url !== null
+        ? { provider: claimed.definition.kind, origin: url.origin }
+        : undefined);
     return {
       host: canonical.slice(0, separator),
       repository: canonical.slice(separator + 1),
       number: key.number,
+      ...(target === undefined ? {} : { target }),
     };
   }
 
@@ -126,7 +136,17 @@ export function makeThreadPullRequests(
     left: ThreadPullRequestKeySource,
     right: ThreadPullRequestKeySource,
   ): boolean {
-    return threadPullRequestKeyOf(left) === threadPullRequestKeyOf(right);
+    const first = normalizedKeyOf(left);
+    const second = normalizedKeyOf(right);
+    return (
+      first.host === second.host &&
+      first.repository === second.repository &&
+      first.number === second.number &&
+      (first.target === undefined ||
+        second.target === undefined ||
+        (first.target.provider === second.target.provider &&
+          first.target.origin === second.target.origin))
+    );
   }
 
   // Clients re-derive chains for every link on each render, and normalizing parses the
@@ -144,7 +164,14 @@ export function makeThreadPullRequests(
 
   function threadPullRequestKeyOf(key: ThreadPullRequestKeySource): string {
     const normalized = normalizedKeyOf(key);
-    return `${normalized.host}/${normalized.repository}#${normalized.number}`;
+    return `${repositoryKeyOf(normalized)}#${normalized.number}`;
+  }
+
+  function repositoryKeyOf(normalized: ThreadPullRequestKey): string {
+    const base = `${normalized.host}/${normalized.repository}`;
+    return normalized.target === undefined
+      ? base
+      : `${normalized.target.provider} ${normalized.target.origin} ${base}`;
   }
 
   function resolveThreadCurrentPullRequest(
@@ -206,7 +233,7 @@ export function makeThreadPullRequests(
     for (const link of visible) {
       if (link.stack === null) continue;
       const key = normalizedKeyOf(link);
-      const stackKey = `${key.host}/${key.repository}#stack:${link.stack.id}`;
+      const stackKey = `${repositoryKeyOf(key)}#stack:${link.stack.id}`;
       const members = nativeStacks.get(stackKey) ?? [];
       members.push(link);
       nativeStacks.set(stackKey, members);
@@ -241,7 +268,7 @@ export function makeThreadPullRequests(
     const remaining = visible.filter((link) => !placed.has(threadPullRequestKeyOf(link)));
     const branchKey = (link: ThreadPullRequestLink, branch: string) => {
       const key = normalizedKeyOf(link);
-      return `${key.host}/${key.repository}:${branch}`;
+      return `${repositoryKeyOf(key)}:${branch}`;
     };
     const byHead = new Map<string, ThreadPullRequestLink | null>();
     for (const link of remaining) {

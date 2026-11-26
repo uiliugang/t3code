@@ -176,7 +176,7 @@ export function useOpenChangeRequestLink(
           involvement: "all",
           state: "all",
           ...pullRequestsSearch,
-          ...(revealUrl === undefined ? {} : { selectedUrl: revealUrl }),
+          selectedUrl: targetUrl,
         },
       });
       return true;

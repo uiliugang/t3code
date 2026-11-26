@@ -194,15 +194,13 @@ interface LinkEntry {
 
 const referenceOf = ({ thread, link }: LinkEntry) => ({
   projectId: thread.projectId,
-  host: normalizeThreadPullRequestKey(link).host,
-  repository: link.repository,
-  number: link.number,
+  ...normalizeThreadPullRequestKey(link),
 });
 
 /** Pauses and batching both belong to a project's host. */
 const pauseKeyOf = (entry: LinkEntry) => {
-  const { projectId, host } = referenceOf(entry);
-  return `${projectId}\0${host}`;
+  const { projectId, host, target } = referenceOf(entry);
+  return JSON.stringify([projectId, host, target?.provider, target?.origin]);
 };
 
 /** Another layer of the stack `url` belongs to, in its host's canonical shape. */
@@ -316,7 +314,7 @@ function stacksEqual(
 /** Stack ids are unique only within a repository, e.g. GitHub's fallback to the stack number. */
 function nativeStackKeyOf(link: ThreadPullRequestLink, stack: ThreadPullRequestStack): string {
   const key = normalizeThreadPullRequestKey(link);
-  return `${key.host}/${key.repository}#stack:${stack.id}`;
+  return `${threadPullRequestKeyOf({ ...key, number: 0 })}#stack:${stack.id}`;
 }
 
 function sameLayerNumbers(left: ThreadPullRequestStack, right: ThreadPullRequestStack): boolean {
@@ -428,7 +426,12 @@ export const make = Effect.gen(function* () {
 
     // A host-level refresh reaches every project, each retaining its own pending retry.
     for (const [key, entries] of groups) {
-      if (!pendingRequests.has(threadPullRequestKeyOf(entries[0]!.link))) continue;
+      const link = normalizeThreadPullRequestKey(entries[0]!.link);
+      if (
+        !pendingRequests.has(threadPullRequestKeyOf(link)) &&
+        !pendingRequests.has(threadPullRequestKeyOf({ ...link, target: undefined }))
+      )
+        continue;
       requested.add(key);
       // A new request reads at once; a failure after it backs off further, not from the start.
       const failed = failedReads.get(key);
@@ -466,8 +469,7 @@ export const make = Effect.gen(function* () {
       // Persist siblings before terminal snapshots trigger settlement; settled threads get snapshots without new links.
       for (const layer of isUnsettled(thread) ? (fetchedStack?.stack?.layers ?? []) : []) {
         const layerKey = {
-          host: normalizeThreadPullRequestKey(link).host,
-          repository: link.repository,
+          ...normalizeThreadPullRequestKey(link),
           number: layer.number,
         };
         const dedupeKey = `${thread.id}:${threadPullRequestKeyOf(layerKey)}`;
@@ -499,9 +501,8 @@ export const make = Effect.gen(function* () {
           type: "thread.pull-request-link.sync",
           commandId: CommandId.make(`server:pr-sync:${thread.id}:${uuid}`),
           threadId: thread.id,
-          host: normalizeThreadPullRequestKey(link).host,
+          ...normalizeThreadPullRequestKey(link),
           repository: link.repository,
-          number: link.number,
           snapshot: { ...fields, syncedAt: nowIso },
           stack: nextStack,
         });

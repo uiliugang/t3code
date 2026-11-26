@@ -1,4 +1,5 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { resolveChangeRequestLinkTarget } from "@t3tools/client-runtime/change-request-links";
 import { issueEventSentence, issueWriteAccess } from "@t3tools/client-runtime/issue-presentation";
 import {
   issueLinkedPullRequestTarget,
@@ -482,6 +483,7 @@ function IssueDetailContent({
   const detail = detailQuery.data;
   const canWrite = useAtomValue(issueEnvironment.comment.permissionAtom(environmentId));
   const projects = useProjects();
+  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const cwd =
     projects.find((p) => p.environmentId === environmentId && p.id === reference.projectId)
       ?.workspaceRoot ?? "";
@@ -523,12 +525,27 @@ function IssueDetailContent({
   const tracker = issueTrackerPresentation(detail.tracker);
   const currentState = issueStatePresentation(detail.state);
 
-  const openLinkedPullRequest = (
+  const resolveLinkedPullRequest = (
     source: Pick<IssueLinkedPullRequest, "url" | "repository" | "number">,
   ) => {
     const target = issueLinkedPullRequestTarget(reference, source);
-    if (!onSelectPullRequest || !target) return false;
-    onSelectPullRequest({ projectId: reference.projectId, ...target });
+    if (!onSelectPullRequest || !target) return null;
+    const resolved = resolveChangeRequestLinkTarget({
+      url: target.url,
+      projects,
+      configLoaded: () => serverConfig !== null,
+      environmentId,
+      projectId: reference.projectId,
+      lendHostProject: serverConfig?.environment.capabilities.pullRequestWebTargets === true,
+    });
+    return resolved === null ? null : { ...target, projectId: resolved.project.id };
+  };
+  const openLinkedPullRequest = (
+    source: Pick<IssueLinkedPullRequest, "url" | "repository" | "number">,
+  ) => {
+    const target = resolveLinkedPullRequest(source);
+    if (target === null || !onSelectPullRequest) return false;
+    onSelectPullRequest(target);
     return true;
   };
   const openEventSource = (source: IssueEventReference) => {
@@ -885,16 +902,14 @@ function IssueDetailContent({
           <PullRequestSection key={`linked:${detail.url}`} title={t("Linked pull requests")}>
             <div className="flex flex-col gap-1">
               {detail.linkedPullRequests.map((link) => {
-                const target = onSelectPullRequest && issueLinkedPullRequestTarget(reference, link);
+                const target = resolveLinkedPullRequest(link);
                 return (
                   <LinkedPullRequestRow
                     key={link.url}
                     link={link}
                     scope={detail.scope}
                     onSelect={
-                      target && onSelectPullRequest
-                        ? () => onSelectPullRequest({ projectId: reference.projectId, ...target })
-                        : null
+                      target && onSelectPullRequest ? () => onSelectPullRequest(target) : null
                     }
                   />
                 );

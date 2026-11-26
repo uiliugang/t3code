@@ -15,6 +15,7 @@ import {
   PullRequestMergeability,
   PullRequestReviewDecision,
   PullRequestState,
+  PullRequestWebTarget,
 } from "./pullRequest.ts";
 
 export const ThreadLinkedPullRequest = Schema.Struct({
@@ -76,6 +77,7 @@ export type ThreadPullRequestStack = typeof ThreadPullRequestStack.Type;
 
 export const ThreadPullRequestKey = Schema.Struct({
   host: TrimmedNonEmptyString,
+  target: Schema.optional(PullRequestWebTarget),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,
 });

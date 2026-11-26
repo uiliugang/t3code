@@ -13,7 +13,7 @@ import { resolveSelectableModel, type SelectableModelOption } from "@t3tools/sha
 import type { AsyncResult } from "effect/reactivity";
 import type { PromptLinkPullRequest, PromptLinkRepository } from "@t3tools/shared/promptLinks";
 import {
-  threadPullRequestKeyOf,
+  threadPullRequestKeysEqual,
   threadPullRequestsOf,
   visibleThreadPullRequests,
 } from "./threadPullRequests.ts";
@@ -41,18 +41,19 @@ export function findPromptLinkPullRequestThread<
     readonly lineage?: { readonly sideChat?: boolean | undefined } | undefined;
   },
 >(threads: ReadonlyArray<T>, pullRequest: PromptLinkPullRequest): T | undefined {
-  const key = threadPullRequestKeyOf({
+  const key = {
     host: "github.com",
     repository: `${pullRequest.owner}/${pullRequest.name}`,
     number: pullRequest.number,
-  });
+    url: `https://github.com/${pullRequest.owner}/${pullRequest.name}/pull/${pullRequest.number}`,
+  };
   let latest: T | undefined;
   for (const thread of threads) {
     if (latest !== undefined && thread.updatedAt <= latest.updatedAt) continue;
     // Side chats inherit their parent's links but stay hidden.
     if (thread.lineage?.sideChat === true) continue;
-    const linked = visibleThreadPullRequests(threadPullRequestsOf(thread)).some(
-      (link) => threadPullRequestKeyOf(link) === key,
+    const linked = visibleThreadPullRequests(threadPullRequestsOf(thread)).some((link) =>
+      threadPullRequestKeysEqual(link, key),
     );
     if (linked) latest = thread;
   }

@@ -53,6 +53,7 @@ import {
   type PullRequestProviderSummary,
   type PullRequestReactionInput,
   type PullRequestRef,
+  type PullRequestWebTarget,
   type PullRequestRoutingResult,
   type PullRequestRoutingIdentityInput,
   type PullRequestRoutingIdentityResult,
@@ -77,6 +78,8 @@ import {
   type ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { parseUrl } from "@t3tools/shared/url";
+import { remoteWebOrigin } from "@t3tools/source-control-core/shared/definition";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 
 import * as ProjectService from "../project/ProjectService.ts";
@@ -375,6 +378,7 @@ export interface SupportedProject {
   readonly kind: SourceControlProviderKind;
   readonly repository: string;
   readonly host: string;
+  readonly origin: string;
   /** Unlike Azure repository names, remotes are unique across an organization. */
   readonly remote: string;
   readonly repositoryKey: string | null;
@@ -1033,9 +1037,14 @@ export const make = Effect.gen(function* () {
           }
           const repositoryKey =
             api?.repositoryKey?.({ canonicalKey: identity.canonicalKey }) ?? null;
+          const origin = remoteWebOrigin(
+            host,
+            kind === "github" ? undefined : identity.locator.remoteUrl,
+          );
           const key = listCursorKey(host, repositoryKey ?? repository);
-          if (seen.has(key)) continue;
-          seen.add(key);
+          const identityKey = JSON.stringify([kind, origin, key]);
+          if (seen.has(identityKey)) continue;
+          seen.add(identityKey);
           if (api === null) {
             const counted = unimplemented.get(host);
             if (counted === undefined) unimplemented.set(host, { kind, projectCount: 1 });
@@ -1049,6 +1058,7 @@ export const make = Effect.gen(function* () {
             kind,
             repository,
             host,
+            origin,
             remote:
               repositoryKey ??
               sourceControlDefinitions.repositoryKeyFromRemote(`https://${host}/${repository}`),
@@ -1068,8 +1078,30 @@ export const make = Effect.gen(function* () {
       Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
         const own = supported[0];
         const repository = ref.repository.trim();
-        const host = ref.host?.trim().toLowerCase();
-        if (own !== undefined && own.repository.toLowerCase() === repository.toLowerCase()) {
+        const origin = ref.target === undefined ? undefined : parseUrl(ref.target.origin);
+        if (
+          ref.target !== undefined &&
+          (origin === undefined ||
+            origin === null ||
+            (origin.protocol !== "https:" && origin.protocol !== "http:") ||
+            origin.origin !== ref.target.origin ||
+            (ref.host !== undefined &&
+              parseUrl(`${origin.protocol}//${ref.host}`)?.host !== origin.host))
+        ) {
+          return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
+        }
+        const host = origin?.host ?? ref.host?.trim().toLowerCase();
+        const sameEndpoint = (candidate: SupportedProject) =>
+          ref.target !== undefined
+            ? candidate.kind === ref.target.provider && candidate.origin === origin?.origin
+            : own === undefined ||
+              host !== own.host ||
+              (candidate.kind === own.kind && candidate.origin === own.origin);
+        if (
+          own !== undefined &&
+          sameEndpoint(own) &&
+          own.repository.toLowerCase() === repository.toLowerCase()
+        ) {
           if (host === undefined || host === own.host) return Effect.succeed(own);
         }
         if (host === undefined) {
@@ -1092,11 +1124,20 @@ export const make = Effect.gen(function* () {
           sourceControlDefinitions.findByRepositoryKey(referenceKey) ? {} : { host },
         ).pipe(
           Effect.flatMap(({ supported }) => {
-            const onHost = (
+            const candidates = (
               own !== undefined && ref[checkoutRoot] !== undefined ? [own, ...supported] : supported
-            ).filter((candidate) => candidate.host === host);
+            ).filter(sameEndpoint);
+            const onHost = candidates.filter((candidate) => candidate.host === host);
+            const endpoints = new Set(
+              onHost.map((candidate) => `${candidate.kind} ${candidate.origin}`),
+            );
+            if (endpoints.size > 1) {
+              return Effect.fail(
+                new PullRequestUnavailableError({ reason: "provider-unsupported" }),
+              );
+            }
             const route =
-              supported.find(
+              candidates.find(
                 (candidate) =>
                   candidate.repositoryKey !== null && candidate.repositoryKey === repositoryKey,
               ) ??
@@ -1110,7 +1151,13 @@ export const make = Effect.gen(function* () {
               return Effect.gen(function* () {
                 const publicHost = sourceControlDefinitions.findByPublicHost(host);
                 const api = publicHost === undefined ? null : registry.get(publicHost.kind);
-                if (publicHost !== undefined && api?.readsPublicHostWithoutCheckout) {
+                if (
+                  publicHost !== undefined &&
+                  api?.readsPublicHostWithoutCheckout &&
+                  (ref.target === undefined ||
+                    (ref.target.provider === publicHost.kind &&
+                      origin?.origin === `https://${host}`))
+                ) {
                   const selected = yield* projects.getShell(ref.projectId, ref[checkoutRoot]).pipe(
                     Effect.mapError(
                       (cause) =>
@@ -1129,6 +1176,7 @@ export const make = Effect.gen(function* () {
                       kind: publicHost.kind,
                       repository,
                       host,
+                      origin: `https://${host}`,
                       remote: sourceControlDefinitions.repositoryKeyFromRemote(
                         `https://${host}/${repository}`,
                       ),
@@ -1179,6 +1227,9 @@ export const make = Effect.gen(function* () {
       ...input,
       projectId: project.project.id,
       host: project.host,
+      ...(input.target === undefined
+        ? {}
+        : { target: { provider: project.kind, origin: project.origin } }),
       repository: project.repository,
       ...(input[checkoutRoot] === undefined
         ? {}
@@ -3118,6 +3169,8 @@ export const make = Effect.gen(function* () {
     JSON.stringify([
       ref.projectId,
       ref.host?.toLowerCase() ?? "",
+      ref.target?.provider ?? null,
+      ref.target?.origin ?? null,
       ref.repository.toLowerCase(),
       ref.number,
     ]);
@@ -3148,22 +3201,34 @@ export const make = Effect.gen(function* () {
       ref.expectedAccountId ?? null,
       ref[credentialNamespace] ?? null,
       ref[checkoutRoot] ?? null,
+      ref.target ?? null,
     ]);
   const refOfCacheKey = (key: string): CredentialRef => {
-    const [, projectId, host, repository, number, expectedAccountId, fingerprint, workspaceRoot] =
-      JSON.parse(key) as [
-        number,
-        ProjectId,
-        string | null,
-        string,
-        number,
-        string | null,
-        string | null,
-        string | null,
-      ];
+    const [
+      ,
+      projectId,
+      host,
+      repository,
+      number,
+      expectedAccountId,
+      fingerprint,
+      workspaceRoot,
+      target,
+    ] = JSON.parse(key) as [
+      number,
+      ProjectId,
+      string | null,
+      string,
+      number,
+      string | null,
+      string | null,
+      string | null,
+      PullRequestWebTarget | null,
+    ];
     return {
       projectId,
       ...(host === null ? {} : { host }),
+      ...(target === null ? {} : { target }),
       ...(expectedAccountId === null ? {} : { expectedAccountId }),
       ...(fingerprint === null ? {} : { [credentialNamespace]: fingerprint }),
       ...(workspaceRoot === null ? {} : { [checkoutRoot]: workspaceRoot }),
@@ -3236,7 +3301,7 @@ export const make = Effect.gen(function* () {
     const key = [
       operation,
       project.api.kind,
-      project.host.toLowerCase(),
+      project.origin,
       project.repository.toLowerCase(),
       project.project.id,
       project.project.workspaceRoot,
@@ -3545,6 +3610,7 @@ export const make = Effect.gen(function* () {
         ref.host !== undefined
         ? PubSub.publish(stateChanges, {
             host: ref.host,
+            ...(ref.target === undefined ? {} : { target: ref.target }),
             repository: ref.repository,
             number: ref.number,
           })
@@ -3585,6 +3651,7 @@ export const make = Effect.gen(function* () {
             ? Effect.void
             : PubSub.publish(stateChanges, {
                 host: ref.host,
+                ...(ref.target === undefined ? {} : { target: ref.target }),
                 repository: ref.repository,
                 number: ref.number,
               });

@@ -26,7 +26,7 @@ export function nativePullRequestDestination(
     projectId: String(target.project.id),
     repository: target.repository,
     number: target.number,
-    ...(parsePullRequestAnchor(url) ? { navigationUrl: url } : {}),
+    navigationUrl: url,
     ...(target.host === undefined ? {} : { host: target.host }),
   };
 }

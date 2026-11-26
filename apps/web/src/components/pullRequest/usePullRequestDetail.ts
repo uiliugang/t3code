@@ -32,17 +32,26 @@ export function pullRequestPanelReference(target: {
   readonly repository: string;
   readonly number: number;
   readonly host?: string | undefined;
+  readonly target?: PullRequestRef["target"];
 }): PullRequestRef {
   return {
     projectId: target.projectId,
     repository: target.repository,
     number: target.number,
     ...(target.host ? { host: target.host } : {}),
+    ...(target.target ? { target: target.target } : {}),
   };
 }
 
 export function pullRequestRefKey(reference: PullRequestRef) {
-  return `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
+  return JSON.stringify([
+    reference.projectId,
+    reference.target?.provider,
+    reference.target?.origin,
+    reference.host,
+    reference.repository,
+    reference.number,
+  ]);
 }
 
 /**
