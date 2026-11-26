@@ -3032,7 +3032,8 @@ it.effect("a refused merge refreshes a borrowed detail without evicting the othe
           getChangeRequest: ({ host }) => {
             reads.push(host);
             return Effect.succeed({
-              ...changeRequest(1, "2026-09-16T00:00:00.000Z"),
+              ...hostedChangeRequest("Port-specific merge state"),
+              url: `https://${host}/acme/web/pull/1`,
               mergeability: mergeable || host === "forge.test" ? "mergeable" : "conflicting",
             });
           },
