@@ -1,5 +1,6 @@
 import { isStandaloneIssueLink } from "@t3tools/client-runtime/issue-links";
 import type { WorkspaceSelections } from "../../../persistence/mobile-preferences";
+import { pullRequestNavigationUrl } from "../../pull-requests/pullRequestSelection";
 import {
   SETTINGS_PAGE_TARGETS,
   type SettingsPageTarget,
@@ -64,12 +65,14 @@ function pullRequestSelection(
   ) {
     return undefined;
   }
+  const navigationUrl = pullRequestNavigationUrl(params);
   return {
     environmentId: value.environmentId,
     projectId: value.projectId,
     repository: value.repository,
     number: value.number,
     ...(typeof value.host === "string" ? { host: value.host } : {}),
+    ...(navigationUrl === undefined ? {} : { navigationUrl }),
   };
 }
 
@@ -82,7 +85,8 @@ function samePullRequest(
     left.projectId === right.projectId &&
     left.repository === right.repository &&
     left.number === right.number &&
-    left.host === right.host
+    left.host === right.host &&
+    left.navigationUrl === right.navigationUrl
   );
 }
 

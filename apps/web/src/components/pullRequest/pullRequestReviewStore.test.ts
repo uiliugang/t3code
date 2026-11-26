@@ -77,6 +77,32 @@ describe("pull request review drafts", () => {
     expect(usePullRequestReviewStore.getState().summaries[insecure]).toBeUndefined();
   });
 
+  it("reopens legacy public GitHub drafts only for the same source", () => {
+    const reference = {
+      projectId: ProjectId.make("project-a"),
+      host: "github.com",
+      repository: "owner/repo",
+      number: 7,
+    };
+    const before = pullRequestReviewKey(reference);
+    const target = {
+      provider: SourceControlProviderKind.make("github"),
+      origin: "https://github.com",
+    };
+    const store = usePullRequestReviewStore.getState();
+    store.addComment(before, comment("saved line"));
+    store.setSummary(before, "saved review");
+    const after = pullRequestReviewKey({ ...reference, target });
+    expect(usePullRequestReviewStore.getState().drafts[after]).toEqual([comment("saved line")]);
+    expect(usePullRequestReviewStore.getState().summaries[after]).toBe("saved review");
+    expect(
+      pullRequestReviewKey({
+        ...reference,
+        target: { ...target, origin: "https://github.com:8443" },
+      }),
+    ).not.toBe(before);
+  });
+
   it("does not clear a summary revised while submission is in flight", () => {
     const store = usePullRequestReviewStore.getState();
     store.setSummary("review-a", "Submitted body");

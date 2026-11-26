@@ -53,10 +53,15 @@ describe("native PR entry points", () => {
     ).toBeNull();
   });
 
-  it("opens a repository nobody has checked out under a project on its host, as web does", () => {
-    expect(
-      nativePullRequestDestination("https://github.com/someone/else/pull/12", context, projects),
-    ).toEqual({ ...context, host: "github.com", repository: "someone/else", number: 12 });
+  it("preserves the original URL when opening a repository under a borrowed project", () => {
+    const navigationUrl = "https://github.com/someone/else/pull/12";
+    expect(nativePullRequestDestination(navigationUrl, context, projects)).toEqual({
+      ...context,
+      host: "github.com",
+      repository: "someone/else",
+      number: 12,
+      navigationUrl,
+    });
   });
 
   it("leaves links to the external opener when the environment cannot show them", () => {

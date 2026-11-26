@@ -7,11 +7,13 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Queue from "effect/Queue";
 import * as Tracer from "effect/Tracer";
 import {
   ProjectId,
+  ProviderInstanceId,
   SourceControlProviderKind,
   GitCommandError,
   type PullRequestActivity,
@@ -366,6 +368,36 @@ const startSingleBranchRun = (input: {
   });
 
 it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideService", (it) => {
+  it.effect("reads legacy public GitHub guides only for their original Web source", () =>
+    Effect.gen(function* () {
+      const repository = yield* PullRequestReviewGuides.PullRequestReviewGuideRepository;
+      const key = { host: "github.com", repository: "acme/app", number: 7 };
+      const guide = {
+        headSha: "a".repeat(40),
+        generatedAt: "2026-08-29T00:00:00Z",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+        stops: [],
+      };
+      yield* repository.put(key, guide);
+      const github = {
+        provider: SourceControlProviderKind.make("github"),
+        origin: "https://github.com",
+      };
+      assert.deepStrictEqual(
+        Option.getOrNull(yield* repository.get({ ...key, target: github })),
+        guide,
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* repository.get({
+            ...key,
+            target: { ...github, origin: "https://github.com:8443" },
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(PullRequestReviewGuides.layer)),
+  );
+
   it.effect.each([
     {
       name: "a branch named like the short head",

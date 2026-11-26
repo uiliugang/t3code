@@ -1,7 +1,11 @@
 import type { PullRequestReviewCommentDraft } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { PullRequestReviewCommentDraft as CommentSchema } from "@t3tools/contracts";
-import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
+import {
+  isPublicGitHubPullRequestTarget,
+  PullRequestReviewCommentDraft as CommentSchema,
+} from "@t3tools/contracts";
+import type { PullRequestParams } from "./usePullRequestDiff";
+import { pullRequestParamsWebTarget } from "./pullRequestSelection";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & {
   readonly id: string;
@@ -15,14 +19,16 @@ export type ReviewDraft = {
 };
 export const EMPTY_REVIEW_DRAFT: ReviewDraft = { summary: "", comment: "", comments: [] };
 export function pullRequestReviewKey(params: PullRequestParams) {
-  const target = pullRequestTarget(params).input.target;
+  const target = pullRequestParamsWebTarget(params);
   return JSON.stringify([
     params.environmentId,
     params.projectId,
     params.host ?? "",
     params.repository,
     params.number,
-    ...(target === undefined ? [] : [target.provider, target.origin]),
+    ...(target === undefined || isPublicGitHubPullRequestTarget({ host: params.host, target })
+      ? []
+      : [target.provider, target.origin]),
   ]);
 }
 export const ReviewDraftDocument = Schema.Struct({

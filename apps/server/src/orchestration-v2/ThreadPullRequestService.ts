@@ -72,18 +72,6 @@ function pullRequestPredatesThread(
   return terminalAt != null && Date.parse(terminalAt) < DateTime.toEpochMillis(createdAt);
 }
 
-function pullRequestMatchesProject(
-  pullRequest: GitManager.GitBranchPullRequest,
-  project: OrchestrationProjectShell,
-): boolean {
-  return (
-    pullRequest.repositoryKey !== null &&
-    project.repositoryIdentity != null &&
-    sourceControlDefinitions.canonicalRepositoryKey(pullRequest.repositoryKey) ===
-      sourceControlDefinitions.canonicalRepositoryKey(project.repositoryIdentity.canonicalKey)
-  );
-}
-
 const resolveProjectForPullRequestDiscovery = Effect.fn(
   "ThreadPullRequestServiceV2.resolveProject",
 )(function* (
@@ -339,7 +327,13 @@ export const make = Effect.gen(function* () {
                   { refresh: request.refresh, confirmTerminal: false },
                 );
           if (first.branch !== null) noPullRequestRechecks.record(key, nowMs, detected !== null);
-          if (detected !== null && !pullRequestMatchesProject(detected, resolvedProject)) {
+          if (
+            detected !== null &&
+            !GitManager.branchPullRequestMatchesRepository(
+              detected,
+              resolvedProject.repositoryIdentity,
+            )
+          ) {
             return finishBackfill(group);
           }
           const detectedReference =
@@ -439,10 +433,7 @@ export const make = Effect.gen(function* () {
               current.url !== detected.url ||
               current.state !== detected.state ||
               current.repositoryKey !== detected.repositoryKey ||
-              !pullRequestMatchesProject(current, {
-                ...project,
-                repositoryIdentity: currentIdentity,
-              })
+              !GitManager.branchPullRequestMatchesRepository(current, currentIdentity)
             ) {
               return failBackfill(updates.map((update) => update.thread));
             }

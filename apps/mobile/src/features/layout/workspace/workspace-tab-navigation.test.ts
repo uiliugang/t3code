@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { restoreSettingsLinkState, settingsLinkAction } from "../../settings/settings-navigation";
 import { workspaceFileLinking } from "../../../lib/appLinking";
+import { selectedPullRequestKeyOf } from "../../pull-requests/pullRequestSelection";
 import {
   workspaceSelectionsIn,
   workspaceTabColumns,
@@ -67,6 +68,21 @@ it("opens a nested workspace file from a link and preserves its path when sharin
 });
 
 describe("workspace tab selections", () => {
+  it("restores a selected merge request from the same Web origin", () => {
+    const url = "http://forge.test/o/r/-/merge_requests/7";
+    const params = { ...pullRequest.params, host: "forge.test", initialSummary: { url } };
+    const selection = workspaceSelectionsIn([{ ...pullRequest, params }], {});
+    const restored = workspaceTabPage({ routes: [home] }, "pullRequests", selection, {
+      columns: true,
+      check: available,
+    })?.params;
+    expect(restored).toMatchObject({ navigationUrl: url });
+    expect(selectedPullRequestKeyOf(restored)).toBe("env:gitlab http://forge.test:o/r:7");
+    expect(
+      selectedPullRequestKeyOf({ ...params, navigationUrl: url.replace("http:", "https:") }),
+    ).not.toBe(selectedPullRequestKeyOf(restored));
+  });
+
   it("remembers the chat, pull request and Settings page each tab showed", () => {
     const afterThread = workspaceSelectionsIn([home, thread], {});
     const afterPullRequest = workspaceSelectionsIn([home, pullRequest], afterThread);

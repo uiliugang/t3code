@@ -118,7 +118,7 @@ import {
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
-import type { ChangeRequest } from "@t3tools/contracts";
+import type { ChangeRequest, RepositoryIdentity } from "@t3tools/contracts";
 
 export interface GitActionProgressReporter {
   readonly publish: (event: GitActionProgressEvent) => Effect.Effect<void, never>;
@@ -375,8 +375,44 @@ interface BranchHeadContext {
 export function pullRequestRepositoryKey(value: string): string | null {
   const link = sourceControlDefinitions.parseChangeRequestUrl(value)?.link;
   return link
-    ? sourceControlDefinitions.canonicalRepositoryKey(`${link.host}/${link.repository}`)
+    ? sourceControlDefinitions.canonicalRepositoryKey(
+        `${link.authority ?? link.host}/${link.repository}`,
+      )
     : null;
+}
+
+export function branchPullRequestMatchesRepository(
+  pullRequest: GitBranchPullRequest,
+  identity?: RepositoryIdentity | null,
+): boolean {
+  const parsed = sourceControlDefinitions.parseChangeRequestUrl(pullRequest.url);
+  if (parsed === null || identity == null || parsed.definition.kind !== identity.provider) {
+    return false;
+  }
+  const host = sourceControlDefinitions.changeRequestHost(identity, identity.provider);
+  const linkHost = parsed.link.authority ?? parsed.link.host;
+  const repository = sourceControlDefinitions.canonicalRepositoryKey;
+  const path = identity.displayName ?? identity.canonicalKey.split("/").slice(1).join("/");
+  if (repository(`${linkHost}/${parsed.link.repository}`) !== repository(`${host}/${path}`)) {
+    return false;
+  }
+  const remote = URL.parse(identity.locator.remoteUrl);
+  if (
+    identity.provider === "gitlab" &&
+    (remote?.protocol === "http:" || remote?.protocol === "https:")
+  ) {
+    return URL.parse(parsed.link.repositoryUrl)?.origin === remote.origin;
+  }
+  return true;
+}
+
+function branchLookupRemoteKey(remoteUrl: string): string | null {
+  const repository = sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl);
+  if (repository === null) return null;
+  const url = URL.parse(remoteUrl);
+  return url?.protocol === "http:" || url?.protocol === "https:"
+    ? `${url.origin}\0${repository}`
+    : repository;
 }
 
 /** Null when the host did not name the repository the head lives in. */
@@ -2136,7 +2172,7 @@ export const make = Effect.gen(function* () {
     }
     return {
       remoteUrl,
-      remoteUrlKey: remoteUrl ? sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl) : null,
+      remoteUrlKey: remoteUrl ? branchLookupRemoteKey(remoteUrl) : null,
       repositoryNameWithOwner,
       ownerLogin: parseRepositoryOwnerLogin(repositoryNameWithOwner),
     };
@@ -3514,9 +3550,7 @@ export const make = Effect.gen(function* () {
               ),
             ).pipe(
               Effect.orElseSucceed(() => null),
-              Effect.map((remoteUrl) =>
-                remoteUrl ? sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl) : null,
-              ),
+              Effect.map((remoteUrl) => (remoteUrl ? branchLookupRemoteKey(remoteUrl) : null)),
             );
       const remoteName = publishedRemoteName(
         remoteNameOverride ?? (yield* readConfig(`branch.${branch}.remote`)),

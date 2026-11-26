@@ -1,4 +1,8 @@
-import { type PullRequestRef, PullRequestReviewCommentDraft } from "@t3tools/contracts";
+import {
+  isPublicGitHubPullRequestTarget,
+  type PullRequestRef,
+  PullRequestReviewCommentDraft,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -19,7 +23,9 @@ export function pullRequestReviewKey(reference: PullRequestRef): string {
     reference.host?.toLowerCase() ?? null,
     reference.repository.toLowerCase(),
     reference.number,
-    ...(reference.target === undefined ? [] : [reference.target.provider, reference.target.origin]),
+    ...(reference.target === undefined || isPublicGitHubPullRequestTarget(reference)
+      ? []
+      : [reference.target.provider, reference.target.origin]),
   ]);
 }
 

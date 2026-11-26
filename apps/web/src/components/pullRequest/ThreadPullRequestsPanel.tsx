@@ -128,14 +128,13 @@ function LinkRowImpl({
   const linkHost =
     sourceControlClients.findByChangeRequestUrl(link.url) ?? UNKNOWN_SOURCE_CONTROL_CLIENT;
   const linkHostActions = linkHost.changeRequestActions;
+  const reference =
+    projectId === null ? null : { projectId, ...normalizeThreadPullRequestKey(link) };
   const actionEntry =
-    projectId !== null && snapshot !== null && snapshot.state !== "merged"
+    reference !== null && snapshot !== null && snapshot.state !== "merged"
       ? {
+          ...reference,
           environmentId: threadRef.environmentId,
-          projectId,
-          host: link.host,
-          repository: link.repository,
-          number: link.number,
           state: snapshot.state,
           isDraft: snapshot.isDraft,
           ...(link.stack === null ? {} : { stack: link.stack }),
@@ -234,7 +233,7 @@ function LinkRowImpl({
             ) : null
           }
           status={
-            projectId === null ? (
+            reference === null ? (
               <PullRequestDiffStat
                 additions={snapshot?.additions ?? 0}
                 deletions={snapshot?.deletions ?? 0}
@@ -243,12 +242,7 @@ function LinkRowImpl({
             ) : (
               <PullRequestChangeBreakdownStat
                 environmentId={threadRef.environmentId}
-                reference={{
-                  projectId,
-                  host: link.host,
-                  repository: link.repository,
-                  number: link.number,
-                }}
+                reference={reference}
                 additions={snapshot?.additions ?? 0}
                 deletions={snapshot?.deletions ?? 0}
                 className="font-mono"

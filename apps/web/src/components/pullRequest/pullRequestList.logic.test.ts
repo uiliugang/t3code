@@ -825,6 +825,33 @@ describe("pull request quick actions", () => {
     });
     expect(pullRequestQuickActions({ state: "open", isDraft: false }, gitlab)).toEqual([]);
   });
+
+  it("keeps configuration and actions separate for same-host Web origins", () => {
+    const https = { ...summary("forge.test", "gitlab", ["merge"]), origin: "https://forge.test" };
+    const http = { ...https, origin: "http://forge.test", configured: false };
+    const merged = mergePullRequestLists([
+      [
+        ENV_1,
+        {
+          viewers: {},
+          providers: [http, https],
+          entries: [],
+          errors: [],
+          truncated: false,
+          nextCursors: {},
+        },
+      ],
+    ]);
+    expect(merged?.providers).toEqual([http, https]);
+    const actions = pullRequestHostActions(merged?.providers ?? []);
+    const base = { host: https.host, provider: https.kind };
+    expect([
+      ...actions({ ...base, target: { provider: https.kind, origin: https.origin } }),
+    ]).toEqual(["merge"]);
+    expect([...actions({ ...base, target: { provider: http.kind, origin: http.origin } })]).toEqual(
+      [],
+    );
+  });
 });
 
 describe("refresh page size", () => {

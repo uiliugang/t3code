@@ -1,10 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { changeRequestWebTarget } from "@t3tools/client-runtime/change-request-links";
+import { legacyThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
 import {
   createLinkedPullRequestSummaryAtomFamily,
   pullRequestDetailToVcsStatus,
 } from "@t3tools/client-runtime/state/pull-requests";
-import type { EnvironmentId, PullRequestSummary } from "@t3tools/contracts";
+import { EnvironmentId, type PullRequestRef, type PullRequestSummary } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { Atom } from "effect/reactivity";
 import { useMessages } from "gt-react-native";
@@ -28,20 +30,25 @@ const MAX_PULL_REQUEST_SNAPSHOTS = 500;
 
 // One bounded cache survives row virtualization (the summary query is dropped once idle) without
 // retaining one live atom for every pull request ever seen.
-const pullRequestSnapshotsAtom = Atom.make<ReadonlyMap<string, PullRequestSummary>>(new Map()).pipe(
-  Atom.keepAlive,
-  Atom.withLabel("mobile:thread-pr-snapshots"),
-);
+const pullRequestSnapshotsAtom = Atom.make<
+  ReadonlyMap<
+    string,
+    {
+      readonly environmentId: EnvironmentId;
+      readonly summary: PullRequestSummary;
+    }
+  >
+>(new Map()).pipe(Atom.keepAlive, Atom.withLabel("mobile:thread-pr-snapshots"));
 
-function snapshotKey(
-  environmentId: EnvironmentId,
-  reference: { readonly projectId: string; readonly repository: string; readonly number: number },
-): string {
+function snapshotKey(environmentId: EnvironmentId, reference: PullRequestRef): string {
   return JSON.stringify([
     environmentId,
     reference.projectId,
     reference.repository,
     reference.number,
+    reference.host,
+    reference.target?.provider,
+    reference.target?.origin,
   ]);
 }
 
@@ -54,7 +61,7 @@ const pullRequestSummaryAtom = createLinkedPullRequestSummaryAtomFamily(
         rememberBounded(
           current,
           snapshotKey(environmentId, input),
-          summary,
+          { environmentId, summary },
           MAX_PULL_REQUEST_SNAPSHOTS,
         ),
       ),
@@ -65,15 +72,28 @@ export { type ThreadPr, type ThreadPrPresentation } from "./thread-pr-presentati
 
 /** Seeds a pull request page with a summary already in memory, never another pull request's. */
 export function withKnownPullRequestSummary<
-  Params extends { readonly host?: string; readonly repository: string; readonly number: number },
+  Params extends {
+    readonly environmentId: string;
+    readonly host?: string;
+    readonly repository: string;
+    readonly number: number;
+    readonly navigationUrl?: string;
+  },
 >(params: Params) {
+  const environmentId = EnvironmentId.make(params.environmentId);
+  const url = params.navigationUrl;
+  const target = changeRequestWebTarget(params, url);
   const initialSummary =
-    params.host === undefined
+    target === undefined || url === undefined
       ? undefined
       : knownPullRequestSummary(
-          { host: params.host, repository: params.repository, number: params.number },
-          appAtomRegistry.get(environmentThreadShells.threadShellsAtom),
-          appAtomRegistry.get(pullRequestSnapshotsAtom).values(),
+          { ...legacyThreadPullRequestKey({ ...params, url }), target },
+          appAtomRegistry
+            .get(environmentThreadShells.threadShellsAtom)
+            .filter((thread) => thread.environmentId === environmentId),
+          [...appAtomRegistry.get(pullRequestSnapshotsAtom).values()].flatMap((entry) =>
+            entry.environmentId === environmentId ? [entry.summary] : [],
+          ),
         );
   return initialSummary === undefined ? params : { ...params, initialSummary };
 }
@@ -104,21 +124,24 @@ export function useThreadPr(thread: EnvironmentThreadShell): ThreadPrPresentatio
       resolve,
     ],
   );
-  const key = pullRequestRef === null ? null : snapshotKey(thread.environmentId, pullRequestRef);
+  const input =
+    pullRequestRef === null
+      ? null
+      : {
+          projectId: pullRequestRef.projectId,
+          ...legacyThreadPullRequestKey(pullRequestRef),
+        };
+  const key = input === null ? null : snapshotKey(thread.environmentId, input);
   // Select this row's entry so answers for other pull requests do not re-render it.
   const snapshot = useAtomValue(pullRequestSnapshotsAtom, (current) =>
-    key === null ? undefined : current.get(key),
+    key === null ? undefined : current.get(key)?.summary,
   );
   const pullRequestSummary = useEnvironmentQuery(
-    pullRequestRef === null || !demand
+    input === null || !demand
       ? null
       : pullRequestSummaryAtom({
           environmentId: thread.environmentId,
-          input: {
-            projectId: pullRequestRef.projectId,
-            repository: pullRequestRef.repository,
-            number: pullRequestRef.number,
-          },
+          input,
         }),
   );
   const summary = pullRequestRef === null ? undefined : (pullRequestSummary.data ?? snapshot);

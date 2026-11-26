@@ -3,6 +3,8 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
+import { parseUrl } from "@t3tools/shared/url";
+import { PullRequestWebOrigin } from "@t3tools/source-control-core/server/PullRequestProvider";
 import {
   parseGitRemoteHost,
   unknownRemoteProvider as unknownHostProvider,
@@ -257,6 +259,9 @@ export const make = Effect.gen(function* () {
     listChangeRequests: Effect.fn("GitLabSourceControlProvider.listChangeRequests")(
       function (input) {
         const source = SourceControlProvider.sourceControlRefFromInput(input);
+        const remote = input.context ? parseUrl(input.context.remoteUrl) : null;
+        const origin =
+          remote?.protocol === "http:" || remote?.protocol === "https:" ? remote.origin : null;
         return gitlab
           .listMergeRequests({
             cwd: input.cwd,
@@ -266,7 +271,12 @@ export const make = Effect.gen(function* () {
             ...(input.limit !== undefined ? { limit: input.limit } : {}),
           })
           .pipe(
-            Effect.map((items) => items.map(toChangeRequest)),
+            Effect.provideService(PullRequestWebOrigin, origin),
+            Effect.map((items) =>
+              items
+                .filter((item) => origin === null || parseUrl(item.url)?.origin === origin)
+                .map(toChangeRequest),
+            ),
             Effect.mapError(
               (error) =>
                 new SourceControlProviderError({

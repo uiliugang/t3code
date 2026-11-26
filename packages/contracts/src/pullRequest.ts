@@ -430,6 +430,7 @@ export type PullRequestListInput = typeof PullRequestListInput.Type;
 export const PullRequestProviderSummary = Schema.Struct({
   host: TrimmedNonEmptyString,
   kind: SourceControlProviderKind,
+  origin: Schema.optional(TrimmedNonEmptyString),
   searchesOnHost: Schema.Boolean,
   actions: Schema.optional(ForwardCompatibleArray(PullRequestAction)),
   projectCount: PositiveInt,
@@ -469,6 +470,17 @@ export const PullRequestRef = Schema.Struct({
   number: PositiveInt,
 });
 export type PullRequestRef = typeof PullRequestRef.Type;
+
+export function isPublicGitHubPullRequestTarget({
+  host,
+  target,
+}: Pick<typeof PullRequestRef.Encoded, "host" | "target">): boolean {
+  return (
+    host?.toLowerCase() === "github.com" &&
+    target?.provider === "github" &&
+    target.origin === "https://github.com"
+  );
+}
 
 /** `query` asks the host for matches past the first page of candidates. */
 export const PullRequestReviewerCandidatesInput = Schema.Struct({

@@ -7,7 +7,11 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
-import { PullRequestReviewGuide, ThreadPullRequestKey } from "@t3tools/contracts";
+import {
+  isPublicGitHubPullRequestTarget,
+  PullRequestReviewGuide,
+  ThreadPullRequestKey,
+} from "@t3tools/contracts";
 
 import {
   PersistenceDecodeError,
@@ -22,7 +26,9 @@ const storedHost = ({
   host,
   target,
 }: Pick<typeof ThreadPullRequestKey.Encoded, "host" | "target">) =>
-  target === undefined ? host : JSON.stringify([host, target.provider, target.origin]);
+  target === undefined || isPublicGitHubPullRequestTarget({ host, target })
+    ? host
+    : JSON.stringify([host, target.provider, target.origin]);
 
 export class PullRequestReviewGuideRepository extends Context.Service<
   PullRequestReviewGuideRepository,

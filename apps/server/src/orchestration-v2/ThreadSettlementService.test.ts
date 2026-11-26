@@ -2275,6 +2275,47 @@ describe("ThreadSettlementServiceV2 worker", () => {
     }),
   );
 
+  it.effect("a merge does not settle the same numbered request on a different Web origin", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      const relatedSettled = yield* Deferred.make<void>();
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot(
+          [
+            "https://example.test/owner/repository/pull/42",
+            "http://example.test/owner/repository/-/merge_requests/42",
+          ].map((url, index) =>
+            makeThread(`request-${index}`, {
+              branch: null,
+              linkedPullRequest: {
+                projectId: PROJECT_ID,
+                repository: "owner/repository",
+                number: 42,
+                url,
+              },
+            }),
+          ),
+        ),
+        onDispatch: (command) =>
+          command.threadId === ThreadId.make("request-0")
+            ? Deferred.succeed(relatedSettled, undefined).pipe(Effect.asVoid)
+            : Effect.void,
+      });
+
+      yield* Effect.gen(function* () {
+        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+        yield* fixture.publishMerge;
+        yield* Deferred.await(relatedSettled);
+        expect(yield* Ref.get(fixture.summaryCalls)).toContainEqual(
+          expect.objectContaining({
+            target: { provider: "gitlab", origin: "http://example.test" },
+          }),
+        );
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
   it.effect("a merge does not settle a local thread on the branch of another thread's PR", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.parse(NOW));

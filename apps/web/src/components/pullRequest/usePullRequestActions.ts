@@ -132,6 +132,16 @@ const actionFailureHints: Record<PullRequestAction, string> = {
     "The host refused it. Check that you have Actions write access and that these workflow runs are still awaiting approval.",
 };
 
+export function pullRequestActionReference({
+  projectId,
+  host,
+  target,
+  repository,
+  number,
+}: PullRequestRef): PullRequestRef {
+  return { projectId, host, target, repository, number };
+}
+
 export function usePullRequestActionRunner({
   environmentId,
   reference,
@@ -242,11 +252,7 @@ export function usePullRequestCloseBatch(
         const result = await runAction({
           environmentId: entry.environmentId,
           input: {
-            projectId: entry.projectId,
-            host: entry.host,
-            target: entry.target,
-            repository: entry.repository,
-            number: entry.number,
+            ...pullRequestActionReference(entry),
             action: "close",
           },
         });

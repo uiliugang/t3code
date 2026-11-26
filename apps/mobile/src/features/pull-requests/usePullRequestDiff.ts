@@ -1,5 +1,4 @@
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
-import { changeRequestWebTarget } from "@t3tools/client-runtime/change-request-links";
 import {
   EnvironmentId,
   ProjectId,
@@ -21,6 +20,7 @@ import {
   type PullRequestDiffPage,
   type WithheldFileLoad,
 } from "./pullRequestDiffPages";
+import { pullRequestParamsWebTarget } from "./pullRequestSelection";
 
 export type PullRequestParams = {
   readonly environmentId: string;
@@ -50,11 +50,7 @@ export function pullRequestParams(params: PullRequestParams): PullRequestParams 
 }
 
 export function pullRequestTarget(params: PullRequestParams) {
-  const summary = params.initialSummary;
-  const target =
-    changeRequestWebTarget(params, params.navigationUrl) ??
-    (summary && "target" in summary ? summary.target : undefined) ??
-    changeRequestWebTarget(params, summary?.url);
+  const target = pullRequestParamsWebTarget(params);
   return {
     environmentId: EnvironmentId.make(params.environmentId),
     input: {

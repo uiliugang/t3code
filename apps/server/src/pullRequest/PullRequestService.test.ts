@@ -34,6 +34,7 @@ import * as SourceControlRateLimit from "@t3tools/source-control-core/server/Sou
 import { fakePullRequestProvider } from "@t3tools/source-control-testing/fakeSourceControlDriver";
 import {
   PullRequestProviderError,
+  PullRequestWebOrigin,
   type ProviderChangeRequest,
   type PullRequestProviderApi,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
@@ -1696,6 +1697,8 @@ it.effect("publishes a merge for immediate settlement only after host confirmati
 
     assert.deepStrictEqual(Option.getOrThrow(yield* Fiber.join(observedMerge)), {
       ...reference,
+      host: "github.com",
+      target: { provider: SourceControlProviderKind.make("github"), origin: "https://github.com" },
       mergedAt,
       baseBranch: "main",
       url: "https://host/pull/1",
@@ -1759,6 +1762,8 @@ it.effect("returns the host's merged reply as a summary and trusts it without an
     assert.strictEqual(summaryReads, 0);
     assert.deepStrictEqual(Option.getOrThrow(yield* Fiber.join(observedMerge)), {
       ...reference,
+      host: "github.com",
+      target: { provider: SourceControlProviderKind.make("github"), origin: "https://github.com" },
       mergedAt,
       baseBranch: merged.baseBranch,
       url: merged.url,
@@ -2337,6 +2342,51 @@ it.effect("borrows the selected checkout's forge and web origin for a sibling re
     assert.strictEqual((yield* service.detail(ref)).projectId, http.id);
     yield* service.runAction({ ...ref, action: "close" });
     assert.deepStrictEqual(actions, ["gitlab:/http"]);
+  }),
+);
+
+it.effect("does not treat an SSH checkout's guessed HTTPS origin as a verified read endpoint", () =>
+  Effect.gen(function* () {
+    const checkout = project({
+      id: "ssh",
+      title: "GitLab over SSH",
+      workspaceRoot: "/ssh",
+      host: "forge.test",
+      repository: "acme/app",
+      remoteUrl: "git@forge.test:acme/app.git",
+      provider: "gitlab",
+    });
+    const provider = SourceControlProviderKind.make("gitlab");
+    const seen: Array<string | null> = [];
+    const service = yield* makeService({
+      projects: [checkout],
+      providers: [
+        fakePullRequestProvider(provider, {
+          getChangeRequest: () =>
+            Effect.gen(function* () {
+              seen.push(yield* PullRequestWebOrigin);
+              return {
+                ...hostedChangeRequest("SSH checkout"),
+                url: "http://forge.test/acme/app/-/merge_requests/7",
+              };
+            }),
+          runAction: () =>
+            Effect.gen(function* () {
+              seen.push(yield* PullRequestWebOrigin);
+            }),
+        }),
+      ],
+    });
+    const legacy = {
+      projectId: checkout.id,
+      host: "forge.test",
+      repository: "acme/app",
+      number: 7,
+    };
+    yield* service.detail(legacy);
+    yield* service.detail({ ...legacy, target: { provider, origin: "http://forge.test" } });
+    yield* service.runAction({ ...legacy, action: "close" });
+    assert.deepStrictEqual(seen, [null, "http://forge.test", "https://forge.test"]);
   }),
 );
 

@@ -1354,11 +1354,16 @@ export function PullRequestsPage() {
       ) : null}
     </>
   );
-  const hostEntries = hosts.length > 0 ? hosts : expectedHosts;
+  const knownHosts = new Map<string, (typeof hosts)[number]>();
+  for (const entry of hosts) {
+    const current = knownHosts.get(entry.host);
+    if (!current || (!current.configured && entry.configured)) knownHosts.set(entry.host, entry);
+  }
+  const hostEntries = hosts.length > 0 ? [...knownHosts.values()] : expectedHosts;
   const hostMenuOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
     { value: "", label: t("All"), Icon: Plug2Icon },
     ...hostEntries.map((entry) => {
-      const summary = hosts.find((host) => host.host === entry.host);
+      const summary = knownHosts.get(entry.host);
       return {
         value: entry.host,
         label: pullRequestHostLabel(hostEntries, entry),

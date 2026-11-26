@@ -101,6 +101,7 @@ const WorkspaceSelections = Schema.Struct({
       repository: Schema.String,
       number: Schema.Number,
       host: Schema.optional(Schema.String),
+      navigationUrl: Schema.optional(Schema.String),
       key: Schema.optional(Schema.String),
     }),
   ),

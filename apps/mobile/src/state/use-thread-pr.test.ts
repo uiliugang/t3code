@@ -144,12 +144,22 @@ describe("knownPullRequestSummary", () => {
       updatedAt: "2026-09-09T00:00:00.000Z",
     };
     const lookup = (host: string, number: number, summaries = [listed]) =>
-      knownPullRequestSummary({ host, repository: "t3tools/t3code", number }, threads, summaries);
+      knownPullRequestSummary(
+        {
+          host,
+          repository: "t3tools/t3code",
+          number,
+          target: { provider: SourceControlProviderKind.make("github"), origin: `https://${host}` },
+        },
+        threads,
+        summaries,
+      );
 
     expect(lookup("github.com", 7, [])?.title).toBe("Change 7");
     expect(lookup("github.com", 7)?.title).toBe("Listed title");
     expect(lookup("github.com", 8)).toBeUndefined();
     expect(lookup("gitlab.com", 7)).toBeUndefined();
+    expect(lookup("github.com:8443", 7)).toBeUndefined();
 
     const sameVersion = { ...listed, updatedAt: "2026-09-08T00:00:00.000Z" };
     const syncedAt = Date.parse(link.snapshot!.syncedAt);
