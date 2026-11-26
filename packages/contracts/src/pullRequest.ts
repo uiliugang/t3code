@@ -508,6 +508,7 @@ export const PullRequestRoutingResult = Schema.Struct({
   host: TrimmedNonEmptyString,
   provider: SourceControlProviderKind,
   viewer: TrimmedNonEmptyString,
+  repository: Schema.optionalKey(TrimmedNonEmptyString),
   projectTitle: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
 });

@@ -371,6 +371,15 @@ function pullRequestReference(input: PullRequestRef): PullRequestRef {
   };
 }
 
+export function withPullRequestViewer(
+  reference: PullRequestRef,
+  identity: PullRequestRoutingResult | null,
+): PullRequestRef {
+  return identity?.repository?.toLowerCase() === reference.repository.toLowerCase()
+    ? { ...reference, host: identity.host, expectedAccountId: identity.accountId }
+    : reference;
+}
+
 /** What an action changes, left out where only the host knows, as when a queue takes a merge. */
 function actionEdit(input: PullRequestActionInput): PullRequestPendingEdit | null {
   if (input.stackNumber !== undefined) return null;
@@ -856,6 +865,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   const commandScheduler = createAtomCommandScheduler();
   const routedRequest = createPullRequestRouter();
   const filesViewedPersistence = persistQuery(PullRequestFilesViewedResult);
+  const routingIdentityPersistence = persistQuery(PullRequestRoutingResult);
   const serialPerEnvironment = {
     mode: "serial",
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
@@ -1225,7 +1235,13 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     routingIdentity: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:routing-identity",
       tag: WS_METHODS.pullRequestsRouting,
-      persistence: persistQuery(PullRequestRoutingResult),
+      persistence: {
+        ...routingIdentityPersistence,
+        save: (environmentId, key, value) =>
+          value.repository === undefined
+            ? Effect.void
+            : routingIdentityPersistence.save(environmentId, key, value),
+      },
       staleTimeMs: 0,
       refreshIntervalMs: 60_000,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),

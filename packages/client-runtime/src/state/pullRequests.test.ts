@@ -56,6 +56,7 @@ import {
   pullRequestHostAnswer,
   pullRequestPendingEditsAtom,
   pullRequestPendingEditsFor,
+  withPullRequestViewer,
 } from "./pullRequests.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import { executeAtomQuery, queryPersistenceKey } from "./runtime.ts";
@@ -2314,13 +2315,15 @@ it.effect(
         projectTitle: "Web",
         workspaceRoot: "/web",
       };
+      expect(withPullRequestViewer(reference.input, identity)).toBe(reference.input);
+      const repositoryIdentity = { ...identity, repository: reference.input.repository };
       const viewed: PullRequestFilesViewedResult = {
         files: [{ path: "main.ts", state: "viewed" }],
         truncated: false,
         target: reference.input.target,
       };
       const client = {
-        [WS_METHODS.pullRequestsRouting]: () => Effect.succeed(identity),
+        [WS_METHODS.pullRequestsRouting]: () => Effect.succeed(repositoryIdentity),
         [WS_METHODS.pullRequestsFilesViewed]: (input: PullRequestRef) =>
           Effect.sync(() => {
             expect(input.expectedAccountId).toBe(identity.accountId);
@@ -2356,12 +2359,12 @@ it.effect(
         const identityQuery = atoms.routingIdentity(reference);
         const unmountIdentity = registry.mount(identityQuery);
         yield* Effect.addFinalizer(() => Effect.sync(unmountIdentity));
-        const { accountId } = yield* AtomRegistry.getResult(registry, identityQuery, {
+        const verified = yield* AtomRegistry.getResult(registry, identityQuery, {
           suspendOnWaiting: true,
         });
         const query = atoms.filesViewed({
           ...reference,
-          input: { ...reference.input, expectedAccountId: accountId },
+          input: withPullRequestViewer(reference.input, verified),
         });
         const unmountViewed = registry.mount(query);
         yield* Effect.addFinalizer(() => Effect.sync(unmountViewed));

@@ -1413,6 +1413,7 @@ it.effect("routing verifies the current account on the requested host without ca
       provider: SourceControlProviderKind.make("github"),
       viewer: "first-account",
       accountId: "123",
+      repository: "acme/web",
       projectTitle: "web",
       workspaceRoot: "/a",
     });

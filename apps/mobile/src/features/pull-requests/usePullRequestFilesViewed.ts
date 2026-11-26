@@ -2,6 +2,7 @@ import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { usePullRequestConnected } from "./usePullRequestConnected";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { withPullRequestViewer } from "@t3tools/client-runtime/state/pull-requests";
 import type { PullRequestDetail } from "@t3tools/contracts";
 import { msg } from "gt-react-native";
 import { use, useEffect, useRef, useState } from "react";
@@ -24,23 +25,14 @@ export function usePullRequestFilesViewed(params: PullRequestParams, pr: PullReq
   const identity = useEnvironmentQuery(
     requiresAccount ? composerPullRequests.routingIdentity(reference) : null,
   );
-  const target =
-    identity.isSuccess && identity.data !== null
-      ? {
-          ...reference,
-          input: {
-            ...reference.input,
-            host: identity.data.host,
-            expectedAccountId: identity.data.accountId,
-          },
-        }
-      : reference;
+  const viewer = identity.isSuccess && !identity.isPending ? identity.data : null;
+  const target = { ...reference, input: withPullRequestViewer(reference.input, viewer) };
   const scopeKey = filesViewedReadsKey(target);
   const permission = useAtomValue(
     composerPullRequests.setFilesViewed.permissionAtom(target.environmentId),
   );
   const connected = usePullRequestConnected(params.environmentId);
-  const allowed = connected && permission && (!requiresAccount || identity.isSuccess);
+  const allowed = connected && permission && (!requiresAccount || viewer !== null);
   const query = useEnvironmentQuery(supported ? composerPullRequests.filesViewed(target) : null);
   const { refresh } = query;
   const headSha = pr?.headSha;

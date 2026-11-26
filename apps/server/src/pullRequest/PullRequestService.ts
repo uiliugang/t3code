@@ -2035,6 +2035,7 @@ export const make = Effect.gen(function* () {
       host: project.host,
       provider: project.api.kind,
       ...identity,
+      repository: project.repository,
       projectTitle: project.project.title,
       workspaceRoot: project.project.workspaceRoot,
     };

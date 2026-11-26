@@ -4253,77 +4253,86 @@ describe("storage cleanup reports and local file policies", () => {
       }),
     ),
   );
-  it.live("rechecks leftover metadata after a concurrent restoration releases the worktree", () =>
-    runCleanupTest(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const recordRead = yield* Deferred.make<void>();
-        const restored = yield* Deferred.make<void>();
-        let recordPath: string | undefined;
-        let gitFile: string | undefined;
-        let checkedBeforeRestore = false;
-        const fixture = yield* cleanupFixture().pipe(
-          Effect.provideService(FileSystem.FileSystem, {
-            ...fs,
-            readFileString: (file, encoding) =>
-              fs.readFileString(file, encoding).pipe(
-                Effect.tap(() => {
-                  if (file === recordPath) return Deferred.succeed(recordRead, undefined);
-                  if (file !== gitFile) return Effect.void;
-                  return Deferred.isDone(restored).pipe(
-                    Effect.flatMap((done) => {
-                      checkedBeforeRestore ||= !done;
-                      return Deferred.await(restored);
-                    }),
-                  );
-                }),
-              ),
-          }),
-        );
-        const adminDir = (yield* fixture.command(fixture.worktree, [
-          "rev-parse",
-          "--absolute-git-dir",
-        ])).stdout.trim();
-        recordPath = `${fixture.config.stateDir}/storage-cleanup-leftovers.json`;
-        gitFile = `${adminDir}/gitdir`;
-        yield* fixture.fs.remove(fixture.worktree, { recursive: true });
-        yield* fixture.fs.writeFileString(
-          recordPath,
-          JSON.stringify([
-            {
-              adminDir,
-              entry: {
-                kind: "worktree",
-                outcome: "failed",
-                reason: "Removal did not finish",
-                path: fixture.worktree,
-                projectPath: fixture.repo,
-                threadId: null,
-                threadTitle: null,
-                bytes: null,
-                files: null,
+  it.live.each(["single", "multi", "same-repository"] as const)(
+    "rechecks leftover metadata after a concurrent %s restoration releases the worktree",
+    (mode) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const recordRead = yield* Deferred.make<void>();
+          const restored = yield* Deferred.make<void>();
+          let recordPath: string | undefined;
+          let gitFile: string | undefined;
+          let checkedBeforeRestore = false;
+          const fixture = yield* cleanupFixture().pipe(
+            Effect.provideService(FileSystem.FileSystem, {
+              ...fs,
+              readFileString: (file, encoding) =>
+                fs.readFileString(file, encoding).pipe(
+                  Effect.tap(() => {
+                    if (file === recordPath) return Deferred.succeed(recordRead, undefined);
+                    if (file !== gitFile) return Effect.void;
+                    return Deferred.isDone(restored).pipe(
+                      Effect.flatMap((done) => {
+                        checkedBeforeRestore ||= !done;
+                        return Deferred.await(restored);
+                      }),
+                    );
+                  }),
+                ),
+            }),
+          );
+          const adminDir = (yield* fixture.command(fixture.worktree, [
+            "rev-parse",
+            "--absolute-git-dir",
+          ])).stdout.trim();
+          recordPath = `${fixture.config.stateDir}/storage-cleanup-leftovers.json`;
+          gitFile = `${adminDir}/gitdir`;
+          const leasePath = mode === "multi" ? `${fixture.worktree}-primary` : fixture.worktree;
+          yield* fixture.fs.remove(fixture.worktree, { recursive: true });
+          yield* fixture.fs.writeFileString(
+            recordPath,
+            JSON.stringify([
+              {
+                adminDir,
+                ...(mode === "multi" ? { leasePath } : {}),
+                entry: {
+                  kind: "worktree",
+                  outcome: "failed",
+                  reason: "Removal did not finish",
+                  path: fixture.worktree,
+                  projectPath: fixture.repo,
+                  threadId: null,
+                  threadTitle: null,
+                  bytes: null,
+                  files: null,
+                },
               },
-            },
-          ]),
-        );
-        fixture.setThreads([]);
-        const sweep = yield* withWorkspaceLease(
-          fixture.worktree,
-          Effect.gen(function* () {
-            const cleanup = yield* fixture.service.runNow.pipe(Effect.forkChild);
-            yield* Deferred.await(recordRead);
-            yield* fixture.command(fixture.repo, ["worktree", "prune"]);
-            yield* fixture.command(fixture.repo, ["worktree", "add", fixture.worktree, "feature"]);
-            yield* Deferred.succeed(restored, undefined);
-            return cleanup;
-          }),
-        );
-        yield* Fiber.join(sweep);
-        expect(checkedBeforeRestore).toBe(false);
-        expect(yield* fixture.fs.exists(adminDir)).toBe(true);
-        expect(yield* fixture.fs.exists(recordPath)).toBe(false);
-      }),
-    ),
+            ]),
+          );
+          fixture.setThreads([]);
+          const sweep = yield* withWorkspaceLease(
+            mode === "same-repository" ? fixture.repo : leasePath,
+            Effect.gen(function* () {
+              const cleanup = yield* fixture.service.runNow.pipe(Effect.forkChild);
+              yield* Deferred.await(recordRead);
+              yield* fixture.command(fixture.repo, ["worktree", "prune"]);
+              yield* fixture.command(fixture.repo, [
+                "worktree",
+                "add",
+                fixture.worktree,
+                "feature",
+              ]);
+              yield* Deferred.succeed(restored, undefined);
+              return cleanup;
+            }),
+          );
+          yield* Fiber.join(sweep);
+          expect(checkedBeforeRestore).toBe(false);
+          expect(yield* fixture.fs.exists(adminDir)).toBe(true);
+          expect(yield* fixture.fs.exists(recordPath)).toBe(false);
+        }),
+      ),
   );
   it.live("skips a stored worktree path whose parent is a regular file", () =>
     runCleanupTest(

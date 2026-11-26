@@ -110,6 +110,7 @@ import {
   type ReviewCommentContext,
 } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
+import { withPullRequestViewer } from "@t3tools/client-runtime/state/pull-requests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -627,15 +628,13 @@ function PullRequestCodeTab({
       : null,
     messages,
   );
-  const accountedReference =
-    identity.isSuccess && identity.data !== null
-      ? { ...reference, host: identity.data.host, expectedAccountId: identity.data.accountId }
-      : reference;
+  const viewer = identity.isSuccess && !identity.isPending ? identity.data : null;
+  const accountedReference = withPullRequestViewer(reference, viewer);
   const filesViewed = usePullRequestFilesViewed({
     environmentId,
     reference: accountedReference,
     enabled: viewedFilesStore !== undefined,
-    editable: detail.provider !== "github" || accountedReference.expectedAccountId !== undefined,
+    editable: detail.provider !== "github" || viewer !== null,
   });
   const {
     setViewed,
