@@ -4010,9 +4010,15 @@ export const make = Effect.gen(function* () {
   // Key canonical refs to match epochs bumped with the remote's spelling.
   const filesViewed: PullRequestService["Service"]["filesViewed"] = (input) =>
     canonicalRef(input).pipe(
-      Effect.flatMap((ref) =>
-        Cache.get(filesViewedCache, JSON.stringify([refCacheKey(ref), filesViewedEpoch(ref)])),
-      ),
+      Effect.flatMap((ref) => {
+        const answer = Cache.get(
+          filesViewedCache,
+          JSON.stringify([refCacheKey(ref), filesViewedEpoch(ref)]),
+        );
+        return ref.target === undefined
+          ? answer
+          : answer.pipe(Effect.map((result) => ({ ...result, target: ref.target })));
+      }),
     );
 
   const listStatsCache = yield* Cache.makeWith(

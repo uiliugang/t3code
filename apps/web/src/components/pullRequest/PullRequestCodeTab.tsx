@@ -621,10 +621,21 @@ function PullRequestCodeTab({
   const getDiffFileContents = useAtomCommand(pullRequestEnvironment.diffFileContents);
 
   const viewedFilesStore = detail.capabilities.viewedFiles;
+  const identity = useEnvironmentQuery(
+    detail.provider === "github" && (viewedFilesStore === "host" || detail.capabilities.diff)
+      ? pullRequestEnvironment.routingIdentity({ environmentId, input: reference })
+      : null,
+    messages,
+  );
+  const accountedReference =
+    identity.isSuccess && identity.data !== null
+      ? { ...reference, host: identity.data.host, expectedAccountId: identity.data.accountId }
+      : reference;
   const filesViewed = usePullRequestFilesViewed({
     environmentId,
-    reference,
+    reference: accountedReference,
     enabled: viewedFilesStore !== undefined,
+    editable: detail.provider !== "github" || accountedReference.expectedAccountId !== undefined,
   });
   const {
     setViewed,
@@ -677,9 +688,9 @@ function PullRequestCodeTab({
 
   const loadDiffFiles = createPullRequestDiffFileContentsLoader(getDiffFileContents, {
     environmentId,
-    reference,
+    reference: accountedReference,
     commit,
-    cacheKey: `pull-request:${referenceKey}:${detail.updatedAt}:${commit ?? "all"}`,
+    cacheKey: `pull-request:${referenceKey}:${accountedReference.expectedAccountId ?? ""}:${detail.updatedAt}:${commit ?? "all"}`,
   });
   const completionScope = pullRequestCompletionScope(detail, environmentId, reference);
   const hostReview = detail.capabilities.review;
@@ -980,7 +991,7 @@ function PullRequestCodeTab({
         foldsAsViewed(path),
       );
       const viewedMark = filesViewedEnabled
-        ? `e${isFileViewed(path) ? "v" : ""}${isFileViewedStale(path) ? "s" : ""}`
+        ? `e${filesViewed.editable ? "w" : ""}${isFileViewed(path) ? "v" : ""}${isFileViewedStale(path) ? "s" : ""}`
         : "";
       return {
         id: fileKey,
@@ -1057,7 +1068,7 @@ function PullRequestCodeTab({
     }
   };
   const fileViewedToggle = {
-    enabled: filesViewedEnabled,
+    enabled: filesViewed.editable,
     isViewed: isFileViewed,
     isStale: isFileViewedStale,
     setFileViewed,

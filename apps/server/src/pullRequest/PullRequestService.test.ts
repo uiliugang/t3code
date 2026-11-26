@@ -4742,7 +4742,11 @@ it.effect("keeps viewed files itself for a host that keeps none of its own", () 
     );
 
     const empty = yield* service.filesViewed(GITLAB_REFERENCE);
-    assert.deepStrictEqual(empty, { files: [], truncated: false });
+    assert.deepStrictEqual(empty, {
+      files: [],
+      truncated: false,
+      target: { provider: SourceControlProviderKind.make("gitlab"), origin: "https://gitlab.com" },
+    });
     assert.deepStrictEqual(asked, []);
 
     yield* service.setFilesViewed({
@@ -4843,8 +4847,16 @@ it.effect("isolates viewed marks by web origin and retains hidden legacy marks",
     assert.deepStrictEqual((yield* service.filesViewed(https)).files, []);
     assert.deepStrictEqual((yield* service.filesViewed(http)).files, []);
     yield* service.setFilesViewed({ ...http, files: [{ path: "src/a.ts", viewed: true }] });
-    assert.deepStrictEqual((yield* service.filesViewed(https)).files, []);
-    assert.deepStrictEqual((yield* service.filesViewed(http)).files, marked);
+    assert.deepStrictEqual(yield* service.filesViewed(https), {
+      files: [],
+      truncated: false,
+      target: https.target,
+    });
+    assert.deepStrictEqual(yield* service.filesViewed(http), {
+      files: marked,
+      truncated: false,
+      target: http.target,
+    });
 
     yield* service.setFilesViewed({ ...https, files: [{ path: "src/a.ts", viewed: true }] });
     assert.deepStrictEqual((yield* service.filesViewed(ref)).files, marked);

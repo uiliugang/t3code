@@ -819,6 +819,7 @@ export const PullRequestFilesViewedResult = Schema.Struct({
   /** Only the files the host reported a state for. A file missing from this list is unviewed. */
   files: Schema.Array(PullRequestFileViewed),
   truncated: Schema.Boolean,
+  target: Schema.optional(PullRequestWebTarget),
 });
 export type PullRequestFilesViewedResult = typeof PullRequestFilesViewedResult.Type;
 

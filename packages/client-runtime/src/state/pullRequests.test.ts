@@ -12,6 +12,7 @@ import {
   type AuthSessionState,
   type PullRequestActionInput,
   type PullRequestDetail,
+  type PullRequestFilesViewedResult,
   type PullRequestListEntry,
   type PullRequestListInput,
   type PullRequestRef,
@@ -964,6 +965,55 @@ it.effect(
     }),
 );
 
+it.effect("preserves the queued viewed-files account when routing after an account switch", () =>
+  Effect.gen(function* () {
+    const writes: Array<{ environment: string; accountId: string | undefined }> = [];
+    const identity = {
+      host: "github.com",
+      provider: "github",
+      viewer: "current",
+      accountId: "456",
+    };
+    const rejection = new PullRequestOperationError({
+      operation: "routeIdentity",
+      detail: "The queued account is no longer active.",
+    });
+    const clientFor = (local: boolean) =>
+      ({
+        [local ? WS_METHODS.pullRequestsRoutingIdentity : WS_METHODS.pullRequestsRouting]: () =>
+          Effect.succeed(identity),
+        [WS_METHODS.pullRequestsSetFilesViewed]: (input: PullRequestRef) =>
+          Effect.gen(function* () {
+            writes.push({
+              environment: local ? "local" : "origin",
+              accountId: input.expectedAccountId,
+            });
+            if (input.expectedAccountId !== identity.accountId) return yield* rejection;
+          }),
+      }) as unknown as WsRpcProtocolClient;
+    const { environmentRegistry, supervisor } = yield* makeTestRuntime(
+      clientFor(false),
+      clientFor(true),
+    );
+    const result = yield* createPullRequestRouter()(WS_METHODS.pullRequestsSetFilesViewed, {
+      projectId: ProjectId.make("project-1"),
+      host: identity.host,
+      repository: "acme/web",
+      number: 7,
+      expectedAccountId: "123",
+      files: [{ path: "src/main.ts", viewed: true }],
+    }).pipe(
+      Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+      Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+      Effect.provideService(PullRequestRoutingPermissions, trustedRouting),
+      Effect.provideService(RpcPermissionGuard, { authorize: () => Effect.void }),
+      Effect.result,
+    );
+    expect(result).toMatchObject({ _tag: "Failure", failure: rejection });
+    expect(writes).toEqual([{ environment: "origin", accountId: "123" }]);
+  }),
+);
+
 it.effect("only shares concurrent diff file reads with the same complete reference", () =>
   Effect.gen(function* () {
     const release = yield* Latch.make();
@@ -1018,13 +1068,22 @@ it.effect("only shares concurrent diff file reads with the same complete referen
     const otherOrigin = yield* read(https);
     const otherAccount = yield* read(anotherAccount);
     const otherHost = yield* read(anotherHost);
+    const unboundDuplicate = yield* read(anotherHost);
     yield* release.open;
 
-    const results = yield* Fiber.joinAll([first, duplicate, otherOrigin, otherAccount, otherHost]);
+    const results = yield* Fiber.joinAll([
+      first,
+      duplicate,
+      otherOrigin,
+      otherAccount,
+      otherHost,
+      unboundDuplicate,
+    ]);
     const identities = [
       JSON.stringify([host, provider, `http://${host}`, "account-a"]),
       JSON.stringify([host, provider, `https://${host}`, "account-a"]),
       JSON.stringify([host, provider, `http://${host}`, "account-b"]),
+      JSON.stringify([anotherHost.host, null, null, null]),
       JSON.stringify([anotherHost.host, null, null, null]),
     ];
     expect(results.map((result) => result.newContents)).toEqual([identities[0], ...identities]);
@@ -2137,67 +2196,96 @@ it.effect("shares checks reads across reference property order", () =>
   }),
 );
 
-it.effect("ignores legacy files-viewed cache entries but restores new answers offline", () =>
-  Effect.gen(function* () {
-    const target = {
-      environmentId: TARGET.environmentId,
-      input: {
-        projectId: ProjectId.make("project-1"),
-        host: "forge.test",
-        repository: "acme/web",
-        number: 7,
-      },
-    };
-    const legacyKey = queryPersistenceKey(
-      "environment-data:pull-requests:files-viewed",
-      target.input,
-    );
-    const legacy = JSON.stringify({
-      files: [{ path: "old.ts", state: "viewed" }],
-      truncated: false,
-    });
-    const saved = new Map([[legacyKey, legacy]]);
-    const savedAnswer = yield* Latch.make();
-    const fresh = { files: [{ path: "new.ts", state: "viewed" }], truncated: false };
-    const client = {
-      [WS_METHODS.pullRequestsFilesViewed]: () => Effect.succeed(fresh),
-    } as unknown as WsRpcProtocolClient;
-    const queryStore: typeof EnvironmentQueryStore.Service = {
-      load: (_environmentId, key) => Effect.sync(() => Option.fromUndefinedOr(saved.get(key))),
-      save: (_environmentId, key, payload) =>
-        Effect.sync(() => saved.set(key, payload)).pipe(Effect.andThen(savedAnswer.open)),
-    };
-    const readOffline = Effect.fnUntraced(function* () {
-      const { atoms, registry, supervisor } = yield* makeTestRuntime(
+it.effect.each(["confirmed", "old-server", "unknown-source"] as const)(
+  "only restores confirmed files-viewed answers offline (%s)",
+  (scenario) =>
+    Effect.gen(function* () {
+      const webTarget = {
+        provider: SourceControlProviderKind.make("gitlab"),
+        origin: "http://forge.test",
+      };
+      const target = {
+        environmentId: TARGET.environmentId,
+        input: {
+          projectId: ProjectId.make("project-1"),
+          host: "forge.test",
+          repository: "acme/web",
+          number: 7,
+          ...(scenario === "unknown-source" ? {} : { target: webTarget }),
+        },
+      };
+      const legacyKey = queryPersistenceKey(
+        "environment-data:pull-requests:files-viewed",
+        target.input,
+      );
+      const legacy = JSON.stringify({
+        files: [{ path: "old.ts", state: "viewed" }],
+        truncated: false,
+      });
+      const saved = new Map([[legacyKey, legacy]]);
+      const handledAnswer = yield* Latch.make();
+      const fresh: PullRequestFilesViewedResult = {
+        files: [{ path: "new.ts", state: "viewed" }],
+        truncated: false,
+        ...(scenario === "old-server" ? {} : { target: webTarget }),
+      };
+      const client = {
+        [WS_METHODS.pullRequestsFilesViewed]: () => Effect.succeed(fresh),
+      } as unknown as WsRpcProtocolClient;
+      const queryStore: typeof EnvironmentQueryStore.Service = {
+        load: (_environmentId, key) => Effect.sync(() => Option.fromUndefinedOr(saved.get(key))),
+        save: (_environmentId, key, payload) => Effect.sync(() => saved.set(key, payload)),
+      };
+      const readOffline = Effect.fnUntraced(function* () {
+        const { atoms, registry, supervisor } = yield* makeTestRuntime(
+          client,
+          undefined,
+          false,
+          {},
+          queryStore,
+        );
+        yield* SubscriptionRef.update(supervisor.state, (state) => ({
+          ...state,
+          phase: "offline" as const,
+          network: "offline" as const,
+        }));
+        return yield* AtomRegistry.getResult(registry, atoms.filesViewed(target));
+      });
+
+      expect(yield* Effect.result(readOffline())).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "EnvironmentRpcUnavailableError" },
+      });
+      const { atoms, registry } = yield* makeTestRuntime(
         client,
         undefined,
         false,
-        {},
+        {
+          filesViewed: () => handledAnswer.open,
+        },
         queryStore,
       );
-      yield* SubscriptionRef.update(supervisor.state, (state) => ({
-        ...state,
-        phase: "offline" as const,
-        network: "offline" as const,
-      }));
-      return yield* AtomRegistry.getResult(registry, atoms.filesViewed(target));
-    });
-
-    expect(yield* Effect.result(readOffline())).toMatchObject({
-      _tag: "Failure",
-      failure: { _tag: "EnvironmentRpcUnavailableError" },
-    });
-    const { atoms, registry } = yield* makeTestRuntime(client, undefined, false, {}, queryStore);
-    const query = atoms.filesViewed(target);
-    const unmount = registry.mount(query);
-    yield* Effect.addFinalizer(() => Effect.sync(unmount));
-    expect(yield* AtomRegistry.getResult(registry, query, { suspendOnWaiting: true })).toEqual(
-      fresh,
-    );
-    yield* savedAnswer.await;
-    expect(yield* readOffline()).toEqual(fresh);
-    expect(saved.get(legacyKey)).toBe(legacy);
-  }),
+      const query = atoms.filesViewed(target);
+      const unmount = registry.mount(query);
+      yield* Effect.addFinalizer(() => Effect.sync(unmount));
+      expect(
+        yield* AtomRegistry.getResult(registry, query, { suspendOnWaiting: true }),
+      ).toMatchObject({
+        files: fresh.files,
+        truncated: false,
+      });
+      yield* handledAnswer.await;
+      const restored = yield* Effect.result(readOffline());
+      if (scenario === "confirmed") {
+        expect(restored).toMatchObject({ _tag: "Success", success: fresh });
+      } else {
+        expect(restored).toMatchObject({
+          _tag: "Failure",
+          failure: { _tag: "EnvironmentRpcUnavailableError" },
+        });
+      }
+      expect(saved.get(legacyKey)).toBe(legacy);
+    }),
 );
 
 it.effect("keeps live detail reads separate from reads that allow stale data", () =>

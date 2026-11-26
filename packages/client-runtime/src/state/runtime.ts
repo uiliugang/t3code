@@ -169,7 +169,7 @@ export type AtomCommandConcurrency<W> =
   | { readonly mode: "parallel" }
   | {
       readonly mode: "serial" | "singleFlight" | "latest";
-      readonly key: (input: W) => string;
+      readonly key: (input: W) => string | null;
     };
 
 /** One run that several callers wait on. It is interrupted once the last of them stops waiting. */
@@ -349,6 +349,7 @@ export function createAtomCommandScheduler(): AtomCommandScheduler {
         ? effect
         : Effect.suspend(() => {
             const key = concurrency.key(input);
+            if (key === null) return effect;
             const state = stateFor(registry);
             switch (concurrency.mode) {
               case "serial":

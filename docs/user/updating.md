@@ -88,8 +88,8 @@ before continuing an important older thread.
 
 If GitLab files you previously marked as viewed appear unread after updating, mark them again in
 the merge request. T3 Code keeps the old marks but does not display them because older versions
-did not record whether the GitLab instance was accessed over HTTP or HTTPS. GitHub's viewed marks
-are unaffected.
+did not record whether the GitLab instance was accessed over HTTP or HTTPS. GitHub keeps its
+viewed marks; reconnect to refresh the local copy after updating.
 
 ## When versions don't match
 

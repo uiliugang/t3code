@@ -854,6 +854,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   );
   const commandScheduler = createAtomCommandScheduler();
   const routedRequest = createPullRequestRouter();
+  const filesViewedPersistence = persistQuery(PullRequestFilesViewedResult);
   const serialPerEnvironment = {
     mode: "serial",
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
@@ -1220,6 +1221,13 @@ export function createPullRequestEnvironmentAtoms<R, E>(
 
   return {
     refreshes,
+    routingIdentity: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:routing-identity",
+      tag: WS_METHODS.pullRequestsRouting,
+      staleTimeMs: 0,
+      refreshIntervalMs: 60_000,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+    }),
     linkedThreads: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:linked-threads",
       persistence: persistQuery(PullRequestLinkedThreadsResult),
@@ -1325,22 +1333,39 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) =>
-          JSON.stringify([
-            environmentId,
-            pullRequestReference(input),
-            input.commit ?? null,
-            input.changeType,
-            input.oldPath,
-            input.newPath,
-          ]),
+          input.target === undefined || input.expectedAccountId === undefined
+            ? null
+            : JSON.stringify([
+                environmentId,
+                pullRequestReference(input),
+                input.commit ?? null,
+                input.changeType,
+                input.oldPath,
+                input.newPath,
+              ]),
       },
     }),
     filesViewed: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:pull-requests:files-viewed:v2",
+      label: "environment-data:pull-requests:files-viewed:v3",
       ...(onAnswer.filesViewed === undefined ? {} : { onAnswer: onAnswer.filesViewed }),
-      persistence: persistQuery(PullRequestFilesViewedResult),
+      persistence: {
+        ...filesViewedPersistence,
+        save: (environmentId, key, value) =>
+          value.target === undefined
+            ? Effect.void
+            : filesViewedPersistence.save(environmentId, key, value),
+      },
       tag: WS_METHODS.pullRequestsFilesViewed,
-      execute: (input) => routedRequest(WS_METHODS.pullRequestsFilesViewed, input),
+      execute: (input) =>
+        routedRequest(WS_METHODS.pullRequestsFilesViewed, input).pipe(
+          Effect.map(({ target, ...result }) =>
+            target !== undefined &&
+            target.provider === input.target?.provider &&
+            target.origin === input.target.origin
+              ? { ...result, target }
+              : result,
+          ),
+        ),
       staleTimeMs: 15_000,
     }),
     changeBreakdown: createEnvironmentRpcQueryAtomFamily(runtime, {
