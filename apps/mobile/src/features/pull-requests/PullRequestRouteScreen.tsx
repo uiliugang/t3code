@@ -940,6 +940,7 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
                         pending={result.isPending && !identity}
                         error={result.error}
                         terminology={terminology}
+                        sourceUrl={params.navigationUrl}
                       />
                       {identity ? (
                         <View

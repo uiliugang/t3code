@@ -314,6 +314,12 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
   const itemId = TurnItemId.make("turn-item-mcp-reasoning");
   const webhookToolItemId = TurnItemId.make("turn-item-mcp-webhook-tool");
   const webhookToken = "wJalrXUtnFEMI_K7MDENG-bPxRfiCYEXAMPLEKEY1234";
+  const encryptedEndpoint = `t3hook://relay.test/v1/hooks/0123456789abcdef/${"a".repeat(43)}/encrypted-v1`;
+  const encryptedFragment = new URLSearchParams({
+    pin: "test-pin",
+    hook: "task-1",
+    token: "test-encrypted-token",
+  });
   const projection = {
     thread: baseThread({
       threadId: parentThreadId,
@@ -369,6 +375,7 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
         },
         output: {
           webhookUrl: `https://relay.test/v1/hooks/0123456789abcdef/task-1/${webhookToken}`,
+          encryptedUrl: `${encryptedEndpoint}#${encryptedFragment}`,
           path: `/api/hooks/task-1/${webhookToken}`,
         },
       },
@@ -454,15 +461,25 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
     expect(first.items).toHaveLength(10);
     expect(first).toMatchObject({ nextPosition: 9, hasMore: true });
 
-    const webhookTool = yield* service.readThread(makeScope(), {
-      threadId: parentThreadId,
-      view: "activity",
-      itemId: webhookToolItemId,
-      maxCharsPerItem: 2_000,
-    });
+    const webhookTool = yield* service.readThread(
+      {
+        ...makeScope(),
+        thread: undefined,
+        client: { sessionId: "webhook-reader", label: "External client", access: "read-only" },
+      },
+      {
+        threadId: parentThreadId,
+        view: "activity",
+        itemId: webhookToolItemId,
+        maxCharsPerItem: 2_000,
+      },
+    );
     const webhookToolText = webhookTool.items[0]?.text ?? "";
     expect(webhookToolText).toContain("/v1/hooks/0123456789abcdef/task-1/[withheld]");
     expect(webhookToolText).toContain("/api/hooks/task-1/[withheld]");
+    expect(webhookToolText).toContain(`${encryptedEndpoint}#[withheld]`);
+    expect(webhookToolText).not.toContain("test-encrypted-token");
+    expect(webhookToolText).not.toContain("test-pin");
     expect(webhookToolText).not.toContain(webhookToken);
     expect(webhookToolText).not.toContain('"s3"');
   }).pipe(Effect.provide(layer), Effect.runPromise);

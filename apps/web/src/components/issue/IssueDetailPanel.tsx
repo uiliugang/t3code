@@ -423,7 +423,9 @@ type IssueDetailPanelProps = {
   listEntry?: IssueListEntry | null;
   threadRef?: ScopedThreadRef | null;
   /** Opens a linked change request beside this one; absent, the link goes to the host. */
-  onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
+  onSelectPullRequest?:
+    | ((reference: PullRequestRef & { readonly url: string }) => void)
+    | undefined;
   /** Opens a referenced issue beside this one; absent, the link goes to the host. */
   onSelectIssue?: ((reference: IssueRef & { readonly url: string }) => void) | undefined;
 };

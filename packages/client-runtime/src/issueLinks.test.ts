@@ -29,6 +29,7 @@ it("uses the linked GitHub pull request's authority, not the issue's authority",
     host: "forge.test",
     repository: "acme/app",
     number: 12,
+    url: link.url,
   });
   expect(
     issueLinkedPullRequestTarget(issue, {

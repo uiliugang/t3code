@@ -173,6 +173,35 @@ describe("rightPanelStore", () => {
     expect(state.activeSurfaceId).toBe(state.surfaces[0]?.id);
   });
 
+  it("restores the active URL-only requirement without merging another repository's issue", () => {
+    const reference = {
+      kind: "requirement-issue",
+      projectId: "project-1",
+      provider: "github",
+      issueId: "7",
+    };
+    const url = "https://forge.test:8443/acme/app/issues/7";
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "url-only",
+          surfaces: [
+            { ...reference, id: "url-only", url, title: "Active issue" },
+            { ...reference, id: "other", url: "https://forge.test:8443/acme/other/issues/7" },
+            { ...reference, id: "explicit", host: "forge.test:8443", scope: "ACME/App" },
+          ],
+        },
+      },
+    });
+    const state = selectThreadRightPanelState(migrated.byThreadKey, refA);
+    expect(state.surfaces).toMatchObject([
+      { scope: "acme/app", url, title: "Active issue" },
+      { scope: "acme/other" },
+    ]);
+    expect(state.activeSurfaceId).toBe(state.surfaces[0]?.id);
+  });
+
   it("reopens the active tab first after a bulk close", () => {
     const store = useRightPanelStore.getState();
     store.open(refA, "files");

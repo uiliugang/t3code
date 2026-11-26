@@ -11,13 +11,20 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { tryOpenWebLink } from "../../lib/openExternalUrl";
+import { useUiTranslation } from "../../lib/useUiTranslation";
+import { parseUrl } from "@t3tools/shared/url";
 
 export function PullRequestReadStatus(props: {
   readonly pending: boolean;
   readonly error: string | null;
   readonly terminology: ChangeRequestTerminology;
+  readonly sourceUrl?: string | undefined;
 }) {
   const gt = useGT();
+  const t = useUiTranslation();
+  const url = props.sourceUrl;
+  const protocol = url ? parseUrl(url)?.protocol : undefined;
   return props.pending ? (
     <AppActivityIndicator className="my-12" colorClassName="accent-icon" />
   ) : props.error ? (
@@ -30,6 +37,12 @@ export function PullRequestReadStatus(props: {
       )}
       detail={props.error}
       variant="plain"
+      {...(url && (protocol === "https:" || protocol === "http:")
+        ? {
+            actionLabel: t("Open browser"),
+            onAction: () => void tryOpenWebLink(url, "pull-request"),
+          }
+        : {})}
     />
   ) : null;
 }

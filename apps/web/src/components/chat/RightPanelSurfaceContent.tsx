@@ -192,6 +192,7 @@ export function RightPanelSurfaceContent(props: {
             repository: surface.repository,
             number: surface.number,
           }}
+          sourceUrl={surface.url}
           initialTab={surface.detailTab ?? "summary"}
           revealUrl={surface.revealUrl}
           onRevealSettled={(revealUrl) => {
@@ -244,6 +245,7 @@ export function RightPanelSurfaceContent(props: {
               repository: reference.repository,
               number: reference.number,
               ...(reference.host ? { host: reference.host } : {}),
+              url: reference.url,
             });
           }}
           onSelectIssue={({ host, ...reference }) => {

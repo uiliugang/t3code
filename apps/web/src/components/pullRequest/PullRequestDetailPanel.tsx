@@ -115,6 +115,7 @@ import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import type { PullRequestAgentSelectionInput } from "./PullRequestCodeTab";
 import { openOnHostLabel } from "./pullRequestLinkContextMenu";
+import { parseUrl } from "@t3tools/shared/url";
 import { PullRequestMarkdownContext } from "./PullRequestMarkdown";
 import { pullRequestMarkdownExtensions } from "./pullRequestMarkdown.logic";
 import { PullRequestComposer } from "./PullRequestComposer";
@@ -246,6 +247,7 @@ function resolvePullRequestReference(
   repositoryIdentity: Parameters<typeof resolvePullRequestReferenceHost>[1],
   supportsThreadPullRequests: boolean,
 ): PullRequestRef {
+  if (requestedReference.host !== undefined) return requestedReference;
   return supportsThreadPullRequests
     ? resolvePullRequestReferenceHost(requestedReference, repositoryIdentity)
     : {
@@ -302,6 +304,7 @@ export function PullRequestDetailPanel({
   getShortcutContext,
   threadRef = null,
   reference: requestedReference,
+  sourceUrl,
   listEntry = null,
   refreshToken: forcedRefreshToken = 0,
   tabOnPage = false,
@@ -323,6 +326,7 @@ export function PullRequestDetailPanel({
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
   threadRef?: ScopedThreadRef | null;
   reference: PullRequestRef;
+  sourceUrl?: string | undefined;
   listEntry?: PullRequestListEntry | null;
   refreshToken?: number;
   /**
@@ -364,11 +368,12 @@ export function PullRequestDetailPanel({
     supportsThreadPullRequests,
   );
   const loadingCheckoutCommand = loadingPullRequestCheckoutCommand(reference, repositoryIdentity);
-  const unavailableHostUrl = projectChangeRequestUrl(
-    repositoryIdentity,
-    reference.repository,
-    reference.number,
-  );
+  const candidateHostUrl =
+    sourceUrl ??
+    projectChangeRequestUrl(repositoryIdentity, reference.repository, reference.number);
+  const candidateProtocol = candidateHostUrl ? parseUrl(candidateHostUrl)?.protocol : undefined;
+  const unavailableHostUrl =
+    candidateProtocol === "https:" || candidateProtocol === "http:" ? candidateHostUrl : null;
   const pullRequestKey = pullRequestRefKey(reference);
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&
@@ -386,7 +391,8 @@ export function PullRequestDetailPanel({
       supportsThreadPullRequests &&
       linkedReference &&
       (reference.host === undefined ||
-        reference.host.toLowerCase() === linkedReference.host.toLowerCase())
+        reference.host.toLowerCase() ===
+          (linkedReference.authority ?? linkedReference.host).toLowerCase())
       ? pullRequestEnvironment.linkedThreads({
           environmentId,
           input: { ...reference, ...normalizeThreadPullRequestKey(linkedReference) },

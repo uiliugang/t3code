@@ -404,11 +404,13 @@ function useOpenIssueLinkedPullRequest(params: IssueParams) {
       void tryOpenWebLink(link.url, "pull-request");
       return;
     }
+    const { url, ...reference } = target;
     navigation.dispatch(
       StackActions.push("PullRequest", {
         environmentId: params.environmentId,
         projectId: params.projectId,
-        ...target,
+        ...reference,
+        navigationUrl: url,
       }),
     );
   };

@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { NoiseApproval } from "@t3tools/client-runtime/relay";
 import { makeNoiseRpcSocket, NOISE_RPC_HIGH_WATER_MARK } from "@t3tools/shared/noiseRpcSocket";
+import { parseUrl } from "@t3tools/shared/url";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -40,7 +41,7 @@ function remember(entry: Entry) {
   } catch {}
 }
 function validRoute(route: Route) {
-  const relay = URL.parse(route.relay);
+  const relay = parseUrl(route.relay);
   return (
     relay?.protocol === "https:" &&
     relay.origin === route.relay &&

@@ -3,7 +3,11 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { isStandaloneIssueLink, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
+import {
+  githubIssueScopeFromUrl,
+  isStandaloneIssueLink,
+  issueReferenceHost,
+} from "@t3tools/client-runtime/issue-links";
 import {
   EnvironmentId,
   IssueTrackerKind,
@@ -433,6 +437,17 @@ export interface RequirementIssueSurfaceTarget {
   title?: string;
 }
 
+function requirementIssueScope(target: RequirementIssueSurfaceTarget): string | undefined {
+  const savedScope = typeof target.scope === "string" ? target.scope : undefined;
+  if (target.provider !== "github") return savedScope;
+  if (savedScope) return savedScope.toLowerCase();
+  const url = typeof target.url === "string" ? target.url : undefined;
+  const host = typeof target.host === "string" ? target.host : undefined;
+  return issueReferenceHost("github", host, url) === issueReferenceHost("github", undefined, url)
+    ? githubIssueScopeFromUrl(url, target.issueId)
+    : undefined;
+}
+
 function requirementIssueSurfaceId(
   target: Omit<RequirementIssueSurfaceTarget, "title">,
 ): RequirementIssueSurface["id"] {
@@ -442,10 +457,8 @@ function requirementIssueSurfaceId(
     tracker: IssueTrackerKind.make(target.provider),
     ...(target.url === undefined ? {} : { url: target.url }),
   });
-  const rawScope =
-    workspace === null
-      ? target.scope
-      : `${workspace}/${target.scope === undefined ? "" : target.scope}`;
+  const repository = requirementIssueScope(target);
+  const rawScope = workspace === null ? repository : `${workspace}/${repository ?? ""}`;
   const scope = rawScope === undefined ? "" : `${encodeURIComponent(rawScope)}:`;
   const referenceHost = issueReferenceHost(target.provider, target.host, target.url);
   const host = referenceHost ? `${encodeURIComponent(referenceHost)}:` : "";
@@ -453,14 +466,15 @@ function requirementIssueSurfaceId(
 }
 
 function requirementIssueSurface(target: RequirementIssueSurfaceTarget): RequirementIssueSurface {
+  const scope = requirementIssueScope(target);
   return {
-    id: requirementIssueSurfaceId(target),
+    id: requirementIssueSurfaceId({ ...target, ...(scope === undefined ? {} : { scope }) }),
     kind: "requirement-issue",
     ...(target.environmentId === undefined ? {} : { environmentId: target.environmentId }),
     projectId: target.projectId,
     provider: target.provider,
     ...(target.host ? { host: target.host } : {}),
-    ...(typeof target.scope === "string" ? { scope: target.scope } : {}),
+    ...(typeof scope === "string" ? { scope } : {}),
     issueId: target.issueId,
     ...(typeof target.url === "string" ? { url: target.url } : {}),
     ...(typeof target.title === "string" ? { title: target.title } : {}),
@@ -778,7 +792,19 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             .map(([threadKey, threadState]) => {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
+              const savedActiveSurfaceId = validThreadState?.activeSurfaceId;
+              let activeIssue: IssueSurface | RequirementIssueSurface | undefined;
               const migratedSurfaceIds = new Map<string, string>();
+              const migrateIssue = (
+                original: IssueSurface | RequirementIssueSurface,
+                rebuilt: IssueSurface | RequirementIssueSurface,
+              ) => {
+                if (typeof original.id === "string" && original.id !== rebuilt.id) {
+                  migratedSurfaceIds.set(original.id, rebuilt.id);
+                }
+                if (original.id === savedActiveSurfaceId) activeIssue = rebuilt;
+                return [rebuilt];
+              };
               const decodedSurfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     if (!surface || typeof surface !== "object") return [];
@@ -848,10 +874,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         ...rest,
                         ...(typeof environmentId === "string" ? { environmentId } : {}),
                       });
-                      if (typeof surface.id === "string" && surface.id !== rebuilt.id) {
-                        migratedSurfaceIds.set(surface.id, rebuilt.id);
-                      }
-                      return [rebuilt];
+                      return migrateIssue(surface, rebuilt);
                     }
                     if (surface.kind === "requirement-issue") {
                       if (
@@ -867,10 +890,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         ...rest,
                         ...(typeof environmentId === "string" ? { environmentId } : {}),
                       });
-                      if (typeof surface.id === "string" && surface.id !== rebuilt.id) {
-                        migratedSurfaceIds.set(surface.id, rebuilt.id);
-                      }
-                      return [rebuilt];
+                      return migrateIssue(surface, rebuilt);
                     }
                     if (surface.kind === "work-item") {
                       if (typeof surface.workItemId !== "string") return [];
@@ -916,10 +936,21 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     ];
                   })
                 : [];
-              const surfaces = [
-                ...new Map(decodedSurfaces.map((surface) => [surface.id, surface])).values(),
-              ];
-              const savedActiveSurfaceId = validThreadState?.activeSurfaceId;
+              const unique = new Map<string, RightPanelSurface>();
+              for (const surface of decodedSurfaces) {
+                const previous = unique.get(surface.id);
+                if (
+                  (surface.kind === "issue" || surface.kind === "requirement-issue") &&
+                  (previous?.kind === "issue" || previous?.kind === "requirement-issue")
+                ) {
+                  const preferred = activeIssue?.id === surface.id ? activeIssue : previous;
+                  const url = preferred.url || previous.url || surface.url;
+                  unique.set(surface.id, url ? { ...preferred, url } : preferred);
+                } else {
+                  unique.set(surface.id, surface);
+                }
+              }
+              const surfaces = [...unique.values()];
               const rawActiveSurfaceId =
                 typeof savedActiveSurfaceId === "string" &&
                 savedActiveSurfaceId.startsWith("side-chat:")

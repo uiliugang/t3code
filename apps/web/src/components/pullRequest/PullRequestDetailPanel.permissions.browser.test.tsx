@@ -21,7 +21,7 @@ const { command, permissions, reads, shown } = vi.hoisted(() => ({
   command: vi.fn(),
   permissions: { checkout: true, operate: true },
   reads: { diff: [] as unknown[] },
-  shown: { detail: null as PullRequestDetailView | null },
+  shown: { detail: null as PullRequestDetailView | null, error: null as string | null },
 }));
 
 vi.mock(import("~/state/session"), async (original) => ({
@@ -43,7 +43,7 @@ vi.mock(import("./usePullRequestDetail"), async (original) => ({
   ...(await original()),
   usePullRequestDetail: (() => ({
     canWriteSourceControl: permissions.checkout,
-    detailQuery: { isPending: false, refresh: vi.fn() },
+    detailQuery: { isPending: false, refresh: vi.fn(), error: shown.error },
     activityQuery: { isPending: false, refresh: vi.fn(), error: null },
     activity: null,
     sharedSummary: shown.detail,
@@ -136,10 +136,11 @@ const detail: PullRequestDetailView = {
 
 const environmentId = EnvironmentId.make("environment");
 const draftId = DraftId.make("conflicts-draft");
-const panel = (attach = false, reference = detail) => (
+const panel = (attach = false, reference = detail, sourceUrl?: string) => (
   <PullRequestDetailPanel
     environmentId={environmentId}
     reference={reference}
+    sourceUrl={sourceUrl}
     context="page"
     shortcutsEnabled={false}
     getShortcutContext={() => ({
@@ -159,9 +160,22 @@ function setup() {
   permissions.operate = true;
   reads.diff = [];
   shown.detail = detail;
+  shown.error = null;
   command.mockReset();
   useComposerDraftStore.setState({ draftsByThreadKey: {} });
 }
+
+it("keeps the original pull request URL available when detail cannot load", async () => {
+  setup();
+  shown.detail = null;
+  shown.error = "Unable to read this instance";
+  const sourceUrl = "https://forge.test:8443/owner/repo/pull/1";
+  await using screen = await render(panel(false, detail, sourceUrl));
+  await expect.element(screen.getByText("Unable to read this instance")).toBeVisible();
+  await expect
+    .element(page.getByRole("link").and(page.elementLocator(`a[href="${sourceUrl}"]`)))
+    .toBeVisible();
+});
 
 it.each([AuthSourceControlWriteScope, AuthOrchestrationOperateScope])(
   "disables conflict checkout when the connection loses %s",

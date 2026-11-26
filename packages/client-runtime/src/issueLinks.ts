@@ -85,10 +85,10 @@ export function issueLinkedPullRequestTarget(
   issue: { readonly tracker: string; readonly host?: string | undefined },
   target: { readonly url: string; readonly repository: string; readonly number: number },
 ) {
-  const { repository, number } = target;
+  const { repository, number, url } = target;
   if (sourceControlClients.find(issue.tracker) === undefined) return null;
   if (issue.tracker !== "github")
-    return { repository, number, ...(issue.host ? { host: issue.host } : {}) };
+    return { repository, number, url, ...(issue.host ? { host: issue.host } : {}) };
   const host = githubLinkHost(target.url);
   const parsed = sourceControlClients.parseChangeRequestUrl(target.url);
   if (
@@ -99,7 +99,7 @@ export function issueLinkedPullRequestTarget(
     parsed.link.number !== number
   )
     return null;
-  return { repository, number, host };
+  return { repository, number, host, url };
 }
 
 export function issueReferenceHost(

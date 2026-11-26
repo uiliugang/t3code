@@ -1598,6 +1598,7 @@ export function RequirementBoard({
                   getShortcutContext={getShortcutContext}
                   shortcutsEnabled={panelSurface?.id === renderedSurface.id}
                   environmentId={panelEnvironmentId}
+                  sourceUrl={renderedSurface.url}
                   reference={{
                     projectId: renderedSurface.projectId as ProjectId,
                     repository: renderedSurface.repository,

@@ -100,6 +100,7 @@ export function IssueDetailPanel(
             projectId: reference.projectId,
             repository: reference.repository,
             number: reference.number,
+            url: reference.url,
             ...(reference.host ? { host: reference.host } : {}),
             environmentId: props.environmentId,
           });
