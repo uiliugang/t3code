@@ -11094,8 +11094,16 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }),
         usageSnapshotFrame("msg_snapshot_only", "00000000-0000-4000-8000-000000000690", {
           ...zeroUsage,
+          output_tokens: 700,
           iterations: [
             ...usage.iterations,
+            {
+              type: "message",
+              input_tokens: 2,
+              cache_read_input_tokens: 541_000,
+              cache_creation_input_tokens: 1_000,
+              output_tokens: 300,
+            },
             { type: "advisor_message", input_tokens: 547000, output_tokens: 25 },
           ],
         }),
@@ -11103,7 +11111,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ])
         yield* Queue.offer(harness.sdkMessages, frame);
       assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
-      assert.deepEqual(reportedContextTokens(harness.events), [545196, 545196]);
+      assert.deepEqual(reportedContextTokens(harness.events), [545_196, 542_302]);
+      assert.deepEqual(
+        harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
+            ? [event.providerTurn.tokenUsage.turnOutputTokens]
+            : [],
+        ),
+        [711, 1_411],
+      );
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -11166,7 +11182,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       for (const frame of frames) yield* Queue.offer(harness.sdkMessages, frame);
       const terminal = yield* Queue.take(harness.terminalReceipts);
       assert.equal(terminal.status, "completed");
-      assert.deepEqual(reportedContextTokens(harness.events), [38_123]);
+      assert.deepEqual(reportedContextTokens(harness.events), [38_123, 38_123]);
+      assert.deepEqual(
+        harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
+            ? [event.providerTurn.tokenUsage.turnOutputTokens]
+            : [],
+        ),
+        [184, 196],
+      );
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -11217,6 +11241,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           delta: { stop_reason: "end_turn", stop_sequence: null },
           usage: { output_tokens: 80 },
         }),
+        usageSnapshotFrame("msg_empty_second", "00000000-0000-4000-8000-000000000678", {
+          ...zeroUsage,
+          output_tokens: 85,
+        }),
         usageStreamFrame({
           type: "message_start",
           message: { id: "msg_null_usage", usage: null },
@@ -11248,8 +11276,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           { usedTokens: 12_345, inputTokens: 12_345, outputTokens: 0, cachedInputTokens: 0 },
           { usedTokens: 12_500, inputTokens: 12_500, outputTokens: 0, cachedInputTokens: 0 },
           { usedTokens: 12_580, inputTokens: 12_500, outputTokens: 80, cachedInputTokens: 0 },
+          { usedTokens: 12_585, inputTokens: 12_500, outputTokens: 85, cachedInputTokens: 0 },
           { usedTokens: 12_640, inputTokens: 12_600, outputTokens: 40, cachedInputTokens: 0 },
         ],
+      );
+      assert.deepEqual(
+        tokenUsages.map((usage) => usage.turnOutputTokens),
+        [undefined, undefined, 80, 85, 125],
       );
     }).pipe(
       Effect.provide(
