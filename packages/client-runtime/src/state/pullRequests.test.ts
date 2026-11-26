@@ -10,8 +10,11 @@ import {
   SourceControlProviderKind,
   WS_METHODS,
   type AuthSessionState,
-  type PullRequestListInput,
+  type PullRequestActionInput,
+  type PullRequestDetail,
   type PullRequestListEntry,
+  type PullRequestListInput,
+  type PullRequestRef,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
@@ -1067,36 +1070,67 @@ it.effect.each(["closed", "draft", "permission", "stack", "method"] as const)(
     }),
 );
 
-it.effect("pins a quick merge to the head it judged mergeable unless the caller showed one", () =>
+it.effect("reads the quick merge's target and pins its head unless the caller showed one", () =>
   Effect.gen(function* () {
-    const pinned: Array<string | undefined> = [];
+    const webTarget = {
+      provider: SourceControlProviderKind.make("gitlab"),
+      origin: "http://forge.test",
+    };
+    const details: PullRequestRef[] = [];
+    const stacks: PullRequestRef[] = [];
+    const merges: PullRequestActionInput[] = [];
     const client = {
-      [WS_METHODS.pullRequestsDetail]: () =>
-        Effect.succeed({
-          state: "open",
-          isDraft: false,
-          headSha: "checked-head",
-          capabilities: { actions: ["merge"] },
-          viewerPermissions: { actions: ["merge"] },
+      [WS_METHODS.pullRequestsDetail]: (reference: PullRequestRef) =>
+        Effect.sync(() => {
+          details.push(reference);
+          const isTarget = reference.target?.origin === webTarget.origin;
+          return {
+            state: "open",
+            isDraft: false,
+            headSha: isTarget ? "checked-head" : "other-head",
+            capabilities: {
+              actions: ["merge"],
+              stackActions: true,
+              mergeMethods: [isTarget ? "squash" : "merge"],
+            },
+            viewerPermissions: { actions: ["merge"] },
+          };
         }),
-      [WS_METHODS.pullRequestsRunAction]: (input: { expectedHeadSha?: string }) =>
-        Effect.sync(() => void pinned.push(input.expectedHeadSha)),
+      [WS_METHODS.pullRequestsStack]: (reference: PullRequestRef) =>
+        Effect.sync(() => {
+          stacks.push(reference);
+          return null;
+        }),
+      [WS_METHODS.pullRequestsRunAction]: (input: PullRequestActionInput) =>
+        Effect.sync(() => void merges.push(input)),
     } as unknown as WsRpcProtocolClient;
     const { atoms, registry } = yield* makeTestRuntime(client);
-    const input = {
+    const reference = {
       projectId: ProjectId.make("project-1"),
+      host: "forge.test",
+      target: webTarget,
       repository: "acme/web",
       number: 1,
-      action: "merge" as const,
-      resolveMergeMethod: () => "squash" as const,
     };
     for (const shown of [{}, { expectedHeadSha: "shown-head" }]) {
       yield* atoms.runAction.run(registry, {
         environmentId: TARGET.environmentId,
-        input: { ...input, ...shown },
+        input: {
+          ...reference,
+          ...shown,
+          action: "merge",
+          resolveMergeMethod: (detail: PullRequestDetail) =>
+            detail.capabilities.mergeMethods.includes("squash") ? "squash" : "merge",
+        },
       });
     }
-    expect(pinned).toEqual(["checked-head", "shown-head"]);
+    const fresh = { ...reference, allowStale: false };
+    expect(details).toEqual([fresh, fresh]);
+    expect(stacks).toEqual([fresh, fresh]);
+    expect(merges).toMatchObject([
+      { ...reference, mergeMethod: "squash", expectedHeadSha: "checked-head" },
+      { ...reference, mergeMethod: "squash", expectedHeadSha: "shown-head" },
+    ]);
   }),
 );
 

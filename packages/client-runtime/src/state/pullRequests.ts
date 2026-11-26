@@ -1107,8 +1107,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     const { resolveMergeMethod, ...actionInput } = input;
     let preparedInput = actionInput;
     if (actionInput.action === "merge" && resolveMergeMethod !== undefined) {
-      const { projectId, host, repository, number } = actionInput;
-      const reference = { projectId, host, repository, number, allowStale: false };
+      const reference = { ...pullRequestReference(actionInput), allowStale: false };
       const detail = yield* routedRequest(WS_METHODS.pullRequestsDetail, reference);
       if (
         detail.state !== "open" ||
