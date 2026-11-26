@@ -11024,7 +11024,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       for (const frame of frames) yield* Queue.offer(harness.sdkMessages, frame);
       const terminal = yield* Queue.take(harness.terminalReceipts);
       assert.equal(terminal.status, "completed");
-      assert.deepEqual(reportedContextTokens(harness.events), [38_123]);
+      assert.deepEqual(reportedContextTokens(harness.events), [38_123, 38_123]);
+      assert.deepEqual(
+        harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
+            ? [event.providerTurn.tokenUsage.turnOutputTokens]
+            : [],
+        ),
+        [184, 196],
+      );
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

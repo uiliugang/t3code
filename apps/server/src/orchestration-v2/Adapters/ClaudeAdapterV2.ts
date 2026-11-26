@@ -2,7 +2,10 @@ import {
   RESOURCE_OWNER_ENV,
   resourceOwner,
 } from "@t3tools/provider-core/server/instanceEnvironment";
-import type { ThreadWorkspaceRevision } from "@t3tools/contracts";
+import type {
+  OrchestrationV2ProviderTurnTokenUsage,
+  ThreadWorkspaceRevision,
+} from "@t3tools/contracts";
 import { workspaceContext } from "@t3tools/provider-core/server/workspacePolicy";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import {
@@ -5462,6 +5465,7 @@ interface ActiveClaudeTurnContext {
   } | null;
   readonly outputTokensByMessage: Map<string, number>;
   turnOutputTokens: number;
+  lastContextUsage?: OrchestrationV2ProviderTurnTokenUsage;
   compactionTokens: number | undefined;
   readonly toolCalls: Map<string, ActiveClaudeToolCall>;
   // A successful status can precede the boundary that supplies its token counts.
@@ -6781,22 +6785,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           // arrives after generation, so it leaves the cache expiry unknown.
           if (requestStarted && context.streamUsage !== null) context.streamUsage.requestedAt = now;
           const maxTokens = claudeContextWindow(context.input.modelSelection);
-          const tokenUsage =
+          const updatedAt = DateTime.formatIso(now);
+          let tokenUsage: OrchestrationV2ProviderTurnTokenUsage =
             typeof usage === "number"
               ? {
                   usedTokens: usage,
                   maxTokens,
                   ...claudeAutoCompactThreshold(context.autoCompactWindow, maxTokens),
-                  updatedAt: DateTime.formatIso(now),
+                  updatedAt,
                 }
               : claudeProviderTurnTokenUsage(
                   usage,
                   maxTokens,
-                  DateTime.formatIso(now),
+                  updatedAt,
                   context.autoCompactWindow,
                   context.streamUsage?.requestedAt,
                 );
           if (typeof usage !== "number") {
+            const previousTurnOutput = context.turnOutputTokens;
             const messageId = context.streamUsage?.messageId;
             const outputTokens = optionalClaudeUsageTokenCount(usage.output_tokens) ?? 0;
             if (messageId !== undefined) {
@@ -6806,9 +6812,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 context.turnOutputTokens += outputTokens - previous;
               }
             }
-            if (claudeMessageInputTokens(usage) <= 0) return;
-            context.compactionTokens = undefined;
+            if (claudeMessageInputTokens(usage) <= 0) {
+              if (
+                context.turnOutputTokens === previousTurnOutput ||
+                context.lastContextUsage === undefined
+              )
+                return;
+              tokenUsage = { ...context.lastContextUsage, updatedAt };
+            } else {
+              context.compactionTokens = undefined;
+            }
           }
+          context.lastContextUsage = tokenUsage;
           yield* emitProviderEvent({
             type: "provider_turn.updated",
             driver: CLAUDE_PROVIDER,
