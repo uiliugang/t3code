@@ -2105,7 +2105,8 @@ it.effect("a hook starts sixty runs a minute; a retry of one it started still an
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
         const [hook] = yield* workflows.hooks;
-        const [hookId, token] = hook!.path.split("/").slice(-2).map(decodeURIComponent);
+        assert.ok(hook && "path" in hook);
+        const [hookId, token] = hook.path.split("/").slice(-2).map(decodeURIComponent);
         const deliver = (delivery: string) =>
           workflows.deliver({
             hookId: hookId!,
