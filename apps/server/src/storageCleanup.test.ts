@@ -380,7 +380,7 @@ const cleanupFixture = (
     let deletedThreads: OrchestrationV2ThreadShell[] = [];
     let storedWorktreePaths: string[] = [worktree];
     let workspaceReferences: Array<{
-      workspacePath: string;
+      workspacePath: string | null;
       commonDir: string | null;
       branch: string | null;
     }> = [];
@@ -1595,6 +1595,16 @@ describe("merged local branch cleanup", () => {
           yield* fixture.fs.utimes(fixture.worktree, 1, 1);
           fixture.setWorkspaceReferences([
             {
+              workspacePath: null,
+              commonDir: null,
+              branch: null,
+            },
+            {
+              workspacePath: `${fixture.repo}/unrelated-task`,
+              commonDir: null,
+              branch: null,
+            },
+            {
               workspacePath:
                 scenario === "workspace-checkout" ? fixture.worktree : `${fixture.repo}/old-task`,
               commonDir: `${fixture.repo}/.git`,
@@ -1635,6 +1645,26 @@ describe("merged local branch cleanup", () => {
           expect(report.counts.failed).toBe(0);
         if (scenario === "ordinary")
           expect(report.entries.some((entry) => entry.path === retainedPath)).toBe(false);
+        if (scenario === "workspace-checkout") {
+          expect(report.counts.failed).toBe(0);
+          expect(report.entries).toContainEqual(
+            expect.objectContaining({
+              kind: "branch",
+              outcome: "kept",
+              reason: "Worktree belongs to a multi-repository workspace",
+            }),
+          );
+        }
+        if (scenario === "workspace-branch") {
+          expect(report.counts.failed).toBe(0);
+          expect(report.entries).toContainEqual(
+            expect.objectContaining({
+              kind: "branch",
+              outcome: "kept",
+              reason: "Branch is retained by a multi-repository workspace",
+            }),
+          );
+        }
         if (scenario === "locked") {
           expect(report.entries).toContainEqual(
             expect.objectContaining({

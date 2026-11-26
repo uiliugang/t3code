@@ -40,7 +40,13 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { decide, readWorkspace } from "../.github/scripts/ci-changes.cjs";
 import { vitePlusCommand } from "./check-changed-command.ts";
-import { resolveGitCommonDir, withBrowserTestLock, withCheckLock } from "./check-changed-lock.ts";
+import {
+  installSighupForwarding,
+  resolveGitCommonDir,
+  trackDescendantProcessGroups,
+  withBrowserTestLock,
+  withCheckLock,
+} from "./check-changed-lock.ts";
 
 const GiB = 1024 ** 3;
 
@@ -253,16 +259,18 @@ const CODE = /\.(?:[cm]?[jt]sx?|astro)$/;
 const TEST = /\.test\.[cm]?[jt]sx?$/;
 // CI runs the .github/scripts tests with `node --test`; vitest passes a failing node:test file.
 const NODE_TEST = /^\.github[/\\]scripts[/\\]/;
-export const splitTests = (tests: Iterable<string>) => {
-  const all = [...tests];
-  return {
-    vitestTests: all.filter((file) => !NODE_TEST.test(file)),
-    nodeTests: all.filter((file) => NODE_TEST.test(file)),
-  };
-};
 export const launchesChromium = (file: string) =>
   /^apps[/\\]web[/\\].*\.browser\.test\.[cm]?[jt]sx?$/.test(file) ||
   /^apps[/\\]server[/\\]src[/\\]preview[/\\]ServerBrowser(?:Contexts|Page)?\.test\.ts$/.test(file);
+export const splitTests = (tests: Iterable<string>) => {
+  const all = [...tests];
+  const vitestTests = all.filter((file) => !NODE_TEST.test(file));
+  return {
+    browserTests: vitestTests.filter(launchesChromium),
+    unitTests: vitestTests.filter((file) => !launchesChromium(file)),
+    nodeTests: all.filter((file) => NODE_TEST.test(file)),
+  };
+};
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // A flag wins over its environment variable; either must be a positive integer.
@@ -398,7 +406,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   for (const test of docReaderTests(files)) tests.add(test);
   // It reads files other than the ones beside it, so no changed file selects it.
   if (affected.includes("t3")) tests.add("apps/server/src/provider/AgentContextBudget.test.ts");
-  const { vitestTests, nodeTests } = splitTests(tests);
+  const { browserTests, unitTests, nodeTests } = splitTests(tests);
 
   // React Compiler coverage compiles every client source file, so run only the
   // changed files' cases, in one extra step: a -t filter in the main test step
@@ -483,6 +491,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
             forceKillAfter: "5 seconds",
           }),
         );
+        yield* trackDescendantProcessGroups(Number(handle.pid));
         const [output, exitCode] = yield* Effect.all(
           [Stream.mkString(Stream.decodeText(handle.all)), handle.exitCode],
           { concurrency: 2 },
@@ -571,28 +580,44 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
           },
         ]
       : []),
-    // From the repo root, the root vite.config.ts hands each file to its package's config.
-    ...(vitestTests.length > 0
+    // Split Chromium-backed tests into their own Vitest invocation so Playwright's
+    // chrome-headless-shell exits immediately afterward instead of staying resident
+    // across long Node/server test runs.
+    ...(browserTests.length > 0
       ? [
           {
-            ...command(`test (${vitestTests.length} files)`, [
+            ...command(`browser test (${browserTests.length} files)`, [
               "test",
               "run",
               "--passWithNoTests",
               "--maxWorkers",
               "1",
               "--no-file-parallelism",
-              ...vitestTests,
+              ...browserTests,
             ]),
-            ...(vitestTests.some(launchesChromium)
-              ? {
-                  withLock: <A, R>(task: Effect.Effect<A, never, R>) =>
-                    withBrowserTestLock(input.commonDir, task, {
-                      waitingMessage:
-                        "check:changed: waiting for another browser test in this repository to finish.",
-                    }).pipe(Effect.mapError(String)),
-                }
-              : {}),
+            withLock: <A, R>(task: Effect.Effect<A, never, R>) =>
+              withBrowserTestLock(input.commonDir, task, {
+                waitingMessage:
+                  "check:changed: waiting for another browser test in this repository to finish.",
+              }).pipe(Effect.mapError(String)),
+            serial: true,
+            weight: concurrency,
+          },
+        ]
+      : []),
+    // From the repo root, the root vite.config.ts hands each file to its package's config.
+    ...(unitTests.length > 0
+      ? [
+          {
+            ...command(`test (${unitTests.length} files)`, [
+              "test",
+              "run",
+              "--passWithNoTests",
+              "--maxWorkers",
+              "1",
+              "--no-file-parallelism",
+              ...unitTests,
+            ]),
             serial: true,
             weight: concurrency,
           },
@@ -713,8 +738,9 @@ export const checkChangedCommand = Command.make(
 ).pipe(Command.withDescription("Run CI's fast checks for this branch's changes."));
 
 if (import.meta.main) {
-  Command.run(checkChangedCommand, { version: "0.0.0" }).pipe(
-    Effect.provide(NodeServices.layer),
-    NodeRuntime.runMain,
-  );
+  Effect.scoped(
+    installSighupForwarding().pipe(
+      Effect.andThen(Command.run(checkChangedCommand, { version: "0.0.0" })),
+    ),
+  ).pipe(Effect.provide(NodeServices.layer), NodeRuntime.runMain);
 }
