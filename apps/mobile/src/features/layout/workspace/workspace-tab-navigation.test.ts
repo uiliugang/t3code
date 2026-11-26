@@ -68,6 +68,23 @@ it("opens a nested workspace file from a link and preserves its path when sharin
 });
 
 describe("workspace tab selections", () => {
+  it("restores the RPC source separately from the Meituan Code browser URL", () => {
+    const url = "https://dev.sankuai.com/code/repo-detail/o/r/pr/7/overview";
+    const target = { provider: "meituan", origin: "https://git.sankuai.com" };
+    const params = {
+      ...pullRequest.params,
+      host: "git.sankuai.com",
+      initialSummary: { url, target },
+    };
+    const selection = workspaceSelectionsIn([{ ...pullRequest, params }], {});
+    const restored = workspaceTabPage({ routes: [home] }, "pullRequests", selection, {
+      columns: true,
+      check: available,
+    })?.params;
+    expect(restored).toMatchObject({ navigationUrl: url, target });
+    expect(selectedPullRequestKeyOf(restored)).toBe("env:meituan https://git.sankuai.com:o/r:7");
+  });
+
   it("restores a selected merge request from the same Web origin", () => {
     const url = "http://forge.test/o/r/-/merge_requests/7";
     const params = { ...pullRequest.params, host: "forge.test", initialSummary: { url } };

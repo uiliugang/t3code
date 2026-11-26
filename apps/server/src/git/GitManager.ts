@@ -2498,8 +2498,9 @@ export const make = Effect.gen(function* () {
       | "isCrossRepository"
     >,
     ownerHeadSelector?: string,
+    resolvedProvider?: SourceControlProvider.SourceControlProvider["Service"],
   ) {
-    const provider = yield* sourceControlProvider(cwd);
+    const provider = resolvedProvider ?? (yield* sourceControlProvider(cwd));
     const probe = headBranchProbe(provider, headContext.headSelectors, "open", ownerHeadSelector);
     for (const headSelector of probe.headSelectors) {
       const pullRequests = yield* provider.listChangeRequests({
@@ -2534,7 +2535,7 @@ export const make = Effect.gen(function* () {
     if (!headContext.isCrossRepository || headContext.headRepositoryNameWithOwner === null) {
       return null;
     }
-    const provider = yield* sourceControlProvider(cwd);
+    const provider = yield* sourceControlProviders.resolve({ cwd, refresh: true });
     if (provider.createsChangeRequestsIn === undefined) return null;
     const sameRepository = { ...headContext, isCrossRepository: false };
     const pullRequests = yield* provider.listChangeRequests({
@@ -2557,7 +2558,7 @@ export const make = Effect.gen(function* () {
   ) {
     const parsedByNumber = new Map<number, PullRequestInfo>();
 
-    const provider = yield* sourceControlProvider(cwd);
+    const provider = yield* sourceControlProviders.resolve({ cwd, refresh: true });
     const probe = headBranchProbe(
       provider,
       headContext.headSelectors,
@@ -2597,6 +2598,7 @@ export const make = Effect.gen(function* () {
         headContext.headRepositoryOwnerLogin
           ? `${headContext.headRepositoryOwnerLogin}:${headContext.headBranch}`
           : undefined,
+        provider,
       );
       if (openPr) return openPr;
     }

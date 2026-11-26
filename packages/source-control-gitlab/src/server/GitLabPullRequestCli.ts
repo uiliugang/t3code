@@ -385,6 +385,8 @@ export interface GitLabMergeRequestDiffSlice {
 export class GitLabPullRequestCli extends Context.Service<
   GitLabPullRequestCli,
   {
+    readonly configuredWebOrigin?: GitLabCli.GitLabCli["Service"]["configuredWebOrigin"];
+
     readonly getViewerUsername: (input: {
       readonly cwd: string;
       readonly host?: string | undefined;
@@ -2293,6 +2295,7 @@ export const make = Effect.gen(function* () {
     );
 
   return GitLabPullRequestCli.of({
+    configuredWebOrigin: gitlab.configuredWebOrigin,
     getViewerUsername: viewerUsername,
 
     listMergeRequests: Effect.fn("GitLabPullRequestCli.listMergeRequests")(function (input) {

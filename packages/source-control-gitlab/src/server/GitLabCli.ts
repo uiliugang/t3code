@@ -308,6 +308,11 @@ export interface GitLabRepositoryCloneUrls {
 export class GitLabCli extends Context.Service<
   GitLabCli,
   {
+    readonly configuredWebOrigin?: (input: {
+      readonly cwd: string;
+      readonly host: string;
+    }) => Effect.Effect<string | null, GitLabCliError>;
+
     readonly execute: (input: {
       readonly cwd: string;
       readonly host?: string | undefined;
@@ -550,6 +555,45 @@ export const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => true),
       );
 
+  const configValue = (cwd: string, host: string, key: string) =>
+    process
+      .run({
+        operation: "GitLabCli.verifyEndpoint",
+        command: "glab",
+        args: ["config", "get", key, "--host", host],
+        cwd,
+        env: WITHOUT_ENVIRONMENT_TOKEN,
+      })
+      .pipe(Effect.map(({ stdout }) => stdout.trim()));
+
+  const configuredWebOrigin = Effect.fn("GitLabCli.configuredWebOrigin")(
+    function* (input: { readonly cwd: string; readonly host: string }) {
+      const protocol = (yield* configValue(input.cwd, input.host, "api_protocol")) || "https";
+      if (protocol !== "http" && protocol !== "https") return null;
+      const configuredHost = (yield* configValue(input.cwd, input.host, "api_host")) || input.host;
+      const endpoint = parseUrl(`${protocol}://${configuredHost}`);
+      return endpoint !== null &&
+        !endpoint.username &&
+        !endpoint.password &&
+        endpoint.origin === parseUrl(`${protocol}://${input.host}`)?.origin
+        ? endpoint.origin
+        : null;
+    },
+    (effect, input) =>
+      effect.pipe(
+        Effect.mapError(
+          (error) =>
+            new GitLabCliCommandError({
+              operation: "execute",
+              command: "glab",
+              cwd: input.cwd,
+              userFacingDetail: "GitLab CLI Web origin could not be read.",
+              cause: error,
+            }),
+        ),
+      ),
+  );
+
   // Untraced: every caller is a named `GitLabCli.*` span already.
   const run = Effect.fnUntraced(function* (
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
@@ -575,23 +619,12 @@ export const make = Effect.gen(function* () {
       ) {
         return yield* incompatible();
       }
-      const configValue = (key: string) =>
-        process
-          .run({
-            operation: "GitLabCli.verifyEndpoint",
-            command: "glab",
-            args: ["config", "get", key, "--host", endpoint.host],
-            cwd: input.cwd,
-            env: WITHOUT_ENVIRONMENT_TOKEN,
-          })
-          .pipe(
-            Effect.map(({ stdout }) => stdout.trim()),
-            Effect.mapError(mapError),
-          );
+      const readConfig = (key: string) =>
+        configValue(input.cwd, endpoint.host, key).pipe(Effect.mapError(mapError));
       const protocol = endpoint.protocol.slice(0, -1);
-      const configuredProtocol = (yield* configValue("api_protocol")) || "https";
+      const configuredProtocol = (yield* readConfig("api_protocol")) || "https";
       if (configuredProtocol !== protocol) return yield* incompatible();
-      const configuredHost = (yield* configValue("api_host")) || endpoint.host;
+      const configuredHost = (yield* readConfig("api_host")) || endpoint.host;
       const api = parseUrl(`${endpoint.protocol}//${configuredHost}`);
       if (api?.origin !== endpoint.origin || api.username || api.password) {
         return yield* incompatible();
@@ -686,6 +719,7 @@ export const make = Effect.gen(function* () {
   });
 
   return GitLabCli.of({
+    configuredWebOrigin,
     execute,
     listMergeRequests: Effect.fn("GitLabCli.listMergeRequests")(function* (input) {
       const limit = input.limit ?? 20;

@@ -48,6 +48,7 @@ export interface IssueLink {
 export interface ParsedChangeRequestUrl extends ChangeRequestLink {
   /** The repository's browser URL, without query or hash. */
   readonly repositoryUrl: string;
+  readonly rpcOrigin?: string;
 }
 
 export interface CommitLink {

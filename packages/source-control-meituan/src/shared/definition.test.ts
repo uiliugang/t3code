@@ -12,6 +12,7 @@ describe("Meituan Code identity", () => {
       repository: "sa/web",
       number: 22,
       repositoryUrl: "https://dev.sankuai.com/code/repo-detail/sa/web",
+      rpcOrigin: "https://git.sankuai.com",
     });
   });
   it.each([

@@ -298,6 +298,12 @@ export const make = Effect.gen(function* () {
     capabilities: CAPABILITIES,
     mergeMessageRewrite: removeAgentCredits,
     unavailableRequirement: UNAVAILABLE_REQUIREMENT,
+    ...(cli.configuredWebOrigin === undefined
+      ? {}
+      : {
+          configuredWebOrigin: (input) =>
+            cli.configuredWebOrigin!(input).pipe(Effect.mapError(fail("configuredWebOrigin"))),
+        }),
 
     getViewer: (input) => cli.getViewerUsername(input).pipe(Effect.mapError(fail("getViewer"))),
 

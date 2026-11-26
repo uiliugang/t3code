@@ -77,13 +77,17 @@ export function makeThreadPullRequests(
     const claimed = key.url === undefined ? null : registry.parseChangeRequestUrl(key.url);
     const parsed = claimed?.link ?? (key.url === undefined ? null : parse(key.url));
     const url = key.url === undefined ? null : parseUrl(key.url);
+    const endpoint = claimed?.link.rpcOrigin === undefined ? url : parseUrl(claimed.link.rpcOrigin);
     const matchesLink =
       parsed?.repository === canonicalRepositoryPath(key.repository.trim()) &&
       parsed.number === key.number &&
-      (url === null || parseUrl(`${url.protocol}//${key.host}`)?.hostname === url.hostname);
+      (endpoint === null ||
+        parseUrl(`${endpoint.protocol}//${key.host}`)?.hostname === endpoint.hostname);
     const authority =
       key.authority ??
-      (matchesLink ? (parsed.authority ?? (claimed === null ? undefined : url?.host)) : undefined);
+      (matchesLink
+        ? (parsed.authority ?? (claimed === null ? undefined : endpoint?.host))
+        : undefined);
     const canonical = savedKeys.canonicalRepositoryKey(
       registry.canonicalRepositoryKey(
         `${(authority ?? key.host).trim().toLowerCase()}/${key.repository.trim().toLowerCase()}`,
@@ -92,8 +96,8 @@ export function makeThreadPullRequests(
     const separator = canonical.indexOf("/");
     const target =
       key.target ??
-      (matchesLink && claimed !== null && url !== null
-        ? { provider: claimed.definition.kind, origin: url.origin }
+      (matchesLink && claimed !== null && endpoint !== null
+        ? { provider: claimed.definition.kind, origin: endpoint.origin }
         : undefined);
     return {
       host: canonical.slice(0, separator),

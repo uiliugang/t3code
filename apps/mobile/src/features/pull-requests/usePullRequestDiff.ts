@@ -4,6 +4,7 @@ import {
   ProjectId,
   type PullRequestListEntry,
   type PullRequestSummary,
+  type PullRequestWebTarget,
 } from "@t3tools/contracts";
 import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Atom, type AsyncResult } from "effect/reactivity";
@@ -28,6 +29,7 @@ export type PullRequestParams = {
   readonly repository: string;
   readonly number: number;
   readonly host?: string;
+  readonly target?: PullRequestWebTarget;
   readonly navigationUrl?: string;
   readonly navigationId?: number;
   readonly initialSummary?: PullRequestListEntry | PullRequestSummary;
@@ -43,6 +45,7 @@ export function pullRequestParams(params: PullRequestParams): PullRequestParams 
     repository: params.repository,
     number: params.number,
     ...(params.host === undefined ? {} : { host: params.host }),
+    ...(params.target === undefined ? {} : { target: params.target }),
     ...(params.navigationUrl === undefined ? {} : { navigationUrl: params.navigationUrl }),
     ...(params.navigationId === undefined ? {} : { navigationId: params.navigationId }),
     ...(params.initialSummary === undefined ? {} : { initialSummary: params.initialSummary }),

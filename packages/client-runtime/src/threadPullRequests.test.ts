@@ -60,6 +60,21 @@ function link(
 }
 
 describe("threadPullRequestKeysEqual", () => {
+  it("recovers the Meituan Code RPC source from its browser URL", () => {
+    expect(
+      legacyThreadPullRequestKey({
+        repository: "acme/app",
+        number: 7,
+        url: "https://dev.sankuai.com/code/repo-detail/acme/app/pr/7/overview",
+      }),
+    ).toEqual({
+      host: "git.sankuai.com",
+      repository: "acme/app",
+      number: 7,
+      target: { provider: "meituan", origin: "https://git.sankuai.com" },
+    });
+  });
+
   it("distinguishes the forge and protocol of old links with the same saved key", () => {
     const pr = link(7, {
       host: "forge.test",

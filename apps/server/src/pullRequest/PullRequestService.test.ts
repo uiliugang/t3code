@@ -4979,50 +4979,57 @@ it.effect("keeps continuation cursors separate for repositories with the same na
   }),
 );
 
-it.effect("keeps the viewer and continuation cursor scoped to a GitLab origin", () =>
-  Effect.gen(function* () {
-    const reads: Array<{ cwd: string; viewer: string }> = [];
-    const service = yield* makeService({
-      projects: ["http", "https"].map((protocol) =>
-        project({
-          id: protocol,
-          title: protocol,
-          workspaceRoot: `/${protocol}`,
-          repository: "acme/web",
-          provider: "gitlab",
-          host: "forge.test",
-          remoteUrl: `${protocol}://forge.test/acme/web.git`,
-        }),
-      ),
-      providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
-          getViewer: ({ cwd }) => Effect.succeed(cwd.slice(1)),
-          listChangeRequests: ({ cwd, viewer }) =>
-            Effect.sync(() => {
-              reads.push({ cwd, viewer });
-              return {
-                items: [changeRequest(7, "2026-07-02T00:00:00Z")],
-                truncated: true,
-                continues: true,
-              };
-            }),
-        }),
-      ],
-    });
-    const first = yield* service.list({ state: "open", involvement: "authored" });
-    assert.deepStrictEqual(
-      reads.sort((left, right) => left.cwd.localeCompare(right.cwd)),
-      [
-        { cwd: "/http", viewer: "http" },
-        { cwd: "/https", viewer: "https" },
-      ],
-    );
-    assert.lengthOf(Object.keys(first.nextCursors), 2);
-    const key = Object.keys(first.nextCursors).find((key) => key.includes("https://forge.test"))!;
-    reads.length = 0;
-    yield* service.list({ state: "open", cursors: { [key]: first.nextCursors[key]! } });
-    assert.deepStrictEqual(reads, [{ cwd: "/https", viewer: "https" }]);
-  }),
+it.effect.each(["http", "ssh"] as const)(
+  "keeps the viewer and continuation cursor scoped to a GitLab origin with an %s checkout",
+  (remoteTransport) =>
+    Effect.gen(function* () {
+      const reads: Array<{ cwd: string; viewer: string }> = [];
+      const service = yield* makeService({
+        projects: ["http", "https"].map((protocol) =>
+          project({
+            id: protocol,
+            title: protocol,
+            workspaceRoot: `/${protocol}`,
+            repository: "acme/web",
+            provider: "gitlab",
+            host: "forge.test",
+            remoteUrl:
+              protocol === "http" && remoteTransport === "ssh"
+                ? "git@forge.test:acme/web.git"
+                : `${protocol}://forge.test/acme/web.git`,
+          }),
+        ),
+        providers: [
+          fakePullRequestProvider(SourceControlProviderKind.make("gitlab"), {
+            configuredWebOrigin: ({ cwd }: { cwd: string }) =>
+              Effect.succeed(cwd === "/http" ? "http://forge.test" : null),
+            getViewer: ({ cwd }) => Effect.succeed(cwd.slice(1)),
+            listChangeRequests: ({ cwd, viewer }) =>
+              Effect.sync(() => {
+                reads.push({ cwd, viewer });
+                return {
+                  items: [changeRequest(7, "2026-07-02T00:00:00Z")],
+                  truncated: true,
+                  continues: true,
+                };
+              }),
+          }),
+        ],
+      });
+      const first = yield* service.list({ state: "open", involvement: "authored" });
+      assert.deepStrictEqual(
+        reads.sort((left, right) => left.cwd.localeCompare(right.cwd)),
+        [
+          { cwd: "/http", viewer: "http" },
+          { cwd: "/https", viewer: "https" },
+        ],
+      );
+      assert.lengthOf(Object.keys(first.nextCursors), 2);
+      const key = Object.keys(first.nextCursors).find((key) => key.includes("https://forge.test"))!;
+      reads.length = 0;
+      yield* service.list({ state: "open", cursors: { [key]: first.nextCursors[key]! } });
+      assert.deepStrictEqual(reads, [{ cwd: "/https", viewer: "https" }]);
+    }),
 );
 
 it.effect("pauses uncached activity on a host after one activity read is rate limited", () =>

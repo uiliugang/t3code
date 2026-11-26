@@ -1,6 +1,9 @@
 import { isStandaloneIssueLink } from "@t3tools/client-runtime/issue-links";
 import type { WorkspaceSelections } from "../../../persistence/mobile-preferences";
-import { pullRequestNavigationUrl } from "../../pull-requests/pullRequestSelection";
+import {
+  pullRequestNavigationTarget,
+  pullRequestNavigationUrl,
+} from "../../pull-requests/pullRequestSelection";
 import {
   SETTINGS_PAGE_TARGETS,
   type SettingsPageTarget,
@@ -66,6 +69,7 @@ function pullRequestSelection(
     return undefined;
   }
   const navigationUrl = pullRequestNavigationUrl(params);
+  const target = pullRequestNavigationTarget(params);
   return {
     environmentId: value.environmentId,
     projectId: value.projectId,
@@ -73,6 +77,7 @@ function pullRequestSelection(
     number: value.number,
     ...(typeof value.host === "string" ? { host: value.host } : {}),
     ...(navigationUrl === undefined ? {} : { navigationUrl }),
+    ...(target === undefined ? {} : { target }),
   };
 }
 
@@ -86,7 +91,9 @@ function samePullRequest(
     left.repository === right.repository &&
     left.number === right.number &&
     left.host === right.host &&
-    left.navigationUrl === right.navigationUrl
+    left.navigationUrl === right.navigationUrl &&
+    left.target?.provider === right.target?.provider &&
+    left.target?.origin === right.target?.origin
   );
 }
 

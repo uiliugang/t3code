@@ -16,6 +16,7 @@ import {
   PullRequestListState,
   type ProviderInstanceId,
   PullRequestMergeMethod,
+  PullRequestWebTarget,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
 import { ToolCallVisibility } from "@t3tools/contracts/settings";
@@ -102,6 +103,7 @@ const WorkspaceSelections = Schema.Struct({
       number: Schema.Number,
       host: Schema.optional(Schema.String),
       navigationUrl: Schema.optional(Schema.String),
+      target: Schema.optional(PullRequestWebTarget),
       key: Schema.optional(Schema.String),
     }),
   ),

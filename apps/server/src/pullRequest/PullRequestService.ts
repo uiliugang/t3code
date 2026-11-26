@@ -435,6 +435,10 @@ function changeRequestSourceKey(kind: SourceControlProviderKind, origin: string)
   return `${kind} ${origin}`;
 }
 
+function projectSourceKey(project: Pick<SupportedProject, "kind" | "origin" | "inferredOrigin">) {
+  return `${changeRequestSourceKey(project.kind, project.origin)}${project.inferredOrigin ? " (ssh)" : ""}`;
+}
+
 function listCursorKey(
   kind: SourceControlProviderKind,
   origin: string,
@@ -538,7 +542,11 @@ function withRateLimitBackoff(
     readonly inferredOrigin?: true | undefined;
   },
 ): PullRequestProviderApi {
-  const key = pullRequestRateLimitKey(api.kind, host, options?.origin);
+  const key = pullRequestRateLimitKey(
+    api.kind,
+    host,
+    options?.inferredOrigin ? undefined : options?.origin,
+  );
   const protect = <A>(
     operation: string,
     effect: Effect.Effect<A, PullRequestProviderError>,
@@ -609,6 +617,9 @@ function withRateLimitBackoff(
       ? {}
       : { unavailableRequirement: api.unavailableRequirement }),
     ...(api.repositoryKey === undefined ? {} : { repositoryKey: api.repositoryKey }),
+    ...(api.configuredWebOrigin === undefined
+      ? {}
+      : { configuredWebOrigin: api.configuredWebOrigin }),
     ...(api.servesHost === undefined ? {} : { servesHost: api.servesHost }),
     ...(api.readsPublicHostWithoutCheckout === undefined
       ? {}
@@ -1026,86 +1037,106 @@ export const make = Effect.gen(function* () {
           Effect.map((remoteHosts) => ({ remoteHosts, projects })),
         ),
       ),
-      Effect.map(({ remoteHosts, projects }) => {
-        const supported: SupportedProject[] = [];
-        const unimplemented = new Map<
-          string,
-          { kind: SourceControlProviderKind; projectCount: number }
-        >();
-        const viewerRoots = new Map<string, string[]>();
-        const refinedProjectIdsByHost = new Map<string, ProjectId[]>();
-        const seen = new Set<string>();
-        for (const project of projects) {
-          if (filter.projectId !== undefined && project.id !== filter.projectId) continue;
-          if (filter.projectIds !== undefined && !filter.projectIds.includes(project.id)) continue;
-          const identity = project.repositoryIdentity;
-          let kind = identity?.provider;
-          const repository = sourceControlDefinitions.repositorySelector(
-            project.repositoryIdentity,
+      Effect.flatMap(({ remoteHosts, projects }) =>
+        Effect.gen(function* () {
+          const supported: SupportedProject[] = [];
+          const unimplemented = new Map<
+            string,
+            { kind: SourceControlProviderKind; projectCount: number }
+          >();
+          const viewerRoots = new Map<string, string[]>();
+          const refinedProjectIdsByHost = new Map<string, ProjectId[]>();
+          const seen = new Set<string>();
+          const candidates = yield* Effect.forEach(
+            projects,
+            Effect.fnUntraced(function* (project) {
+              if (filter.projectId !== undefined && project.id !== filter.projectId) return null;
+              if (filter.projectIds !== undefined && !filter.projectIds.includes(project.id))
+                return null;
+              const identity = project.repositoryIdentity;
+              let kind = identity?.provider;
+              const repository = sourceControlDefinitions.repositorySelector(
+                project.repositoryIdentity,
+              );
+              if (!identity || kind === undefined || repository === null) return null;
+              const recognized = sourceControlDefinitions.recognizeRemote(
+                identity.locator.remoteUrl,
+              );
+              const remote =
+                recognized === null
+                  ? undefined
+                  : remoteHosts.get(remoteHostKey(recognized, identity.locator.remoteUrl));
+              kind = remote?.kind ?? kind;
+              const host =
+                remote?.host ?? sourceControlDefinitions.changeRequestHost(identity, kind);
+              if (filter.host !== undefined && host !== filter.host.toLowerCase()) {
+                return null;
+              }
+              const registered = registry.get(kind);
+              const api = registered?.servesHost?.(host) === false ? null : registered;
+              const inferred =
+                kind === "gitlab" && httpRemoteHost(identity.locator.remoteUrl) === null;
+              const configured =
+                inferred && api?.configuredWebOrigin !== undefined
+                  ? yield* api
+                      .configuredWebOrigin({ cwd: project.workspaceRoot, host })
+                      .pipe(Effect.orElseSucceed(() => null))
+                  : null;
+              const origin =
+                configured ??
+                remoteWebOrigin(host, kind === "github" ? undefined : identity.locator.remoteUrl);
+              const inferredOrigin = inferred && configured === null ? (true as const) : undefined;
+              return { project, identity, kind, repository, host, api, origin, inferredOrigin };
+            }),
+            { concurrency: REPOSITORY_CONCURRENCY },
           );
-          if (!identity || kind === undefined || repository === null) continue;
-          const recognized = sourceControlDefinitions.recognizeRemote(identity.locator.remoteUrl);
-          const remote =
-            recognized === null
-              ? undefined
-              : remoteHosts.get(remoteHostKey(recognized, identity.locator.remoteUrl));
-          kind = remote?.kind ?? kind;
-          const host = remote?.host ?? sourceControlDefinitions.changeRequestHost(identity, kind);
-          if (filter.host !== undefined && host !== filter.host.toLowerCase()) {
-            continue;
+          for (const candidate of candidates) {
+            if (candidate === null) continue;
+            const { project, identity, kind, repository, host, api, origin, inferredOrigin } =
+              candidate;
+            if (host !== sourceControlDefinitions.changeRequestHost(identity, identity.provider)) {
+              const projectIds = refinedProjectIdsByHost.get(host);
+              if (projectIds === undefined) refinedProjectIdsByHost.set(host, [project.id]);
+              else projectIds.push(project.id);
+            }
+            const source = projectSourceKey(candidate);
+            if (api !== null) {
+              const roots = viewerRoots.get(source);
+              if (roots === undefined) viewerRoots.set(source, [project.workspaceRoot]);
+              else if (!roots.includes(project.workspaceRoot)) roots.push(project.workspaceRoot);
+            }
+            const repositoryKey =
+              api?.repositoryKey?.({ canonicalKey: identity.canonicalKey }) ?? null;
+            const key = `${source} ${(repositoryKey ?? repository).toLowerCase()}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            if (api === null) {
+              const counted = unimplemented.get(host);
+              if (counted === undefined) unimplemented.set(host, { kind, projectCount: 1 });
+              else counted.projectCount += 1;
+              continue;
+            }
+            supported.push({
+              cursorKey: key,
+              project,
+              api: withRateLimitBackoff(api, host, rateLimits, { origin, inferredOrigin }),
+              kind,
+              repository,
+              host,
+              origin,
+              inferredOrigin,
+              remote:
+                repositoryKey ??
+                sourceControlDefinitions.repositoryKeyFromRemote(`https://${host}/${repository}`),
+              repositoryKey:
+                repositoryKey === null
+                  ? null
+                  : sourceControlDefinitions.canonicalRepositoryKey(repositoryKey.toLowerCase()),
+            });
           }
-          if (host !== sourceControlDefinitions.changeRequestHost(identity, identity.provider)) {
-            const projectIds = refinedProjectIdsByHost.get(host);
-            if (projectIds === undefined) refinedProjectIdsByHost.set(host, [project.id]);
-            else projectIds.push(project.id);
-          }
-          const registered = registry.get(kind);
-          const api = registered?.servesHost?.(host) === false ? null : registered;
-          const origin = remoteWebOrigin(
-            host,
-            kind === "github" ? undefined : identity.locator.remoteUrl,
-          );
-          const inferredOrigin =
-            kind === "gitlab" && httpRemoteHost(identity.locator.remoteUrl) === null
-              ? (true as const)
-              : undefined;
-          const source = changeRequestSourceKey(kind, origin);
-          if (api !== null) {
-            const roots = viewerRoots.get(source);
-            if (roots === undefined) viewerRoots.set(source, [project.workspaceRoot]);
-            else if (!roots.includes(project.workspaceRoot)) roots.push(project.workspaceRoot);
-          }
-          const repositoryKey =
-            api?.repositoryKey?.({ canonicalKey: identity.canonicalKey }) ?? null;
-          const key = listCursorKey(kind, origin, repositoryKey ?? repository);
-          if (seen.has(key)) continue;
-          seen.add(key);
-          if (api === null) {
-            const counted = unimplemented.get(host);
-            if (counted === undefined) unimplemented.set(host, { kind, projectCount: 1 });
-            else counted.projectCount += 1;
-            continue;
-          }
-          supported.push({
-            cursorKey: key,
-            project,
-            api: withRateLimitBackoff(api, host, rateLimits, { origin, inferredOrigin }),
-            kind,
-            repository,
-            host,
-            origin,
-            inferredOrigin,
-            remote:
-              repositoryKey ??
-              sourceControlDefinitions.repositoryKeyFromRemote(`https://${host}/${repository}`),
-            repositoryKey:
-              repositoryKey === null
-                ? null
-                : sourceControlDefinitions.canonicalRepositoryKey(repositoryKey.toLowerCase()),
-          });
-        }
-        return { projects, supported, unimplemented, viewerRoots, refinedProjectIdsByHost };
-      }),
+          return { projects, supported, unimplemented, viewerRoots, refinedProjectIdsByHost };
+        }),
+      ),
     );
 
   // Azure derives organization from the checkout; require the matching repository.
@@ -1379,6 +1410,7 @@ export const make = Effect.gen(function* () {
     readonly host: string;
     readonly kind: SourceControlProviderKind;
     readonly origin: string;
+    readonly inferredOrigin?: true | undefined;
     readonly viewer: string | null;
     readonly error: PullRequestProviderError | null;
   };
@@ -1404,24 +1436,26 @@ export const make = Effect.gen(function* () {
         origin,
         inferredOrigin: inferred ? true : undefined,
       });
+      const identity = {
+        host,
+        kind,
+        origin,
+        inferredOrigin: inferred ? (true as const) : undefined,
+      };
       return Effect.firstSuccessOf(roots.map((cwd) => api.getViewer({ cwd, host }))).pipe(
         Effect.map((viewer) => ({
-          host,
-          kind,
-          origin,
+          ...identity,
           viewer: viewer as string | null,
           error: null as PullRequestProviderError | null,
         })),
         Effect.tap((result) =>
           Effect.map(Clock.currentTimeMillis, (at) =>
-            viewersBySource.set(changeRequestSourceKey(kind, origin), { at, result }),
+            viewersBySource.set(projectSourceKey(identity), { at, result }),
           ),
         ),
         Effect.catch((error) =>
           Effect.succeed({
-            host,
-            kind,
-            origin,
+            ...identity,
             viewer: null,
             error,
           }),
@@ -1442,14 +1476,14 @@ export const make = Effect.gen(function* () {
     options?: { readonly allowPaused: boolean },
   ) =>
     Effect.forEach(
-      [...Map.groupBy(projects, ({ kind, origin }) => changeRequestSourceKey(kind, origin))],
+      [...Map.groupBy(projects, projectSourceKey)],
       ([source, candidates]) =>
         Effect.flatMap(Clock.currentTimeMillis, (now): Effect.Effect<ResolvedViewer> => {
           const held = viewersBySource.get(source);
           if (held !== undefined && now - held.at <= Duration.toMillis(VIEWER_CACHE_TTL)) {
             return Effect.succeed(held.result);
           }
-          const { kind, host, origin } = candidates[0]!;
+          const { kind, host, origin, inferredOrigin } = candidates[0]!;
           // Include deduplicated checkouts too; one unreadable worktree must not mark the whole host signed out.
           const roots =
             viewerRoots.get(source) ?? candidates.map(({ project }) => project.workspaceRoot);
@@ -1458,29 +1492,31 @@ export const make = Effect.gen(function* () {
             kind,
             origin,
             [...new Set(roots)].sort(),
-            candidates.every((candidate) => candidate.inferredOrigin),
+            inferredOrigin === true,
           ]);
           if (options?.allowPaused === true) return Cache.get(viewerFlights, key);
           // Check pauses outside the shared lookup so background reads cannot spawn repeated failing CLIs and extend the pause.
-          return rateLimits.check(pullRequestRateLimitKey(kind, host, origin)).pipe(
-            Effect.flatMap(() => Cache.get(viewerFlights, key)),
-            Effect.catch((error) =>
-              Effect.succeed<ResolvedViewer>({
-                host,
-                kind,
-                origin,
-                viewer: null,
-                error: new PullRequestProviderError({
-                  provider: kind,
-                  operation: "getViewer",
-                  reason: "rate-limited",
-                  detail: error.detail,
-                  retryAt: error.retryAt,
-                  cause: error,
+          return rateLimits
+            .check(pullRequestRateLimitKey(kind, host, inferredOrigin ? undefined : origin))
+            .pipe(
+              Effect.flatMap(() => Cache.get(viewerFlights, key)),
+              Effect.catch((error) =>
+                Effect.succeed<ResolvedViewer>({
+                  host,
+                  kind,
+                  origin,
+                  viewer: null,
+                  error: new PullRequestProviderError({
+                    provider: kind,
+                    operation: "getViewer",
+                    reason: "rate-limited",
+                    detail: error.detail,
+                    retryAt: error.retryAt,
+                    cause: error,
+                  }),
                 }),
-              }),
-            ),
-          );
+              ),
+            );
         }),
       { concurrency: REPOSITORY_CONCURRENCY },
     );
@@ -1576,8 +1612,8 @@ export const make = Effect.gen(function* () {
       refinedProjectIdsByHost,
     } = yield* listWorkspaceProjects(input, workspaceRoot);
     const projectCounts = new Map<string, number>();
-    for (const { kind, origin } of projects) {
-      const source = changeRequestSourceKey(kind, origin);
+    for (const project of projects) {
+      const source = projectSourceKey(project);
       projectCounts.set(source, (projectCounts.get(source) ?? 0) + 1);
     }
 
@@ -1586,11 +1622,10 @@ export const make = Effect.gen(function* () {
     const viewerCountByHost = Map.groupBy(viewerResults, ({ host }) => host);
     for (const result of viewerResults) {
       if (result.viewer === null) continue;
-      viewers[changeRequestSourceKey(result.kind, result.origin)] = result.viewer;
+      viewers[projectSourceKey(result)] = result.viewer;
       if (viewerCountByHost.get(result.host)?.length === 1) viewers[result.host] = result.viewer;
     }
-    const viewerOfSource = ({ kind, origin }: SupportedProject) =>
-      viewers[changeRequestSourceKey(kind, origin)];
+    const viewerOfSource = (project: SupportedProject) => viewers[projectSourceKey(project)];
 
     const providers: ReadonlyArray<PullRequestProviderSummary> = [
       ...viewerResults.map((result) => {
@@ -1598,10 +1633,10 @@ export const make = Effect.gen(function* () {
         return {
           host: result.host,
           kind: result.kind,
-          origin: result.origin,
+          ...(result.inferredOrigin ? {} : { origin: result.origin }),
           searchesOnHost: capabilities?.search ?? false,
           actions: capabilities?.actions ?? [],
-          projectCount: projectCounts.get(changeRequestSourceKey(result.kind, result.origin)) ?? 1,
+          projectCount: projectCounts.get(projectSourceKey(result)) ?? 1,
           projectIds: refinedProjectIdsByHost.get(result.host),
           configured: result.viewer !== null,
           detail: result.error === null ? null : providerDetail(requirementOf, result.error),
@@ -1653,7 +1688,7 @@ export const make = Effect.gen(function* () {
       };
       const errors = viewerResults.flatMap((result) =>
         result.error === null ||
-        !selected.some(({ kind, origin }) => kind === result.kind && origin === result.origin)
+        !selected.some((project) => projectSourceKey(project) === projectSourceKey(result))
           ? []
           : [result.error],
       );
@@ -1873,7 +1908,7 @@ export const make = Effect.gen(function* () {
         separate.push(project);
         continue;
       }
-      const key = `${changeRequestSourceKey(project.kind, project.origin)}\n${cursorOf(project)?.updatedBefore ?? ""}`;
+      const key = `${projectSourceKey(project)}\n${cursorOf(project)?.updatedBefore ?? ""}`;
       const group = together.get(key);
       if (group === undefined) together.set(key, [project]);
       else group.push(project);

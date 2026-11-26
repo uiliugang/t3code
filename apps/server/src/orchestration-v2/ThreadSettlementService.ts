@@ -33,6 +33,7 @@ import * as Stream from "effect/Stream";
 import * as GitManager from "../git/GitManager.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -332,6 +333,7 @@ export const make = Effect.gen(function* () {
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const git = yield* GitManager.GitManager;
+  const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const terminals = yield* TerminalManager.TerminalManager;
   const pullRequests = yield* PullRequestService.PullRequestService;
   const random = yield* SecureRandom.SecureRandom;
@@ -432,6 +434,20 @@ export const make = Effect.gen(function* () {
     const projectShells = yield* projectStore.listShells();
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const projects = new Map(projectShells.map((project) => [project.id, project]));
+    const verifiedBranchRepository = Effect.fnUntraced(function* (
+      thread: ProjectionStore.ProjectionSettlementCandidate,
+      pullRequest: GitManager.GitBranchPullRequest,
+    ) {
+      const project = projects.get(thread.projectId);
+      if (project === undefined) return false;
+      const identity =
+        project.repositoryIdentity ??
+        (yield* repositoryIdentities.resolve(project.workspaceRoot, {
+          refresh: true,
+          remoteOnly: true,
+        }));
+      return GitManager.branchPullRequestMatchesRepository(pullRequest, identity);
+    });
     for (const [key, readAtMs] of quietOpenReadAt) {
       if (nowMs - readAtMs >= QUIET_SYNC_INTERVAL_MS) quietOpenReadAt.delete(key);
     }
@@ -694,12 +710,7 @@ export const make = Effect.gen(function* () {
             { cwd, branch: thread.branch },
             { refresh: true },
           );
-          const project = projects.get(thread.projectId);
-          if (
-            current?.state === "open" &&
-            project !== undefined &&
-            GitManager.branchPullRequestMatchesRepository(current, project.repositoryIdentity)
-          ) {
+          if (current?.state === "open" && (yield* verifiedBranchRepository(thread, current))) {
             return current;
           }
         }
@@ -730,7 +741,12 @@ export const make = Effect.gen(function* () {
       if (!matchesProject(remembered)) return undefined;
       noPullRequestRechecks.record(key, nowMs, remembered !== null);
       if (refresh || remembered === null || remembered.state === "open") {
-        return ownedByAnotherThread(remembered) ? undefined : remembered;
+        return ownedByAnotherThread(remembered) ||
+          (remembered !== null &&
+            remembered.state !== "open" &&
+            !(yield* verifiedBranchRepository(thread, remembered)))
+          ? undefined
+          : remembered;
       }
       // A deferred thread confirms first: a reused branch can have a new open PR.
       if (
@@ -743,7 +759,13 @@ export const make = Effect.gen(function* () {
         { cwd, branch: thread.branch },
         { freshGitState: true },
       );
-      return !matchesProject(fresh) || ownedByAnotherThread(fresh) ? undefined : fresh;
+      return !matchesProject(fresh) ||
+        ownedByAnotherThread(fresh) ||
+        (fresh !== null &&
+          fresh.state !== "open" &&
+          !(yield* verifiedBranchRepository(thread, fresh)))
+        ? undefined
+        : fresh;
     });
 
     // A merge, a shell close and a thread's own events read at once; only scheduled sweeps wait.

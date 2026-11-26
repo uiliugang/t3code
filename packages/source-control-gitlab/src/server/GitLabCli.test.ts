@@ -38,6 +38,29 @@ afterEach(() => {
 });
 
 layer("GitLabCli.layer", (it) => {
+  it.effect("uses the discovered HTTP origin for a checkout's merge request command", () =>
+    Effect.gen(function* () {
+      mockedRun.mockImplementation(({ args }) =>
+        Effect.succeed(processOutput(args[2] === "api_protocol" ? "http\n" : "")),
+      );
+      const glab = yield* GitLabCli.GitLabCli;
+      const checkout = { cwd: "/repo", host: "forge.test" };
+      const origin = yield* glab.configuredWebOrigin!(checkout);
+      expect(origin).toBe("http://forge.test");
+      yield* glab
+        .execute({ ...checkout, args: ["api", "user"] })
+        .pipe(Effect.provideService(PullRequestWebOrigin, origin));
+      expect(mockedRun.mock.calls.at(-1)?.[0]).toMatchObject({
+        args: ["api", "user"],
+        env: {
+          GITLAB_HOST: "forge.test",
+          GLAB_API_PROTOCOL: "http",
+          GITLAB_API_HOST: "forge.test",
+        },
+      });
+    }).pipe(Effect.provideService(HostProcess.Environment, {})),
+  );
+
   it.effect("does not run an MR mutation through a differently configured protocol", () =>
     Effect.gen(function* () {
       mockedRun.mockImplementation(({ args }) =>

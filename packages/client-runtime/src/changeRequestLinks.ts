@@ -21,7 +21,7 @@ export function changeRequestWebTarget(
   if (url === undefined) return undefined;
   const parsed = sourceControlClients.parseChangeRequestUrl(url);
   if (parsed === null) return undefined;
-  const origin = parseUrl(parsed.link.repositoryUrl)?.origin;
+  const origin = parsed.link.rpcOrigin ?? parseUrl(parsed.link.repositoryUrl)?.origin;
   const host = parsed.link.authority ?? parsed.link.host;
   return origin !== undefined &&
     (reference.host === undefined ||

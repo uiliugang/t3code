@@ -1,15 +1,30 @@
 import type { NavigationState } from "@react-navigation/native";
 import { changeRequestWebTarget } from "@t3tools/client-runtime/change-request-links";
+import { PullRequestWebTarget } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { pullRequestListKey } from "./pullRequestList";
 import type { PullRequestParams } from "./usePullRequestDiff";
 
 export function pullRequestParamsWebTarget(params: PullRequestParams) {
-  const summary = params.initialSummary;
   return (
-    changeRequestWebTarget(params, params.navigationUrl) ??
-    (summary && "target" in summary ? summary.target : undefined) ??
-    changeRequestWebTarget(params, summary?.url)
+    pullRequestNavigationTarget(params) ??
+    changeRequestWebTarget(params, pullRequestNavigationUrl(params))
   );
+}
+
+const decodeTarget = Schema.decodeUnknownOption(PullRequestWebTarget);
+
+export function pullRequestNavigationTarget(params: object | undefined) {
+  if (!params) return undefined;
+  if ("target" in params) {
+    const target = decodeTarget(params.target);
+    if (Option.isSome(target)) return target.value;
+  }
+  const summary = "initialSummary" in params ? params.initialSummary : undefined;
+  return typeof summary === "object" && summary !== null && "target" in summary
+    ? Option.getOrUndefined(decodeTarget(summary.target))
+    : undefined;
 }
 
 export function pullRequestNavigationUrl(params: object | undefined): string | undefined {
@@ -39,10 +54,9 @@ export function selectedPullRequestKeyOf(params: object | undefined): string | n
     return null;
   const host = "host" in params && typeof params.host === "string" ? params.host : undefined;
   const { environmentId, repository, number } = params;
-  const target = changeRequestWebTarget(
-    { host, repository, number },
-    pullRequestNavigationUrl(params),
-  );
+  const target =
+    pullRequestNavigationTarget(params) ??
+    changeRequestWebTarget({ host, repository, number }, pullRequestNavigationUrl(params));
   return host === undefined && target === undefined
     ? null
     : `${environmentId}:${pullRequestListKey({ host: host ?? "", repository, number, target })}`;

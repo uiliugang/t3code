@@ -56,6 +56,7 @@ export function parsePullRequestUrl(value: string) {
         ...link,
         host: HOST,
         repositoryUrl: `https://${WEB_HOST}/code/repo-detail/${link.repository}`,
+        rpcOrigin: `https://${HOST}`,
       }
     : null;
 }
