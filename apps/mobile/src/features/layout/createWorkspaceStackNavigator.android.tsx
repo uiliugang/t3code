@@ -20,6 +20,7 @@ import {
 import { use, type ComponentProps } from "react";
 
 import { BottomSheetContext } from "../../components/ui/BottomSheetContext";
+import { OverlayPortalScope } from "../../components/ui/OverlayPortal";
 import { RoutedFormSheetContext } from "../../components/ui/RoutedFormSheetContext";
 
 import {
@@ -134,7 +135,7 @@ function WorkspaceStackNavigator({
                       render: () => (
                         <BottomSheetContext value>
                           <RoutedFormSheetContext value>
-                            {descriptor.render()}
+                            <OverlayPortalScope>{descriptor.render()}</OverlayPortalScope>
                           </RoutedFormSheetContext>
                         </BottomSheetContext>
                       ),

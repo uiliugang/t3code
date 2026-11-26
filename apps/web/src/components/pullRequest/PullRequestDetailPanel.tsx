@@ -27,6 +27,7 @@ import {
   type PullRequestReviewGuideStop,
   type PullRequestSummary,
   resolveEnvironmentMachineKind,
+  sourceControlTokenHost,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
@@ -115,7 +116,6 @@ import { DiffPanelLoadingState } from "../DiffPanelShell";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import type { PullRequestAgentSelectionInput } from "./PullRequestCodeTab";
 import { openOnHostLabel } from "./pullRequestLinkContextMenu";
-import { parseUrl } from "@t3tools/shared/url";
 import { PullRequestMarkdownContext } from "./PullRequestMarkdown";
 import { pullRequestMarkdownExtensions } from "./pullRequestMarkdown.logic";
 import { PullRequestComposer } from "./PullRequestComposer";
@@ -368,16 +368,28 @@ export function PullRequestDetailPanel({
     supportsThreadPullRequests,
   );
   const loadingCheckoutCommand = loadingPullRequestCheckoutCommand(reference, repositoryIdentity);
-  const candidateHostUrl =
-    sourceUrl ??
-    projectChangeRequestUrl(repositoryIdentity, reference.repository, reference.number);
-  const candidateUrl = candidateHostUrl ? parseUrl(candidateHostUrl) : null;
+  const projectHostUrl = projectChangeRequestUrl(
+    repositoryIdentity,
+    reference.repository,
+    reference.number,
+  );
+  const candidateHostUrl = sourceUrl ?? projectHostUrl;
+  const candidate = sourceControlClients.parseChangeRequestUrl(candidateHostUrl ?? "");
+  const projectLink =
+    requestedReference.host === undefined
+      ? sourceControlClients.parseChangeRequestUrl(projectHostUrl ?? "")?.link
+      : undefined;
+  const expectedHost = requestedReference.host ?? projectLink?.authority ?? projectLink?.host;
   const unavailableHostUrl =
-    candidateUrl &&
-    (candidateUrl.protocol === "https:" || candidateUrl.protocol === "http:") &&
-    (sourceUrl !== undefined ||
-      requestedReference.host === undefined ||
-      candidateUrl.host === parseUrl(`${candidateUrl.protocol}//${requestedReference.host}`)?.host)
+    candidate &&
+    expectedHost !== undefined &&
+    (repositoryIdentity?.provider === undefined ||
+      repositoryIdentity.provider === "unknown" ||
+      candidate.definition.kind === repositoryIdentity.provider) &&
+    (candidate.link.authority ?? candidate.link.host) ===
+      sourceControlTokenHost(candidate.definition.kind, expectedHost) &&
+    candidate.link.repository.toLowerCase() === reference.repository.toLowerCase() &&
+    candidate.link.number === reference.number
       ? candidateHostUrl
       : null;
   const pullRequestKey = pullRequestRefKey(reference);
@@ -2041,7 +2053,8 @@ export function PullRequestDetailPanel({
                   host: {
                     url: unavailableHostUrl,
                     openLabel: openOnHostLabel(
-                      sourceControlClients.get(repositoryIdentity?.provider),
+                      candidate?.definition ??
+                        sourceControlClients.get(repositoryIdentity?.provider),
                       t,
                     ),
                   },

@@ -1118,14 +1118,10 @@ function RequirementCreateSheet({
     projects[0];
   const config = useEnvironmentServerConfig(project?.environmentId ?? null);
   const canCreateLocal = useAtomValue(
-    serverEnvironment.mutateWorkItem.permissionAtom(
-      project?.environmentId ?? EnvironmentId.make(""),
-    ),
+    serverEnvironment.mutateWorkItem.permissionAtom(project?.environmentId ?? null),
   );
   const canCreateIssue = useAtomValue(
-    sourceControlEnvironment.createIssue.permissionAtom(
-      project?.environmentId ?? EnvironmentId.make(""),
-    ),
+    sourceControlEnvironment.createIssue.permissionAtom(project?.environmentId ?? null),
   );
   const localAllowed = Boolean(project && canCreateLocal && config?.workItems === true);
   const issueAllowed = Boolean(project && canCreateIssue);
@@ -1138,7 +1134,7 @@ function RequirementCreateSheet({
       : null,
   );
   const trackerAllowed = useAtomValue(
-    issueEnvironment.create.permissionAtom(project?.environmentId ?? EnvironmentId.make("")),
+    issueEnvironment.create.permissionAtom(project?.environmentId ?? null),
   );
   const trackable = trackerAllowed ? trackerCreateTargets(trackerList.data) : [];
   const [kind, setKind] = useState<string>(() => {

@@ -115,6 +115,34 @@ describe("resolveChangeRequestLinkTarget", () => {
   const loaded = () => true;
   const url = "https://github.com/acme/app/pull/7";
 
+  it("routes identical GitHub repositories by HTTPS authority", () => {
+    const standard = project("standard", local, "forge.test/acme/app");
+    const withRemote = (id: string, remoteUrl: string) => ({
+      ...standard,
+      id: ProjectId.make(id),
+      repositoryIdentity: {
+        ...standard.repositoryIdentity,
+        locator: { ...standard.repositoryIdentity.locator, remoteUrl },
+      },
+    });
+    const custom = withRemote("custom", "https://forge.test:8443/acme/app.git");
+    const ssh = withRemote("ssh", "git@forge.test:acme/app.git");
+    const resolve = (host: string, projects: ReadonlyArray<typeof standard>) =>
+      resolveChangeRequestLinkTarget({
+        url: `https://${host}/acme/app/pull/7`,
+        projects,
+        configLoaded: loaded,
+        lendHostProject: true,
+      });
+    expect(resolve("forge.test:8443", [standard, ssh, custom])).toMatchObject({
+      project: custom,
+      host: "forge.test:8443",
+    });
+    expect(resolve("forge.test:8443", [standard, ssh])).toBeNull();
+    expect(resolve("forge.test", [custom, standard])).toMatchObject({ project: standard });
+    expect(resolve("forge.test", [custom])).toBeNull();
+  });
+
   it("opens a mirror's link in its own environment under a project on the link's host", () => {
     expect(
       resolveChangeRequestLinkTarget({

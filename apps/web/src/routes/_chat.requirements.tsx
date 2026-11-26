@@ -14,6 +14,7 @@ import {
 import * as Schema from "effect/Schema";
 import { RequirementsPage } from "../components/requirements/RequirementsPage";
 
+const MAX_PR_URL_LENGTH = 2_048;
 const Search = Schema.Struct({
   mode: Schema.optionalKey(Schema.Literals(["board", "issues"])),
   labels: Schema.optionalKey(RequirementFilters.fields.labels),
@@ -32,7 +33,7 @@ const Search = Schema.Struct({
       host,
       repository,
       number,
-      url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_048))),
+      url: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_PR_URL_LENGTH))),
     })),
   ),
   archived: Schema.optionalKey(Schema.Boolean),
@@ -88,6 +89,13 @@ export const Route = createFileRoute("/_chat/requirements")({
     if (typeof normalized.q === "string") normalized.q = normalized.q.slice(0, 200);
     if (typeof normalized.trackerQuery === "string")
       normalized.trackerQuery = normalized.trackerQuery.slice(0, 200);
+    const pullRequest = normalized.pullRequest;
+    if (pullRequest && typeof pullRequest === "object" && "url" in pullRequest) {
+      const { url, ...reference } = pullRequest;
+      if (typeof url !== "string" || url.length > MAX_PR_URL_LENGTH) {
+        normalized.pullRequest = reference;
+      }
+    }
     return decodeSearch(normalized);
   },
   component: RequirementsPage,

@@ -5,6 +5,7 @@ import {
   ProjectId,
   SourceControlProviderKind,
   type PullRequestDetailView,
+  type PullRequestRef,
 } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -136,7 +137,7 @@ const detail: PullRequestDetailView = {
 
 const environmentId = EnvironmentId.make("environment");
 const draftId = DraftId.make("conflicts-draft");
-const panel = (attach = false, reference = detail, sourceUrl?: string) => (
+const panel = (attach = false, reference: PullRequestRef = detail, sourceUrl?: string) => (
   <PullRequestDetailPanel
     environmentId={environmentId}
     reference={reference}
@@ -170,11 +171,31 @@ it("keeps the original pull request URL available when detail cannot load", asyn
   shown.detail = null;
   shown.error = "Unable to read this instance";
   const sourceUrl = "https://forge.test:8443/owner/repo/pull/1";
-  await using screen = await render(panel(false, detail, sourceUrl));
+  await using screen = await render(
+    panel(false, { ...detail, host: "forge.test:8443" }, sourceUrl),
+  );
   await expect.element(screen.getByText("Unable to read this instance")).toBeVisible();
   await expect
     .element(screen.getByRole("link", { name: "Open on GitHub" }))
     .toHaveAttribute("href", sourceUrl);
+});
+
+it.each([
+  "https://other.test:8443/owner/repo/pull/1",
+  "https://forge.test/owner/repo/pull/1",
+  "https://forge.test:8443/owner/other/pull/1",
+  "https://forge.test:8443/owner/repo/pull/2",
+  "https://user@forge.test:8443/owner/repo/pull/1",
+  "http://forge.test:8443/owner/repo/pull/1",
+])("does not advertise an unverified PR fallback: %s", async (url) => {
+  setup();
+  shown.detail = null;
+  shown.error = "Unable to read this instance";
+  await using screen = await render(panel(false, { ...detail, host: "forge.test:8443" }, url));
+  await expect.element(screen.getByText("Unable to read this instance")).toBeVisible();
+  await expect
+    .element(screen.getByRole("link", { name: "Open on GitHub" }))
+    .not.toBeInTheDocument();
 });
 
 it.each([AuthSourceControlWriteScope, AuthOrchestrationOperateScope])(

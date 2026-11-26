@@ -2254,6 +2254,52 @@ it.effect("routes a hosted reference to another repository through a project on 
   }),
 );
 
+it.effect.each(["github", "gitlab"] as const)(
+  "routes the same %s repository and change request number to the requested HTTPS authority",
+  (provider) =>
+    Effect.gen(function* () {
+      const standard = project({
+        id: "standard",
+        title: "Default port",
+        workspaceRoot: "/standard",
+        host: "forge.test",
+        repository: "acme/app",
+        provider,
+      });
+      const custom = project({
+        id: "custom",
+        title: "Custom port",
+        workspaceRoot: "/custom",
+        host: "forge.test",
+        repository: "acme/app",
+        remoteUrl: "https://forge.test:8443/acme/app.git",
+        provider,
+      });
+      const service = yield* makeService({
+        projects: [standard, custom],
+        providers: [
+          fakePullRequestProvider(SourceControlProviderKind.make(provider), {
+            getChangeRequestSummary: ({ host, cwd }) =>
+              Effect.succeed({
+                ...changeRequest(7, "2026-07-02T00:00:00Z"),
+                title: `${host} ${cwd}`,
+              }),
+          }),
+        ],
+      });
+      for (const [projectId, host, expected] of [
+        [standard.id, "forge.test:8443", "forge.test:8443 /custom"],
+        [custom.id, "forge.test", "forge.test /standard"],
+      ] as const) {
+        const summary = yield* service.summary(
+          { projectId, host, repository: "acme/app", number: 7 },
+          { recoverTransientFailure: false },
+        );
+        assert.strictEqual(summary.title, expected);
+      }
+    }),
+);
+
 it.effect("an uncached summary reaches the host despite a cached read in another project", () =>
   Effect.gen(function* () {
     const caller = project({

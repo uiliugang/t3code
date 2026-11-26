@@ -7,8 +7,8 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
-import { EnvironmentId, ProjectId, type PullRequestRef } from "@t3tools/contracts";
+import type { ComponentProps, ReactNode } from "react";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -197,46 +197,44 @@ vi.mock(import("./IssueDetailPanel"), () => ({
 vi.mock(import("../issue/IssuesPage"), () => ({
   TrackerIssuesView: () => <div data-testid="tracker-issues-view">Tracker issues</div>,
 }));
-vi.mock(import("../issue/IssueDetailPanel"), () => ({
-  IssueDetailPanel: ({
-    environmentId,
-    reference,
-    onSelectPullRequest,
-  }: {
-    environmentId: string;
-    reference: { key: string; url?: string | undefined };
-    onSelectPullRequest?: (reference: PullRequestRef & { url: string }) => void;
-  }) => (
-    <div
-      data-testid={`tracker-detail:${reference.key}`}
-      data-issue-url={reference.url ?? ""}
-      data-environment={environmentId}
-    >
-      Tracker issue {reference.key}
-      <button
-        type="button"
-        onClick={() =>
-          onSelectPullRequest?.({
-            projectId: ProjectId.make("project"),
-            host: "forge.test:8443",
-            repository: "acme/app",
-            number: 8,
-            url: "https://forge.test:8443/acme/app/pull/8",
-          })
-        }
+vi.mock(import("../issue/IssueDetailPanel"), async () => {
+  const { issueLinkedPullRequestTarget } = await import("@t3tools/client-runtime/issue-links");
+  return {
+    IssueDetailPanel: ({
+      environmentId,
+      reference,
+      onSelectPullRequest,
+    }: ComponentProps<typeof import("../issue/IssueDetailPanel").IssueDetailPanel>) => (
+      <div
+        data-testid={`tracker-detail:${reference.key}`}
+        data-issue-url={reference.url ?? ""}
+        data-environment={environmentId}
       >
-        Linked tracker PR
-      </button>
-    </div>
-  ),
-}));
+        Tracker issue {reference.key}
+        <button
+          type="button"
+          onClick={() => {
+            const target = issueLinkedPullRequestTarget(reference, {
+              repository: "acme/app",
+              number: 8,
+              url: "https://forge.test:8443/acme/app/pull/8",
+            });
+            if (target) onSelectPullRequest?.({ projectId: reference.projectId, ...target });
+          }}
+        >
+          Linked tracker PR
+        </button>
+      </div>
+    ),
+  };
+});
 vi.mock(
   import("../pullRequest/PullRequestDetailPanel"),
   () =>
     ({
       PullRequestDetailPanel: ({ sourceUrl }: { sourceUrl?: string }) => (
         <div>
-          Linked PR detail
+          <span>Linked PR detail</span>
           {sourceUrl ? <a href={sourceUrl}>Original PR</a> : null}
         </div>
       ),
@@ -1012,6 +1010,27 @@ it("preserves the original PR URL in requirements deep links and tracker issue t
   await expect
     .element(screen.getByRole("link", { name: "Original PR" }))
     .toHaveAttribute("href", url);
+
+  await act(() =>
+    router.navigate({
+      to: "/requirements",
+      search: {
+        detailEnvironmentId: EnvironmentId.make("local"),
+        pullRequest: {
+          projectId: ProjectId.make("project"),
+          host: "forge.test:8443",
+          repository: "acme/app",
+          number: 7,
+          url: `${url}?${"a".repeat(2_048)}`,
+        },
+      },
+    }),
+  );
+  await expect.element(screen.getByText("Linked PR detail", { exact: true })).toBeVisible();
+  expect(router.state.location.search).toMatchObject({ pullRequest: { number: 7 } });
+  expect(router.state.location.search).not.toMatchObject({
+    pullRequest: { url: expect.anything() },
+  });
 
   await act(() =>
     router.navigate({

@@ -1943,20 +1943,22 @@ describe("cached pull request detail", () => {
     ).toBeNull();
   });
 
-  // regression: #12168 cached PR details were missed across entry points on custom ports
   it.each(["github", "gitlab"] as const)(
-    "retains portless %s snapshot identities for custom web ports",
+    "shows a %s snapshot only at the matching web port",
     (providerName) => {
       const provider = SourceControlProviderKind.make(providerName);
       const storage = makeStorage();
       const host = `${provider}.example.com`;
       const hosted = { ...reference, host };
+      const customPort = { ...reference, host: `${host}:8443` };
       const cached = detail({
         provider,
         url: `https://${host}:8443/acme/web/${provider === "github" ? "pull" : "-/merge_requests"}/7`,
       });
       writePullRequestDetailSnapshot(storage, "env-1", hosted, cached);
-      expect(readPullRequestDetailSnapshot(storage, "env-1", hosted)?.title).toBe(cached.title);
+      expect(readPullRequestDetailSnapshot(storage, "env-1", hosted)).toBeNull();
+      writePullRequestDetailSnapshot(storage, "env-1", customPort, cached);
+      expect(readPullRequestDetailSnapshot(storage, "env-1", customPort)?.title).toBe(cached.title);
     },
   );
 

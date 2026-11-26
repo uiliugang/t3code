@@ -13,6 +13,7 @@ import {
   repositoryUrlFromPagePath,
   projectChangeRequestHost,
   remoteWebOrigin,
+  type ChangeRequestHostIdentity,
   type SourceControlAppSignIn,
 } from "@t3tools/source-control-core/shared/definition";
 
@@ -65,6 +66,12 @@ export const APP_SIGN_IN: SourceControlAppSignIn = {
 export const settings = makeProviderSettingsSchema(hostCredentialSettingsFields);
 export type GitHubSettings = typeof settings.Type;
 
+function changeRequestHost(identity: ChangeRequestHostIdentity): string {
+  const host = projectChangeRequestHost(identity, KIND);
+  const remote = parseUrl(identity?.locator?.remoteUrl ?? "");
+  return remote?.protocol === "https:" && remote.hostname === host ? remote.host : host;
+}
+
 export const definition = defineSourceControl({
   kind: KIND,
   label: "GitHub",
@@ -111,7 +118,9 @@ export const definition = defineSourceControl({
   parseCommitUrl: (url, known) =>
     known || isGitHubHost(url.hostname) ? parseCommitPath(url, COMMIT_PATH) : null,
   parseChangeRequestUrl: (url) =>
-    isRetiredPublicHost(url.hostname) ? null : parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
+    url.protocol !== "https:" || isRetiredPublicHost(url.hostname)
+      ? null
+      : parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
   // `/issues/` is too generic a path to believe from a host that is not GitHub's, unless a known
   // project's host vouches for it as a GitHub Enterprise Server.
   parseIssueUrl: (url, known) =>
@@ -165,7 +174,8 @@ export const definition = defineSourceControl({
     const url = parseUrl(value);
     return url !== null && !url.username && !url.password && !isRetiredPublicHost(url.hostname);
   },
-  checkoutChangeRequestHost: (identity) => projectChangeRequestHost(identity, KIND),
+  checkoutChangeRequestHost: changeRequestHost,
+  changeRequestHost,
   changeRequestHeadRef: (number) => `refs/pull/${number}/head`,
   // `*.ghe.com` is GitHub Enterprise Cloud with data residency, one subdomain per enterprise.
   recognizeRemote: ({ host, hostname }) => {

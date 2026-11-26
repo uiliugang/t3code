@@ -31,12 +31,11 @@ it("uses the linked GitHub pull request's authority, not the issue's authority",
     number: 12,
     url: link.url,
   });
-  expect(
-    issueLinkedPullRequestTarget(issue, {
-      ...link,
-      url: link.url.replace(".test/", ".test:8443/"),
-    }),
-  ).toBeNull();
+  const ported = { ...link, url: link.url.replace(".test/", ".test:8443/") };
+  expect(issueLinkedPullRequestTarget(issue, ported)).toEqual({
+    ...ported,
+    host: "forge.test:8443",
+  });
   expect(
     issueLinkedPullRequestTarget(issue, { ...link, url: link.url.replace("/12", "/13") }),
   ).toBeNull();

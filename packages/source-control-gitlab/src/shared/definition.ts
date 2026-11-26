@@ -1,4 +1,5 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
+import { parseUrl } from "@t3tools/shared/url";
 import {
   buildCommitUrl,
   changeRequestUrlBelow,
@@ -82,6 +83,10 @@ export const definition = defineSourceControl({
   checkoutCommandArgument: (input) => CHECKOUT_COMMAND.exec(input)?.[1]?.trim() ?? null,
   isChangeRequestReference: (url) => CHANGE_REQUEST_REFERENCE.test(url),
   checkoutChangeRequestHost: () => null,
+  changeRequestHost: (identity) => {
+    const host = projectChangeRequestHost(identity, KIND);
+    return parseUrl(remoteWebOrigin(host, identity?.locator?.remoteUrl))?.host ?? host;
+  },
   changeRequestHeadRef: (number) => `refs/merge-requests/${number}/head`,
   recognizeRemote: ({ host, hostname }) =>
     hostname === "gitlab.com" || hostname.split(".").includes("gitlab")
