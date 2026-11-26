@@ -137,6 +137,8 @@ const pullRequestView = {
     selectedHost: "github.com",
     selectedProjectId: projectId,
     selectedEnvironmentId: environmentId,
+    selectedTarget: { provider: "github", origin: "https://github.com" },
+    selectedUrl: pullRequestUrl,
   },
 };
 

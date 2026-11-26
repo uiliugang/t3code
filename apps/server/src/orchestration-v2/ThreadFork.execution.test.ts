@@ -16,6 +16,7 @@ import {
   RunAttemptId,
   RunId,
   ScheduledTaskId,
+  SourceControlProviderKind,
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -145,6 +146,10 @@ it.effect("a persisted fork leaves PR watching with its parent until explicitly 
       {
         ...key,
         ...link,
+        target: {
+          provider: SourceControlProviderKind.make("github"),
+          origin: "https://github.com",
+        },
         linkedAt: parentWatch.startedAt,
         snapshot: null,
         stack: null,
