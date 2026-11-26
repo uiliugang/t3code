@@ -4209,6 +4209,33 @@ it.effect("keeps a row of a host that ignored the filters if any name of a label
   }),
 );
 
+it.effect("refreshes stack membership before a strict read", () =>
+  Effect.gen(function* () {
+    let inStack = false;
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const stack = {
+      id: "stack-10",
+      number: 10,
+      url: "https://github.com/acme/web/stacks/10",
+      base: "main",
+      layers: [{ number: 1, headBranch: "change", headSha: "abc123", state: "open" as const }],
+    };
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          getChangeRequestStack: () => Effect.sync(() => (inStack ? stack : null)),
+        }),
+      ],
+    });
+
+    expect(yield* service.stack(reference)).toBeNull();
+    inStack = true;
+    expect(yield* service.stack(reference)).toBeNull();
+    expect(yield* service.stack({ ...reference, allowStale: false })).toEqual(stack);
+  }),
+);
+
 it.effect.each([false, true])(
   "authorizes stack rebases and refreshes sibling layers (cross-host: %s)",
   (crossHost) =>

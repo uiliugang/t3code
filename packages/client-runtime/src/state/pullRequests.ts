@@ -79,19 +79,12 @@ const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 function normalizePullRequestQuery<A>(
   query: (target: { readonly environmentId: EnvironmentId; readonly input: PullRequestRef }) => A,
 ) {
-  return ({
-    environmentId,
-    input: { projectId, host, repository, number, allowStale, expectedAccountId },
-  }: Parameters<typeof query>[0]) =>
+  return ({ environmentId, input }: Parameters<typeof query>[0]) =>
     query({
       environmentId,
       input: {
-        projectId,
-        ...(host === undefined ? {} : { host }),
-        repository,
-        number,
-        ...(allowStale === undefined ? {} : { allowStale }),
-        ...(expectedAccountId === undefined ? {} : { expectedAccountId }),
+        ...pullRequestReference(input),
+        ...(input.allowStale === undefined ? {} : { allowStale: input.allowStale }),
       },
     });
 }
@@ -368,7 +361,9 @@ function pullRequestReference(input: PullRequestRef): PullRequestRef {
   return {
     projectId,
     ...(host === undefined ? {} : { host }),
-    ...(target === undefined ? {} : { target }),
+    ...(target === undefined
+      ? {}
+      : { target: { provider: target.provider, origin: target.origin } }),
     repository,
     number,
     ...(expectedAccountId === undefined ? {} : { expectedAccountId }),

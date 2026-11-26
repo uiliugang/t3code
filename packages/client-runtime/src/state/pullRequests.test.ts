@@ -1222,6 +1222,52 @@ function actionReplyClient(overrides: Record<string, unknown> = {}) {
   } as unknown as WsRpcProtocolClient;
 }
 
+it.effect("keeps detail and checks reads and action replies scoped to their web origin", () =>
+  Effect.gen(function* () {
+    const http = "http://forge.test";
+    const https = "https://forge.test";
+    const reference = (origin: string) => ({
+      ...actionReference,
+      host: "forge.test",
+      target: { provider: SourceControlProviderKind.make("gitlab"), origin },
+    });
+    const client = actionReplyClient({
+      [WS_METHODS.pullRequestsDetail]: (input: PullRequestRef) =>
+        Effect.succeed({ title: input.target?.origin, state: "open", observedAt: 100 }),
+      [WS_METHODS.pullRequestsChecks]: (input: PullRequestRef) =>
+        Effect.succeed({
+          state: "open",
+          checks: [],
+          observedAt: input.target?.origin === http ? 100 : 101,
+        }),
+      [WS_METHODS.pullRequestsRunAction]: () =>
+        Effect.succeed({ ...actionReply, ...reference(http), provider: "gitlab" }),
+    });
+    const { atoms, registry } = yield* makeTestRuntime(client);
+    const readers = [http, https].map((origin) => {
+      const target = { environmentId: TARGET.environmentId, input: reference(origin) };
+      return { detail: atoms.detail(target), checks: atoms.checks(target) };
+    });
+    for (const { detail, checks } of readers) {
+      registry.mount(detail);
+      registry.mount(checks);
+      yield* Effect.promise(() => executeAtomQuery(registry, detail));
+      yield* Effect.promise(() => executeAtomQuery(registry, checks));
+    }
+    const value = <A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
+      Option.getOrThrow(AsyncResult.value(registry.get(atom)));
+    expect(readers.map(({ detail }) => value(detail).title)).toEqual([http, https]);
+    expect(readers.map(({ checks }) => value(checks)?.observedAt)).toEqual([100, 101]);
+
+    yield* atoms.runAction.run(registry, {
+      environmentId: TARGET.environmentId,
+      input: { ...reference(http), action: "merge" },
+    });
+    expect(readers.map(({ detail }) => value(detail).state)).toEqual(["merged", "open"]);
+    expect(readers.map(({ checks }) => value(checks)?.state)).toEqual(["merged", "open"]);
+  }),
+);
+
 it.effect("shows an action's reply in loaded readers and moves list rows without reads", () =>
   Effect.gen(function* () {
     const reads: string[] = [];

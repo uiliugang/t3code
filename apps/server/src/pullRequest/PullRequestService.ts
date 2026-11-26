@@ -3501,7 +3501,7 @@ export const make = Effect.gen(function* () {
   );
 
   const stack: PullRequestService["Service"]["stack"] = (input, options) =>
-    options?.bypassCache === true
+    input.allowStale === false || options?.bypassCache === true
       ? stackUncached(input, options)
       : persistedRead(
           input,
