@@ -24,6 +24,7 @@ import * as NodeOS from "node:os";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Arr from "effect/Array";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
@@ -49,6 +50,7 @@ import {
 } from "./check-changed-lock.ts";
 
 const GiB = 1024 ** 3;
+const BROWSER_TEST_BATCH_SIZE = 30;
 
 // A typecheck or test step can take several cores and gigabytes of memory, so
 // allow one step per two cores and per 6 GiB of available memory.
@@ -580,21 +582,27 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
           },
         ]
       : []),
-    // Split Chromium-backed tests into their own Vitest invocation so Playwright's
-    // chrome-headless-shell exits immediately afterward instead of staying resident
-    // across long Node/server test runs.
+    // Fresh Chromium sessions bound the lifetime of Vitest's browser RPC connection.
     ...(browserTests.length > 0
       ? [
           {
-            ...command(`browser test (${browserTests.length} files)`, [
-              "test",
-              "run",
-              "--passWithNoTests",
-              "--maxWorkers",
-              "1",
-              "--no-file-parallelism",
-              ...browserTests,
-            ]),
+            name: `browser test (${browserTests.length} files)`,
+            run: Effect.forEach(Arr.chunksOf(browserTests, BROWSER_TEST_BATCH_SIZE), (batch) =>
+              vp([
+                "test",
+                "run",
+                "--passWithNoTests",
+                "--maxWorkers",
+                "1",
+                "--no-file-parallelism",
+                ...batch,
+              ]),
+            ).pipe(
+              Effect.map((batches) => ({
+                ok: batches.every(({ ok }) => ok),
+                output: batches.map(({ output }) => output.trimEnd()).join("\n\n"),
+              })),
+            ),
             withLock: <A, R>(task: Effect.Effect<A, never, R>) =>
               withBrowserTestLock(input.commonDir, task, {
                 waitingMessage:
