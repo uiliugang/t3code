@@ -12,6 +12,7 @@ import {
   type ThreadId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
+  type ThreadLinkedPullRequest,
 } from "@t3tools/contracts";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
@@ -32,6 +33,7 @@ import * as Stream from "effect/Stream";
 import * as GitManager from "../git/GitManager.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -55,7 +57,6 @@ export interface SettlementPullRequest {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
-const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 
 function toMillis(value: DateTime.Utc | null | undefined): number | null {
   return value == null ? null : DateTime.toEpochMillis(value);
@@ -81,24 +82,10 @@ function threadActivityAtMs(thread: ProjectionStore.ProjectionSettlementCandidat
   );
 }
 
-function pullRequestMatchesProject(
-  pullRequest: GitManager.GitBranchPullRequest,
-  project: {
-    readonly repositoryIdentity?: { readonly canonicalKey: string } | null | undefined;
-  },
-): boolean {
-  return (
-    pullRequest.repositoryKey !== null &&
-    project.repositoryIdentity != null &&
-    sourceControlDefinitions.canonicalRepositoryKey(pullRequest.repositoryKey) ===
-      sourceControlDefinitions.canonicalRepositoryKey(project.repositoryIdentity.canonicalKey)
-  );
-}
-
 function branchPullRequestKey(pullRequest: GitManager.GitBranchPullRequest): string | null {
   const parsed = sourceControlDefinitions.parseChangeRequestUrl(pullRequest.url)?.link;
   if (parsed !== undefined && parsed.number === pullRequest.number) {
-    return threadPullRequestKeyOf(parsed);
+    return threadPullRequestKeyOf({ ...parsed, url: pullRequest.url });
   }
   const separator = pullRequest.repositoryKey?.indexOf("/") ?? -1;
   if (pullRequest.repositoryKey == null || separator <= 0) return null;
@@ -112,6 +99,16 @@ function branchPullRequestKey(pullRequest: GitManager.GitBranchPullRequest): str
 type SettlementPullRequestLink = NonNullable<
   ProjectionStore.ProjectionSettlementCandidate["pullRequests"]
 >[number];
+
+function settlementReferenceKey(reference: ThreadLinkedPullRequest): string {
+  const key = legacyThreadPullRequestKey(reference);
+  return JSON.stringify([
+    reference.projectId,
+    key.target === undefined ? reference.url : threadPullRequestKeyOf(key),
+    key.repository,
+    key.number,
+  ]);
+}
 
 /** When the linked pull request merged or closed, or -Infinity if it has not. */
 function linkTerminalAtMs(link: SettlementPullRequestLink): number {
@@ -148,7 +145,7 @@ export function threadHasQueuedTurnStart(
   const messageAtMs = toMillis(thread.latestUserMessageAt);
   if (messageAtMs === null || thread.status === "failed") return false;
   const age = nowMs - messageAtMs;
-  if (Number.isNaN(age) || Math.abs(age) > QUEUED_TURN_START_GRACE_MS) return false;
+  if (Number.isNaN(age) || Math.abs(age) > Orchestrator.QUEUED_TURN_START_GRACE_MS) return false;
   if (thread.latestRunId === null) return true;
   return [
     toMillis(thread.latestRunRequestedAt),
@@ -160,7 +157,7 @@ export function threadHasQueuedTurnStart(
 function pullRequestSettles(
   thread: Pick<
     ProjectionStore.ProjectionSettlementCandidate,
-    "createdAt" | "latestUserAuthoredMessageAt"
+    "createdAt" | "latestResumingMessageAt"
   >,
   pullRequest: SettlementPullRequest,
   autoSettleOnMerge: boolean,
@@ -172,7 +169,7 @@ function pullRequestSettles(
   if (terminalAt == null) return false;
   const userAnchorMs = latestMillis([
     toMillis(thread.createdAt),
-    toMillis(thread.latestUserAuthoredMessageAt),
+    toMillis(thread.latestResumingMessageAt),
   ]);
   if (userAnchorMs === null) return false;
   const pullRequestAtMs = Date.parse(terminalAt);
@@ -181,7 +178,7 @@ function pullRequestSettles(
 }
 
 export function isAutoSettlementCandidate(
-  thread: Omit<ProjectionStore.ProjectionSettlementCandidate, "latestUserAuthoredMessageAt">,
+  thread: Omit<ProjectionStore.ProjectionSettlementCandidate, "latestResumingMessageAt">,
   nowMs: number,
 ): boolean {
   if (thread.archivedAt !== null || thread.settledOverride !== null) return false;
@@ -336,6 +333,7 @@ export const make = Effect.gen(function* () {
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const git = yield* GitManager.GitManager;
+  const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const terminals = yield* TerminalManager.TerminalManager;
   const pullRequests = yield* PullRequestService.PullRequestService;
   const random = yield* SecureRandom.SecureRandom;
@@ -348,11 +346,6 @@ export const make = Effect.gen(function* () {
   // Each summary read can be a host CLI process (one `az` per read on Azure DevOps), so a quiet
   // open pull request is read on the sync reactor's quiet cadence rather than every sweep.
   const quietOpenReadAt = new Map<string, number>();
-  const quietReadKey = (reference: {
-    readonly projectId: string;
-    readonly repository: string;
-    readonly number: number;
-  }) => `${reference.projectId}\0${reference.repository.toLowerCase()}\0${reference.number}`;
   // A host can finish a merge minutes after the app's merge action and its refresh, and Azure's
   // updatedAt never moves while open, so pull requests stay on the fast cadence for a while after.
   // Sweeps that started before the pause fail the same check, so their reads record nothing.
@@ -441,6 +434,17 @@ export const make = Effect.gen(function* () {
     const projectShells = yield* projectStore.listShells();
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const projects = new Map(projectShells.map((project) => [project.id, project]));
+    const verifiedBranchRepository = Effect.fnUntraced(function* (
+      thread: ProjectionStore.ProjectionSettlementCandidate,
+      pullRequest: GitManager.GitBranchPullRequest,
+    ) {
+      const project = projects.get(thread.projectId);
+      if (project === undefined) return false;
+      const identity = yield* repositoryIdentities.resolve(project.workspaceRoot, {
+        refresh: true,
+      });
+      return GitManager.branchPullRequestMatchesRepository(pullRequest, identity);
+    });
     for (const [key, readAtMs] of quietOpenReadAt) {
       if (nowMs - readAtMs >= QUIET_SYNC_INTERVAL_MS) quietOpenReadAt.delete(key);
     }
@@ -578,9 +582,7 @@ export const make = Effect.gen(function* () {
       if (reference != null) {
         return JSON.stringify([
           thread.linkedPullRequest != null ? "linked" : "branch-reference",
-          reference.projectId,
-          reference.repository,
-          reference.number,
+          settlementReferenceKey(reference),
           lookupCwdByThreadId.get(thread.id),
           thread.branch,
         ]);
@@ -644,16 +646,21 @@ export const make = Effect.gen(function* () {
         return undefined;
       }
       if (reference != null) {
-        // Only matching PR links settle from this merge event; unrelated links require fresh lookup.
+        const key = legacyThreadPullRequestKey(reference);
+        if (key.target === undefined) return undefined;
         const matchesMerge =
           mergedPullRequest !== null &&
-          reference.projectId === mergedPullRequest.projectId &&
-          reference.repository.toLowerCase() === mergedPullRequest.repository.toLowerCase() &&
-          reference.number === mergedPullRequest.number;
+          (mergedPullRequest.target === undefined ||
+            threadPullRequestKeyOf(legacyThreadPullRequestKey(mergedPullRequest)) ===
+              threadPullRequestKeyOf({
+                ...legacyThreadPullRequestKey(mergedPullRequest),
+                target: mergedPullRequest.target,
+              })) &&
+          settlementReferenceKey(reference) === settlementReferenceKey(mergedPullRequest);
         if (!matchesMerge && !projects.has(reference.projectId)) {
           return yield* Effect.die(new Error("linked pull request project not found"));
         }
-        const readKey = quietReadKey(reference);
+        const readKey = settlementReferenceKey(reference);
         const shellClosed =
           group.filter((member) => shellClosedThreads.delete(member.id)).length > 0;
         if (shellClosed) quietOpenReadAt.delete(readKey);
@@ -669,11 +676,17 @@ export const make = Effect.gen(function* () {
           : yield* pullRequests.summary(
               {
                 projectId: reference.projectId,
-                repository: reference.repository,
-                number: reference.number,
+                ...key,
               },
               { recoverTransientFailure: false, bypassCache: shellClosed },
             );
+        if (
+          "url" in summary &&
+          summary.state !== "open" &&
+          threadPullRequestKeyOf(legacyThreadPullRequestKey(summary)) !==
+            threadPullRequestKeyOf(key)
+        )
+          return undefined;
         if (
           "updatedAt" in summary &&
           summary.state === "open" &&
@@ -694,15 +707,18 @@ export const make = Effect.gen(function* () {
             { cwd, branch: thread.branch },
             { refresh: true },
           );
-          const project = projects.get(thread.projectId);
-          if (
-            current?.state === "open" &&
-            project !== undefined &&
-            pullRequestMatchesProject(current, project)
-          ) {
+          if (current?.state === "open" && (yield* verifiedBranchRepository(thread, current))) {
             return current;
           }
+          if (thread.linkedPullRequest == null) {
+            return current !== null &&
+              branchPullRequestKey(current) === threadPullRequestKeyOf(key) &&
+              (yield* verifiedBranchRepository(thread, current))
+              ? current
+              : undefined;
+          }
         }
+        if (summary.state !== "open" && thread.linkedPullRequest == null) return undefined;
         return terminal;
       }
       if (thread.branch === null) return null;
@@ -722,9 +738,20 @@ export const make = Effect.gen(function* () {
         { cwd, branch: thread.branch },
         { refresh, confirmTerminal: false },
       );
+      const identity = projects.get(thread.projectId)?.repositoryIdentity;
+      const matchesProject = (request: GitManager.GitBranchPullRequest | null) =>
+        request === null ||
+        identity == null ||
+        GitManager.branchPullRequestMatchesRepository(request, identity);
+      if (!matchesProject(remembered)) return undefined;
       noPullRequestRechecks.record(key, nowMs, remembered !== null);
       if (refresh || remembered === null || remembered.state === "open") {
-        return ownedByAnotherThread(remembered) ? undefined : remembered;
+        return ownedByAnotherThread(remembered) ||
+          (remembered !== null &&
+            remembered.state !== "open" &&
+            !(yield* verifiedBranchRepository(thread, remembered)))
+          ? undefined
+          : remembered;
       }
       // A deferred thread confirms first: a reused branch can have a new open PR.
       if (
@@ -737,7 +764,13 @@ export const make = Effect.gen(function* () {
         { cwd, branch: thread.branch },
         { freshGitState: true },
       );
-      return ownedByAnotherThread(fresh) ? undefined : fresh;
+      return !matchesProject(fresh) ||
+        ownedByAnotherThread(fresh) ||
+        (fresh !== null &&
+          fresh.state !== "open" &&
+          !(yield* verifiedBranchRepository(thread, fresh)))
+        ? undefined
+        : fresh;
     });
 
     // A merge, a shell close and a thread's own events read at once; only scheduled sweeps wait.

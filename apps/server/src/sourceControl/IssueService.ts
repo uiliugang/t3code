@@ -1,5 +1,10 @@
 import {
+  dedupeIssueSources,
   RequirementIssueError,
+  normalizeGithubIssueHost,
+  normalizeGithubIssueSource,
+  issueSourceKey,
+  issueSourceScopeKey,
   isMeituanServiceEnabled,
   mergeProjectIssueSources,
   projectIssueProvider,
@@ -177,7 +182,7 @@ export const make = Effect.gen(function* () {
         automatic.push({
           provider: "github",
           scope: repository,
-          host: new URL(context.provider.baseUrl).hostname,
+          host: new URL(context.provider.baseUrl).host,
         });
       if (
         provider.discoverIssueSources &&
@@ -223,8 +228,10 @@ export const make = Effect.gen(function* () {
       (handle?._tag === "Success" && handle.success.context
         ? handle.success.provider.kind
         : undefined);
-    const sources = mergeProjectIssueSources(automatic, manual, repositoryKind).filter(
-      (source) => source.provider !== "meituan" || isMeituanServiceEnabled(saved, "requirements"),
+    const sources = normalizedSources(
+      mergeProjectIssueSources(automatic, manual, repositoryKind).filter(
+        (source) => source.provider !== "meituan" || isMeituanServiceEnabled(saved, "requirements"),
+      ),
     );
     const provider = projectIssueProvider(repositoryKind, automatic.length ? automatic : manual);
     return {
@@ -257,17 +264,25 @@ export const make = Effect.gen(function* () {
   const validSource = (source: IssueSource) =>
     source.provider === "meituan"
       ? /^[1-9]\d*$/u.test(source.scope) && source.host === "mep.sankuai.com"
-      : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) && /^[\w.-]+$/u.test(source.host);
+      : /^[\w.-]+\/[\w.-]+$/u.test(source.scope) &&
+        normalizeGithubIssueHost(source.host) !== undefined;
+  const normalizedSources = (sources: readonly IssueSource[]) =>
+    dedupeIssueSources(sources).map(normalizeGithubIssueSource);
   const resolveAll = Effect.fn("IssueService.resolveAll")(function* (
     input: IssueTarget,
     refreshRepository = false,
   ) {
     const resolved = yield* projectSources(input.projectId, false, refreshRepository);
+    const host =
+      input.host && input.provider === "github"
+        ? (normalizeGithubIssueHost(input.host) ?? input.host)
+        : input.host;
+    const scope = input.scope && issueSourceScopeKey(input.provider, input.scope);
     const sources = resolved.sources.filter(
       (source) =>
         source.provider === input.provider &&
-        (!input.scope || source.scope === input.scope) &&
-        (!input.host || source.host === input.host),
+        (!scope || issueSourceScopeKey(source.provider, source.scope) === scope) &&
+        (!host || source.host === host),
     );
     for (const source of sources) {
       if (!validSource(source))
@@ -320,11 +335,11 @@ export const make = Effect.gen(function* () {
             ((enabled && kind === "meituan") ||
               (kind === "github" && project.repositoryIdentity?.provider !== kind));
           const resolved = discover ? yield* resolveSources(project, saved) : { sources: manual };
-          const sources = resolved.sources.filter(validSource);
+          const valid = resolved.sources.filter(validSource);
           return {
             ...resolved,
-            sources,
-            ...(sources.length !== resolved.sources.length
+            sources: normalizedSources(valid),
+            ...(valid.length !== resolved.sources.length
               ? {
                   failure: new RequirementIssueError({
                     operation: "resolve",
@@ -414,7 +429,7 @@ export const make = Effect.gen(function* () {
         }
         const { projectId, targets: resolvedTargets } = entry.success;
         for (const target of resolvedTargets) {
-          const key = `${target.source.provider}\n${target.source.host}\n${target.source.scope}`;
+          const key = issueSourceKey(target.source);
           const existing = distinct.get(key);
           if (existing) {
             if (!existing.projectIds.includes(projectId)) existing.projectIds.push(projectId);

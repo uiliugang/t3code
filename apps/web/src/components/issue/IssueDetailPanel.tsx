@@ -1,6 +1,13 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { resolveChangeRequestLinkTarget } from "@t3tools/client-runtime/change-request-links";
 import { issueEventSentence, issueWriteAccess } from "@t3tools/client-runtime/issue-presentation";
+import {
+  issueLinkedPullRequestTarget,
+  issueReferenceCompatible,
+  issueReferenceHost,
+} from "@t3tools/client-runtime/issue-links";
 import { createIssueCommentPager } from "@t3tools/client-runtime/state/issues";
+import { parseUrl } from "@t3tools/shared/url";
 import {
   issueAssigneeHeld,
   issueAssigneesAfterPicks,
@@ -44,6 +51,7 @@ import { m } from "~/i18n/messages";
 import { issueEnvironment, refreshIssueLists } from "~/state/issues";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
+import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -407,16 +415,7 @@ function IssueEventText({
   );
 }
 
-export function IssueDetailPanel({
-  environmentId,
-  reference,
-  threadRef = null,
-  listEntry = null,
-  onSelectPullRequest,
-  onSelectIssue,
-  renderSupplement,
-  onIssueChanged,
-}: {
+type IssueDetailPanelProps = {
   renderSupplement?: ((detail: IssueDetail) => ReactNode) | undefined;
   onIssueChanged?: (() => void) | undefined;
   environmentId: EnvironmentId;
@@ -425,10 +424,53 @@ export function IssueDetailPanel({
   listEntry?: IssueListEntry | null;
   threadRef?: ScopedThreadRef | null;
   /** Opens a linked change request beside this one; absent, the link goes to the host. */
-  onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
+  onSelectPullRequest?:
+    | ((reference: PullRequestRef & { readonly url: string }) => void)
+    | undefined;
   /** Opens a referenced issue beside this one; absent, the link goes to the host. */
   onSelectIssue?: ((reference: IssueRef & { readonly url: string }) => void) | undefined;
-}) {
+};
+
+export function IssueLinkUnavailable({ url }: { url?: string | undefined }) {
+  const gt = useGT();
+  const protocol = url ? parseUrl(url)?.protocol : undefined;
+  return (
+    <PullRequestsUnavailableState
+      title={gt("Issues unavailable")}
+      error={gt("Update this environment's T3 Code server to browse issues.")}
+      {...(url && (protocol === "https:" || protocol === "http:")
+        ? { host: { url, openLabel: gt("Open in browser") } }
+        : {})}
+    />
+  );
+}
+
+export function IssueDetailPanel(props: IssueDetailPanelProps) {
+  const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
+  if (!issueReferenceCompatible(props.reference, config?.environment.capabilities))
+    return <IssueLinkUnavailable url={props.reference.url} />;
+  return <IssueDetailContent {...props} />;
+}
+
+function IssueDetailContent({
+  environmentId,
+  reference: rawReference,
+  threadRef = null,
+  listEntry = null,
+  onSelectPullRequest,
+  onSelectIssue,
+  renderSupplement,
+  onIssueChanged,
+}: IssueDetailPanelProps) {
+  const referenceHost = issueReferenceHost(
+    rawReference.tracker,
+    rawReference.host,
+    rawReference.url,
+  );
+  const reference =
+    referenceHost === undefined || referenceHost === rawReference.host
+      ? rawReference
+      : { ...rawReference, host: referenceHost };
   const t = useUiTranslation();
   const language = useClientSettings((settings) => settings.uiLanguage);
   const gt = useGT();
@@ -441,6 +483,7 @@ export function IssueDetailPanel({
   const detail = detailQuery.data;
   const canWrite = useAtomValue(issueEnvironment.comment.permissionAtom(environmentId));
   const projects = useProjects();
+  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const cwd =
     projects.find((p) => p.environmentId === environmentId && p.id === reference.projectId)
       ?.workspaceRoot ?? "";
@@ -482,23 +525,44 @@ export function IssueDetailPanel({
   const tracker = issueTrackerPresentation(detail.tracker);
   const currentState = issueStatePresentation(detail.state);
 
-  const host = reference.host === undefined ? {} : { host: reference.host };
+  const resolveLinkedPullRequest = (
+    source: Pick<IssueLinkedPullRequest, "url" | "repository" | "number">,
+  ) => {
+    const target = issueLinkedPullRequestTarget(reference, source);
+    if (!onSelectPullRequest || !target) return null;
+    const supportsWebTargets =
+      serverConfig?.environment.capabilities.pullRequestWebTargets === true;
+    const resolved = resolveChangeRequestLinkTarget({
+      url: target.url,
+      projects,
+      configLoaded: () => serverConfig !== null,
+      environmentId,
+      projectId: reference.projectId,
+      lendHostProject: supportsWebTargets,
+      supportsWebTargets: () => supportsWebTargets,
+    });
+    return resolved === null ? null : { ...target, projectId: resolved.project.id };
+  };
+  const openLinkedPullRequest = (
+    source: Pick<IssueLinkedPullRequest, "url" | "repository" | "number">,
+  ) => {
+    const target = resolveLinkedPullRequest(source);
+    if (target === null || !onSelectPullRequest) return false;
+    onSelectPullRequest(target);
+    return true;
+  };
   const openEventSource = (source: IssueEventReference) => {
-    if (source.kind === "pull-request") {
-      if (!onSelectPullRequest) return false;
-      onSelectPullRequest({
-        projectId: reference.projectId,
-        ...host,
-        repository: source.repository,
-        number: source.number,
-      });
-      return true;
-    }
+    if (source.kind === "pull-request") return openLinkedPullRequest(source);
     if (!onSelectIssue) return false;
+    const host = issueReferenceHost(
+      reference.tracker,
+      reference.tracker === "github" ? undefined : reference.host,
+      source.url,
+    );
     onSelectIssue({
       projectId: reference.projectId,
       tracker: reference.tracker,
-      ...host,
+      ...(host ? { host } : {}),
       scope: source.repository,
       key: String(source.number),
       url: source.url,
@@ -840,24 +904,19 @@ export function IssueDetailPanel({
         {detail.linkedPullRequests.length > 0 ? (
           <PullRequestSection key={`linked:${detail.url}`} title={t("Linked pull requests")}>
             <div className="flex flex-col gap-1">
-              {detail.linkedPullRequests.map((link) => (
-                <LinkedPullRequestRow
-                  key={`${link.repository}#${link.number}`}
-                  link={link}
-                  scope={detail.scope}
-                  onSelect={
-                    onSelectPullRequest
-                      ? () =>
-                          onSelectPullRequest({
-                            projectId: reference.projectId,
-                            ...(reference.host === undefined ? {} : { host: reference.host }),
-                            repository: link.repository,
-                            number: link.number,
-                          })
-                      : null
-                  }
-                />
-              ))}
+              {detail.linkedPullRequests.map((link) => {
+                const target = resolveLinkedPullRequest(link);
+                return (
+                  <LinkedPullRequestRow
+                    key={link.url}
+                    link={link}
+                    scope={detail.scope}
+                    onSelect={
+                      target && onSelectPullRequest ? () => onSelectPullRequest(target) : null
+                    }
+                  />
+                );
+              })}
             </div>
           </PullRequestSection>
         ) : null}

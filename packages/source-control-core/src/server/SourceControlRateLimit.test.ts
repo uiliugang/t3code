@@ -7,6 +7,23 @@ import * as SourceControlRateLimit from "./SourceControlRateLimit.ts";
 
 const github = { provider: SourceControlProviderKind.make("github"), host: "github.com" };
 
+it.effect("does not pause a different Web origin on the same GitLab host", () =>
+  Effect.gen(function* () {
+    const limits = yield* SourceControlRateLimit.SourceControlRateLimit;
+    const http = {
+      provider: SourceControlProviderKind.make("gitlab"),
+      host: "forge.test",
+      origin: "http://forge.test",
+    };
+    yield* limits.recordRateLimit({ ...http, lease: 0 });
+    assert.strictEqual(yield* limits.check({ ...http, origin: "https://forge.test" }), 0);
+    assert.strictEqual(
+      (yield* limits.check(http).pipe(Effect.flip))._tag,
+      "SourceControlRateLimitPausedError",
+    );
+  }).pipe(Effect.provide(SourceControlRateLimit.layer)),
+);
+
 it.effect("isolates cooldowns for verified credentials on the same host", () =>
   Effect.gen(function* () {
     const limits = yield* SourceControlRateLimit.SourceControlRateLimit;

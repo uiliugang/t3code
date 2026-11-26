@@ -1,5 +1,6 @@
 import { useMessages } from "gt-react";
-import type { EnvironmentId, PullRequestRef } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { PullRequestViewerRef } from "@t3tools/client-runtime/state/pull-requests";
 import { useSyncExternalStore } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -32,7 +33,7 @@ const DISABLED_SCOPE = {
 
 export function usePullRequestFilesViewed(options: {
   readonly environmentId: EnvironmentId;
-  readonly reference: PullRequestRef;
+  readonly reference: PullRequestViewerRef;
   readonly enabled: boolean;
 }): PullRequestFilesViewedView {
   const { environmentId, reference, enabled } = options;

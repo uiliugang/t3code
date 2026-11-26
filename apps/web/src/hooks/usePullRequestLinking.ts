@@ -48,7 +48,7 @@ export function usePullRequestLinking(environmentId: EnvironmentId | null | unde
     return (
       parsed !== undefined &&
       visibleThreadPullRequests(thread.pullRequests ?? []).some((entry) =>
-        threadPullRequestKeysEqual(entry, parsed),
+        threadPullRequestKeysEqual(entry, { ...parsed, url }),
       )
     );
   };

@@ -84,7 +84,12 @@ const hooks = Layer.mock(Workflows.Workflows)({
     Effect.sync(() => {
       workflowDeliveries.push(delivery);
       return delivery.token === "tok" ? Option.some({ runId: "run-1" }) : Option.none();
-    }),
+    }).pipe(
+      Effect.filterOrFail(
+        () => delivery.token !== "busy",
+        () => new Workflows.WorkflowHookBusyError({ hook: "push" }),
+      ),
+    ),
 });
 
 const handlerFor = (
@@ -153,7 +158,7 @@ describe("webhook route", () => {
               createdAt: created,
               method: "PATCH",
               query: "private=query",
-              headers: { "x-private": "secret" },
+              headers: { "x-private": "secret", Cookie: "discarded" },
               body: new TextEncoder().encode("private content"),
             }),
           );
@@ -203,6 +208,7 @@ describe("webhook route", () => {
           headers: { "x-private": "secret" },
           bodyText: "private content",
         });
+        expect(requests[0]?.headers).not.toHaveProperty("cookie");
         const expired = yield* seal(createdAt - 25 * 3_600_000);
         expect((yield* deliver(expired.body, "retry")).status).toBe(400);
         expect((yield* deliver("invalid-ciphertext", "retry")).status).toBe(400);
@@ -226,6 +232,9 @@ describe("webhook route", () => {
       expect(accepted.status).toBe(202);
       expect(yield* Effect.promise(() => accepted.json())).toEqual({ runId: "run-1" });
       expect((yield* send("wrong")).status).toBe(404);
+      const busy = yield* send("busy");
+      expect([busy.status, busy.headers.get("retry-after")]).toEqual([429, "60"]);
+      expect(yield* Effect.promise(() => busy.json())).toEqual({ error: "rate_limited" });
       expect(tasks).toBe(0);
       expect(workflowDeliveries[0]).toMatchObject({
         hookId: "wf-inbound.push",
@@ -308,6 +317,30 @@ describe("webhook route", () => {
       expect(received[0]?.relayDeliveryId).toBeUndefined();
     }),
   );
+
+  it("keeps a browser's session cookie out of the request a task reads", async () => {
+    const received: Array<WebhookTriggerRequest> = [];
+    const { handler, dispose } = handlerFor((request) => {
+      received.push(request);
+      return Effect.succeed({
+        _tag: "accepted",
+        deliveryId: ScheduledTaskWebhookDeliveryId.make("delivery:1"),
+        outcome: "accepted",
+      });
+    });
+    try {
+      const response = await handler(
+        new Request("http://env.local/api/hooks/id/tok", {
+          headers: { Cookie: "t3_session=session-secret", "x-github-event": "push" },
+        }),
+      );
+      expect(response.status).toBe(202);
+      expect(received[0]?.headers).not.toHaveProperty("cookie");
+      expect(received[0]?.headers["x-github-event"]).toBe("push");
+    } finally {
+      await dispose();
+    }
+  });
 
   it("maps service outcomes to status codes and names each outcome for the relay", async () => {
     const deliveryId = ScheduledTaskWebhookDeliveryId.make("delivery:1");

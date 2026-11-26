@@ -60,6 +60,40 @@ function link(
 }
 
 describe("threadPullRequestKeysEqual", () => {
+  it("recovers the Meituan Code RPC source from its browser URL", () => {
+    expect(
+      legacyThreadPullRequestKey({
+        repository: "acme/app",
+        number: 7,
+        url: "https://dev.sankuai.com/code/repo-detail/acme/app/pr/7/overview",
+      }),
+    ).toEqual({
+      host: "git.sankuai.com",
+      repository: "acme/app",
+      number: 7,
+      target: { provider: "meituan", origin: "https://git.sankuai.com" },
+    });
+  });
+
+  it("distinguishes the forge and protocol of old links with the same saved key", () => {
+    const pr = link(7, {
+      host: "forge.test",
+      repository: "acme/app",
+      url: "https://forge.test/acme/app/pull/7",
+    });
+    const mr = { ...pr, url: "https://forge.test/acme/app/-/merge_requests/7" };
+    const insecure = { ...mr, url: "http://forge.test/acme/app/-/merge_requests/7" };
+    expect(threadPullRequestKeysEqual(pr, mr)).toBe(false);
+    expect(threadPullRequestKeysEqual(mr, insecure)).toBe(false);
+    expect(
+      threadPullRequestKeysEqual(mr, {
+        ...mr,
+        host: "forge.test:443",
+        url: "https://forge.test:443/acme/app/-/merge_requests/7",
+      }),
+    ).toBe(true);
+  });
+
   it("recovers Forgejo ports from old stored URLs and keeps separate servers distinct", () => {
     const old = link(1, {
       host: "forge.example",

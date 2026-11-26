@@ -1,6 +1,7 @@
 import {
   RequirementIssueError,
   RequirementIssueListResult,
+  issueSourceKey,
   WS_METHODS,
   type EnvironmentId,
   type MaintainableTool,
@@ -42,12 +43,10 @@ const retainFailedIssueGroups = Effect.fn("sourceControl.retainFailedIssueGroups
       .filter((failure) => failure.reason !== unconfiguredSourceMessage)
       .map((failure) => failure.projectId),
   );
-  const sourceKey = (source: (typeof result.groups)[number]["source"]) =>
-    JSON.stringify([source.provider, source.host, source.scope]);
-  const freshSources = new Set(result.groups.map((group) => sourceKey(group.source)));
+  const freshSources = new Set(result.groups.map((group) => issueSourceKey(group.source)));
   const candidates = previous.value.groups.filter(
     (group) =>
-      !freshSources.has(sourceKey(group.source)) &&
+      !freshSources.has(issueSourceKey(group.source)) &&
       group.projectIds.some((id) => failedProjects.has(id)),
   );
   if (!candidates.length) return result;
@@ -67,7 +66,9 @@ const retainFailedIssueGroups = Effect.fn("sourceControl.retainFailedIssueGroups
       const project = byProject.get(id);
       return (
         project !== undefined &&
-        (project.sources.some((source) => sourceKey(source) === sourceKey(group.source)) ||
+        (project.sources.some(
+          (source) => issueSourceKey(source) === issueSourceKey(group.source),
+        ) ||
           (project.error !== undefined && project.error !== unconfiguredSourceMessage))
       );
     });

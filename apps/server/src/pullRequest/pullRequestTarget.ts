@@ -1,9 +1,14 @@
-import type { OrchestrationProjectShell, SourceControlProviderKind } from "@t3tools/contracts";
+import type {
+  OrchestrationProjectShell,
+  SourceControlProviderKind,
+  ThreadPullRequestKey,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { normalizeThreadPullRequestKey } from "../sourceControl/threadPullRequests.ts";
+import { pullRequestSyncKey } from "./pullRequestSyncKey.ts";
 
 export interface PullRequestTarget {
   readonly url?: string | undefined;
@@ -48,16 +53,23 @@ export class PullRequestUrlUnavailableError extends Schema.TaggedError<
   }
 }
 
+export class PullRequestRepositoryInvalidError extends Schema.TaggedError<PullRequestRepositoryInvalidError>()(
+  "PullRequestRepositoryInvalidError",
+  {},
+) {
+  override get message(): string {
+    return "Pass repository as owner/repo, without the host.";
+  }
+}
+
 export type PullRequestTargetError =
   | PullRequestUrlInvalidError
   | PullRequestTargetIncompleteError
   | PullRequestHostRequiredError
-  | PullRequestUrlUnavailableError;
+  | PullRequestUrlUnavailableError
+  | PullRequestRepositoryInvalidError;
 
-export interface ResolvedTarget {
-  readonly host: string;
-  readonly repository: string;
-  readonly number: number;
+export interface ResolvedTarget extends ThreadPullRequestKey {
   readonly url: string;
 }
 
@@ -102,33 +114,52 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
       return yield* new PullRequestUrlInvalidError({});
     }
     return {
-      ...normalizeThreadPullRequestKey(parsed),
+      ...normalizeThreadPullRequestKey({ ...parsed, url: input.url }),
       url: input.url,
     } satisfies ResolvedTarget;
   }
   if (input.repository === undefined || input.number === undefined) {
     return yield* new PullRequestTargetIncompleteError({});
   }
+  // Azure DevOps tools name the project's repository by its bare name, which no URL can be built
+  // from, so it is read as the project's full repository path.
+  const own =
+    project?.repositoryIdentity == null || input.repository.includes("/")
+      ? null
+      : pullRequestSyncKey(
+          {
+            projectId: project.id,
+            host: input.host,
+            repository: input.repository,
+            number: input.number,
+          },
+          project.repositoryIdentity,
+        );
   const projectHost = projectHostAndProvider(project);
-  const host = (input.host ?? projectHost.host)?.toLowerCase();
+  const host = (own?.host ?? input.host ?? projectHost.host)?.toLowerCase();
   if (host === undefined) {
     return yield* new PullRequestHostRequiredError({});
   }
-  const repository = input.repository.toLowerCase();
+  const repository = (own?.repository ?? input.repository).toLowerCase();
   // Without a URL, a public forge host says what shape its change request URLs take;
   // any other host is taken to run the project's own forge.
   const kind = sourceControlDefinitions.findByPublicHost(host)?.kind ?? projectHost.kind;
+  const definition = kind === null ? null : sourceControlDefinitions.get(kind);
   const url =
-    kind === null
-      ? null
-      : sourceControlDefinitions.find(kind)?.changeRequestUrl({
-          host,
-          repository,
-          number: input.number,
-          remoteUrl: project?.repositoryIdentity?.locator.remoteUrl,
-        });
-  if (url == null) {
-    return yield* new PullRequestUrlUnavailableError({});
+    definition?.changeRequestUrl({
+      host,
+      repository,
+      number: input.number,
+      remoteUrl:
+        input.host === undefined || host === projectHost.host
+          ? project?.repositoryIdentity?.locator.remoteUrl
+          : undefined,
+    }) ?? null;
+  if (url === null) {
+    // A known forge returns no URL when the repository is not in its shape.
+    return yield* definition === null || definition.kind === "unknown"
+      ? new PullRequestUrlUnavailableError({})
+      : new PullRequestRepositoryInvalidError({});
   }
   return {
     ...normalizeThreadPullRequestKey({ host, repository, number: input.number, url }),

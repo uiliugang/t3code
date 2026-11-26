@@ -3,6 +3,8 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
+import { parseUrl } from "@t3tools/shared/url";
+import { PullRequestWebOrigin } from "@t3tools/source-control-core/server/PullRequestProvider";
 import {
   parseGitRemoteHost,
   unknownRemoteProvider as unknownHostProvider,
@@ -148,7 +150,21 @@ export const discovery = {
   // glab lists every host and rejects --all. --all waits on every host, so ask it only after
   // the current host reports signed out.
   authArgs: ["auth", "status"],
-  authRetryArgs: ["auth", "status", "--all"],
+  // A probe that names no host covers every host glab has a login for, so it runs without the
+  // environment token; the default host is asked with it last, by name.
+  authRetryArgs: (environment) => [
+    ["auth", "status", "--all"],
+    ...(GitLabCli.hasEnvironmentToken(environment)
+      ? [["auth", "status", "--hostname", GitLabCli.defaultHost(environment)]]
+      : []),
+  ],
+  probeEnv: (args, environment) => {
+    const named = args.indexOf("--hostname");
+    return named !== -1 &&
+      GitLabCli.hostOf(args[named + 1] ?? "") === GitLabCli.defaultHost(environment)
+      ? {}
+      : GitLabCli.WITHOUT_ENVIRONMENT_TOKEN;
+  },
   // glab host matching requires the remote's exact spelling.
   remoteRefinementArgs: ({ provider, remoteUrl }) => {
     const authority = /^[a-z][a-z0-9+.-]*:\/\/([^/]+)/iu.exec(remoteUrl.trim())?.[1];
@@ -243,6 +259,9 @@ export const make = Effect.gen(function* () {
     listChangeRequests: Effect.fn("GitLabSourceControlProvider.listChangeRequests")(
       function (input) {
         const source = SourceControlProvider.sourceControlRefFromInput(input);
+        const remote = input.context ? parseUrl(input.context.remoteUrl) : null;
+        const origin =
+          remote?.protocol === "http:" || remote?.protocol === "https:" ? remote.origin : null;
         return gitlab
           .listMergeRequests({
             cwd: input.cwd,
@@ -252,7 +271,12 @@ export const make = Effect.gen(function* () {
             ...(input.limit !== undefined ? { limit: input.limit } : {}),
           })
           .pipe(
-            Effect.map((items) => items.map(toChangeRequest)),
+            Effect.provideService(PullRequestWebOrigin, origin),
+            Effect.map((items) =>
+              items
+                .filter((item) => origin === null || parseUrl(item.url)?.origin === origin)
+                .map(toChangeRequest),
+            ),
             Effect.mapError(
               (error) =>
                 new SourceControlProviderError({

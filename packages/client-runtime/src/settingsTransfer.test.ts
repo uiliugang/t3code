@@ -11,6 +11,7 @@ import {
   WorkspaceRootId,
   type ServerSettings,
   requiredScopesForServerSettingsPatch,
+  AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
@@ -547,7 +548,7 @@ describe("settings transfer", () => {
       requiredScopesForServerSettingsPatch(
         applicationSettingsImportPatch(file, sameApprovalTarget),
       ),
-    ).toEqual([AuthSettingsWriteScope]);
+    ).toEqual([AuthSettingsWriteScope, AuthOrchestrationOperateScope]);
     expect(contents).not.toContain("private-theme");
     expect(contents).not.toContain("defaultAppearance");
     const updatedPreferences = {

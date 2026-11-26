@@ -2,9 +2,9 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { msg, useGT } from "gt-react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
+import { githubIssueScopeFromUrl, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
 import {
   IssueTrackerKind,
-  parseBranchIssueUrl,
   standaloneIssueWorkspace,
   type IssueProvider,
   type ProjectId,
@@ -367,6 +367,12 @@ export function RequirementBoard({
       );
     }
     const surfaceTracker = surface.kind === "issue" ? surface.tracker : surface.provider;
+    const issueKey = surface.kind === "issue" ? surface.key : surface.issueId;
+    const host = issueReferenceHost(surfaceTracker, surface.host, surface.url);
+    const scope =
+      surface.scope ||
+      (surfaceTracker === "github" ? githubIssueScopeFromUrl(surface.url, issueKey) : undefined);
+    if (surfaceTracker === "github" && !scope) return undefined;
     const surfaceWorkspace = surface.url
       ? standaloneIssueWorkspace({
           tracker: IssueTrackerKind.make(surfaceTracker),
@@ -380,16 +386,19 @@ export function RequirementBoard({
         entry.kind === "issue" &&
         entry.projectId === surface.projectId &&
         entry.provider === surfaceTracker &&
-        entry.issue.id === (surface.kind === "issue" ? surface.key : surface.issueId) &&
-        (surface.host === undefined || entry.host === surface.host) &&
-        (surface.scope === undefined || entry.scope === surface.scope) &&
+        entry.issue.id === issueKey &&
+        (host === undefined || issueReferenceHost(surfaceTracker, entry.host) === host) &&
+        (scope === undefined ||
+          (surfaceTracker === "github"
+            ? entry.scope?.toLowerCase() === scope.toLowerCase()
+            : entry.scope === scope)) &&
         (surfaceWorkspace === null ||
           standaloneIssueWorkspace({
             tracker: IssueTrackerKind.make(entry.provider),
             url: entry.issue.url,
           }) === surfaceWorkspace)
       ) {
-        if (surface.host && surface.scope) return entry;
+        if (host && scope) return entry;
         if (match) return undefined;
         match = entry;
       }
@@ -532,6 +541,8 @@ export function RequirementBoard({
         repository: pullRequest.repository,
         number: pullRequest.number,
         ...(pullRequest.host ? { host: pullRequest.host } : {}),
+        ...(pullRequest.target ? { target: pullRequest.target } : {}),
+        ...(pullRequest.url ? { url: pullRequest.url } : {}),
       });
     else if (selectActiveRightPanelSurface(panels.byThreadKey, rightPanelRef))
       panels.close(rightPanelRef);
@@ -1566,10 +1577,7 @@ export function RequirementBoard({
                   }}
                   onSelectPullRequest={(reference) => {
                     useRightPanelStore.getState().openPullRequest(rightPanelRef, {
-                      projectId: reference.projectId,
-                      repository: reference.repository,
-                      number: reference.number,
-                      ...(reference.host ? { host: reference.host } : {}),
+                      ...reference,
                       environmentId: panelEnvironmentId,
                     });
                     selectOpened();
@@ -1589,11 +1597,13 @@ export function RequirementBoard({
                   getShortcutContext={getShortcutContext}
                   shortcutsEnabled={panelSurface?.id === renderedSurface.id}
                   environmentId={panelEnvironmentId}
+                  sourceUrl={renderedSurface.url}
                   reference={{
                     projectId: renderedSurface.projectId as ProjectId,
                     repository: renderedSurface.repository,
                     number: renderedSurface.number,
                     ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
+                    ...(renderedSurface.target ? { target: renderedSurface.target } : {}),
                   }}
                 />
               ) : null}
@@ -1642,16 +1652,13 @@ export function RequirementBoard({
               setCreatingIssue(null);
               setCreatingEnvironmentId(null);
             }}
-            created={(issue, projectId) => {
-              const issueScope = parseBranchIssueUrl(issue.url)?.repository;
+            created={(issue, target) => {
               setCreatingIssue(null);
               setCreatingEnvironmentId(null);
               refresh();
               useRightPanelStore.getState().openRequirementIssue(rightPanelRef, {
                 environmentId,
-                projectId,
-                provider: creatingIssue,
-                ...(issueScope ? { scope: issueScope } : {}),
+                ...target,
                 issueId: issue.id,
                 url: issue.url,
                 title: issue.title,

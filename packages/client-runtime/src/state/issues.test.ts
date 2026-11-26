@@ -60,6 +60,9 @@ it("refreshes the same issue detail regardless of how a surface orders the refer
   const { projectId, tracker, host, scope, key } = entry({ key: "23" });
   const environmentId = EnvironmentId.make("local");
   const opened = issues.detail({ environmentId, input: { projectId, host, scope, key, tracker } });
+  const legacy = { projectId, tracker, host: "GitHub.com:443", scope, key };
+  expect(normalizeIssueDetailInput(legacy)).toEqual({ ...legacy, host: "github.com" });
+  expect(issues.detail({ environmentId, input: legacy })).toBe(opened);
   expect(
     opened === issues.detail({ environmentId, input: { projectId, tracker, host, scope, key } }),
   ).toBe(true);
@@ -130,6 +133,17 @@ it("refreshes the same issue detail regardless of how a surface orders the refer
     }).url,
   ).toBe("https://linear.app/acme/issue/ENG-1");
   expect(acmeLinear === globexLinear).toBe(false);
+});
+
+it("keeps hostless GitHub links on distinct HTTPS authorities", () => {
+  const { projectId, tracker, scope, key } = entry({ key: "7" });
+  const reference = { projectId, tracker, scope, key };
+  expect(
+    normalizeIssueDetailInput({ ...reference, url: "https://forge.test/acme/app/issues/7" }),
+  ).toEqual({ ...reference, host: "forge.test" });
+  expect(
+    normalizeIssueDetailInput({ ...reference, url: "https://forge.test:8443/acme/app/issues/7" }),
+  ).toEqual({ ...reference, host: "forge.test:8443" });
 });
 
 describe("mergeIssueListPage", () => {

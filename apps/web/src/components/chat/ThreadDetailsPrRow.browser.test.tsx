@@ -17,7 +17,11 @@ import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   issuesSupported: false,
+  issuePortsSupported: false,
+  webTargetsSupported: false,
+  linkedIssueDetail: vi.fn<(...args: readonly unknown[]) => null>(() => null),
   isDraft: false,
+  headSha: "shown-head",
   status: "success" as PullRequestCheck["status"],
   extraStatus: null as PullRequestCheck["status"] | null,
   mergeMethods: ["merge"] as Array<"merge" | "squash" | "rebase">,
@@ -43,14 +47,39 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
     new Map([
       [
         EnvironmentId.make("environment"),
-        { environment: { capabilities: { pullRequests: true, issues: state.issuesSupported } } },
+        {
+          environment: {
+            capabilities: {
+              pullRequests: true,
+              issues: state.issuesSupported,
+              githubIssueSourcePorts: state.issuePortsSupported,
+              pullRequestWebTargets: state.webTargetsSupported,
+            },
+          },
+        },
       ],
     ])) as never,
   useProjects: (() => state.projects) as never,
   useQuietThreadShell: ((ref: unknown) =>
     ref === null ? null : { branch: null, pullRequests: state.pullRequests }) as never,
 }));
-vi.mock(import("~/state/issues"), () => ({ useLinkedIssueDetail: () => null }));
+vi.mock(import("~/state/issues"), () => ({
+  useLinkedIssueDetail: (...args) => state.linkedIssueDetail(...args),
+}));
+vi.mock(import("~/state/server"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  return {
+    ...actual,
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      configValueAtom: (() =>
+        Atom.make({
+          environment: { capabilities: { pullRequestWebTargets: state.webTargetsSupported } },
+        })) as never,
+    },
+  };
+});
 
 const queryData = () => ({
   projectId: ProjectId.make("project"),
@@ -60,6 +89,7 @@ const queryData = () => ({
   title: "Test PR",
   state: "open",
   isDraft: state.isDraft,
+  headSha: state.headSha,
   mergeability: "mergeable",
   headBranch: "feature",
   baseBranch: "main",
@@ -97,11 +127,25 @@ vi.mock(import("~/state/query"), async (importOriginal) => ({
     isPending: false,
   })) as never,
 }));
-vi.mock(import("../pullRequest/usePullRequestActions"), async (importOriginal) => ({
-  ...(await importOriginal()),
-  usePullRequestDefaultMergeMethodResolver: ((_environmentId: unknown, projectId: unknown) => () =>
-    state.projectMergeMethods[String(projectId)]) as never,
-}));
+vi.mock(import("~/hooks/useSettings"), async (original) => {
+  const { DEFAULT_SERVER_SETTINGS } = await import("@t3tools/contracts/settings");
+  return {
+    ...(await original()),
+    useEnvironmentSettings: ((
+      _environmentId: unknown,
+      select: (settings: typeof DEFAULT_SERVER_SETTINGS) => unknown,
+    ) =>
+      select({
+        ...DEFAULT_SERVER_SETTINGS,
+        projectSettingsOverrides: Object.fromEntries(
+          Object.entries(state.projectMergeMethods).map(([id, method]) => [
+            id,
+            { pullRequestMergeMethod: method },
+          ]),
+        ),
+      })) as never,
+  };
+});
 
 vi.mock(import("~/hooks/useHandleNewThread"), async (original) => ({
   ...(await original()),
@@ -180,19 +224,21 @@ it("merges with the last selected merge method", async () => {
   const { container } = screen;
   state.mergeMethods = ["merge", "squash"];
   useUiStateStore.getState().setPullRequestMergeMethod("squash");
-  await act(async () => {
-    await screen.rerender(
-      <ThreadDetailsPrRow
-        environmentId={EnvironmentId.make("environment")}
-        pr={null}
-        number={1}
-        status={null}
-        project={repositoryProject}
-        label="Test PR"
-        onOpen={vi.fn()}
-      />,
-    );
-  });
+  const rerender = () =>
+    act(async () => {
+      await screen.rerender(
+        <ThreadDetailsPrRow
+          environmentId={EnvironmentId.make("environment")}
+          pr={null}
+          number={1}
+          status={null}
+          project={repositoryProject}
+          label="Test PR"
+          onOpen={vi.fn()}
+        />,
+      );
+    });
+  await rerender();
   const clickMerge = async (scope: ParentNode) =>
     await act(async () => {
       [...scope.querySelectorAll("button")]
@@ -202,10 +248,17 @@ it("merges with the last selected merge method", async () => {
   await clickMerge(container);
   const dialog = document.querySelector('[role="alertdialog"]')!;
   expect(dialog.textContent).toContain("using squash");
+  // A push that a background refresh picks up while the confirmation is open.
+  state.headSha = "pushed-head";
+  await rerender();
   await clickMerge(dialog);
   expect(state.perform).toHaveBeenCalledWith(
     expect.objectContaining({
-      input: expect.objectContaining({ action: "merge", mergeMethod: "squash" }),
+      input: expect.objectContaining({
+        action: "merge",
+        mergeMethod: "squash",
+        expectedHeadSha: "shown-head",
+      }),
     }),
   );
 });
@@ -263,6 +316,10 @@ async function setup() {
   state.updateToast.mockReset();
 
   state.issuesSupported = false;
+  state.issuePortsSupported = false;
+  state.webTargetsSupported = false;
+  state.linkedIssueDetail.mockClear();
+  state.headSha = "shown-head";
   state.isDraft = false;
   state.status = "success";
   state.extraStatus = null;
@@ -306,6 +363,33 @@ const repositoryClone = {
   workspaceRoot: "/work/clone",
 };
 
+const gitlabRepository = {
+  ...repositoryProject,
+  repositoryIdentity: {
+    ...repositoryProject.repositoryIdentity,
+    canonicalKey: "gitlab.test/owner/repo",
+    provider: SourceControlProviderKind.make("gitlab"),
+    locator: {
+      ...repositoryProject.repositoryIdentity.locator,
+      remoteUrl: "git@gitlab.test:owner/repo.git",
+    },
+  },
+};
+
+const gitlabSibling = {
+  ...repositoryClone,
+  repositoryIdentity: {
+    ...gitlabRepository.repositoryIdentity,
+    canonicalKey: "gitlab.test/owner/sibling",
+    displayName: "owner/sibling",
+    name: "sibling",
+    locator: {
+      ...gitlabRepository.repositoryIdentity.locator,
+      remoteUrl: "http://gitlab.test/owner/sibling.git",
+    },
+  },
+};
+
 it.each([
   {
     name: "the project holding its repository, not the No project thread's",
@@ -325,34 +409,99 @@ it.each([
     repository: "owner/other",
     expected: "squash",
   },
-])("merges a linked pull request with $name", async ({ thread, repository, expected }) => {
-  await using screen = await setup();
-  state.mergeMethods = ["merge", "squash", "rebase"];
-  state.projects = [scratchProject, repositoryProject, repositoryClone];
-  state.projectMergeMethods = { scratch: "squash", repository: "rebase", clone: "merge" };
-  useUiStateStore.getState().setPullRequestMergeMethod("squash");
-  state.pullRequests = [
-    {
-      host: "github.com",
-      repository,
-      number: 1,
-      url: `https://github.com/${repository}/pull/1`,
-      source: "manual",
-      linkedAt: "2026-10-30T00:00:00.000Z",
-      snapshot: null,
-      stack: null,
-    },
-  ];
-  await act(async () => {
-    await screen.rerender(
-      <ThreadDetailsThreadPrRows threadRef={threadRef} project={thread as never} />,
+  {
+    name: "the SSH project holding its repository on a source-aware server",
+    thread: scratchProject,
+    repository: "owner/repo",
+    expected: "rebase",
+    gitlab: true,
+  },
+  {
+    name: "the SSH project's preference when borrowing an HTTP sibling for reads",
+    thread: scratchProject,
+    repository: "owner/repo",
+    expected: "rebase",
+    gitlab: true,
+    sibling: true,
+  },
+  {
+    name: "the thread's clone first in an expanded row",
+    thread: repositoryClone,
+    repository: "owner/repo",
+    expected: "merge",
+    expanded: true,
+  },
+  {
+    name: "the thread's preference for an expanded row without a matching checkout",
+    thread: scratchProject,
+    repository: "owner/other",
+    expected: "squash",
+    expanded: true,
+  },
+])(
+  "merges a linked pull request with $name",
+  async ({ thread, repository, expected, gitlab, sibling, expanded }) => {
+    await using screen = await setup();
+    state.mergeMethods = ["merge", "squash", "rebase"];
+    state.webTargetsSupported = gitlab === true;
+    state.projects = gitlab
+      ? [scratchProject, gitlabRepository, ...(sibling ? [gitlabSibling] : [])]
+      : [scratchProject, repositoryProject, repositoryClone];
+    state.projectMergeMethods = { scratch: "squash", repository: "rebase", clone: "merge" };
+    useUiStateStore.getState().setPullRequestMergeMethod("squash");
+    state.pullRequests = [
+      {
+        host: gitlab ? "gitlab.test" : "github.com",
+        repository,
+        number: 1,
+        url: gitlab
+          ? `http://gitlab.test/${repository}/-/merge_requests/1`
+          : `https://github.com/${repository}/pull/1`,
+        source: "manual",
+        linkedAt: "2026-10-30T00:00:00.000Z",
+        snapshot: null,
+        stack: null,
+      },
+    ];
+    if (expanded) {
+      state.pullRequests.push({
+        host: "github.com",
+        repository: "owner/repo",
+        number: 2,
+        url: "https://github.com/owner/repo/pull/2",
+        source: "manual",
+        linkedAt: "2026-10-31T00:00:00.000Z",
+        snapshot: null,
+        stack: null,
+      });
+    }
+    await act(async () => {
+      await screen.rerender(
+        <ThreadDetailsThreadPrRows threadRef={threadRef} project={thread as never} />,
+      );
+    });
+    if (expanded) await clickButton(screen.container, "Show 1 more");
+    await clickButton(
+      expanded
+        ? screen.container.querySelector("[data-thread-details-pr-list]")!
+        : screen.container,
+      "Merge",
     );
-  });
-  await clickButton(screen.container, "Merge");
-  expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain(
-    `using ${expected}`,
-  );
-});
+    const dialog = document.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent).toContain(`using ${expected}`);
+    await clickButton(dialog, "Merge");
+    expect(state.perform).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          action: "merge",
+          number: 1,
+          mergeMethod: expected,
+          ...(sibling ? { projectId: gitlabSibling.id } : {}),
+        }),
+      }),
+    );
+  },
+);
 
 it("names a linked pull request row by its kind, number and title, not its URL", async () => {
   await using screen = await setup();
@@ -449,6 +598,49 @@ it("names the first linked issue and reveals more issues on demand", async () =>
   await screen.getByRole("button", { name: "Show less" }).click();
   await expect.element(extra).not.toBeInTheDocument();
 });
+
+it.each([
+  ["http://github.com/owner/repo/issues/123", "github.com", true, false],
+  ["https://github.example:8443/owner/repo/issues/123", "github.example:8443", false, false],
+  ["https://github.example:8443/owner/repo/issues/123", "github.example:8443", true, true],
+  ["https://github.com:443/owner/repo/issues/123", "github.com:443", false, true],
+] as const)(
+  "routes the saved issue %s for its server capabilities",
+  async (url, host, ports, internal) => {
+    await using screen = await setup();
+    state.issuesSupported = true;
+    state.issuePortsSupported = ports;
+    const onOpen = vi.fn();
+    const issue: ThreadIssueLink = {
+      tracker: IssueTrackerKind.make("github"),
+      host,
+      scope: "owner/repo",
+      key: "123",
+      projectId: ProjectId.make("repository"),
+      url,
+      source: "manual",
+      linkedAt: "2026-10-30T00:00:00.000Z",
+      displayKey: "#123",
+      title: "Saved issue",
+    };
+    await screen.rerender(
+      <ThreadDetailsIssueRows links={[issue]} threadRef={threadRef} onOpen={onOpen} />,
+    );
+    const row = screen.container.querySelector("a")!;
+    expect(row.getAttribute("href")).toBe(url);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(() => {
+      row.dispatchEvent(click);
+    });
+    expect(click.defaultPrevented).toBe(internal);
+    expect(onOpen).toHaveBeenCalledTimes(internal ? 1 : 0);
+    expect(state.linkedIssueDetail).toHaveBeenLastCalledWith(
+      threadRef.environmentId,
+      internal ? issue : undefined,
+      "thread-details",
+    );
+  },
+);
 
 it("keeps Ready pending when refreshed detail becomes mergeable before the action settles", async () => {
   await using screen = await setup();

@@ -7,7 +7,6 @@ import type {
   PullRequestListEntry,
   PullRequestListProjectError,
   PullRequestListResult,
-  ProjectId,
   RepositoryIdentity,
   PullRequestAction,
   PullRequestActor,
@@ -17,6 +16,7 @@ import type {
   PullRequestListCursors,
   PullRequestListFilters,
   PullRequestListState,
+  PullRequestRef,
   PullRequestState,
   PullRequestSummary,
 } from "@t3tools/contracts";
@@ -59,8 +59,10 @@ export type PullRequestViewers = PullRequestListResult["viewers"];
 
 type ScopedEntry = PullRequestListEntry & { readonly environmentId?: string };
 
-const pullRequestViewerKey = (entry: ScopedEntry): string =>
-  `${entry.environmentId ?? ""} ${entry.host}`;
+const pullRequestViewerKey = (entry: ScopedEntry): string => {
+  const source = entry.target ? `${entry.target.provider} ${entry.target.origin}` : entry.host;
+  return entry.environmentId === undefined ? source : `${entry.environmentId} ${source}`;
+};
 
 const GROUP_LABELS: Record<PullRequestGroupKey, string> = {
   reviewRequested: msg("Review requested"),
@@ -208,7 +210,11 @@ export function pullRequestEntryViewer(
   entry: ScopedEntry,
   viewers: PullRequestViewers,
 ): string | null {
-  return normalize(viewers[pullRequestViewerKey(entry)] ?? viewers[entry.host]);
+  return normalize(
+    entry.viewerLogin ??
+      viewers[pullRequestViewerKey(entry)] ??
+      (entry.target ? undefined : viewers[entry.host]),
+  );
 }
 
 function isAuthoredByViewer(entry: ScopedEntry, viewers: PullRequestViewers): boolean {
@@ -300,17 +306,14 @@ export function groupPullRequestsByInvolvement<Entry extends ScopedEntry>(
 
 export function pullRequestEntryKey(entry: ScopedEntry): string {
   const scope = entry.environmentId === undefined ? "" : `${entry.environmentId}:`;
-  return `${scope}${entry.host}:${entry.repository}#${entry.number}`;
+  const source = entry.target ? `${entry.target.provider} ${entry.target.origin}` : entry.host;
+  return `${scope}${source}:${entry.repository}#${entry.number}`;
 }
 
 export interface PullRequestStatsTarget {
   readonly environmentId: EnvironmentId;
   readonly input: {
-    readonly refs: ReadonlyArray<{
-      readonly projectId: ProjectId;
-      readonly repository: string;
-      readonly number: number;
-    }>;
+    readonly refs: ReadonlyArray<PullRequestRef>;
   };
 }
 
@@ -367,6 +370,7 @@ export function pullRequestStatsBatches(
       key,
       ref: {
         projectId: entry.projectId,
+        ...(entry.target === undefined ? {} : { host: entry.host, target: entry.target }),
         repository: entry.repository,
         number: entry.number,
       },
@@ -494,16 +498,17 @@ export type PullRequestDiffStats = ReadonlyMap<
   { readonly additions: number; readonly deletions: number }
 >;
 
+type PullRequestDiffStatIdentity = {
+  readonly environmentId: string;
+  readonly projectId: string;
+} & Pick<PullRequestDiffStat, "repository" | "target" | "number">;
+
 /** New stats queries must not blank existing counts. */
 export function mergePullRequestDiffStats(
   previous: PullRequestDiffStats,
-  stats: ReadonlyArray<{
-    readonly environmentId: string;
-    readonly projectId: string;
-    readonly number: number;
-    readonly additions: number;
-    readonly deletions: number;
-  }>,
+  stats: ReadonlyArray<
+    PullRequestDiffStatIdentity & Pick<PullRequestDiffStat, "additions" | "deletions">
+  >,
 ): PullRequestDiffStats {
   if (stats.length === 0) return previous;
   const next = new Map(previous);
@@ -516,11 +521,15 @@ export function mergePullRequestDiffStats(
   return next;
 }
 
-export const pullRequestDiffStatKey = (row: {
-  readonly environmentId: string;
-  readonly projectId: string;
-  readonly number: number;
-}) => `${row.environmentId} ${row.projectId} ${row.number}`;
+export const pullRequestDiffStatKey = (row: PullRequestDiffStatIdentity) =>
+  JSON.stringify([
+    row.environmentId,
+    row.projectId,
+    row.target?.provider,
+    row.target?.origin,
+    row.repository.trim().toLowerCase(),
+    row.number,
+  ]);
 
 export interface MergedPullRequestList {
   readonly viewers: PullRequestViewers;
@@ -531,6 +540,10 @@ export interface MergedPullRequestList {
   readonly nextCursors: Readonly<Record<string, PullRequestListCursors>>;
   readonly truncatedEnvironments: ReadonlyArray<string>;
 }
+
+const pullRequestProviderKey = (
+  provider: Pick<PullRequestListResult["providers"][number], "kind" | "host" | "origin">,
+) => `${provider.kind} ${provider.origin ?? provider.host.toLowerCase()}`;
 
 export function mergePullRequestLists(
   answers: ReadonlyArray<readonly [EnvironmentId, PullRequestListResult]>,
@@ -548,9 +561,10 @@ export function mergePullRequestLists(
       viewers[`${environmentId} ${host}`] = login;
     }
     for (const provider of answer.providers) {
-      const held = providers.get(provider.host);
+      const key = pullRequestProviderKey(provider);
+      const held = providers.get(key);
       providers.set(
-        provider.host,
+        key,
         held === undefined
           ? provider
           : {
@@ -937,20 +951,29 @@ export type PullRequestQuickAction = "close" | "merge" | "ready" | "reopen";
 export function pullRequestHostActions(
   providers: ReadonlyArray<PullRequestListResult["providers"][number]>,
 ): (
-  entry: Pick<EnvironmentPullRequestEntry, "host" | "provider">,
+  entry: Pick<EnvironmentPullRequestEntry, "host" | "provider" | "target">,
 ) => ReadonlySet<PullRequestAction> {
-  const byHost = new Map(
-    providers.flatMap((provider) =>
-      provider.actions === undefined
-        ? []
-        : [[provider.host.toLowerCase(), new Set(provider.actions)] as const],
-    ),
-  );
   const none = new Set<PullRequestAction>();
-  return (entry) =>
-    byHost.get(entry.host.toLowerCase()) ??
-    sourceControlClients.find(entry.provider)?.changeRequestActionsWhenUnreported ??
-    none;
+  const bySource = new Map(
+    providers.map((provider) => [
+      pullRequestProviderKey(provider),
+      {
+        configured: provider.configured,
+        actions: provider.actions === undefined ? undefined : new Set(provider.actions),
+      },
+    ]),
+  );
+  return (entry) => {
+    const key = { kind: entry.target?.provider ?? entry.provider, host: entry.host };
+    const source =
+      bySource.get(pullRequestProviderKey({ ...key, origin: entry.target?.origin })) ??
+      bySource.get(pullRequestProviderKey(key));
+    return source?.configured === false
+      ? none
+      : (source?.actions ??
+          sourceControlClients.find(entry.provider)?.changeRequestActionsWhenUnreported ??
+          none);
+  };
 }
 
 export function pullRequestQuickActions(

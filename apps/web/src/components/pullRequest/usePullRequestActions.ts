@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -23,6 +24,7 @@ import {
   type ChangeRequestTerminology,
 } from "@t3tools/client-runtime/source-control-clients";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { parseUrl } from "@t3tools/shared/url";
 import { useClientSettings, useEnvironmentSettings } from "~/hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -30,7 +32,7 @@ import {
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
 import { buildPhysicalToLogicalProjectKeyMap } from "~/sidebarProjectGrouping";
-import { useProjects } from "~/state/entities";
+import { useProjects, useServerConfigs } from "~/state/entities";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
@@ -46,6 +48,7 @@ import { offHeadPullRequestCheckoutToast } from "./pullRequestCheckoutToast";
 import {
   checkoutFailureDescription,
   appendHandoff,
+  mergeHeadPin,
   readableFailure,
 } from "./pullRequestDetail.logic";
 import { pullRequestEntryKey, type EnvironmentPullRequestEntry } from "./pullRequestList.logic";
@@ -54,15 +57,39 @@ import { changeRequestTermKind } from "./changeRequestTerm";
 
 export function usePullRequestDefaultMergeMethodResolver(
   environmentId: EnvironmentId,
-  projectId: ProjectId | null,
+  fallbackProjectId: ProjectId | null,
+  reference?: Pick<PullRequestRef, "repository" | "number" | "target">,
 ) {
+  const projects = useProjects();
+  const supportsWebTargets =
+    useServerConfigs().get(environmentId)?.environment.capabilities.pullRequestWebTargets === true;
+  const origin = parseUrl(reference?.target?.origin ?? "");
+  const projectId =
+    (origin !== null && reference?.target !== undefined
+      ? findProjectForChangeRequest(
+          projects
+            .filter((project) => project.environmentId === environmentId)
+            .toSorted(
+              (left, right) =>
+                Number(right.id === fallbackProjectId) - Number(left.id === fallbackProjectId),
+            ),
+          {
+            host: origin.hostname,
+            ...(origin.port === "" ? {} : { authority: origin.host }),
+            repository: reference.repository,
+            repositoryUrl: origin.origin,
+            number: reference.number,
+          },
+          reference.target.provider,
+          () => supportsWebTargets,
+        )?.id
+      : undefined) ?? fallbackProjectId;
   const projectDefault = useEnvironmentSettings(
     environmentId,
     (settings) => resolveProjectSettings(settings, projectId).settings.pullRequestMergeMethod,
   );
   const legacyOverrides = useClientSettings((settings) => settings.pullRequestMergeMethodOverrides);
   const grouping = useClientSettings(selectProjectGroupingSettings);
-  const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   return () => {
     if (projectDefault != null) return projectDefault;
@@ -131,15 +158,30 @@ const actionFailureHints: Record<PullRequestAction, string> = {
     "The host refused it. Check that you have Actions write access and that these workflow runs are still awaiting approval.",
 };
 
+export function pullRequestActionReference({
+  projectId,
+  host,
+  target,
+  repository,
+  number,
+}: PullRequestRef): PullRequestRef {
+  return { projectId, host, target, repository, number };
+}
+
 export function usePullRequestActionRunner({
   environmentId,
   reference,
+  headSha,
   terminology,
   onSuccess,
+  onFailure,
   resolveMergeMethod,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef | null;
+  /** The head on screen, which a merge is pinned to. */
+  headSha?: string | undefined;
+  onFailure?: (action: PullRequestAction) => void;
   terminology: ChangeRequestTerminology;
   onSuccess?: (action: PullRequestAction, reply: PullRequestSummary | undefined) => void;
   /** Resolve repository settings on click to avoid per-row reads. */
@@ -160,6 +202,8 @@ export function usePullRequestActionRunner({
           environmentId,
           reference.projectId,
           reference.host ?? null,
+          reference.target?.provider ?? null,
+          reference.target?.origin ?? null,
           reference.repository,
           reference.number,
         ]);
@@ -175,6 +219,7 @@ export function usePullRequestActionRunner({
       input: {
         ...reference,
         action,
+        ...mergeHeadPin(action, headSha),
         ...(method ? { mergeMethod: method } : resolveMergeMethod ? { resolveMergeMethod } : {}),
       },
     });
@@ -195,6 +240,7 @@ export function usePullRequestActionRunner({
           }),
         ),
       });
+      onFailure?.(action);
       return;
     }
     toastManager.add({
@@ -232,10 +278,7 @@ export function usePullRequestCloseBatch(
         const result = await runAction({
           environmentId: entry.environmentId,
           input: {
-            projectId: entry.projectId,
-            host: entry.host,
-            repository: entry.repository,
-            number: entry.number,
+            ...pullRequestActionReference(entry),
             action: "close",
           },
         });

@@ -44,9 +44,6 @@ vi.mock("../../lib/backHandler", () => ({
 vi.mock("../../native/window-hinge-context", () => ({
   WindowHingeContext: createContext(null),
 }));
-vi.mock("./OverlayPortal", () => ({
-  OverlayPortal: (props: { readonly children?: ReactNode }) => <>{props.children}</>,
-}));
 vi.mock("./useAndroidControlSizing", () => ({
   useAndroidControlSizing: () => ({ scale: 1, menuWidth: 200, menuItemHeight: 48 }),
 }));
@@ -56,12 +53,39 @@ vi.mock("./MenuPopup", () => ({
 
 import { Pressable, View } from "react-native";
 import { AndroidAnchoredMenu } from "./AndroidAnchoredMenu.android";
+import { OverlayPortal, OverlayPortalHost, OverlayPortalScope } from "./OverlayPortal";
 
 const roots: Root[] = [];
 
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   document.body.innerHTML = "";
+});
+
+it("renders a sheet's overlays in the sheet instead of the root host", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.push(root);
+
+  act(() =>
+    root.render(
+      <>
+        <OverlayPortal>Root menu</OverlayPortal>
+        <section data-surface="root">
+          <OverlayPortalHost />
+        </section>
+        <section data-surface="sheet">
+          <OverlayPortalScope>
+            <OverlayPortal>Sheet menu</OverlayPortal>
+          </OverlayPortalScope>
+        </section>
+      </>,
+    ),
+  );
+
+  expect(container.querySelector('[data-surface="root"]')?.textContent).toBe("Root menu");
+  expect(container.querySelector('[data-surface="sheet"]')?.textContent).toBe("Sheet menu");
 });
 
 it("lifts trigger accessibility props onto the single outer button and hides inner trigger descendants", () => {

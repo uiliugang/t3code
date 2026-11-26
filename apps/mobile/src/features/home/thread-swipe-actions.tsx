@@ -630,6 +630,7 @@ function ThreadSwipeActions(props: {
         label={props.primaryAction.label ? t(props.primaryAction.label) : undefined}
         onPress={props.primaryAction.onPress}
         rowHeight={props.rowHeight}
+        slidesUnderStretch={false}
         stretchesOnFullSwipe={fullSwipeIsPrimary}
         translation={props.translation}
       />
@@ -645,6 +646,7 @@ function ThreadSwipeActions(props: {
           icon={middleAction.icon}
           label={middleAction.label ? t(middleAction.label) : undefined}
           onPress={middleAction.onPress}
+          slidesUnderStretch={fullSwipeIsPrimary}
           rowHeight={props.rowHeight}
           stretchesOnFullSwipe={false}
           translation={props.translation}
@@ -664,6 +666,7 @@ function ThreadSwipeActions(props: {
           menu={secondaryAction.menu}
           onPress={secondaryAction.onPress}
           rowHeight={props.rowHeight}
+          slidesUnderStretch={fullSwipeIsPrimary}
           stretchesOnFullSwipe={!fullSwipeIsPrimary}
           translation={props.translation}
         />

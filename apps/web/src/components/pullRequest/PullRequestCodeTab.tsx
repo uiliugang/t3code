@@ -110,6 +110,7 @@ import {
   type ReviewCommentContext,
 } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
+import { withPullRequestViewer } from "@t3tools/client-runtime/state/pull-requests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -621,10 +622,18 @@ function PullRequestCodeTab({
   const getDiffFileContents = useAtomCommand(pullRequestEnvironment.diffFileContents);
 
   const viewedFilesStore = detail.capabilities.viewedFiles;
+  const identity = useEnvironmentQuery(
+    detail.provider === "github" && (viewedFilesStore === "host" || detail.capabilities.diff)
+      ? pullRequestEnvironment.routingIdentity({ environmentId, input: reference })
+      : null,
+    messages,
+  );
+  const viewer = identity.isSuccess && !identity.isPending ? identity.data : null;
+  const accountedReference = withPullRequestViewer(reference, viewer);
   const filesViewed = usePullRequestFilesViewed({
     environmentId,
-    reference,
-    enabled: viewedFilesStore !== undefined,
+    reference: accountedReference,
+    enabled: viewedFilesStore !== undefined && (detail.provider !== "github" || viewer !== null),
   });
   const {
     setViewed,
@@ -675,11 +684,12 @@ function PullRequestCodeTab({
   const codeViewReveal = useCodeViewFileReveal();
   const answeredRevealNonce = useRef<number | null>(null);
 
+  const { legacyViewerId, ...fileContentsReference } = accountedReference;
   const loadDiffFiles = createPullRequestDiffFileContentsLoader(getDiffFileContents, {
     environmentId,
-    reference,
+    reference: fileContentsReference,
     commit,
-    cacheKey: `pull-request:${referenceKey}:${detail.updatedAt}:${commit ?? "all"}`,
+    cacheKey: `pull-request:${referenceKey}:${fileContentsReference.expectedAccountId ?? legacyViewerId ?? ""}:${detail.updatedAt}:${commit ?? "all"}`,
   });
   const completionScope = pullRequestCompletionScope(detail, environmentId, reference);
   const hostReview = detail.capabilities.review;
@@ -1429,12 +1439,12 @@ function PullRequestCodeTab({
   };
   const toolbar = (
     <div className="@container flex h-10 min-h-10 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-background px-4 text-xs text-muted-foreground">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-clip">
         {orderedCommits.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger
               render={<Button size="xs" variant="secondary" />}
-              className="min-w-0 max-w-64"
+              className="min-w-0 max-w-64 shrink-[999]"
               aria-label={t("Diff scope: {scope}", { scope: scopeLabel })}
             >
               <span className="truncate">{scopeLabel}</span>

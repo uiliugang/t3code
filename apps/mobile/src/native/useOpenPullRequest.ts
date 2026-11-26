@@ -7,7 +7,7 @@ import {
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useProjects, useThreadShell } from "../state/entities";
-import { tryOpenExternalUrl } from "../lib/openExternalUrl";
+import { tryOpenWebLink } from "../lib/openExternalUrl";
 import { appAtomRegistry } from "../state/atom-registry";
 import { environmentServerConfigsAtom } from "../state/server";
 import { issueTrackerEnvironment } from "../state/issueTrackers";
@@ -36,18 +36,22 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
   return async (url: string, context: PullRequestContext | null) => {
     // Read at press time so a config push does not hand every link a new handler.
     const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
-    const destination = nativePullRequestDestination(url, context, projects, (environmentId) =>
-      serverConfigs.has(environmentId),
+    const destination = nativePullRequestDestination(
+      url,
+      context,
+      projects,
+      (environmentId) => serverConfigs.has(environmentId),
+      (environmentId) =>
+        serverConfigs.get(environmentId)?.environment.capabilities.pullRequestWebTargets === true,
     );
     if (!destination) {
       // An issue link from the same text opens the issue; anything else leaves for the browser.
       const environmentId = context && EnvironmentId.make(context.environmentId);
-      const issuesEnabled =
-        environmentId !== null &&
-        serverConfigs.get(environmentId)?.environment.capabilities.issues === true;
+      const config = environmentId === null ? undefined : serverConfigs.get(environmentId);
+      const issuesEnabled = config?.environment.capabilities.issues === true;
       // Only a standalone tracker's link needs the bindings, whose read probes the tracker.
       const connections =
-        issuesEnabled && isStandaloneIssueLink(url)
+        issuesEnabled && environmentId !== null && isStandaloneIssueLink(url)
           ? await readTrackerConnections({ environmentId, input: {} })
           : null;
       const issue =
@@ -57,9 +61,11 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
               projects: projects.filter((project) => project.environmentId === environmentId),
               preferredProjectId: context.projectId,
               trackers: connections?._tag === "Success" ? connections.value : undefined,
+              issueProjectSources: config.settings?.issueProjectSources,
+              githubIssueSourcePorts: config.environment.capabilities.githubIssueSourcePorts,
             })
           : null;
-      if (!issue || !environmentId) return tryOpenExternalUrl(url, "pull-request");
+      if (!issue || !environmentId) return tryOpenWebLink(url, "pull-request");
       const candidate = pullRequestCandidateForIssueLink(url, issue.ref);
       if (candidate) {
         const preview = await readPreview({ environmentId, input: candidate.target });
@@ -76,7 +82,7 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
           return true;
         }
         // A dropped connection says nothing about what the link names; the browser knows.
-        if (isAtomCommandInterrupted(preview)) return tryOpenExternalUrl(url, "pull-request");
+        if (isAtomCommandInterrupted(preview)) return tryOpenWebLink(url, "pull-request");
       }
       const issueParams = {
         environmentId,

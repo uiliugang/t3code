@@ -1,7 +1,28 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind, sourceControlTokenForHost } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { appSignInTargetForRemote, sourceControlClients } from "./sourceControlClients.ts";
+import {
+  appSignInTargetForRemote,
+  configuredSourceControlTokenHosts,
+  sourceControlClients,
+  sourceControlHostTokenPatch,
+} from "./sourceControlClients.ts";
+
+it("replaces or clears a GitHub credential across its HTTPS aliases only", () => {
+  const tokens = { "code.example": "", "code.example:443": "legacy", "code.example:8443": "other" };
+  expect(sourceControlTokenForHost("github", tokens, "code.example")).toBe("legacy");
+  expect(configuredSourceControlTokenHosts("github", tokens)).toEqual([
+    "code.example",
+    "code.example:8443",
+  ]);
+  const updated = sourceControlHostTokenPatch("github", tokens, "Code.Example:443", "replacement");
+  expect(updated).toEqual({
+    "code.example": "replacement",
+    "code.example:443": "",
+  });
+  const removed = sourceControlHostTokenPatch("github", tokens, "code.example", "");
+  expect(removed).toEqual({ "code.example": "", "code.example:443": "" });
+});
 
 const parse = (url: string) => {
   const parsed = sourceControlClients.parseChangeRequestUrl(url);
@@ -188,8 +209,8 @@ describe("sourceControlClients project hosts", () => {
     locator: { remoteUrl: "http://forge.example:3000/team/repo.git" },
   };
 
-  it("falls back to the kind without a key", () => {
-    expect(sourceControlClients.changeRequestHost(identity, "gitlab")).toBe("forge.example");
+  it("keeps the GitLab HTTP port and falls back to the kind without a key", () => {
+    expect(sourceControlClients.changeRequestHost(identity, "gitlab")).toBe("forge.example:3000");
     expect(sourceControlClients.changeRequestHost(identity, undefined)).toBe("forge.example");
     expect(
       sourceControlClients.changeRequestHost(

@@ -31,6 +31,7 @@ import * as Layer from "effect/Layer";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import { withTurnStartReservation, withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -238,6 +239,23 @@ it.effect.each([
           ThreadCommandExecutor.layer,
           NodeServices.layer,
           layerNoTaskFolders,
+          Layer.mock(ThreadWorktreeRestore)({
+            takeRecreated: (recordedThreadId, options) =>
+              Effect.sync(() => {
+                if (options?.action === "record") {
+                  assert.deepEqual(
+                    {
+                      threadId: recordedThreadId,
+                      projectId: options.projectId,
+                      worktreePath: options.worktreePath,
+                    },
+                    { threadId, projectId, worktreePath },
+                  );
+                  calls.push("recreated");
+                }
+                return undefined;
+              }),
+          }),
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),
           ServerSettings.layerTest(),
           Layer.mock(ProjectStore.ProjectStoreV2)({
@@ -377,7 +395,7 @@ it.effect.each([
       }
       if (createFails) {
         yield* Fiber.join(rollback).pipe(Effect.exit);
-        assert.deepEqual(calls, ["cleanup", "prune", "create"]);
+        assert.deepEqual(calls, ["cleanup", "recreated", "prune", "create"]);
         assert.equal(
           yield* fileSystem.readFileString(path.join(worktreePath, "unsaved.txt")),
           "keep",
@@ -394,7 +412,7 @@ it.effect.each([
       assert.deepEqual(
         calls,
         order === "cleanup-first"
-          ? ["cleanup", ...(recreates ? ["prune", "create"] : []), ...rollbackCalls]
+          ? ["cleanup", ...(recreates ? ["recreated", "prune", "create"] : []), ...rollbackCalls]
           : [...rollbackCalls, "cleanup"],
       );
       if (!recreates) {
@@ -490,7 +508,7 @@ it.effect.each(
             layerNoTaskFolders,
             Layer.mock(TaskFolders.TaskFolders)({
               find: () => Effect.succeed(taskFolder),
-              restore: () => Effect.void,
+              restore: () => Effect.succeed(false),
             }),
             Layer.mock(GitWorkflow.GitWorkflowService)({}),
             Layer.mock(CheckpointService.CheckpointServiceV2)({

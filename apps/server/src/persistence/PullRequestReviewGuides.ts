@@ -7,7 +7,11 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
-import { PullRequestReviewGuide, ThreadPullRequestKey } from "@t3tools/contracts";
+import {
+  isPublicGitHubPullRequestTarget,
+  PullRequestReviewGuide,
+  ThreadPullRequestKey,
+} from "@t3tools/contracts";
 
 import {
   PersistenceDecodeError,
@@ -18,6 +22,13 @@ import {
 const GuideRow = Schema.Struct({
   guide: Schema.fromJsonString(PullRequestReviewGuide),
 });
+const storedHost = ({
+  host,
+  target,
+}: Pick<typeof ThreadPullRequestKey.Encoded, "host" | "target">) =>
+  target === undefined || isPublicGitHubPullRequestTarget({ host, target })
+    ? host
+    : JSON.stringify([host, target.provider, target.origin]);
 
 export class PullRequestReviewGuideRepository extends Context.Service<
   PullRequestReviewGuideRepository,
@@ -41,11 +52,11 @@ const make = Effect.gen(function* () {
   const findGuide = SqlSchema.findOneOption({
     Request: ThreadPullRequestKey,
     Result: GuideRow,
-    execute: ({ host, repository, number }) =>
+    execute: (key) =>
       sql`
         SELECT guide_json AS "guide"
         FROM pull_request_review_guides
-        WHERE host = ${host} AND repository = ${repository} AND number = ${number}
+        WHERE host = ${storedHost(key)} AND repository = ${key.repository} AND number = ${key.number}
       `,
   });
   const encodeGuide = Schema.encodeEffect(Schema.fromJsonString(PullRequestReviewGuide));
@@ -70,7 +81,7 @@ const make = Effect.gen(function* () {
         Effect.flatMap((guideJson) =>
           sql`
             INSERT INTO pull_request_review_guides (host, repository, number, guide_json)
-            VALUES (${key.host}, ${key.repository}, ${key.number}, ${guideJson})
+            VALUES (${storedHost(key)}, ${key.repository}, ${key.number}, ${guideJson})
             ON CONFLICT (host, repository, number) DO UPDATE SET guide_json = excluded.guide_json
           `.pipe(
             Effect.mapError(

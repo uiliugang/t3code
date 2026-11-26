@@ -764,7 +764,9 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
     describe("t3 home precedence", () => {
       const makeWorktree = Effect.acquireRelease(
         Effect.sync(() => {
-          const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-devrunner-"));
+          const root = NodeFS.realpathSync(
+            NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-devrunner-")),
+          );
           NodeFS.writeFileSync(
             NodePath.join(root, ".git"),
             "gitdir: /elsewhere/.git/worktrees/x\n",
@@ -778,6 +780,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         readonly t3Home: string | undefined;
         readonly cwd: string;
         readonly ambientHome: string | undefined;
+        readonly seed?: boolean;
+        readonly runArgs?: readonly string[];
       }) =>
         Effect.gen(function* () {
           let captured: Record<string, string | undefined> | undefined;
@@ -793,7 +797,12 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             }),
           );
 
-          yield* runDevRunnerWithInput({ ...devServerInput, t3Home: input.t3Home }).pipe(
+          yield* runDevRunnerWithInput({
+            ...devServerInput,
+            t3Home: input.t3Home,
+            seed: input.seed,
+            runArgs: input.runArgs ?? devServerInput.runArgs,
+          }).pipe(
             Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
             Effect.provideService(HostProcess.Platform, "linux"),
             Effect.provideService(HostProcess.WorkingDirectory, input.cwd),
@@ -812,12 +821,13 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         Effect.gen(function* () {
           const path = yield* Path.Path;
           const root = yield* makeWorktree;
+          const explicitHome = path.join(root, "explicit-home");
           const home = yield* spawnedHome({
-            t3Home: "/tmp/explicit-home",
+            t3Home: explicitHome,
             cwd: root,
             ambientHome: "/home/user/.t3",
           });
-          assert.equal(home, path.resolve("/tmp/explicit-home"));
+          assert.equal(home, explicitHome);
         }).pipe(Effect.scoped),
       );
 
@@ -847,6 +857,175 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         }).pipe(Effect.scoped),
       );
 
+      it.effect("allows T3CODE_HOME to name the current isolated worktree home", () =>
+        Effect.gen(function* () {
+          const root = yield* makeWorktree;
+          const home = NodePath.join(root, ".t3");
+          assert.equal(
+            yield* spawnedHome({
+              t3Home: undefined,
+              cwd: root,
+              ambientHome: home,
+              seed: false,
+            }),
+            NodePath.join(NodeFS.realpathSync(root), ".t3"),
+          );
+        }).pipe(Effect.scoped),
+      );
+
+      it.effect("allows an ambient alias of the same isolated worktree home", () =>
+        Effect.gen(function* () {
+          const root = yield* makeWorktree;
+          const alias = NodePath.join(root, "alias");
+          NodeFS.symlinkSync(root, alias, "junction");
+          assert.equal(
+            yield* spawnedHome({
+              t3Home: undefined,
+              cwd: root,
+              ambientHome: NodePath.join(alias, ".t3"),
+              seed: false,
+            }),
+            NodePath.join(root, ".t3"),
+          );
+        }).pipe(Effect.scoped),
+      );
+
+      it.effect("validates an explicit worktree home from another checkout", () =>
+        Effect.gen(function* () {
+          const root = yield* makeWorktree;
+          const other = yield* makeWorktree;
+          const main = NodePath.join(root, "main");
+          const alias = NodePath.join(root, "alias");
+          const stopped = NodePath.join(root, "stopped-server");
+          NodeFS.mkdirSync(NodePath.join(main, ".git"), { recursive: true });
+          NodeFS.mkdirSync(NodePath.join(stopped, "userdata"), { recursive: true });
+          NodeFS.symlinkSync(other, alias, "junction");
+          const t3Home = NodePath.join(alias, ".t3");
+          for (const cwd of [main, root]) {
+            const input = { t3Home, cwd, ambientHome: undefined, seed: false };
+            assert.equal(yield* spawnedHome(input), NodePath.join(other, ".t3"));
+            NodeFS.symlinkSync(stopped, NodePath.join(other, ".t3"), "junction");
+            const error = yield* spawnedHome(input).pipe(Effect.flip);
+            assert.match(error.message, /Refusing to modify a live T3 Code database/);
+            NodeFS.unlinkSync(NodePath.join(other, ".t3"));
+          }
+        }).pipe(Effect.scoped),
+      );
+
+      it.effect("starts implicit dev state even after relocating the default home", () =>
+        Effect.gen(function* () {
+          const root = yield* makeWorktree;
+          const defaultHome = NodePath.join(root, "home", ".t3");
+          const relocatedHome = NodePath.join(root, "relocated-home");
+          NodeFS.mkdirSync(NodePath.dirname(defaultHome));
+          NodeFS.mkdirSync(relocatedHome);
+          NodeFS.symlinkSync(relocatedHome, defaultHome, "junction");
+          const userdata = NodePath.join(defaultHome, "userdata");
+          NodeFS.mkdirSync(userdata, { recursive: true });
+          const db = NodePath.join(userdata, "statev2.sqlite");
+          NodeFS.writeFileSync(db, "preserve userdata");
+          const input = { t3Home: "~/.t3", cwd: root, ambientHome: defaultHome, seed: false };
+          assert.isUndefined(yield* spawnedHome(input));
+
+          const dev = NodePath.join(defaultHome, "dev");
+          NodeFS.symlinkSync(userdata, dev, "junction");
+          const linkedDir = yield* spawnedHome(input).pipe(Effect.flip);
+          assert.match(linkedDir.message, /Refusing to modify a live T3 Code database/);
+          NodeFS.unlinkSync(dev);
+          NodeFS.mkdirSync(dev);
+          NodeFS.linkSync(db, NodePath.join(dev, "statev2.sqlite"));
+          const linkedFile = yield* spawnedHome(input).pipe(Effect.flip);
+          assert.match(linkedFile.message, /Refusing to modify a live T3 Code database/);
+          assert.equal(NodeFS.readFileSync(db, "utf8"), "preserve userdata");
+        }).pipe(Effect.scoped),
+      );
+
+      it.effect.each([{ runArgs: ["--base-dir", "/other"] }, { runArgs: ["--base-dir=/other"] }])(
+        "refuses a passthrough base-dir override: $runArgs",
+        ({ runArgs }) =>
+          Effect.gen(function* () {
+            const root = yield* makeWorktree;
+            const error = yield* spawnedHome({
+              t3Home: undefined,
+              cwd: root,
+              ambientHome: undefined,
+              seed: false,
+              runArgs,
+            }).pipe(Effect.flip);
+            assert.include(error.message, "--home-dir");
+          }).pipe(Effect.scoped),
+      );
+
+      it.effect.each(["known live home", "unconfigured service home"])(
+        "refuses seeded userdata redirected to %s even with --no-seed",
+        (target) =>
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const root = yield* makeWorktree;
+            const liveState =
+              target === "known live home"
+                ? path.join(root, "home", ".t3", "userdata")
+                : path.join(root, "service", "userdata");
+            const worktreeHome = path.join(root, ".t3");
+            yield* fs.makeDirectory(liveState, { recursive: true });
+            yield* fs.writeFileString(path.join(liveState, "statev2.sqlite"), "live data");
+            yield* fs.makeDirectory(path.join(liveState, "secrets"));
+            yield* fs.makeDirectory(worktreeHome, { recursive: true });
+            NodeFS.symlinkSync(liveState, path.join(worktreeHome, "userdata"), "junction");
+
+            const error = yield* spawnedHome({
+              t3Home: undefined,
+              cwd: root,
+              ambientHome: undefined,
+              seed: false,
+            }).pipe(Effect.flip);
+            assert.match(error.message, /Refusing to modify a live T3 Code database/);
+          }).pipe(Effect.scoped),
+      );
+
+      it.effect("does not start if seeding fails after userdata is redirected", () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = yield* makeWorktree;
+          const home = path.join(root, "home");
+          const liveState = path.join(home, ".t3", "userdata");
+          const worktreeHome = path.join(root, ".t3");
+          yield* fs.makeDirectory(liveState, { recursive: true });
+          yield* fs.makeDirectory(worktreeHome, { recursive: true });
+          yield* fs.writeFileString(path.join(liveState, "statev2.sqlite"), "live data");
+          let attemptedBackend = false;
+          const spawner = Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make((command) =>
+              Effect.sync(() => {
+                const { command: executable, args } = command as unknown as {
+                  readonly command: string;
+                  readonly args: readonly string[];
+                };
+                if (args.some((arg) => arg.endsWith("migrate-dev-db.ts"))) {
+                  NodeFS.symlinkSync(liveState, path.join(worktreeHome, "userdata"), "junction");
+                  return mockProcess(1);
+                }
+                if (executable === "vp") attemptedBackend = true;
+                return mockProcess(0);
+              }),
+            ),
+          );
+          const error = yield* runDevRunnerWithInput({ ...devServerInput, t3Home: undefined }).pipe(
+            Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawner)),
+            Effect.provideService(HostProcess.Platform, "linux"),
+            Effect.provideService(HostProcess.WorkingDirectory, root),
+            Effect.provideService(HostProcess.HomeDirectory, home),
+            Effect.provideService(HostProcess.Environment, {}),
+            Effect.flip,
+          );
+          assert.match(error.message, /Refusing to modify a live T3 Code database/);
+          assert.isFalse(attemptedBackend);
+        }).pipe(Effect.scoped),
+      );
+
       it.effect("seeds a worktree database from ~/.t3 only when it has none", () =>
         Effect.gen(function* () {
           const path = yield* Path.Path;
@@ -855,15 +1034,20 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           NodeFS.mkdirSync(path.join(home, ".t3", "userdata"), { recursive: true });
           NodeFS.writeFileSync(path.join(home, ".t3", "userdata", "statev2.sqlite"), "");
 
-          const spawnedArgs = (seed: boolean | undefined) =>
+          const spawnedCalls = (seed: boolean | undefined, ambientHome?: string) =>
             Effect.gen(function* () {
-              const spawned: Array<ReadonlyArray<string>> = [];
+              const spawned: Array<{
+                readonly args: ReadonlyArray<string>;
+                readonly env: NodeJS.ProcessEnv | undefined;
+              }> = [];
               const spawnerLayer = Layer.succeed(
                 ChildProcessSpawner.ChildProcessSpawner,
                 ChildProcessSpawner.make((command) => {
-                  spawned.push(
-                    (command as unknown as { readonly args: ReadonlyArray<string> }).args,
-                  );
+                  const raw = command as unknown as {
+                    readonly args: ReadonlyArray<string>;
+                    readonly options?: { readonly env?: NodeJS.ProcessEnv };
+                  };
+                  spawned.push({ args: raw.args, env: raw.options?.env });
                   return Effect.succeed(mockProcess(0));
                 }),
               );
@@ -872,23 +1056,39 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
                 Effect.provideService(HostProcess.Platform, "linux"),
                 Effect.provideService(HostProcess.WorkingDirectory, root),
                 Effect.provideService(HostProcess.HomeDirectory, home),
-                Effect.provideService(HostProcess.Environment, {}),
+                Effect.provideService(
+                  HostProcess.Environment,
+                  ambientHome === undefined ? {} : { T3CODE_HOME: ambientHome },
+                ),
               );
-              return spawned.filter((args) =>
+              return spawned.filter(({ args }) =>
                 args.some((arg) => arg.endsWith("migrate-dev-db.ts")),
               );
             });
 
-          assert.deepStrictEqual(yield* spawnedArgs(false), []);
-          const [seedArgs] = yield* spawnedArgs(undefined);
-          assert.includeMembers([...(seedArgs ?? [])], ["--base-dir", path.join(root, ".t3")]);
+          assert.deepStrictEqual(yield* spawnedCalls(false), []);
+          const [seedCall] = yield* spawnedCalls(undefined);
+          assert.includeMembers(
+            [...(seedCall?.args ?? [])],
+            ["--base-dir", path.join(root, ".t3")],
+          );
+          assert.equal(seedCall?.env?.T3CODE_HOME, undefined);
+          const [ambientSeedCall] = yield* spawnedCalls(undefined, "/opt/live-t3");
+          assert.equal(ambientSeedCall?.env?.T3CODE_HOME, path.resolve(root, "/opt/live-t3"));
+          const [homeSeedCall] = yield* spawnedCalls(undefined, "~/live-t3");
+          assert.equal(homeSeedCall?.env?.T3CODE_HOME, path.join(home, "live-t3"));
+          const [relativeAmbientSeedCall] = yield* spawnedCalls(undefined, "relative-live-home");
+          assert.equal(
+            relativeAmbientSeedCall?.env?.T3CODE_HOME,
+            path.resolve(root, "relative-live-home"),
+          );
 
           // Either database means the worktree already has data.
           for (const name of ["state.sqlite", "statev2.sqlite"]) {
             const file = path.join(root, ".t3", "userdata", name);
             NodeFS.mkdirSync(path.dirname(file), { recursive: true });
             NodeFS.writeFileSync(file, "");
-            assert.deepStrictEqual(yield* spawnedArgs(undefined), []);
+            assert.deepStrictEqual(yield* spawnedCalls(undefined), []);
             NodeFS.rmSync(file);
           }
         }).pipe(Effect.scoped),
@@ -971,13 +1171,16 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       it.effect("falls back to an ambient T3CODE_HOME outside a worktree", () =>
         Effect.gen(function* () {
           const path = yield* Path.Path;
+          const fs = yield* FileSystem.FileSystem;
+          const cwd = yield* fs.makeTempDirectoryScoped();
+          const ambientHome = path.join(yield* fs.realPath(cwd), "standalone", ".t3");
           const home = yield* spawnedHome({
             t3Home: undefined,
-            cwd: NodeOS.tmpdir(),
-            ambientHome: "/home/user/.t3",
+            cwd,
+            ambientHome,
           });
-          assert.equal(home, path.resolve("/home/user/.t3"));
-        }),
+          assert.equal(home, ambientHome);
+        }).pipe(Effect.scoped),
       );
     });
   });

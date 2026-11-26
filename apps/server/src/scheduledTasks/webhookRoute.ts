@@ -86,7 +86,10 @@ export const layer = HttpApiBuilder.group(
 
       let headers: Record<string, string> = {};
       for (const [name, value] of Object.entries(request.headers)) {
-        if (typeof value === "string") headers[name.toLowerCase()] = value;
+        // Webhook senders do not use cookies, so the request a task reads carries none.
+        if (typeof value === "string" && name.toLowerCase() !== "cookie") {
+          headers[name.toLowerCase()] = value;
+        }
       }
       const queryIndex = request.url.indexOf("?");
       // The relay's delivery id and receive time count only with its signed
@@ -124,7 +127,9 @@ export const layer = HttpApiBuilder.group(
         bytes = inner.body;
         query = inner.query;
         headers = Object.fromEntries(
-          Object.entries(inner.headers).map(([name, value]) => [name.toLowerCase(), value]),
+          Object.entries(inner.headers)
+            .map(([name, value]) => [name.toLowerCase(), value] as const)
+            .filter(([name]) => name !== "cookie"),
         );
         // Only the sender's authenticated id and timestamp survive forwarding and offline replay.
         relayDeliveryId = `encrypted:${hookId}:${inner.id}`;
@@ -163,6 +168,9 @@ export const layer = HttpApiBuilder.group(
                 : { error: "invalid_request", problem: started.failure.problem },
               "invalid",
             );
+          }
+          if (started.failure._tag === "WorkflowHookBusyError") {
+            return json(429, { error: "rate_limited" }, "rate_limited", { "retry-after": "60" });
           }
           yield* Effect.logWarning("Workflow hook delivery failed", { hookId });
           return json(500, { error: "internal_error" }, "error");

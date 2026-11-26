@@ -7,7 +7,76 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveIssueLinkTarget } from "./issueLinks.ts";
+import {
+  githubIssueScopeFromUrl,
+  issueLinkedPullRequestTarget,
+  issueReferenceCompatible,
+  resolveIssueLinkTarget,
+} from "./issueLinks.ts";
+
+it("recovers the exact repository and issue from an old enterprise URL", () => {
+  const url = "https://forge.test:8443/Acme/App/issues/7";
+  expect(githubIssueScopeFromUrl(url, "7")).toBe("acme/app");
+  expect(githubIssueScopeFromUrl(url, "8")).toBeUndefined();
+  expect(githubIssueScopeFromUrl(url.replace("https:", "http:"), "7")).toBeUndefined();
+  expect(githubIssueScopeFromUrl("https://forge.test:8443/account", "7")).toBeUndefined();
+});
+
+it("uses the linked GitHub pull request's authority, not the issue's authority", () => {
+  const issue = { tracker: "github", host: "forge.test:8443" };
+  const link = { repository: "acme/app", number: 12, url: "https://forge.test/acme/app/pull/12" };
+  expect(issueLinkedPullRequestTarget(issue, link)).toEqual({
+    host: "forge.test",
+    repository: "acme/app",
+    number: 12,
+    url: link.url,
+  });
+  const ported = { ...link, url: link.url.replace(".test/", ".test:8443/") };
+  expect(issueLinkedPullRequestTarget(issue, ported)).toEqual({
+    ...ported,
+    host: "forge.test:8443",
+  });
+  expect(
+    issueLinkedPullRequestTarget(issue, { ...link, url: link.url.replace("/12", "/13") }),
+  ).toBeNull();
+  expect(
+    issueLinkedPullRequestTarget(issue, { ...link, url: link.url.replace("https:", "http:") }),
+  ).toBeNull();
+});
+
+it("uses the linked GitLab merge request's authority, not the issue's authority", () => {
+  const issue = { tracker: "gitlab", host: "forge.test" };
+  const link = {
+    repository: "acme/team/app",
+    number: 12,
+    url: "https://forge.test:8443/acme/team/app/-/merge_requests/12",
+  };
+  expect(issueLinkedPullRequestTarget(issue, link)).toEqual({ ...link, host: "forge.test:8443" });
+  expect(issueLinkedPullRequestTarget(issue, { ...link, number: 13 })).toBeNull();
+});
+
+it("requires port support and an HTTPS authority match before reading restored GitHub links", () => {
+  const ported = { tracker: "github", url: "https://forge.test:8443/acme/web/issues/7" };
+  const supportsPorts = { githubIssueSourcePorts: true };
+  expect(issueReferenceCompatible(ported, undefined)).toBe(false);
+  expect(issueReferenceCompatible(ported, supportsPorts)).toBe(true);
+  expect(issueReferenceCompatible({ ...ported, host: "forge.test" }, supportsPorts)).toBe(false);
+  expect(issueReferenceCompatible({ tracker: "github", host: "forge.test:8443" }, undefined)).toBe(
+    false,
+  );
+  expect(
+    issueReferenceCompatible(
+      { ...ported, url: ported.url.replace("https:", "http:") },
+      supportsPorts,
+    ),
+  ).toBe(false);
+  expect(
+    issueReferenceCompatible(
+      { tracker: "github", host: "forge.test:443", url: "https://forge.test/acme/web/issues/7" },
+      undefined,
+    ),
+  ).toBe(true);
+});
 
 const project = (id: string, repository: string, origin?: string) =>
   ({
@@ -67,7 +136,12 @@ describe("resolveIssueLinkTarget", () => {
         id: ProjectId.make(id),
         environmentId: EnvironmentId.make("env"),
         repositoryIdentity: {
-          canonicalKey: `${host}/acme/web`,
+          canonicalKey: `${new URL(`https://${host}`).hostname}/acme/web`,
+          locator: {
+            source: "git-remote",
+            remoteName: "origin",
+            remoteUrl: `https://${host}/acme/web.git`,
+          },
           provider: SourceControlProviderKind.make("github"),
           displayName: "acme/web",
           owner: "acme",
@@ -76,12 +150,27 @@ describe("resolveIssueLinkTarget", () => {
       }) as never;
     const target = resolveIssueLinkTarget({
       url: "https://github.example.com:8443/acme/web/issues/7",
+      githubIssueSourcePorts: true,
       projects: [
         enterprise("bare", "github.example.com"),
         enterprise("ported", "github.example.com:8443"),
       ],
     });
     expect(target?.ref.projectId).toBe("ported");
+    expect(target?.ref.host).toBe("github.example.com:8443");
+    expect(
+      resolveIssueLinkTarget({
+        url: "https://github.example.com:8443/acme/web/issues/7",
+        projects: [enterprise("ported", "github.example.com:8443")],
+      }),
+    ).toBeNull();
+    expect(
+      resolveIssueLinkTarget({
+        url: "https://github.example.com:8443/acme/web/issues/7",
+        githubIssueSourcePorts: true,
+        projects: [enterprise("bare", "github.example.com")],
+      }),
+    ).toBeNull();
 
     // An Enterprise Server's hostname need not say "github"; its project vouches for it.
     const custom = resolveIssueLinkTarget({
@@ -89,6 +178,25 @@ describe("resolveIssueLinkTarget", () => {
       projects: [enterprise("custom", "code.acme.test")],
     });
     expect(custom?.ref).toMatchObject({ projectId: "custom", host: "code.acme.test", key: "7" });
+  });
+
+  it("resolves a manual GitHub source instead of the project's git binding", () => {
+    const input = {
+      projects: [project("p1", "acme/api")],
+      githubIssueSourcePorts: true,
+      issueProjectSources: {
+        [ProjectId.make("p1")]: [
+          { provider: "github" as const, host: "code.acme.test:9443", scope: "work/api" },
+        ],
+      },
+    };
+    expect(
+      resolveIssueLinkTarget({ ...input, url: "https://code.acme.test:9443/work/api/issues/7" })
+        ?.ref,
+    ).toMatchObject({ projectId: "p1", host: "code.acme.test:9443", scope: "work/api" });
+    expect(
+      resolveIssueLinkTarget({ ...input, url: "https://github.com/acme/api/issues/7" }),
+    ).toBeNull();
   });
 
   it("reads a Linear link through the project bound to its team, else any bound to Linear", () => {
@@ -164,6 +272,7 @@ describe("resolveIssueLinkTarget", () => {
   it.each([
     "https://github.com.evil.example/acme/web/issues/7",
     "https://github.com/acme/web/pull/7",
+    "http://github.com/acme/web/issues/7",
   ])("leaves %s an ordinary link", (url) => {
     expect(resolveIssueLinkTarget({ url, projects })).toBeNull();
   });

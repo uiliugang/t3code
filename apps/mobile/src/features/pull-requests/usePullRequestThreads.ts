@@ -62,7 +62,10 @@ export function usePullRequestThreads(
   const parsed = pr ? sourceControlClients.parseChangeRequestUrl(pr.url)?.link : undefined;
   const reference = {
     ...target,
-    input: { ...target.input, ...(parsed ? normalizeThreadPullRequestKey(parsed) : {}) },
+    input: {
+      ...target.input,
+      ...(pr && parsed ? normalizeThreadPullRequestKey({ ...parsed, url: pr.url }) : {}),
+    },
   };
   const key = JSON.stringify(reference);
   const route = useRoute();

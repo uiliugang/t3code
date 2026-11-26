@@ -32,6 +32,7 @@ import { forkParked } from "../serverActivation.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { makeNoPullRequestRechecks } from "./noPullRequestRechecks.ts";
 import {
+  normalizeThreadPullRequestKey,
   threadPullRequestKeysEqual,
   threadPullRequestsOf,
 } from "../sourceControl/threadPullRequests.ts";
@@ -69,18 +70,6 @@ function pullRequestPredatesThread(
         ? pullRequest.closedAt
         : null;
   return terminalAt != null && Date.parse(terminalAt) < DateTime.toEpochMillis(createdAt);
-}
-
-function pullRequestMatchesProject(
-  pullRequest: GitManager.GitBranchPullRequest,
-  project: OrchestrationProjectShell,
-): boolean {
-  return (
-    pullRequest.repositoryKey !== null &&
-    project.repositoryIdentity != null &&
-    sourceControlDefinitions.canonicalRepositoryKey(pullRequest.repositoryKey) ===
-      sourceControlDefinitions.canonicalRepositoryKey(project.repositoryIdentity.canonicalKey)
-  );
 }
 
 const resolveProjectForPullRequestDiscovery = Effect.fn(
@@ -187,7 +176,8 @@ export const make = Effect.gen(function* () {
             { refresh, confirmTerminal: false },
           );
           if (detected === null || detected.state !== "open") return;
-          const key = sourceControlDefinitions.parseChangeRequestUrl(detected.url)?.link;
+          const parsed = sourceControlDefinitions.parseChangeRequestUrl(detected.url)?.link;
+          const key = parsed && normalizeThreadPullRequestKey({ ...parsed, url: detected.url });
           // A link the user removed from a stack stays as a tombstone and is not added back.
           if (
             key === undefined ||
@@ -200,9 +190,7 @@ export const make = Effect.gen(function* () {
             type: "thread.pull-request.link",
             commandId: CommandId.make(`server:thread-repository-pull-request:${thread.id}:${uuid}`),
             threadId: thread.id,
-            host: key.host,
-            repository: key.repository,
-            number: key.number,
+            ...key,
             url: detected.url,
             source: "created",
           });
@@ -339,7 +327,13 @@ export const make = Effect.gen(function* () {
                   { refresh: request.refresh, confirmTerminal: false },
                 );
           if (first.branch !== null) noPullRequestRechecks.record(key, nowMs, detected !== null);
-          if (detected !== null && !pullRequestMatchesProject(detected, resolvedProject)) {
+          if (
+            detected !== null &&
+            !GitManager.branchPullRequestMatchesRepository(
+              detected,
+              resolvedProject.repositoryIdentity,
+            )
+          ) {
             return finishBackfill(group);
           }
           const detectedReference =
@@ -439,10 +433,7 @@ export const make = Effect.gen(function* () {
               current.url !== detected.url ||
               current.state !== detected.state ||
               current.repositoryKey !== detected.repositoryKey ||
-              !pullRequestMatchesProject(current, {
-                ...project,
-                repositoryIdentity: currentIdentity,
-              })
+              !GitManager.branchPullRequestMatchesRepository(current, currentIdentity)
             ) {
               return failBackfill(updates.map((update) => update.thread));
             }

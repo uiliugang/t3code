@@ -51,6 +51,7 @@ import { TestClock } from "effect/testing";
 import * as GitManager from "../git/GitManager.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerActivation from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -72,7 +73,7 @@ function at(offsetMs: number): DateTime.Utc {
 }
 
 type SettlementShell = OrchestrationV2ThreadShell &
-  Pick<ProjectionStore.ProjectionSettlementCandidate, "latestUserAuthoredMessageAt">;
+  Pick<ProjectionStore.ProjectionSettlementCandidate, "latestResumingMessageAt">;
 
 function shell(overrides: Partial<SettlementShell> = {}): SettlementShell {
   return {
@@ -111,7 +112,7 @@ function shell(overrides: Partial<SettlementShell> = {}): SettlementShell {
     latestRunStartedAt: null,
     latestRunCompletedAt: null,
     latestUserMessageAt: null,
-    latestUserAuthoredMessageAt: overrides.latestUserMessageAt ?? null,
+    latestResumingMessageAt: overrides.latestUserMessageAt ?? null,
     createdAt: at(-30 * DAY_MS),
     updatedAt: at(-10 * DAY_MS),
     archivedAt: null,
@@ -409,10 +410,10 @@ describe("resolveAutoSettlementAt", () => {
     ).toEqual(shell().createdAt);
   });
 
-  it("settles on merge after agent-started runs, but not after the user writes again", () => {
+  it("settles on merge after automatic agent wakes, but not after the thread is resumed", () => {
     const woken = shell({
       latestUserMessageAt: at(-30 * 60 * 1_000),
-      latestUserAuthoredMessageAt: at(-2 * 60 * 60 * 1_000),
+      latestResumingMessageAt: at(-2 * 60 * 60 * 1_000),
       latestRunRequestedAt: at(-30 * 60 * 1_000),
       latestRunCompletedAt: at(-29 * 60 * 1_000),
     });
@@ -427,7 +428,7 @@ describe("resolveAutoSettlementAt", () => {
     expect(
       ThreadSettlementService.resolveAutoSettlementAt({
         ...input,
-        thread: { ...woken, latestUserAuthoredMessageAt: at(-30 * 60 * 1_000) },
+        thread: { ...woken, latestResumingMessageAt: at(-30 * 60 * 1_000) },
       }),
     ).toBeNull();
   });
@@ -594,6 +595,7 @@ function readsFreshGitState(
 
 interface HarnessOptions {
   readonly snapshot: SettlementSnapshot;
+  readonly resolveRepositoryIdentity?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"]["resolve"];
   readonly settings?: Partial<ContractServerSettings>;
   readonly branchPullRequest?: GitManager.GitManager["Service"]["branchPullRequest"];
   readonly pullRequestSummary?: PullRequestService.PullRequestService["Service"]["summary"];
@@ -716,6 +718,20 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const layerDependencies = Layer.mergeAll(
     Layer.mock(Previews.PreviewManager)({}),
     Layer.mock(Tasks.ScheduledTaskService)({}),
+    Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
+      resolve:
+        options.resolveRepositoryIdentity ??
+        (() =>
+          Effect.succeed({
+            canonicalKey: "example.test/owner/repository",
+            locator: {
+              source: "git-remote",
+              remoteName: "origin",
+              remoteUrl: "https://example.test/owner/repository.git",
+            },
+            provider: SourceControlProviderKind.make("github"),
+          })),
+    }),
     ServerConfig.layerTest("/test", { prefix: "t3-settlement-" }).pipe(
       Layer.provide(NodeServices.layer),
     ),
@@ -892,6 +908,8 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       baseBranch: "main",
       url: "https://example.test/owner/repository/pull/42",
     }),
+    publishMergeEvent: (event: PullRequestService.PullRequestMergeEvent) =>
+      PubSub.publish(mergedPullRequests, event),
     layer: Layer.effect(
       ThreadSettlementService.ThreadSettlementServiceV2,
       ThreadSettlementService.make,
@@ -2150,7 +2168,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
         snapshot: makeSnapshot([
           makeThread("worked-after-merge", {
             branch: "merged-feature",
-            latestUserAuthoredMessageAt: DateTime.makeUnsafe("2026-08-28T06:00:00.000Z"),
+            latestResumingMessageAt: DateTime.makeUnsafe("2026-08-28T06:00:00.000Z"),
           }),
         ]),
         settings: { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: true },
@@ -2270,6 +2288,220 @@ describe("ThreadSettlementServiceV2 worker", () => {
             .map((call) => call.number)
             .toSorted((left, right) => left - right),
           [42, 99, 99],
+        );
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
+  it.effect(
+    "rechecks the checkout before settling a merged branch when its project shell has no repository identity",
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([makeThread("https-checkout", { branch: "feature" })]),
+          resolveRepositoryIdentity: () =>
+            Effect.succeed({
+              canonicalKey: "example.test/owner/repository",
+              locator: {
+                source: "git-remote",
+                remoteName: "origin",
+                remoteUrl: "https://example.test/owner/repository.git",
+              },
+              provider: SourceControlProviderKind.make("gitlab"),
+            }),
+          branchPullRequest: () =>
+            Effect.succeed({
+              ...makeBranchPullRequest("merged"),
+              url: "http://example.test/owner/repository/-/merge_requests/42",
+            }),
+        });
+        yield* Effect.gen(function* () {
+          const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+          expect(yield* Ref.get(fixture.commands)).toEqual([]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+  );
+
+  it.effect.each(["event", "sweep"] as const)(
+    "settles a legacy Meituan Code browser link through its RPC origin on a %s",
+    (trigger) =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const target = {
+          provider: SourceControlProviderKind.make("meituan"),
+          origin: "https://git.sankuai.com",
+        };
+        const reference = {
+          projectId: PROJECT_ID,
+          repository: "sa/web",
+          number: 22,
+          url: "https://dev.sankuai.com/code/repo-detail/SA/Web/pr/22/overview?codeArea=mcode",
+        };
+        const thread = makeThread("legacy-meituan", { branch: null, linkedPullRequest: reference });
+        const open = yield* Ref.make(true);
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([thread]),
+          pullRequestSummary: (input) =>
+            Ref.get(open).pipe(
+              Effect.map((isOpen) => ({
+                ...makePullRequestSummary({ ...input, state: isOpen ? "open" : "merged" }),
+                ...reference,
+                provider: target.provider,
+                ...(isOpen ? {} : { mergedAt: NOW }),
+              })),
+            ),
+        });
+        yield* Effect.gen(function* () {
+          const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+          expect(yield* Ref.get(fixture.summaryCalls)).toEqual([
+            expect.objectContaining({ target }),
+          ]);
+          expect(yield* Ref.get(fixture.commands)).toEqual([]);
+          if (trigger === "event") {
+            yield* fixture.publishMergeEvent({
+              ...reference,
+              target,
+              mergedAt: NOW,
+              baseBranch: "main",
+            });
+          } else {
+            yield* Ref.set(open, false);
+            yield* TestClock.adjust("1 minute");
+          }
+          yield* Queue.take(fixture.snapshotReads);
+          yield* reactor.drain;
+          expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
+            thread.id,
+          ]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+  );
+
+  it.effect("does not settle from a saved branch PR on a previous Web origin", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      const branchPullRequest = {
+        projectId: PROJECT_ID,
+        repository: "owner/repository",
+        number: 42,
+        url: "http://example.test/owner/repository/-/merge_requests/42",
+      };
+      const snapshot = makeSnapshot([
+        makeThread("saved-branch", {
+          branch: "feature",
+          branchPullRequest,
+          latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+        }),
+      ]);
+      const fixture = yield* makeHarness({
+        snapshot,
+        settings: { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: true },
+        branchPullRequest: () => Effect.succeed(null),
+        pullRequestSummary: (input) =>
+          Effect.succeed({
+            ...makePullRequestSummary({ ...input, state: "merged" }),
+            provider: SourceControlProviderKind.make("gitlab"),
+            url: branchPullRequest.url,
+            mergedAt: NOW,
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+        expect(yield* Ref.get(fixture.summaryCalls)).toHaveLength(1);
+        expect(yield* Ref.get(fixture.branchCalls)).toHaveLength(1);
+        expect(yield* Ref.get(fixture.commands)).toEqual([]);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
+  it.effect("refines a self-hosted forge before settling a branch merge request", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      const thread = makeThread("self-hosted", { branch: "feature" });
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([thread]),
+        settings: { sidebarAutoSettleAfterDays: null, sidebarAutoSettleOnMerge: true },
+        resolveRepositoryIdentity: (_cwd, options) =>
+          Effect.succeed({
+            canonicalKey: "example.test/owner/repository",
+            locator: {
+              source: "git-remote",
+              remoteName: "origin",
+              remoteUrl: "https://example.test/owner/repository.git",
+            },
+            provider: SourceControlProviderKind.make(options?.remoteOnly ? "unknown" : "gitlab"),
+          }),
+        branchPullRequest: () =>
+          Effect.succeed({
+            ...makeBranchPullRequest("merged"),
+            url: "https://example.test/owner/repository/-/merge_requests/42",
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+        expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
+          thread.id,
+        ]);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
+  it.effect("a merge does not settle the same numbered request on a different Web origin", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      const relatedSettled = yield* Deferred.make<void>();
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot(
+          [
+            "https://example.test/owner/repository/-/merge_requests/42",
+            "http://example.test/owner/repository/-/merge_requests/42",
+          ].map((url, index) =>
+            makeThread(`request-${index}`, {
+              branch: null,
+              linkedPullRequest: {
+                projectId: PROJECT_ID,
+                repository: "owner/repository",
+                number: 42,
+                url,
+              },
+            }),
+          ),
+        ),
+        onDispatch: (command) =>
+          command.threadId === ThreadId.make("request-0")
+            ? Deferred.succeed(relatedSettled, undefined).pipe(Effect.asVoid)
+            : Effect.void,
+      });
+
+      yield* Effect.gen(function* () {
+        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+        yield* fixture.publishMergeEvent({
+          projectId: PROJECT_ID,
+          repository: "owner/repository",
+          number: 42,
+          mergedAt: NOW,
+          baseBranch: "main",
+          url: "https://example.test/owner/repository/-/merge_requests/42",
+          target: {
+            provider: SourceControlProviderKind.make("gitlab"),
+            origin: "https://example.test",
+          },
+        });
+        yield* Deferred.await(relatedSettled);
+        yield* reactor.drain;
+        expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
+          ThreadId.make("request-0"),
+        ]);
+        expect(yield* Ref.get(fixture.summaryCalls)).toContainEqual(
+          expect.objectContaining({
+            target: { provider: "gitlab", origin: "http://example.test" },
+          }),
         );
       }).pipe(Effect.provide(fixture.layer));
     }),

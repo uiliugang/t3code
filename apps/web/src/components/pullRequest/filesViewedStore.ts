@@ -3,17 +3,15 @@ import {
   isAtomCommandInterrupted,
   runAtomCommand,
 } from "@t3tools/client-runtime/state/runtime";
-import type {
-  EnvironmentId,
-  PullRequestFilesViewedResult,
-  PullRequestRef,
-} from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestFilesViewedResult } from "@t3tools/contracts";
+import type { PullRequestViewerRef } from "@t3tools/client-runtime/state/pull-requests";
 
 import { msg } from "gt-react";
 
 import { m } from "~/i18n/messages";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
+  filesViewedScopeKey,
   pullRequestEnvironment,
   subscribePullRequestFilesViewedAnswers,
 } from "~/state/pullRequests";
@@ -30,7 +28,7 @@ import {
 
 export interface FilesViewedTarget {
   readonly environmentId: EnvironmentId;
-  readonly reference: PullRequestRef;
+  readonly reference: PullRequestViewerRef;
 }
 
 type FilesViewedBatch = ReadonlyArray<{
@@ -198,7 +196,7 @@ export function createFilesViewedStore(deps: FilesViewedStoreDeps) {
      * during render: an uncommitted handle is not cached, and any handle for a key behaves the same.
      */
     scope(target: FilesViewedTarget): FilesViewedScopeHandle {
-      const key = filesViewedScopeKey(target);
+      const key = filesViewedScopeKey(target.environmentId, target.reference);
       const cached = handles.get(key);
       if (cached !== undefined) return cached;
       const owned = { environmentId: target.environmentId, reference: { ...target.reference } };
@@ -219,18 +217,6 @@ export function createFilesViewedStore(deps: FilesViewedStoreDeps) {
   };
 }
 
-function filesViewedScopeKey({ environmentId, reference }: FilesViewedTarget): string {
-  return JSON.stringify([
-    environmentId,
-    reference.projectId,
-    reference.host ?? null,
-    reference.expectedAccountId ?? null,
-    reference.allowStale ?? null,
-    reference.repository,
-    reference.number,
-  ]);
-}
-
 const filesViewedAtom = ({ environmentId, reference }: FilesViewedTarget) =>
   pullRequestEnvironment.filesViewed({ environmentId, input: reference });
 
@@ -238,7 +224,7 @@ const filesViewedStore = createFilesViewedStore({
   flushDelayMs: 400,
   subscribeAnswers: ({ environmentId, reference }, onAnswer) =>
     subscribePullRequestFilesViewedAnswers({ environmentId, input: reference }, onAnswer),
-  send: ({ environmentId, reference }, files) =>
+  send: ({ environmentId, reference: { legacyViewerId: _legacyViewerId, ...reference } }, files) =>
     runAtomCommand(
       appAtomRegistry,
       pullRequestEnvironment.setFilesViewed,

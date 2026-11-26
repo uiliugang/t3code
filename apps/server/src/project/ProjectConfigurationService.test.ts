@@ -598,21 +598,28 @@ describe("ProjectConfigurationService", () => {
       yield* Effect.gen(function* () {
         const service = yield* ProjectConfigurationService.ProjectConfigurationService;
         yield* git(rootPath, "remote", "add", "upstream", "https://gitlab.com/vendor/web.git");
+        yield* git(
+          rootPath,
+          "config",
+          "url.https://proxy.example/team/.insteadOf",
+          "https://user:secret@github.com/team/",
+        );
         const exported = yield* service.exportProjects({ projectIds: [projectId] });
-        expect(exported[0]!.configuration.issueSources).toEqual([github]);
+        expect(exported[0]!.configuration.issueSources).toEqual([mep]);
         const roots = exported[0]!.configuration.workspace.roots;
         expect(exported[0]!.configuration.workspace.grouped).toBe(true);
         expect(roots.map((root) => [root.alias, root.remoteUrl, root.directory])).toEqual([
-          ["web", "https://github.com/team/web.git", "web"],
+          ["web", "https://proxy.example/team/web.git", "web"],
           ["api", "git@code.example.test:team/api.git", ""],
         ]);
         expect(roots[0]!.setupScript).toEqual(setupScript);
         expect(roots[1]!.defaultBaseRef).toBe("develop");
         expect(roots.every((root) => !("sourcePath" in root))).toBe(true);
+        yield* git(rootPath, "config", "--unset", "url.https://proxy.example/team/.insteadOf");
         yield* git(rootPath, "remote", "rename", "origin", "work");
         const renamed = (yield* service.exportProjects({ projectIds: [projectId] }))[0]!
           .configuration;
-        expect(renamed.workspace.roots[0]?.remoteUrl).toEqual(roots[0]!.remoteUrl);
+        expect(renamed.workspace.roots[0]?.remoteUrl).toBe("https://github.com/team/web.git");
         expect(renamed.issueSources).toEqual([github]);
         yield* git(rootPath, "remote", "set-url", "work", "https://gitlab.com/team/fork.git");
         yield* git(rootPath, "remote", "set-url", "upstream", "https://github.com/vendor/web.git");

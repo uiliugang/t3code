@@ -1,6 +1,7 @@
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { contextMenuSourceOf } from "../../contextMenuSource";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -31,6 +32,7 @@ const openNumberContextMenu = (
     url: detail.url,
     openLabel: openOnHostLabel(sourceControlClients.get(detail.provider), t),
     position: { x: event.clientX, y: event.clientY },
+    source: contextMenuSourceOf(event),
   });
 };
 

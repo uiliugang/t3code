@@ -7,11 +7,14 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Queue from "effect/Queue";
 import * as Tracer from "effect/Tracer";
 import {
   ProjectId,
+  ProviderInstanceId,
+  SourceControlProviderKind,
   GitCommandError,
   type PullRequestActivity,
   type PullRequestDetail,
@@ -365,6 +368,36 @@ const startSingleBranchRun = (input: {
   });
 
 it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideService", (it) => {
+  it.effect("reads legacy public GitHub guides only for their original Web source", () =>
+    Effect.gen(function* () {
+      const repository = yield* PullRequestReviewGuides.PullRequestReviewGuideRepository;
+      const key = { host: "github.com", repository: "acme/app", number: 7 };
+      const guide = {
+        headSha: "a".repeat(40),
+        generatedAt: "2026-08-29T00:00:00Z",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+        stops: [],
+      };
+      yield* repository.put(key, guide);
+      const github = {
+        provider: SourceControlProviderKind.make("github"),
+        origin: "https://github.com",
+      };
+      assert.deepStrictEqual(
+        Option.getOrNull(yield* repository.get({ ...key, target: github })),
+        guide,
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* repository.get({
+            ...key,
+            target: { ...github, origin: "https://github.com:8443" },
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(PullRequestReviewGuides.layer)),
+  );
+
   it.effect.each([
     {
       name: "a branch named like the short head",
@@ -421,48 +454,61 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
     }),
   );
 
-  it.effect("measures only the PR change using the renamed verified remote's fetch URL", () =>
-    Effect.gen(function* () {
-      const repositories = yield* makeRepositories;
-      const fork = `${repositories.root}/fork`;
-      yield* git(repositories.root, ["clone", "--quiet", repositories.remote, fork]);
-      yield* git(fork, ["branch", "stack-base", "main~1"]);
-      // The cached identity still names origin, which now belongs to the stale fork.
-      yield* git(repositories.workspace, ["remote", "rename", "origin", "upstream"]);
-      yield* git(repositories.workspace, ["remote", "add", "origin", fork]);
-      yield* git(repositories.workspace, [
-        "config",
-        `url.${repositories.remote}.insteadOf`,
-        "review-upstream:",
-      ]);
-      yield* git(repositories.workspace, ["remote", "set-url", "upstream", "review-upstream:"]);
-      const changed = yield* Deferred.make<string>();
-      const driver = yield* GitVcsDriver.GitVcsDriver;
-      const stored = yield* Deferred.make<void>();
-      const context = yield* Layer.build(
-        makeLayer({
-          ...repositories,
-          stored,
-          generate: (input) =>
-            git(input.cwd, ["diff", "--name-only", `${input.baseCommit}...HEAD`]).pipe(
-              Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
-              Effect.orDie,
-              Effect.flatMap((names) => Deferred.succeed(changed, names)),
-              Effect.as({ stops: [] }),
-            ),
-        }),
-      );
-      const service = Context.get(
-        context,
-        PullRequestReviewGuideService.PullRequestReviewGuideService,
-      );
-      yield* service.generate(reference);
-      assert.strictEqual(yield* Deferred.await(changed), "feature.txt");
-      yield* Deferred.await(stored);
-      const result = yield* service.get(reference);
-      assert.strictEqual(result.guide?.headSha, repositories.headSha);
-      assert.deepStrictEqual(result.guide?.stops[0]?.files, [{ path: "feature.txt" }]);
-    }),
+  it.effect.each(["rewritten", "configured"] as const)(
+    "measures only the PR change through the renamed remote matched by its %s URL",
+    (locatorUrl) =>
+      Effect.gen(function* () {
+        const repositories = yield* makeRepositories;
+        const fork = `${repositories.root}/fork`;
+        yield* git(repositories.root, ["clone", "--quiet", repositories.remote, fork]);
+        yield* git(fork, ["branch", "stack-base", "main~1"]);
+        // The cached identity still names origin, which now belongs to the stale fork.
+        yield* git(repositories.workspace, ["remote", "rename", "origin", "upstream"]);
+        yield* git(repositories.workspace, ["remote", "add", "origin", fork]);
+        yield* git(repositories.workspace, [
+          "config",
+          `url.${repositories.remote}.insteadOf`,
+          "review-upstream:",
+        ]);
+        yield* git(repositories.workspace, ["remote", "set-url", "upstream", "review-upstream:"]);
+        const changed = yield* Deferred.make<string>();
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const stored = yield* Deferred.make<void>();
+        const context = yield* Layer.build(
+          makeLayer({
+            ...repositories,
+            ...(locatorUrl === "configured"
+              ? { locator: { ...ACME_APP.locator, remoteUrl: "review-upstream:" } }
+              : {}),
+            stored,
+            generate: (input) =>
+              git(input.cwd, ["diff", "--name-only", `${input.baseCommit}...HEAD`]).pipe(
+                Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+                Effect.orDie,
+                Effect.flatMap((names) => Deferred.succeed(changed, names)),
+                Effect.as({ stops: [] }),
+              ),
+          }),
+        );
+        const service = Context.get(
+          context,
+          PullRequestReviewGuideService.PullRequestReviewGuideService,
+        );
+        yield* service.generate(reference);
+        assert.strictEqual(yield* Deferred.await(changed), "feature.txt");
+        yield* Deferred.await(stored);
+        const result = yield* service.get(reference);
+        assert.strictEqual(result.guide?.headSha, repositories.headSha);
+        assert.deepStrictEqual(result.guide?.stops[0]?.files, [{ path: "feature.txt" }]);
+        const differentSource = yield* service.get({
+          ...reference,
+          target: {
+            provider: SourceControlProviderKind.make("gitlab"),
+            origin: "https://github.com",
+          },
+        });
+        assert.isNull(differentSource.guide);
+      }),
   );
 
   it.effect("keeps excerpts despite the checkout's diff driver and a failing hook", () =>

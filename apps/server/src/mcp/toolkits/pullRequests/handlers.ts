@@ -311,10 +311,9 @@ const make = Effect.gen(function* () {
       | typeof PullRequestUnlinkFailedError
       | typeof PullRequestForgeError,
   ) =>
-    projects.getShell(thread.projectId, thread.projectWorkspaceRoot).pipe(
-      Effect.map(Option.getOrUndefined),
-      Effect.mapError((cause) => new Failure({ cause })),
-    );
+    pullRequests
+      .addressedProject(thread.projectId, thread.projectWorkspaceRoot)
+      .pipe(Effect.mapError((cause) => new Failure({ cause })));
 
   const dispatchFailure =
     (Failure: typeof PullRequestLinkFailedError | typeof PullRequestUnlinkFailedError) =>
@@ -364,7 +363,12 @@ const make = Effect.gen(function* () {
     const known = yield* projects
       .listShells()
       .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })));
-    const callerProject = known.find((project) => project.id === callerThread?.projectId);
+    const callerProject =
+      callerThread === undefined
+        ? undefined
+        : yield* pullRequests
+            .addressedProject(callerThread.projectId, callerThread.projectWorkspaceRoot)
+            .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })));
     // A pull request named by host and repository builds its URL through the project that holds
     // it, which need not be the caller's.
     const urlProject = (input: PullRequestTargetInput) =>
@@ -397,12 +401,10 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const guideReference = (
-    project: OrchestrationProjectShell,
-    target: { readonly host: string; readonly repository: string; readonly number: number },
-  ) => ({
+  const guideReference = (project: OrchestrationProjectShell, target: ResolvedTarget) => ({
     projectId: project.id,
     host: target.host,
+    target: target.target,
     repository: target.repository,
     number: target.number,
   });
@@ -420,10 +422,8 @@ const make = Effect.gen(function* () {
   // Layers below the target are pinned to the heads read here; the host refuses if any moved.
   const stackMergeScope = Effect.fnUntraced(function* (
     ref: PullRequestRef,
-    input: { readonly expectedHeadSha: string; readonly auto?: boolean | undefined },
+    input: { readonly expectedHeadSha: string },
   ) {
-    if (input.auto === true)
-      return yield* new PullRequestForgeError({ detail: "A stack merge cannot wait with auto." });
     const stack = yield* pullRequests
       .stack(ref, { bypassCache: true })
       .pipe(Effect.mapError(forgeFailure));
@@ -543,12 +543,13 @@ const make = Effect.gen(function* () {
           }
         : branchPullRequest === null
           ? null
-          : { number: branchPullRequest.number, repository: branchPullRequest.repository };
+          : { url: branchPullRequest.url };
     if (named === null) return yield* new PullRequestBranchHasNoneError();
     const target = yield* resolveTarget(named, targetProject);
     const ref: PullRequestService.CheckoutRef = {
       projectId: project.id,
       host: target.host,
+      target: target.target,
       repository: target.repository,
       number: target.number,
       ...(thread.projectWorkspaceRoot === undefined
@@ -738,20 +739,18 @@ const make = Effect.gen(function* () {
             : {};
         const project = yield* projectOf(thread, PullRequestLinkFailedError);
         const target = yield* resolveTarget(input, project);
+        const identity = identityOf(target);
         const existing = threadPullRequestsOf(thread).find((link) =>
           threadPullRequestKeysEqual(link, target),
         );
         if (existing && existing.source !== "stack-dismissed")
-          return { ...target, alreadyLinked: true, ...next };
+          return { ...identity, alreadyLinked: true, ...next };
         const alreadyLinked = yield* engine
           .dispatch({
             type: "thread.pull-request.link",
             commandId: yield* commandId("mcp-pr-link", thread.id),
             threadId: thread.id,
-            host: target.host,
-            repository: target.repository,
-            number: target.number,
-            url: target.url,
+            ...identity,
             source: "agent",
           })
           .pipe(
@@ -759,7 +758,7 @@ const make = Effect.gen(function* () {
 
             Effect.catchCause(dispatchFailure(PullRequestLinkFailedError)),
           );
-        return { ...target, alreadyLinked, ...next };
+        return { ...identity, alreadyLinked, ...next };
       }),
     ),
     link_pull_requests: writesThread((input) =>
@@ -833,6 +832,7 @@ const make = Effect.gen(function* () {
             commandId: yield* commandId("mcp-pr-unlink", thread.id),
             threadId: thread.id,
             host: target.host,
+            target: target.target,
             repository: target.repository,
             number: target.number,
           })
@@ -859,15 +859,13 @@ const make = Effect.gen(function* () {
             ? [{ ...normalizeThreadPullRequestKey(link), state }]
             : [];
         });
-        yield* Effect.forEach(matching, ({ host, repository, number }) =>
+        yield* Effect.forEach(matching, ({ state: _state, ...key }) =>
           Effect.gen(function* () {
             yield* engine.dispatch({
               type: "thread.pull-request.unlink",
               commandId: yield* commandId("mcp-pr-unlink", thread.id),
               threadId: thread.id,
-              host,
-              repository,
-              number,
+              ...key,
             });
           }).pipe(Effect.catchCause(dispatchFailure(PullRequestUnlinkFailedError))),
         );
@@ -1195,10 +1193,24 @@ const make = Effect.gen(function* () {
     ),
     pull_request_review: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
+        if (input.verdict === "approve" && input.expectedHeadSha === undefined) {
+          return yield* new PullRequestForgeError({
+            detail:
+              "Approving needs expectedHeadSha: the headSha pull_request_read reported for the commits you reviewed.",
+          });
+        }
         const { target, ref } = yield* locate(input);
         const comments = yield* reviewComments(ref, input.comments ?? []);
         yield* pullRequests
-          .submitReview({ ...ref, verdict: input.verdict, body: input.body ?? "", comments })
+          .submitReview({
+            ...ref,
+            verdict: input.verdict,
+            body: input.body ?? "",
+            comments,
+            ...(input.expectedHeadSha === undefined
+              ? {}
+              : { expectedHeadSha: input.expectedHeadSha }),
+          })
           .pipe(Effect.mapError(forgeFailure));
         return identityOf(target);
       }),

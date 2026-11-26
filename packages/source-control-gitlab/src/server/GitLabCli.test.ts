@@ -8,6 +8,8 @@ import { ChildProcessSpawner } from "effect/process";
 
 import { VcsProcessExitError } from "@t3tools/contracts";
 
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { PullRequestWebOrigin } from "@t3tools/source-control-core/server/PullRequestProvider";
 import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as GitLabCli from "./GitLabCli.ts";
@@ -36,6 +38,75 @@ afterEach(() => {
 });
 
 layer("GitLabCli.layer", (it) => {
+  it.effect("uses the discovered HTTP origin for a checkout's merge request command", () =>
+    Effect.gen(function* () {
+      mockedRun.mockImplementation(({ args }) =>
+        Effect.succeed(processOutput(args[2] === "api_protocol" ? "http\n" : "")),
+      );
+      const glab = yield* GitLabCli.GitLabCli;
+      const checkout = { cwd: "/repo", host: "forge.test" };
+      const origin = yield* glab.configuredWebOrigin!(checkout);
+      expect(origin).toBe("http://forge.test");
+      yield* glab
+        .execute({ ...checkout, args: ["api", "user"] })
+        .pipe(Effect.provideService(PullRequestWebOrigin, origin));
+      expect(mockedRun.mock.calls.at(-1)?.[0]).toMatchObject({
+        args: ["api", "user"],
+        env: {
+          GITLAB_HOST: "forge.test",
+          GLAB_API_PROTOCOL: "http",
+          GITLAB_API_HOST: "forge.test",
+        },
+      });
+    }).pipe(Effect.provideService(HostProcess.Environment, {})),
+  );
+
+  it.effect("does not run an MR mutation through a differently configured protocol", () =>
+    Effect.gen(function* () {
+      mockedRun.mockImplementation(({ args }) =>
+        Effect.succeed(processOutput(args[2] === "api_protocol" ? "https\n" : "")),
+      );
+      const glab = yield* GitLabCli.GitLabCli;
+      const run = glab.execute({
+        cwd: "/repo",
+        host: "forge.test",
+        args: ["mr", "close", "7", "--repo", "acme/app"],
+      });
+      const rejected = yield* run.pipe(
+        Effect.provideService(PullRequestWebOrigin, "http://forge.test"),
+        Effect.flip,
+      );
+      expect(rejected._tag).toBe("GitLabCliCommandError");
+      expect(mockedRun.mock.calls.map(([command]) => command.args)).toEqual([
+        ["config", "get", "api_protocol", "--host", "forge.test"],
+      ]);
+
+      yield* run.pipe(Effect.provideService(PullRequestWebOrigin, "https://forge.test"));
+      expect(mockedRun.mock.calls.at(-1)?.[0]).toMatchObject({
+        args: ["mr", "close", "7", "--repo", "acme/app"],
+        env: {
+          GITLAB_HOST: "forge.test",
+          GLAB_API_PROTOCOL: "https",
+          GITLAB_API_HOST: "forge.test",
+        },
+      });
+
+      mockedRun.mockClear();
+      mockedRun.mockImplementation(({ args }) =>
+        Effect.succeed(processOutput(args[2] === "api_host" ? "forge.test:8443" : "")),
+      );
+      const wrongApiHost = yield* run.pipe(
+        Effect.provideService(PullRequestWebOrigin, "https://forge.test"),
+        Effect.flip,
+      );
+      expect(wrongApiHost._tag).toBe("GitLabCliCommandError");
+      expect(mockedRun.mock.calls.map(([command]) => command.args[0])).toEqual([
+        "config",
+        "config",
+      ]);
+    }).pipe(Effect.provideService(HostProcess.Environment, {})),
+  );
+
   it.effect("parses merge request view output", () =>
     Effect.gen(function* () {
       mockedRun.mockReturnValueOnce(
@@ -378,6 +449,70 @@ layer("GitLabCli.layer", (it) => {
         expect.objectContaining({ command: "glab", args, env }),
       );
     }),
+  );
+
+  it.effect.each([
+    { host: "gitlab.com", withheld: {} },
+    {
+      host: "gitlab.example.com",
+      withheld: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+    },
+  ])(
+    "sends the environment token to a project on $host only when it is glab's default host",
+    ({ host, withheld }) =>
+      Effect.gen(function* () {
+        mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("{}")));
+
+        const glab = yield* GitLabCli.GitLabCli;
+        yield* glab.execute({ cwd: "/repo", host, args: ["api", "user"] });
+
+        expect(mockedRun).toHaveBeenCalledWith(
+          expect.objectContaining({ env: { GITLAB_HOST: host, ...withheld } }),
+        );
+      }),
+  );
+
+  it.effect.each([
+    { remote: "git@gitlab.com:group/project.git", reference: "42", withheld: {} },
+    {
+      remote: "https://gitlab.example.com/group/project.git",
+      reference: "42",
+      withheld: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+    },
+    {
+      remote: "git+ssh://git@gitlab.example.com/project.git",
+      reference: "42",
+      withheld: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+    },
+    {
+      remote: "git@gitlab.com:group/project.git",
+      reference: "https://gitlab.example.com/group/project/-/merge_requests/42",
+      withheld: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+    },
+  ])(
+    "keeps the environment token from the host glab picks for $reference in a $remote checkout",
+    ({ remote, reference, withheld }) =>
+      Effect.gen(function* () {
+        const environments: Array<unknown> = [];
+        const glab = yield* GitLabCli.make.pipe(
+          Effect.provide(
+            TestSourceControlHost.layer({
+              process: {
+                run: (input) => {
+                  if (input.command === "git")
+                    return Effect.succeed(processOutput(`origin\t${remote} (fetch)\n`));
+                  environments.push(input.env);
+                  return Effect.succeed(processOutput("{}"));
+                },
+              },
+            }),
+          ),
+          Effect.provideService(HostProcess.Environment, { GITLAB_TOKEN: "default-host-token" }),
+        );
+        yield* glab.checkoutMergeRequest({ cwd: "/repo", reference });
+
+        assert.deepStrictEqual(environments, [withheld]);
+      }),
   );
 
   it.effect.each(["not-found", "command-failed"] as const)(

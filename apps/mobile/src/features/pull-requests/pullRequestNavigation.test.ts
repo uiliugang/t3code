@@ -24,7 +24,8 @@ const nativePullRequestDestination = (
   linkContext: typeof context | null,
   linkProjects: typeof projects,
   configLoaded: Parameters<typeof destination>[3] = () => true,
-) => destination(url, linkContext, linkProjects, configLoaded);
+  supportsWebTargets?: Parameters<typeof destination>[4],
+) => destination(url, linkContext, linkProjects, configLoaded, supportsWebTargets);
 
 describe("native PR entry points", () => {
   it("keeps a thread link in its own environment and handles renamed host path shapes", () => {
@@ -41,22 +42,29 @@ describe("native PR entry points", () => {
       number: 12,
       navigationUrl: "https://github.com/org/repo/pull/12/files#diff",
     });
+    const gitlabUrl = "https://git.example/group/sub/repo/-/merge_requests/9";
+    expect(nativePullRequestDestination(gitlabUrl, context, projects)).toBeNull();
     expect(
-      nativePullRequestDestination(
-        "https://git.example/group/sub/repo/-/merge_requests/9",
-        context,
-        projects,
-      ),
-    ).toMatchObject({ projectId: "gitlab", repository: "group/sub/repo" });
+      nativePullRequestDestination(gitlabUrl, context, projects, undefined, () => true),
+    ).toMatchObject({
+      projectId: "gitlab",
+      repository: "group/sub/repo",
+      navigationUrl: gitlabUrl,
+    });
     expect(
       nativePullRequestDestination("http://forgejo.test:3000/org/repo/pulls/3", context, projects),
     ).toBeNull();
   });
 
-  it("opens a repository nobody has checked out under a project on its host, as web does", () => {
-    expect(
-      nativePullRequestDestination("https://github.com/someone/else/pull/12", context, projects),
-    ).toEqual({ ...context, host: "github.com", repository: "someone/else", number: 12 });
+  it("preserves the original URL when opening a repository under a borrowed project", () => {
+    const navigationUrl = "https://github.com/someone/else/pull/12";
+    expect(nativePullRequestDestination(navigationUrl, context, projects)).toEqual({
+      ...context,
+      host: "github.com",
+      repository: "someone/else",
+      number: 12,
+      navigationUrl,
+    });
   });
 
   it("leaves links to the external opener when the environment cannot show them", () => {

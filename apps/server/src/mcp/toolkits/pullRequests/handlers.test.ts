@@ -215,7 +215,15 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
         Effect.succeed(id === thread?.id ? v2PullRequestThread(thread) : null),
       dispatch,
     }),
-    Layer.mock(PullRequestService.PullRequestService)(options.pullRequests ?? {}),
+    Layer.mock(PullRequestService.PullRequestService)({
+      addressedProject: (_projectId, workspaceRoot) =>
+        Effect.succeed(
+          (workspaceRoot === options.checkoutProject?.workspaceRoot
+            ? (options.checkoutProject ?? project)
+            : project) ?? undefined,
+        ),
+      ...options.pullRequests,
+    }),
     Layer.mock(GitManager.GitManager)(options.git ?? {}),
     Layer.succeed(SecureRandom.SecureRandom, testCrypto),
     McpToolAccessTestkit.liveThreadsLayer,
@@ -398,6 +406,18 @@ describe("pull request toolkit handlers", () => {
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         { type: "thread.pull-request.link", number: 123, url: supplied },
       ]);
+    }),
+  );
+
+  it.effect("says when repository is not owner/repo on a known host", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ project: makeProject() });
+      const error = yield* harness
+        .call("link_pull_request", { repository: "github.com/org/repo", number: 1 })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "PullRequestRepositoryInvalidError" });
+      expect(error.message).toContain("owner/repo");
+      expect(yield* Ref.get(harness.commands)).toEqual([]);
     }),
   );
 
@@ -893,6 +913,7 @@ describe("source control tools", () => {
         host: "github.com",
         repository: "t3tools/t3code",
         number: 42,
+        target: { provider: "github", origin: "https://github.com" },
         allowStale: false,
       });
       expect(result.body).toBe("Adds tools.");
@@ -1382,6 +1403,33 @@ describe("source control tools", () => {
         .pipe(Effect.flip);
       expect(error.message).toContain("a.ts line 40 (new side) is not in this PR's diff");
       expect(reviews).toHaveLength(1);
+    }),
+  );
+
+  it.effect("pins a review to the head the caller read, and approves only with one", () =>
+    Effect.gen(function* () {
+      const reviews: Array<PullRequestSubmitReviewInput> = [];
+      const harness = yield* makeHarness({
+        thread: branchThread,
+        pullRequests: {
+          submitReview: (input) => Effect.sync(() => void reviews.push(input)),
+        },
+      });
+      yield* harness.call("pull_request_review", {
+        verdict: "approve",
+        expectedHeadSha: "abc1234def5678",
+      });
+      expect(reviews).toMatchObject([{ verdict: "approve", expectedHeadSha: "abc1234def5678" }]);
+
+      const error = yield* harness
+        .call("pull_request_review", { verdict: "approve" })
+        .pipe(Effect.flip);
+      expect(error.message).toContain("expectedHeadSha");
+      expect(reviews).toHaveLength(1);
+
+      yield* harness.call("pull_request_review", { verdict: "comment", body: "A question." });
+      expect(reviews).toHaveLength(2);
+      expect(reviews[1]).not.toHaveProperty("expectedHeadSha");
     }),
   );
 

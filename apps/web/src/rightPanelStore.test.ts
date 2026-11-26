@@ -1,5 +1,11 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  PullRequestWebTarget,
+  RunId,
+  SourceControlProviderKind,
+  ThreadId,
+} from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { useClosedViewStore } from "./closedViewStore";
@@ -129,6 +135,77 @@ describe("rightPanelStore", () => {
     const migratedState = selectThreadRightPanelState(migrated.byThreadKey, refA);
     expect(migratedState.activeSurfaceId).toBe(migratedState.surfaces[1]?.id);
     expect(migratedState.activeSurfaceId).toContain("acme");
+  });
+
+  it("keeps old GitHub issue tabs with distinct HTTPS authorities separate", () => {
+    const store = useRightPanelStore.getState();
+    const reference = { projectId: "project-1", tracker: "github", scope: "acme/app", key: "7" };
+    store.openIssue(refA, { ...reference, url: "https://forge.test/acme/app/issues/7" });
+    store.openIssue(refA, { ...reference, url: "https://forge.test:8443/acme/app/issues/7" });
+    store.openIssue(refA, { ...reference, host: "forge.test:443" });
+    const { surfaces } = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      refA,
+    );
+    expect(surfaces.map((surface) => surface.id)).toEqual([
+      "issue:project-1:github:forge.test:acme%2Fapp:7",
+      "issue:project-1:github:forge.test%3A8443:acme%2Fapp:7",
+    ]);
+  });
+
+  it("restores only one tab for equivalent legacy GitHub references", () => {
+    const reference = {
+      kind: "issue",
+      projectId: "project-1",
+      tracker: "github",
+      scope: "acme/app",
+      key: "7",
+    };
+    const url = "https://forge.test:8443/acme/app/issues/7";
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "without-host",
+          surfaces: [
+            { ...reference, id: "without-host", url },
+            { ...reference, id: "with-host", host: "forge.test:8443", url },
+          ],
+        },
+      },
+    });
+    const state = selectThreadRightPanelState(migrated.byThreadKey, refA);
+    expect(state.surfaces).toHaveLength(1);
+    expect(state.activeSurfaceId).toBe(state.surfaces[0]?.id);
+  });
+
+  it("restores the active URL-only requirement without merging another repository's issue", () => {
+    const reference = {
+      kind: "requirement-issue",
+      projectId: "project-1",
+      provider: "github",
+      issueId: "7",
+    };
+    const url = "https://forge.test:8443/acme/app/issues/7";
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "url-only",
+          surfaces: [
+            { ...reference, id: "url-only", url, title: "Active issue" },
+            { ...reference, id: "other", url: "https://forge.test:8443/acme/other/issues/7" },
+            { ...reference, id: "explicit", host: "forge.test:8443", scope: "ACME/App" },
+          ],
+        },
+      },
+    });
+    const state = selectThreadRightPanelState(migrated.byThreadKey, refA);
+    expect(state.surfaces).toMatchObject([
+      { scope: "acme/app", url, title: "Active issue" },
+      { scope: "acme/other" },
+    ]);
+    expect(state.activeSurfaceId).toBe(state.surfaces[0]?.id);
   });
 
   it("reopens the active tab first after a bulk close", () => {
@@ -1310,6 +1387,39 @@ describe("rightPanelStore", () => {
     expect(pullRequestSurfaceId({ ...first, host: "GITHUB.COM" })).toBe(
       pullRequestSurfaceId(first),
     );
+  });
+
+  it("restores separate pull request tabs for different web targets on the same host", async () => {
+    const reference = {
+      projectId: "project-a",
+      repository: "acme/api",
+      number: 7,
+      host: "forge.test",
+    };
+    const first = {
+      ...reference,
+      target: PullRequestWebTarget.make({
+        provider: SourceControlProviderKind.make("github"),
+        origin: "https://forge.test",
+      }),
+    };
+    const second = {
+      ...reference,
+      target: PullRequestWebTarget.make({
+        provider: SourceControlProviderKind.make("gitlab"),
+        origin: "http://forge.test",
+      }),
+    };
+    useRightPanelStore.getState().openPullRequest(refA, first);
+    useRightPanelStore.getState().openPullRequest(refA, second);
+    await reloadRightPanelStore();
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      pullRequestSurfaceId(first),
+      pullRequestSurfaceId(second),
+    ]);
+    expect(state.activeSurfaceId).toBe(pullRequestSurfaceId(second));
+    expect(state.surfaces[1]).toMatchObject({ target: second.target });
   });
 
   it("keeps the page's panel tabs reachable when the set of connected servers changes", () => {

@@ -7,6 +7,7 @@ import {
   type MergedIssueList,
 } from "@t3tools/client-runtime/state/issues";
 import { useAtomValue } from "@effect/atom-react";
+import { canOpenLinkedIssue } from "@t3tools/client-runtime/issue-links";
 import { selectEnvironmentQueryData } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, IssueState, ThreadIssueLink } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
@@ -53,30 +54,31 @@ export function useSidebarLinkedIssueState(
   links: ReadonlyArray<ThreadIssueLink> | undefined,
 ) {
   const configs = useServerConfigs();
-  const aggregate =
-    links?.length && configs.get(environmentId)?.environment.capabilities.issues === true
-      ? Atom.make((get): IssueState | null => {
-          const states = links.map(
-            (link) =>
-              selectEnvironmentQueryData(
-                get(
-                  issueEnvironment.detail(
-                    { environmentId, input: linkedIssueRef(link) },
-                    "sidebar",
-                  ),
-                ),
-              )?.state,
-          );
-          const open = states.find((state) => state?.category === "open");
-          if (open !== undefined) return open;
-          if (states.includes(undefined)) return null;
-          return (
-            states.find((state) => state?.closeReason && state.closeReason !== "completed") ??
-            states[0] ??
-            null
-          );
-        })
-      : emptySidebarIssueState;
+  const capabilities = configs.get(environmentId)?.environment.capabilities;
+  const internal =
+    capabilities?.issues === true
+      ? links?.filter((link) => canOpenLinkedIssue(link, capabilities))
+      : undefined;
+  const aggregate = internal?.length
+    ? Atom.make((get): IssueState | null => {
+        const states = internal.map(
+          (link) =>
+            selectEnvironmentQueryData(
+              get(
+                issueEnvironment.detail({ environmentId, input: linkedIssueRef(link) }, "sidebar"),
+              ),
+            )?.state,
+        );
+        const open = states.find((state) => state?.category === "open");
+        if (open !== undefined) return open;
+        if (states.includes(undefined)) return null;
+        return (
+          states.find((state) => state?.closeReason && state.closeReason !== "completed") ??
+          states[0] ??
+          null
+        );
+      })
+    : emptySidebarIssueState;
   return useAtomValue(aggregate);
 }
 

@@ -173,6 +173,127 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
+  it.effect("keys a remote by its configured URL when insteadOf rewrites it", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-instead-of-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "origin", "https://github.com/T3Tools/t3code.git"]);
+      yield* git(cwd, ["config", "url.https://proxy.example/.insteadOf", "https://github.com/"]);
+      yield* git(cwd, ["config", "remote.origin.gh-resolved", "base"]);
+      const remotes = yield* git(cwd, ["remote", "-v"]);
+      expect(remotes.stdout).toContain("https://proxy.example/T3Tools/t3code.git (fetch)");
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+
+      expect(identity?.canonicalKey).toBe("github.com/t3tools/t3code");
+      expect(identity?.provider).toBe("github");
+      expect(identity?.displayName).toBe("T3Tools/t3code");
+      expect(identity?.locator).toEqual({
+        source: "git-remote",
+        remoteName: "origin",
+        remoteUrl: "https://github.com/T3Tools/t3code.git",
+      });
+      expect(identity?.issueRepository).toMatchObject({
+        provider: "unknown",
+        locator: { remoteUrl: "https://proxy.example/T3Tools/t3code.git" },
+      });
+
+      yield* git(cwd, ["config", "--unset", "url.https://proxy.example/.insteadOf"]);
+      yield* git(cwd, ["config", "url.file:///srv/mirror/.insteadOf", "https://github.com/"]);
+      const mirroredIdentity = yield* resolver.resolve(cwd, { refresh: true });
+      expect(mirroredIdentity).toMatchObject({
+        canonicalKey: "github.com/t3tools/t3code",
+        hasLocalOrigin: true,
+        issueRepository: null,
+      });
+
+      const shorthandCwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-instead-of-shorthand-test-",
+      });
+      yield* git(shorthandCwd, ["init"]);
+      yield* git(shorthandCwd, ["remote", "add", "origin", "gh:T3Tools/t3code.git"]);
+      yield* git(shorthandCwd, ["config", "url.https://github.com/.insteadOf", "gh:"]);
+
+      const shorthandIdentity = yield* resolver.resolve(shorthandCwd);
+
+      expect(shorthandIdentity?.canonicalKey).toBe("github.com/t3tools/t3code");
+      expect(shorthandIdentity?.provider).toBe("github");
+      expect(shorthandIdentity?.locator.remoteUrl).toBe("https://github.com/T3Tools/t3code.git");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("keeps the rewritten issue origin even when it fetches the grouping repository", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const cwd = yield* fs.makeTempDirectoryScoped();
+      const rewritten = "https://github.com/org/upstream.git";
+      const configured = "https://github.com/me/old-fork.git";
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, ["remote", "add", "upstream", rewritten]);
+      yield* git(cwd, ["remote", "add", "origin", configured]);
+      yield* git(cwd, ["config", `url.${rewritten}.insteadOf`, configured]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd, { refresh: true });
+      expect(identity?.origin?.remoteUrl).toBe(configured);
+      expect(identity?.issueRepository?.locator).toMatchObject({
+        remoteName: "origin",
+        remoteUrl: rewritten,
+      });
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect(
+    "never falls back to the configured issue forge when the effective HTTPS remote is unknown",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped();
+        const configured = "https://github.com/team/old.git";
+        const rewritten = "https://forge.example.test/team/new.git";
+        yield* git(cwd, ["init"]);
+        yield* git(cwd, ["remote", "add", "origin", configured]);
+        yield* git(cwd, ["config", `url.${rewritten}.insteadOf`, configured]);
+        let probe: "offline" | "forge" | "unknown" = "offline";
+        const resolver = yield* RepositoryIdentityResolver.make({
+          refine: (identity) => {
+            if (identity.locator.remoteUrl !== rewritten) return Effect.succeed(identity);
+            if (probe === "offline")
+              return Effect.fail(
+                new SourceControlProviderError({
+                  provider: SourceControlProviderKind.make("unknown"),
+                  operation: "detectProvider",
+                  cwd,
+                  detail: "Credential lookup timed out.",
+                }),
+              );
+            return Effect.succeed(
+              probe === "forge"
+                ? { ...identity, provider: SourceControlProviderKind.make("github") }
+                : identity,
+            );
+          },
+        });
+        const strict = { refresh: true, onUnavailable: () => Effect.fail("unavailable") };
+        expect(yield* resolver.resolve(cwd, strict).pipe(Effect.flip)).toBe("unavailable");
+        probe = "forge";
+        expect(yield* resolver.resolve(cwd, strict)).toMatchObject({
+          canonicalKey: "github.com/team/old",
+          issueRepository: { provider: "github", locator: { remoteUrl: rewritten } },
+        });
+        probe = "unknown";
+        expect(yield* resolver.resolve(cwd, strict)).toMatchObject({
+          canonicalKey: "github.com/team/old",
+          issueRepository: { provider: "unknown", locator: { remoteUrl: rewritten } },
+        });
+      }).pipe(Effect.provide(ProcessRunner.layer)),
+  );
+
   it.effect("resolves an Azure DevOps remote as generic Git", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -284,6 +405,36 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const identity = yield* resolver.resolve(cwd);
       expect(identity?.locator.remoteUrl).toBe("ssh://git@git.example.test/team repos/app.git");
       expect(identity?.locator.remoteName).toBe("origin");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
+  it.effect("keeps a login embedded in a remote URL out of the identity", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-repository-identity-credentials-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, [
+        "remote",
+        "add",
+        "origin",
+        "https://me:origin-secret@github.com/me/t3code.git",
+      ]);
+      yield* git(cwd, [
+        "remote",
+        "add",
+        "upstream",
+        "https://x-access-token:upstream-secret@github.com/T3Tools/t3code.git?token=query-secret",
+      ]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+      expect(identity?.locator.remoteUrl).toBe("https://github.com/T3Tools/t3code.git");
+      expect(identity?.origin?.remoteUrl).toBe("https://github.com/me/t3code.git");
+      expect(identity?.issueRepository?.locator.remoteUrl).toBe("https://github.com/me/t3code.git");
+      expect(JSON.stringify(identity)).not.toContain("secret");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 

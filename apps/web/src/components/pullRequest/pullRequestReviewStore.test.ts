@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, it } from "vite-plus/test";
-import { ProjectId } from "@t3tools/contracts";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 
 import {
   type PendingReviewComment,
   pullRequestReviewKey,
   usePullRequestReviewStore,
 } from "./pullRequestReviewStore";
+import { createMemoryStorage } from "../../lib/storage";
 
 function comment(id: string, body = id): PendingReviewComment {
   return { id, body, path: "src/app.ts", position: { kind: "added", newLine: 1 } };
@@ -54,6 +55,54 @@ describe("pull request review drafts", () => {
     expect(usePullRequestReviewStore.getState().summaries[publicKey]).toBe("Public review");
   });
 
+  it("keeps drafts for different Web origins on the same host separate", () => {
+    const reference = {
+      projectId: ProjectId.make("project-a"),
+      host: "forge.test",
+      repository: "owner/repo",
+      number: 7,
+    };
+    const secure = pullRequestReviewKey({
+      ...reference,
+      target: { provider: SourceControlProviderKind.make("gitlab"), origin: "https://forge.test" },
+    });
+    const insecure = pullRequestReviewKey({
+      ...reference,
+      target: { provider: SourceControlProviderKind.make("gitlab"), origin: "http://forge.test" },
+    });
+    const store = usePullRequestReviewStore.getState();
+    store.addComment(secure, comment("https comment"));
+    store.setSummary(secure, "HTTPS review");
+    expect(usePullRequestReviewStore.getState().drafts[insecure]).toBeUndefined();
+    expect(usePullRequestReviewStore.getState().summaries[insecure]).toBeUndefined();
+  });
+
+  it("reopens legacy public GitHub drafts only for the same source", () => {
+    const reference = {
+      projectId: ProjectId.make("project-a"),
+      host: "github.com",
+      repository: "owner/repo",
+      number: 7,
+    };
+    const before = pullRequestReviewKey(reference);
+    const target = {
+      provider: SourceControlProviderKind.make("github"),
+      origin: "https://github.com",
+    };
+    const store = usePullRequestReviewStore.getState();
+    store.addComment(before, comment("saved line"));
+    store.setSummary(before, "saved review");
+    const after = pullRequestReviewKey({ ...reference, target });
+    expect(usePullRequestReviewStore.getState().drafts[after]).toEqual([comment("saved line")]);
+    expect(usePullRequestReviewStore.getState().summaries[after]).toBe("saved review");
+    expect(
+      pullRequestReviewKey({
+        ...reference,
+        target: { ...target, origin: "https://github.com:8443" },
+      }),
+    ).not.toBe(before);
+  });
+
   it("does not clear a summary revised while submission is in flight", () => {
     const store = usePullRequestReviewStore.getState();
     store.setSummary("review-a", "Submitted body");
@@ -61,5 +110,33 @@ describe("pull request review drafts", () => {
     usePullRequestReviewStore.getState().clearSummary("review-a", "Submitted body");
 
     expect(usePullRequestReviewStore.getState().summaries["review-a"]).toBe("Revised body");
+  });
+
+  // regression: #42078 line comments and the summary were lost when the window reloaded
+  it("keeps unsubmitted line comments and the summary across a reload", async () => {
+    vi.stubGlobal("localStorage", createMemoryStorage());
+    vi.useFakeTimers();
+    vi.resetModules();
+    try {
+      const before = await import("./pullRequestReviewStore");
+      before.usePullRequestReviewStore.getState().addComment("review-a", comment("drafted"));
+      before.usePullRequestReviewStore.getState().setSummary("review-a", "Drafted summary");
+      await vi.runAllTimersAsync();
+
+      vi.resetModules();
+      const after = await import("./pullRequestReviewStore");
+      await vi.runAllTimersAsync();
+
+      expect(after.usePullRequestReviewStore.getState().drafts["review-a"]).toEqual([
+        comment("drafted"),
+      ]);
+      expect(after.usePullRequestReviewStore.getState().summaries["review-a"]).toBe(
+        "Drafted summary",
+      );
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
   });
 });

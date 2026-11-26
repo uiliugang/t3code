@@ -1,10 +1,5 @@
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
-import {
-  EnvironmentId,
-  ProjectId,
-  type PullRequestListEntry,
-  type PullRequestSummary,
-} from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Atom, type AsyncResult } from "effect/reactivity";
 import { useLocale, useMessages } from "gt-react-native";
@@ -20,21 +15,29 @@ import {
   type PullRequestDiffPage,
   type WithheldFileLoad,
 } from "./pullRequestDiffPages";
+import { pullRequestParamsWebTarget, type PullRequestParams } from "./pullRequestSelection";
 
-export type PullRequestParams = {
-  readonly environmentId: string;
-  readonly projectId: string;
-  readonly repository: string;
-  readonly number: number;
-  readonly host?: string;
-  readonly navigationUrl?: string;
-  readonly navigationId?: number;
-  readonly initialSummary?: PullRequestListEntry | PullRequestSummary;
-};
+export type { PullRequestParams } from "./pullRequestSelection";
 
 export type PullRequestDiffParams = PullRequestParams & { readonly commit?: string };
 
+/** The pull request a route names, without whatever else arrived on that route. */
+export function pullRequestParams(params: PullRequestParams): PullRequestParams {
+  return {
+    environmentId: params.environmentId,
+    projectId: params.projectId,
+    repository: params.repository,
+    number: params.number,
+    ...(params.host === undefined ? {} : { host: params.host }),
+    ...(params.target === undefined ? {} : { target: params.target }),
+    ...(params.navigationUrl === undefined ? {} : { navigationUrl: params.navigationUrl }),
+    ...(params.navigationId === undefined ? {} : { navigationId: params.navigationId }),
+    ...(params.initialSummary === undefined ? {} : { initialSummary: params.initialSummary }),
+  };
+}
+
 export function pullRequestTarget(params: PullRequestParams) {
+  const target = pullRequestParamsWebTarget(params);
   return {
     environmentId: EnvironmentId.make(params.environmentId),
     input: {
@@ -42,6 +45,7 @@ export function pullRequestTarget(params: PullRequestParams) {
       repository: params.repository,
       number: params.number,
       ...(params.host ? { host: params.host } : {}),
+      ...(target === undefined ? {} : { target }),
     },
   };
 }

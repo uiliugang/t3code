@@ -40,6 +40,8 @@ import {
   ModelSelection,
   type OrchestrationV2TurnItem,
   type ProjectId,
+  PROVIDER_DISPLAY_NAMES,
+  ProviderDriverKind,
   SourceControlProviderError,
   type SourceControlWritingStyleSettings,
   type ThreadId,
@@ -116,7 +118,7 @@ import {
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
-import type { ChangeRequest } from "@t3tools/contracts";
+import type { ChangeRequest, RepositoryIdentity } from "@t3tools/contracts";
 
 export interface GitActionProgressReporter {
   readonly publish: (event: GitActionProgressEvent) => Effect.Effect<void, never>;
@@ -270,6 +272,7 @@ const SETTLED_PR_LOOKUP_RECHECK_INTERVAL = Duration.minutes(15);
 // cannot fill the git and forge process slots that foreground work also needs.
 const BRANCH_PR_LOOKUP_CONCURRENCY = 4;
 const PR_THREAD_CONTEXT_BYTES = 16_000;
+const NO_THREAD_CONTEXT = { history: undefined, producedBy: undefined };
 const PR_THREAD_COMMAND_OUTPUT_CHARS = 2_000;
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
@@ -372,8 +375,44 @@ interface BranchHeadContext {
 export function pullRequestRepositoryKey(value: string): string | null {
   const link = sourceControlDefinitions.parseChangeRequestUrl(value)?.link;
   return link
-    ? sourceControlDefinitions.canonicalRepositoryKey(`${link.host}/${link.repository}`)
+    ? sourceControlDefinitions.canonicalRepositoryKey(
+        `${link.authority ?? link.host}/${link.repository}`,
+      )
     : null;
+}
+
+export function branchPullRequestMatchesRepository(
+  pullRequest: GitBranchPullRequest,
+  identity?: RepositoryIdentity | null,
+): boolean {
+  const parsed = sourceControlDefinitions.parseChangeRequestUrl(pullRequest.url);
+  if (parsed === null || identity == null || parsed.definition.kind !== identity.provider) {
+    return false;
+  }
+  const host = sourceControlDefinitions.changeRequestHost(identity, identity.provider);
+  const linkHost = parsed.link.authority ?? parsed.link.host;
+  const repository = sourceControlDefinitions.canonicalRepositoryKey;
+  const path = identity.displayName ?? identity.canonicalKey.split("/").slice(1).join("/");
+  if (repository(`${linkHost}/${parsed.link.repository}`) !== repository(`${host}/${path}`)) {
+    return false;
+  }
+  const remote = URL.parse(identity.locator.remoteUrl);
+  if (
+    identity.provider === "gitlab" &&
+    (remote?.protocol === "http:" || remote?.protocol === "https:")
+  ) {
+    return URL.parse(parsed.link.repositoryUrl)?.origin === remote.origin;
+  }
+  return true;
+}
+
+function branchLookupRemoteKey(remoteUrl: string): string | null {
+  const repository = sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl);
+  if (repository === null) return null;
+  const url = URL.parse(remoteUrl);
+  return url?.protocol === "http:" || url?.protocol === "https:"
+    ? `${url.origin}\0${repository}`
+    : repository;
 }
 
 /** Null when the host did not name the repository the head lives in. */
@@ -872,8 +911,8 @@ export const make = Effect.gen(function* () {
   });
   const readThreadContext = Effect.fnUntraced(
     function* (threadId: ThreadId | undefined) {
-      if (threadId === undefined) return undefined;
-      const { visibleTurnItems } = yield* threads.getThreadProjection(threadId);
+      if (threadId === undefined) return NO_THREAD_CONTEXT;
+      const { thread, runs, visibleTurnItems } = yield* threads.getThreadProjection(threadId);
       const selected = selectHistory({
         messages: visibleTurnItems.flatMap(
           ({ item }) => historicalMessage(limitCommandOutput(item)) ?? [],
@@ -881,9 +920,47 @@ export const make = Effect.gen(function* () {
         coverage: "Digest of the thread that made this change, oldest first.",
         budget: PR_THREAD_CONTEXT_BYTES,
       });
-      return selected.messages.length === 0
-        ? undefined
-        : renderHistory(selected.messages, selected.context);
+      // A thread can switch models mid-way, and a fork inherits its ancestors' history; credit
+      // every model behind a turn still visible here. Ancestor runs are best-effort.
+      const visibleRunIds = new Set(visibleTurnItems.flatMap(({ item }) => item.runId ?? []));
+      const ancestorRuns = yield* Effect.forEach(
+        new Set(
+          visibleTurnItems.flatMap(({ item }) => (item.threadId === threadId ? [] : item.threadId)),
+        ),
+        (ancestorId) =>
+          threads.getThreadRecords(ancestorId, ["runs"]).pipe(
+            Effect.map((records) => records.runs),
+            Effect.orElseSucceed(() => []),
+          ),
+      );
+      // Visibility already hides local rollbacks; an ancestor's later rollback leaves the fork's
+      // inherited work in place. A queued run shows its message before it starts.
+      const runSelections = [...runs, ...ancestorRuns.flat()]
+        .filter((run) => visibleRunIds.has(run.id) && run.startedAt !== null)
+        .map((run) => run.modelSelection);
+      const providers = yield* providerRegistry.getProviders;
+      const producedBy = Arr.dedupeWith(
+        (runSelections.length > 0 ? runSelections : [thread.modelSelection]).map(
+          ({ instanceId, model }) => {
+            // The instance's displayName is a user label (often an account), not the harness.
+            // Default instances are named after their driver; a removed custom one names nothing.
+            const harness =
+              PROVIDER_DISPLAY_NAMES[
+                providers.find((provider) => provider.instanceId === instanceId)?.driver ??
+                  ProviderDriverKind.make(instanceId)
+              ];
+            return harness === undefined ? { model } : { model, harness };
+          },
+        ),
+        (left, right) => left.model === right.model && left.harness === right.harness,
+      );
+      return {
+        producedBy,
+        history:
+          selected.messages.length === 0
+            ? undefined
+            : renderHistory(selected.messages, selected.context),
+      };
     },
     (effect, threadId) =>
       effect.pipe(
@@ -891,7 +968,7 @@ export const make = Effect.gen(function* () {
           Effect.logWarning("GitManager.readThreadContext failed", {
             threadId,
             errorTag: error._tag,
-          }).pipe(Effect.as(undefined)),
+          }).pipe(Effect.as(NO_THREAD_CONTEXT)),
         ),
       ),
   );
@@ -2095,7 +2172,7 @@ export const make = Effect.gen(function* () {
     }
     return {
       remoteUrl,
-      remoteUrlKey: remoteUrl ? sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl) : null,
+      remoteUrlKey: remoteUrl ? branchLookupRemoteKey(remoteUrl) : null,
       repositoryNameWithOwner,
       ownerLogin: parseRepositoryOwnerLogin(repositoryNameWithOwner),
     };
@@ -2421,8 +2498,9 @@ export const make = Effect.gen(function* () {
       | "isCrossRepository"
     >,
     ownerHeadSelector?: string,
+    resolvedProvider?: SourceControlProvider.SourceControlProvider["Service"],
   ) {
-    const provider = yield* sourceControlProvider(cwd);
+    const provider = resolvedProvider ?? (yield* sourceControlProvider(cwd));
     const probe = headBranchProbe(provider, headContext.headSelectors, "open", ownerHeadSelector);
     for (const headSelector of probe.headSelectors) {
       const pullRequests = yield* provider.listChangeRequests({
@@ -2457,7 +2535,7 @@ export const make = Effect.gen(function* () {
     if (!headContext.isCrossRepository || headContext.headRepositoryNameWithOwner === null) {
       return null;
     }
-    const provider = yield* sourceControlProvider(cwd);
+    const provider = yield* sourceControlProviders.resolve({ cwd, refresh: true });
     if (provider.createsChangeRequestsIn === undefined) return null;
     const sameRepository = { ...headContext, isCrossRepository: false };
     const pullRequests = yield* provider.listChangeRequests({
@@ -2480,7 +2558,7 @@ export const make = Effect.gen(function* () {
   ) {
     const parsedByNumber = new Map<number, PullRequestInfo>();
 
-    const provider = yield* sourceControlProvider(cwd);
+    const provider = yield* sourceControlProviders.resolve({ cwd, refresh: true });
     const probe = headBranchProbe(
       provider,
       headContext.headSelectors,
@@ -2520,6 +2598,7 @@ export const make = Effect.gen(function* () {
         headContext.headRepositoryOwnerLogin
           ? `${headContext.headRepositoryOwnerLogin}:${headContext.headBranch}`
           : undefined,
+        provider,
       );
       if (openPr) return openPr;
     }
@@ -3092,7 +3171,7 @@ export const make = Effect.gen(function* () {
                   yield* provider.readChangeRequestTemplate({ cwd, treeish: baseRangeRef }),
                 )
               : undefined;
-          const threadContext = yield* readThreadContext(threadId);
+          const { history: threadContext, producedBy } = yield* readThreadContext(threadId);
 
           return yield* textGeneration.generatePrContent({
             cwd,
@@ -3103,6 +3182,7 @@ export const make = Effect.gen(function* () {
             diffPatch: limitContext(rangeContext.diffPatch, 60_000),
             ...(changeRequestTemplate ? { changeRequestTemplate } : {}),
             ...(threadContext ? { threadContext } : {}),
+            producedBy,
             ...(policy ? { policy } : {}),
             modelSelection: settings.modelSelection,
             projectId: settings.projectId,
@@ -3472,9 +3552,7 @@ export const make = Effect.gen(function* () {
               ),
             ).pipe(
               Effect.orElseSucceed(() => null),
-              Effect.map((remoteUrl) =>
-                remoteUrl ? sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl) : null,
-              ),
+              Effect.map((remoteUrl) => (remoteUrl ? branchLookupRemoteKey(remoteUrl) : null)),
             );
       const remoteName = publishedRemoteName(
         remoteNameOverride ?? (yield* readConfig(`branch.${branch}.remote`)),
@@ -3658,7 +3736,17 @@ export const make = Effect.gen(function* () {
         detail: `Repository identity for ${branch} could not be verified.`,
       });
     }
-    if (!hasSameIdentity(cached.headContext, currentIdentity)) {
+    const confirmInferredGitLabOrigin =
+      options.freshGitState &&
+      !options.refresh &&
+      cached.latest !== null &&
+      cached.latest.state !== "open" &&
+      sourceControlDefinitions.parseChangeRequestUrl(cached.latest.url)?.definition.kind ===
+        "gitlab" &&
+      [currentIdentity.headRemoteUrlKey, currentIdentity.targetRemoteUrlKey].some(
+        (remoteKey) => remoteKey !== null && !remoteKey.includes("\0"),
+      );
+    if (confirmInferredGitLabOrigin || !hasSameIdentity(cached.headContext, currentIdentity)) {
       yield* Cache.invalidate(prLookupCache, cacheKey);
       cached = yield* withPrLookupGitReads(getPrLookup(cacheKey), cacheCwd);
       const refreshedIdentity = yield* Effect.provideService(

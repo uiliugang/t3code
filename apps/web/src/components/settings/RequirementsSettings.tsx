@@ -1,7 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  normalizeGithubIssueHost,
   isMeituanServiceEnabled,
-  mergeProjectIssueSources,
+  issueSourcesMatch,
   projectIssueProvider,
   MAX_WORK_ITEM_DISCOVERY_LIMIT,
   WorkItemDiscoveryLimit,
@@ -49,6 +50,7 @@ import {
   listedProjectIssueSources,
   projectIssueSourceCleanup,
   projectIssueSourceEdit,
+  replaceProjectIssueSources,
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -272,7 +274,7 @@ function ProjectSourceRow({
   checked,
   disabled,
   toggle,
-  canEdit,
+  canEdit: canWrite,
   result,
   error,
   loading,
@@ -293,10 +295,13 @@ function ProjectSourceRow({
   const saved = settings.issueProjectSources[project.id] ?? [];
   const enabled = isMeituanServiceEnabled(settings, "requirements");
   const kind = detectedProjectIssueKind(project.repositoryIdentity, result);
-  const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
+  const sources = listedProjectIssueSources(true, result?.sources ?? [], saved, kind);
   const provider = projectIssueProvider(kind, sources);
   const singleProvider =
     group.environment.serverConfig?.environment.capabilities.singleProjectIssueProvider === true;
+  const canEdit =
+    canWrite &&
+    group.environment.serverConfig?.environment.capabilities.issueProjectSourcesCas === true;
   const cleanup = projectIssueSourceCleanup(singleProvider, project.id, provider, saved, enabled);
   const githubSources = sources.filter((entry) => entry.provider === "github");
   const manualGithub = saved.some((entry) => entry.provider === "github");
@@ -315,7 +320,7 @@ function ProjectSourceRow({
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const inputId = `mep-spaces-${projectKey(project)}`;
   const persist = async (input: ReturnType<typeof projectIssueSourceEdit>) => {
-    if (saving || disabled) return;
+    if (saving || disabled || !canEdit) return;
     if (!input) {
       setFailure(t("Project sources have changed. Reopen the editor and try again."));
       return;
@@ -332,12 +337,8 @@ function ProjectSourceRow({
   const submit = (ids: string[] | null) => {
     if (ids && draft && showMepEditor)
       return persist(
-        projectIssueSourceEdit(
-          project.id,
-          singleProvider ? "meituan" : undefined,
-          saved,
-          draft.saved,
-          () => withMepSpaceOverrides(ids),
+        projectIssueSourceEdit(project.id, singleProvider, "meituan", saved, draft.saved, () =>
+          withMepSpaceOverrides(ids),
         ),
       );
   };
@@ -417,7 +418,7 @@ function ProjectSourceRow({
                   <Button
                     variant="ghost-muted"
                     size="icon-xs"
-                    disabled={disabled}
+                    disabled={disabled || !canEdit}
                     aria-label={t("Edit MEP spaces for {project}", { project: project.title })}
                     onClick={() => {
                       setFailure(null);
@@ -429,7 +430,7 @@ function ProjectSourceRow({
                 </span>
               ) : null}
             </div>
-            {draft !== null ? (
+            {draft !== null && canEdit ? (
               <form
                 className="grid gap-2 pt-1"
                 onSubmit={(event) => {
@@ -543,7 +544,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const t = useUiTranslation();
   const { connectedEnvironments } = useSettingsScope();
   const [selected, setSelected] = useState<string[]>([]);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<ReadonlyMap<string, readonly IssueSource[]> | null>(null);
   const [scope, setScope] = useState("");
   const [host, setHost] = useState("github.com");
   const [busy, setBusy] = useState(false);
@@ -588,6 +589,13 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const singleProviderEnvironments = new Set(
     connectedEnvironments
       .filter((entry) => entry.serverConfig?.environment.capabilities.singleProjectIssueProvider)
+      .map((entry) => entry.environmentId),
+  );
+  const casEnvironments = new Set(
+    connectedEnvironments
+      .filter(
+        (entry) => entry.serverConfig?.environment.capabilities.issueProjectSourcesCas === true,
+      )
       .map((entry) => entry.environmentId),
   );
   for (const group of groups) {
@@ -637,11 +645,48 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
   const githubOverrides = githubChosen.filter((project) =>
     savedSources.get(projectKey(project))?.some((source) => source.provider === "github"),
   );
-  const valid = /^[\w.-]+\/[\w.-]+$/u.test(scope.trim()) && /^[\w.-]+$/u.test(host.trim());
+  const lacksCas = (project: Project) => !casEnvironments.has(project.environmentId);
+  const cannotSave = githubChosen.some(lacksCas);
+  const cannotReset = githubOverrides.some(lacksCas);
+  const githubHost = normalizeGithubIssueHost(host.trim());
+  const unsupportedPort =
+    githubHost?.includes(":") === true &&
+    githubChosen.some(
+      (project) =>
+        !connectedEnvironments.some(
+          (entry) =>
+            entry.environmentId === project.environmentId &&
+            entry.serverConfig?.environment.capabilities.githubIssueSourcePorts === true,
+        ),
+    );
+  const githubOverride =
+    githubHost && !unsupportedPort && /^[\w.-]+\/[\w.-]+$/u.test(scope.trim())
+      ? { provider: "github" as const, scope: scope.trim(), host: githubHost }
+      : undefined;
   const run = async (action: "refresh" | "save" | "reset") => {
     const actionTargets =
       action === "refresh" ? chosen : action === "reset" ? githubOverrides : githubChosen;
-    if (!actionTargets.length || busy || (action === "save" && !valid)) return;
+    const expected = action === "save" ? editing : savedSources;
+    if (
+      !expected ||
+      !actionTargets.length ||
+      busy ||
+      (action !== "refresh" && actionTargets.some(lacksCas)) ||
+      (action === "save" && !githubOverride)
+    )
+      return;
+    if (
+      action === "save" &&
+      (actionTargets.length !== expected.size ||
+        actionTargets.some((project) => {
+          const key = projectKey(project);
+          const before = expected.get(key);
+          return before === undefined || !issueSourcesMatch(savedSources.get(key) ?? [], before);
+        }))
+    ) {
+      setMessage(t("Project sources have changed. Reopen the editor and try again."));
+      return;
+    }
     setBusy(true);
     setMessage("");
     const results = await Promise.all(
@@ -661,25 +706,25 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               : targets.length;
           return { success: targets.length - failed, failed };
         }
-        const saved = environment.serverConfig!.settings.issueProjectSources;
-        const entries = Object.fromEntries(
-          targets.map((project) => [
-            project.id,
-            action === "reset"
-              ? []
-              : [{ provider: "github" as const, scope: scope.trim(), host: host.trim() }],
-          ]),
+        const { environment: descriptor } = environment.serverConfig!;
+        const scoped = descriptor.capabilities.singleProjectIssueProvider === true;
+        const replacement = action === "save" && githubOverride ? [githubOverride] : [];
+        const expectedSources = targets.map(
+          (project) => [project.id, expected.get(projectKey(project)) ?? []] as const,
         );
         const result = await update({
           environmentId: environment.environmentId,
           input: {
-            patch: { issueProjectSources: entries },
-            expectedIssueProjectSources: Object.fromEntries(
-              targets.map((project) => [project.id, saved[project.id] ?? []]),
-            ),
-            ...(environment.serverConfig!.environment.capabilities.singleProjectIssueProvider
-              ? { issueSourceProvider: "github" as const }
-              : {}),
+            patch: {
+              issueProjectSources: Object.fromEntries(
+                expectedSources.map(([id, sources]) => [
+                  id,
+                  replaceProjectIssueSources(scoped, "github", sources, replacement),
+                ]),
+              ),
+            },
+            expectedIssueProjectSources: Object.fromEntries(expectedSources),
+            ...(scoped ? { issueSourceProvider: "github" as const } : {}),
           },
         });
         return {
@@ -694,7 +739,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
         failed: String(results.reduce((sum, result) => sum + result.failed, 0)),
       }),
     );
-    if (!results.some((result) => result.failed)) setEditing(false);
+    if (!results.some((result) => result.failed)) setEditing(null);
     setBusy(false);
   };
   return (
@@ -780,10 +825,20 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
             <Button
               size="sm"
               variant="outline"
-              disabled={busy}
+              disabled={busy || cannotSave}
               onClick={() => {
-                setEditing(!editing);
+                setEditing(
+                  editing
+                    ? null
+                    : new Map(
+                        githubChosen.map((project) => {
+                          const key = projectKey(project);
+                          return [key, savedSources.get(key) ?? []];
+                        }),
+                      ),
+                );
                 setScope("");
+                setMessage("");
               }}
             >
               <Settings2Icon />
@@ -791,7 +846,12 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
               <span className="text-xs text-muted-foreground">{githubChosen.length}</span>
             </Button>
             {githubOverrides.length > 0 ? (
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => void run("reset")}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || cannotReset}
+                onClick={() => void run("reset")}
+              >
                 <Undo2Icon />
                 {t("Restore GitHub automatic")}
                 <span className="text-xs text-muted-foreground">{githubOverrides.length}</span>
@@ -800,7 +860,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
           </>
         ) : null}
       </div>
-      {editing && githubChosen.length ? (
+      {editing && githubChosen.length && !cannotSave ? (
         <form
           className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted/20 p-4 sm:grid-cols-2"
           onSubmit={(event) => {
@@ -811,18 +871,22 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
           <div className="flex items-start justify-between gap-3 sm:col-span-2">
             <div className="space-y-1">
               <h3 className="text-sm font-medium">{t("GitHub Issue repository override")}</h3>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Saving or restoring GitHub sources removes previously saved MEP spaces from the selected projects.",
-                )}
-              </p>
+              {githubChosen.some((project) =>
+                singleProviderEnvironments.has(project.environmentId),
+              ) ? (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Saving or restoring GitHub sources removes previously saved MEP spaces from projects on servers that support only one requirement provider.",
+                  )}
+                </p>
+              ) : null}
             </div>
             <Button
               type="button"
               size="icon-xs"
               variant="ghost-muted"
               aria-label={t("Close")}
-              onClick={() => setEditing(false)}
+              onClick={() => setEditing(null)}
             >
               <XIcon />
             </Button>
@@ -847,7 +911,7 @@ function ProjectIssueSources({ groups }: { groups: Group[] }) {
             />
           </div>
           <div className="flex justify-end sm:col-span-2">
-            <Button size="sm" type="submit" disabled={busy || !valid}>
+            <Button size="sm" type="submit" disabled={busy || !githubOverride}>
               <SaveIcon />
               {t("Save GitHub override")}
             </Button>

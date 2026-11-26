@@ -6,11 +6,13 @@ import {
 } from "@t3tools/client-runtime/source-control-clients";
 import {
   type PullRequestListLine,
+  normalizeThreadPullRequestKey,
   pullRequestListLines,
   resolveThreadPullRequestChains,
+  threadPullRequestKeyOf,
   visibleThreadPullRequests,
 } from "@t3tools/client-runtime/thread-pull-requests";
-import { canStartThreadPullRequestWatch } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { canWatchLinkedPullRequest } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import {
   ArrowUpRightIcon,
   EyeIcon,
@@ -28,7 +30,7 @@ import {
   encodePullRequestDragPayload,
 } from "~/components/chat/composerMentionDrag";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
+import { findProjectOnChangeRequestHost } from "@t3tools/client-runtime/change-request-links";
 import { pullRequestLinkPanelTarget, useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useClientSettings } from "~/hooks/useSettings";
 import { usePrimaryEnvironmentId } from "~/state/environments";
@@ -97,20 +99,20 @@ function LinkRowImpl({
   line,
   threadRef,
   projectId,
+  mergePreferenceProjectId,
   speedMode,
   onUnlink,
   onSetWatching,
   onIntent,
-  canStartWatch,
 }: {
   line: PullRequestListLine;
   threadRef: ScopedThreadRef;
   projectId: ProjectId | null;
+  mergePreferenceProjectId: ProjectId | null;
   speedMode: boolean;
   onUnlink: (link: ThreadPullRequestLink) => void;
   onSetWatching: ((link: ThreadPullRequestLink, watching: boolean) => void) | null;
   onIntent: (link: ThreadPullRequestLink | null) => void;
-  canStartWatch: boolean;
 }) {
   const t = useUiTranslation();
   const resolve = useMessages();
@@ -127,14 +129,13 @@ function LinkRowImpl({
   const linkHost =
     sourceControlClients.findByChangeRequestUrl(link.url) ?? UNKNOWN_SOURCE_CONTROL_CLIENT;
   const linkHostActions = linkHost.changeRequestActions;
+  const reference =
+    projectId === null ? null : { projectId, ...normalizeThreadPullRequestKey(link) };
   const actionEntry =
-    projectId !== null && snapshot !== null && snapshot.state !== "merged"
+    reference !== null && snapshot !== null && snapshot.state !== "merged"
       ? {
+          ...reference,
           environmentId: threadRef.environmentId,
-          projectId,
-          host: link.host,
-          repository: link.repository,
-          number: link.number,
           state: snapshot.state,
           isDraft: snapshot.isDraft,
           ...(link.stack === null ? {} : { stack: link.stack }),
@@ -233,7 +234,7 @@ function LinkRowImpl({
             ) : null
           }
           status={
-            projectId === null ? (
+            reference === null ? (
               <PullRequestDiffStat
                 additions={snapshot?.additions ?? 0}
                 deletions={snapshot?.deletions ?? 0}
@@ -242,12 +243,7 @@ function LinkRowImpl({
             ) : (
               <PullRequestChangeBreakdownStat
                 environmentId={threadRef.environmentId}
-                reference={{
-                  projectId,
-                  host: link.host,
-                  repository: link.repository,
-                  number: link.number,
-                }}
+                reference={reference}
                 additions={snapshot?.additions ?? 0}
                 deletions={snapshot?.deletions ?? 0}
                 className="font-mono"
@@ -309,6 +305,7 @@ function LinkRowImpl({
       {actionEntry !== null ? (
         <PullRequestSpeedActions
           entry={actionEntry}
+          mergePreferenceProjectId={mergePreferenceProjectId}
           hostActions={linkHostActions}
           terminology={linkHost.changeRequest}
         />
@@ -367,7 +364,7 @@ function LinkRowImpl({
               <ArrowUpRightIcon className="size-3.5" />
               {t("Open")}
             </MenuItem>
-            {onSetWatching !== null && open && (watching || canStartWatch) ? (
+            {onSetWatching !== null ? (
               <MenuItem onClick={() => onSetWatching(link, !watching)}>
                 {watching ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
                 {watching ? t("Stop watching") : t("Watch for changes")}
@@ -395,8 +392,7 @@ function latestSyncedAt(links: ReadonlyArray<ThreadPullRequestLink>): string | n
   return latest;
 }
 
-const lineKey = (line: PullRequestListLine) =>
-  `${line.link.host}/${line.link.repository}#${line.link.number}`;
+const lineKey = (line: PullRequestListLine) => threadPullRequestKeyOf(line.link);
 
 export function ThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
   const gt = useGT();
@@ -440,13 +436,10 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   const capabilities = useServerConfigs().get(threadRef.environmentId)?.environment.capabilities;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const opensInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
-  const prefetch = usePullRequestIntentPrefetch((target) =>
-    links.some(
-      (link) =>
-        link.number === target.number &&
-        link.repository.toLowerCase() === target.repository.toLowerCase(),
-    ),
-  );
+  const prefetch = usePullRequestIntentPrefetch((target) => {
+    const key = threadPullRequestKeyOf(target);
+    return links.some((link) => threadPullRequestKeyOf(link) === key);
+  });
   const intendLink = (link: ThreadPullRequestLink | null) => {
     const target =
       link === null || !opensInApp
@@ -458,38 +451,37 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
             lendHostProject: true,
           });
     prefetch(
-      target?.host === undefined
+      target?.host === undefined || target.target === undefined
         ? null
         : {
             environmentId: target.project.environmentId,
             projectId: target.project.id,
             host: target.host,
+            target: target.target,
             repository: target.repository,
             number: target.number,
           },
     );
   };
-  const supportsWatch = capabilities?.threadPullRequestWatch === true;
-  const canStartWatch = thread !== null && canStartThreadPullRequestWatch(thread);
+  const project = environmentProjects.find((project) => project.id === thread?.projectId);
+  const canWatch = (link: ThreadPullRequestLink) =>
+    canWatchLinkedPullRequest({ capabilities, thread, project, link });
   const handleUnlink = (link: ThreadPullRequestLink) => {
     void unlink({
       environmentId: threadRef.environmentId,
       input: {
         threadId: threadRef.threadId,
-        host: link.host,
-        repository: link.repository,
-        number: link.number,
+        ...normalizeThreadPullRequestKey(link),
       },
     });
   };
   const handleSetWatching = (link: ThreadPullRequestLink, watching: boolean) => {
+    if (!canWatch(link)) return;
     void watch({
       environmentId: threadRef.environmentId,
       input: {
         threadId: threadRef.threadId,
-        host: link.host,
-        repository: link.repository,
-        number: link.number,
+        ...normalizeThreadPullRequestKey(link),
         watching,
       },
     });
@@ -500,7 +492,6 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
     speedMode,
     environmentProjects,
     capabilities,
-    supportsWatch,
     thread,
     opensInApp,
     primaryEnvironmentId,
@@ -555,24 +546,30 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
               </>
             ) : null
           }
-          renderItem={({ item: line }) => (
-            <LinkRow
-              line={line}
-              threadRef={threadRef}
-              projectId={
-                capabilities !== undefined
-                  ? (findProjectForChangeRequest(environmentProjects, line.link)?.id ??
-                    thread?.projectId ??
-                    null)
-                  : null
-              }
-              speedMode={speedMode}
-              onUnlink={handleUnlink}
-              onSetWatching={supportsWatch ? handleSetWatching : null}
-              onIntent={intendLink}
-              canStartWatch={canStartWatch}
-            />
-          )}
+          renderItem={({ item: line }) => {
+            const parsed = sourceControlClients.parseChangeRequestUrl(line.link.url);
+            return (
+              <LinkRow
+                line={line}
+                threadRef={threadRef}
+                mergePreferenceProjectId={thread?.projectId ?? null}
+                projectId={
+                  capabilities !== undefined && parsed !== null
+                    ? (findProjectOnChangeRequestHost(
+                        environmentProjects,
+                        parsed.link,
+                        parsed.definition.kind,
+                        () => capabilities.pullRequestWebTargets === true,
+                      )?.id ?? null)
+                    : null
+                }
+                speedMode={speedMode}
+                onUnlink={handleUnlink}
+                onSetWatching={canWatch(line.link) ? handleSetWatching : null}
+                onIntent={intendLink}
+              />
+            );
+          }}
           estimatedItemSize={44}
           drawDistance={440}
           className="min-h-0 flex-1 overscroll-contain p-1.5"

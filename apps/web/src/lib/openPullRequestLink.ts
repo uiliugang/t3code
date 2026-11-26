@@ -7,6 +7,7 @@ import { type MouseEvent } from "react";
 import { msg } from "gt-react";
 
 import {
+  changeRequestWebTarget,
   resolveChangeRequestLinkTarget,
   resolvePullRequestPreviewTarget,
 } from "@t3tools/client-runtime/change-request-links";
@@ -51,6 +52,7 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
     environmentId,
     projects,
     pullRequestsEnabled: serverConfig !== null,
+    supportsWebTargets: serverConfig?.environment.capabilities.pullRequestWebTargets === true,
     url,
   });
 }
@@ -66,14 +68,19 @@ export function pullRequestLinkPanelTarget(input: {
   // subscribing would hand every rendered link a new handler. Projects likewise, so a
   // link can resolve against a snapshot that arrived after this handler was built.
   const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
-  return resolveChangeRequestLinkTarget({
+  const resolved = resolveChangeRequestLinkTarget({
     url: input.url,
     projects: readProjects(),
     configLoaded: (environmentId) => serverConfigs.has(environmentId),
+    supportsWebTargets: (environmentId) =>
+      serverConfigs.get(environmentId)?.environment.capabilities.pullRequestWebTargets === true,
     environmentId: input.environmentId,
     primaryEnvironmentId: input.primaryEnvironmentId,
     lendHostProject: input.lendHostProject,
   });
+  return resolved === null
+    ? null
+    : { ...resolved, target: changeRequestWebTarget(resolved, input.url) };
 }
 
 function shouldOpenPullRequestExternally(
@@ -119,7 +126,7 @@ export function useOpenChangeRequestLink(
         lendHostProject: resolvedPanelRef !== undefined,
       });
       if (target === null) return false;
-      const { project, repository, number, host } = target;
+      const { project, repository, number, host, target: webTarget } = target;
       const revealUrl = parsePullRequestAnchor(targetUrl) === null ? undefined : targetUrl;
       const pullRequestsSearch = {
         repository,
@@ -127,6 +134,8 @@ export function useOpenChangeRequestLink(
         ...(host === undefined ? {} : { selectedHost: host }),
         selectedProjectId: project.id,
         selectedEnvironmentId: project.environmentId,
+        selectedUrl: targetUrl,
+        ...(webTarget === undefined ? {} : { selectedTarget: webTarget }),
       };
       if (resolvedPanelRef) {
         useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
@@ -136,6 +145,7 @@ export function useOpenChangeRequestLink(
             : { environmentId: project.environmentId }),
           projectId: project.id,
           ...(host === undefined ? {} : { host }),
+          ...(webTarget === undefined ? {} : { target: webTarget }),
           repository,
           url: targetUrl,
           ...(revealUrl === undefined ? {} : { revealUrl }),
@@ -163,6 +173,8 @@ export function useOpenChangeRequestLink(
               ...previous,
               involvement: previous.involvement ?? "all",
               state: previous.state ?? "all",
+              selectedReveal: undefined,
+              selectedTarget: undefined,
               ...pullRequestsSearch,
             }),
             replace: true,
@@ -176,7 +188,6 @@ export function useOpenChangeRequestLink(
           involvement: "all",
           state: "all",
           ...pullRequestsSearch,
-          ...(revealUrl === undefined ? {} : { selectedUrl: revealUrl }),
         },
       });
       return true;

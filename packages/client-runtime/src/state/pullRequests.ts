@@ -13,6 +13,7 @@ import {
   PullRequestChangeBreakdown,
   PullRequestFilesViewedResult,
   PullRequestLinkedThreadsResult,
+  PullRequestRoutingResult,
   type EnvironmentId,
   type PullRequestActor,
   type PullRequestActionInput,
@@ -79,19 +80,12 @@ const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 function normalizePullRequestQuery<A>(
   query: (target: { readonly environmentId: EnvironmentId; readonly input: PullRequestRef }) => A,
 ) {
-  return ({
-    environmentId,
-    input: { projectId, host, repository, number, allowStale, expectedAccountId },
-  }: Parameters<typeof query>[0]) =>
+  return ({ environmentId, input }: Parameters<typeof query>[0]) =>
     query({
       environmentId,
       input: {
-        projectId,
-        ...(host === undefined ? {} : { host }),
-        repository,
-        number,
-        ...(allowStale === undefined ? {} : { allowStale }),
-        ...(expectedAccountId === undefined ? {} : { expectedAccountId }),
+        ...pullRequestReference(input),
+        ...(input.allowStale === undefined ? {} : { allowStale: input.allowStale }),
       },
     });
 }
@@ -364,14 +358,30 @@ function settleEdit(
 }
 
 function pullRequestReference(input: PullRequestRef): PullRequestRef {
-  const { projectId, host, repository, number, expectedAccountId } = input;
+  const { projectId, host, target, repository, number, expectedAccountId } = input;
   return {
     projectId,
     ...(host === undefined ? {} : { host }),
+    ...(target === undefined
+      ? {}
+      : { target: { provider: target.provider, origin: target.origin } }),
     repository,
     number,
     ...(expectedAccountId === undefined ? {} : { expectedAccountId }),
   };
+}
+
+export type PullRequestViewerRef = PullRequestRef & { readonly legacyViewerId?: string };
+
+export function withPullRequestViewer(
+  reference: PullRequestRef,
+  identity: PullRequestRoutingResult | null,
+): PullRequestViewerRef {
+  if (identity !== null && identity.repository === undefined)
+    return { ...reference, legacyViewerId: identity.accountId };
+  return identity?.repository?.toLowerCase() === reference.repository.toLowerCase()
+    ? { ...reference, host: identity.host, expectedAccountId: identity.accountId }
+    : reference;
 }
 
 /** What an action changes, left out where only the host knows, as when a queue takes a merge. */
@@ -410,6 +420,8 @@ function samePullRequest(reader: PullRequestRef, acted: PullRequestRef) {
     reader.projectId === acted.projectId &&
     // A missing host is not a wildcard: one project can reach the same repository on two hosts.
     reader.host?.toLowerCase() === acted.host?.toLowerCase() &&
+    reader.target?.provider === acted.target?.provider &&
+    reader.target?.origin === acted.target?.origin &&
     reader.repository.toLowerCase() === acted.repository.toLowerCase() &&
     reader.number === acted.number &&
     reader.expectedAccountId === acted.expectedAccountId
@@ -856,6 +868,8 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   );
   const commandScheduler = createAtomCommandScheduler();
   const routedRequest = createPullRequestRouter();
+  const filesViewedPersistence = persistQuery(PullRequestFilesViewedResult);
+  const routingIdentityPersistence = persistQuery(PullRequestRoutingResult);
   const serialPerEnvironment = {
     mode: "serial",
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
@@ -1104,8 +1118,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     const { resolveMergeMethod, ...actionInput } = input;
     let preparedInput = actionInput;
     if (actionInput.action === "merge" && resolveMergeMethod !== undefined) {
-      const { projectId, host, repository, number } = actionInput;
-      const reference = { projectId, host, repository, number, allowStale: false };
+      const reference = { ...pullRequestReference(actionInput), allowStale: false };
       const detail = yield* routedRequest(WS_METHODS.pullRequestsDetail, reference);
       if (
         detail.state !== "open" ||
@@ -1135,7 +1148,14 @@ export function createPullRequestEnvironmentAtoms<R, E>(
             detail: cause instanceof Error ? cause.message : "Could not choose a merge method.",
           }),
       });
-      preparedInput = { ...actionInput, mergeMethod };
+      // Without a head the caller showed, pin to the one this read judged mergeable.
+      preparedInput = {
+        ...actionInput,
+        mergeMethod,
+        ...(actionInput.expectedHeadSha === undefined && detail.headSha !== undefined
+          ? { expectedHeadSha: detail.headSha }
+          : {}),
+      };
     }
     return yield* routedRequest(WS_METHODS.pullRequestsRunAction, {
       ...preparedInput,
@@ -1216,6 +1236,20 @@ export function createPullRequestEnvironmentAtoms<R, E>(
 
   return {
     refreshes,
+    routingIdentity: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:routing-identity",
+      tag: WS_METHODS.pullRequestsRouting,
+      persistence: {
+        ...routingIdentityPersistence,
+        load: (environmentId, key) =>
+          routingIdentityPersistence
+            .load(environmentId, key)
+            .pipe(Effect.map(Option.filter((identity) => identity.repository !== undefined))),
+      },
+      staleTimeMs: 0,
+      refreshIntervalMs: 60_000,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+    }),
     linkedThreads: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:linked-threads",
       persistence: persistQuery(PullRequestLinkedThreadsResult),
@@ -1293,7 +1327,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.threadId, input.cursor]),
+          JSON.stringify([
+            environmentId,
+            pullRequestReference(input),
+            input.threadId,
+            input.cursor,
+          ]),
       },
     }),
     diff: createEnvironmentQueryAtomFamily(runtime, {
@@ -1316,25 +1355,39 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) =>
-          JSON.stringify([
-            environmentId,
-            input.projectId,
-            input.host?.toLowerCase() ?? null,
-            input.repository,
-            input.number,
-            input.commit ?? null,
-            input.changeType,
-            input.oldPath,
-            input.newPath,
-          ]),
+          input.target === undefined || input.expectedAccountId === undefined
+            ? null
+            : JSON.stringify([
+                environmentId,
+                pullRequestReference(input),
+                input.commit ?? null,
+                input.changeType,
+                input.oldPath,
+                input.newPath,
+              ]),
       },
     }),
-    filesViewed: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:pull-requests:files-viewed",
+    filesViewed: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:files-viewed:v3",
       ...(onAnswer.filesViewed === undefined ? {} : { onAnswer: onAnswer.filesViewed }),
-      persistence: persistQuery(PullRequestFilesViewedResult),
-      tag: WS_METHODS.pullRequestsFilesViewed,
-      execute: (input) => routedRequest(WS_METHODS.pullRequestsFilesViewed, input),
+      persistence: {
+        ...filesViewedPersistence,
+        save: (environmentId, key, value) =>
+          value.target === undefined
+            ? Effect.void
+            : filesViewedPersistence.save(environmentId, key, value),
+      },
+      execute: ({ legacyViewerId: _legacyViewerId, ...input }: PullRequestViewerRef) =>
+        routedRequest(WS_METHODS.pullRequestsFilesViewed, input).pipe(
+          Effect.map(({ target, ...result }): PullRequestFilesViewedResult =>
+            target !== undefined &&
+            target.provider === input.target?.provider &&
+            target.origin === input.target.origin &&
+            (target.provider !== "github" || input.expectedAccountId !== undefined)
+              ? { ...result, target }
+              : result,
+          ),
+        ),
       staleTimeMs: 15_000,
     }),
     changeBreakdown: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -1414,14 +1467,9 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       execute: (input) => routedRequest(WS_METHODS.pullRequestsUpdateComment, input),
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
-      onSuccess: ({ environmentId, input: { projectId, host, repository, number } }, registry) =>
+      onSuccess: ({ environmentId, input }, registry) =>
         Effect.sync(() =>
-          registry.refresh(
-            activity({
-              environmentId,
-              input: { projectId, ...(host === undefined ? {} : { host }), repository, number },
-            }),
-          ),
+          registry.refresh(activity({ environmentId, input: pullRequestReference(input) })),
         ),
     }),
     submitReview: createEnvironmentRpcCommand(runtime, {

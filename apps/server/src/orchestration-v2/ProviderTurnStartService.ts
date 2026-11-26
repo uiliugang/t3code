@@ -46,9 +46,14 @@ import {
 } from "./Adapters/ClaudeAdapterV2.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { makeRestoreMissingWorktree } from "../workspace/restoreMissingWorktree.ts";
+import {
+  makeRestoreMissingWorktree,
+  ThreadWorktreeRestore,
+  type RecreatedWorktree,
+} from "../workspace/restoreMissingWorktree.ts";
 import type * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
@@ -101,6 +106,24 @@ export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStart
   },
 ) {}
 
+class WorktreeSetupScriptFailedError extends Schema.TaggedError<WorktreeSetupScriptFailedError>()(
+  "WorktreeSetupScriptFailedError",
+  { worktreePath: Schema.String, exitCode: Schema.NullOr(Schema.Number) },
+) {
+  override get message(): string {
+    return `Setup script exited with ${this.exitCode ?? "no exit code"} in '${this.worktreePath}'.`;
+  }
+}
+
+class WorktreeSetupCommandNotWrittenError extends Schema.TaggedError<
+  WorktreeSetupCommandNotWrittenError,
+  { readonly brand: unique symbol }
+>()("WorktreeSetupCommandNotWrittenError", { worktreePath: Schema.String }) {
+  override get message(): string {
+    return `Could not write setup command to terminal in '${this.worktreePath}'.`;
+  }
+}
+
 /** Runs that ended without completing: their provider turn may still project as running. */
 const NON_COMPLETING_TERMINAL_RUN_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
   "failed",
@@ -143,6 +166,7 @@ export function abandonedProviderTurns(
 
 export const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
 const isProviderAdapterProtocolError = Schema.is(ProviderAdapter.ProviderAdapterProtocolError);
+const isProviderAdapterTurnStartError = Schema.is(ProviderAdapter.ProviderAdapterTurnStartError);
 const isProviderAdapterOpenSessionError = Schema.is(
   ProviderAdapter.ProviderAdapterOpenSessionError,
 );
@@ -163,6 +187,7 @@ const PROMPT_REFUSAL_TAGS = [
 
 const refusedBeforePrompt = (error: unknown): boolean =>
   PROMPT_REFUSAL_TAGS.some((tag) => Predicate.isTagged(error, tag)) ||
+  (isProviderAdapterTurnStartError(error) && error.refusedBeforePrompt === true) ||
   (isProviderAdapterProtocolError(error) &&
     error.driver === CLAUDE_PROVIDER &&
     error.detail === CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL) ||
@@ -284,6 +309,7 @@ export const layer: Layer.Layer<
   | ServerSettings.ServerSettingsService
   | GitWorkflowService.GitWorkflowService
   | ProjectService.ProjectService
+  | ProjectSetupScriptRunner.ProjectSetupScriptRunner
   | ProviderAuthService.ProviderAuthService
   | ProjectionStore.ProjectionStoreV2
   | ProviderSessionManager.ProviderSessionManagerV2
@@ -291,6 +317,7 @@ export const layer: Layer.Layer<
   | RuntimePolicy.RuntimePolicyV2
   | TurnItemPositionStore.TurnItemPositionStoreV2
   | TaskFolders.TaskFolders
+  | ThreadWorktreeRestore
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
@@ -300,12 +327,14 @@ export const layer: Layer.Layer<
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const projects = yield* ProjectService.ProjectService;
+    const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
+    const worktreeRestore = yield* ThreadWorktreeRestore;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
 
     // Build draining callbacks outside startup scope so they cannot retain full thread history.
@@ -826,7 +855,43 @@ export const layer: Layer.Layer<
           return;
         }
       }
-      const recreateResult = yield* Effect.result(restoreMissingWorktree(projection.thread));
+      const recreateResult = yield* Effect.result(
+        Effect.gen(function* () {
+          const direct: RecreatedWorktree | void = yield* restoreMissingWorktree(
+            projection.thread,
+            {
+              beforeRecreate: (pending) =>
+                worktreeRestore
+                  .takeRecreated(projection.thread.id, {
+                    action: "record",
+                    projectId: projection.thread.projectId,
+                    worktreePath: pending.worktreePath,
+                    project: pending.project,
+                  })
+                  .pipe(Effect.asVoid),
+            },
+          );
+          if (direct !== undefined) return direct;
+          if (
+            projection.thread.workspace !== undefined ||
+            projection.thread.worktreePath === null ||
+            projection.thread.branch === null
+          ) {
+            return undefined;
+          }
+          const pending = yield* worktreeRestore.takeRecreated(projection.thread.id, {
+            action: "peek",
+          });
+          if (pending !== undefined && pending.worktreePath !== projection.thread.worktreePath) {
+            yield* worktreeRestore.takeRecreated(projection.thread.id, {
+              action: "clear",
+              worktreePath: pending.worktreePath,
+            });
+            return undefined;
+          }
+          return pending;
+        }),
+      );
       if (recreateResult._tag === "Failure") {
         if (input.willRetry === true) return yield* recreateResult.failure;
         const metadataMissing = recreateResult.failure._tag === "WorktreeMetadataMissingError";
@@ -839,6 +904,82 @@ export const layer: Layer.Layer<
           message: recreateResult.failure.message,
         });
         return;
+      }
+      if (recreateResult.success !== undefined) {
+        const { project, worktreePath, setupCompleted } = recreateResult.success;
+        // Opening the setup terminal takes its own workspace lease.
+        return {
+          worktreeSetup: Effect.gen(function* () {
+            const setupResult = yield* Effect.result(
+              Effect.gen(function* () {
+                const threadId = projection.thread.id;
+                const resetSetup = worktreeRestore.takeRecreated(threadId, {
+                  action: "reset-setup",
+                  worktreePath,
+                });
+                if (!setupCompleted) {
+                  yield* worktreeRestore.takeRecreated(threadId, {
+                    action: "start-setup",
+                    worktreePath,
+                  });
+                  const setup = yield* setupScripts
+                    .runForThread({
+                      threadId: projection.thread.id,
+                      projectId: project.id,
+                      projectCwd: project.workspaceRoot,
+                      worktreePath,
+                      project,
+                      observeCompletion: {},
+                    })
+                    .pipe(Effect.tapError(() => resetSetup));
+                  if (setup.status === "started") {
+                    const written =
+                      setup.commandWritten === undefined ? true : yield* setup.commandWritten;
+                    if (!written) {
+                      yield* resetSetup;
+                      return yield* new WorktreeSetupCommandNotWrittenError({ worktreePath });
+                    }
+                    if (setup.completion) {
+                      if (setup.async) {
+                        yield* setup.completion.pipe(Effect.forkDetach);
+                      } else {
+                        const { exitCode } = yield* setup.completion;
+                        if (exitCode !== 0) {
+                          if (exitCode !== null) yield* resetSetup;
+                          return yield* new WorktreeSetupScriptFailedError({
+                            worktreePath,
+                            exitCode,
+                          });
+                        }
+                      }
+                    }
+                  }
+                }
+                yield* worktreeRestore.takeRecreated(threadId, {
+                  action: "clear",
+                  worktreePath,
+                  setupCompleted: true,
+                });
+              }),
+            );
+            if (setupResult._tag === "Failure") {
+              if (
+                input.willRetry === true &&
+                setupResult.failure._tag === "ProjectSetupScriptOperationError"
+              ) {
+                return yield* setupResult.failure;
+              }
+              yield* settleStartFailure({
+                signal: "worktree-setup-failure",
+                title: "Couldn't set up restored workspace",
+                error: setupResult.failure,
+                message: setupResult.failure.message,
+              });
+              return;
+            }
+            yield* startWithWorkspaceLease(input);
+          }),
+        };
       }
       const selectInheritedBackgroundItems = (
         current: ProjectionStore.ProjectionRuntimeRecoveryState,
@@ -1989,6 +2130,10 @@ export const layer: Layer.Layer<
             : { nativeThreadId: runningProviderThread.nativeThreadRef.nativeId }),
           status: "running",
           startedAt: now,
+          startedModes: {
+            runtimeMode: projection.thread.runtimeMode,
+            interactionMode: projection.thread.interactionMode,
+          },
         };
         const runningRootNode: OrchestrationV2ExecutionNode = {
           ...rootNode,
@@ -2340,111 +2485,120 @@ export const layer: Layer.Layer<
         : withTurnStartReservation(fileSystem, path, extraRoots, startWithPolicy);
     });
 
-    return ProviderTurnStartServiceV2.of({
-      start: Effect.fn("ProviderTurnStartService.start")(
-        function* (input) {
-          let startingRun: OrchestrationV2Run | undefined;
-          const captureStartingRun = (run: OrchestrationV2Run) => {
-            startingRun = run;
-          };
-          return yield* Effect.gen(function* () {
-            // Storage cleanup removes worktrees under the same lease. Only startup
-            // holds it; the provider turn runs after it is released.
-            const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
-            if (thread.workspace !== undefined) {
-              const workspace = thread.workspace;
-              const roots = workspace.resources.map((resource) => resource.checkoutRoot);
-              const turn = Effect.gen(function* () {
-                const providerTurn = yield* withWorkspaceLeases(
-                  roots,
-                  start(input, captureStartingRun),
+    const startWithWorkspaceLease: ProviderTurnStartServiceV2Shape["start"] = Effect.fn(
+      "ProviderTurnStartService.start",
+    )(
+      function* (input) {
+        let startingRun: OrchestrationV2Run | undefined;
+        const captureStartingRun = (run: OrchestrationV2Run) => {
+          startingRun = run;
+        };
+        return yield* Effect.gen(function* () {
+          // Storage cleanup removes worktrees under the same lease. Only startup
+          // holds it; the provider turn runs after it is released.
+          const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
+          if (thread.workspace !== undefined) {
+            const workspace = thread.workspace;
+            const roots = workspace.resources.map((resource) => resource.checkoutRoot);
+            const turn = Effect.gen(function* () {
+              const providerTurn = yield* withWorkspaceLeases(
+                roots,
+                start(input, captureStartingRun),
+              );
+              if (providerTurn !== undefined && "worktreeSetup" in providerTurn)
+                return providerTurn;
+              if (providerTurn !== undefined)
+                yield* providerTurn.pipe(
+                  Effect.catchCauseIf(
+                    (cause) => !Cause.hasInterruptsOnly(cause),
+                    (cause) =>
+                      Effect.logWarning(
+                        "Run execution failed after starting",
+                        { runId: input.runId },
+                        cause,
+                      ),
+                  ),
                 );
-                if (providerTurn !== undefined)
-                  yield* providerTurn.pipe(
-                    Effect.catchCauseIf(
-                      (cause) => !Cause.hasInterruptsOnly(cause),
-                      (cause) =>
-                        Effect.logWarning(
-                          "Run execution failed after starting",
-                          { runId: input.runId },
-                          cause,
-                        ),
-                    ),
-                  );
-              });
-              return yield* withTurnStartReservation(
+            });
+            const pending = yield* withTurnStartReservation(
+              fileSystem,
+              path,
+              roots,
+              thread.lineage.sideChat === true
+                ? turn
+                : withWorkspaceLeases(
+                    roots.map((root) => `checkout:${root}`),
+                    turn,
+                  ),
+            );
+            if (pending) yield* pending.worktreeSetup;
+            return;
+          }
+          const cwd =
+            thread.worktreePath ??
+            (yield* projects
+              .getById(thread.projectId, { includeDeleted: true })
+              .pipe(Effect.map((project) => Option.getOrUndefined(project)?.workspaceRoot)));
+          const providerTurn = yield* cwd === undefined
+            ? start(input, captureStartingRun)
+            : withTurnStartReservation(
                 fileSystem,
                 path,
-                roots,
-                thread.lineage.sideChat === true
-                  ? turn
-                  : withWorkspaceLeases(
-                      roots.map((root) => `checkout:${root}`),
-                      turn,
+                path.resolve(cwd),
+                thread.worktreePath === null
+                  ? start(input, captureStartingRun)
+                  : withWorkspaceLease(
+                      path.resolve(thread.worktreePath),
+                      start(input, captureStartingRun),
                     ),
               );
-            }
-            const cwd =
-              thread.worktreePath ??
-              (yield* projects
-                .getById(thread.projectId, { includeDeleted: true })
-                .pipe(Effect.map((project) => Option.getOrUndefined(project)?.workspaceRoot)));
-            const providerTurn = yield* cwd === undefined
-              ? start(input, captureStartingRun)
-              : withTurnStartReservation(
-                  fileSystem,
-                  path,
-                  path.resolve(cwd),
-                  thread.worktreePath === null
-                    ? start(input, captureStartingRun)
-                    : withWorkspaceLease(
-                        path.resolve(thread.worktreePath),
-                        start(input, captureStartingRun),
-                      ),
-                );
-            if (providerTurn !== undefined) {
-              // Run execution owns finalization after the running write. A later
-              // failure must not settle a replacement attempt committed by steering.
-              yield* providerTurn.pipe(
-                Effect.catchCauseIf(
-                  (cause) => !Cause.hasInterruptsOnly(cause),
-                  (cause) =>
-                    Effect.logWarning(
-                      "Run execution failed after starting",
-                      { runId: input.runId },
-                      cause,
-                    ),
-                ),
-              );
-            }
-          }).pipe(
-            Effect.catchCauseIf(
-              (cause) => !Cause.hasInterruptsOnly(cause),
-              (cause) =>
-                Effect.fail(
-                  new ProviderTurnStartError({
-                    runId: input.runId,
-                    cause: Cause.squash(cause),
-                    ...(startingRun?.activeAttemptId == null || startingRun.rootNodeId == null
-                      ? {}
-                      : {
-                          attemptId: startingRun.activeAttemptId,
-                          rootNodeId: startingRun.rootNodeId,
-                        }),
-                  }),
-                ),
-            ),
-          );
-        },
-        (effect, input) =>
-          effect.pipe(
-            Effect.mapError((cause) =>
-              isProviderTurnStartError(cause)
-                ? cause
-                : new ProviderTurnStartError({ runId: input.runId, cause }),
-            ),
+          if (providerTurn !== undefined && "worktreeSetup" in providerTurn) {
+            yield* providerTurn.worktreeSetup;
+          } else if (providerTurn !== undefined) {
+            // Run execution owns finalization after the running write. A later
+            // failure must not settle a replacement attempt committed by steering.
+            yield* providerTurn.pipe(
+              Effect.catchCauseIf(
+                (cause) => !Cause.hasInterruptsOnly(cause),
+                (cause) =>
+                  Effect.logWarning(
+                    "Run execution failed after starting",
+                    { runId: input.runId },
+                    cause,
+                  ),
+              ),
+            );
+          }
+        }).pipe(
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterruptsOnly(cause),
+            (cause) =>
+              Effect.fail(
+                new ProviderTurnStartError({
+                  runId: input.runId,
+                  cause: Cause.squash(cause),
+                  ...(startingRun?.activeAttemptId == null || startingRun.rootNodeId == null
+                    ? {}
+                    : {
+                        attemptId: startingRun.activeAttemptId,
+                        rootNodeId: startingRun.rootNodeId,
+                      }),
+                }),
+              ),
           ),
-      ),
+        );
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError((cause) =>
+            isProviderTurnStartError(cause)
+              ? cause
+              : new ProviderTurnStartError({ runId: input.runId, cause }),
+          ),
+        ),
+    );
+    return ProviderTurnStartServiceV2.of({
+      start: startWithWorkspaceLease,
       failStartingRun: Effect.fn("ProviderTurnStartService.failStartingRun")(
         function* ({ threadId, runId, attemptId, rootNodeId }) {
           const projection = yield* projectionStore.getTurnStartContext(threadId, runId);

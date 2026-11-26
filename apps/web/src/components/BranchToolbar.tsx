@@ -1,10 +1,11 @@
 import { useUiTranslation } from "../hooks/useUiTranslation";
+import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { contextMenuSourceOf } from "../contextMenuSource";
 import {
   writeTextToClipboard,
   ClipboardApiUnavailableError,
   ClipboardWriteError,
 } from "../hooks/useCopyToClipboard";
-import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { readLocalApi } from "../localApi";
@@ -127,10 +128,11 @@ function showWorkspaceContextMenu(event: ReactMouseEvent, workspacePath: string)
   event.preventDefault();
   event.stopPropagation();
   void api.contextMenu
-    .show([{ id: "copy-path", label: resolveMessage(msg("Copy full path")), icon: "copy" }], {
-      x: event.clientX,
-      y: event.clientY,
-    })
+    .show(
+      [{ id: "copy-path", label: resolveMessage(msg("Copy full path")), icon: "copy" }],
+      { x: event.clientX, y: event.clientY },
+      contextMenuSourceOf(event),
+    )
     .then((action) => {
       if (action !== "copy-path") return;
       const clipboardPath = formatFilePathForClipboard(workspacePath);

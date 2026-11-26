@@ -22,8 +22,11 @@ import {
   type ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import type { ReviewGuideStackLayer } from "@t3tools/provider-core/server/textGeneration";
+import { withoutRemoteUrlCredentials } from "@t3tools/shared/cloneUrl";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { remoteWebOrigin } from "@t3tools/source-control-core/shared/definition";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import { threadPullRequestKeyOf } from "../sourceControl/threadPullRequests.ts";
 
 import * as ServerConfig from "../config.ts";
 import * as PullRequestReviewGuides from "../persistence/PullRequestReviewGuides.ts";
@@ -55,8 +58,6 @@ export class PullRequestReviewGuideService extends Context.Service<
   }
 >()("t3/pullRequest/PullRequestReviewGuideService") {}
 
-const keyString = (key: ThreadPullRequestKey) => `${key.host}/${key.repository}#${key.number}`;
-
 const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map((millis) => DateTime.formatIso(DateTime.makeUnsafe(millis))),
 );
@@ -83,21 +84,46 @@ const make = Effect.gen(function* () {
     const project = Option.getOrUndefined(
       yield* projects.getShell(input.projectId).pipe(Effect.orElseSucceed(() => Option.none())),
     );
-    const key = pullRequestSyncKey(input, project?.repositoryIdentity ?? undefined);
+    const identity = project?.repositoryIdentity;
+    const key = pullRequestSyncKey(input, identity);
     if (key === null || project === undefined) {
       return yield* new PullRequestOperationError({
         operation: "reviewGuide",
         detail: "Could not identify this pull request's host.",
       });
     }
-    return { key, workspaceRoot: project.workspaceRoot, identity: project.repositoryIdentity };
+    const target =
+      key.target ??
+      (identity?.provider === undefined ||
+      sourceControlDefinitions.changeRequestHost(identity, identity.provider) !== key.host
+        ? undefined
+        : {
+            provider: identity.provider,
+            origin: remoteWebOrigin(
+              key.host,
+              identity.provider === "github" ? undefined : identity.locator.remoteUrl,
+            ),
+          });
+    if (target === undefined) {
+      return yield* new PullRequestOperationError({
+        operation: "reviewGuide",
+        detail: "Could not identify this pull request's Web origin.",
+      });
+    }
+    return { key: { ...key, target }, workspaceRoot: project.workspaceRoot, identity };
   });
 
   const requireOwnRepository = Effect.fn("PullRequestReviewGuideService.requireOwnRepository")(
     function* (key: ThreadPullRequestKey, identity: RepositoryIdentity | null | undefined) {
       const own = ownPullRequestRepositories(identity).find(
         (candidate) =>
-          candidate.key.host === key.host && candidate.key.repository === key.repository,
+          candidate.key.host === key.host &&
+          candidate.key.repository === key.repository &&
+          identity?.provider === key.target?.provider &&
+          remoteWebOrigin(
+            key.host,
+            identity?.provider === "github" ? undefined : candidate.locator.remoteUrl,
+          ) === key.target?.origin,
       );
       if (own === undefined) {
         return yield* new PullRequestOperationError({
@@ -128,12 +154,12 @@ const make = Effect.gen(function* () {
   )(function* (input) {
     const { key } = yield* keyFor(input);
     const [guide, detail, current] = yield* Effect.all(
-      [readStored(key), pullRequests.detail(input), Ref.get(runs)],
+      [readStored(key), pullRequests.detail({ ...input, target: key.target }), Ref.get(runs)],
       { concurrency: "unbounded" },
     );
     return {
       guide,
-      run: current.get(keyString(key)) ?? null,
+      run: current.get(threadPullRequestKeyOf(key)) ?? null,
       currentHeadSha: detail.headSha ?? null,
     };
   });
@@ -146,7 +172,7 @@ const make = Effect.gen(function* () {
     stack: PullRequestStack | null,
     runId: string,
   ) {
-    // Identity names can be stale; match effective fetch URLs, including insteadOf rewrites.
+    // Identity names can be stale; the identity keeps a remote's URL before or after insteadOf.
     const names = yield* git
       .execute({
         operation: "PullRequestReviewGuideService.listRemotes",
@@ -157,16 +183,28 @@ const make = Effect.gen(function* () {
     const remote = yield* Effect.findFirst(
       [locator.remoteName, ...names.filter((name) => name !== locator.remoteName)],
       (name) =>
-        git
-          .execute({
-            operation: "PullRequestReviewGuideService.remoteUrl",
-            cwd: workspaceRoot,
-            args: ["remote", "get-url", "--", name],
-          })
-          .pipe(
-            Effect.map((result) => result.stdout.trim() === locator.remoteUrl),
-            Effect.orElseSucceed(() => false),
-          ),
+        Effect.forEach(
+          [
+            ["remote", "get-url", "--", name],
+            ["config", "--get-all", `remote.${name}.url`],
+          ],
+          (args) =>
+            git
+              .execute({
+                operation: "PullRequestReviewGuideService.remoteUrl",
+                cwd: workspaceRoot,
+                args,
+              })
+              .pipe(
+                Effect.map(
+                  (result) =>
+                    withoutRemoteUrlCredentials(result.stdout.split("\n")[0]?.trim() ?? "") ===
+                    locator.remoteUrl,
+                ),
+                Effect.orElseSucceed(() => false),
+              ),
+          { concurrency: "unbounded" },
+        ).pipe(Effect.map((matches) => matches.includes(true))),
     ).pipe(Effect.map(Option.getOrUndefined));
     if (remote === undefined) {
       return yield* new PullRequestOperationError({
@@ -389,6 +427,7 @@ const make = Effect.gen(function* () {
             generated: textGeneration.generateReviewGuide({
               ...reviewGuideInputFromPullRequest(detail, activity, checkout.baseCommit),
               cwd: checkout.path,
+              projectCwd: workspaceRoot,
               modelSelection,
               projectId: input.projectId,
               instructions: projectSettings.reviewGuideInstructions,
@@ -443,9 +482,10 @@ const make = Effect.gen(function* () {
     }
     const { key, workspaceRoot, identity } = yield* keyFor(input);
     const locator = yield* requireOwnRepository(key, identity);
-    const runKey = keyString(key);
-    yield* pullRequests.invalidate({ reference: input });
-    const [detail, stored] = yield* Effect.all([pullRequests.detail(input), readStored(key)], {
+    const runKey = threadPullRequestKeyOf(key);
+    const reference = { ...input, target: key.target };
+    yield* pullRequests.invalidate({ reference });
+    const [detail, stored] = yield* Effect.all([pullRequests.detail(reference), readStored(key)], {
       concurrency: "unbounded",
     });
     const currentHeadSha = detail.headSha ?? null;
@@ -462,7 +502,7 @@ const make = Effect.gen(function* () {
     };
     // Claim atomically and re-read the head so stale clicks cannot replace a newer head's run.
     const claimed = yield* ownership.withPermits(1)(
-      pullRequests.detail(input).pipe(
+      pullRequests.detail(reference).pipe(
         Effect.flatMap((latest) =>
           (latest.headSha ?? null) !== currentHeadSha
             ? Effect.fail(
@@ -493,7 +533,7 @@ const make = Effect.gen(function* () {
         return updated;
       });
     const runId = `${runCounter++}`;
-    yield* write(input, key, workspaceRoot, locator, detail, currentHeadSha, runId, owns).pipe(
+    yield* write(reference, key, workspaceRoot, locator, detail, currentHeadSha, runId, owns).pipe(
       Effect.andThen(finish(null)),
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)

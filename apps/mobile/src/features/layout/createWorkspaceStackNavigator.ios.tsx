@@ -50,6 +50,7 @@ import { NAVIGATION_TAB_ORDER } from "./workspace/navigation-tab-order";
 import { workspaceUsesColumns } from "./workspace/workspace-tabs-state";
 import { useWorkspaceCompose } from "./workspace/useWorkspaceCompose";
 import { selectedIssueKeyOf } from "../issues/issueParams";
+import { selectedPullRequestKeyOf } from "../pull-requests/pullRequestSelection";
 import { isSettingsRoute, settingsOpenIn } from "../settings/settings-navigation";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { setNativelyPoppingWorkspaceRoute } from "./workspace/workspace-detail-selection";
@@ -300,18 +301,7 @@ function WorkspaceColumns(
   const collapsedColumn = useRef<CollapsedSplitColumn>({ visible: compactColumn, leaving: null });
   const threadParams = props.detail.findLast((route) => route.name === "Thread")?.params;
   const pullRequestParams = props.detail.findLast(isPullRequestRoute)?.params;
-  const selectedPullRequestKey =
-    pullRequestParams &&
-    "environmentId" in pullRequestParams &&
-    "host" in pullRequestParams &&
-    "repository" in pullRequestParams &&
-    "number" in pullRequestParams &&
-    typeof pullRequestParams.environmentId === "string" &&
-    typeof pullRequestParams.host === "string" &&
-    typeof pullRequestParams.repository === "string" &&
-    typeof pullRequestParams.number === "number"
-      ? `${pullRequestParams.environmentId}:${pullRequestParams.host}:${pullRequestParams.repository}:${pullRequestParams.number}`
-      : null;
+  const selectedPullRequestKey = selectedPullRequestKeyOf(pullRequestParams);
   const selectedIssueKey = selectedIssueKeyOf(props.detail.findLast(isIssueRoute)?.params);
   const selectedThreadKey =
     threadParams &&

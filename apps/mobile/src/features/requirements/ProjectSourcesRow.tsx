@@ -7,6 +7,7 @@ import {
   withMepSpaceOverrides,
 } from "@t3tools/client-runtime/issueSources";
 import { mepSpaceValue } from "@t3tools/client-runtime/meituanSettings";
+import { normalizeGithubIssueHost } from "@t3tools/contracts";
 import type { EnvironmentId, IssueProvider, IssueSource, ProjectId } from "@t3tools/contracts";
 import { useState } from "react";
 import { View } from "react-native";
@@ -33,10 +34,12 @@ export function ProjectSourcesRow({
   sources,
   provider,
   singleProvider,
+  compareAndSet,
+  githubIssueSourcePorts = false,
   error,
   discovery,
   mep,
-  allowed,
+  allowed: canWrite,
 }: {
   environmentId: EnvironmentId;
   projectId: ProjectId;
@@ -46,11 +49,14 @@ export function ProjectSourcesRow({
   sources: readonly IssueSource[];
   provider: IssueProvider | undefined;
   singleProvider: boolean;
+  compareAndSet: boolean;
+  githubIssueSourcePorts?: boolean;
   error: string | undefined;
   discovery: "pending" | "failed" | "ready";
   mep: boolean;
   allowed: boolean;
 }) {
+  const allowed = canWrite && compareAndSet;
   const t = useUiTranslation();
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const [view, setView] = useState<
@@ -90,10 +96,17 @@ export function ProjectSourcesRow({
         ? t("Loading...")
         : undefined;
   const repositorySummary = [status, githubLabel].filter(Boolean).join(" · ");
+  const githubEditHost =
+    editing?.provider === "github"
+      ? normalizeGithubIssueHost(editing.source?.host ?? "github.com")
+      : undefined;
   const valid =
     editing?.provider === "meituan"
       ? parseMepSpaceIds(draft) !== null
-      : draft.trim().length <= 200 && /^[\w.-]+\/[\w.-]+$/u.test(draft.trim());
+      : githubEditHost !== undefined &&
+        (githubIssueSourcePorts || !githubEditHost.includes(":")) &&
+        draft.trim().length <= 200 &&
+        /^[\w.-]+\/[\w.-]+$/u.test(draft.trim());
   const edit = (target: SourceEdit) => {
     setView({ ...target, saved });
     setDraft(target.provider === "meituan" ? spaces.join(", ") : (target.source?.scope ?? ""));
@@ -129,7 +142,8 @@ export function ProjectSourcesRow({
       return;
     const input = projectIssueSourceEdit(
       projectId,
-      singleProvider ? editing.provider : undefined,
+      singleProvider,
+      editing.provider,
       saved,
       editing.saved,
       (latest) =>

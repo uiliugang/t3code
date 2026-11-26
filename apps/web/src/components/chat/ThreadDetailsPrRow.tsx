@@ -96,6 +96,7 @@ export function ThreadDetailsPrRow({
   reference: linkedReference,
   status,
   project,
+  mergePreferenceProjectId,
   label,
   onOpen,
   onActed,
@@ -105,9 +106,10 @@ export function ThreadDetailsPrRow({
   environmentId: EnvironmentId;
   pr: ThreadPr;
   number: number;
-  reference?: Pick<PullRequestRef, "host" | "repository" | "number"> | null;
+  reference?: Pick<PullRequestRef, "host" | "target" | "repository" | "number"> | null;
   status: PrStatusIndicator | null;
   project: EnvironmentProject | null;
+  mergePreferenceProjectId?: ProjectId | null | undefined;
   label: string;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   onActed?: () => void;
@@ -171,20 +173,26 @@ export function ThreadDetailsPrRow({
     checks: detail?.checks ?? [],
   });
 
+  const [armedMergeHead, setArmedMergeHead] = useState<string>();
   const { actionPending, pendingAction, perform } = usePullRequestActionRunner({
     environmentId,
     reference,
+    // The row shows no diff, so a merge lands the head it had when the confirmation opened.
+    headSha: armedMergeHead ?? detail?.headSha,
     terminology,
     onSuccess: () => {
       checksQuery.refresh();
       onActed?.();
     },
+    // A refused merge usually means the row is stale, so show what the host has now.
+    onFailure: () => detailQuery.refresh(),
   });
   const { handoff, startHandoff } = usePullRequestHandoffs({ environmentId, detail });
   const lastSelectedMergeMethod = useUiStateStore((state) => state.pullRequestMergeMethod);
   const resolveProjectDefaultMergeMethod = usePullRequestDefaultMergeMethodResolver(
     environmentId,
-    (project?.id as ProjectId | undefined) ?? null,
+    mergePreferenceProjectId === undefined ? (project?.id ?? null) : mergePreferenceProjectId,
+    linkedReference ?? undefined,
   );
   const [confirmingMerge, setConfirmingMerge] = useState(false);
 
@@ -439,7 +447,10 @@ export function ThreadDetailsPrRow({
                   kind: t(terminology.singular),
                   method: selectedMergeMethodLabel,
                 }),
-                onClick: () => setConfirmingMerge(true),
+                onClick: () => {
+                  setArmedMergeHead(detail?.headSha);
+                  setConfirmingMerge(true);
+                },
               }
             : null;
 

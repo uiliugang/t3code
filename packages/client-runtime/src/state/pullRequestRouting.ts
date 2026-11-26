@@ -358,7 +358,12 @@ export function createPullRequestRouter() {
         )
       : identityProbe;
     // The source server answers only for a host whose account it can verify.
-    if (identity === null) return yield* finish(source);
+    if (
+      identity === null ||
+      (ref.expectedAccountId !== undefined && ref.expectedAccountId !== identity.accountId)
+    ) {
+      return yield* finish(source);
+    }
 
     const routedInput = {
       ...input,

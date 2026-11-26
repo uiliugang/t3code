@@ -253,6 +253,7 @@ describe("GitHubRest", () => {
         ).pipe(Effect.provide(GitHubGraphQlClient.layer));
         for (const [host, apiHost, root] of [
           ["github.com", "api.github.com", ""],
+          ["github.com:443", "api.github.com", ""],
           ["git.acme.test:8443", "git.acme.test:8443", "/api/v3"],
         ] as const) {
           const answer = yield* rest.rest({

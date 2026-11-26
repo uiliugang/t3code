@@ -60,7 +60,9 @@ import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import {
   layerThreadWorktreeRestore,
   ThreadWorktreeRestore,
+  WorktreeRecreateError,
 } from "../workspace/restoreMissingWorktree.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
   layerNoTaskFolders,
@@ -68,6 +70,7 @@ import {
   makeLayerRealGit,
 } from "./ProviderTurnStartService.testkit.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
@@ -170,17 +173,27 @@ function startWithMissingWorktree(
   );
   const startRootRun = vi.fn(() => Effect.void);
   const pruneWorktrees = vi.fn(() => Effect.void);
-  const createWorktree = vi.fn(() => Effect.succeed({} as never));
+  let worktreeExists = false;
+  const createWorktree = vi.fn(() =>
+    Effect.sync(() => {
+      worktreeExists = true;
+      return {} as never;
+    }),
+  );
   const listLocalBranchNames = vi.fn(() => Effect.succeed(["feature/restore"]));
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+          runForThread: () => Effect.succeed({ status: "no-script" }),
+        }),
+        Layer.mock(ThreadWorktreeRestore)({ takeRecreated: () => Effect.undefined }),
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
         Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         Layer.succeed(FileSystem.FileSystem, {
-          exists: () => Effect.succeed(false),
+          exists: () => Effect.succeed(worktreeExists),
           realPath: (target: string) =>
             normalize(target) in realPaths
               ? Effect.succeed(realPaths[normalize(target)])
@@ -338,7 +351,7 @@ const layerRestoreLeaseTest = layerThreadWorktreeRestore.pipe(
 effectIt.effect("restores a missing worktree before a send only under the workspace lease", () =>
   Effect.gen(function* () {
     const worktreePath = `${managedWorktreesDir}/project/feature-restore`;
-    const { restore } = yield* ThreadWorktreeRestore;
+    const { restore, takeRecreated } = yield* ThreadWorktreeRestore;
     yield* withWorkspaceLease(
       worktreePath,
       Effect.gen(function* () {
@@ -353,8 +366,230 @@ effectIt.effect("restores a missing worktree before a send only under the worksp
       }),
     ).pipe(Effect.flatMap(Fiber.join));
     expect(restoreLeaseCreateWorktree).toHaveBeenCalledTimes(1);
+    // Turn start finds the checkout present, so it runs setup from this hand-over, once.
+    const threadId = ThreadId.make("thread_send_restore_lease");
+    expect(yield* takeRecreated(threadId)).toMatchObject({ worktreePath });
+    expect(yield* takeRecreated(threadId)).toBeUndefined();
   }).pipe(Effect.provide(layerRestoreLeaseTest)),
 );
+
+effectIt.effect("records task-folder recreation only when a checkout was missing", () => {
+  const worktreeA = `${managedWorktreesDir}/project/feature-restore-a`;
+  const worktreeB = `${managedWorktreesDir}/project/feature-restore-b`;
+  const missingPaths = new Set([worktreeA, worktreeB]);
+  let failProjectReads = 0;
+  const restoreTaskFolder: TaskFolders.TaskFolders["Service"]["restore"] = ({
+    taskFolder,
+    beforeRecreate,
+  }) =>
+    Effect.gen(function* () {
+      if (!missingPaths.has(taskFolder.projectPath)) return false;
+      if (beforeRecreate !== undefined) {
+        yield* beforeRecreate();
+      }
+      missingPaths.delete(taskFolder.projectPath);
+      return true;
+    });
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const stateDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-restore-state-" });
+    const buildRestoreLayer = (customFs?: FileSystem.FileSystem) =>
+      layerThreadWorktreeRestore.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(TaskFolders.TaskFolders)({
+              find: (target) =>
+                Effect.succeed({
+                  root: `${managedWorktreesDir}/project`,
+                  projectId: ProjectId.make("project_task_folder_restore"),
+                  projectRoot: "/tmp/provider-turn-start-project",
+                  anchor: "/tmp",
+                  projectPath: target,
+                  projectIsWorktree: true,
+                  repositories: [],
+                }),
+              restore: restoreTaskFolder,
+            }),
+            Path.layer,
+            ...(customFs === undefined ? [] : [Layer.succeed(FileSystem.FileSystem, customFs)]),
+            Layer.mock(ServerConfig.ServerConfig)({
+              worktreesDir: managedWorktreesDir,
+              stateDir,
+            } as ServerConfig.ServerConfig["Service"]),
+            ServerSettings.layerTest(),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+            Layer.mock(GitWorkflow.GitWorkflowService)({}),
+            Layer.mock(ProjectService.ProjectService)({
+              getById: () =>
+                Effect.suspend(() => {
+                  if (failProjectReads > 0) {
+                    failProjectReads -= 1;
+                    return Effect.fail(new Error("transient project read error") as never);
+                  }
+                  return Effect.succeedSome({
+                    workspaceRoot: "/tmp/provider-turn-start-project",
+                  } as never);
+                }),
+            }),
+          ),
+        ),
+      );
+    const threadA = {
+      id: ThreadId.make("thread_task_folder_restore_a"),
+      projectId: ProjectId.make("project_task_folder_restore"),
+      worktreePath: worktreeA,
+      branch: "feature/restore-a",
+    };
+    const threadB = {
+      id: ThreadId.make("thread_task_folder_restore_b"),
+      projectId: ProjectId.make("project_task_folder_restore"),
+      worktreePath: worktreeB,
+      branch: "feature/restore-b",
+    };
+
+    // Project lookup and pending-setup persistence run BEFORE taskFolders.restore mutates disk,
+    // so if either fails, `missingPaths` is untouched and retry still recreates + records setup.
+    failProjectReads = 1;
+    const failed = yield* Effect.gen(function* () {
+      const { restore } = yield* ThreadWorktreeRestore;
+      return yield* restore(threadA).pipe(Effect.flip);
+    }).pipe(Effect.provide(buildRestoreLayer()));
+    expect(failed._tag).toBe("WorktreeRecreateError");
+    expect(missingPaths.has(worktreeA)).toBe(true);
+
+    const failingWriteFs = {
+      ...fileSystem,
+      makeTempDirectory: () =>
+        Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "makeTempDirectory",
+            pathOrDescriptor: stateDir,
+          }),
+        ),
+    } as FileSystem.FileSystem;
+    const writeFailed = yield* Effect.gen(function* () {
+      const { restore } = yield* ThreadWorktreeRestore;
+      return yield* restore(threadA).pipe(Effect.flip);
+    }).pipe(Effect.provide(buildRestoreLayer(failingWriteFs)));
+    expect(writeFailed._tag).toBe("WorktreeRecreateError");
+    expect(missingPaths.has(worktreeA)).toBe(true);
+
+    // Concurrent restores across two threads serialize updates to recreated-worktree-setup.json.
+    yield* Effect.gen(function* () {
+      const { restore } = yield* ThreadWorktreeRestore;
+      yield* Effect.all([restore(threadA), restore(threadB)], { concurrency: "unbounded" });
+    }).pipe(Effect.provide(buildRestoreLayer()));
+
+    // Across restart: action "peek" keeps the persisted record until action "clear" confirms setup,
+    // and a transient project read failure fails instead of returning undefined.
+    failProjectReads = 1;
+    yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      const readFailed = yield* takeRecreated(threadA.id, { action: "peek" }).pipe(Effect.flip);
+      expect(readFailed._tag).toBe("WorktreeRecreateError");
+      expect(yield* takeRecreated(threadA.id, { action: "peek" })).toMatchObject({
+        worktreePath: worktreeA,
+      });
+      expect(yield* takeRecreated(threadB.id, { action: "peek" })).toMatchObject({
+        worktreePath: worktreeB,
+      });
+    }).pipe(Effect.provide(buildRestoreLayer()));
+
+    // Another restart before clear still sees both entries; clearing removes them,
+    // and a disk removal failure surfaces instead of being swallowed.
+    const failingRemoveFs = {
+      ...fileSystem,
+      remove: () =>
+        Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "remove",
+            pathOrDescriptor: `${stateDir}/recreated-worktree-setup.json`,
+          }),
+        ),
+    } as FileSystem.FileSystem;
+    yield* Effect.gen(function* () {
+      const { takeRecreated, restore } = yield* ThreadWorktreeRestore;
+      expect(yield* takeRecreated(threadA.id, { action: "peek" })).toMatchObject({
+        worktreePath: worktreeA,
+      });
+      yield* takeRecreated(threadA.id, { action: "clear", worktreePath: worktreeA });
+      expect(yield* takeRecreated(threadA.id, { action: "peek" })).toBeUndefined();
+      // Removing the last entry calls fileSystem.remove; verify failure surfaces on failingRemoveFs.
+      expect(yield* takeRecreated(threadB.id, { action: "peek" })).toMatchObject({
+        worktreePath: worktreeB,
+      });
+      yield* restore(threadA);
+      expect(yield* takeRecreated(threadA.id, { action: "peek" })).toBeUndefined();
+    }).pipe(Effect.provide(buildRestoreLayer()));
+
+    yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      yield* takeRecreated(threadB.id, { action: "start-setup", worktreePath: worktreeB });
+    }).pipe(Effect.provide(buildRestoreLayer()));
+
+    const pendingFile = (yield* Path.Path).join(stateDir, "recreated-worktree-setup.json");
+    const completionWriteFailed = yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      return yield* takeRecreated(threadB.id, {
+        action: "clear",
+        worktreePath: worktreeB,
+        setupCompleted: true,
+      }).pipe(Effect.flip);
+    }).pipe(
+      Effect.provide(
+        buildRestoreLayer({
+          ...fileSystem,
+          rename: (source, target) =>
+            target === pendingFile
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "rename",
+                    pathOrDescriptor: target,
+                  }),
+                )
+              : fileSystem.rename(source, target),
+        }),
+      ),
+    );
+    expect(completionWriteFailed._tag).toBe("WorktreeRecreateError");
+
+    yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      const retry = yield* takeRecreated(threadB.id, {
+        action: "start-setup",
+        worktreePath: worktreeB,
+      }).pipe(Effect.flip);
+      expect(retry.message).toContain("Verify or finish setup manually");
+      expect(retry.message).toContain(threadB.id);
+      expect(retry.message).toContain(pendingFile);
+    }).pipe(Effect.provide(buildRestoreLayer()));
+
+    const clearFailed = yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      return yield* takeRecreated(threadB.id, {
+        action: "clear",
+        worktreePath: worktreeB,
+        setupCompleted: true,
+      }).pipe(Effect.flip);
+    }).pipe(Effect.provide(buildRestoreLayer(failingRemoveFs)));
+    expect(clearFailed._tag).toBe("WorktreeRecreateError");
+
+    yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      expect(yield* takeRecreated(threadB.id)).toMatchObject({
+        worktreePath: worktreeB,
+        setupCompleted: true,
+      });
+      expect(yield* takeRecreated(threadB.id)).toBeUndefined();
+    }).pipe(Effect.provide(buildRestoreLayer()));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
+});
 
 effectIt.effect("restores into a leftover worktree folder that cannot itself be removed", () => {
   const worktreePath = `${managedWorktreesDir}/project/feature-restore`;
@@ -483,6 +718,9 @@ function makeLocalCommandHarness(input: {
   readonly workspaceRoot?: string;
   readonly gitWorkflow?: GitWorkflow.GitWorkflowService["Service"];
   readonly fileSystem?: FileSystem.FileSystem;
+  readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
+  readonly recreatedBeforeDispatch?: boolean;
+  readonly failClearRecreatedOnce?: boolean;
   readonly previousNativeSession?: boolean;
   readonly previousMessages?: ReadonlyArray<string>;
   readonly createdBy?: "agent" | "system";
@@ -597,6 +835,8 @@ function makeLocalCommandHarness(input: {
       id: threadId,
       activeProviderThreadId: providerThreadId,
       projectId: ProjectId.make("project-native-account-command"),
+      runtimeMode: "full-access",
+      interactionMode: "default",
       branch: input.worktreePath === undefined ? null : "feature/restore",
       worktreePath: input.worktreePath ?? null,
       lineage: input.delegatedWorktree
@@ -1233,6 +1473,7 @@ function makeLocalCommandHarness(input: {
                     providerSession,
                     ensureThread: () => Effect.succeed(providerThread),
                     resumeThread: () => Effect.succeed(projection.providerThreads[0]),
+                    startTurn,
                   } as never)
                 : Effect.die("A local command must not open a native session."),
   );
@@ -1241,7 +1482,7 @@ function makeLocalCommandHarness(input: {
       input: RunExecutionService.RunExecutionServiceV2StartRootRunInput,
     ) => Effect.Effect<void, RunExecutionService.RunExecutionServiceV2Error>
   >((runInput) =>
-    input.sideChat !== undefined
+    input.sideChat !== undefined || input.failClearRecreatedOnce === true
       ? (runInput.resume
           ? runInput.session.resumeTurn!({
               ...runInput,
@@ -1275,7 +1516,7 @@ function makeLocalCommandHarness(input: {
         ),
   );
   const writeIfRunCurrent = vi.fn<EventSink.EventSinkV2["Service"]["writeIfRunCurrent"]>(
-    ({ events: incoming, activeAttemptId, expectedStatus }) =>
+    ({ runId: targetRunId, events: incoming, activeAttemptId, expectedStatus }) =>
       "writeFailure" in input
         ? Effect.fail(
             new EventSink.EventSinkWriteError({
@@ -1284,7 +1525,7 @@ function makeLocalCommandHarness(input: {
             }),
           )
         : Effect.sync(() => {
-            const current = projection.runs.find((candidate) => candidate.id === runId);
+            const current = projection.runs.find((candidate) => candidate.id === targetRunId);
             const committed =
               current !== undefined &&
               current.activeAttemptId === activeAttemptId &&
@@ -1370,6 +1611,12 @@ function makeLocalCommandHarness(input: {
       projection.runs.find((candidate) => candidate.id === id),
     ),
   );
+  const recreatedBeforeDispatch = {
+    pending: input.recreatedBeforeDispatch === true,
+    failClearOnce: input.failClearRecreatedOnce === true,
+    setupStarted: false,
+    setupCompleted: false,
+  };
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -1389,6 +1636,74 @@ function makeLocalCommandHarness(input: {
         }),
         IdAllocator.layer,
         Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
+        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+          runForThread: input.runSetup ?? (() => Effect.succeed({ status: "no-script" })),
+        }),
+        Layer.mock(ThreadWorktreeRestore)({
+          takeRecreated: (_threadId, options) => {
+            const targetWorktreePath = input.worktreePath;
+            if (targetWorktreePath === undefined) {
+              return Effect.fail(
+                new WorktreeRecreateError({
+                  worktreePath: "",
+                  branch: "",
+                  cause: new Error("corrupt recreated-worktree-setup.json"),
+                }),
+              );
+            }
+            return Effect.suspend(() => {
+              if (options?.action === "record") {
+                recreatedBeforeDispatch.pending = true;
+                recreatedBeforeDispatch.setupStarted = false;
+                recreatedBeforeDispatch.setupCompleted = false;
+                return Effect.undefined;
+              }
+              if (options?.action === "start-setup") {
+                if (recreatedBeforeDispatch.setupStarted) {
+                  return Effect.fail(
+                    new WorktreeRecreateError({
+                      worktreePath: targetWorktreePath,
+                      branch: "feature/restore",
+                      cause: "Setup outcome unknown",
+                    }),
+                  );
+                }
+                recreatedBeforeDispatch.setupStarted = true;
+                return Effect.undefined;
+              }
+              if (options?.action === "reset-setup") {
+                recreatedBeforeDispatch.setupStarted = false;
+                return Effect.undefined;
+              }
+              if (options?.action === "clear") {
+                if (options.setupCompleted) recreatedBeforeDispatch.setupCompleted = true;
+                if (recreatedBeforeDispatch.failClearOnce) {
+                  recreatedBeforeDispatch.failClearOnce = false;
+                  return Effect.fail(
+                    new WorktreeRecreateError({
+                      worktreePath: targetWorktreePath,
+                      branch: "feature/restore",
+                      cause: new Error("failed to persist cleared state"),
+                    }),
+                  );
+                }
+                recreatedBeforeDispatch.pending = false;
+                return Effect.undefined;
+              }
+              if (!recreatedBeforeDispatch.pending) return Effect.undefined;
+              if (options?.action !== "peek") {
+                recreatedBeforeDispatch.pending = false;
+              }
+              return Effect.succeed({
+                project: {
+                  workspaceRoot: input.workspaceRoot ?? "/tmp/native-account-project",
+                } as never,
+                worktreePath: targetWorktreePath,
+                ...(recreatedBeforeDispatch.setupCompleted ? { setupCompleted: true } : {}),
+              });
+            });
+          },
+        }),
         layerWorktreeLocation(input.worktreesDir, input.newWorktreesMainBranchOnly),
         layerNoTaskFolders,
         input.fileSystem === undefined
@@ -1412,9 +1727,16 @@ function makeLocalCommandHarness(input: {
           getTurnStartContext,
           getRuntimeRecoveryProjection,
           getRun,
-          getTurnStartHistory: () =>
-            input.sideChat !== undefined || input.previousTurn !== undefined
-              ? Effect.succeed([])
+          getTurnStartHistory: (_, runIds) =>
+            input.sideChat !== undefined ||
+            input.previousTurn !== undefined ||
+            input.failClearRecreatedOnce === true
+              ? Effect.succeed(
+                  projection.turnItems.filter(
+                    (item) =>
+                      runIds === undefined || (item.runId !== null && runIds.includes(item.runId)),
+                  ),
+                )
               : Effect.fail(
                   new ProjectionStore.ProjectionStoreReadError({
                     threadId,
@@ -2282,6 +2604,570 @@ effectIt.effect("leaves a managed worktree folder without .git that holds user f
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+effectIt.effect.each([
+  { async: false, exitCode: 0 },
+  { async: false, exitCode: 1 },
+  { async: true, exitCode: 0 },
+])("restored setup respects async=$async and exitCode=$exitCode", (input) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-restore-setup-" });
+    const worktreePath = path.join(worktreesDir, "project", "restore");
+    const setupStarted = yield* Deferred.make<void>();
+    const setupDone = yield* Deferred.make<ProjectSetupScriptRunner.ProjectSetupScriptCompletion>();
+    const completionObserved = yield* Deferred.make<void>();
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      worktreesDir,
+      worktreePath,
+      fileSystem,
+      failReadsAfterRunning: true,
+      runSetup: () =>
+        withWorkspaceLease(worktreePath, Deferred.succeed(setupStarted, undefined)).pipe(
+          Effect.as({
+            status: "started",
+            scriptId: "setup",
+            scriptName: "Setup",
+            scriptCommand: "setup",
+            terminalId: "setup-test",
+            cwd: worktreePath,
+            async: input.async,
+            completion: Deferred.await(setupDone).pipe(
+              Effect.tap(() => Deferred.succeed(completionObserved, undefined)),
+            ),
+          }),
+        ),
+    });
+    harness.createWorktree.mockImplementation(() =>
+      fileSystem
+        .makeDirectory(path.join(worktreePath, ".git"), { recursive: true })
+        .pipe(Effect.as({} as never), Effect.orDie),
+    );
+
+    const startup = yield* harness.start.pipe(Effect.forkChild({ startImmediately: true }));
+    yield* Deferred.await(setupStarted);
+    if (input.async) yield* Fiber.join(startup);
+    else expect(harness.open).not.toHaveBeenCalled();
+    yield* Deferred.succeed(setupDone, { exitCode: input.exitCode, durationMs: 0 });
+    yield* Deferred.await(completionObserved);
+    yield* Fiber.join(startup);
+
+    const failed = !input.async && input.exitCode !== 0;
+    expect(harness.projection().runs.at(-1)?.status).toBe(failed ? "failed" : "running");
+    expect(harness.open).toHaveBeenCalledTimes(failed ? 0 : 1);
+    if (failed) {
+      expect(harness.projection().turnItems).toMatchObject([
+        {
+          type: "error",
+          title: "Couldn't set up restored workspace",
+          failure: {
+            message: `Setup script exited with ${input.exitCode} in '${worktreePath}'.`,
+          },
+        },
+      ]);
+    }
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect("runs setup for a worktree a send recreated before dispatch", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-sent-setup-" });
+    const worktreePath = path.join(worktreesDir, "project", "restore");
+    yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+    const runSetup = vi.fn(() => Effect.succeed({ status: "no-script" as const }));
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      worktreesDir,
+      worktreePath,
+      fileSystem,
+      failReadsAfterRunning: true,
+      recreatedBeforeDispatch: true,
+      runSetup,
+    });
+    yield* harness.start;
+    expect(harness.createWorktree).not.toHaveBeenCalled();
+    expect(runSetup).toHaveBeenCalledWith(expect.objectContaining({ worktreePath }));
+    expect(harness.open).toHaveBeenCalledTimes(1);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect.each([{ async: false }, { async: true }])(
+  "does not repeat setup after interruption while the result is unknown (async=$async)",
+  ({ async: isAsync }) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-restart-setup-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      const setupEntered = yield* Deferred.make<void>();
+      const neverReady = yield* Deferred.make<boolean>();
+      const neverFinish =
+        yield* Deferred.make<ProjectSetupScriptRunner.ProjectSetupScriptCompletion>();
+      const runSetup = vi.fn(() =>
+        Deferred.succeed(setupEntered, undefined).pipe(
+          Effect.as({
+            status: "started" as const,
+            scriptId: "setup",
+            scriptName: "Setup",
+            scriptCommand: "setup",
+            terminalId: "setup-restart-test",
+            cwd: worktreePath,
+            async: isAsync,
+            commandWritten: Deferred.await(neverReady),
+            completion: Deferred.await(neverFinish),
+          }),
+        ),
+      );
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        runSetup,
+      });
+
+      const interrupted = yield* harness.start.pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(setupEntered);
+      yield* Fiber.interrupt(interrupted);
+      expect(harness.open).not.toHaveBeenCalled();
+
+      yield* harness.start;
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect(
+  "fails the current start attempt once when async setup commandWritten resolves false and retains pending setup for the next user start",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-unwritten-setup-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      let shouldWrite = false;
+      const runSetup = vi.fn(() =>
+        Effect.succeed({
+          status: "started" as const,
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "setup",
+          terminalId: "setup-unwritten",
+          cwd: worktreePath,
+          async: true,
+          commandWritten: Effect.succeed(shouldWrite),
+          completion: Effect.succeed({ exitCode: shouldWrite ? 0 : null, durationMs: 0 }),
+        }),
+      );
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        runSetup,
+      });
+      const initialProjection = harness.projection();
+
+      yield* harness.startWithRetry;
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+      expect(harness.projection().turnItems).toMatchObject([
+        {
+          type: "error",
+          title: "Couldn't set up restored workspace",
+          failure: {
+            message: `Could not write setup command to terminal in '${worktreePath}'.`,
+          },
+        },
+      ]);
+
+      // Pending setup was retained, so a subsequent explicit start runs setup again, clears it, and opens provider.
+      shouldWrite = true;
+      harness.setProjection(initialProjection);
+      yield* harness.startWithRetry;
+      expect(runSetup).toHaveBeenCalledTimes(2);
+      expect(harness.open).toHaveBeenCalledTimes(1);
+      expect(harness.projection().runs.at(-1)?.status).toBe("running");
+
+      // And a third start does not run setup again because the pending record was cleared on success.
+      harness.setProjection(initialProjection);
+      yield* harness.startWithRetry;
+      expect(runSetup).toHaveBeenCalledTimes(2);
+      expect(harness.open).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect(
+  "does not automatically retry a synchronous setup script that already ran and exited nonzero under EffectWorker",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-sync-setup-once-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      const runSetup = vi.fn(() =>
+        Effect.succeed({
+          status: "started" as const,
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "setup",
+          terminalId: "setup-sync-fail",
+          cwd: worktreePath,
+          async: false,
+          commandWritten: Effect.succeed(true),
+          completion: Effect.succeed({ exitCode: 2, durationMs: 0 }),
+        }),
+      );
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        runSetup,
+      });
+
+      yield* Effect.gen(function* () {
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const { storedEffect } = yield* enqueueStart(harness.projection());
+        expect(yield* worker.drain()).toBe(1);
+        expect(yield* storedEffect).toMatchObject({ status: "succeeded", attemptCount: 1 });
+      }).pipe(Effect.provide(layerStartEffectWorker(harness)));
+
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+      expect(harness.projection().turnItems).toMatchObject([
+        {
+          type: "error",
+          title: "Couldn't set up restored workspace",
+          failure: {
+            message: `Setup script exited with 2 in '${worktreePath}'.`,
+          },
+        },
+      ]);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect(
+  "automatically retries pre-execution setup operation errors under EffectWorker before running the script",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-pre-setup-retry-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      let calls = 0;
+      const runSetup = vi.fn(() => {
+        calls += 1;
+        if (calls === 1) {
+          return Effect.fail(
+            new ProjectSetupScriptRunner.ProjectSetupScriptOperationError({
+              threadId: "native-account-thread",
+              worktreePath,
+              operation: "readSettings",
+              cause: "transient read failure",
+            }),
+          );
+        }
+        return Effect.succeed({
+          status: "started" as const,
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "setup",
+          terminalId: "setup-pre-retry",
+          cwd: worktreePath,
+          async: false,
+          commandWritten: Effect.succeed(true),
+          completion: Effect.succeed({ exitCode: 0, durationMs: 0 }),
+        });
+      });
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        runSetup,
+      });
+
+      yield* Effect.gen(function* () {
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const { storedEffect } = yield* enqueueStart(harness.projection());
+        expect(yield* worker.drain()).toBe(1);
+        expect(yield* storedEffect).toMatchObject({ status: "pending", attemptCount: 1 });
+        expect(harness.projection().runs.at(-1)?.status).toBe("starting");
+
+        yield* TestClock.adjust("100 millis");
+        expect(yield* worker.drain()).toBe(1);
+        expect(yield* storedEffect).toMatchObject({ status: "succeeded", attemptCount: 2 });
+      }).pipe(Effect.provide(layerStartEffectWorker(harness)));
+
+      expect(runSetup).toHaveBeenCalledTimes(2);
+      expect(harness.open).toHaveBeenCalledTimes(1);
+      expect(harness.projection().runs.at(-1)?.status).toBe("running");
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect(
+  "does not re-run a succeeded setup script under EffectWorker when clearing pending setup fails",
+  () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const worktreesDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-clear-fail-once-",
+      });
+      const worktreePath = path.join(worktreesDir, "project", "restore");
+      yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      const runSetup = vi.fn(() =>
+        Effect.succeed({
+          status: "started" as const,
+          scriptId: "setup",
+          scriptName: "Setup",
+          scriptCommand: "setup",
+          terminalId: "setup-clear-fail",
+          cwd: worktreePath,
+          async: false,
+          commandWritten: Effect.succeed(true),
+          completion: Effect.succeed({ exitCode: 0, durationMs: 0 }),
+        }),
+      );
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        worktreesDir,
+        worktreePath,
+        fileSystem,
+        failReadsAfterRunning: true,
+        recreatedBeforeDispatch: true,
+        failClearRecreatedOnce: true,
+        runSetup,
+      });
+      const initial = harness.projection();
+      const message = initial.messages[0]!;
+      const item = {
+        type: "user_message",
+        id: TurnItemId.make("missed-setup-request"),
+        threadId: initial.thread.id,
+        runId: message.runId,
+        nodeId: message.nodeId,
+        providerThreadId: initial.runs[0]!.providerThreadId,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "completed",
+        title: null,
+        startedAt: initial.updatedAt,
+        completedAt: initial.updatedAt,
+        updatedAt: initial.updatedAt,
+        createdBy: "user",
+        creationSource: "server",
+        messageId: message.id,
+        text: message.text,
+        inputIntent: "turn_start",
+        attachments: [],
+      } as const;
+      harness.setProjection({ ...initial, turnItems: [item] });
+      harness.prepareProviderHandoff.mockImplementation((handoff) =>
+        Effect.succeed({
+          ...handoff,
+          id: ContextHandoffId.make("retry-setup-handoff"),
+          createdByProviderInstanceId: handoff.toProviderInstanceId,
+          status: "ready",
+          summaryMessageId: null,
+          summaryText: handoff.items
+            .flatMap((entry) => (entry.type === "user_message" ? [entry.text] : []))
+            .join("\n"),
+          updatedAt: handoff.createdAt,
+        }),
+      );
+
+      yield* Effect.gen(function* () {
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const { storedEffect } = yield* enqueueStart(harness.projection());
+        expect(yield* worker.drain()).toBe(1);
+        expect(yield* storedEffect).toMatchObject({ status: "succeeded", attemptCount: 1 });
+      }).pipe(Effect.provide(layerStartEffectWorker(harness)));
+
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+      expect(harness.projection().turnItems).toMatchObject([
+        item,
+        {
+          type: "error",
+          title: "Couldn't set up restored workspace",
+        },
+      ]);
+
+      const failedProjection = harness.projection();
+      const firstRun = failedProjection.runs[0]!;
+      const firstAttempt = failedProjection.attempts[0]!;
+      const firstNode = failedProjection.nodes[0]!;
+      const firstMessage = failedProjection.messages[0]!;
+      const firstScope = failedProjection.checkpointScopes[0]!;
+      const nextRunId = RunId.make("run-after-clear-failure");
+      const nextAttemptId = RunAttemptId.make("attempt-after-clear-failure");
+      const nextNodeId = NodeId.make("root-after-clear-failure");
+      const nextMessageId = MessageId.make("message-after-clear-failure");
+      const nextScopeId = CheckpointScopeId.make("scope-after-clear-failure");
+      harness.setProjection({
+        ...failedProjection,
+        runs: [
+          ...failedProjection.runs,
+          {
+            ...firstRun,
+            id: nextRunId,
+            ordinal: firstRun.ordinal + 1,
+            userMessageId: nextMessageId,
+            rootNodeId: nextNodeId,
+            activeAttemptId: nextAttemptId,
+            status: "starting",
+            startedAt: null,
+            completedAt: null,
+          },
+        ],
+        attempts: [
+          ...failedProjection.attempts,
+          {
+            ...firstAttempt,
+            id: nextAttemptId,
+            runId: nextRunId,
+            rootNodeId: nextNodeId,
+            attemptOrdinal: 1,
+            providerTurnId: null,
+            status: "pending",
+            startedAt: null,
+            completedAt: null,
+          },
+        ],
+        nodes: [
+          ...failedProjection.nodes,
+          {
+            ...firstNode,
+            id: nextNodeId,
+            runId: nextRunId,
+            rootNodeId: nextNodeId,
+            checkpointScopeId: nextScopeId,
+            providerTurnId: null,
+            status: "pending",
+            startedAt: null,
+            completedAt: null,
+          },
+        ],
+        messages: [
+          ...failedProjection.messages,
+          {
+            ...firstMessage,
+            id: nextMessageId,
+            runId: nextRunId,
+            nodeId: nextNodeId,
+            text: "Retry after fixing disk",
+          },
+        ],
+        checkpointScopes: [
+          ...failedProjection.checkpointScopes,
+          {
+            ...firstScope,
+            id: nextScopeId,
+            runId: nextRunId,
+            nodeId: nextNodeId,
+          },
+        ],
+      });
+
+      yield* Effect.gen(function* () {
+        yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2).start({
+          threadId: failedProjection.thread.id,
+          runId: nextRunId,
+          willRetry: true,
+        });
+      }).pipe(Effect.provide(harness.layer));
+
+      expect(runSetup).toHaveBeenCalledTimes(1);
+      expect(harness.open).toHaveBeenCalledTimes(1);
+      expect(harness.prepareProviderHandoff.mock.calls[0]?.[0]).toMatchObject({
+        targetRunId: nextRunId,
+        items: expect.arrayContaining([item]),
+      });
+      const prompt = harness.startTurn.mock.calls[0]?.[0].message.text;
+      expect(prompt).toContain(item.text);
+      expect(prompt).toContain("Retry after fixing disk");
+      expect(
+        harness.projection().runs.map((candidate) => [candidate.id, candidate.status]),
+      ).toEqual([
+        [firstRun.id, "failed"],
+        [nextRunId, "running"],
+      ]);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+effectIt.effect("does not read recreated-worktree setup state for threads without a worktree", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const stateDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-corrupt-pending-" });
+    yield* fileSystem.writeFileString(path.join(stateDir, "recreated-worktree-setup.json"), "{bad");
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      fileSystem,
+      failReadsAfterRunning: true,
+    });
+    const realRestoreLayer = layerThreadWorktreeRestore.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          layerNoTaskFolders,
+          Path.layer,
+          Layer.succeed(FileSystem.FileSystem, fileSystem),
+          Layer.mock(ServerConfig.ServerConfig)({
+            worktreesDir: managedWorktreesDir,
+            stateDir,
+          } as ServerConfig.ServerConfig["Service"]),
+          ServerSettings.layerTest(),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+          Layer.mock(GitWorkflow.GitWorkflowService)({}),
+          Layer.mock(ProjectService.ProjectService)({
+            getById: () => Effect.succeedSome({ workspaceRoot: "/tmp/project" } as never),
+          }),
+        ),
+      ),
+    );
+    // Corrupt pending file fails worktree-backed peek, while non-worktree turn start succeeds.
+    const peekError = yield* Effect.gen(function* () {
+      const { takeRecreated } = yield* ThreadWorktreeRestore;
+      return yield* takeRecreated(ThreadId.make("any"), { action: "peek" }).pipe(Effect.flip);
+    }).pipe(Effect.provide(realRestoreLayer));
+    expect(peekError._tag).toBe("WorktreeRecreateError");
+
+    yield* harness.start;
+    expect(harness.open).toHaveBeenCalledTimes(1);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
 effectIt.effect(
   "preserves recreation interrupts and retries, then fails the final attempt before provider start",
   () =>
@@ -3042,7 +3928,7 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
       });
       harness.createWorktree.mockImplementation(() =>
         fileSystem
-          .makeDirectory(worktreePath, { recursive: true })
+          .makeDirectory(path.join(worktreePath, ".git"), { recursive: true })
           .pipe(Effect.as({} as never), Effect.orDie),
       );
       const open = harness.open.getMockImplementation()!;

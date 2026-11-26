@@ -1,4 +1,3 @@
-import { normalizeHost } from "@t3tools/source-control-core/server/pullRequestUtils";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -115,7 +114,7 @@ export type GitHubApiError =
   | SourceControlRateLimit.SourceControlRateLimitPausedError;
 
 export function gitHubApiUrls(host: string): { readonly rest: string; readonly graphql: string } {
-  const normalized = normalizeHost(host);
+  const normalized = GitHubCredentials.normalizeGitHubHost(host);
   if (normalized === "github.com") {
     return { rest: "https://api.github.com", graphql: "https://api.github.com/graphql" };
   }
@@ -294,19 +293,20 @@ export const make = Effect.gen(function* () {
   const appCredential: GitHubRequestPolicy["Service"]["appCredential"] = Effect.fn(
     "GitHubRest.appCredential",
   )(function* (host) {
-    const token = yield* appSignIn.token(normalizeHost(host));
+    const authority = GitHubCredentials.normalizeGitHubHost(host);
+    const token = yield* appSignIn.token(authority);
     if (Option.isNone(token)) return Option.none();
     return Option.some({
       source: "app" as const,
       token: Redacted.make(token.value),
-      fingerprint: yield* credentials.fingerprint(normalizeHost(host), token.value),
+      fingerprint: yield* credentials.fingerprint(authority, token.value),
     });
   });
 
   const choose = Effect.fn("GitHubRest.credential")(function* (host: string, personal: boolean) {
     const pinned = yield* PinnedGitHubCredential;
     if (pinned !== null) {
-      if (pinned.host !== host) {
+      if (GitHubCredentials.normalizeGitHubHost(pinned.host) !== host) {
         return yield* new GitHubApiAuthenticationError({ host, operation: "credential" });
       }
       return {
@@ -336,7 +336,7 @@ export const make = Effect.gen(function* () {
   });
 
   const credential: GitHubRequestPolicy["Service"]["credential"] = (host, options) =>
-    choose(normalizeHost(host), options?.personal === true).pipe(
+    choose(GitHubCredentials.normalizeGitHubHost(host), options?.personal === true).pipe(
       Effect.map(({ token, fingerprint, source }) => ({
         token,
         fingerprint,
@@ -352,7 +352,7 @@ export const make = Effect.gen(function* () {
       source: GitHubCredentials.GitHubCredentialSource | undefined,
     ) => Effect.Effect<GitHubAnswer<A>, E, R>,
   ) {
-    const host = normalizeHost(input.host);
+    const host = GitHubCredentials.normalizeGitHubHost(input.host);
     const context = { host, operation: input.operation };
     yield* Effect.annotateCurrentSpan({
       "github.host": host,

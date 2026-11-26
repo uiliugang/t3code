@@ -10,12 +10,14 @@ export function nativePullRequestDestination(
   context: { environmentId: string; projectId: string } | null,
   projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>,
   configLoaded: (environmentId: EnvironmentId) => boolean,
+  supportsWebTargets?: (environmentId: EnvironmentId) => boolean,
 ) {
   if (!context) return null;
   const target = resolveChangeRequestLinkTarget({
     url,
     projects,
     configLoaded,
+    supportsWebTargets,
     environmentId: EnvironmentId.make(context.environmentId),
     projectId: ProjectId.make(context.projectId),
     lendHostProject: true,
@@ -26,7 +28,7 @@ export function nativePullRequestDestination(
     projectId: String(target.project.id),
     repository: target.repository,
     number: target.number,
-    ...(parsePullRequestAnchor(url) ? { navigationUrl: url } : {}),
+    navigationUrl: url,
     ...(target.host === undefined ? {} : { host: target.host }),
   };
 }

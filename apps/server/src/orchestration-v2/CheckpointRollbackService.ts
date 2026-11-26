@@ -5,6 +5,7 @@ import {
   type CommandId,
   latestProviderTurnForAttempt,
   type OrchestrationV2DomainEvent,
+  type Project,
   ProviderThreadId,
   repositoryRewindCheckpoint,
   ThreadId,
@@ -24,6 +25,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import type * as ServerConfig from "../config.ts";
 import type * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
+import { ThreadWorktreeRestore } from "../workspace/ThreadWorktreeRestore.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as WorkspaceFolders from "../workspace/WorkspaceFolders.ts";
 import {
@@ -150,6 +152,7 @@ export const layer: Layer.Layer<
     const path = yield* Path.Path;
     const taskFolders = yield* TaskFolders.TaskFolders;
     const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
+    const worktreeRestore = yield* Effect.serviceOption(ThreadWorktreeRestore);
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
@@ -262,11 +265,27 @@ export const layer: Layer.Layer<
           checkpointId: input.checkpointId,
         });
 
+      const recordRecreatedWorktree = (recreatedPath: string, project?: Project) =>
+        Option.isNone(worktreeRestore)
+          ? Effect.void
+          : worktreeRestore.value
+              .takeRecreated(input.threadId, {
+                action: "record",
+                projectId: context.thread.projectId,
+                worktreePath: recreatedPath,
+                ...(project === undefined ? {} : { project }),
+              })
+              .pipe(Effect.asVoid);
+
       if (context.thread.workspace === undefined && taskFolder !== null && branch != null) {
         // Cleanup can remove any of the folder's checkouts; the linked project folder has none.
         yield* taskFolders.restore({
           taskFolder,
           branch,
+          projectCommands: TaskFolders.linkRunsProjectCommands(context.thread.linkOrigin),
+          ...(worktreePath === null
+            ? {}
+            : { beforeRecreate: () => recordRecreatedWorktree(worktreePath) }),
           recreate: (checkout) =>
             gitWorkflow.pruneWorktrees({ cwd: checkout.repositoryPath }).pipe(
               Effect.andThen(
@@ -289,12 +308,13 @@ export const layer: Layer.Layer<
           (leftover || !(yield* fileSystem.exists(worktreePath))) &&
           (yield* isManagedWorktreePath(worktreePath))
         ) {
-          const project = yield* projects.get(context.thread.projectId);
-          if (Option.isSome(project)) {
-            const recreate = gitWorkflow.pruneWorktrees({ cwd: project.value.workspaceRoot }).pipe(
+          const projectRow = yield* projects.get(context.thread.projectId);
+          if (Option.isSome(projectRow)) {
+            const project = ProjectStore.projectFromRow(projectRow.value);
+            const recreate = gitWorkflow.pruneWorktrees({ cwd: project.workspaceRoot }).pipe(
               Effect.andThen(
                 gitWorkflow.createWorktree({
-                  cwd: project.value.workspaceRoot,
+                  cwd: project.workspaceRoot,
                   refName: branch,
                   path: worktreePath,
                 }),
@@ -302,6 +322,7 @@ export const layer: Layer.Layer<
             );
             if (leftover) {
               if (!(yield* isolated)) return yield* sharedWorkspace();
+              yield* recordRecreatedWorktree(worktreePath, project);
               // Set aside, not removed: a checkout that fails puts the folder and its files back.
               yield* Effect.acquireUseRelease(
                 Effect.gen(function* () {
@@ -335,6 +356,7 @@ export const layer: Layer.Layer<
                   ),
               );
             } else {
+              yield* recordRecreatedWorktree(worktreePath, project);
               yield* recreate;
             }
           }

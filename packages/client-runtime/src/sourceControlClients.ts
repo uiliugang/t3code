@@ -5,7 +5,13 @@ import {
   type SourceControlAppSignIn,
   type SourceControlDefinition,
 } from "@t3tools/source-control-core/shared/definition";
-import type { ServerSettings, SourceControlAppAccessInput } from "@t3tools/contracts";
+import {
+  isConfiguredSourceControlToken,
+  sourceControlTokenHost,
+  type ServerSettings,
+  type SettingsSecretValue,
+  type SourceControlAppAccessInput,
+} from "@t3tools/contracts";
 import { parseGitRemoteRepository } from "@t3tools/shared/git";
 
 export {
@@ -33,6 +39,33 @@ export function readHostCredentialSettings(
   kind: string,
 ): HostCredentialSettings {
   return readSourceControlHostSettings(HostCredentialSettings, settings.sourceControlHosts[kind]);
+}
+
+export function sourceControlHostTokenPatch(
+  kind: string,
+  tokens: HostCredentialSettings["tokens"],
+  host: string,
+  token: SettingsSecretValue,
+): HostCredentialSettings["tokens"] {
+  const target = sourceControlTokenHost(kind, host);
+  const aliases =
+    kind === "github"
+      ? Object.keys(tokens).filter((key) => sourceControlTokenHost(kind, key) === target)
+      : [];
+  return { ...Object.fromEntries(aliases.map((key) => [key, ""])), [target]: token };
+}
+
+export function configuredSourceControlTokenHosts(
+  kind: string,
+  tokens: HostCredentialSettings["tokens"],
+): string[] {
+  return [
+    ...new Set(
+      Object.entries(tokens)
+        .filter(([, value]) => isConfiguredSourceControlToken(value))
+        .map(([host]) => sourceControlTokenHost(kind, host)),
+    ),
+  ];
 }
 
 /** A host's change request term where it opens a sentence: "Merge request merged". */

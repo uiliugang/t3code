@@ -1,4 +1,5 @@
 import { builtInSourceControlDefinitions } from "@t3tools/source-control-definitions/registry";
+import { withoutRemoteUrlCredentials } from "@t3tools/shared/cloneUrl";
 import * as GitHubDriver from "@t3tools/source-control-github/server/driver";
 import * as GitLabDriver from "@t3tools/source-control-gitlab/server/driver";
 import * as MeituanDriver from "@t3tools/source-control-meituan/server/driver";
@@ -37,8 +38,9 @@ export function selectRequirementRemote(
     targets.length > 1 ? targets.filter((remote) => remote.name !== "upstream") : targets;
   const selected = origin ?? (candidates.length === 1 ? candidates[0] : undefined);
   if (!selected || isLocalRemoteUrl(selected.url)) return null;
-  const provider = sourceControlDefinitions.recognizeRemote(selected.url);
-  return provider ? { remoteName: selected.name, remoteUrl: selected.url, provider } : null;
+  const remoteUrl = withoutRemoteUrlCredentials(selected.url);
+  const provider = sourceControlDefinitions.recognizeRemote(remoteUrl);
+  return provider ? { remoteName: selected.name, remoteUrl, provider } : null;
 }
 
 /** A host CLI command that merges or closes a change request, such as `gh pr merge`. */

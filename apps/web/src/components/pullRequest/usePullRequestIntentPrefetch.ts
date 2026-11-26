@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestRef } from "@t3tools/contracts";
 import { useRef, useState } from "react";
 
 import { useStableCallback } from "~/hooks/useStableCallback";
@@ -9,12 +9,9 @@ import { pullRequestPanelReference } from "./usePullRequestDetail";
 
 const INTENT_DELAY_MS = 150;
 
-interface PullRequestIntentTarget {
+interface PullRequestIntentTarget extends PullRequestRef {
   readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId;
   readonly host: string;
-  readonly repository: string;
-  readonly number: number;
 }
 
 /**

@@ -286,9 +286,10 @@ export function usePullRequestList(targets: readonly ListTarget[]) {
           const base = withoutCachedOverlay.get(scopedPullRequestListKey(row)) ?? row;
           return row.environmentId === environmentId && base.additions + base.deletions === 0;
         })
-        .map(({ projectId, host, repository, number }) => ({
+        .map(({ projectId, host, target, repository, number }) => ({
           projectId,
           host,
+          target,
           repository,
           number,
         }));

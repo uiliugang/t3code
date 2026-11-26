@@ -312,6 +312,8 @@ export const PullRequestCapabilities = Schema.Struct({
   edit: Schema.optional(PullRequestEditCapabilities),
   stacks: Schema.optional(Schema.Boolean),
   stackActions: Schema.optional(Schema.Boolean),
+  /** Stack actions also arm and cancel auto-merge for a layer and the open layers below it. */
+  stackAutoMerge: Schema.optional(Schema.Boolean),
   labels: Schema.optional(Schema.Boolean),
   /** The host searches the repository's users, so composers can complete `@login`. */
   mentions: Schema.optional(Schema.Boolean),
@@ -363,10 +365,17 @@ export type PullRequestStackMembership = typeof PullRequestStackMembership.Type;
 export const PullRequestVisibility = Schema.Literals(["public", "private"]);
 export type PullRequestVisibility = typeof PullRequestVisibility.Type;
 
+export const PullRequestWebTarget = Schema.Struct({
+  provider: SourceControlProviderKind,
+  origin: TrimmedNonEmptyString,
+});
+export type PullRequestWebTarget = typeof PullRequestWebTarget.Type;
+
 export const PullRequestListEntry = Schema.Struct({
   stack: Schema.optional(PullRequestStackMembership),
   provider: SourceControlProviderKind,
   host: TrimmedNonEmptyString,
+  target: Schema.optional(PullRequestWebTarget),
   projectId: ProjectId,
   projectTitle: TrimmedNonEmptyString,
   repository: TrimmedNonEmptyString,
@@ -386,6 +395,7 @@ export const PullRequestListEntry = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   observedAt: Schema.optional(Schema.Finite),
+  viewerLogin: Schema.optional(TrimmedNonEmptyString),
   viewerReviewRequested: Schema.Boolean,
   labels: Schema.Array(PullRequestLabel),
   reviewDecision: Schema.optional(PullRequestReviewDecision),
@@ -421,6 +431,7 @@ export type PullRequestListInput = typeof PullRequestListInput.Type;
 export const PullRequestProviderSummary = Schema.Struct({
   host: TrimmedNonEmptyString,
   kind: SourceControlProviderKind,
+  origin: Schema.optional(TrimmedNonEmptyString),
   searchesOnHost: Schema.Boolean,
   actions: Schema.optional(ForwardCompatibleArray(PullRequestAction)),
   projectCount: PositiveInt,
@@ -453,12 +464,24 @@ export type PullRequestListResult = typeof PullRequestListResult.Type;
 export const PullRequestRef = Schema.Struct({
   projectId: ProjectId,
   host: Schema.optional(TrimmedNonEmptyString),
+  target: Schema.optional(PullRequestWebTarget),
   expectedAccountId: Schema.optional(TrimmedNonEmptyString),
   allowStale: Schema.optional(Schema.Boolean),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,
 });
 export type PullRequestRef = typeof PullRequestRef.Type;
+
+export function isPublicGitHubPullRequestTarget({
+  host,
+  target,
+}: Pick<typeof PullRequestRef.Encoded, "host" | "target">): boolean {
+  return (
+    host?.toLowerCase() === "github.com" &&
+    target?.provider === "github" &&
+    target.origin === "https://github.com"
+  );
+}
 
 /** `query` asks the host for matches past the first page of candidates. */
 export const PullRequestReviewerCandidatesInput = Schema.Struct({
@@ -485,6 +508,7 @@ export const PullRequestRoutingResult = Schema.Struct({
   host: TrimmedNonEmptyString,
   provider: SourceControlProviderKind,
   viewer: TrimmedNonEmptyString,
+  repository: Schema.optionalKey(TrimmedNonEmptyString),
   projectTitle: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
 });
@@ -570,6 +594,7 @@ export type PullRequestStack = typeof PullRequestStack.Type;
 
 export const PullRequestDiffStat = Schema.Struct({
   projectId: ProjectId,
+  target: Schema.optional(PullRequestWebTarget),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,
   additions: NonNegativeInt,
@@ -795,6 +820,7 @@ export const PullRequestFilesViewedResult = Schema.Struct({
   /** Only the files the host reported a state for. A file missing from this list is unviewed. */
   files: Schema.Array(PullRequestFileViewed),
   truncated: Schema.Boolean,
+  target: Schema.optional(PullRequestWebTarget),
 });
 export type PullRequestFilesViewedResult = typeof PullRequestFilesViewedResult.Type;
 
@@ -918,6 +944,8 @@ export type PullRequestReviewCommentDraft = typeof PullRequestReviewCommentDraft
 
 export const PullRequestSubmitReviewInput = Schema.Struct({
   ...PullRequestRef.fields,
+  /** Reviews refuse when the head commit is no longer this one. */
+  expectedHeadSha: Schema.optional(TrimmedNonEmptyString),
   verdict: PullRequestReviewVerdict,
   body: Schema.String.check(Schema.isMaxLength(65_536)),
   comments: Schema.Array(PullRequestReviewCommentDraft),

@@ -59,12 +59,17 @@ describe("mergeProjectIssueSources", () => {
       { ...second, scope: "team/next" },
     ]);
     expect(withGithubRepositoryOverride(saved, first, null)).toEqual([second]);
+    const legacy = [{ ...first, host: "GitHub.com:443", scope: "Team/App" }, first, second];
+    expect(withGithubRepositoryOverride(legacy, first, null)).toEqual([second]);
+    expect(withGithubRepositoryOverride(legacy, first, first.scope)).toEqual([first, second]);
+    expect(listedProjectIssueSources(true, [], legacy, "github")).toEqual([legacy[0], second]);
+    expect(listedProjectIssueSources(false, [], legacy, "github")).toEqual([legacy[0], second]);
     expect(withGithubRepositoryOverride([space], second, "team/new")).toEqual([
       { ...second, scope: "team/new" },
     ]);
     expect(withGithubRepositoryOverride([], undefined, first.scope)).toEqual([first]);
     const renamed = { ...first, scope: "team/next" };
-    expect(withGithubRepositoryOverride([first, renamed, space], first, renamed.scope)).toEqual([
+    expect(withGithubRepositoryOverride([first, renamed, space], first, "TEAM/next")).toEqual([
       renamed,
     ]);
   });
@@ -72,11 +77,27 @@ describe("mergeProjectIssueSources", () => {
     const id = ProjectId.make("project");
     const github = { provider: "github", host: "github.com", scope: "team/original" } as const;
     const latest = { ...github, scope: "team/renamed" };
-    const patch = projectIssueSourceEdit(id, "meituan", [latest], [github], () =>
+    const patch = projectIssueSourceEdit(id, false, "meituan", [latest], [github], () =>
       withMepSpaceOverrides(["42"]),
     );
     expect(patch).toBeNull();
-    expect(projectIssueSourceEdit(id, "github", [latest], [github], () => [])).toBeNull();
+    expect(projectIssueSourceEdit(id, true, "github", [latest], [github], () => [])).toBeNull();
+  });
+  it("sends the full legacy source list but scopes writes to a capable server", () => {
+    const id = ProjectId.make("project");
+    const github = { provider: "github", host: "github.com", scope: "team/original" } as const;
+    const oldSpace = withMepSpaceOverrides(["41"])[0]!;
+    const saved = [github, oldSpace];
+    const replacement = withMepSpaceOverrides(["42"]);
+    expect(projectIssueSourceEdit(id, false, "meituan", saved, saved, () => replacement)).toEqual({
+      expectedIssueProjectSources: { [id]: saved },
+      patch: { issueProjectSources: { [id]: [github, ...replacement] } },
+    });
+    expect(projectIssueSourceEdit(id, true, "meituan", saved, saved, () => replacement)).toEqual({
+      issueSourceProvider: "meituan",
+      expectedIssueProjectSources: { [id]: saved },
+      patch: { issueProjectSources: { [id]: replacement } },
+    });
   });
   it("batches more than 500 projects without dropping the remainder", () => {
     const projectIds = Array.from({ length: 501 }, (_, index) =>

@@ -2,7 +2,6 @@
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import * as Console from "effect/Console";
@@ -16,9 +15,24 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { Command, Flag } from "effect/cli";
 
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
+import { resolveBaseDir } from "../src/os-jank.ts";
 import { rebuildMessageSearch } from "../src/orchestration-v2/messageSearchIndex.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
+import { holdServerOwnershipLock } from "../src/serverOwnership.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import {
+  assertUnlinkedDatabaseFiles,
+  comparableDevDbPath,
+  databaseFamilyPaths,
+  inspectIsolatedDevDirectory,
+  inspectPath,
+  inspectProtectedHomes,
+  looksLikeInstalledHome,
+  looksLikeLiveDatabase,
+  MigrateDevDbSharedHomeError,
+  resolveFilesystemPath,
+} from "../../../scripts/lib/dev-db-safety.ts";
 
 export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<
   MigrateDevDbNotInWorktreeError,
@@ -26,15 +40,6 @@ export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<
 >()("MigrateDevDbNotInWorktreeError", {}) {
   override get message(): string {
     return "Not inside a linked git worktree. Pass --base-dir to target an isolated .t3 directory.";
-  }
-}
-
-export class MigrateDevDbSharedHomeError extends Schema.TaggedError<
-  MigrateDevDbSharedHomeError,
-  { readonly brand: unique symbol }
->()("MigrateDevDbSharedHomeError", {}) {
-  override get message(): string {
-    return "Refusing to rebuild the shared ~/.t3 database. Use an isolated --base-dir.";
   }
 }
 
@@ -124,6 +129,10 @@ export interface RunMigrateDevDbInput {
 export interface RunMigrateDevDbOptions {
   /** Test override for the directory writes must never target. */
   readonly sharedHome?: string | undefined;
+  /** Test override for ambient T3CODE_HOME. */
+  readonly ambientHome?: string | undefined;
+  /** Test override for the working directory when `--base-dir` is omitted. */
+  readonly cwd?: string | undefined;
 }
 
 interface KeptProject {
@@ -131,10 +140,26 @@ interface KeptProject {
   readonly threads: number;
 }
 
-const removeDatabaseFiles = Effect.fn("removeDatabaseFiles")(function* (databasePath: string) {
+const migrationHomes = Effect.fn("migrationHomes")(function* (options: RunMigrateDevDbOptions) {
+  const env = yield* HostProcess.Environment;
+  const shared = yield* resolveBaseDir(options.sharedHome);
+  const ambient = (options.ambientHome ?? env.T3CODE_HOME)?.trim();
+  return {
+    shared,
+    homes: [...new Set([shared, ...(ambient ? [yield* resolveBaseDir(ambient)] : [])])],
+  };
+});
+
+const removeDatabaseFiles = Effect.fn("removeDatabaseFiles")(function* (
+  databasePath: string,
+  keepMain = false,
+) {
   const fs = yield* FileSystem.FileSystem;
-  for (const suffix of ["", "-wal", "-shm"]) {
-    yield* fs.remove(`${databasePath}${suffix}`).pipe(Effect.orElseSucceed(() => undefined));
+  for (const candidate of databaseFamilyPaths(databasePath)) {
+    if (keepMain && candidate === databasePath) continue;
+    yield* fs
+      .remove(candidate)
+      .pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.void));
   }
 });
 
@@ -195,12 +220,19 @@ const ensureNotInUse = Effect.fn("ensureDevDbNotInUse")(function* (databasePath:
   }
 });
 
-const RECOVERY_KINDS: ReadonlyArray<ProjectionStore.ProjectionRecoveryKind> = [
-  "queued-runs",
-  "runtime",
-  "subagent-results",
-  "delegated-completions",
-];
+// Every kind startup recovery resumes, so a copied family never starts work by itself. The record
+// fails typecheck when a kind is added and not listed here.
+const RECOVERY_KIND_SET = {
+  "queued-runs": true,
+  runtime: true,
+  "restart-continuations": true,
+  "subagent-results": true,
+  "delegated-completions": true,
+  "unread-steers": true,
+} satisfies Record<ProjectionStore.ProjectionRecoveryKind, true>;
+const RECOVERY_KINDS = Object.keys(
+  RECOVERY_KIND_SET,
+) as ReadonlyArray<ProjectionStore.ProjectionRecoveryKind>;
 
 const CLEARED_TABLES: ReadonlyArray<string> = [
   "scheduled_tasks",
@@ -360,19 +392,17 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
   yield* sql`DETACH DATABASE src`;
 });
 
-const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigrateDevDbInput) {
+/**
+ * Threads a server started on this database would resume by itself: every startup recovery kind,
+ * plus latest-run failures and recovery choices, which usage-limit recovery can resume.
+ */
+export const resumableThreadIds = Effect.fn("resumableDevDbThreadIds")(function* () {
   const sql = yield* SqlClient.SqlClient;
-
-  // Usage-limit recovery also depends on settings; exclude latest-run failures and recovery choices.
   const projections = yield* ProjectionStore.ProjectionStoreV2;
-  const recoveryThreadIds = yield* Effect.forEach(RECOVERY_KINDS, (kind) =>
+  const recovery = yield* Effect.forEach(RECOVERY_KINDS, (kind) =>
     projections.getRecoveryThreadIds(kind),
   );
-  yield* sql`CREATE TEMP TABLE live_threads (thread_id TEXT PRIMARY KEY)`;
-  for (const threadId of new Set(recoveryThreadIds.flat())) {
-    yield* sql`INSERT INTO live_threads (thread_id) VALUES (${threadId})`;
-  }
-  yield* sql`INSERT OR IGNORE INTO live_threads (thread_id)
+  const failedOrRecovering = yield* sql<{ thread_id: string }>`
     SELECT r.thread_id FROM orchestration_v2_projection_runs r
     WHERE r.status = 'failed' AND r.ordinal = (
       SELECT MAX(latest.ordinal) FROM orchestration_v2_projection_runs latest
@@ -380,6 +410,115 @@ const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigra
     UNION
     SELECT thread_id FROM orchestration_v2_projection_threads
     WHERE json_extract(payload_json, '$.limitRecovery') IS NOT NULL`;
+  return [
+    ...new Set<string>([...recovery.flat(), ...failedOrRecovering.map((row) => row.thread_id)]),
+  ];
+});
+
+export class MigrateDevDbResumableWorkError extends Schema.TaggedError<MigrateDevDbResumableWorkError>()(
+  "MigrateDevDbResumableWorkError",
+  { databasePath: Schema.String, threads: Schema.Number },
+) {
+  override get message() {
+    return `${this.databasePath} still holds ${this.threads} threads a server would resume.`;
+  }
+}
+
+/**
+ * Drops, in place, every thread family a server started on `databasePath` would resume, and fails
+ * if any remain. A database seeded by an older checkout can miss a recovery kind added since.
+ */
+export const dropResumableFamilies = Effect.fn("dropResumableDevDbFamilies")(function* (
+  databasePath: string,
+  options: RunMigrateDevDbOptions = {},
+) {
+  const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  yield* assertUnlinkedDatabaseFiles([databasePath]);
+  const main = yield* inspectPath(databasePath);
+  if (Option.isNone(main.identity)) {
+    return yield* new MigrateDevDbSourceMissingError({ sourcePath: databasePath });
+  }
+  const target = main.canonical;
+  const stateDir = path.dirname(target);
+  const ownerFiles = databaseFamilyPaths(path.join(stateDir, "server-owner.sqlite"));
+  if (ownerFiles.includes(target)) return yield* new MigrateDevDbSharedHomeError();
+  const files = [...databaseFamilyPaths(target), ...ownerFiles];
+  yield* assertUnlinkedDatabaseFiles(files);
+  const family = yield* Effect.forEach(files, inspectPath);
+  const directory = yield* inspectPath(path.dirname(target));
+  const { stateDirs, databases } = yield* inspectProtectedHomes(
+    (yield* migrationHomes(options)).homes,
+  );
+  const matches = (target: typeof main, candidate: typeof main) =>
+    comparableDevDbPath(target.canonical, platform) ===
+      comparableDevDbPath(candidate.canonical, platform) ||
+    Option.exists(target.identity, (identity) => Option.contains(candidate.identity, identity));
+  if (
+    !Option.contains(family[0]!.identity, main.identity.value) ||
+    stateDirs.some((live) => matches(directory, live)) ||
+    databases.some((live) => family.some((file) => matches(file, live))) ||
+    (yield* looksLikeLiveDatabase(databasePath)) ||
+    (yield* looksLikeLiveDatabase(target))
+  ) {
+    return yield* new MigrateDevDbSharedHomeError();
+  }
+  // Beside the real file, where a running server keeps its runtime state.
+  yield* holdServerOwnershipLock(path.join(stateDir, "server-runtime.json"));
+  yield* ensureNotInUse(target);
+  return yield* Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const resumable = yield* resumableThreadIds();
+    if (resumable.length > 0) {
+      yield* sql`CREATE TEMP TABLE resumable_families (thread_id TEXT PRIMARY KEY)`;
+      yield* sql`INSERT OR IGNORE INTO resumable_families
+        SELECT family.thread_id FROM orchestration_v2_projection_threads family
+        WHERE COALESCE(json_extract(family.payload_json, '$.lineage.rootThreadId'), family.thread_id) IN (
+          SELECT COALESCE(json_extract(payload_json, '$.lineage.rootThreadId'), thread_id)
+          FROM orchestration_v2_projection_threads WHERE thread_id IN ${sql.in(resumable)})`;
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          for (const { name } of yield* sql<{ name: string }>`
+            SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) c
+            WHERE m.type = 'table' AND c.name = 'thread_id'
+              AND m.name <> ${PROVIDER_SESSIONS_TABLE}`) {
+            yield* sql`DELETE FROM ${sql(name)}
+              WHERE thread_id IN (SELECT thread_id FROM resumable_families)`;
+          }
+          // A session a kept thread still binds stays, as pruning keeps it.
+          yield* sql`DELETE FROM ${sql(PROVIDER_SESSIONS_TABLE)}
+            WHERE thread_id IN (SELECT thread_id FROM resumable_families)
+              AND provider_session_id NOT IN (
+                SELECT provider_session_id FROM orchestration_v2_projection_provider_session_bindings
+                WHERE thread_id NOT IN (SELECT thread_id FROM resumable_families)
+              )`;
+          yield* sql`DELETE FROM orchestration_v2_projection_context_transfers
+            WHERE source_thread_id IN (SELECT thread_id FROM resumable_families)
+               OR target_thread_id IN (SELECT thread_id FROM resumable_families)`;
+          yield* sql`DELETE FROM orchestration_events WHERE aggregate_kind = 'thread'
+            AND stream_id IN (SELECT thread_id FROM resumable_families)`;
+        }),
+      );
+    }
+    const left = yield* resumableThreadIds();
+    if (left.length > 0) {
+      return yield* new MigrateDevDbResumableWorkError({ databasePath, threads: left.length });
+    }
+    return resumable.length;
+  }).pipe(
+    Effect.provide(
+      ProjectionStore.layer.pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename: target }))),
+    ),
+  );
+}, Effect.scoped);
+
+const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigrateDevDbInput) {
+  const sql = yield* SqlClient.SqlClient;
+
+  yield* sql`CREATE TEMP TABLE live_threads (thread_id TEXT PRIMARY KEY)`;
+  for (const threadId of yield* resumableThreadIds()) {
+    yield* sql`INSERT INTO live_threads (thread_id) VALUES (${threadId})`;
+  }
 
   // Clone or drop whole thread families to preserve fork and subagent lineage reads.
   yield* sql`CREATE TEMP TABLE thread_families AS
@@ -536,47 +675,125 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   }
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const comparable = (resolved: string) => comparableDevDbPath(resolved, platform);
+  const samePath = (left: string, right: string) => comparable(left) === comparable(right);
 
-  const sharedHome = path.resolve(options.sharedHome ?? path.join(NodeOS.homedir(), ".t3"));
-  const sourcePath = path.resolve(
-    input.source ?? path.join(sharedHome, "userdata", "statev2.sqlite"),
-  );
+  const { shared: sharedHome, homes } = yield* migrationHomes(options);
+  const rawSourcePath = input.source ?? path.join(sharedHome, "userdata", "statev2.sqlite");
 
-  const baseDir =
-    input.baseDir !== undefined
-      ? path.resolve(input.baseDir)
-      : yield* resolveWorktreeT3Home(process.cwd());
-  if (baseDir === undefined) {
+  const worktreeBaseDir = yield* resolveWorktreeT3Home(options.cwd ?? process.cwd());
+  if (input.baseDir === undefined && worktreeBaseDir === undefined) {
     return yield* new MigrateDevDbNotInWorktreeError();
   }
-  const stateDir = path.join(baseDir, "userdata");
+  const rawBaseDir = input.baseDir ?? worktreeBaseDir!;
+  const { base: baseDirStat, state: stateDirStat } = yield* inspectIsolatedDevDirectory(
+    rawBaseDir,
+    "userdata",
+  );
+  const canonicalBaseDir = baseDirStat.canonical;
+  const lexicalBaseDir = path.resolve(rawBaseDir);
+  // All filesystem writes use `canonicalBaseDir`; preserve `lexicalBaseDir` for display only when
+  // its canonical path is byte-identical (avoiding case-sensitive volume collisions on macOS).
+  const displayBaseDir = Option.exists(
+    yield* resolveFilesystemPath(lexicalBaseDir),
+    (lexicalResolved) => lexicalResolved === canonicalBaseDir,
+  )
+    ? lexicalBaseDir
+    : canonicalBaseDir;
+  const stateDir = stateDirStat.canonical;
   const databasePath = path.join(stateDir, "statev2.sqlite");
+  const displayDatabasePath = path.join(displayBaseDir, "userdata", "statev2.sqlite");
   const snapshotPath = `${databasePath}.migrate-dev-db-tmp`;
+  const statePath = path.join(stateDir, "server-runtime.json");
 
-  if (!(yield* fs.exists(sourcePath))) {
-    return yield* new MigrateDevDbSourceMissingError({ sourcePath });
+  const { canonical: sourcePath, identity: sourceIdentity } = yield* inspectPath(rawSourcePath);
+  if (Option.isNone(sourceIdentity)) {
+    return yield* new MigrateDevDbSourceMissingError({
+      sourcePath: input.source ?? path.resolve(rawSourcePath),
+    });
   }
-  const [canonicalBaseDir, canonicalSharedHome] = yield* Effect.all([
-    fs.realPath(baseDir).pipe(Effect.orElseSucceed(() => baseDir)),
-    fs.realPath(sharedHome).pipe(Effect.orElseSucceed(() => sharedHome)),
-  ]);
-  if (canonicalBaseDir === canonicalSharedHome) {
-    return yield* new MigrateDevDbSharedHomeError();
-  }
-  // Both destination and snapshot are deleted below; reject sources resolving to either.
-  const canonicalSourcePath = yield* fs
-    .realPath(sourcePath)
-    .pipe(Effect.orElseSucceed(() => sourcePath));
-  for (const destination of [databasePath, snapshotPath]) {
-    const canonicalDestination = yield* fs
-      .realPath(destination)
-      .pipe(Effect.orElseSucceed(() => destination));
-    if (canonicalSourcePath === canonicalDestination) {
-      return yield* new MigrateDevDbSourceIsDestinationError({ sourcePath });
+  const destinationRewriteFiles = [
+    ...databaseFamilyPaths(databasePath),
+    ...databaseFamilyPaths(snapshotPath),
+    ...databaseFamilyPaths(path.join(stateDir, "server-owner.sqlite")),
+  ];
+  const {
+    homes: protectedHomeStats,
+    stateDirs: protectedStateDirStats,
+    databases: protectedDatabaseStats,
+  } = yield* inspectProtectedHomes(homes);
+  const destinationFileStats = yield* Effect.forEach(destinationRewriteFiles, inspectPath);
+  const canonicalProtectedHomes = protectedHomeStats.map((entry) => entry.canonical);
+  const canonicalProtectedStateDirs = protectedStateDirStats.map((entry) => entry.canonical);
+  const canonicalProtectedDatabases = protectedDatabaseStats.map((entry) => entry.canonical);
+  const resolvedStateDir = stateDirStat.canonical;
+  const resolvedDestinationFiles = destinationFileStats.map((entry) => entry.canonical);
+  const resolvedDestinationDb = resolvedDestinationFiles[0]!;
+  // Reject any symlink at the destination or snapshot database / WAL / SHM filenames themselves.
+  for (const rawFile of destinationRewriteFiles) {
+    const rawInfo = yield* fs.lstat(rawFile).pipe(
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null)),
+      Effect.option,
+    );
+    if (Option.isNone(rawInfo) || (rawInfo.value !== null && rawInfo.value.type !== "File")) {
+      return yield* new MigrateDevDbSharedHomeError();
     }
   }
+  const sharesIdentity = (
+    target: Option.Option<string>,
+    candidates: ReadonlyArray<{ readonly identity: Option.Option<string> }>,
+  ) =>
+    Option.isSome(target) &&
+    candidates.some(
+      ({ identity: candidate }) => Option.isSome(candidate) && candidate.value === target.value,
+    );
+  const stateDirHome =
+    path.basename(resolvedStateDir).toLowerCase() === "userdata"
+      ? path.dirname(resolvedStateDir)
+      : undefined;
+  const resolvedDestinationHome =
+    path.basename(path.dirname(resolvedDestinationDb)).toLowerCase() === "userdata"
+      ? path.dirname(path.dirname(resolvedDestinationDb))
+      : undefined;
+  if (
+    canonicalProtectedHomes.some((home) => samePath(home, canonicalBaseDir)) ||
+    canonicalProtectedStateDirs.some((dir) => samePath(dir, resolvedStateDir)) ||
+    canonicalProtectedDatabases.some((live) =>
+      resolvedDestinationFiles.some((dest) => samePath(live, dest)),
+    ) ||
+    sharesIdentity(baseDirStat.identity, protectedHomeStats) ||
+    sharesIdentity(stateDirStat.identity, protectedStateDirStats) ||
+    destinationFileStats.some((destStat) =>
+      sharesIdentity(destStat.identity, protectedDatabaseStats),
+    ) ||
+    (stateDirHome !== undefined &&
+      canonicalProtectedHomes.some((home) => samePath(home, stateDirHome))) ||
+    (resolvedDestinationHome !== undefined &&
+      canonicalProtectedHomes.some((home) => samePath(home, resolvedDestinationHome))) ||
+    (yield* looksLikeInstalledHome(displayBaseDir)) ||
+    (yield* looksLikeInstalledHome(canonicalBaseDir)) ||
+    (stateDirHome !== undefined && (yield* looksLikeInstalledHome(stateDirHome))) ||
+    (resolvedDestinationHome !== undefined &&
+      (yield* looksLikeInstalledHome(resolvedDestinationHome)))
+  ) {
+    return yield* new MigrateDevDbSharedHomeError();
+  }
+  // Every destination and snapshot database / WAL / SHM file is deleted below; reject sources matching any of them.
+  if (
+    resolvedDestinationFiles.some((canonicalDestination) =>
+      samePath(sourcePath, canonicalDestination),
+    ) ||
+    sharesIdentity(sourceIdentity, destinationFileStats)
+  ) {
+    return yield* new MigrateDevDbSourceIsDestinationError({
+      sourcePath: input.source ?? sourcePath,
+    });
+  }
+  yield* assertUnlinkedDatabaseFiles(destinationRewriteFiles);
 
   yield* fs.makeDirectory(stateDir, { recursive: true });
+  yield* holdServerOwnershipLock(statePath);
 
   const wrapPhase =
     (phase: MigrateDevDbPhaseError["phase"], phaseDatabasePath: string) =>
@@ -626,39 +843,46 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
       wrapPhase("prune", snapshotPath),
     );
 
+    const stagingDir = yield* fs.makeTempDirectoryScoped({
+      directory: stateDir,
+      prefix: ".migrate-dev-db-",
+    });
+    const replacement = path.join(stagingDir, "replacement.sqlite");
     yield* Console.log(`Compacting into ${databasePath}...`);
-    // A server may have started during pruning; re-check before replacing its database.
-    yield* ensureNotInUse(databasePath);
-    yield* removeDatabaseFiles(databasePath);
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* sql`VACUUM INTO ${databasePath}`;
+      yield* sql`VACUUM INTO ${replacement}`;
     }).pipe(
       Effect.provide(NodeSqliteClient.layer({ filename: snapshotPath })),
       wrapPhase("compact", databasePath),
     );
-    return { executedMigrations: executed, pruned: result };
-  }).pipe(Effect.ensuring(removeDatabaseFiles(snapshotPath)));
-  yield* fs.chmod(databasePath, 0o600);
+    yield* fs.chmod(replacement, 0o600);
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      // VACUUM INTO loses WAL mode; restore the server boot setting.
+      yield* sql.unsafe("PRAGMA journal_mode = WAL").unprepared;
+    }).pipe(
+      Effect.provide(NodeSqliteClient.layer({ filename: replacement })),
+      wrapPhase("compact", databasePath),
+    );
 
-  yield* Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    // VACUUM INTO loses WAL mode; restore the server boot setting.
-    yield* sql.unsafe("PRAGMA journal_mode = WAL").unprepared;
-  }).pipe(
-    Effect.provide(NodeSqliteClient.layer({ filename: databasePath })),
-    wrapPhase("compact", databasePath),
-  );
+    // A server may have started during pruning; re-check before replacing its database.
+    yield* assertUnlinkedDatabaseFiles(databaseFamilyPaths(databasePath));
+    yield* ensureNotInUse(databasePath);
+    yield* removeDatabaseFiles(databasePath, true);
+    yield* fs.rename(replacement, databasePath);
+    return { executedMigrations: executed, pruned: result };
+  }).pipe(Effect.scoped, Effect.ensuring(removeDatabaseFiles(snapshotPath).pipe(Effect.ignore)));
 
   const size = (yield* fs.stat(databasePath)).size;
   return {
-    databasePath,
+    databasePath: displayDatabasePath,
     sizeBytes: Number(size),
     projects: pruned.projects,
     eventCount: pruned.eventCount,
     executedMigrations: executedMigrations.map(([id, name]) => `${id}_${name}`),
   };
-});
+}, Effect.scoped);
 
 const formatSize = (bytes: number): string =>
   bytes >= 1024 * 1024
@@ -686,9 +910,20 @@ export const migrateDevDbCommand = Command.make(
       Flag.optional,
       Flag.withDescription("Source database. Defaults to ~/.t3/userdata/statev2.sqlite."),
     ),
+    dropResumable: Flag.String("drop-resumable").pipe(
+      Flag.optional,
+      Flag.withDescription(
+        "Only drop, in place, the thread families a server started on this database would resume, and fail if any remain. Copies only; never the live database.",
+      ),
+    ),
   },
-  ({ projects, threadsPerProject, baseDir, source }) =>
+  ({ projects, threadsPerProject, baseDir, source, dropResumable }) =>
     Effect.gen(function* () {
+      if (Option.isSome(dropResumable)) {
+        const dropped = yield* dropResumableFamilies(dropResumable.value);
+        yield* Console.log(`Dropped ${dropped} resumable threads.`);
+        return;
+      }
       const result = yield* runMigrateDevDb({
         projects,
         threadsPerProject,

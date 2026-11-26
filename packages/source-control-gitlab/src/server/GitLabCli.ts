@@ -18,6 +18,9 @@ import {
 } from "@t3tools/contracts";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { parseUrl } from "@t3tools/shared/url";
+import { PullRequestWebOrigin } from "@t3tools/source-control-core/server/PullRequestProvider";
+import { parseGitRemoteHost } from "@t3tools/source-control-core/shared/definition";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import {
   decodeGitLabMergeRequestJson,
@@ -134,7 +137,7 @@ export class GitLabCliCommandError extends Schema.TaggedError<
   userFacingDetail: Schema.optional(Schema.String),
 }) {
   get detail(): string {
-    return "GitLab CLI command failed.";
+    return this.userFacingDetail ?? "GitLab CLI command failed.";
   }
 
   override get message(): string {
@@ -305,10 +308,15 @@ export interface GitLabRepositoryCloneUrls {
 export class GitLabCli extends Context.Service<
   GitLabCli,
   {
+    readonly configuredWebOrigin?: (input: {
+      readonly cwd: string;
+      readonly host: string;
+    }) => Effect.Effect<string | null, GitLabCliError>;
+
     readonly execute: (input: {
       readonly cwd: string;
       readonly host?: string | undefined;
-      /** A host taken from caller input, not from a project remote. See `ENVIRONMENT_TOKEN_VARIABLES`. */
+      /** A host named in the arguments instead of through `host`. See `ENVIRONMENT_TOKEN_VARIABLES`. */
       readonly callerNamedHost?: string | undefined;
       readonly args: ReadonlyArray<string>;
       readonly timeoutMs?: number;
@@ -497,16 +505,22 @@ const classifyGlabFailure = (stderr: string): VcsProcessExitFailureKind | null =
 };
 
 /**
- * These are the login for glab's default host (GITLAB_HOST, else gitlab.com). glab before 1.131
- * sends them to any host a command names, so a host a caller names runs without them and falls
- * back to that host's own `glab auth login`.
+ * These are the login for glab's default host (GITLAB_HOST, else gitlab.com). glab would use
+ * them for whichever host a command resolves to, so a command for any other host runs without
+ * them and uses that host's own `glab auth login`.
  */
 const ENVIRONMENT_TOKEN_VARIABLES = ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"] as const;
-const WITHOUT_ENVIRONMENT_TOKEN = Object.fromEntries(
+export const WITHOUT_ENVIRONMENT_TOKEN = Object.fromEntries(
   ENVIRONMENT_TOKEN_VARIABLES.map((name) => [name, ""]),
 );
 
-const hostOf = (value: string) =>
+export const hasEnvironmentToken = (environment: NodeJS.ProcessEnv) =>
+  ENVIRONMENT_TOKEN_VARIABLES.some((name) => environment[name]?.trim());
+
+export const defaultHost = (environment: NodeJS.ProcessEnv) =>
+  hostOf(environment.GITLAB_HOST?.trim() || "gitlab.com");
+
+export const hostOf = (value: string) =>
   value
     .trim()
     .toLowerCase()
@@ -518,13 +532,111 @@ export const make = Effect.gen(function* () {
   const { process } = yield* SourceControlHost.SourceControlHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const environment = yield* HostProcess.Environment;
-  const defaultHost = hostOf(environment.GITLAB_HOST?.trim() || "gitlab.com");
+  const defaultGitLabHost = defaultHost(environment);
+  const defaultHostname = defaultGitLabHost.replace(/:\d+$/, "");
 
-  const run = (
+  // With no host named, glab picks one from the checkout's remotes.
+  const checkoutHasOtherHost = (cwd: string) =>
+    process
+      .run({
+        operation: "GitLabCli.remotes",
+        command: "git",
+        args: ["remote", "-v"],
+        cwd,
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.map((result) =>
+          result.stdout.split("\n").some((line) => {
+            const remote = parseGitRemoteHost(line.trim().split(/\s+/)[1] ?? "");
+            return remote !== null && remote.hostname !== defaultHostname;
+          }),
+        ),
+        Effect.orElseSucceed(() => true),
+      );
+
+  const configValue = (cwd: string, host: string, key: string) =>
+    process
+      .run({
+        operation: "GitLabCli.verifyEndpoint",
+        command: "glab",
+        args: ["config", "get", key, "--host", host],
+        cwd,
+        env: WITHOUT_ENVIRONMENT_TOKEN,
+      })
+      .pipe(Effect.map(({ stdout }) => stdout.trim()));
+
+  const configuredWebOrigin = Effect.fn("GitLabCli.configuredWebOrigin")(
+    function* (input: { readonly cwd: string; readonly host: string }) {
+      const protocol = (yield* configValue(input.cwd, input.host, "api_protocol")) || "https";
+      if (protocol !== "http" && protocol !== "https") return null;
+      const configuredHost = (yield* configValue(input.cwd, input.host, "api_host")) || input.host;
+      const endpoint = parseUrl(`${protocol}://${configuredHost}`);
+      return endpoint !== null &&
+        !endpoint.username &&
+        !endpoint.password &&
+        endpoint.origin === parseUrl(`${protocol}://${input.host}`)?.origin
+        ? endpoint.origin
+        : null;
+    },
+    (effect, input) =>
+      effect.pipe(
+        Effect.mapError(
+          (error) =>
+            new GitLabCliCommandError({
+              operation: "execute",
+              command: "glab",
+              cwd: input.cwd,
+              userFacingDetail: "GitLab CLI Web origin could not be read.",
+              cause: error,
+            }),
+        ),
+      ),
+  );
+
+  // Untraced: every caller is a named `GitLabCli.*` span already.
+  const run = Effect.fnUntraced(function* (
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
     mapError: (error: VcsError) => GitLabCliError,
-  ) =>
-    process
+  ) {
+    const origin = yield* PullRequestWebOrigin;
+    const endpoint = origin === null ? null : parseUrl(origin);
+    const namedHosts = [input.host, input.callerNamedHost].filter((host) => host !== undefined);
+    let endpointEnv: Record<string, string> = {};
+    if (origin !== null) {
+      const incompatible = () =>
+        new GitLabCliCommandError({
+          operation: "execute",
+          command: "glab",
+          cwd: input.cwd,
+          userFacingDetail: "GitLab CLI is not configured for this merge request's Web origin.",
+          cause: undefined,
+        });
+      if (
+        endpoint === null ||
+        (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") ||
+        namedHosts.some((host) => hostOf(host) !== endpoint.host)
+      ) {
+        return yield* incompatible();
+      }
+      const readConfig = (key: string) =>
+        configValue(input.cwd, endpoint.host, key).pipe(Effect.mapError(mapError));
+      const protocol = endpoint.protocol.slice(0, -1);
+      const configuredProtocol = (yield* readConfig("api_protocol")) || "https";
+      if (configuredProtocol !== protocol) return yield* incompatible();
+      const configuredHost = (yield* readConfig("api_host")) || endpoint.host;
+      const api = parseUrl(`${endpoint.protocol}//${configuredHost}`);
+      if (api?.origin !== endpoint.origin || api.username || api.password) {
+        return yield* incompatible();
+      }
+      endpointEnv = { GLAB_API_PROTOCOL: protocol, GITLAB_API_HOST: configuredHost };
+      namedHosts.push(endpoint.host);
+    }
+    const withholdToken =
+      namedHosts.length > 0
+        ? namedHosts.some((host) => hostOf(host) !== defaultGitLabHost)
+        : hasEnvironmentToken(environment) && (yield* checkoutHasOtherHost(input.cwd));
+    return yield* process
       .run({
         operation: "GitLabCli.execute",
         command: "glab",
@@ -532,10 +644,11 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         env: {
           // glab may otherwise prefer a different checkout remote.
-          ...(input.host === undefined ? {} : { GITLAB_HOST: input.host }),
-          ...(input.callerNamedHost !== undefined && hostOf(input.callerNamedHost) !== defaultHost
-            ? WITHOUT_ENVIRONMENT_TOKEN
-            : {}),
+          ...((endpoint?.host ?? input.host) === undefined
+            ? {}
+            : { GITLAB_HOST: endpoint?.host ?? input.host }),
+          ...endpointEnv,
+          ...(withholdToken ? WITHOUT_ENVIRONMENT_TOKEN : {}),
         },
         classifyFailure: classifyGlabFailure,
         notFoundDetail: "Merge request not found.",
@@ -544,6 +657,7 @@ export const make = Effect.gen(function* () {
         ...(input.maxOutputBytes === undefined ? {} : { maxOutputBytes: input.maxOutputBytes }),
       })
       .pipe(Effect.mapError(mapError));
+  });
 
   const execute: GitLabCli["Service"]["execute"] = (input) =>
     run(input, (error) =>
@@ -557,8 +671,12 @@ export const make = Effect.gen(function* () {
     readonly cwd: string;
     readonly reference: string;
     readonly args: ReadonlyArray<string>;
-  }) =>
-    run(input, (error) =>
+  }) => {
+    // glab takes the host from a merge request URL, not from the checkout.
+    const callerNamedHost = /^https?:\/\//i.test(input.reference)
+      ? hostOf(input.reference)
+      : undefined;
+    return run({ ...input, callerNamedHost }, (error) =>
       GitLabMergeRequestNotFoundError.fromVcsError(
         {
           operation: "execute",
@@ -569,6 +687,7 @@ export const make = Effect.gen(function* () {
         error,
       ),
     );
+  };
 
   // glab's MR JSON names a fork's source project only by `source_project_id`.
   const resolveSourceProjectPaths = Effect.fn("GitLabCli.resolveSourceProjectPaths")(function* (
@@ -600,6 +719,7 @@ export const make = Effect.gen(function* () {
   });
 
   return GitLabCli.of({
+    configuredWebOrigin,
     execute,
     listMergeRequests: Effect.fn("GitLabCli.listMergeRequests")(function* (input) {
       const limit = input.limit ?? 20;

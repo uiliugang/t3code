@@ -1,4 +1,5 @@
 import {
+  normalizeGithubIssueHost,
   type PullRequestAction,
   type PullRequestReviewVerdict,
   type RepositoryIdentity,
@@ -47,6 +48,7 @@ export interface IssueLink {
 export interface ParsedChangeRequestUrl extends ChangeRequestLink {
   /** The repository's browser URL, without query or hash. */
   readonly repositoryUrl: string;
+  readonly rpcOrigin?: string;
 }
 
 export interface CommitLink {
@@ -449,6 +451,7 @@ export function buildCommitUrl(
  */
 export function parseChangeRequestPath(url: URL, route: RegExp): ParsedChangeRequestUrl | null {
   if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.username || url.password) return null;
   const match = route.exec(url.pathname);
   const repository = match?.[1];
   const number = Number(match?.[2]);
@@ -458,6 +461,7 @@ export function parseChangeRequestPath(url: URL, route: RegExp): ParsedChangeReq
         repository: canonicalRepositoryPath(repository),
         number,
         repositoryUrl: `${url.origin}/${repository}`,
+        ...(url.port ? { authority: url.host.toLowerCase() } : {}),
       }
     : null;
 }
@@ -516,16 +520,17 @@ function isChangeRequestAuthorityOfProject(
   identity: ChangeRequestProjectIdentity,
   link: ChangeRequestLink | CommitLink,
 ): boolean {
-  if (link.authority === undefined) return true;
   try {
     const remote = new URL(identity.locator.remoteUrl);
     if (remote.protocol === "http:" || remote.protocol === "https:") {
-      return remote.host.toLowerCase() === link.authority;
+      return link.authority === undefined
+        ? remote.port === ""
+        : remote.host.toLowerCase() === link.authority;
     }
   } catch {
     // SSH remotes do not specify the server's HTTP port.
   }
-  return true;
+  return link.authority === undefined;
 }
 
 /** The host of the project's repository key, or `kind` when the key has none. */
@@ -814,13 +819,15 @@ export function makeSourceControlDefinitionRegistry(
   ): string | Kind =>
     (kind === undefined ? undefined : byKind.get(kind)?.changeRequestHost?.(identity)) ??
     projectChangeRequestHost(identity, kind);
-  const issueBindings = (identity: RepositoryIdentity | null | undefined) => {
+  const repositoryIssueBindings = (identity: RepositoryIdentity | null | undefined) => {
     const tracker = identity?.provider;
     if (!identity || tracker === undefined || tracker === "unknown") return [];
     const scope = issueScope(identity);
     if (scope === null) return [];
-    const host = changeRequestHost(identity, tracker);
-    const primary = { tracker, host, scope };
+    const canonicalHost =
+      tracker === "github"
+        ? projectChangeRequestHost(identity, tracker)
+        : changeRequestHost(identity, tracker);
     const origin = identity.origin;
     // The origin keeps no provider or web URL, so it is read only on the primary's server. Keys
     // drop schemes and ports, so an HTTP origin must match the primary's remote, its web address
@@ -829,12 +836,25 @@ export function makeSourceControlDefinitionRegistry(
     const primaryUrl =
       (identity.locator?.remoteUrl === undefined ? null : httpUrl(identity.locator.remoteUrl)) ??
       (identity.webUrl === undefined ? null : httpUrl(identity.webUrl));
+    const host =
+      tracker === "github" && primaryUrl?.hostname.toLowerCase() === canonicalHost
+        ? (normalizeGithubIssueHost(primaryUrl.host) ?? canonicalHost)
+        : canonicalHost;
+    const originMatches =
+      originUrl === null
+        ? tracker !== "github" || host === canonicalHost
+        : tracker === "github" && originUrl.protocol === "https:"
+          ? (primaryUrl === null || primaryUrl.protocol === "https:") &&
+            normalizeGithubIssueHost(originUrl.host) === host
+          : primaryUrl === null
+            ? originUrl.host === host
+            : originUrl.origin === primaryUrl.origin;
+    const primary = { tracker, host, scope };
     if (
       origin === undefined ||
       projectChangeRequestHost(origin, undefined) !==
         projectChangeRequestHost(identity, undefined) ||
-      (originUrl !== null &&
-        (primaryUrl === null ? originUrl.host !== host : originUrl.origin !== primaryUrl.origin))
+      !originMatches
     )
       return [primary];
     const originScope = issueScope({
@@ -844,6 +864,22 @@ export function makeSourceControlDefinitionRegistry(
     });
     if (originScope === null || originScope.toLowerCase() === scope.toLowerCase()) return [primary];
     return [primary, { tracker, host, scope: originScope }];
+  };
+  const issueBindings = (identity: RepositoryIdentity | null | undefined) => {
+    const selected = identity?.issueRepository;
+    if (selected === undefined) return repositoryIssueBindings(identity);
+    if (selected && identity?.origin && selected.provider === identity.provider) {
+      const fork = repositoryIssueBindings({
+        ...identity,
+        origin: {
+          canonicalKey: selected.canonicalKey,
+          remoteUrl: selected.locator.remoteUrl,
+          ...(selected.displayName ? { displayName: selected.displayName } : {}),
+        },
+      });
+      if (fork.length > 1) return fork;
+    }
+    return repositoryIssueBindings(selected);
   };
   return {
     definitions,

@@ -1,7 +1,9 @@
 import { pipe } from "effect/Function";
+import { useAtomValue } from "@effect/atom-react";
 import { ThreadDetailsMoreButton } from "./ThreadDetailsControl";
 import type {
   EnvironmentId,
+  ProjectId,
   ScopedThreadRef,
   ThreadPullRequestLink,
   VcsStatusResult,
@@ -9,6 +11,7 @@ import type {
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   pullRequestListLines,
+  normalizeThreadPullRequestKey,
   resolveThreadPullRequestChains,
   threadPullRequestKeyOf,
   visibleThreadPullRequests,
@@ -17,13 +20,11 @@ import { useMessages } from "gt-react";
 import { useState, type ComponentProps, type MouseEvent as ReactMouseEvent } from "react";
 
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import {
-  findProjectForChangeRequest,
-  findProjectOnChangeRequestHost,
-} from "@t3tools/client-runtime/change-request-links";
+import { findProjectOnChangeRequestHost } from "@t3tools/client-runtime/change-request-links";
 
 import type { ComposerThreadTarget } from "~/composerDraftStore";
 import { useProjects, useQuietThreadShell } from "~/state/entities";
+import { serverEnvironment } from "~/state/server";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -36,9 +37,17 @@ import {
 
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
 
+function useSupportsWebTargets(environmentId: EnvironmentId) {
+  return useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.pullRequestWebTargets === true,
+  );
+}
+
 function ThreadDetailsPrLinkRow({
   environmentId,
   link,
+  mergePreferenceProjectId,
   onOpen,
   onActed,
   onStopWatching,
@@ -46,6 +55,7 @@ function ThreadDetailsPrLinkRow({
 }: {
   environmentId: EnvironmentId;
   link: ThreadPullRequestLink;
+  mergePreferenceProjectId: ProjectId | null;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   onActed?: (() => void) | undefined;
   onStopWatching?: (() => void) | undefined;
@@ -53,13 +63,17 @@ function ThreadDetailsPrLinkRow({
 }) {
   const m = useMessages();
   const projects = useProjects();
-  const parsed = sourceControlClients.parseChangeRequestUrl(link.url)?.link;
+  const supportsWebTargets = useSupportsWebTargets(environmentId);
+  const parsed = sourceControlClients.parseChangeRequestUrl(link.url);
+  const candidates = projects.filter((candidate) => candidate.environmentId === environmentId);
   const project =
-    parsed === undefined
+    parsed === null
       ? null
       : (findProjectOnChangeRequestHost(
-          projects.filter((candidate) => candidate.environmentId === environmentId),
-          parsed,
+          candidates,
+          parsed.link,
+          parsed.definition.kind,
+          () => supportsWebTargets,
         ) ?? null);
   const linked = linkedPullRequestSnapshotStatus(link);
   const pr = linked?.pr ?? null;
@@ -68,9 +82,10 @@ function ThreadDetailsPrLinkRow({
       environmentId={environmentId}
       pr={pr}
       number={link.number}
-      reference={link}
+      reference={normalizeThreadPullRequestKey(link)}
       status={prStatusIndicator(pr, linked?.sourceControlProvider, m)}
       project={project}
+      mergePreferenceProjectId={mergePreferenceProjectId}
       label={`#${link.number}${link.snapshot === null ? "" : `: ${link.snapshot.title}`}`}
       onOpen={onOpen}
       onStopWatching={onStopWatching}
@@ -102,13 +117,23 @@ export function ThreadDetailsPrRows({
             environmentId: threadRef.environmentId,
             input: {
               threadId: threadRef.threadId,
-              host: link.host,
-              repository: link.repository,
-              number: link.number,
+              ...normalizeThreadPullRequestKey(link),
               watching: false,
             },
           });
-  const currentRow = <ThreadDetailsPrRow {...row} onStopWatching={stopWatching(currentLink)} />;
+  const currentRow = (
+    <ThreadDetailsPrRow
+      {...row}
+      reference={
+        currentLink === null ? (row.reference ?? null) : normalizeThreadPullRequestKey(currentLink)
+      }
+      onStopWatching={stopWatching(currentLink)}
+    />
+  );
+  const mergePreferenceProjectId =
+    row.mergePreferenceProjectId === undefined
+      ? (row.project?.id ?? null)
+      : row.mergePreferenceProjectId;
   const rest =
     currentLink === null
       ? []
@@ -127,6 +152,7 @@ export function ThreadDetailsPrRows({
               key={threadPullRequestKeyOf(link)}
               environmentId={row.environmentId}
               link={link}
+              mergePreferenceProjectId={mergePreferenceProjectId}
               onOpen={(event) => onOpenLink(event, link.url)}
               onActed={row.onActed}
               onStopWatching={stopWatching(link)}
@@ -171,17 +197,26 @@ export function ThreadDetailsThreadPrRows({
   const { currentLink, pr, number, url } = displayed;
   const projects = useProjects();
   const parsed =
-    currentLink === null
-      ? undefined
-      : sourceControlClients.parseChangeRequestUrl(currentLink.url)?.link;
-  // Merge settings belong to the project holding the linked repository, the thread's own first.
+    currentLink === null ? null : sourceControlClients.parseChangeRequestUrl(currentLink.url);
+  const candidates = [
+    ...(project === null ? [] : [project]),
+    ...projects.filter(
+      (candidate) =>
+        candidate.environmentId === threadRef.environmentId && candidate.id !== project?.id,
+    ),
+  ];
+  const supportsWebTargets = useSupportsWebTargets(threadRef.environmentId);
   const rowProject =
-    parsed === undefined || (project !== null && findProjectForChangeRequest([project], parsed))
+    currentLink === null
       ? project
-      : (findProjectForChangeRequest(
-          projects.filter((candidate) => candidate.environmentId === threadRef.environmentId),
-          parsed,
-        ) ?? project);
+      : parsed === null
+        ? null
+        : (findProjectOnChangeRequestHost(
+            candidates,
+            parsed.link,
+            parsed.definition.kind,
+            () => supportsWebTargets,
+          ) ?? null);
   if (number === undefined || url === undefined) return null;
   return (
     <ThreadDetailsPrRows
@@ -192,9 +227,9 @@ export function ThreadDetailsThreadPrRows({
       environmentId={threadRef.environmentId}
       pr={pr}
       number={number}
-      reference={currentLink}
       status={displayed.status}
       project={rowProject}
+      mergePreferenceProjectId={project?.id ?? null}
       label={`#${number}${pr?.title.trim() ? `: ${pr.title}` : ""}`}
       onOpen={(event) => openPrLink(event, url)}
       composerTarget={composerTarget}

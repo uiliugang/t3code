@@ -119,7 +119,7 @@ import { SharedTooltipProvider, SharedTooltipTrigger } from "./ui/shared-tooltip
 import { Button } from "./ui/button";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { recordVisitForThread } from "../browserHistoryStore";
-import { contextMenuSourceOf } from "../contextMenuSource";
+import { contextMenuSourceOf, openContextMenuFromKeyboard } from "../contextMenuSource";
 import {
   PreferredEditorEnvironmentRequiredError,
   useOpenInPreferredEditor,
@@ -454,7 +454,10 @@ type MarkdownServerConfigFields = ReturnType<typeof markdownServerConfigFields>;
 function markdownServerConfigFields(config: ServerConfig | null) {
   return {
     pullRequestsEnabled: config !== null,
+    pullRequestWebTargets: config?.environment.capabilities.pullRequestWebTargets === true,
     issuesEnabled: config?.environment.capabilities.issues === true,
+    githubIssueSourcePorts: config?.environment.capabilities.githubIssueSourcePorts === true,
+    issueProjectSources: config?.settings?.issueProjectSources,
     isMacOS: config?.environment.platform.os === "darwin",
     availableEditors: config?.availableEditors ?? NO_MARKDOWN_EDITORS,
     revealInFileManager:
@@ -470,7 +473,10 @@ function markdownServerConfigFieldsEqual(
 ): boolean {
   return (
     previous.pullRequestsEnabled === next.pullRequestsEnabled &&
+    previous.pullRequestWebTargets === next.pullRequestWebTargets &&
     previous.issuesEnabled === next.issuesEnabled &&
+    previous.githubIssueSourcePorts === next.githubIssueSourcePorts &&
+    previous.issueProjectSources === next.issueProjectSources &&
     previous.isMacOS === next.isMacOS &&
     previous.revealInFileManager === next.revealInFileManager &&
     previous.availableEditors.length === next.availableEditors.length &&
@@ -724,8 +730,16 @@ function useChatMarkdownState(
       },
     );
   };
-  const { pullRequestsEnabled, issuesEnabled, availableEditors, revealInFileManager, isMacOS } =
-    useAtomValue(markdownServerConfigFieldsAtom(environmentId));
+  const {
+    pullRequestsEnabled,
+    pullRequestWebTargets,
+    issuesEnabled,
+    githubIssueSourcePorts,
+    issueProjectSources,
+    availableEditors,
+    revealInFileManager,
+    isMacOS,
+  } = useAtomValue(markdownServerConfigFieldsAtom(environmentId));
   const revealInFileManagerLabel =
     revealInFileManager === undefined
       ? undefined
@@ -1113,11 +1127,14 @@ function useChatMarkdownState(
     openMarkdownMedia,
     projects,
     issueProjects,
+    issueProjectSources,
+    githubIssueSourcePorts,
     issueTrackers,
     linkedThreadPullRequestFor,
     resolveThreadPullRequest,
     resolvedTheme,
     pullRequestsEnabled,
+    pullRequestWebTargets,
     issuesEnabled,
     skills,
     threadRef,
@@ -1286,10 +1303,13 @@ const CHAT_MARKDOWN_COMPONENTS = {
       openExternalLinkInPreview,
       projects,
       issueProjects,
+      issueProjectSources,
+      githubIssueSourcePorts,
       issueTrackers,
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
       pullRequestsEnabled,
+      pullRequestWebTargets,
       issuesEnabled,
       updateThreadPullRequestLink,
       fileLinkChip,
@@ -1357,6 +1377,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             environmentId,
             projects,
             pullRequestsEnabled,
+            supportsWebTargets: pullRequestWebTargets,
             url: pullRequestCandidateUrl,
           })
         : null;
@@ -1366,6 +1387,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
               url: href,
               projects: issueProjects,
               trackers: issueTrackers,
+              issueProjectSources,
+              githubIssueSourcePorts,
             })
           : null;
       const issuePreviewTarget =
@@ -1431,7 +1454,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
               }) !== "app"
             ) {
               // Open desktop Alt-clicks before Chromium downloads them so link routers can read the held key.
-              if (isElectron && event.altKey) {
+              // Editor links also go over IPC: the desktop popup handler only passes web links.
+              if (isElectron && (event.altKey || isLocalEditorFileHref(href))) {
                 event.preventDefault();
                 event.stopPropagation();
                 void readLocalApi()
@@ -1456,6 +1480,22 @@ const CHAT_MARKDOWN_COMPONENTS = {
               if (isBrowserSettingsReadError(squashAtomCommandFailure(result))) return;
               void readLocalApi()?.shell.openExternal(href);
             });
+          }}
+          onAuxClick={(event) => {
+            // A middle-click raises no click event, and the desktop popup handler only passes web links.
+            if (!isElectron || event.button !== 1 || !href || !isLocalEditorFileHref(href)) return;
+            event.preventDefault();
+            void readLocalApi()
+              ?.shell.openExternal(href)
+              .catch((cause) =>
+                reportMarkdownActionFailure(
+                  { operation: "open-link-external", target: href },
+                  cause,
+                ),
+              );
+          }}
+          onKeyDown={(event) => {
+            if (href && faviconHost) openContextMenuFromKeyboard(event);
           }}
           onContextMenu={(event) => {
             if (!href || !faviconHost) return;

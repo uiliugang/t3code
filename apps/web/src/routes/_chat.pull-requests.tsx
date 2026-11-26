@@ -1,5 +1,6 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { PullRequestWebTarget, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import { createFileRoute } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 
 import { type PullRequestListSort } from "../components/pullRequest/pullRequestListPreferences";
 import { SORT_OPTIONS } from "../components/pullRequest/pullRequestListOptions";
@@ -7,6 +8,7 @@ import { type PullRequestsSearch } from "../components/pullRequest/usePullReques
 import { PullRequestsPage } from "../components/pullRequest/PullRequestsPage";
 
 const MAX_SEARCH_LABEL_CANDIDATES = 100;
+const isPullRequestWebTarget = Schema.is(PullRequestWebTarget);
 
 function pullRequestSearchLabels(raw: unknown): PullRequestsSearch["labels"] {
   const values = (Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : []).slice(
@@ -30,6 +32,8 @@ function pullRequestSearchLabels(raw: unknown): PullRequestsSearch["labels"] {
 export const Route = createFileRoute("/_chat/pull-requests")({
   validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
     ...(typeof raw.selectedUrl === "string" ? { selectedUrl: raw.selectedUrl.slice(0, 4096) } : {}),
+    ...(isPullRequestWebTarget(raw.selectedTarget) ? { selectedTarget: raw.selectedTarget } : {}),
+    ...(raw.selectedReveal === false ? { selectedReveal: false } : {}),
     involvement:
       raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
     state:

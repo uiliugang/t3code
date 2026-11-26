@@ -12,6 +12,8 @@ import {
   latestProviderTurnForAttempt,
   PROVIDER_DISPLAY_NAMES,
   type ModelSelection,
+  type ProviderDriverKind,
+  type ProviderInstanceId,
   type OrchestrationV2NotificationSource,
   type OrchestrationV2PendingBackgroundTask,
   type OrchestrationV2ProviderGoal,
@@ -125,6 +127,8 @@ function providerStartingPhase(phase: string | undefined, provider: string) {
       return msg("Loading {provider} hooks", { provider });
     case "skills":
       return msg("Loading {provider} rules and skills", { provider });
+    case "resume":
+      return msg("Resuming {provider} session", { provider });
     case "connecting":
       return msg("Connecting to {provider}", { provider });
     default:
@@ -132,27 +136,29 @@ function providerStartingPhase(phase: string | undefined, provider: string) {
   }
 }
 
-function providerStarting(
-  projection: ThreadStructure,
-  run: OrchestrationV2ThreadProjection["runs"][number],
-): Pick<
+/** The instances a client knows, so a run names its provider before the provider session exists. */
+export type ProviderDrivers = ReadonlyArray<Pick<ServerProvider, "instanceId" | "driver">>;
+
+/** A provider that has not produced output yet: its logo, and the step it reports. */
+export function presentProviderStarting(input: {
+  readonly instanceId: ProviderInstanceId;
+  readonly driver: ProviderDriverKind | undefined;
+  readonly phase?: string | undefined;
+}): Pick<
   ThreadRunSummary,
   "providerStartingLabel" | "providerStartingLabelMsg" | "providerStarting"
 > {
-  const session = projection.providerSessions.findLast(
-    (session) => session.providerInstanceId === run.providerInstanceId,
-  );
-  const name = session === undefined ? undefined : PROVIDER_DISPLAY_NAMES[session.driver];
+  const name = input.driver === undefined ? undefined : PROVIDER_DISPLAY_NAMES[input.driver];
   const label =
     name === undefined
       ? msg("Starting", { $context: "a provider is launching" })
-      : providerStartingPhase(session?.startupPhase, name);
+      : providerStartingPhase(input.phase, name);
   return {
     providerStartingLabel: markedTextEnglish([label]),
     providerStartingLabelMsg: label,
-    ...(session === undefined
+    ...(input.driver === undefined
       ? {}
-      : { providerStarting: { instanceId: run.providerInstanceId, driver: session.driver } }),
+      : { providerStarting: { instanceId: input.instanceId, driver: input.driver } }),
   };
 }
 
@@ -176,9 +182,43 @@ function runningTurnThroughput(
   return elapsed > 0 ? (usage.turnOutputTokens * 1000) / elapsed : undefined;
 }
 
+// A session shared by several threads names the one thread its phase describes.
+function startupPhaseFor(
+  projection: ThreadStructure,
+  session: OrchestrationV2ProviderSession | undefined,
+) {
+  return session?.startupPhaseThreadId === undefined ||
+    session.startupPhaseThreadId === projection.thread.id
+    ? session?.startupPhase
+    : undefined;
+}
+
+function providerStarting(
+  run: OrchestrationV2ThreadProjection["runs"][number],
+  session: OrchestrationV2ProviderSession | undefined,
+  phase: string | undefined,
+  providers: ProviderDrivers | undefined,
+) {
+  return presentProviderStarting({
+    instanceId: run.providerInstanceId,
+    driver:
+      session?.driver ??
+      providers?.find((provider) => provider.instanceId === run.providerInstanceId)?.driver,
+    phase,
+  });
+}
+
+// A phase only describes a run that has not answered yet.
+function runHasProviderOutput(projection: ThreadStructure, runId: RunId) {
+  return projection.turnItems.some(
+    (item) => item.runId === runId && item.providerTurnId !== null && item.type !== "user_message",
+  );
+}
+
 function summarizeThreadRun(
   projection: ThreadStructure,
   run: OrchestrationV2ThreadProjection["runs"][number],
+  providers?: ProviderDrivers,
 ): ThreadRunSummary {
   const active = ACTIVITY_RUN_STATUSES.has(run.status);
   const turn = active
@@ -186,6 +226,10 @@ function summarizeThreadRun(
     : undefined;
   const turnStatus = turn?.status;
   const runningOutputTokensPerSecond = runningTurnThroughput(turn);
+  const session = projection.providerSessions.findLast(
+    (candidate) => candidate.providerInstanceId === run.providerInstanceId,
+  );
+  const phase = startupPhaseFor(projection, session);
   return {
     runId: run.id,
     status: run.status,
@@ -197,13 +241,16 @@ function summarizeThreadRun(
         (message) => message.runId === run.id && message.role === "assistant",
       )?.id ?? null,
     // A run counts as running before its provider opens; until a turn appears,
-    // the provider can still be launching for minutes.
+    // the provider can still be launching for minutes. Some providers keep
+    // preparing after their turn opens and report that step until the first output.
     ...(turnStatus === undefined
       ? PROVIDER_STARTING_RUN_STATUSES.has(run.status)
-        ? providerStarting(projection, run)
+        ? providerStarting(run, session, phase, providers)
         : {}
       : turnStatus === "pending" || turnStatus === "running"
-        ? {}
+        ? phase === undefined || runHasProviderOutput(projection, run.id)
+          ? {}
+          : providerStarting(run, session, phase, providers)
         : { turnEnded: true }),
     ...(runningOutputTokensPerSecond === undefined ? {} : { runningOutputTokensPerSecond }),
     ...(run.sourcePlanRef === undefined ? {} : { sourcePlanRef: run.sourcePlanRef }),
@@ -234,14 +281,17 @@ export function deriveLatestThreadRun(projection: ThreadStructure): ThreadRunSum
   return run === null ? null : summarizeThreadRun(projection, run);
 }
 
-export function deriveThreadActivityRun(projection: ThreadStructure): ThreadRunSummary | null {
+export function deriveThreadActivityRun(
+  projection: ThreadStructure,
+  providers?: ProviderDrivers,
+): ThreadRunSummary | null {
   const activeRun = latestMatchingRun(projection, (candidate) =>
     ACTIVITY_RUN_STATUSES.has(candidate.status),
   );
-  if (activeRun !== null) return summarizeThreadRun(projection, activeRun);
+  if (activeRun !== null) return summarizeThreadRun(projection, activeRun, providers);
   const run = presentedLatestRun(projection);
   if (run === null) return null;
-  const summary = summarizeThreadRun(projection, run);
+  const summary = summarizeThreadRun(projection, run, providers);
   const latestExecuted = latestExecutedRun(projection.runs);
   if (latestExecuted?.status !== "completed" || latestExecuted.completedAt === null) return summary;
   const tokensPerSecond = completedTurnThroughput(

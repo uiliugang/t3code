@@ -23,6 +23,7 @@ import { toastManager } from "../ui/toast";
 import { groupPullRequestChecks } from "./pullRequestDetail.logic";
 import {
   PullRequestCheckStatusIcon,
+  pullRequestChecksCountLabel,
   pullRequestCheckStatusLabel,
   pullRequestChecksStatePresentation,
   summarizePullRequestChecks,
@@ -164,12 +165,7 @@ export function PullRequestChecksPopover({
   const t = useUiTranslation();
   const resolve = useMessages();
   const presentation = pullRequestChecksStatePresentation(checksState, resolve);
-  const incompleteCount =
-    checks?.filter((check) => check.status === "pending" || check.status === "action-required")
-      .length ?? 0;
-  const failedCount =
-    checks?.filter((check) => check.status === "failure" || check.status === "cancelled").length ??
-    0;
+  const countLabel = checks === undefined ? null : pullRequestChecksCountLabel(checks, resolve);
   const summary = checks === undefined || stale ? null : summarizePullRequestChecks(checks, t);
   return (
     <Popover>
@@ -194,22 +190,8 @@ export function PullRequestChecksPopover({
         onClick={(event) => event.stopPropagation()}
       >
         <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
-        {variant === "count" ? (
-          <>
-            {checks !== undefined && incompleteCount > 0 ? (
-              // Clip the second line so "checks" disappears whole when the count must shrink.
-              <span className="h-lh min-w-0 overflow-hidden text-left whitespace-normal tabular-nums">
-                <span className="whitespace-nowrap">
-                  {checks.length - incompleteCount}/{checks.length}
-                </span>{" "}
-                {t("checks")}
-              </span>
-            ) : failedCount > 0 ? (
-              <span className="min-w-0 truncate tabular-nums">
-                {t("{count} failed", { count: failedCount })}
-              </span>
-            ) : null}
-          </>
+        {variant === "count" && countLabel !== null ? (
+          <span className="min-w-0 truncate tabular-nums">{countLabel}</span>
         ) : null}
       </PopoverTrigger>
       <PopoverPopup align="start" width="md" side="bottom">

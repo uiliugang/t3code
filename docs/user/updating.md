@@ -73,7 +73,7 @@ T3 Code must start again on that machine;
 the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
 A thread that finished its turn to wait on a subagent, a background task, a Claude
-monitor, or a command or other monitor the agent said it was waiting on is woken and told that this work
+monitor or `sleep` timer, or a command or other monitor the agent said it was waiting on is woken and told that this work
 stopped. Other background shells and monitors, such as a dev server and its
 watchdog, do not wake it; the thread learns about them with your next message.
 A thread is not resumed while it waits for your approval, answer, or secret, or
@@ -85,6 +85,11 @@ that limit.
 Updates from the previous orchestration system preserve conversation transcripts but cannot carry
 every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)
 before continuing an important older thread.
+
+If GitLab files you previously marked as viewed appear unread after updating, mark them again in
+the merge request. T3 Code keeps the old marks but does not display them because older versions
+did not record whether the GitLab instance was accessed over HTTP or HTTPS. GitHub keeps its
+viewed marks; reconnect to refresh the local copy after updating.
 
 ## When versions don't match
 

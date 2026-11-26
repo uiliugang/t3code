@@ -1,3 +1,7 @@
+import {
+  changeRequestWebTarget,
+  projectChangeRequestUrl,
+} from "@t3tools/client-runtime/change-request-links";
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   parsePullRequestAnchor,
@@ -1545,16 +1549,37 @@ const TOOL_NOISE = [
 
 const FAILURE_DETAIL_MAX_LENGTH = 320;
 
+/**
+ * The head a reader was first shown. A background refresh does not move it, so a merge or review
+ * keeps applying to the commits they read until they load the newer ones.
+ */
+export function seenPullRequestHead(
+  seen: { readonly key: string; readonly sha: string | undefined } | null,
+  key: string,
+  settledHead: string | undefined,
+) {
+  return seen !== null && seen.key === key && (seen.sha !== undefined || settledHead === undefined)
+    ? seen
+    : { key, sha: settledHead };
+}
+
+/** A merge lands the head the reader was shown, so it refuses a head that moved since. */
+export function mergeHeadPin(action: PullRequestAction, headSha: string | undefined) {
+  return (action === "merge" || action === "enable-auto-merge") && headSha !== undefined
+    ? { expectedHeadSha: headSha }
+    : {};
+}
+
 export function readableFailure(failure: unknown, hint: string): string {
   const raw =
     failure instanceof Error ? failure.message : typeof failure === "string" ? failure : "";
   const detail = raw.replace(OPERATION_PREFIX, "").trim();
   if (detail.length === 0 || TOOL_NOISE.some((pattern) => pattern.test(detail))) return hint;
-  const bounded =
-    detail.length <= FAILURE_DETAIL_MAX_LENGTH
-      ? detail
-      : `${detail.slice(0, FAILURE_DETAIL_MAX_LENGTH - 1)}…`;
-  return bounded;
+  if (detail.length <= FAILURE_DETAIL_MAX_LENGTH) return detail;
+  let end = FAILURE_DETAIL_MAX_LENGTH - 1;
+  const last = detail.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${detail.slice(0, end)}…`;
 }
 
 const isGitCommandError = Schema.is(GitCommandError);
@@ -1634,13 +1659,19 @@ export function resolvePullRequestReferenceHost(
   reference: PullRequestRef,
   identity: RepositoryIdentity | null | undefined,
 ): PullRequestRef {
-  if (reference.host !== undefined || !identity?.provider) return reference;
+  if (!identity?.provider || reference.target !== undefined) return reference;
   const host = sourceControlClients.get(identity.provider).checkoutChangeRequestHost(identity);
-  return host === null ? reference : { ...reference, host };
+  if (host === null || (reference.host !== undefined && reference.host !== host)) return reference;
+  const target = changeRequestWebTarget(
+    { ...reference, host },
+    projectChangeRequestUrl(identity, reference.repository, reference.number) ?? undefined,
+  );
+  return { ...reference, host, ...(target === undefined ? {} : { target }) };
 }
 
 interface PullRequestDetailSnapshotRef {
   readonly host?: string | undefined;
+  readonly target?: PullRequestRef["target"];
   readonly projectId: string;
   readonly repository: string;
   readonly number: number;
@@ -1650,9 +1681,11 @@ const pullRequestDetailSnapshotKey = (
   environmentId: string,
   reference: PullRequestDetailSnapshotRef,
 ) =>
-  reference.host
-    ? `t3.pullRequests.detail:${JSON.stringify([environmentId, reference.projectId, reference.host.toLowerCase(), reference.repository.toLowerCase(), reference.number])}`
-    : `t3.pullRequests.detail:${environmentId}:${reference.projectId}:${reference.repository}#${reference.number}`;
+  reference.target !== undefined
+    ? `t3.pullRequests.detail:${JSON.stringify([environmentId, reference.projectId, reference.target.provider, reference.target.origin, reference.repository.toLowerCase(), reference.number])}`
+    : reference.host
+      ? `t3.pullRequests.detail:${JSON.stringify([environmentId, reference.projectId, reference.host.toLowerCase(), reference.repository.toLowerCase(), reference.number])}`
+      : `t3.pullRequests.detail:${environmentId}:${reference.projectId}:${reference.repository}#${reference.number}`;
 
 const decodeDetailSnapshot = Schema.decodeUnknownOption(PullRequestDetail);
 
@@ -1664,10 +1697,19 @@ export function readPullRequestDetailSnapshot(
   try {
     const raw =
       storage?.getItem(pullRequestDetailSnapshotKey(environmentId, reference)) ??
+      (reference.target === undefined
+        ? null
+        : storage?.getItem(
+            pullRequestDetailSnapshotKey(environmentId, { ...reference, target: undefined }),
+          )) ??
       (reference.host === undefined
         ? null
         : storage?.getItem(
-            pullRequestDetailSnapshotKey(environmentId, { ...reference, host: undefined }),
+            pullRequestDetailSnapshotKey(environmentId, {
+              ...reference,
+              host: undefined,
+              target: undefined,
+            }),
           ));
     if (!raw) return null;
     const decoded = decodeDetailSnapshot(JSON.parse(raw));
@@ -1725,6 +1767,14 @@ export function resolveDisplayedPullRequestDetail(input: {
     input.cached.number !== input.reference.number
   ) {
     return null;
+  }
+  if (input.reference.target !== undefined) {
+    const target = changeRequestWebTarget(input.reference, input.cached.url);
+    return target?.provider === input.reference.target.provider &&
+      target.origin === input.reference.target.origin &&
+      input.cached.provider === target.provider
+      ? input.cached
+      : null;
   }
   if (input.reference.host === undefined) return input.cached;
   const link = sourceControlClients.parseChangeRequestUrl(input.cached.url)?.link;

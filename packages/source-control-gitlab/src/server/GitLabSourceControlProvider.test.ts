@@ -1,5 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { PullRequestWebOrigin } from "@t3tools/source-control-core/server/PullRequestProvider";
 import { refineUnknownRemoteProvider } from "@t3tools/source-control-core/server/discovery";
 import { processOutput } from "@t3tools/source-control-testing/TestSourceControlHost";
 import { assert, it } from "@effect/vitest";
@@ -22,6 +23,39 @@ function makeProvider(gitlab: Partial<GitLabCli.GitLabCli["Service"]>) {
     ),
   );
 }
+
+it.effect("binds branch discovery to the GitLab checkout's Web origin", () =>
+  Effect.gen(function* () {
+    const provider = yield* makeProvider({
+      listMergeRequests: () =>
+        Effect.gen(function* () {
+          assert.strictEqual(yield* PullRequestWebOrigin, "http://forge.test:8443");
+          return ["https", "http"].map((protocol) => ({
+            number: 7,
+            title: "Branch request",
+            url: `${protocol}://forge.test:8443/acme/app/-/merge_requests/7`,
+            baseRefName: "main",
+            headRefName: "feature",
+            state: "merged" as const,
+          }));
+        }),
+    });
+    const requests = yield* provider.listChangeRequests({
+      cwd: "/repo",
+      state: "all",
+      headSelector: "feature",
+      context: {
+        provider: { kind: definition.kind, name: "GitLab", baseUrl: "http://forge.test:8443" },
+        remoteName: "origin",
+        remoteUrl: "http://forge.test:8443/acme/app.git",
+      },
+    });
+    assert.deepStrictEqual(
+      requests.map(({ url }) => url),
+      ["http://forge.test:8443/acme/app/-/merge_requests/7"],
+    );
+  }),
+);
 
 it("accepts authenticated GitLab hosts when another configured host fails", () => {
   const auth = GitLabSourceControlProvider.discovery.parseAuth({

@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem, ContextMenuSource } from "@t3tools/contracts";
 import { translateUi, type UiTranslator } from "@t3tools/shared/uiLocale";
 import {
   type SourceControlDefinition,
@@ -37,17 +37,23 @@ export async function showPullRequestLinkContextMenu({
   openLabel,
   position,
   t = translateUi.bind(null, "en"),
+  source,
 }: {
   readonly url: string;
   readonly openLabel: string;
   readonly position: { readonly x: number; readonly y: number };
   readonly t?: UiTranslator;
+  readonly source: ContextMenuSource;
 }): Promise<void> {
   const api = readLocalApi();
   if (!api) return;
   let action: PullRequestLinkContextMenuAction | null = null;
   try {
-    action = await api.contextMenu.show(pullRequestLinkContextMenuItems(openLabel, t), position);
+    action = await api.contextMenu.show(
+      pullRequestLinkContextMenuItems(openLabel, t),
+      position,
+      source,
+    );
   } catch {
     return;
   }

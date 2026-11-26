@@ -27,7 +27,7 @@ import {
   PersistentThreadTerminalPanel,
   type PersistentThreadTerminalPanelProps,
 } from "../PersistentThreadTerminals";
-import { IssueDetailPanel } from "../issue/IssueDetailPanel";
+import { IssueDetailPanel, IssueLinkUnavailable } from "../issue/IssueDetailPanel";
 import { pullRequestPanelContext } from "../pullRequest/pullRequestDetail.logic";
 import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
@@ -183,15 +183,18 @@ export function RightPanelSurfaceContent(props: {
               repository: reference.repository,
               number: reference.number,
               ...(reference.host ? { host: reference.host } : {}),
+              ...(reference.target ? { target: reference.target } : {}),
             });
           }}
           threadRef={threadRef}
           reference={{
             projectId: surface.projectId as ProjectId,
             ...(surface.host ? { host: surface.host } : {}),
+            ...(surface.target ? { target: surface.target } : {}),
             repository: surface.repository,
             number: surface.number,
           }}
+          sourceUrl={surface.url}
           initialTab={surface.detailTab ?? "summary"}
           revealUrl={surface.revealUrl}
           onRevealSettled={(revealUrl) => {
@@ -214,25 +217,21 @@ export function RightPanelSurfaceContent(props: {
         />
       );
     }
-    case "issue":
+    case "issue": {
       if (!props.pullRequest.capabilityKnown) return <PullRequestDetailGhost />;
       if (!props.issuesSupported) {
-        return (
-          <PullRequestsUnavailableState
-            title={gt("Issues unavailable")}
-            error={gt("Update this environment's T3 Code server to browse issues.")}
-          />
-        );
+        return <IssueLinkUnavailable url={surface.url} />;
       }
+      const environmentId =
+        (surface.environmentId as EnvironmentId | undefined) ?? props.environmentId;
+      const tracker = surface.tracker as IssueTrackerKind;
       return (
         <IssueDetailPanel
-          key={`${surface.environmentId ?? props.environmentId}:${surface.id}`}
-          environmentId={
-            (surface.environmentId as EnvironmentId | undefined) ?? props.environmentId
-          }
+          key={`${environmentId}:${surface.id}`}
+          environmentId={environmentId}
           reference={{
             projectId: surface.projectId as ProjectId,
-            tracker: surface.tracker as IssueTrackerKind,
+            tracker,
             ...(surface.host ? { host: surface.host } : {}),
             scope: surface.scope,
             key: surface.key,
@@ -241,13 +240,10 @@ export function RightPanelSurfaceContent(props: {
           threadRef={threadRef}
           onSelectPullRequest={(reference) => {
             useRightPanelStore.getState().openPullRequest(threadRef, {
+              ...reference,
               ...(surface.environmentId === undefined
                 ? {}
                 : { environmentId: surface.environmentId }),
-              projectId: reference.projectId,
-              repository: reference.repository,
-              number: reference.number,
-              ...(reference.host ? { host: reference.host } : {}),
             });
           }}
           onSelectIssue={({ host, ...reference }) => {
@@ -261,6 +257,7 @@ export function RightPanelSurfaceContent(props: {
           }}
         />
       );
+    }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
     case "work-item": {

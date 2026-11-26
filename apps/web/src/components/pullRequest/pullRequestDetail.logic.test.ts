@@ -60,6 +60,7 @@ import {
   pullRequestLinkSubject,
   writePullRequestDetailSnapshot,
   readableFailure,
+  seenPullRequestHead,
 } from "./pullRequestDetail.logic";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 
@@ -986,6 +987,9 @@ describe("what to say when an action fails", () => {
     const reason = "The worktree directory already exists. Choose another directory.";
     expect(checkoutFailureDescription(diagnostic(reason))).toBe(reason);
     expect(checkoutFailureDescription(diagnostic("x".repeat(900)))).toBe(`${"x".repeat(319)}…`);
+    expect(checkoutFailureDescription(diagnostic(`${"x".repeat(318)}😀 tail`))).toBe(
+      `${"x".repeat(318)}…`,
+    );
     for (const failure of [undefined, diagnostic(""), diagnostic("exited with code 1")]) {
       expect(checkoutFailureDescription(failure)).toBe(
         "Check that the branch still exists and is not checked out elsewhere, then try again.",
@@ -1939,20 +1943,49 @@ describe("cached pull request detail", () => {
     ).toBeNull();
   });
 
-  // regression: #12168 cached PR details were missed across entry points on custom ports
+  it.each([
+    ["gitlab", "https://forge.test:8443/acme/web.git"],
+    ["gitlab", "http://forge.test/acme/web.git"],
+    ["github", "https://forge.test/acme/web.git"],
+  ])("does not show an old HTTPS MR snapshot for a %s checkout at %s", (provider, remoteUrl) => {
+    const storage = makeStorage();
+    writePullRequestDetailSnapshot(
+      storage,
+      "env-1",
+      reference,
+      detail({
+        provider: SourceControlProviderKind.make("gitlab"),
+        url: "https://forge.test/acme/web/-/merge_requests/7",
+      }),
+    );
+    const resolved = resolvePullRequestReferenceHost(reference, {
+      canonicalKey: "forge.test/acme/web",
+      locator: {
+        source: "git-remote",
+        remoteName: "origin",
+        remoteUrl,
+      },
+      provider: SourceControlProviderKind.make(provider),
+    });
+    expect(readPullRequestDetailSnapshot(storage, "env-1", resolved)).toBeNull();
+  });
+
   it.each(["github", "gitlab"] as const)(
-    "retains portless %s snapshot identities for custom web ports",
+    "shows a %s snapshot only at the matching web port",
     (providerName) => {
       const provider = SourceControlProviderKind.make(providerName);
       const storage = makeStorage();
       const host = `${provider}.example.com`;
       const hosted = { ...reference, host };
+      const customPort = { ...reference, host: `${host}:8443` };
       const cached = detail({
         provider,
         url: `https://${host}:8443/acme/web/${provider === "github" ? "pull" : "-/merge_requests"}/7`,
       });
       writePullRequestDetailSnapshot(storage, "env-1", hosted, cached);
-      expect(readPullRequestDetailSnapshot(storage, "env-1", hosted)?.title).toBe(cached.title);
+      expect(readPullRequestDetailSnapshot(storage, "env-1", hosted)).toBeNull();
+      writePullRequestDetailSnapshot(storage, "env-1", customPort, cached);
+      expect(readPullRequestDetailSnapshot(storage, "env-1", customPort)?.title).toBe(cached.title);
     },
   );
 
@@ -2031,6 +2064,19 @@ describe("single-PR merge compatibility during stack discovery", () => {
       ).toBe(allowed);
     },
   );
+});
+
+describe("seenPullRequestHead", () => {
+  it("takes the first settled head and keeps it until another pull request is shown", () => {
+    // A stored answer paints before the read settles, and is not what the reader ends up seeing.
+    const loading = seenPullRequestHead(null, "pr-1", undefined);
+    expect(loading).toEqual({ key: "pr-1", sha: undefined });
+    const seen = seenPullRequestHead(loading, "pr-1", "a");
+    expect(seen).toEqual({ key: "pr-1", sha: "a" });
+    expect(seenPullRequestHead(seen, "pr-1", "b")).toBe(seen);
+    expect(seenPullRequestHead(seen, "pr-1", undefined)).toBe(seen);
+    expect(seenPullRequestHead(seen, "pr-2", "c")).toEqual({ key: "pr-2", sha: "c" });
+  });
 });
 
 describe("readableFailure", () => {

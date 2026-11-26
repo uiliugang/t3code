@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { type StaticScreenProps, useNavigation } from "@react-navigation/native";
-import { mergeProjectIssueSources, projectIssueProvider } from "@t3tools/contracts";
+import { projectIssueProvider } from "@t3tools/contracts";
 import {
   detectedProjectIssueKind,
   listedProjectIssueSources,
@@ -111,11 +111,12 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
   );
   const byId = new Map(query.data?.map((row) => [row.projectId, row]));
   const singleProvider = serverConfig.environment.capabilities.singleProjectIssueProvider === true;
+  const compareAndSet = serverConfig.environment.capabilities.issueProjectSourcesCas === true;
   const rows = projects.map((project) => {
     const result = byId.get(project.id);
     const saved = settings.issueProjectSources[project.id] ?? [];
     const kind = detectedProjectIssueKind(project.repositoryIdentity, result);
-    const sources = mergeProjectIssueSources(result?.sources ?? [], saved, kind);
+    const sources = listedProjectIssueSources(true, result?.sources ?? [], saved, kind);
     return {
       project,
       result,
@@ -153,7 +154,7 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
       ) : null}
       <SettingsSection
         title={t("Project issue sources")}
-        footer={!allowed ? t("Read-only") : undefined}
+        footer={!allowed || !compareAndSet ? t("Read-only") : undefined}
       >
         {query.error ? (
           <Text accessibilityRole="alert" className="p-3 text-danger">
@@ -172,6 +173,10 @@ function EnvironmentRequirements({ environment }: { environment: SettingsTarget 
             repository={result?.repository ?? null}
             saved={saved}
             singleProvider={singleProvider}
+            compareAndSet={compareAndSet}
+            githubIssueSourcePorts={
+              serverConfig.environment.capabilities.githubIssueSourcePorts === true
+            }
             sources={sources}
             provider={provider}
             error={result?.error ?? query.error ?? undefined}

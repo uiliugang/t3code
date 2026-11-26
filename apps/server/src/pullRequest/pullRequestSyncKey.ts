@@ -19,6 +19,7 @@ export function pullRequestSyncKey(
     ? null
     : normalizeThreadPullRequestKey({
         host: resolvedHost,
+        target: reference.target,
         repository: reference.repository,
         number: reference.number,
       });

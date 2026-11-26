@@ -1,7 +1,11 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
-import type { EnvironmentId, SourceControlSignInPrompt } from "@t3tools/contracts";
+import {
+  sourceControlTokenForHost,
+  type EnvironmentId,
+  type SourceControlSignInPrompt,
+} from "@t3tools/contracts";
 import {
   readHostCredentialSettings,
   type SourceControlAppSignIn,
@@ -105,9 +109,7 @@ export function SourceControlAppSignInSettings({
     readHostCredentialSettings(settings, definition.kind),
   );
   const signedIn = (signIns[host] ?? "").length > 0;
-  const token = tokens[host];
-  // A token read from a secret provider overrides the sign-in like a saved one.
-  const tokenOverrides = typeof token === "string" ? token.length > 0 : token !== undefined;
+  const tokenOverrides = sourceControlTokenForHost(definition.kind, tokens, host) !== undefined;
   const canSignIn = useAtomValue(
     sourceControlEnvironment.startSignIn.permissionAtom(environmentId),
   );

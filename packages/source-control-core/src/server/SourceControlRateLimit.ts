@@ -29,6 +29,7 @@ export const Interactive = Context.Reference<boolean>(
 interface RateLimitKey {
   readonly provider: SourceControlProviderKind;
   readonly host: string;
+  readonly origin?: string | undefined;
 }
 
 interface RateLimitLease extends RateLimitKey {
@@ -73,7 +74,7 @@ export class SourceControlRateLimit extends Context.Service<
 >()("@t3tools/source-control-core/server/SourceControlRateLimit") {}
 
 function normalizedKey(key: RateLimitKey, scope: string): string {
-  return `${key.provider}\0${key.host.trim().toLowerCase()}\0${scope}`;
+  return `${key.provider}\0${key.host.trim().toLowerCase()}\0${key.origin ?? ""}\0${scope}`;
 }
 
 function fallbackCooldownMs(attempt: number): number {

@@ -3,11 +3,13 @@ import {
   IsoDateTime,
   ModelSelection,
   type OrchestrationProjectShell,
+  type Project,
   StoredProjectIcon,
   ProjectId,
   ProjectScript,
   ProjectWorkspaceConfig,
   ProjectTrackedFolders,
+  type RepositoryIdentity,
   ThreadEnvMode,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -62,6 +64,34 @@ const ProjectDbRow = Schema.Struct({
   workspaceConfig: Schema.NullOr(Schema.fromJsonString(ProjectWorkspaceConfig)),
   trackedFolders: Schema.fromJsonString(ProjectTrackedFolders),
 });
+
+export function projectFromRow(
+  row: ProjectRow,
+  enrichment: {
+    readonly repositoryIdentity: RepositoryIdentity | null;
+    readonly faviconPath: string | null;
+  } | null = null,
+): Project {
+  return {
+    id: row.projectId,
+    title: row.title,
+    workspaceRoot: row.workspaceRoot,
+    ...(row.workspaceConfig === undefined ? {} : { workspaceConfig: row.workspaceConfig }),
+    repositoryIdentity: enrichment?.repositoryIdentity ?? null,
+    faviconPath: row.faviconPath ?? enrichment?.faviconPath ?? null,
+    defaultModelSelection: row.defaultModelSelection,
+    defaultThreadEnvMode: row.defaultThreadEnvMode,
+    autoPull: row.autoPull,
+    projectIcon: row.projectIcon,
+    scripts: row.scripts,
+    trackedFolders: row.trackedFolders,
+    pinnedAt: row.pinnedAt,
+    archivedAt: row.archivedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  };
+}
 
 function toShell(row: ProjectRow): OrchestrationProjectShell {
   return {

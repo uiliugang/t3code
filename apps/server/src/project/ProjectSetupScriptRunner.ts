@@ -15,6 +15,7 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -38,6 +39,8 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly terminalId: string;
   readonly cwd: string;
   readonly async: boolean;
+  /** Resolves with `true` once the command has been written to the setup terminal. */
+  readonly commandWritten?: Effect.Effect<boolean>;
   /** Null exit code means the terminal exited or closed before the sentinel. */
   readonly completion?: Effect.Effect<ProjectSetupScriptCompletion>;
 }
@@ -370,7 +373,8 @@ export const make = Effect.gen(function* () {
         lineBuffer = "";
         return handleLine(partial);
       });
-      const abandon = settle(null).pipe(
+      const abandon = Effect.sync(() => unsubscribe()).pipe(
+        Effect.andThen(settle(null)),
         Effect.andThen(Deferred.succeed(promptReturned, undefined)),
       );
       return { completion, unsubscribe, flushPartialLine, abandon };
@@ -429,7 +433,7 @@ export const make = Effect.gen(function* () {
             Effect.timeoutOption(SHELL_QUIET_FALLBACK),
           );
           if (Option.isSome(changed)) continue;
-          if (!busy) return "ready" as const;
+          if (!busy) return "quiet" as const;
           yield* input.onStartupPrompt;
         }
       });
@@ -524,6 +528,19 @@ export const make = Effect.gen(function* () {
       trigger === "settle"
         ? `settle-${script.id}-${(yield* random.uuidV4()).slice(0, 8)}`
         : `setup-${script.id}`;
+    // A surviving setup shell may still hold a deleted worktree directory.
+    if (trigger === "setup") {
+      yield* terminalManager.close({ threadId: input.threadId, terminalId }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProjectSetupScriptOperationError({
+              ...errorContext,
+              operation: "openTerminal",
+              cause,
+            }),
+        ),
+      );
+    }
     const target = thread?.workspace
       ? projectScriptTargets(script, thread.workspace).find(
           (entry) => entry.worktreePath === input.worktreePath,
@@ -561,22 +578,34 @@ export const make = Effect.gen(function* () {
       terminalId,
       onStartupPrompt: observed?.flushPartialLine ?? Effect.void,
     });
-    const { completionShell, commandLine } = yield* Effect.gen(function* () {
-      const shell = yield* terminalManager
-        .open({
-          threadId: input.threadId,
-          terminalId,
-          keepOnSettle: trigger === "settle",
-          stopOnSettle: script.stopOnSettle ?? false,
-          cwd,
-          worktreePath: input.worktreePath,
-          env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
-        })
-        .pipe(
+    const cleanupListeners = Effect.sync(() => {
+      observed?.unsubscribe();
+      readiness.unsubscribe();
+    });
+    const { completionShell, commandLine } = yield* Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        const shell = yield* restore(
+          terminalManager.open({
+            threadId: input.threadId,
+            terminalId,
+            keepOnSettle: trigger === "settle",
+            stopOnSettle: script.stopOnSettle ?? false,
+            cwd,
+            worktreePath: input.worktreePath,
+            env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
+          }),
+        ).pipe(
           Effect.andThen(() =>
-            terminalManager
-              .getShell({ threadId: input.threadId, terminalId })
-              .pipe(Effect.catchTags({ TerminalNotRunningError: () => Effect.succeed(null) })),
+            restore(terminalManager.getShell({ threadId: input.threadId, terminalId })).pipe(
+              Effect.catchTags({ TerminalNotRunningError: () => Effect.succeed(null) }),
+            ),
+          ),
+          Effect.onError(() =>
+            cleanupListeners.pipe(
+              Effect.andThen(observed?.abandon ?? Effect.void),
+              Effect.andThen(terminalManager.close({ threadId: input.threadId, terminalId })),
+              Effect.ignore,
+            ),
           ),
           Effect.mapError(
             (cause) =>
@@ -587,62 +616,79 @@ export const make = Effect.gen(function* () {
               }),
           ),
         );
-      if (shell === null) {
-        yield* observed?.abandon ?? Effect.void;
-        return { completionShell: null, commandLine: null };
-      }
-      const completionShell = resolveCompletionShell(shell);
-      let commandLine = script.command;
-      if (observe && completionToken) {
-        if (completionShell === null) {
-          yield* terminalManager.closeIdle({ threadId: input.threadId, terminalId });
-          return yield* new ProjectSetupScriptUnsupportedShellError({ shell });
+        if (shell === null) {
+          yield* cleanupListeners;
+          yield* observed?.abandon ?? Effect.void;
+          return { completionShell: null, commandLine: null };
         }
-        commandLine = wrapCommandForCompletion(
-          script.command,
-          completionShell,
-          completionSentinel(completionToken),
-        );
-      }
-      echoedWrapperLines.push(...commandLine.split("\r").filter((line) => line.length > 0));
-      return { completionShell, commandLine };
-    }).pipe(
-      Effect.onError(() =>
-        Effect.sync(() => {
-          observed?.unsubscribe();
-          readiness.unsubscribe();
-        }),
-      ),
+        const completionShell = resolveCompletionShell(shell);
+        let commandLine = script.command;
+        if (observe && completionToken) {
+          if (completionShell === null) {
+            yield* cleanupListeners;
+            yield* observed?.abandon ?? Effect.void;
+            yield* terminalManager.closeIdle({ threadId: input.threadId, terminalId });
+            return yield* new ProjectSetupScriptUnsupportedShellError({ shell });
+          }
+          commandLine = wrapCommandForCompletion(
+            script.command,
+            completionShell,
+            completionSentinel(completionToken),
+          );
+        }
+        echoedWrapperLines.push(...commandLine.split("\r").filter((line) => line.length > 0));
+        return { completionShell, commandLine };
+      }),
     );
 
     // Return once the terminal exists so callers can show it while a startup prompt waits.
     // PowerShell and cmd have no line-editor signal.
-    yield* (
-      completionShell === "powershell" || completionShell === null
+    const commandWriter = yield* Effect.uninterruptible(
+      (completionShell === "powershell" || completionShell === null
         ? Effect.succeed("ready" as const)
         : readiness.wait
-    ).pipe(
-      Effect.flatMap((shell) =>
-        shell === "exited" || commandLine === null
-          ? Effect.void
-          : terminalManager.write({
-              threadId: input.threadId,
-              terminalId,
-              data: projectScriptTerminalInput(commandLine),
-            }),
+      ).pipe(
+        Effect.flatMap((shell) =>
+          shell === "exited" || commandLine === null
+            ? (observed?.abandon ?? Effect.void).pipe(Effect.as(false))
+            : terminalManager
+                .write(
+                  {
+                    threadId: input.threadId,
+                    terminalId,
+                    // macOS zsh garbles long typed-ahead multiline input; a live line editor takes it as one paste.
+                    data: projectScriptTerminalInput(
+                      shell === "ready" && completionShell === "posix" && commandLine.includes("\r")
+                        ? `\x1b[200~${commandLine.replaceAll("\r", "\n")}\x1b[201~`
+                        : commandLine,
+                    ),
+                  },
+                  undefined,
+                  { requireRunning: true },
+                )
+                .pipe(Effect.as(true)),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("project script command was not written", {
+            ...errorContext,
+            terminalId,
+            cause,
+          }).pipe(Effect.andThen(observed?.abandon ?? Effect.void), Effect.as(false)),
+        ),
+        Effect.ensuring(Effect.sync(() => readiness.unsubscribe())),
+        Effect.forkIn(serviceScope),
       ),
-      Effect.catchCause((cause) =>
-        Effect.logWarning("project script command was not written", {
-          ...errorContext,
-          terminalId,
-          cause,
-        }).pipe(Effect.andThen(observed?.abandon ?? Effect.void)),
-      ),
-      Effect.ensuring(Effect.sync(() => readiness.unsubscribe())),
-      Effect.forkIn(serviceScope),
+    );
+
+    const abortSetupTerminal = Fiber.interrupt(commandWriter).pipe(
+      Effect.andThen(cleanupListeners),
+      Effect.andThen(observed?.abandon ?? Effect.void),
+      Effect.andThen(terminalManager.close({ threadId: input.threadId, terminalId })),
+      Effect.ignore,
     );
 
     const completion = observed?.completion.pipe(
+      Effect.onInterrupt(() => abortSetupTerminal),
       Effect.tap(({ exitCode }) =>
         exitCode === 0
           ? terminalManager.closeIdle({ threadId: input.threadId, terminalId })
@@ -658,6 +704,7 @@ export const make = Effect.gen(function* () {
       terminalId,
       cwd,
       async: script.async !== false,
+      commandWritten: Fiber.join(commandWriter).pipe(Effect.onInterrupt(() => abortSetupTerminal)),
       ...(completion ? { completion } : {}),
     } as const;
   });

@@ -14,10 +14,11 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import {
-  canStartThreadPullRequestWatch,
+  canWatchLinkedPullRequest,
   planThreadPullRequestMutation,
 } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { AuthOrchestrationOperateScope, type ThreadPullRequestLink } from "@t3tools/contracts";
 import * as Clipboard from "expo-clipboard";
@@ -49,8 +50,8 @@ export function useLinkedPullRequestActions(input: {
     AuthOrchestrationOperateScope,
   );
   const canEdit = canOperate && capabilities !== undefined;
-  const canWatch = canOperate && capabilities?.threadPullRequestWatch === true;
-  const canStartWatch = canWatch && thread !== null && canStartThreadPullRequestWatch(thread);
+  const canWatch = (link: ThreadPullRequestLink) =>
+    canOperate && canWatchLinkedPullRequest({ capabilities, thread, project, link });
   const link = useAtomCommand(threadEnvironment.linkPullRequest, { reportFailure: false });
   const unlink = useAtomCommand(threadEnvironment.unlinkPullRequest, { reportFailure: false });
   const watch = useAtomCommand(threadEnvironment.watchPullRequest, { reportFailure: false });
@@ -149,12 +150,11 @@ export function useLinkedPullRequestActions(input: {
   };
 
   const menuActions = (link: ThreadPullRequestLink): MenuAction[] => {
-    const open = link.snapshot === null || link.snapshot.state === "open";
     const watching = link.watch !== undefined;
     return [
       { id: "copy", title: t("Copy link"), image: "link" },
       { id: "browser", title: t("Open in browser"), image: "safari" },
-      ...((watching ? canWatch : canStartWatch) && open
+      ...(canWatch(link)
         ? [
             {
               id: "watch",
@@ -199,16 +199,14 @@ export function useLinkedPullRequestActions(input: {
           );
         }
       });
-    else if (action === "watch" && thread !== null)
+    else if (action === "watch" && thread !== null && canWatch(link))
       void run(
         t("Could not change watching"),
         watch({
           environmentId: thread.environmentId,
           input: {
             threadId: thread.id,
-            host: link.host,
-            repository: link.repository,
-            number: link.number,
+            ...normalizeThreadPullRequestKey(link),
             watching: link.watch === undefined,
           },
         }),

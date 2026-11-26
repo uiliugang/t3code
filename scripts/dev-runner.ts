@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 
-import * as NodeOS from "node:os";
-
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
@@ -20,6 +18,13 @@ import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess } from "effect/process";
 
+import {
+  assertIsolatedDevStartup,
+  expectedDevHomePath,
+  isDotT3Home,
+  resolveFilesystemPath,
+  selectWorktreeDevHome,
+} from "./lib/dev-db-safety.ts";
 import { defaultDevMemoryLimitBytes, enforceDevMemoryLimit } from "./lib/dev-memory-limit.ts";
 import { type DevShareError, shareDevServer, unshareDevServer } from "./lib/dev-share.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
@@ -67,9 +72,10 @@ function sharedBackendTargetHost(host: string | undefined): string {
   return "127.0.0.1";
 }
 
-export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
-  path.join(NodeOS.homedir(), ".t3"),
-);
+export const DEFAULT_T3_HOME = Effect.gen(function* () {
+  const path = yield* Path.Path;
+  return path.join(yield* HostProcess.HomeDirectory, ".t3");
+});
 
 const MODE_ARGS = {
   dev: [
@@ -146,6 +152,15 @@ export class DevRunnerPortExhaustedError extends Schema.TaggedError<
 }) {
   override get message(): string {
     return `No required dev ports were available from offset ${this.startOffset} through maximum port ${this.maximumPort}.`;
+  }
+}
+
+export class DevRunnerBaseDirOverrideError extends Schema.TaggedError<
+  DevRunnerBaseDirOverrideError,
+  { readonly brand: unique symbol }
+>()("DevRunnerBaseDirOverrideError", {}) {
+  override get message() {
+    return "Use --home-dir on the dev runner; passing --base-dir to the backend bypasses dev home selection.";
   }
 }
 
@@ -282,7 +297,7 @@ const resolveBaseDir = Effect.fn("dev-runner.resolveBaseDir")(function* (
     return path.join(yield* HostProcess.HomeDirectory, configured.slice(2));
   }
   if (configured) {
-    return path.resolve(configured);
+    return path.resolve(yield* HostProcess.WorkingDirectory, configured);
   }
 
   return yield* DEFAULT_T3_HOME;
@@ -627,6 +642,7 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
   readonly seed: boolean;
   readonly worktreeHome: string | undefined;
   readonly env: NodeJS.ProcessEnv;
+  readonly seedEnv: NodeJS.ProcessEnv;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -664,7 +680,7 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
           yield* runRepoScript(
             "apps/server/scripts/migrate-dev-db.ts",
             ["--base-dir", input.worktreeHome, "--source", source],
-            input.env,
+            input.seedEnv,
           );
         }
       }
@@ -757,7 +773,15 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     return yield* new DevRunnerBuiltNeedsShareError({ mode: input.mode });
   }
 
-  const worktreePath = yield* resolveGitWorktreePath(yield* HostProcess.WorkingDirectory);
+  if (
+    input.mode !== "dev:web" &&
+    input.runArgs.some((arg) => arg === "--base-dir" || arg.startsWith("--base-dir="))
+  ) {
+    return yield* new DevRunnerBaseDirOverrideError();
+  }
+
+  const cwd = yield* HostProcess.WorkingDirectory;
+  const worktreePath = yield* resolveGitWorktreePath(cwd);
 
   const { offset, source } = yield* resolveOffset({
     portOffset,
@@ -777,7 +801,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   // A dev server started inside a worktree defaults to that worktree's own
   // (gitignored) `.t3` — see @t3tools/shared/devHome for why this must
   // outrank an ambient T3CODE_HOME. `--home-dir` still wins.
-  const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
+  const worktreeHome = yield* resolveWorktreeT3Home(cwd);
   // Trim before choosing: `--home-dir ""` is not a selection, and treating it
   // as one would skip the worktree default and land on the shared home —
   // exactly the outcome this precedence exists to prevent.
@@ -815,6 +839,33 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   if (input.dryRun) {
     return;
   }
+
+  const ambientHome = hostEnvironment.T3CODE_HOME?.trim() || undefined;
+  const resolvedAmbientHome =
+    ambientHome === undefined ? undefined : yield* resolveBaseDir(ambientHome);
+  const selectedWorktreeHome = yield* selectWorktreeDevHome(baseDir, worktreeHome);
+  const ambientSharedHome =
+    resolvedAmbientHome !== undefined &&
+    worktreeHome !== undefined &&
+    Option.contains(
+      yield* resolveFilesystemPath(resolvedAmbientHome),
+      yield* expectedDevHomePath(worktreeHome),
+    )
+      ? undefined
+      : resolvedAmbientHome;
+  const defaultHome = yield* DEFAULT_T3_HOME;
+  const platform = yield* HostProcess.Platform;
+  const startupAmbientHome =
+    worktreeHome === undefined && !input.t3Home?.trim() ? undefined : ambientSharedHome;
+  const verifyStartupHome =
+    input.mode !== "dev:web" && (worktreeHome !== undefined || isDotT3Home(baseDir, platform))
+      ? assertIsolatedDevStartup({
+          baseDir,
+          stateSubdir: env.T3CODE_HOME === undefined ? "dev" : "userdata",
+          protectedHomes: [...new Set([defaultHome, startupAmbientHome ?? defaultHome])],
+        })
+      : Effect.succeed(baseDir);
+  yield* verifyStartupHome;
 
   const sharedWebPort = BASE_WEB_PORT + webOffset;
   let built = false;
@@ -901,13 +952,23 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     }
   }
 
+  const seedEnv: NodeJS.ProcessEnv = { ...env };
+  if (ambientSharedHome === undefined) {
+    delete seedEnv.T3CODE_HOME;
+  } else {
+    seedEnv.T3CODE_HOME = ambientSharedHome;
+  }
   // After sharing, so the warm step sees the same bundled-dev env as Vite.
   yield* prepareFirstStart({
     mode: input.mode,
     seed: input.seed !== false,
-    worktreeHome: baseDir === worktreeHome ? worktreeHome : undefined,
+    worktreeHome: selectedWorktreeHome,
     env,
+    seedEnv,
   });
+
+  const startupHome = yield* verifyStartupHome;
+  if (env.T3CODE_HOME !== undefined) env.T3CODE_HOME = startupHome;
 
   const args = [...(built ? BUILT_DEV_ARGS : MODE_ARGS[input.mode]), ...input.runArgs];
   const spawnCommand = yield* resolveSpawnCommand("vp", args, { env });

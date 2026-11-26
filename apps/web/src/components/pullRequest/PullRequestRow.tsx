@@ -1,5 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import type { PullRequestAction } from "@t3tools/contracts";
+import { contextMenuSourceOf } from "../../contextMenuSource";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
 import { SearchIcon } from "lucide-react";
@@ -69,8 +70,9 @@ const PAGE_ROW_CLASS = "px-3 py-2.5";
 
 export type PullRequestRowTarget = Pick<
   EnvironmentPullRequestEntry,
-  "environmentId" | "projectId" | "host" | "repository" | "number"
->;
+  "environmentId" | "projectId" | "host" | "repository" | "number" | "target"
+> &
+  Partial<Pick<EnvironmentPullRequestEntry, "url">>;
 
 function PullRequestRowImpl({
   entry,
@@ -156,6 +158,7 @@ function PullRequestRowImpl({
                   url: entry.url,
                   openLabel: openOnHostLabel(sourceControlClients.get(entry.provider), t),
                   position: { x: event.clientX, y: event.clientY },
+                  source: contextMenuSourceOf(event),
                 });
               }}
             >
@@ -191,12 +194,18 @@ function PullRequestRowImpl({
                   reference={{
                     projectId: entry.projectId,
                     host: entry.host,
+                    target: entry.target,
                     repository: entry.repository,
                     number: entry.number,
                   }}
                   membership={entry.stack}
                   onSelect={(target) =>
-                    onSelect({ ...target, host: entry.host, environmentId: entry.environmentId })
+                    onSelect({
+                      ...target,
+                      host: entry.host,
+                      target: entry.target,
+                      environmentId: entry.environmentId,
+                    })
                   }
                 />
               ) : null}
@@ -205,6 +214,7 @@ function PullRequestRowImpl({
                 reference={{
                   projectId: entry.projectId,
                   host: entry.host,
+                  target: entry.target,
                   repository: entry.repository,
                   number: entry.number,
                 }}

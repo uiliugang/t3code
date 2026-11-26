@@ -12,6 +12,7 @@ import {
   type IssueTrackerAccountId,
   SourceControlProviderKind,
   issueTrackerBindingScopes,
+  normalizeGithubIssueHost,
   projectIssueProvider,
   repositoryIssueKind,
   type IssueCandidates,
@@ -100,15 +101,7 @@ interface SupportedProject extends ProjectTrackerBinding {
 function resolveGitHostBindings(
   project: OrchestrationProjectShell,
 ): ReadonlyArray<ProjectTrackerBinding> {
-  const identity = project.repositoryIdentity;
-  const selected = identity?.issueRepository;
-  const grouped = sourceControlDefinitions.issueBindings(identity);
-  const bindings =
-    selected === undefined ||
-    (grouped.length > 1 && selected && selected.provider === identity?.provider)
-      ? grouped
-      : sourceControlDefinitions.issueBindings(selected);
-  return bindings.map((binding) => ({
+  return sourceControlDefinitions.issueBindings(project.repositoryIdentity).map((binding) => ({
     ...binding,
     tracker: IssueTrackerKind.make(binding.tracker),
     accountId: null,
@@ -493,12 +486,26 @@ const make = Effect.gen(function* () {
       );
     }
 
+    let host = ref.host?.trim().toLowerCase();
+    if (ref.tracker === "github") {
+      if (host !== undefined) host = normalizeGithubIssueHost(host) ?? host;
+      if (ref.url !== undefined) {
+        const url = parseUrl(ref.url);
+        if (url?.protocol !== "https:" || (host !== undefined && url.host !== host)) {
+          return yield* new IssueOperationError({
+            operation: writeOperation ?? "resolveUrl",
+            reason: "not-found",
+            detail: "The issue URL does not match the selected GitHub host.",
+          });
+        }
+        host = url.host;
+      }
+    }
     const { supported } = yield* listProjects({
       projectId: ref.projectId,
       standaloneOnly: standaloneTracker,
       refreshRepository: writeOperation !== undefined && !standaloneTracker,
     });
-    const host = ref.host?.trim().toLowerCase();
     const candidates = supported.filter(
       (candidate) =>
         candidate.tracker === ref.tracker && (host === undefined || candidate.host === host),
@@ -534,11 +541,13 @@ const make = Effect.gen(function* () {
       excludeProjectIds: input.excludeProjectIds,
     });
     const host = input.host?.trim().toLowerCase();
+    const githubHost = host === undefined ? undefined : (normalizeGithubIssueHost(host) ?? host);
     const limit = input.limit ?? DEFAULT_LIST_LIMIT;
     const scopes = new Map<string, SupportedProject>();
     for (const project of supported) {
       if (input.tracker !== undefined && project.tracker !== input.tracker) continue;
-      if (host !== undefined && project.host !== host) continue;
+      if (host !== undefined && project.host !== (project.tracker === "github" ? githubHost : host))
+        continue;
       const key = listCursorKey(project);
       if (!scopes.has(key)) scopes.set(key, project);
     }
@@ -959,6 +968,7 @@ const make = Effect.gen(function* () {
     return listProjects({ host: url.hostname, authority: url.host.toLowerCase() }).pipe(
       Effect.map(({ supported }) => {
         for (const project of supported) {
+          if (project.tracker === "github" && project.host !== url.host.toLowerCase()) continue;
           const parsed = sourceControlDefinitions.parseIssueUrl(
             value,
             SourceControlProviderKind.make(project.tracker),
@@ -993,7 +1003,7 @@ const make = Effect.gen(function* () {
       const { supported } = yield* listProjects({ host: link.host, authority });
       const onHost = supported.filter((project) => project.tracker === tracker);
       const onAuthority = onHost.filter((project) => project.host === authority);
-      const onTracker = onAuthority.length > 0 ? onAuthority : onHost;
+      const onTracker = tracker === "github" || onAuthority.length > 0 ? onAuthority : onHost;
       const preferFirst = (projects: ReadonlyArray<SupportedProject>) =>
         projects.find((project) => project.project.id === preferredProjectId) ?? projects[0];
       const scope = link.scope.toLowerCase();
@@ -1025,7 +1035,10 @@ const make = Effect.gen(function* () {
       if (standalone === null) {
         const found = serve(onTracker);
         if (found === null) {
-          return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+          return yield* new IssueOperationError({
+            operation: "resolveUrl",
+            detail: `No project in T3 Code is on ${link.host}. Add any ${link.host} project to read its issues.`,
+          });
         }
         return found.resolved;
       }

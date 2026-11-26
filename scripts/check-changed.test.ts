@@ -633,3 +633,21 @@ it("acquires the repository browser test lock only when changed tests launch Chr
     ),
   ).toBe(true);
 });
+
+it("runs every changed browser test in a bounded Chromium batch", () => {
+  using project = launcherFixture();
+  const files = Array.from(
+    { length: 31 },
+    (_, index) => `apps/web/src/Component${String(index).padStart(2, "0")}.browser.test.tsx`,
+  );
+  for (const file of files) project.write(file, "export {};\n");
+
+  const result = project.run();
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  const batches = project
+    .calls()
+    .filter(({ args }) => args[0] === "test")
+    .map(({ args }) => args.filter(launchesChromium));
+  expect(batches).toHaveLength(2);
+  expect(batches).toEqual(expect.arrayContaining([files.slice(0, 30), files.slice(30)]));
+});

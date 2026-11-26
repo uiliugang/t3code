@@ -1,6 +1,7 @@
 import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
 import { parseGitRemoteHost } from "@t3tools/source-control-core/shared/definition";
 import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
+import { withoutRemoteUrlCredentials } from "@t3tools/shared/cloneUrl";
 import { canonicalRepositoryPath, normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 import * as Cache from "effect/Cache";
@@ -50,7 +51,19 @@ export class RepositoryIdentityResolver extends Context.Service<
   }
 >()("t3/project/RepositoryIdentityResolver") {}
 
-function parseRemoteFetchUrls(stdout: string) {
+// `git remote -v` applies url.*.insteadOf, which can point a GitHub remote at a proxy or mirror.
+// A configured URL that names a forge wins; a shorthand like `gh:` is known only once rewritten.
+function parseConfiguredRemoteUrls(config: string): Map<string, string> {
+  const urls = new Map<string, string>();
+  for (const line of config.split("\n")) {
+    const match = /^remote\.(\S+)\.url (.+)$/u.exec(line);
+    // Git fetches from the first of several configured URLs.
+    if (match?.[1] && match[2] && !urls.has(match[1])) urls.set(match[1], match[2]);
+  }
+  return urls;
+}
+
+function parseRemoteFetchUrls(stdout: string, configuredUrls: ReadonlyMap<string, string>) {
   const remotes = new Map<string, string>();
   const fetchRemotes = new Map<string, string>();
   let hasLocalOrigin = false;
@@ -59,14 +72,19 @@ function parseRemoteFetchUrls(stdout: string) {
     // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
     const match = /^(\S+)\t(.+) \((fetch|push)\)(?:\s+\[[^\]]+\])?$/.exec(line);
     if (!match) continue;
-    const [, remoteName = "", remoteUrl = "", direction = ""] = match;
-    if (direction !== "fetch" || !remoteName || !remoteUrl) continue;
-    fetchRemotes.set(remoteName, remoteUrl);
-    if (isLocalRemoteUrl(remoteUrl)) {
-      if (remoteName === "origin") hasLocalOrigin = true;
-      continue;
-    }
-    remotes.set(remoteName, remoteUrl);
+    const [, remoteName = "", fetchUrl = "", direction = ""] = match;
+    if (direction !== "fetch" || !remoteName || !fetchUrl) continue;
+    fetchRemotes.set(remoteName, fetchUrl);
+    if (remoteName === "origin" && isLocalRemoteUrl(fetchUrl)) hasLocalOrigin = true;
+    const configuredUrl = configuredUrls.get(remoteName);
+    const remoteUrl =
+      configuredUrl !== undefined &&
+      (sourceControlDefinitions.recognizeRemote(configuredUrl)?.kind ?? "unknown") !== "unknown"
+        ? configuredUrl
+        : fetchUrl;
+    if (isLocalRemoteUrl(remoteUrl)) continue;
+    // The identity names the remote, not the login used to reach it.
+    remotes.set(remoteName, withoutRemoteUrlCredentials(remoteUrl));
   }
   return { remotes, fetchRemotes, hasLocalOrigin };
 }
@@ -410,10 +428,14 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
         timeoutBehavior: "timedOutResult",
       })
       .pipe(Effect.option);
-  const [remoteResult, resolvedResult] = yield* Effect.all(
+  const [remoteResult, configResult] = yield* Effect.all(
     [
       runGit(["remote", "-v"]),
-      runGit(["config", "--get-regexp", "^remote\\..*\\.(gh-resolved|t3-private-pr-companion)$"]),
+      runGit([
+        "config",
+        "--get-regexp",
+        "^remote\\..*\\.(url|gh-resolved|t3-private-pr-companion)$",
+      ]),
     ],
     { concurrency: "unbounded" },
   );
@@ -427,12 +449,13 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     return undefined;
   }
 
-  const { remotes, fetchRemotes, hasLocalOrigin } = parseRemoteFetchUrls(remoteResult.value.stdout);
-  // Exits 1 when no remote has a mark.
+  // Exits 1 when no key matches.
   const resolved =
-    resolvedResult._tag === "Some" && resolvedResult.value.code === 0
-      ? resolvedResult.value.stdout
-      : "";
+    configResult._tag === "Some" && configResult.value.code === 0 ? configResult.value.stdout : "";
+  const { remotes, fetchRemotes, hasLocalOrigin } = parseRemoteFetchUrls(
+    remoteResult.value.stdout,
+    parseConfiguredRemoteUrls(resolved),
+  );
   const remote = pickPrimaryRemote(remotes, resolved);
   if (!remote) return null;
   const originUrl = remotes.get("origin");
@@ -450,7 +473,6 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     rootPath: cacheKey.rootPath,
   });
   if (hasLocalOrigin) return { identity, issueIdentity: null };
-  if (remote.remoteName === "origin") return { identity };
   for (const line of resolved.split("\n")) {
     const mark = /^remote\.(.+)\.t3-private-pr-companion\s+(.+)$/u.exec(line);
     if (!mark) continue;
@@ -468,7 +490,14 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     Array.from(fetchRemotes, ([name, url]) => ({ name, url })),
   );
   if (!selected) return { identity, issueIdentity: null };
-  if (selected.remoteUrl === remote.remoteUrl) return { identity };
+  if (
+    identity.origin === undefined &&
+    selected.remoteName === remote.remoteName &&
+    selected.remoteUrl === remote.remoteUrl &&
+    (selected.remoteName === "origin" ||
+      selected.remoteUrl === fetchRemotes.get(selected.remoteName))
+  )
+    return { identity };
   const issueIdentity = buildRepositoryIdentity({
     remoteName: selected.remoteName,
     remoteUrl: selected.remoteUrl,

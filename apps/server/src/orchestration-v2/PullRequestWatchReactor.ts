@@ -326,11 +326,7 @@ export const make = Effect.gen(function* () {
     }
   >();
 
-  const identityOf = (link: ThreadPullRequestLink) => ({
-    host: normalizeThreadPullRequestKey(link).host,
-    repository: link.repository,
-    number: link.number,
-  });
+  const identityOf = normalizeThreadPullRequestKey;
 
   /**
    * The orchestrator applies this only while the same watch is on, so a stop or restart

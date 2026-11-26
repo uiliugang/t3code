@@ -88,6 +88,7 @@ function setup() {
     saved: IssueSource[] = sources,
     singleProvider = true,
     mep = true,
+    compareAndSet = true,
   ) =>
     act(() =>
       root.render(
@@ -98,6 +99,7 @@ function setup() {
           repository="acme/app"
           saved={saved}
           singleProvider={singleProvider}
+          compareAndSet={compareAndSet}
           sources={saved.filter((source) => source.provider === saved[0]?.provider)}
           provider={saved[0]?.provider}
           error={undefined}
@@ -156,6 +158,52 @@ it("keeps MEP spaces readable without offering a GitHub binding", () => {
   expect(details.textContent).not.toContain("Not configured");
   expect(details.textContent).toContain(space.scope);
   expect(details.querySelector("button, input")).toBeNull();
+});
+
+it("keeps legacy sources read-only without compare-and-set support", () => {
+  update.mockReset();
+  using screen = setup();
+  screen.render(true, [first, space], false, true, false);
+  act(() => screen.button("View sources for server").click());
+  expect(screen.container.textContent).toContain(space.scope);
+  expect(screen.button("Remove incompatible sources")).toBeUndefined();
+  expect(screen.container.querySelector("section button, section input")).toBeNull();
+  expect(update).not.toHaveBeenCalled();
+});
+
+it("allows restoring a ported GitHub source without letting an older server save it", async () => {
+  update.mockReset().mockResolvedValue({ _tag: "Success" });
+  using screen = setup();
+  const ported = { ...second, host: "git.example.test:8443" };
+  screen.render(true, [ported]);
+  act(() => screen.button("Edit server").click());
+  expect(screen.button("Save").disabled).toBe(true);
+  await act(async () => screen.button("Restore automatic").click());
+  expect(update).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      issueSourceProvider: "github",
+      expectedIssueProjectSources: { [projectId]: [ported] },
+      patch: { issueProjectSources: { [projectId]: [] } },
+    },
+  });
+});
+
+it("restores automatic GitHub sources without removing MEP on a multi-provider server", async () => {
+  update.mockReset().mockResolvedValue({ _tag: "Success" });
+  using screen = setup();
+  const legacy = [first, space];
+  screen.render(true, legacy, false);
+  act(() => screen.button("Edit server").click());
+  act(() => screen.button("acme/app github.com").click());
+  await act(async () => screen.button("Restore automatic").click());
+  expect(update).toHaveBeenCalledWith({
+    environmentId,
+    input: {
+      expectedIssueProjectSources: { [projectId]: legacy },
+      patch: { issueProjectSources: { [projectId]: [space] } },
+    },
+  });
 });
 
 it("removes a legacy binding without losing either same-platform repository", async () => {

@@ -75,7 +75,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102, 108])(
+  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102, 108, 126])(
     "upgrades a database at exactly %s",
     (id) =>
       Effect.gen(function* () {
@@ -90,6 +90,11 @@ describe("runMigrations", () => {
           migrationManifest.filter(([migrationId]) => migrationId > id),
         );
         assert.deepStrictEqual(yield* history, migrationManifest);
+        assert.deepStrictEqual(
+          yield* sql`SELECT name FROM sqlite_schema WHERE type = 'index'
+            AND name = 'orchestration_v2_projection_run_attempts_superseded_idx'`,
+          [{ name: "orchestration_v2_projection_run_attempts_superseded_idx" }],
+        );
         if (id >= 87) {
           assert.deepStrictEqual(
             yield* sql`SELECT text, request_json FROM wechat_deliveries WHERE id = 'legacy'`,

@@ -5,7 +5,7 @@ import {
   readPullRequestDetailSnapshot,
   resolvePullRequestReferenceHost,
 } from "../components/pullRequest/pullRequestDetail.logic";
-import { projectChangeRequestUrl } from "@t3tools/client-runtime/change-request-links";
+import { changeRequestFallback } from "@t3tools/client-runtime/change-request-links";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { useProject } from "../state/entities";
 import { pullRequestEnvironment } from "../state/pullRequests";
@@ -68,8 +68,7 @@ export function useOpenPanelPullRequestUrl(threadRef: ScopedThreadRef | null) {
         )
       : null;
   const fallbackUrl = reference
-    ? (requestedReference?.url ??
-      projectChangeRequestUrl(project?.repositoryIdentity, reference.repository, reference.number))
+    ? changeRequestFallback(reference, project?.repositoryIdentity, requestedReference?.url)?.url
     : undefined;
   const detail = useEnvironmentQuery(
     reference && environmentId

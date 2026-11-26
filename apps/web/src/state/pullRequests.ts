@@ -8,6 +8,7 @@ import {
   pullRequestPendingEditsFor,
   pullRequestHostAnswer,
   type PullRequestPendingEdit,
+  type PullRequestViewerRef,
 } from "@t3tools/client-runtime/state/pull-requests";
 import {
   PullRequestListResult,
@@ -112,11 +113,12 @@ export function pullRequestListEntryToSummary(entry: PullRequestListEntry): Pull
   };
 }
 
-// Project ids pin the remote host; omit host so legacy, URL, and list references share entries.
 function pullRequestSummaryKey(environmentId: EnvironmentId, reference: PullRequestRef): string {
   return JSON.stringify([
     environmentId,
     reference.projectId,
+    reference.target?.provider ?? null,
+    reference.target?.origin ?? reference.host?.toLowerCase() ?? null,
     reference.repository.toLowerCase(),
     reference.number,
   ]);
@@ -397,23 +399,26 @@ const filesViewedAnswerListeners = new Map<
   Set<(answer: PullRequestFilesViewedResult) => void>
 >();
 
-function filesViewedAnswerKey({ environmentId, input }: EnvironmentQueryTarget<PullRequestRef>) {
+export function filesViewedScopeKey(environmentId: EnvironmentId, reference: PullRequestViewerRef) {
   return JSON.stringify([
     environmentId,
-    input.projectId,
-    input.host,
-    input.expectedAccountId,
-    input.allowStale,
-    input.repository,
-    input.number,
+    reference.projectId,
+    reference.host ?? null,
+    reference.target?.provider ?? null,
+    reference.target?.origin ?? null,
+    reference.expectedAccountId ?? null,
+    reference.legacyViewerId ?? null,
+    reference.allowStale ?? null,
+    reference.repository,
+    reference.number,
   ]);
 }
 
 export function subscribePullRequestFilesViewedAnswers(
-  target: EnvironmentQueryTarget<PullRequestRef>,
+  { environmentId, input }: EnvironmentQueryTarget<PullRequestRef>,
   onAnswer: (answer: PullRequestFilesViewedResult) => void,
 ) {
-  const key = filesViewedAnswerKey(target);
+  const key = filesViewedScopeKey(environmentId, input);
   let listeners = filesViewedAnswerListeners.get(key);
   if (listeners === undefined) filesViewedAnswerListeners.set(key, (listeners = new Set()));
   listeners.add(onAnswer);
@@ -439,10 +444,10 @@ export const pullRequestEnvironment = createPullRequestEnvironmentAtoms(connecti
         return summary === null ? current : { ...current, metadata: { summary, observedAt } };
       });
     }),
-  filesViewed: (target, answer) =>
+  filesViewed: ({ environmentId, input }, answer) =>
     Effect.sync(() => {
-      for (const listener of filesViewedAnswerListeners.get(filesViewedAnswerKey(target)) ?? [])
-        listener(answer);
+      const listeners = filesViewedAnswerListeners.get(filesViewedScopeKey(environmentId, input));
+      for (const listener of listeners ?? []) listener(answer);
     }),
   list: ({ environmentId, input }, answer, registry) =>
     Effect.map(Clock.currentTimeMillis, (observedAt) => {
@@ -531,7 +536,7 @@ export function threadPullRequestLinkToSummary(
 
 function savedPullRequestKey(
   environmentId: EnvironmentId,
-  reference: Pick<PullRequestRef, "host" | "repository" | "number">,
+  reference: Pick<PullRequestRef, "host" | "target" | "repository" | "number"> & { url?: string },
 ): string {
   return reference.host === undefined
     ? ""

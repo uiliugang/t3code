@@ -36,7 +36,17 @@ export function usePullRequestDiffHighlightFiles(
   const fetchContents = useAtomCommand(composerPullRequests.diffFileContents, {
     reportFailure: false,
   });
-  const { environmentId, projectId, repository, number, host, commit } = params;
+  const {
+    environmentId,
+    projectId,
+    repository,
+    number,
+    host,
+    target,
+    commit,
+    navigationUrl,
+    initialSummary,
+  } = params;
   const cache = createPullRequestDiffHighlightCache();
   return useMemo(() => {
     if (process.env.EXPO_PUBLIC_T3_DIFF_TRACE === "1") {
@@ -55,7 +65,16 @@ export function usePullRequestDiffHighlightFiles(
     }
     return createPullRequestDiffHighlightFiles(
       {
-        target: pullRequestTarget({ environmentId, projectId, repository, number, host }),
+        target: pullRequestTarget({
+          environmentId,
+          projectId,
+          repository,
+          number,
+          host,
+          ...(target === undefined ? {} : { target }),
+          ...(navigationUrl === undefined ? {} : { navigationUrl }),
+          ...(initialSummary === undefined ? {} : { initialSummary }),
+        }),
         commit,
       },
       parsed,
@@ -69,6 +88,9 @@ export function usePullRequestDiffHighlightFiles(
     repository,
     number,
     host,
+    target,
+    navigationUrl,
+    initialSummary,
     commit,
     parsed,
     files,

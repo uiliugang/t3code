@@ -1,3 +1,4 @@
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as Stream from "effect/Stream";
@@ -351,7 +352,16 @@ export interface ProviderRepositoryRef {
   readonly host: string;
 }
 
+export const PullRequestWebOrigin = Context.Reference<string | null>(
+  "t3/source-control/PullRequestWebOrigin",
+  { defaultValue: () => null },
+);
+
 export interface PullRequestProviderApi {
+  readonly configuredWebOrigin?: (input: {
+    readonly cwd: string;
+    readonly host: string;
+  }) => Effect.Effect<string | null, PullRequestProviderError>;
   readonly withVerifiedCredential?: <A, E, R>(
     /** `repository` lets a host pick the credential that can reach it. */
     input: { readonly cwd: string; readonly host: string; readonly repository?: string },
@@ -364,6 +374,7 @@ export interface PullRequestProviderApi {
   readonly getRoutingIdentity?: (input: {
     readonly cwd: string;
     readonly host: string;
+    readonly repository?: string;
   }) => Effect.Effect<
     { readonly accountId: string; readonly viewer: string },
     PullRequestProviderError
@@ -615,6 +626,8 @@ export interface PullRequestProviderApi {
       readonly verdict: PullRequestReviewVerdict;
       readonly body: string;
       readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
+      /** Hosts that can pin a review to a head commit do; the caller has already checked it. */
+      readonly expectedHeadSha?: string;
     },
   ) => Effect.Effect<void, PullRequestProviderError>;
 

@@ -5,7 +5,10 @@ import {
   resolvePullRequestReviewAnchor,
   type PullRequestAnchor,
 } from "@t3tools/shared/pullRequestAnchor";
-import { projectChangeRequestUrl } from "@t3tools/client-runtime/change-request-links";
+import {
+  changeRequestFallback,
+  changeRequestWebTarget,
+} from "@t3tools/client-runtime/change-request-links";
 import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
@@ -37,6 +40,7 @@ import {
   GitCommitHorizontalIcon,
   MessageSquareIcon,
   PanelRightIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import {
   lazy,
@@ -68,7 +72,7 @@ import { usePreparePullRequestThreadAction } from "~/state/sourceControlActions"
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
-import { useProjects, useServerConfigs } from "~/state/entities";
+import { useProjects, useQuietThreadShell, useServerConfigs } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
@@ -84,6 +88,7 @@ import { vcsEnvironment } from "~/state/vcs";
 import { RelativeTime } from "~/components/RelativeTime";
 import { useUiStateStore } from "~/uiStateStore";
 
+import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
@@ -140,6 +145,8 @@ import {
   pullRequestHandoffLabels,
   PULL_REQUEST_MERGE_METHOD_LABELS,
   checkoutFailureDescription,
+  mergeHeadPin,
+  seenPullRequestHead,
   readableFailure,
   resolvePullRequestReferenceHost,
   resolvePullRequestPrimaryControl,
@@ -242,6 +249,11 @@ function resolvePullRequestReference(
   repositoryIdentity: Parameters<typeof resolvePullRequestReferenceHost>[1],
   supportsThreadPullRequests: boolean,
 ): PullRequestRef {
+  if (
+    (requestedReference.host !== undefined || requestedReference.target !== undefined) &&
+    !supportsThreadPullRequests
+  )
+    return requestedReference;
   return supportsThreadPullRequests
     ? resolvePullRequestReferenceHost(requestedReference, repositoryIdentity)
     : {
@@ -268,11 +280,13 @@ function pullRequestStackReference(
   reference: PullRequestRef,
   supportsThreadPullRequests: boolean,
 ) {
+  const link =
+    detail === null ? undefined : sourceControlClients.parseChangeRequestUrl(detail.url)?.link;
   return detail === null || detail.capabilities.stacks !== true || !supportsThreadPullRequests
     ? null
     : {
         ...reference,
-        host: reference.host ?? sourceControlClients.parseChangeRequestUrl(detail.url)?.link.host,
+        host: reference.host ?? link?.authority ?? link?.host,
       };
 }
 
@@ -298,6 +312,7 @@ export function PullRequestDetailPanel({
   getShortcutContext,
   threadRef = null,
   reference: requestedReference,
+  sourceUrl,
   listEntry = null,
   refreshToken: forcedRefreshToken = 0,
   tabOnPage = false,
@@ -319,6 +334,7 @@ export function PullRequestDetailPanel({
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
   threadRef?: ScopedThreadRef | null;
   reference: PullRequestRef;
+  sourceUrl?: string | undefined;
   listEntry?: PullRequestListEntry | null;
   refreshToken?: number;
   /**
@@ -354,35 +370,39 @@ export function PullRequestDetailPanel({
   );
   const repositoryIdentity = project?.repositoryIdentity;
   const supportsThreadPullRequests = environmentConfigs.get(environmentId) !== undefined;
+  const linkTarget = changeRequestWebTarget(requestedReference, sourceUrl);
   const reference = resolvePullRequestReference(
-    requestedReference,
+    requestedReference.target !== undefined || linkTarget === undefined
+      ? requestedReference
+      : { ...requestedReference, target: linkTarget },
     repositoryIdentity,
     supportsThreadPullRequests,
   );
   const loadingCheckoutCommand = loadingPullRequestCheckoutCommand(reference, repositoryIdentity);
-  const unavailableHostUrl = projectChangeRequestUrl(
-    repositoryIdentity,
-    reference.repository,
-    reference.number,
-  );
+  const fallback = changeRequestFallback(reference, repositoryIdentity, sourceUrl);
   const pullRequestKey = pullRequestRefKey(reference);
+  const listTarget = changeRequestWebTarget(reference, listEntry?.url);
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&
     listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
     (reference.host === undefined ||
       listEntry.host.toLowerCase() === reference.host.toLowerCase()) &&
-    listEntry.number === reference.number
+    listEntry.number === reference.number &&
+    (reference.target === undefined ||
+      (listTarget?.provider === reference.target.provider &&
+        listTarget.origin === reference.target.origin))
       ? listEntry
       : null;
   const linkedReference = sourceControlClients.parseChangeRequestUrl(
-    matchingListEntry?.url ?? unavailableHostUrl ?? "",
+    matchingListEntry?.url ?? fallback?.url ?? "",
   )?.link;
   useEnvironmentQuery(
     context === "page" &&
       supportsThreadPullRequests &&
       linkedReference &&
       (reference.host === undefined ||
-        reference.host.toLowerCase() === linkedReference.host.toLowerCase())
+        reference.host.toLowerCase() ===
+          (linkedReference.authority ?? linkedReference.host).toLowerCase())
       ? pullRequestEnvironment.linkedThreads({
           environmentId,
           input: { ...reference, ...normalizeThreadPullRequestKey(linkedReference) },
@@ -537,9 +557,11 @@ export function PullRequestDetailPanel({
   }, [condensed, tab]);
   const lastSelectedMergeMethod = useUiStateStore((state) => state.pullRequestMergeMethod);
   const setLastSelectedMergeMethod = useUiStateStore((state) => state.setPullRequestMergeMethod);
+  const thread = useQuietThreadShell(threadRef?.environmentId === environmentId ? threadRef : null);
   const resolveProjectDefaultMergeMethod = usePullRequestDefaultMergeMethodResolver(
     environmentId,
-    reference.projectId,
+    thread?.projectId ?? reference.projectId,
+    { ...reference, target: reference.target ?? changeRequestWebTarget(reference, detail?.url) },
   );
   const projectDefaultMergeMethod = resolveProjectDefaultMergeMethod();
   const [mergeMethodSelection, setMergeMethodSelection] = useState<{
@@ -654,6 +676,7 @@ export function PullRequestDetailPanel({
     stackError: nativeStackQuery.error,
   });
   const stackOwnsMerge = supportsStackActions && nativeStack !== null;
+  const stackAutoMerge = supportsStackActions && detail?.capabilities.stackAutoMerge === true;
   const mergeBlockedReason = canMergeSinglePullRequest
     ? null
     : nativeStackQuery.error
@@ -667,6 +690,20 @@ export function PullRequestDetailPanel({
     nativeStackQuery.refresh();
   };
   const [refreshToken, setRefreshToken] = useState(0);
+  const seenHeadKey = `${environmentId}:${pullRequestKey}`;
+  const [storedSeenHead, setSeenHead] = useState<ReturnType<typeof seenPullRequestHead> | null>(
+    null,
+  );
+  // A stored answer paints first, so only a settled read counts as shown.
+  const seenHead = seenPullRequestHead(
+    storedSeenHead,
+    seenHeadKey,
+    detailQuery.isPending ? undefined : detail?.headSha,
+  );
+  if (seenHead !== storedSeenHead) setSeenHead(seenHead);
+  const shownHeadSha = seenHead.sha ?? detail?.headSha;
+  const unseenHeadSha =
+    detail?.state === "open" && detail.headSha !== shownHeadSha ? detail.headSha : undefined;
   const [activityRevision, setActivityRevision] = useState<{
     readonly key: string;
     readonly updatedAt: string;
@@ -825,6 +862,7 @@ export function PullRequestDetailPanel({
       input: {
         ...reference,
         action,
+        ...mergeHeadPin(action, shownHeadSha),
         ...(method ? { mergeMethod: method } : {}),
         ...(updateMethod ? { updateMethod } : {}),
       },
@@ -842,6 +880,8 @@ export function PullRequestDetailPanel({
         title: t(actionFailureLabels[action], { term: t(terminology.singular) }),
         description: readableFailure(failure, hint),
       });
+      // A refused merge usually means new commits, so show what the host has now.
+      if (action === "merge" || action === "enable-auto-merge") refreshDetail();
       onActed?.(action, "failed");
       return false;
     }
@@ -962,6 +1002,7 @@ export function PullRequestDetailPanel({
             environmentId,
             projectId: reference.projectId,
             ...(reference.host === undefined ? {} : { host: reference.host }),
+            ...(reference.target === undefined ? {} : { target: reference.target }),
             repository: reference.repository,
             number: reference.number,
             url: detail.url,
@@ -1522,11 +1563,18 @@ export function PullRequestDetailPanel({
                   onRetry={nativeStackQuery.error ? nativeStackQuery.refresh : undefined}
                   reference={reference}
                   environmentId={environmentId}
+                  shownHeadSha={shownHeadSha}
                   onSelect={onSelectPullRequest}
                   mergeMethod={selectedMergeMethod}
                   stale={!nativeStackQuery.isFresh}
                   canMerge={supportsStackActions && can("merge") && allowedMergeMethods.length > 0}
                   canRebase={supportsStackActions && detail.viewerPermissions.stackRebase === true}
+                  canAutoMerge={
+                    stackAutoMerge && can("enable-auto-merge") && allowedMergeMethods.length > 0
+                  }
+                  preferAutoMerge={checksState !== null && checksState !== "passing"}
+                  autoMergeArmed={stackAutoMerge && autoMergeArmed}
+                  canCancelAutoMerge={stackAutoMerge && can("disable-auto-merge")}
                   onActed={() => {
                     refreshDetail();
                     onActed?.();
@@ -1803,6 +1851,33 @@ export function PullRequestDetailPanel({
           </div>
         </div>
 
+        {unseenHeadSha !== undefined && shownHeadSha !== undefined ? (
+          <div className="px-4 pb-2">
+            <Alert variant="warning">
+              <TriangleAlertIcon />
+              <AlertDescription>
+                {gt("New commits were pushed. A merge or review still applies to {sha}.", {
+                  sha: shownHeadSha.slice(0, 7),
+                })}
+              </AlertDescription>
+              <AlertAction>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={isInvalidating}
+                  onClick={() => {
+                    // The pin moves once the host read that reloads the diff has been asked for.
+                    void refetchFromHost().then(() =>
+                      setSeenHead({ key: seenHeadKey, sha: unseenHeadSha }),
+                    );
+                  }}
+                >
+                  {gt("Load new commits")}
+                </Button>
+              </AlertAction>
+            </Alert>
+          </div>
+        ) : null}
         {detail ? (
           <PullRequestDetailTabBar
             tabs={visibleTabs}
@@ -1968,14 +2043,11 @@ export function PullRequestDetailPanel({
               : { error: detailQuery.error })}
             refreshing={detailQuery.isPending}
             onRetry={refreshDetail}
-            {...(unavailableHostUrl
+            {...(fallback
               ? {
                   host: {
-                    url: unavailableHostUrl,
-                    openLabel: openOnHostLabel(
-                      sourceControlClients.get(repositoryIdentity?.provider),
-                      t,
-                    ),
+                    url: fallback.url,
+                    openLabel: openOnHostLabel(fallback.definition, t),
                   },
                 }
               : {})}
@@ -2117,6 +2189,7 @@ export function PullRequestDetailPanel({
             environmentId={environmentId}
             reference={reference}
             detail={detail}
+            shownHeadSha={shownHeadSha}
             actionPending={actionPending}
             onCommentAction={performCommentAction}
             onCommented={refreshDetail}

@@ -1,6 +1,6 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useAtomValue } from "@effect/atom-react";
-import type { PullRequestAction, PullRequestSummary } from "@t3tools/contracts";
+import type { ProjectId, PullRequestAction, PullRequestSummary } from "@t3tools/contracts";
 import { msg, useMessages } from "gt-react";
 import { createContext, use, type ReactNode } from "react";
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
@@ -16,13 +16,14 @@ import { resolvePullRequestMergeMethod } from "./pullRequestDetail.logic";
 import { PullRequestGlyph } from "./pullRequestIcons";
 import { pullRequestQuickActions, type EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import {
+  pullRequestActionReference,
   usePullRequestActionRunner,
   usePullRequestDefaultMergeMethodResolver,
 } from "./usePullRequestActions";
 
 type PullRequestSpeedActionEntry = Pick<
   EnvironmentPullRequestEntry,
-  "environmentId" | "projectId" | "host" | "repository" | "number" | "state" | "isDraft"
+  "environmentId" | "projectId" | "host" | "target" | "repository" | "number" | "state" | "isDraft"
 > & { readonly stack?: object | undefined };
 
 export interface PullRequestSpeedActionResult<Entry = EnvironmentPullRequestEntry> {
@@ -33,6 +34,7 @@ export interface PullRequestSpeedActionResult<Entry = EnvironmentPullRequestEntr
 
 export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntry>({
   entry,
+  mergePreferenceProjectId,
   hostActions,
   terminology,
   onActed,
@@ -41,6 +43,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
   onCloseSweepStart,
 }: {
   entry: Entry;
+  mergePreferenceProjectId?: ProjectId | null;
   hostActions: ReadonlySet<PullRequestAction>;
   terminology: ChangeRequestTerminology;
   onActed?: (result: PullRequestSpeedActionResult<Entry>) => void;
@@ -55,17 +58,12 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
   );
   const resolveProjectDefault = usePullRequestDefaultMergeMethodResolver(
     entry.environmentId,
-    entry.projectId,
+    mergePreferenceProjectId === undefined ? entry.projectId : mergePreferenceProjectId,
+    entry,
   );
-  const reference = {
-    projectId: entry.projectId,
-    host: entry.host,
-    repository: entry.repository,
-    number: entry.number,
-  };
   const { actionPending, perform } = usePullRequestActionRunner({
     environmentId: entry.environmentId,
-    reference,
+    reference: pullRequestActionReference(entry),
     terminology,
     onSuccess: (action, reply) => onActed?.({ entry, action, reply }),
     resolveMergeMethod: (detail) => {

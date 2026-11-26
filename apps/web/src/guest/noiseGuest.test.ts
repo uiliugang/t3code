@@ -13,6 +13,9 @@ function fixture(search = "") {
   return records;
 }
 it("never lends a saved guest session to an invitation with a different relay or pin", async () => {
+  using _parse = vi.spyOn(URL, "parse").mockImplementation(() => {
+    throw new TypeError("URL.parse is not available");
+  });
   const records = fixture();
   records.set(key, JSON.stringify({ ...route, token: "secret-session" }));
   try {

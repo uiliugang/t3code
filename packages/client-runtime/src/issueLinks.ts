@@ -1,20 +1,29 @@
 import {
   IssueTrackerKind,
   issueTrackerBindingScopes,
+  mergeProjectIssueSources,
+  normalizeGithubIssueHost,
+  repositoryIssueKind,
+  SourceControlProviderKind,
   type IssueRef,
   type IssueTrackerConnectionList,
   type RepositoryIdentity,
+  type ServerSettings,
+  type ThreadIssueLink,
 } from "@t3tools/contracts";
 import {
   LINEAR_HOST,
   LINEAR_KIND,
   parseLinearIssueUrl,
 } from "@t3tools/issue-tracker-linear/shared/issueUrl";
+import { parseUrl } from "@t3tools/shared/url";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 import type { EnvironmentProject } from "./state/shell.ts";
 
 type LinkProject = Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">;
+type IssueProjectSources = ServerSettings["issueProjectSources"];
+const GITHUB = SourceControlProviderKind.make("github");
 
 const issueBindingsByRepository = new WeakMap<
   RepositoryIdentity,
@@ -22,24 +31,105 @@ const issueBindingsByRepository = new WeakMap<
 >();
 
 /** The hosts and scopes a project's git-host tracker is bound to, the way the server resolves them. */
-function projectIssueBindings(project: LinkProject) {
+function projectIssueBindings(project: LinkProject, saved?: IssueProjectSources) {
   const identity = project.repositoryIdentity;
-  if (identity == null) return [];
+  const manual = mergeProjectIssueSources(
+    [],
+    saved?.[project.id] ?? [],
+    repositoryIssueKind(identity),
+  ).flatMap((source) => {
+    if (source.provider !== "github" || !/^[\w.-]+\/[\w.-]+$/u.test(source.scope)) return [];
+    const host = normalizeGithubIssueHost(source.host);
+    return host === undefined ? [] : [{ tracker: GITHUB, host, scope: source.scope.toLowerCase() }];
+  });
+  if (identity == null) return manual;
   const cached = issueBindingsByRepository.get(identity);
-  if (cached !== undefined) return cached;
-  const bindings = sourceControlClients
-    .issueBindings(identity)
-    .map((binding) => ({ ...binding, scope: binding.scope.toLowerCase() }));
-  issueBindingsByRepository.set(identity, bindings);
-  return bindings;
+  const bindings =
+    cached ??
+    sourceControlClients
+      .issueBindings(identity)
+      .map((binding) => ({ ...binding, scope: binding.scope.toLowerCase() }));
+  if (cached === undefined) issueBindingsByRepository.set(identity, bindings);
+  return manual.length === 0
+    ? bindings
+    : [
+        ...manual,
+        ...bindings.filter(({ tracker }) => tracker !== "github" && tracker !== "meituan"),
+      ];
 }
 
 function linkAuthority(url: string): string | null {
   try {
-    return new URL(url).host.toLowerCase();
+    const link = new URL(url);
+    const host = link.host.toLowerCase();
+    return link.protocol === "https:" ? (normalizeGithubIssueHost(host) ?? host) : host;
   } catch {
     return null;
   }
+}
+
+function githubLinkHost(url: string): string | undefined {
+  const link = parseUrl(url);
+  return link?.protocol === "https:" && !link.username && !link.password
+    ? normalizeGithubIssueHost(link.host)
+    : undefined;
+}
+
+export function githubIssueScopeFromUrl(url: string | undefined, key: string): string | undefined {
+  if (url === undefined || githubLinkHost(url) === undefined) return undefined;
+  const parsed = sourceControlClients.parseIssueUrl(url, GITHUB);
+  return parsed?.link.key === key ? parsed.link.scope : undefined;
+}
+
+export function issueLinkedPullRequestTarget(
+  issue: { readonly tracker: string; readonly host?: string | undefined },
+  target: { readonly url: string; readonly repository: string; readonly number: number },
+) {
+  const { repository, number, url } = target;
+  const parsed = sourceControlClients.parseChangeRequestUrl(target.url);
+  if (
+    parsed === null ||
+    parsed.definition.kind !== issue.tracker ||
+    parsed.link.repository.toLowerCase() !== repository.toLowerCase() ||
+    parsed.link.number !== number
+  )
+    return null;
+  return { repository, number, host: parsed.link.authority ?? parsed.link.host, url };
+}
+
+export function issueReferenceHost(
+  tracker: string,
+  host: string | undefined,
+  url?: string,
+): string | undefined {
+  if (tracker !== "github") return host;
+  if (host !== undefined) return normalizeGithubIssueHost(host) ?? host;
+  return url === undefined ? undefined : githubLinkHost(url);
+}
+
+export function issueReferenceCompatible(
+  link: {
+    readonly tracker: string;
+    readonly host?: string | undefined;
+    readonly url?: string | undefined;
+  },
+  capabilities: { readonly githubIssueSourcePorts?: boolean } | undefined,
+): boolean {
+  if (link.tracker !== "github") return true;
+  const host = issueReferenceHost(link.tracker, link.host, link.url);
+  if (link.url !== undefined && (host === undefined || githubLinkHost(link.url) !== host)) {
+    return false;
+  }
+  return host?.includes(":") !== true || capabilities?.githubIssueSourcePorts === true;
+}
+
+export function canOpenLinkedIssue(
+  link: Pick<ThreadIssueLink, "tracker" | "url"> & { readonly host?: string },
+  capabilities:
+    | { readonly issues?: boolean; readonly githubIssueSourcePorts?: boolean }
+    | undefined,
+): boolean {
+  return capabilities?.issues === true && issueReferenceCompatible(link, capabilities);
 }
 
 /** A host whose hostname does not name it, such as GitHub Enterprise Server, is vouched for by a project on it. */
@@ -47,15 +137,19 @@ function parseIssueLink(
   url: string,
   authority: string | null,
   projects: ReadonlyArray<LinkProject>,
+  saved?: IssueProjectSources,
 ) {
   const parsed = sourceControlClients.parseIssueUrl(url);
   if (parsed !== null || authority === null) return parsed;
   const hostname = new URL(url).hostname.toLowerCase();
   for (const project of projects) {
-    const bindings = projectIssueBindings(project);
-    if (!bindings.some((binding) => binding.host === hostname || binding.host === authority))
-      continue;
-    const known = sourceControlClients.parseIssueUrl(url, project.repositoryIdentity?.provider);
+    const bindings = projectIssueBindings(project, saved);
+    const binding = bindings.find(
+      (entry) =>
+        entry.host === authority || (entry.tracker !== "github" && entry.host === hostname),
+    );
+    if (!binding) continue;
+    const known = sourceControlClients.parseIssueUrl(url, binding.tracker);
     if (known !== null) return known;
   }
   return null;
@@ -146,10 +240,12 @@ export function resolveIssueLinkTarget<Project extends LinkProject>(input: {
   readonly preferredProjectId?: string | undefined;
   /** The environment's standalone trackers and bindings; without them only git-host links resolve. */
   readonly trackers?: IssueTrackerConnectionList | undefined;
+  readonly issueProjectSources?: IssueProjectSources | undefined;
+  readonly githubIssueSourcePorts?: boolean | undefined;
 }): { readonly project: Project; readonly ref: IssueRef } | null {
   // A link names its server's port; a binding does only when its remote or web URL did.
   const authority = linkAuthority(input.url);
-  const parsed = parseIssueLink(input.url, authority, input.projects);
+  const parsed = parseIssueLink(input.url, authority, input.projects, input.issueProjectSources);
   if (parsed === null)
     return resolveStandaloneIssueLink(
       input.url,
@@ -158,8 +254,14 @@ export function resolveIssueLinkTarget<Project extends LinkProject>(input: {
       input.preferredProjectId,
     );
   const { definition, link } = parsed;
+  if (
+    definition.kind === "github" &&
+    authority?.includes(":") &&
+    input.githubIssueSourcePorts !== true
+  )
+    return null;
   const onHost = input.projects.flatMap((project) =>
-    projectIssueBindings(project)
+    projectIssueBindings(project, input.issueProjectSources)
       .filter(
         (binding) =>
           binding.tracker === definition.kind &&
@@ -168,7 +270,7 @@ export function resolveIssueLinkTarget<Project extends LinkProject>(input: {
       .map((binding) => ({ project, binding })),
   );
   const onAuthority = onHost.filter((candidate) => candidate.binding.host === authority);
-  const bound = onAuthority.length > 0 ? onAuthority : onHost;
+  const bound = definition.kind === "github" || onAuthority.length > 0 ? onAuthority : onHost;
   const preferFirst = (candidates: typeof bound) =>
     candidates.find((candidate) => candidate.project.id === input.preferredProjectId) ??
     candidates[0];

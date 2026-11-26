@@ -299,7 +299,7 @@ describe("one server per repository", () => {
       },
     ] as const;
     const availability = new Map([
-      ["env-1" as EnvironmentId, hostAvailability(new Map([["forge.example", false]]))],
+      ["env-1" as EnvironmentId, hostAvailability(new Map([["forge.example:3000", false]]))],
     ]);
     for (const copies of [projects, projects.toReversed()]) {
       expect(

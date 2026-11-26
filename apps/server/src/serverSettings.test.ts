@@ -467,7 +467,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         const expected = { [id]: [github, second] };
         yield* service.updateSettings({ issueProjectSources: expected });
         yield* service.updateSettings(
-          { issueProjectSources: { [id]: [renamed, second] } },
+          { issueProjectSources: { [id]: [{ ...renamed, host: "GitHub.com:443" }, second] } },
           "github",
           expected,
         );
@@ -3014,6 +3014,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         browserArtifactsAfterDays: null,
         logsAfterDays: null,
       });
+      assert.isTrue(settings.requireConnectDeviceApproval);
+      assert.isFalse(settings.enablePreviewTunnel);
+      assert.isFalse(settings.enableAgentBrowserAccess);
+      assert.equal(settings.defaultRuntimeMode, "approval-required");
       assert.deepEqual(settings.projectSettingsOverrides, {});
       const failure = yield* Effect.flip(
         serverSettings.withSettingsSnapshot(Effect.succeed, { tryTrusted: true }),

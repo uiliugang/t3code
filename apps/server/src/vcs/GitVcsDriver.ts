@@ -20,6 +20,7 @@ import {
   VcsCheckpointStorageError,
   VcsProcessExitError,
   VcsUnsupportedOperationError,
+  type VcsError,
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
   type VcsCreateRefInput,
@@ -783,7 +784,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       16_384,
     );
     if (stdout === null) return null;
-    const lines = stdout.replace(/\r?\n$/u, "").split(/\r?\n/u);
+    const lines = stdout.replace(/\n$/, "").split("\n");
     if (lines[0]?.trim() !== "true") return null;
     // A newline inside a path breaks the line framing; ask for each path on its own.
     if (lines.length !== 3) {
@@ -797,16 +798,16 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       ]).pipe(Effect.orElseSucceed(() => null));
       return {
         kind: "git" as const,
-        rootPath: root.stdout.trim(),
-        metadataPath: gitCommonDir?.stdout.trim() || null,
+        rootPath: root.stdout.replace(/\n$/, ""),
+        metadataPath: gitCommonDir?.stdout.replace(/\n$/, "") || null,
         freshness: yield* nowFreshness(),
       };
     }
 
     return {
       kind: "git" as const,
-      rootPath: lines[1]!.trim(),
-      metadataPath: lines[2]!.trim() || null,
+      rootPath: lines[1]!,
+      metadataPath: lines[2] || null,
       freshness: yield* nowFreshness(),
     };
   });
@@ -1016,7 +1017,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       cwd,
       args: ["rev-parse", "--git-common-dir"],
     });
-    const gitCommonDir = result.stdout.trim();
+    const gitCommonDir = result.stdout.replace(/\n$/, "");
     if (path.isAbsolute(gitCommonDir)) return gitCommonDir;
     const physicalCwd = yield* fileSystem.realPath(cwd).pipe(Effect.orElseSucceed(() => cwd));
     return path.resolve(physicalCwd, gitCommonDir);
@@ -1049,9 +1050,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     const [gitCommonDir = "", indexPath = "", worktreeRoot = "", prefix = "", head = ""] = lines;
     if (headChecked && lines.length === (headExists ? 6 : 5) && lines.at(-1) === "") {
       return {
-        gitCommonDir: gitCommonDir.trim(),
-        indexPath: indexPath.trim(),
-        topLevel: worktreeRoot.trim(),
+        gitCommonDir,
+        indexPath,
+        topLevel: worktreeRoot,
         prefix,
         headExists,
         worktreeRoot,
@@ -1282,6 +1283,71 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             ),
           ),
       );
+      // git-lfs's clean filter copies each file into <lfs.storage>/tmp while hashing it and strands
+      // that copy when killed. Give it storage that is removed with the capture's private objects.
+      const privateLfs = path.join(privateObjects, "lfs");
+      const publishLfsObjects = Effect.gen(function* () {
+        const source = path.join(privateLfs, "objects");
+        const objects = (yield* fileSystem.readDirectory(source, { recursive: true }).pipe(
+          // Absent when no file went through the filter; any other failure must stop publication.
+          Effect.catchIf(
+            (cause) => cause.reason._tag === "NotFound",
+            () => Effect.succeed([]),
+          ),
+          Effect.mapError(
+            (cause) =>
+              new VcsCheckpointStorageError({
+                operation,
+                cwd: input.cwd,
+                stage: "publish",
+                cause,
+              }),
+          ),
+        )).filter((entry) => /^[0-9a-f]{2}[\\/][0-9a-f]{2}[\\/][0-9a-f]{64}$/.test(entry));
+        if (objects.length === 0) return;
+        const configured = yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: ["config", "--get", "lfs.storage"],
+          allowNonZeroExit: true,
+        });
+        // git-lfs resolves a relative lfs.storage against the common Git directory.
+        const storage = path.resolve(gitCommonDir, configured.stdout.trim() || "lfs");
+        yield* Effect.forEach(
+          objects,
+          (entry) =>
+            Effect.gen(function* () {
+              const from = path.join(source, entry);
+              const to = path.join(storage, "objects", entry);
+              if (yield* fileSystem.exists(to)) return;
+              yield* fileSystem.makeDirectory(path.dirname(to), { recursive: true });
+              // Identical oids are interchangeable, so losing a race to another writer is fine.
+              // lfs.storage may be on another volume, where only a copy can move the object.
+              const partial = `${to}.${indexId}`;
+              yield* fileSystem.rename(from, to).pipe(
+                Effect.catch((cause) =>
+                  Effect.flatMap(fileSystem.exists(to), (exists) =>
+                    exists
+                      ? Effect.void
+                      : fileSystem.copyFile(from, partial).pipe(
+                          Effect.andThen(fileSystem.rename(partial, to)),
+                          Effect.ensuring(
+                            fileSystem.remove(partial, { force: true }).pipe(Effect.ignore),
+                          ),
+                          Effect.mapError(() => cause),
+                        ),
+                  ),
+                ),
+              );
+            }),
+          { concurrency: 16, discard: true },
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new VcsCheckpointStorageError({ operation, cwd: input.cwd, stage: "publish", cause }),
+          ),
+        );
+      });
       const commitEnv: NodeJS.ProcessEnv = {
         GIT_INDEX_FILE: tempIndexPath,
         GIT_OBJECT_DIRECTORY: privateObjects,
@@ -1295,6 +1361,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         GIT_AUTHOR_EMAIL: "t3code@users.noreply.github.com",
         GIT_COMMITTER_NAME: "T3 Code",
         GIT_COMMITTER_EMAIL: "t3code@users.noreply.github.com",
+        // Any command on the scratch index can run the clean filter, not just add.
+        ...VcsProcess.gitConfigEnv(hostEnv, "lfs.storage", privateLfs, hostPlatform),
       };
 
       const cleanupTempIndex = Effect.forEach(
@@ -1881,6 +1949,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           });
         }
 
+        yield* publishLfsObjects;
         // Git writers have exited; bound publication by fanout directory.
         yield* fileSystem.readDirectory(privateObjects).pipe(
           Effect.flatMap((directories) =>
@@ -2165,22 +2234,44 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       yield* Effect.addFinalizer((exit) =>
         mutationStarted && Exit.hasInterrupts(exit) ? resetIndex.pipe(Effect.ignore) : Effect.void,
       );
+      const isIndexLock = (error: VcsError) =>
+        error._tag === "VcsProcessExitError" &&
+        error.retryable === true &&
+        error.detail === VcsProcess.GIT_INDEX_LOCKED_DETAIL;
+      // A restore that could not acquire the index lock has not written files or staging.
+      // Retry only that subprocess; do not repeat cleanup or reset unrelated user changes.
+      const restoreFromCheckpoint = Effect.fn("GitVcsDriver.restoreCheckpoint.restoreIndex")(
+        function* (args: ReadonlyArray<string>, stdin?: string) {
+          for (let attempt = 0; ; attempt++) {
+            const previouslyMutated = mutationStarted;
+            const locked = yield* execute({
+              operation,
+              cwd: input.cwd,
+              args,
+              ...(stdin === undefined ? {} : { stdin }),
+              onSpawn,
+            }).pipe(
+              Effect.as(undefined),
+              Effect.catchIf(isIndexLock, (error) => Effect.succeed(error)),
+            );
+            if (locked === undefined) return;
+            mutationStarted = previouslyMutated;
+            if (attempt === 2) return yield* locked;
+            yield* Effect.sleep("75 millis");
+          }
+        },
+      );
       // An empty index and checkpoint have nothing for git restore's pathspec to match.
       if (tracked.stdout.length > 0) {
         const restore = [...longPaths, "restore", "--source", commitOid, "--worktree", "--staged"];
         // restore leaves skip-worktree paths alone. Outside a sparse checkout every such bit was
         // set by hand and capture recorded the file, so override them all.
-        yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: [
-            ...restore,
-            ...(sparseCheckout ? [] : ["--ignore-skip-worktree-bits"]),
-            "--",
-            ...scope,
-          ],
-          onSpawn,
-        });
+        yield* restoreFromCheckpoint([
+          ...restore,
+          ...(sparseCheckout ? [] : ["--ignore-skip-worktree-bits"]),
+          "--",
+          ...scope,
+        ]);
         if (sparseCheckout) {
           // Sparse exclusions stay excluded; only skip-worktree paths the rules select are manual.
           const manual = yield* Effect.gen(function* () {
@@ -2237,17 +2328,15 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             Effect.orElseSucceed((): string[] => []),
           );
           if (manual.length > 0) {
-            yield* execute({
-              operation,
-              cwd: input.cwd,
-              args: [
+            yield* restoreFromCheckpoint(
+              [
                 ...restore,
                 "--ignore-skip-worktree-bits",
                 "--pathspec-from-file=-",
                 "--pathspec-file-nul",
               ],
-              stdin: manual.map((entry) => `:(top,literal)${entry}\0`).join(""),
-            });
+              manual.map((entry) => `:(top,literal)${entry}\0`).join(""),
+            );
           }
         }
       }

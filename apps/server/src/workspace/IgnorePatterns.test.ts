@@ -69,6 +69,12 @@ describe("parseIgnoreFile", () => {
     expect(decide("name\\", "name\\")).toBeUndefined();
   });
 
+  it("drops trailing spaces unless a backslash escapes them, like git", () => {
+    expect(decide("build  ", "build")).toBe("ignored");
+    expect(decide("keep\\ ", "keep ")).toBe("ignored");
+    expect(decide("dir\\\\ ", "dir\\")).toBe("ignored");
+  });
+
   it("matches adversarial patterns in linear time", () => {
     // A backtracking regex takes seconds to reject this pair; the vitest timeout catches that.
     const pattern = `${"a*".repeat(20)}b\n`;

@@ -10,8 +10,13 @@ import {
   SourceControlProviderKind,
   WS_METHODS,
   type AuthSessionState,
-  type PullRequestListInput,
+  type PullRequestActionInput,
+  type PullRequestDetail,
+  type PullRequestFilesViewedResult,
   type PullRequestListEntry,
+  type PullRequestListInput,
+  type PullRequestRef,
+  type PullRequestRoutingResult,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
@@ -52,6 +57,7 @@ import {
   pullRequestHostAnswer,
   pullRequestPendingEditsAtom,
   pullRequestPendingEditsFor,
+  withPullRequestViewer,
 } from "./pullRequests.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import { executeAtomQuery, queryPersistenceKey } from "./runtime.ts";
@@ -961,18 +967,73 @@ it.effect(
     }),
 );
 
-it.effect("keeps concurrent diff file reads on different hosts separate", () =>
+it.effect("preserves the queued viewed-files account when routing after an account switch", () =>
+  Effect.gen(function* () {
+    const writes: Array<{ environment: string; accountId: string | undefined }> = [];
+    const identity = {
+      host: "github.com",
+      provider: "github",
+      viewer: "current",
+      accountId: "456",
+    };
+    const rejection = new PullRequestOperationError({
+      operation: "routeIdentity",
+      detail: "The queued account is no longer active.",
+    });
+    const clientFor = (local: boolean) =>
+      ({
+        [local ? WS_METHODS.pullRequestsRoutingIdentity : WS_METHODS.pullRequestsRouting]: () =>
+          Effect.succeed(identity),
+        [WS_METHODS.pullRequestsSetFilesViewed]: (input: PullRequestRef) =>
+          Effect.gen(function* () {
+            writes.push({
+              environment: local ? "local" : "origin",
+              accountId: input.expectedAccountId,
+            });
+            if (input.expectedAccountId !== identity.accountId) return yield* rejection;
+          }),
+      }) as unknown as WsRpcProtocolClient;
+    const { environmentRegistry, supervisor } = yield* makeTestRuntime(
+      clientFor(false),
+      clientFor(true),
+    );
+    const result = yield* createPullRequestRouter()(WS_METHODS.pullRequestsSetFilesViewed, {
+      projectId: ProjectId.make("project-1"),
+      host: identity.host,
+      repository: "acme/web",
+      number: 7,
+      expectedAccountId: "123",
+      files: [{ path: "src/main.ts", viewed: true }],
+    }).pipe(
+      Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
+      Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+      Effect.provideService(PullRequestRoutingPermissions, trustedRouting),
+      Effect.provideService(RpcPermissionGuard, { authorize: () => Effect.void }),
+      Effect.result,
+    );
+    expect(result).toMatchObject({ _tag: "Failure", failure: rejection });
+    expect(writes).toEqual([{ environment: "origin", accountId: "123" }]);
+  }),
+);
+
+it.effect("only shares concurrent diff file reads with the same complete reference", () =>
   Effect.gen(function* () {
     const release = yield* Latch.make();
     const started = yield* Latch.make();
     const calls: string[] = [];
     const client = {
-      [WS_METHODS.pullRequestsDiffFileContents]: (input: { readonly host: string }) =>
+      [WS_METHODS.pullRequestsDiffFileContents]: (input: PullRequestRef) =>
         Effect.gen(function* () {
-          calls.push(input.host);
+          const identity = JSON.stringify([
+            input.host,
+            input.target?.provider,
+            input.target?.origin,
+            input.expectedAccountId,
+          ]);
+          calls.push(identity);
           yield* started.open;
           yield* release.await;
-          return { oldContents: "", newContents: input.host };
+          return { oldContents: "", newContents: identity };
         }),
     } as unknown as WsRpcProtocolClient;
     const { atoms, registry } = yield* makeTestRuntime(client);
@@ -984,33 +1045,51 @@ it.effect("keeps concurrent diff file reads on different hosts separate", () =>
       oldPath: "src/app.ts",
       newPath: "src/app.ts",
     } as const;
-    const first = yield* Effect.forkChild(
-      Effect.exit(
+    const host = "forge.test";
+    const provider = SourceControlProviderKind.make("gitlab");
+    const http = {
+      ...input,
+      host,
+      target: { provider, origin: `http://${host}` },
+      expectedAccountId: "account-a",
+    };
+    const https = { ...http, target: { provider, origin: `https://${host}` } };
+    const anotherAccount = { ...http, expectedAccountId: "account-b" };
+    const anotherHost = { ...input, host: "another-forge.test" };
+    const read = (reference: typeof input & PullRequestRef) =>
+      Effect.forkChild(
         atoms.diffFileContents.run(registry, {
           environmentId: TARGET.environmentId,
-          input: { ...input, host: "github.com" },
+          input: reference,
         }),
-      ),
-      { startImmediately: true },
-    );
+        { startImmediately: true },
+      );
+    const first = yield* read(http);
     yield* started.await;
-    const second = yield* Effect.forkChild(
-      Effect.exit(
-        atoms.diffFileContents.run(registry, {
-          environmentId: TARGET.environmentId,
-          input: { ...input, host: "github.example.com" },
-        }),
-      ),
-      { startImmediately: true },
-    );
+    const duplicate = yield* read(http);
+    const otherOrigin = yield* read(https);
+    const otherAccount = yield* read(anotherAccount);
+    const otherHost = yield* read(anotherHost);
+    const unboundDuplicate = yield* read(anotherHost);
     yield* release.open;
 
-    const results = yield* Fiber.joinAll([first, second]);
-    expect(results).toMatchObject([
-      { _tag: "Success", value: { newContents: "github.com" } },
-      { _tag: "Success", value: { newContents: "github.example.com" } },
+    const results = yield* Fiber.joinAll([
+      first,
+      duplicate,
+      otherOrigin,
+      otherAccount,
+      otherHost,
+      unboundDuplicate,
     ]);
-    expect(calls).toEqual(["github.com", "github.example.com"]);
+    const identities = [
+      JSON.stringify([host, provider, `http://${host}`, "account-a"]),
+      JSON.stringify([host, provider, `https://${host}`, "account-a"]),
+      JSON.stringify([host, provider, `http://${host}`, "account-b"]),
+      JSON.stringify([anotherHost.host, null, null, null]),
+      JSON.stringify([anotherHost.host, null, null, null]),
+    ];
+    expect(results.map((result) => result.newContents)).toEqual([identities[0], ...identities]);
+    expect(calls).toEqual(identities);
   }),
 );
 
@@ -1065,6 +1144,70 @@ it.effect.each(["closed", "draft", "permission", "stack", "method"] as const)(
       expect(results.map((result) => result._tag)).toEqual(["Failure", "Success"]);
       expect(calls).toEqual(["close"]);
     }),
+);
+
+it.effect("reads the quick merge's target and pins its head unless the caller showed one", () =>
+  Effect.gen(function* () {
+    const webTarget = {
+      provider: SourceControlProviderKind.make("gitlab"),
+      origin: "http://forge.test",
+    };
+    const details: PullRequestRef[] = [];
+    const stacks: PullRequestRef[] = [];
+    const merges: PullRequestActionInput[] = [];
+    const client = {
+      [WS_METHODS.pullRequestsDetail]: (reference: PullRequestRef) =>
+        Effect.sync(() => {
+          details.push(reference);
+          const isTarget = reference.target?.origin === webTarget.origin;
+          return {
+            state: "open",
+            isDraft: false,
+            headSha: isTarget ? "checked-head" : "other-head",
+            capabilities: {
+              actions: ["merge"],
+              stackActions: true,
+              mergeMethods: [isTarget ? "squash" : "merge"],
+            },
+            viewerPermissions: { actions: ["merge"] },
+          };
+        }),
+      [WS_METHODS.pullRequestsStack]: (reference: PullRequestRef) =>
+        Effect.sync(() => {
+          stacks.push(reference);
+          return null;
+        }),
+      [WS_METHODS.pullRequestsRunAction]: (input: PullRequestActionInput) =>
+        Effect.sync(() => void merges.push(input)),
+    } as unknown as WsRpcProtocolClient;
+    const { atoms, registry } = yield* makeTestRuntime(client);
+    const reference = {
+      projectId: ProjectId.make("project-1"),
+      host: "forge.test",
+      target: webTarget,
+      repository: "acme/web",
+      number: 1,
+    };
+    for (const shown of [{}, { expectedHeadSha: "shown-head" }]) {
+      yield* atoms.runAction.run(registry, {
+        environmentId: TARGET.environmentId,
+        input: {
+          ...reference,
+          ...shown,
+          action: "merge",
+          resolveMergeMethod: (detail: PullRequestDetail) =>
+            detail.capabilities.mergeMethods.includes("squash") ? "squash" : "merge",
+        },
+      });
+    }
+    const fresh = { ...reference, allowStale: false };
+    expect(details).toEqual([fresh, fresh]);
+    expect(stacks).toEqual([fresh, fresh]);
+    expect(merges).toMatchObject([
+      { ...reference, mergeMethod: "squash", expectedHeadSha: "checked-head" },
+      { ...reference, mergeMethod: "squash", expectedHeadSha: "shown-head" },
+    ]);
+  }),
 );
 
 it.effect("keeps a close batch ordered and continues after a refused close", () =>
@@ -1154,6 +1297,52 @@ function actionReplyClient(overrides: Record<string, unknown> = {}) {
     ...overrides,
   } as unknown as WsRpcProtocolClient;
 }
+
+it.effect("keeps detail and checks reads and action replies scoped to their web origin", () =>
+  Effect.gen(function* () {
+    const http = "http://forge.test";
+    const https = "https://forge.test";
+    const reference = (origin: string) => ({
+      ...actionReference,
+      host: "forge.test",
+      target: { provider: SourceControlProviderKind.make("gitlab"), origin },
+    });
+    const client = actionReplyClient({
+      [WS_METHODS.pullRequestsDetail]: (input: PullRequestRef) =>
+        Effect.succeed({ title: input.target?.origin, state: "open", observedAt: 100 }),
+      [WS_METHODS.pullRequestsChecks]: (input: PullRequestRef) =>
+        Effect.succeed({
+          state: "open",
+          checks: [],
+          observedAt: input.target?.origin === http ? 100 : 101,
+        }),
+      [WS_METHODS.pullRequestsRunAction]: () =>
+        Effect.succeed({ ...actionReply, ...reference(http), provider: "gitlab" }),
+    });
+    const { atoms, registry } = yield* makeTestRuntime(client);
+    const readers = [http, https].map((origin) => {
+      const target = { environmentId: TARGET.environmentId, input: reference(origin) };
+      return { detail: atoms.detail(target), checks: atoms.checks(target) };
+    });
+    for (const { detail, checks } of readers) {
+      registry.mount(detail);
+      registry.mount(checks);
+      yield* Effect.promise(() => executeAtomQuery(registry, detail));
+      yield* Effect.promise(() => executeAtomQuery(registry, checks));
+    }
+    const value = <A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
+      Option.getOrThrow(AsyncResult.value(registry.get(atom)));
+    expect(readers.map(({ detail }) => value(detail).title)).toEqual([http, https]);
+    expect(readers.map(({ checks }) => value(checks)?.observedAt)).toEqual([100, 101]);
+
+    yield* atoms.runAction.run(registry, {
+      environmentId: TARGET.environmentId,
+      input: { ...reference(http), action: "merge" },
+    });
+    expect(readers.map(({ detail }) => value(detail).state)).toEqual(["merged", "open"]);
+    expect(readers.map(({ checks }) => value(checks)?.state)).toEqual(["merged", "open"]);
+  }),
+);
 
 it.effect("shows an action's reply in loaded readers and moves list rows without reads", () =>
   Effect.gen(function* () {
@@ -2007,6 +2196,248 @@ it.effect("shares checks reads across reference property order", () =>
     yield* AtomRegistry.getResult(registry, panel);
     expect(reads).toBe(1);
   }),
+);
+
+it.effect.each(["confirmed", "old-server", "unknown-source", "unknown-account"] as const)(
+  "only restores confirmed files-viewed answers offline (%s)",
+  (scenario) =>
+    Effect.gen(function* () {
+      const webTarget = {
+        provider: SourceControlProviderKind.make(
+          scenario === "unknown-account" ? "github" : "gitlab",
+        ),
+        origin: scenario === "unknown-account" ? "https://forge.test" : "http://forge.test",
+      };
+      const target = {
+        environmentId: TARGET.environmentId,
+        input: {
+          projectId: ProjectId.make("project-1"),
+          host: "forge.test",
+          repository: "acme/web",
+          number: 7,
+          ...(scenario === "unknown-source" ? {} : { target: webTarget }),
+        },
+      };
+      const legacyKey = queryPersistenceKey(
+        "environment-data:pull-requests:files-viewed",
+        target.input,
+      );
+      const legacy = JSON.stringify({
+        files: [{ path: "old.ts", state: "viewed" }],
+        truncated: false,
+      });
+      const saved = new Map([[legacyKey, legacy]]);
+      const handledAnswer = yield* Latch.make();
+      const fresh: PullRequestFilesViewedResult = {
+        files: [{ path: "new.ts", state: "viewed" }],
+        truncated: false,
+        ...(scenario === "old-server" ? {} : { target: webTarget }),
+      };
+      const client = {
+        [WS_METHODS.pullRequestsFilesViewed]: () => Effect.succeed(fresh),
+      } as unknown as WsRpcProtocolClient;
+      const queryStore: typeof EnvironmentQueryStore.Service = {
+        load: (_environmentId, key) => Effect.sync(() => Option.fromUndefinedOr(saved.get(key))),
+        save: (_environmentId, key, payload) => Effect.sync(() => saved.set(key, payload)),
+      };
+      const readOffline = Effect.fnUntraced(function* () {
+        const { atoms, registry, supervisor } = yield* makeTestRuntime(
+          client,
+          undefined,
+          false,
+          {},
+          queryStore,
+        );
+        yield* SubscriptionRef.update(supervisor.state, (state) => ({
+          ...state,
+          phase: "offline" as const,
+          network: "offline" as const,
+        }));
+        return yield* AtomRegistry.getResult(registry, atoms.filesViewed(target));
+      });
+
+      expect(yield* Effect.result(readOffline())).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "EnvironmentRpcUnavailableError" },
+      });
+      const { atoms, registry } = yield* makeTestRuntime(
+        client,
+        undefined,
+        false,
+        {
+          filesViewed: () => handledAnswer.open,
+        },
+        queryStore,
+      );
+      const query = atoms.filesViewed(target);
+      const unmount = registry.mount(query);
+      yield* Effect.addFinalizer(() => Effect.sync(unmount));
+      expect(
+        yield* AtomRegistry.getResult(registry, query, { suspendOnWaiting: true }),
+      ).toMatchObject({
+        files: fresh.files,
+        truncated: false,
+      });
+      yield* handledAnswer.await;
+      const restored = yield* Effect.result(readOffline());
+      if (scenario === "confirmed") {
+        expect(restored).toMatchObject({ _tag: "Success", success: fresh });
+      } else {
+        expect(restored).toMatchObject({
+          _tag: "Failure",
+          failure: { _tag: "EnvironmentRpcUnavailableError" },
+        });
+      }
+      expect(saved.get(legacyKey)).toBe(legacy);
+    }),
+);
+
+it.effect("isolates legacy online marks by viewer without sending a repository account pin", () =>
+  Effect.gen(function* () {
+    const host = "github.com";
+    const provider = SourceControlProviderKind.make("github");
+    const reference = {
+      projectId: ProjectId.make("project-1"),
+      host,
+      repository: "acme/web",
+      target: { provider, origin: `https://${host}` },
+      number: 7,
+    };
+    let accountId = "first";
+    const client = {
+      [WS_METHODS.pullRequestsFilesViewed]: (input: PullRequestRef) =>
+        Effect.sync(() => {
+          expect(input).toEqual(reference);
+          return { files: [{ path: `${accountId}.ts`, state: "viewed" }], truncated: false };
+        }),
+    } as unknown as WsRpcProtocolClient;
+    const { atoms, registry } = yield* makeTestRuntime(client);
+    const read = () =>
+      AtomRegistry.getResult(
+        registry,
+        atoms.filesViewed({
+          environmentId: TARGET.environmentId,
+          input: withPullRequestViewer(reference, {
+            host,
+            provider,
+            viewer: accountId,
+            accountId,
+            projectTitle: "Web",
+            workspaceRoot: "/web",
+          }),
+        }),
+      );
+    expect((yield* read()).files).toEqual([{ path: "first.ts", state: "viewed" }]);
+    accountId = "second";
+    expect((yield* read()).files).toEqual([{ path: "second.ts", state: "viewed" }]);
+  }),
+);
+
+it.effect(
+  "restores verified marks offline until the server stops confirming the repository account",
+  () =>
+    Effect.gen(function* () {
+      const host = "github.com";
+      const provider = SourceControlProviderKind.make("github");
+      const reference = {
+        environmentId: TARGET.environmentId,
+        input: {
+          projectId: ProjectId.make("project-1"),
+          host,
+          target: { provider, origin: `https://${host}` },
+          repository: "acme/web",
+          number: 7,
+        },
+      };
+      const identity = {
+        host,
+        provider,
+        accountId: "123",
+        viewer: "viewer",
+        projectTitle: "Web",
+        workspaceRoot: "/web",
+      };
+      expect(withPullRequestViewer(reference.input, identity)).toEqual({
+        ...reference.input,
+        legacyViewerId: identity.accountId,
+      });
+      let currentIdentity: PullRequestRoutingResult = {
+        ...identity,
+        repository: reference.input.repository,
+      };
+      const viewed: PullRequestFilesViewedResult = {
+        files: [{ path: "main.ts", state: "viewed" }],
+        truncated: false,
+        target: reference.input.target,
+      };
+      const client = {
+        [WS_METHODS.pullRequestsRouting]: () => Effect.sync(() => currentIdentity),
+        [WS_METHODS.pullRequestsFilesViewed]: (input: PullRequestRef) =>
+          Effect.sync(() => {
+            expect(input.expectedAccountId).toBe(
+              currentIdentity.repository === undefined ? undefined : currentIdentity.accountId,
+            );
+            return viewed;
+          }),
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+      } as unknown as WsRpcProtocolClient;
+      const saved = new Map<string, string>();
+      const bothSaved = yield* Latch.make();
+      const legacySaved = yield* Latch.make();
+      const identityKey = queryPersistenceKey(
+        "environment-data:pull-requests:routing-identity",
+        reference.input,
+      );
+      const queryStore: typeof EnvironmentQueryStore.Service = {
+        load: (_environmentId, key) => Effect.sync(() => Option.fromUndefinedOr(saved.get(key))),
+        save: (_environmentId, key, payload) =>
+          Effect.gen(function* () {
+            saved.set(key, payload);
+            if (saved.size === 2) yield* bothSaved.open;
+            if (key === identityKey && currentIdentity.repository === undefined)
+              yield* legacySaved.open;
+          }),
+      };
+      const reopen = Effect.fnUntraced(function* (offline: boolean) {
+        const { atoms, registry, supervisor } = yield* makeTestRuntime(
+          client,
+          undefined,
+          false,
+          {},
+          queryStore,
+        );
+        if (offline) {
+          yield* SubscriptionRef.update(supervisor.state, (state) => ({
+            ...state,
+            phase: "offline" as const,
+            network: "offline" as const,
+          }));
+        }
+        const identityQuery = atoms.routingIdentity(reference);
+        const unmountIdentity = registry.mount(identityQuery);
+        yield* Effect.addFinalizer(() => Effect.sync(unmountIdentity));
+        const verified = yield* AtomRegistry.getResult(registry, identityQuery, {
+          suspendOnWaiting: true,
+        });
+        const query = atoms.filesViewed({
+          ...reference,
+          input: withPullRequestViewer(reference.input, verified),
+        });
+        const unmountViewed = registry.mount(query);
+        yield* Effect.addFinalizer(() => Effect.sync(unmountViewed));
+        return yield* AtomRegistry.getResult(registry, query, { suspendOnWaiting: true });
+      });
+      expect(yield* reopen(false)).toEqual(viewed);
+      yield* bothSaved.await;
+      expect(yield* reopen(true)).toEqual(viewed);
+      currentIdentity = { ...identity, accountId: "456" };
+      expect((yield* reopen(false)).files).toEqual(viewed.files);
+      yield* legacySaved.await;
+      expect(yield* Effect.result(reopen(true))).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "EnvironmentRpcUnavailableError" },
+      });
+    }),
 );
 
 it.effect("keeps live detail reads separate from reads that allow stale data", () =>

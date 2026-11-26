@@ -1,5 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  githubIssueScopeFromUrl,
+  issueReferenceCompatible,
+  issueReferenceHost,
+} from "@t3tools/client-runtime/issue-links";
+import {
   BranchIssueError,
   IssueTrackerKind,
   type IssueOption,
@@ -25,7 +30,10 @@ import { refreshIssueLists } from "../../state/issues";
 import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
 import { ProjectTag } from "./ProjectTag";
 
-import { IssueDetailPanel as TrackerDetailPanel } from "../issue/IssueDetailPanel";
+import {
+  IssueDetailPanel as TrackerDetailPanel,
+  IssueLinkUnavailable,
+} from "../issue/IssueDetailPanel";
 import { PullRequestSection } from "../pullRequest/PullRequestSummaryTab";
 import type { RequirementTracker } from "@t3tools/client-runtime/work-item";
 import { REQUIREMENTS_PANEL_REF, useRightPanelStore } from "../../rightPanelStore";
@@ -53,7 +61,19 @@ export function IssueDetailPanel(
   },
 ) {
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
-  const { provider, scope, url, ...target } = props.target;
+  const { provider, scope: savedScope, url, host: rawHost, ...rest } = props.target;
+  if (
+    !issueReferenceCompatible(
+      { tracker: provider, host: rawHost, url },
+      config?.environment.capabilities,
+    )
+  )
+    return <IssueLinkUnavailable url={url} />;
+  const scope =
+    savedScope || (provider === "github" ? githubIssueScopeFromUrl(url, props.id) : undefined);
+  if (provider === "github" && !scope) return <IssueLinkUnavailable url={url} />;
+  const host = issueReferenceHost(provider, rawHost, url);
+  const target = { ...rest, ...(host === undefined ? {} : { host }) };
   const legacy =
     provider === "github" || provider === "meituan"
       ? ({ ...target, ...(scope ? { scope } : {}), provider } satisfies IssueTarget)
@@ -77,10 +97,7 @@ export function IssueDetailPanel(
         onIssueChanged={props.changed}
         onSelectPullRequest={(reference) => {
           useRightPanelStore.getState().openPullRequest(props.panelRef ?? REQUIREMENTS_PANEL_REF, {
-            projectId: reference.projectId,
-            repository: reference.repository,
-            number: reference.number,
-            ...(reference.host ? { host: reference.host } : {}),
+            ...reference,
             environmentId: props.environmentId,
           });
           props.onPullRequestOpened?.();

@@ -70,6 +70,7 @@ export class SourceControlProviderRegistry extends Context.Service<
     }) => Effect.Effect<SourceControlProviderHandle, SourceControlProviderError>;
     readonly resolve: (input: {
       readonly cwd: string;
+      readonly refresh?: boolean;
     }) => Effect.Effect<
       SourceControlProvider.SourceControlProvider["Service"],
       SourceControlProviderError

@@ -2,8 +2,11 @@ import type {
   ExecutionEnvironmentCapabilities,
   ThreadId,
   ThreadPullRequestKey,
+  ThreadPullRequestLink,
 } from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "./state/models.ts";
+import { findProjectForChangeRequest } from "./changeRequestLinks.ts";
+import { sourceControlClients } from "./sourceControlClients.ts";
+import type { EnvironmentProject, EnvironmentThreadShell } from "./state/models.ts";
 import { normalizeThreadPullRequestKey } from "./threadPullRequests.ts";
 
 /** "unsupported" until the environment's server config has loaded. */
@@ -22,6 +25,36 @@ export function canStartThreadPullRequestWatch(
     thread.settledAt === null &&
     thread.settledOverride !== "settled" &&
     thread.lineage.relationshipToParent !== "subagent"
+  );
+}
+
+export function canWatchLinkedPullRequest({
+  capabilities,
+  thread,
+  project,
+  link,
+}: {
+  capabilities: ExecutionEnvironmentCapabilities | null | undefined;
+  thread: Parameters<typeof canStartThreadPullRequestWatch>[0] | null;
+  project:
+    | Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">
+    | null
+    | undefined;
+  link: Pick<ThreadPullRequestLink, "url" | "target" | "snapshot" | "watch">;
+}): boolean {
+  if (capabilities?.threadPullRequestWatch !== true || thread === null) return false;
+  if (link.watch !== undefined) return true;
+  if (
+    !canStartThreadPullRequestWatch(thread) ||
+    (link.snapshot !== null && link.snapshot.state !== "open")
+  )
+    return false;
+  if (capabilities.pullRequestWebTargets === true) return true;
+  const parsed = sourceControlClients.parseChangeRequestUrl(link.url);
+  if (parsed?.definition.kind !== "gitlab") return link.target?.provider !== "gitlab";
+  return (
+    project != null &&
+    findProjectForChangeRequest([project], parsed.link, parsed.definition.kind) !== undefined
   );
 }
 

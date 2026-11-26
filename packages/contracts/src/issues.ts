@@ -13,6 +13,43 @@ export const IssueSource = Schema.Struct({
 });
 export type IssueSource = typeof IssueSource.Type;
 
+export function normalizeGithubIssueHost(host: string): string | undefined {
+  const match = /^[\w.-]+(?::([0-9]{1,5}))?$/u.exec(host);
+  if (!match || host.length > 253) return undefined;
+  const port = match[1] === undefined ? 443 : Number(match[1]);
+  if (port === 0 || port > 65535) return undefined;
+  try {
+    const hostname = new URL(`https://${host}`).hostname.toLowerCase();
+    return port === 443 ? hostname : `${hostname}:${port}`;
+  } catch {
+    return undefined;
+  }
+}
+
+export function normalizeGithubIssueSource(source: IssueSource): IssueSource {
+  if (source.provider !== "github") return source;
+  const host = normalizeGithubIssueHost(source.host);
+  return host === undefined || host === source.host ? source : { ...source, host };
+}
+
+export const issueSourceScopeKey = (provider: IssueProvider, scope: string) =>
+  provider === "github" ? scope.toLowerCase() : scope;
+
+export function issueSourceKey(source: IssueSource): string {
+  const { provider, host, scope } = normalizeGithubIssueSource(source);
+  return JSON.stringify([provider, host, issueSourceScopeKey(provider, scope)]);
+}
+
+export function dedupeIssueSources(sources: readonly IssueSource[]): IssueSource[] {
+  const distinct = new Set<string>();
+  return sources.filter((source) => {
+    const key = issueSourceKey(source);
+    if (distinct.has(key)) return false;
+    distinct.add(key);
+    return true;
+  });
+}
+
 export function issueSourcesMatch(
   current: readonly IssueSource[],
   expected: readonly IssueSource[],
