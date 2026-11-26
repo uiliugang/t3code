@@ -2,7 +2,10 @@ import {
   RESOURCE_OWNER_ENV,
   resourceOwner,
 } from "@t3tools/provider-core/server/instanceEnvironment";
-import type { ThreadWorkspaceRevision } from "@t3tools/contracts";
+import type {
+  OrchestrationV2ProviderTurnTokenUsage,
+  ThreadWorkspaceRevision,
+} from "@t3tools/contracts";
 import { workspaceContext } from "@t3tools/provider-core/server/workspacePolicy";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import {
@@ -5460,6 +5463,9 @@ interface ActiveClaudeTurnContext {
     requestedAt?: DateTime.Utc;
     usage: ClaudeMessageUsage | null;
   } | null;
+  readonly outputTokensByMessage: Map<string, number>;
+  turnOutputTokens: number;
+  lastContextUsage?: OrchestrationV2ProviderTurnTokenUsage;
   compactionTokens: number | undefined;
   readonly toolCalls: Map<string, ActiveClaudeToolCall>;
   // A successful status can precede the boundary that supplies its token counts.
@@ -6779,25 +6785,45 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           // arrives after generation, so it leaves the cache expiry unknown.
           if (requestStarted && context.streamUsage !== null) context.streamUsage.requestedAt = now;
           const maxTokens = claudeContextWindow(context.input.modelSelection);
-          const tokenUsage =
+          const updatedAt = DateTime.formatIso(now);
+          let tokenUsage: OrchestrationV2ProviderTurnTokenUsage =
             typeof usage === "number"
               ? {
                   usedTokens: usage,
                   maxTokens,
                   ...claudeAutoCompactThreshold(context.autoCompactWindow, maxTokens),
-                  updatedAt: DateTime.formatIso(now),
+                  updatedAt,
                 }
               : claudeProviderTurnTokenUsage(
                   usage,
                   maxTokens,
-                  DateTime.formatIso(now),
+                  updatedAt,
                   context.autoCompactWindow,
                   context.streamUsage?.requestedAt,
                 );
           if (typeof usage !== "number") {
-            if (claudeMessageInputTokens(usage) <= 0) return;
-            context.compactionTokens = undefined;
+            const previousTurnOutput = context.turnOutputTokens;
+            const messageId = context.streamUsage?.messageId;
+            const outputTokens = optionalClaudeUsageTokenCount(usage.output_tokens) ?? 0;
+            if (messageId !== undefined) {
+              const previous = context.outputTokensByMessage.get(messageId) ?? 0;
+              if (outputTokens > previous) {
+                context.outputTokensByMessage.set(messageId, outputTokens);
+                context.turnOutputTokens += outputTokens - previous;
+              }
+            }
+            if (claudeMessageInputTokens(usage) <= 0) {
+              if (
+                context.turnOutputTokens === previousTurnOutput ||
+                context.lastContextUsage === undefined
+              )
+                return;
+              tokenUsage = { ...context.lastContextUsage, updatedAt };
+            } else {
+              context.compactionTokens = undefined;
+            }
           }
+          context.lastContextUsage = tokenUsage;
           yield* emitProviderEvent({
             type: "provider_turn.updated",
             driver: CLAUDE_PROVIDER,
@@ -6816,7 +6842,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               status: "running",
               startedAt: context.startedAt,
               completedAt: null,
-              tokenUsage,
+              tokenUsage: {
+                ...tokenUsage,
+                ...(context.turnOutputTokens > 0
+                  ? { turnOutputTokens: context.turnOutputTokens }
+                  : {}),
+              },
               ...(context.executedModel === undefined ? {} : { model: context.executedModel }),
             },
           });
@@ -11875,19 +11906,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (stream === null || stream.messageId !== message.message.id) {
                 context.streamUsage = { messageId: message.message.id, usage: snapshotUsage };
                 yield* emitContextUsage(context, snapshotUsage);
-              } else if (
-                stream.usage !== null &&
-                claudeMessageInputTokens(stream.usage) <= 0 &&
-                claudeMessageInputTokens(snapshotUsage) > 0
-              ) {
-                stream.usage = {
-                  ...snapshotUsage,
-                  output_tokens: Math.max(
-                    optionalClaudeUsageTokenCount(snapshotUsage.output_tokens) ?? 0,
-                    optionalClaudeUsageTokenCount(stream.usage.output_tokens) ?? 0,
-                  ),
-                };
-                yield* emitContextUsage(context, stream.usage);
+              } else if (stream.usage !== null) {
+                const fillsInput =
+                  claudeMessageInputTokens(stream.usage) <= 0 &&
+                  claudeMessageInputTokens(snapshotUsage) > 0;
+                const streamOutput = optionalClaudeUsageTokenCount(stream.usage.output_tokens) ?? 0;
+                const snapshotOutput =
+                  optionalClaudeUsageTokenCount(snapshotUsage.output_tokens) ?? 0;
+                if (fillsInput || snapshotOutput > streamOutput) {
+                  stream.usage = {
+                    ...(fillsInput ? snapshotUsage : stream.usage),
+                    output_tokens: Math.max(snapshotOutput, streamOutput),
+                  };
+                  yield* emitContextUsage(context, stream.usage);
+                }
               }
             }
             const parentToolUseId = message.parent_tool_use_id;
@@ -14236,6 +14268,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 blocks: new Map(),
               },
               streamUsage: null,
+              outputTokensByMessage: new Map(),
+              turnOutputTokens: 0,
               compactionTokens: undefined,
               toolCalls: new Map(),
               compaction: null,
