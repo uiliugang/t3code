@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   ProjectId,
+  SourceControlProviderKind,
   type PullRequestFilesViewedResult,
   type PullRequestRef,
 } from "@t3tools/contracts";
@@ -70,6 +71,37 @@ function setup(initial: PullRequestFilesViewedResult | null = answer(false)) {
 }
 
 describe("createFilesViewedStore", () => {
+  it("sends presses to their own web origin when both views are open", async () => {
+    using t = setup();
+    const target = (protocol: string): FilesViewedTarget => ({
+      ...first,
+      reference: {
+        ...first.reference,
+        host: "forge.test",
+        target: {
+          provider: SourceControlProviderKind.make("gitlab"),
+          origin: `${protocol}://forge.test`,
+        },
+      },
+    });
+    const http = target("http");
+    const https = target("https");
+    const left = t.store.scope(http);
+    const right = t.store.scope(https);
+    const releaseLeft = left.subscribe(() => {});
+    const releaseRight = right.subscribe(() => {});
+    left.setViewed("a.ts", true);
+    expect(right.getSnapshot().has("a.ts")).toBe(false);
+    right.setViewed("a.ts", false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(t.send.mock.calls).toEqual([
+      [http, [{ path: "a.ts", viewed: true }]],
+      [https, [{ path: "a.ts", viewed: false }]],
+    ]);
+    releaseLeft();
+    releaseRight();
+  });
+
   it("batches presses and holds them until a read that could have seen them", async () => {
     const unchanged = { files: [{ path: "a.ts", state: "dismissed" as const }], truncated: false };
     using t = setup(unchanged);

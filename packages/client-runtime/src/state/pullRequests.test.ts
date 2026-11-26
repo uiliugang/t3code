@@ -964,18 +964,24 @@ it.effect(
     }),
 );
 
-it.effect("keeps concurrent diff file reads on different hosts separate", () =>
+it.effect("only shares concurrent diff file reads with the same complete reference", () =>
   Effect.gen(function* () {
     const release = yield* Latch.make();
     const started = yield* Latch.make();
     const calls: string[] = [];
     const client = {
-      [WS_METHODS.pullRequestsDiffFileContents]: (input: { readonly host: string }) =>
+      [WS_METHODS.pullRequestsDiffFileContents]: (input: PullRequestRef) =>
         Effect.gen(function* () {
-          calls.push(input.host);
+          const identity = JSON.stringify([
+            input.host,
+            input.target?.provider,
+            input.target?.origin,
+            input.expectedAccountId,
+          ]);
+          calls.push(identity);
           yield* started.open;
           yield* release.await;
-          return { oldContents: "", newContents: input.host };
+          return { oldContents: "", newContents: identity };
         }),
     } as unknown as WsRpcProtocolClient;
     const { atoms, registry } = yield* makeTestRuntime(client);
@@ -987,33 +993,42 @@ it.effect("keeps concurrent diff file reads on different hosts separate", () =>
       oldPath: "src/app.ts",
       newPath: "src/app.ts",
     } as const;
-    const first = yield* Effect.forkChild(
-      Effect.exit(
+    const host = "forge.test";
+    const provider = SourceControlProviderKind.make("gitlab");
+    const http = {
+      ...input,
+      host,
+      target: { provider, origin: `http://${host}` },
+      expectedAccountId: "account-a",
+    };
+    const https = { ...http, target: { provider, origin: `https://${host}` } };
+    const anotherAccount = { ...http, expectedAccountId: "account-b" };
+    const anotherHost = { ...input, host: "another-forge.test" };
+    const read = (reference: typeof input & PullRequestRef) =>
+      Effect.forkChild(
         atoms.diffFileContents.run(registry, {
           environmentId: TARGET.environmentId,
-          input: { ...input, host: "github.com" },
+          input: reference,
         }),
-      ),
-      { startImmediately: true },
-    );
+        { startImmediately: true },
+      );
+    const first = yield* read(http);
     yield* started.await;
-    const second = yield* Effect.forkChild(
-      Effect.exit(
-        atoms.diffFileContents.run(registry, {
-          environmentId: TARGET.environmentId,
-          input: { ...input, host: "github.example.com" },
-        }),
-      ),
-      { startImmediately: true },
-    );
+    const duplicate = yield* read(http);
+    const otherOrigin = yield* read(https);
+    const otherAccount = yield* read(anotherAccount);
+    const otherHost = yield* read(anotherHost);
     yield* release.open;
 
-    const results = yield* Fiber.joinAll([first, second]);
-    expect(results).toMatchObject([
-      { _tag: "Success", value: { newContents: "github.com" } },
-      { _tag: "Success", value: { newContents: "github.example.com" } },
-    ]);
-    expect(calls).toEqual(["github.com", "github.example.com"]);
+    const results = yield* Fiber.joinAll([first, duplicate, otherOrigin, otherAccount, otherHost]);
+    const identities = [
+      JSON.stringify([host, provider, `http://${host}`, "account-a"]),
+      JSON.stringify([host, provider, `https://${host}`, "account-a"]),
+      JSON.stringify([host, provider, `http://${host}`, "account-b"]),
+      JSON.stringify([anotherHost.host, null, null, null]),
+    ];
+    expect(results.map((result) => result.newContents)).toEqual([identities[0], ...identities]);
+    expect(calls).toEqual(identities);
   }),
 );
 

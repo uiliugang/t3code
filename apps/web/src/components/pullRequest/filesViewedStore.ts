@@ -224,6 +224,8 @@ function filesViewedScopeKey({ environmentId, reference }: FilesViewedTarget): s
     environmentId,
     reference.projectId,
     reference.host ?? null,
+    reference.target?.provider ?? null,
+    reference.target?.origin ?? null,
     reference.expectedAccountId ?? null,
     reference.allowStale ?? null,
     reference.repository,

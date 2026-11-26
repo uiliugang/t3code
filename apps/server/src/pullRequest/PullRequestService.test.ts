@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";
@@ -14,7 +14,6 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import type {
   OrchestrationProjectShell,
-  ProjectId,
   PullRequestReviewCapabilities,
   PullRequestReviewerCapabilities,
   RepositoryOrigin,
@@ -4798,6 +4797,44 @@ it.effect("records shown revisions until the reader ticks the pushed version", (
       { path: "src/a.ts", state: "viewed" },
       { path: "src/b.ts", state: "viewed" },
     ]);
+  }),
+);
+
+it.effect("keeps environment viewed marks separate for HTTP and HTTPS on the same host", () =>
+  Effect.gen(function* () {
+    const host = "forge.test";
+    const repository = "group/project";
+    const provider = SourceControlProviderKind.make("gitlab");
+    const projects = ["http", "https"].map((protocol) =>
+      project({
+        id: protocol,
+        title: protocol,
+        workspaceRoot: `/${protocol}`,
+        host,
+        repository,
+        provider,
+        remoteUrl: `${protocol}://${host}/${repository}.git`,
+      }),
+    );
+    const service = yield* makeService({
+      projects,
+      providers: [environmentViewedProvider(new Map([["src/a.ts", "blob-a"]]), [])],
+    });
+    const ref = { projectId: ProjectId.make("https"), host, repository, number: 1 };
+    const http = { ...ref, target: { provider, origin: `http://${host}` } };
+    const https = { ...ref, target: { provider, origin: `https://${host}` } };
+    const marked = [{ path: "src/a.ts", state: "viewed" }];
+
+    yield* service.setFilesViewed({ ...http, files: [{ path: "src/a.ts", viewed: true }] });
+    assert.deepStrictEqual((yield* service.filesViewed(https)).files, []);
+    assert.deepStrictEqual((yield* service.filesViewed(http)).files, marked);
+
+    yield* service.setFilesViewed({ ...https, files: [{ path: "src/a.ts", viewed: true }] });
+    assert.deepStrictEqual((yield* service.filesViewed(ref)).files, marked);
+    yield* service.setFilesViewed({ ...https, files: [{ path: "src/a.ts", viewed: false }] });
+    assert.deepStrictEqual((yield* service.filesViewed(https)).files, []);
+    yield* service.invalidate({ reference: http });
+    assert.deepStrictEqual((yield* service.filesViewed(http)).files, marked);
   }),
 );
 

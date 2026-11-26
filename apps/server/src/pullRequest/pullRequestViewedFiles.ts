@@ -47,14 +47,24 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
   const refreshingFileRevisions = new Set<string>();
 
   // Epochs use remote spelling; canonicalize client refs before keying.
-  const fileRevisionsKey = (project: SupportedProject, ref: PullRequestRef) =>
-    [
-      refEpoch({ ...ref, host: project.host, repository: project.repository }),
-      fileRevisionsEpoch({ ...ref, host: project.host, repository: project.repository }),
-      ref.projectId,
-      project.repository.trim().toLowerCase(),
+  const fileRevisionsKey = (project: SupportedProject, ref: PullRequestRef) => {
+    const canonical = {
+      ...ref,
+      projectId: project.project.id,
+      host: project.host,
+      target: { provider: project.kind, origin: project.origin },
+      repository: project.repository,
+    };
+    return JSON.stringify([
+      refEpoch(canonical),
+      fileRevisionsEpoch(canonical),
+      canonical.projectId,
+      canonical.target,
+      project.remote,
       ref.number,
-    ].join(" ");
+      ref.expectedAccountId ?? null,
+    ]);
+  };
 
   const recordFileRevisions = (
     key: string,
@@ -170,7 +180,7 @@ export const make = (dependencies: Dependencies) => {
   const { fileRevisionsOf } = makeFileRevisions(dependencies);
   const filesViewedScope = (project: SupportedProject, number: number, viewer: string | null) => ({
     provider: project.api.kind,
-    host: project.host,
+    host: project.origin,
     repository: project.remote,
     number,
     viewer: viewer ?? "",
@@ -183,11 +193,22 @@ export const make = (dependencies: Dependencies) => {
       cause,
     });
 
+  const requireFilesViewedOrigin = (project: SupportedProject, operation: string) =>
+    project.inferredOrigin
+      ? Effect.fail(
+          new PullRequestOperationError({
+            operation,
+            detail: "This environment could not verify the change request's Web origin.",
+          }),
+        )
+      : Effect.void;
+
   const environmentFilesViewed = Effect.fn("pullRequestViewedFiles.environmentFilesViewed")(
     function* (
       project: SupportedProject,
       ref: PullRequestRef,
     ): Effect.fn.Return<PullRequestFilesViewedResult, PullRequestError> {
+      yield* requireFilesViewedOrigin(project, "filesViewed");
       const viewer = yield* requiredViewerOf(project, "filesViewed");
       const held = yield* filesViewedStore
         .list(filesViewedScope(project, ref.number, viewer))
@@ -237,7 +258,7 @@ export const make = (dependencies: Dependencies) => {
   ) =>
     // Atomically find, register and queue on gates; yielding during creation lets concurrent presses use separate gates.
     Effect.suspend(() => {
-      const key = `${project.project.id} ${project.remote} ${number}`;
+      const key = JSON.stringify(filesViewedScope(project, number, null));
       const held = filesViewedGates.get(key);
       const entry = held ?? { gate: Semaphore.makeUnsafe(1), pending: 0 };
       if (held === undefined) filesViewedGates.set(key, entry);
@@ -259,6 +280,7 @@ export const make = (dependencies: Dependencies) => {
       project: SupportedProject,
       input: PullRequestSetFilesViewedInput,
     ): Effect.fn.Return<void, PullRequestError> {
+      yield* requireFilesViewedOrigin(project, "setFilesViewed");
       const viewer = yield* requiredViewerOf(project, "setFilesViewed");
       const cleared = input.files
         .filter((file) => file.viewed && file.revision === undefined)

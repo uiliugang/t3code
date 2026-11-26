@@ -1297,7 +1297,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.threadId, input.cursor]),
+          JSON.stringify([
+            environmentId,
+            pullRequestReference(input),
+            input.threadId,
+            input.cursor,
+          ]),
       },
     }),
     diff: createEnvironmentQueryAtomFamily(runtime, {
@@ -1322,10 +1327,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
         key: ({ environmentId, input }) =>
           JSON.stringify([
             environmentId,
-            input.projectId,
-            input.host?.toLowerCase() ?? null,
-            input.repository,
-            input.number,
+            pullRequestReference(input),
             input.commit ?? null,
             input.changeType,
             input.oldPath,
@@ -1418,14 +1420,9 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       execute: (input) => routedRequest(WS_METHODS.pullRequestsUpdateComment, input),
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
-      onSuccess: ({ environmentId, input: { projectId, host, repository, number } }, registry) =>
+      onSuccess: ({ environmentId, input }, registry) =>
         Effect.sync(() =>
-          registry.refresh(
-            activity({
-              environmentId,
-              input: { projectId, ...(host === undefined ? {} : { host }), repository, number },
-            }),
-          ),
+          registry.refresh(activity({ environmentId, input: pullRequestReference(input) })),
         ),
     }),
     submitReview: createEnvironmentRpcCommand(runtime, {
