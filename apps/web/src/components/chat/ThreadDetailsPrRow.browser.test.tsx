@@ -18,6 +18,7 @@ import { expect, it, vi } from "vite-plus/test";
 const state = vi.hoisted(() => ({
   issuesSupported: false,
   issuePortsSupported: false,
+  webTargetsSupported: false,
   linkedIssueDetail: vi.fn<(...args: readonly unknown[]) => null>(() => null),
   isDraft: false,
   headSha: "shown-head",
@@ -64,6 +65,20 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
 vi.mock(import("~/state/issues"), () => ({
   useLinkedIssueDetail: (...args) => state.linkedIssueDetail(...args),
 }));
+vi.mock(import("~/state/server"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  return {
+    ...actual,
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      configValueAtom: (() =>
+        Atom.make({
+          environment: { capabilities: { pullRequestWebTargets: state.webTargetsSupported } },
+        })) as never,
+    },
+  };
+});
 
 const queryData = () => ({
   projectId: ProjectId.make("project"),
@@ -287,6 +302,7 @@ async function setup() {
 
   state.issuesSupported = false;
   state.issuePortsSupported = false;
+  state.webTargetsSupported = false;
   state.linkedIssueDetail.mockClear();
   state.headSha = "shown-head";
   state.isDraft = false;
@@ -332,6 +348,19 @@ const repositoryClone = {
   workspaceRoot: "/work/clone",
 };
 
+const gitlabRepository = {
+  ...repositoryProject,
+  repositoryIdentity: {
+    ...repositoryProject.repositoryIdentity,
+    canonicalKey: "gitlab.test/owner/repo",
+    provider: SourceControlProviderKind.make("gitlab"),
+    locator: {
+      ...repositoryProject.repositoryIdentity.locator,
+      remoteUrl: "git@gitlab.test:owner/repo.git",
+    },
+  },
+};
+
 it.each([
   {
     name: "the project holding its repository, not the No project thread's",
@@ -351,18 +380,30 @@ it.each([
     repository: "owner/other",
     expected: "squash",
   },
-])("merges a linked pull request with $name", async ({ thread, repository, expected }) => {
+  {
+    name: "the SSH project holding its repository on a source-aware server",
+    thread: scratchProject,
+    repository: "owner/repo",
+    expected: "rebase",
+    gitlab: true,
+  },
+])("merges a linked pull request with $name", async ({ thread, repository, expected, gitlab }) => {
   await using screen = await setup();
   state.mergeMethods = ["merge", "squash", "rebase"];
-  state.projects = [scratchProject, repositoryProject, repositoryClone];
+  state.webTargetsSupported = gitlab === true;
+  state.projects = gitlab
+    ? [scratchProject, gitlabRepository]
+    : [scratchProject, repositoryProject, repositoryClone];
   state.projectMergeMethods = { scratch: "squash", repository: "rebase", clone: "merge" };
   useUiStateStore.getState().setPullRequestMergeMethod("squash");
   state.pullRequests = [
     {
-      host: "github.com",
+      host: gitlab ? "gitlab.test" : "github.com",
       repository,
       number: 1,
-      url: `https://github.com/${repository}/pull/1`,
+      url: gitlab
+        ? `http://gitlab.test/${repository}/-/merge_requests/1`
+        : `https://github.com/${repository}/pull/1`,
       source: "manual",
       linkedAt: "2026-10-30T00:00:00.000Z",
       snapshot: null,

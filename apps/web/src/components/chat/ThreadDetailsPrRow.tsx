@@ -96,7 +96,7 @@ export function ThreadDetailsPrRow({
   reference: linkedReference,
   status,
   project,
-  mergePreferenceProjectId = project?.id as ProjectId | undefined,
+  mergePreferenceProjectId,
   label,
   onOpen,
   onActed,
@@ -191,7 +191,7 @@ export function ThreadDetailsPrRow({
   const lastSelectedMergeMethod = useUiStateStore((state) => state.pullRequestMergeMethod);
   const resolveProjectDefaultMergeMethod = usePullRequestDefaultMergeMethodResolver(
     environmentId,
-    mergePreferenceProjectId ?? null,
+    mergePreferenceProjectId ?? project?.id ?? null,
   );
   const [confirmingMerge, setConfirmingMerge] = useState(false);
 

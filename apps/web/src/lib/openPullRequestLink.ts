@@ -68,7 +68,7 @@ export function pullRequestLinkPanelTarget(input: {
   // subscribing would hand every rendered link a new handler. Projects likewise, so a
   // link can resolve against a snapshot that arrived after this handler was built.
   const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
-  return resolveChangeRequestLinkTarget({
+  const resolved = resolveChangeRequestLinkTarget({
     url: input.url,
     projects: readProjects(),
     configLoaded: (environmentId) => serverConfigs.has(environmentId),
@@ -78,6 +78,9 @@ export function pullRequestLinkPanelTarget(input: {
     primaryEnvironmentId: input.primaryEnvironmentId,
     lendHostProject: input.lendHostProject,
   });
+  return resolved === null
+    ? null
+    : { ...resolved, target: changeRequestWebTarget(resolved, input.url) };
 }
 
 function shouldOpenPullRequestExternally(
@@ -123,8 +126,7 @@ export function useOpenChangeRequestLink(
         lendHostProject: resolvedPanelRef !== undefined,
       });
       if (target === null) return false;
-      const { project, repository, number, host } = target;
-      const webTarget = changeRequestWebTarget(target, targetUrl);
+      const { project, repository, number, host, target: webTarget } = target;
       const revealUrl = parsePullRequestAnchor(targetUrl) === null ? undefined : targetUrl;
       const pullRequestsSearch = {
         repository,

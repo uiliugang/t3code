@@ -191,23 +191,26 @@ export function ThreadDetailsThreadPrRows({
     ),
   ];
   const supportsWebTargets = useSupportsWebTargets(threadRef.environmentId);
-  const ownProject =
-    parsed === null
-      ? undefined
-      : findProjectForChangeRequest(candidates, parsed.link, parsed.definition.kind);
   const rowProject =
     currentLink === null
       ? project
       : parsed === null
         ? null
-        : (ownProject ??
-          findProjectOnChangeRequestHost(
+        : (findProjectOnChangeRequestHost(
             candidates,
             parsed.link,
             parsed.definition.kind,
             () => supportsWebTargets,
-          ) ??
-          null);
+          ) ?? null);
+  const ownsRepository =
+    parsed !== null &&
+    rowProject !== null &&
+    findProjectForChangeRequest(
+      [rowProject],
+      parsed.link,
+      parsed.definition.kind,
+      () => supportsWebTargets,
+    ) !== undefined;
   if (number === undefined || url === undefined) return null;
   return (
     <ThreadDetailsPrRows
@@ -221,7 +224,7 @@ export function ThreadDetailsThreadPrRows({
       reference={currentLink === null ? null : normalizeThreadPullRequestKey(currentLink)}
       status={displayed.status}
       project={rowProject}
-      mergePreferenceProjectId={ownProject?.id ?? project?.id}
+      mergePreferenceProjectId={ownsRepository ? rowProject.id : project?.id}
       label={`#${number}${pr?.title.trim() ? `: ${pr.title}` : ""}`}
       onOpen={(event) => openPrLink(event, url)}
       composerTarget={composerTarget}

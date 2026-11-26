@@ -9,9 +9,10 @@ import {
   normalizeThreadPullRequestKey,
   pullRequestListLines,
   resolveThreadPullRequestChains,
+  threadPullRequestKeyOf,
   visibleThreadPullRequests,
 } from "@t3tools/client-runtime/thread-pull-requests";
-import { canStartThreadPullRequestWatch } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { canWatchLinkedPullRequest } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import {
   ArrowUpRightIcon,
   EyeIcon,
@@ -102,7 +103,6 @@ function LinkRowImpl({
   onUnlink,
   onSetWatching,
   onIntent,
-  canStartWatch,
 }: {
   line: PullRequestListLine;
   threadRef: ScopedThreadRef;
@@ -111,7 +111,6 @@ function LinkRowImpl({
   onUnlink: (link: ThreadPullRequestLink) => void;
   onSetWatching: ((link: ThreadPullRequestLink, watching: boolean) => void) | null;
   onIntent: (link: ThreadPullRequestLink | null) => void;
-  canStartWatch: boolean;
 }) {
   const t = useUiTranslation();
   const resolve = useMessages();
@@ -362,7 +361,7 @@ function LinkRowImpl({
               <ArrowUpRightIcon className="size-3.5" />
               {t("Open")}
             </MenuItem>
-            {onSetWatching !== null && open && (watching || canStartWatch) ? (
+            {onSetWatching !== null ? (
               <MenuItem onClick={() => onSetWatching(link, !watching)}>
                 {watching ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
                 {watching ? t("Stop watching") : t("Watch for changes")}
@@ -390,8 +389,7 @@ function latestSyncedAt(links: ReadonlyArray<ThreadPullRequestLink>): string | n
   return latest;
 }
 
-const lineKey = (line: PullRequestListLine) =>
-  `${line.link.host}/${line.link.repository}#${line.link.number}`;
+const lineKey = (line: PullRequestListLine) => threadPullRequestKeyOf(line.link);
 
 export function ThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
   const gt = useGT();
@@ -435,12 +433,9 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   const capabilities = useServerConfigs().get(threadRef.environmentId)?.environment.capabilities;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const opensInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
+  const linkKeys = new Set(links.map(threadPullRequestKeyOf));
   const prefetch = usePullRequestIntentPrefetch((target) =>
-    links.some(
-      (link) =>
-        link.number === target.number &&
-        link.repository.toLowerCase() === target.repository.toLowerCase(),
-    ),
+    linkKeys.has(threadPullRequestKeyOf(target)),
   );
   const intendLink = (link: ThreadPullRequestLink | null) => {
     const target =
@@ -453,19 +448,21 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
             lendHostProject: true,
           });
     prefetch(
-      target?.host === undefined
+      target?.host === undefined || target.target === undefined
         ? null
         : {
             environmentId: target.project.environmentId,
             projectId: target.project.id,
             host: target.host,
+            target: target.target,
             repository: target.repository,
             number: target.number,
           },
     );
   };
-  const supportsWatch = capabilities?.threadPullRequestWatch === true;
-  const canStartWatch = thread !== null && canStartThreadPullRequestWatch(thread);
+  const project = environmentProjects.find((project) => project.id === thread?.projectId);
+  const canWatch = (link: ThreadPullRequestLink) =>
+    canWatchLinkedPullRequest({ capabilities, thread, project, link });
   const handleUnlink = (link: ThreadPullRequestLink) => {
     void unlink({
       environmentId: threadRef.environmentId,
@@ -476,6 +473,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
     });
   };
   const handleSetWatching = (link: ThreadPullRequestLink, watching: boolean) => {
+    if (!canWatch(link)) return;
     void watch({
       environmentId: threadRef.environmentId,
       input: {
@@ -491,7 +489,6 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
     speedMode,
     environmentProjects,
     capabilities,
-    supportsWatch,
     thread,
     opensInApp,
     primaryEnvironmentId,
@@ -564,9 +561,8 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
                 }
                 speedMode={speedMode}
                 onUnlink={handleUnlink}
-                onSetWatching={supportsWatch ? handleSetWatching : null}
+                onSetWatching={canWatch(line.link) ? handleSetWatching : null}
                 onIntent={intendLink}
-                canStartWatch={canStartWatch}
               />
             );
           }}

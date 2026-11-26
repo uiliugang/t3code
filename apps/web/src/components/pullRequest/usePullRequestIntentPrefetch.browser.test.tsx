@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({ reads: [] as Array<unknown> }));
@@ -31,6 +31,7 @@ const row = {
   host: "GitHub.com",
   repository: "owner/repo",
   number: 7,
+  target: { provider: SourceControlProviderKind.make("github"), origin: "https://github.com" },
 };
 
 function Rows() {
@@ -74,6 +75,7 @@ it("reads the panel's detail and activity once intent rests on a row for 150 ms"
     repository: "owner/repo",
     number: 7,
     host: "github.com",
+    target: row.target,
   };
   expect(state.reads.slice(-2).map((read) => JSON.stringify(read))).toEqual([
     JSON.stringify({ environmentId, input: { ...reference, allowStale: false } }),
