@@ -86,6 +86,11 @@ Updates from the previous orchestration system preserve conversation transcripts
 every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)
 before continuing an important older thread.
 
+If GitLab files you previously marked as viewed appear unread after updating, mark them again in
+the merge request. T3 Code keeps the old marks but does not display them because older versions
+did not record whether the GitLab instance was accessed over HTTP or HTTPS. GitHub's viewed marks
+are unaffected.
+
 ## When versions don't match
 
 A client and server must speak the same orchestration protocol. If they do not, the connection is

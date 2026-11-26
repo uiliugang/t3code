@@ -14,6 +14,7 @@ import { msg } from "gt-react";
 import { m } from "~/i18n/messages";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
+  filesViewedScopeKey,
   pullRequestEnvironment,
   subscribePullRequestFilesViewedAnswers,
 } from "~/state/pullRequests";
@@ -198,7 +199,7 @@ export function createFilesViewedStore(deps: FilesViewedStoreDeps) {
      * during render: an uncommitted handle is not cached, and any handle for a key behaves the same.
      */
     scope(target: FilesViewedTarget): FilesViewedScopeHandle {
-      const key = filesViewedScopeKey(target);
+      const key = filesViewedScopeKey(target.environmentId, target.reference);
       const cached = handles.get(key);
       if (cached !== undefined) return cached;
       const owned = { environmentId: target.environmentId, reference: { ...target.reference } };
@@ -217,20 +218,6 @@ export function createFilesViewedStore(deps: FilesViewedStoreDeps) {
       return handle;
     },
   };
-}
-
-function filesViewedScopeKey({ environmentId, reference }: FilesViewedTarget): string {
-  return JSON.stringify([
-    environmentId,
-    reference.projectId,
-    reference.host ?? null,
-    reference.target?.provider ?? null,
-    reference.target?.origin ?? null,
-    reference.expectedAccountId ?? null,
-    reference.allowStale ?? null,
-    reference.repository,
-    reference.number,
-  ]);
 }
 
 const filesViewedAtom = ({ environmentId, reference }: FilesViewedTarget) =>

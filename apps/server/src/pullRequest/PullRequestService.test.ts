@@ -305,6 +305,7 @@ function makeService(input: {
   readonly resolveRepositoryIdentity?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"]["resolve"];
   readonly checkoutProject?: OrchestrationProjectShell;
   readonly onProjectRead?: () => void;
+  readonly filesViewedStore?: PullRequestFilesViewed.PullRequestFilesViewedRepository["Service"];
 }) {
   // Build in the test scope; per-call Effect.provide would close the marks database on service acquisition.
   return Effect.flatMap(
@@ -347,7 +348,12 @@ function makeService(input: {
           resolve: input.resolveRepositoryIdentity ?? (() => Effect.succeed(null)),
         }),
         SourceControlRateLimit.layer,
-        PullRequestFilesViewed.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
+        input.filesViewedStore === undefined
+          ? PullRequestFilesViewed.layer.pipe(Layer.provide(SqlitePersistence.layerMemory))
+          : Layer.succeed(
+              PullRequestFilesViewed.PullRequestFilesViewedRepository,
+              input.filesViewedStore,
+            ),
         Layer.effect(PullRequestReadCache.PullRequestReadCache, PullRequestReadCache.make).pipe(
           Layer.provide(KeyValueStore.layerMemory),
           Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
@@ -4800,7 +4806,7 @@ it.effect("records shown revisions until the reader ticks the pushed version", (
   }),
 );
 
-it.effect("keeps environment viewed marks separate for HTTP and HTTPS on the same host", () =>
+it.effect("isolates viewed marks by web origin and retains hidden legacy marks", () =>
   Effect.gen(function* () {
     const host = "forge.test";
     const repository = "group/project";
@@ -4816,15 +4822,26 @@ it.effect("keeps environment viewed marks separate for HTTP and HTTPS on the sam
         remoteUrl: `${protocol}://${host}/${repository}.git`,
       }),
     );
+    const filesViewedStore = yield* PullRequestFilesViewed.PullRequestFilesViewedRepository;
+    const legacyScope = { provider, host, repository, number: 1, viewer: "bilal" };
+    const legacyMark = { path: "src/a.ts", revision: "blob-a" };
+    yield* filesViewedStore.set({
+      ...legacyScope,
+      files: [{ ...legacyMark, viewed: true }],
+      viewedAt: "2026-07-02T00:00:00Z",
+    });
     const service = yield* makeService({
       projects,
       providers: [environmentViewedProvider(new Map([["src/a.ts", "blob-a"]]), [])],
+      filesViewedStore,
     });
     const ref = { projectId: ProjectId.make("https"), host, repository, number: 1 };
     const http = { ...ref, target: { provider, origin: `http://${host}` } };
     const https = { ...ref, target: { provider, origin: `https://${host}` } };
     const marked = [{ path: "src/a.ts", state: "viewed" }] as const;
 
+    assert.deepStrictEqual((yield* service.filesViewed(https)).files, []);
+    assert.deepStrictEqual((yield* service.filesViewed(http)).files, []);
     yield* service.setFilesViewed({ ...http, files: [{ path: "src/a.ts", viewed: true }] });
     assert.deepStrictEqual((yield* service.filesViewed(https)).files, []);
     assert.deepStrictEqual((yield* service.filesViewed(http)).files, marked);
@@ -4835,7 +4852,10 @@ it.effect("keeps environment viewed marks separate for HTTP and HTTPS on the sam
     assert.deepStrictEqual((yield* service.filesViewed(https)).files, []);
     yield* service.invalidate({ reference: http });
     assert.deepStrictEqual((yield* service.filesViewed(http)).files, marked);
-  }),
+    assert.deepStrictEqual((yield* filesViewedStore.list(legacyScope)).files, [legacyMark]);
+  }).pipe(
+    Effect.provide(PullRequestFilesViewed.layer.pipe(Layer.provide(SqlitePersistence.layerMemory))),
+  ),
 );
 
 it.effect("keeps a deleted file cleared, which the head has no version of at all", () =>
