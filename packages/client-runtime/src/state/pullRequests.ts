@@ -13,6 +13,7 @@ import {
   PullRequestChangeBreakdown,
   PullRequestFilesViewedResult,
   PullRequestLinkedThreadsResult,
+  PullRequestRoutingResult,
   type EnvironmentId,
   type PullRequestActor,
   type PullRequestActionInput,
@@ -1224,6 +1225,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     routingIdentity: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:routing-identity",
       tag: WS_METHODS.pullRequestsRouting,
+      persistence: persistQuery(PullRequestRoutingResult),
       staleTimeMs: 0,
       refreshIntervalMs: 60_000,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
@@ -1361,7 +1363,8 @@ export function createPullRequestEnvironmentAtoms<R, E>(
           Effect.map(({ target, ...result }) =>
             target !== undefined &&
             target.provider === input.target?.provider &&
-            target.origin === input.target.origin
+            target.origin === input.target.origin &&
+            (target.provider !== "github" || input.expectedAccountId !== undefined)
               ? { ...result, target }
               : result,
           ),

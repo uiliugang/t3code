@@ -1,5 +1,4 @@
 import appCss from "../index.css?inline";
-import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as shelfHooks from "../state/olderSettledShelf";
 import { createWorkspaceFocusController, workspaceAreaProps } from "../lib/workspaceFocus";
@@ -17,6 +16,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { act, fakeTimers, render } from "../../test/render";
+import { makeServerConfig } from "../../test/fakeEnvironment";
 import { openCommandPalette } from "../commandPaletteBus";
 import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { makeThreadFixture } from "../test-fixtures";
@@ -543,9 +543,9 @@ describe("sidebar settled pagination", () => {
         [
           activeProject.environmentId,
           {
-            scratchWorkspaceRoot: null,
+            ...makeServerConfig([]),
             shellThreadFamilies: false,
-          } as unknown as EnvironmentServerConfig,
+          },
         ],
       ]),
     );

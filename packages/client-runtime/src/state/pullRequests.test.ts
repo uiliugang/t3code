@@ -2196,13 +2196,15 @@ it.effect("shares checks reads across reference property order", () =>
   }),
 );
 
-it.effect.each(["confirmed", "old-server", "unknown-source"] as const)(
+it.effect.each(["confirmed", "old-server", "unknown-source", "unknown-account"] as const)(
   "only restores confirmed files-viewed answers offline (%s)",
   (scenario) =>
     Effect.gen(function* () {
       const webTarget = {
-        provider: SourceControlProviderKind.make("gitlab"),
-        origin: "http://forge.test",
+        provider: SourceControlProviderKind.make(
+          scenario === "unknown-account" ? "github" : "gitlab",
+        ),
+        origin: scenario === "unknown-account" ? "https://forge.test" : "http://forge.test",
       };
       const target = {
         environmentId: TARGET.environmentId,
@@ -2285,6 +2287,89 @@ it.effect.each(["confirmed", "old-server", "unknown-source"] as const)(
         });
       }
       expect(saved.get(legacyKey)).toBe(legacy);
+    }),
+);
+
+it.effect(
+  "restores the verified GitHub account and its viewed marks on an offline cold start",
+  () =>
+    Effect.gen(function* () {
+      const host = "github.com";
+      const provider = SourceControlProviderKind.make("github");
+      const reference = {
+        environmentId: TARGET.environmentId,
+        input: {
+          projectId: ProjectId.make("project-1"),
+          host,
+          target: { provider, origin: `https://${host}` },
+          repository: "acme/web",
+          number: 7,
+        },
+      };
+      const identity = {
+        host,
+        provider,
+        accountId: "123",
+        viewer: "viewer",
+        projectTitle: "Web",
+        workspaceRoot: "/web",
+      };
+      const viewed: PullRequestFilesViewedResult = {
+        files: [{ path: "main.ts", state: "viewed" }],
+        truncated: false,
+        target: reference.input.target,
+      };
+      const client = {
+        [WS_METHODS.pullRequestsRouting]: () => Effect.succeed(identity),
+        [WS_METHODS.pullRequestsFilesViewed]: (input: PullRequestRef) =>
+          Effect.sync(() => {
+            expect(input.expectedAccountId).toBe(identity.accountId);
+            return viewed;
+          }),
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+      } as unknown as WsRpcProtocolClient;
+      const saved = new Map<string, string>();
+      const bothSaved = yield* Latch.make();
+      const queryStore: typeof EnvironmentQueryStore.Service = {
+        load: (_environmentId, key) => Effect.sync(() => Option.fromUndefinedOr(saved.get(key))),
+        save: (_environmentId, key, payload) =>
+          Effect.gen(function* () {
+            saved.set(key, payload);
+            if (saved.size === 2) yield* bothSaved.open;
+          }),
+      };
+      const reopen = Effect.fnUntraced(function* (offline: boolean) {
+        const { atoms, registry, supervisor } = yield* makeTestRuntime(
+          client,
+          undefined,
+          false,
+          {},
+          queryStore,
+        );
+        if (offline) {
+          yield* SubscriptionRef.update(supervisor.state, (state) => ({
+            ...state,
+            phase: "offline" as const,
+            network: "offline" as const,
+          }));
+        }
+        const identityQuery = atoms.routingIdentity(reference);
+        const unmountIdentity = registry.mount(identityQuery);
+        yield* Effect.addFinalizer(() => Effect.sync(unmountIdentity));
+        const { accountId } = yield* AtomRegistry.getResult(registry, identityQuery, {
+          suspendOnWaiting: true,
+        });
+        const query = atoms.filesViewed({
+          ...reference,
+          input: { ...reference.input, expectedAccountId: accountId },
+        });
+        const unmountViewed = registry.mount(query);
+        yield* Effect.addFinalizer(() => Effect.sync(unmountViewed));
+        return yield* AtomRegistry.getResult(registry, query, { suspendOnWaiting: true });
+      });
+      expect(yield* reopen(false)).toEqual(viewed);
+      yield* bothSaved.await;
+      expect(yield* reopen(true)).toEqual(viewed);
     }),
 );
 

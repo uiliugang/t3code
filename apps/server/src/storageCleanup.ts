@@ -1063,6 +1063,7 @@ const make = Effect.gen(function* () {
     ),
   );
   const removeLeftover = Effect.fn("StorageCleanup.removeLeftover")(function* (adminDir: string) {
+    if (!(yield* fs.exists(adminDir))) return "missing";
     if (yield* fs.exists(path.join(adminDir, "locked"))) return "locked";
     // Pruning by hand frees the name, and a worktree recreated since may have taken it.
     const gitFile = yield* fs.readFileString(path.join(adminDir, "gitdir")).pipe(
@@ -1083,8 +1084,14 @@ const make = Effect.gen(function* () {
     const remaining: Array<(typeof leftovers)[number]> = [];
     for (const leftover of leftovers) {
       const { adminDir, entry } = leftover;
-      if (!(yield* fs.exists(adminDir).pipe(Effect.orElseSucceed(() => true)))) continue;
-      const failure = yield* removeLeftover(adminDir).pipe(
+      if (entry.path === null) {
+        remaining.push(leftover);
+        continue;
+      }
+      const failure = yield* withWorkspaceLease(
+        path.resolve(entry.path),
+        removeLeftover(adminDir),
+      ).pipe(
         Effect.map((outcome) => {
           if (outcome === "locked") {
             remaining.push(leftover);

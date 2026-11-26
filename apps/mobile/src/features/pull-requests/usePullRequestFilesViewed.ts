@@ -1,10 +1,10 @@
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { usePullRequestConnected } from "./usePullRequestConnected";
-import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { PullRequestDetail } from "@t3tools/contracts";
 import { msg } from "gt-react-native";
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import {
   composerPullRequests,
   filesViewedReadsFamily,
@@ -13,23 +13,49 @@ import {
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
-import { pullRequestReviewKey } from "./pullRequestReviewDrafts";
 import { viewedOverlay, type ViewedState } from "./pullRequestFilesViewed";
 import { m } from "../../i18n/messages";
 
 export function usePullRequestFilesViewed(params: PullRequestParams, pr: PullRequestDetail | null) {
   const registry = use(RegistryContext);
-  const target = pullRequestTarget(params);
-  const scopeKey = pullRequestReviewKey(params);
+  const reference = pullRequestTarget(params);
   const supported = Boolean(pr?.capabilities.viewedFiles);
+  const requiresAccount = pr?.provider === "github" && pr.capabilities.viewedFiles === "host";
+  const identity = useEnvironmentQuery(
+    requiresAccount ? composerPullRequests.routingIdentity(reference) : null,
+  );
+  const target =
+    identity.isSuccess && identity.data !== null
+      ? {
+          ...reference,
+          input: {
+            ...reference.input,
+            host: identity.data.host,
+            expectedAccountId: identity.data.accountId,
+          },
+        }
+      : reference;
+  const scopeKey = filesViewedReadsKey(target);
   const permission = useAtomValue(
     composerPullRequests.setFilesViewed.permissionAtom(target.environmentId),
   );
   const connected = usePullRequestConnected(params.environmentId);
-  const allowed = connected && permission;
+  const allowed = connected && permission && (!requiresAccount || identity.isSuccess);
   const query = useEnvironmentQuery(supported ? composerPullRequests.filesViewed(target) : null);
-  const refresh = useAtomRefresh(composerPullRequests.filesViewed(target));
-  const readsAtom = filesViewedReadsFamily(filesViewedReadsKey(target));
+  const { refresh } = query;
+  const headSha = pr?.headSha;
+  const previousHead = useRef(headSha);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a pushed revision changes the host's viewed-file states
+  useEffect(() => {
+    if (
+      previousHead.current !== undefined &&
+      headSha !== undefined &&
+      previousHead.current !== headSha
+    )
+      refresh();
+    previousHead.current = headSha;
+  }, [headSha, refresh]);
+  const readsAtom = filesViewedReadsFamily(scopeKey);
   const reads = useAtomValue(readsAtom);
   const write = useAtomCommand(composerPullRequests.setFilesViewed, { reportFailure: false });
   const [state, setState] = useState<ViewedState>({ key: scopeKey, presses: {}, error: null });
