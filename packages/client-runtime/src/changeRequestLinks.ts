@@ -97,14 +97,7 @@ export function findProjectOnChangeRequestHost<Project extends ChangeRequestProj
     findChangeRequestProject(projects, link, provider, "canReadChangeRequestOnHost") ??
     (supportsWebTargets === undefined
       ? undefined
-      : (findProjectForChangeRequest(projects, link, provider, supportsWebTargets) ??
-        findChangeRequestProject(
-          projects,
-          link,
-          provider,
-          "canReadChangeRequestOnHost",
-          supportsWebTargets,
-        )))
+      : findProjectForChangeRequest(projects, link, provider, supportsWebTargets))
   );
 }
 

@@ -277,6 +277,13 @@ describe("resolveChangeRequestLinkTarget", () => {
       expect(
         resolveChangeRequestLinkTarget({
           ...navigation,
+          url: `${protocol}://forge.test/acme/sibling/-/merge_requests/7`,
+          supportsWebTargets: loaded,
+        }),
+      ).toBeNull();
+      expect(
+        resolveChangeRequestLinkTarget({
+          ...navigation,
           projects: [gitlab, explicit],
           projectId: gitlab.id,
           supportsWebTargets: loaded,

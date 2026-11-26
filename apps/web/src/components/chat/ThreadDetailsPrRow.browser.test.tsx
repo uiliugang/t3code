@@ -361,6 +361,20 @@ const gitlabRepository = {
   },
 };
 
+const gitlabSibling = {
+  ...repositoryClone,
+  repositoryIdentity: {
+    ...gitlabRepository.repositoryIdentity,
+    canonicalKey: "gitlab.test/owner/sibling",
+    displayName: "owner/sibling",
+    name: "sibling",
+    locator: {
+      ...gitlabRepository.repositoryIdentity.locator,
+      remoteUrl: "http://gitlab.test/owner/sibling.git",
+    },
+  },
+};
+
 it.each([
   {
     name: "the project holding its repository, not the No project thread's",
@@ -387,39 +401,59 @@ it.each([
     expected: "rebase",
     gitlab: true,
   },
-])("merges a linked pull request with $name", async ({ thread, repository, expected, gitlab }) => {
-  await using screen = await setup();
-  state.mergeMethods = ["merge", "squash", "rebase"];
-  state.webTargetsSupported = gitlab === true;
-  state.projects = gitlab
-    ? [scratchProject, gitlabRepository]
-    : [scratchProject, repositoryProject, repositoryClone];
-  state.projectMergeMethods = { scratch: "squash", repository: "rebase", clone: "merge" };
-  useUiStateStore.getState().setPullRequestMergeMethod("squash");
-  state.pullRequests = [
-    {
-      host: gitlab ? "gitlab.test" : "github.com",
-      repository,
-      number: 1,
-      url: gitlab
-        ? `http://gitlab.test/${repository}/-/merge_requests/1`
-        : `https://github.com/${repository}/pull/1`,
-      source: "manual",
-      linkedAt: "2026-10-30T00:00:00.000Z",
-      snapshot: null,
-      stack: null,
-    },
-  ];
-  await act(async () => {
-    await screen.rerender(
-      <ThreadDetailsThreadPrRows threadRef={threadRef} project={thread as never} />,
+  {
+    name: "the SSH project's preference when borrowing an HTTP sibling for reads",
+    thread: scratchProject,
+    repository: "owner/repo",
+    expected: "rebase",
+    gitlab: true,
+    sibling: true,
+  },
+])(
+  "merges a linked pull request with $name",
+  async ({ thread, repository, expected, gitlab, sibling }) => {
+    await using screen = await setup();
+    state.mergeMethods = ["merge", "squash", "rebase"];
+    state.webTargetsSupported = gitlab === true;
+    state.projects = gitlab
+      ? [scratchProject, gitlabRepository, ...(sibling ? [gitlabSibling] : [])]
+      : [scratchProject, repositoryProject, repositoryClone];
+    state.projectMergeMethods = { scratch: "squash", repository: "rebase", clone: "merge" };
+    useUiStateStore.getState().setPullRequestMergeMethod("squash");
+    state.pullRequests = [
+      {
+        host: gitlab ? "gitlab.test" : "github.com",
+        repository,
+        number: 1,
+        url: gitlab
+          ? `http://gitlab.test/${repository}/-/merge_requests/1`
+          : `https://github.com/${repository}/pull/1`,
+        source: "manual",
+        linkedAt: "2026-10-30T00:00:00.000Z",
+        snapshot: null,
+        stack: null,
+      },
+    ];
+    await act(async () => {
+      await screen.rerender(
+        <ThreadDetailsThreadPrRows threadRef={threadRef} project={thread as never} />,
+      );
+    });
+    await clickButton(screen.container, "Merge");
+    const dialog = document.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent).toContain(`using ${expected}`);
+    await clickButton(dialog, "Merge");
+    expect(state.perform).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          action: "merge",
+          mergeMethod: expected,
+          ...(sibling ? { projectId: gitlabSibling.id } : {}),
+        }),
+      }),
     );
-  });
-  await clickButton(screen.container, "Merge");
-  expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain(
-    `using ${expected}`,
-  );
-});
+  },
+);
 
 it("names a linked pull request row by its kind, number and title, not its URL", async () => {
   await using screen = await setup();

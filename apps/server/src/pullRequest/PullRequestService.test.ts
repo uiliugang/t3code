@@ -2390,6 +2390,55 @@ it.effect("does not treat an SSH checkout's guessed HTTPS origin as a verified r
   }),
 );
 
+it.effect("routes a projectless watch to the same repository's SSH checkout", () =>
+  Effect.gen(function* () {
+    const scratch = project({ id: "scratch", title: "No project", workspaceRoot: "/scratch" });
+    const checkout = project({
+      id: "ssh",
+      title: "GitLab over SSH",
+      workspaceRoot: "/ssh",
+      host: "forge.test",
+      repository: "acme/app",
+      remoteUrl: "git@forge.test:acme/app.git",
+      provider: "gitlab",
+    });
+    const provider = SourceControlProviderKind.make("gitlab");
+    const service = yield* makeService({
+      projects: [scratch, checkout],
+      providers: [
+        fakePullRequestProvider(provider, {
+          getChangeRequestWatchFingerprint: ({ cwd, repository }) =>
+            Effect.gen(function* () {
+              assert.strictEqual(cwd, checkout.workspaceRoot);
+              assert.strictEqual(repository, "acme/app");
+              assert.strictEqual(yield* PullRequestWebOrigin, "http://forge.test");
+              return { status: "steady", remarks: "" };
+            }),
+        }),
+      ],
+    });
+    const ref = {
+      projectId: scratch.id,
+      host: "forge.test",
+      repository: "acme/app",
+      number: 7,
+      target: { provider, origin: "http://forge.test" },
+    };
+    assert.deepStrictEqual(yield* service.watchFingerprint(ref), { status: "steady", remarks: "" });
+    assert.isTrue(
+      Exit.isFailure(
+        yield* Effect.exit(
+          service.watchFingerprint({
+            ...ref,
+            repository: "acme/sibling",
+            target: { provider, origin: "https://forge.test" },
+          }),
+        ),
+      ),
+    );
+  }),
+);
+
 it.effect.each(["github", "gitlab"] as const)(
   "routes the same %s repository and change request number to the requested HTTPS authority",
   (provider) =>

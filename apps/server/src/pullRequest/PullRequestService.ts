@@ -1174,15 +1174,20 @@ export const make = Effect.gen(function* () {
         };
         const sameEndpoint = (candidate: SupportedProject) =>
           ref.target !== undefined
-            ? candidate.kind === ref.target.provider && candidate.origin === origin?.origin
+            ? !candidate.inferredOrigin &&
+              candidate.kind === ref.target.provider &&
+              candidate.origin === origin?.origin
             : own === undefined ||
               host !== own.host ||
               (candidate.kind === own.kind && candidate.origin === own.origin);
-        if (
-          own !== undefined &&
-          sameEndpoint(own) &&
-          own.repository.toLowerCase() === repository.toLowerCase()
-        ) {
+        const sameRepository = (candidate: SupportedProject) =>
+          candidate.repository.toLowerCase() === repository.toLowerCase();
+        const canBindRequestedOrigin = (candidate: SupportedProject) =>
+          candidate.inferredOrigin === true &&
+          ref.target?.provider === candidate.kind &&
+          candidate.host === host &&
+          sameRepository(candidate);
+        if (own !== undefined && sameEndpoint(own) && sameRepository(own)) {
           if (host === undefined || host === own.host)
             return Effect.succeed(bindRequestedOrigin(own));
         }
@@ -1224,17 +1229,11 @@ export const make = Effect.gen(function* () {
                   candidate.repositoryKey !== null && candidate.repositoryKey === repositoryKey,
               ) ??
               onHost.find(
-                (candidate) =>
-                  candidate.repositoryKey === null &&
-                  candidate.repository.toLowerCase() === repository.toLowerCase(),
+                (candidate) => candidate.repositoryKey === null && sameRepository(candidate),
               ) ??
               onHost.find((candidate) => candidate.repositoryKey === null) ??
-              (own?.inferredOrigin &&
-              ref.target?.provider === own.kind &&
-              own.host === host &&
-              own.repository.toLowerCase() === repository.toLowerCase()
-                ? own
-                : undefined);
+              (own !== undefined && canBindRequestedOrigin(own) ? own : undefined) ??
+              supported.find(canBindRequestedOrigin);
             if (route === undefined) {
               return Effect.gen(function* () {
                 const publicHost = sourceControlDefinitions.findByPublicHost(host);
@@ -1292,8 +1291,7 @@ export const make = Effect.gen(function* () {
             }
             return Effect.succeed(
               bindRequestedOrigin(
-                route.repositoryKey !== null ||
-                  route.repository.toLowerCase() === repository.toLowerCase()
+                route.repositoryKey !== null || sameRepository(route)
                   ? route
                   : {
                       ...route,

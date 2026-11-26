@@ -433,10 +433,10 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   const capabilities = useServerConfigs().get(threadRef.environmentId)?.environment.capabilities;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const opensInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
-  const linkKeys = new Set(links.map(threadPullRequestKeyOf));
-  const prefetch = usePullRequestIntentPrefetch((target) =>
-    linkKeys.has(threadPullRequestKeyOf(target)),
-  );
+  const prefetch = usePullRequestIntentPrefetch((target) => {
+    const key = threadPullRequestKeyOf(target);
+    return links.some((link) => threadPullRequestKeyOf(link) === key);
+  });
   const intendLink = (link: ThreadPullRequestLink | null) => {
     const target =
       link === null || !opensInApp
