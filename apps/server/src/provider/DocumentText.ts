@@ -79,7 +79,6 @@ const make = Effect.gen(function* () {
               timeout: 15_000,
               maxBuffer: 4 * 1024 * 1024 + 1024,
               encoding: "utf8",
-              windowsHide: true,
               env: {
                 ...environment,
                 ELECTRON_RUN_AS_NODE: "1",

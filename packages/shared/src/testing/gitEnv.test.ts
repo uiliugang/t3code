@@ -19,9 +19,8 @@ describe("git test setup", () => {
     expect(process.env.GIT_EDITOR).toBe("true");
   });
 
-  it("unsets a selector under the spelling Windows passed it in", () => {
-    const inherited = { Git_Dir: "C:\\repo\\.git", GIT_EDITOR: "true", PATH: "C:\\bin" };
-    expect(Object.keys(unsetInheritedGitRepositoryEnv(inherited, "win32"))).toEqual(["Git_Dir"]);
+  it("leaves non-exact spellings alone on POSIX", () => {
+    const inherited = { Git_Dir: "/repo/.git", GIT_EDITOR: "true", PATH: "/bin" };
     expect(Object.keys(unsetInheritedGitRepositoryEnv(inherited, "linux"))).toEqual([]);
   });
 });

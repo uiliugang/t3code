@@ -161,8 +161,6 @@ const CLOUD_CONNECT_SESSION_SUBJECT = "cloud-connect";
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
 
-// Colons are invalid in distro names, keeping picker sentinels collision-free.
-
 // Subscribes on its own so desktop download progress does not re-render the page.
 function LocalVersionStatusLabel() {
   const t = useUiTranslation();

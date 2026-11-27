@@ -133,7 +133,6 @@ struct HelloEvent {
 #[serde(rename_all = "kebab-case")]
 enum IoSemantics {
     Storage,
-    AllIo,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -784,11 +783,7 @@ fn truncate_utf8(mut value: String, max_bytes: usize) -> String {
 }
 
 fn io_semantics() -> IoSemantics {
-    if cfg!(target_os = "windows") {
-        IoSemantics::AllIo
-    } else {
-        IoSemantics::Storage
-    }
+    IoSemantics::Storage
 }
 
 fn unix_time_ms() -> u64 {
@@ -1185,7 +1180,6 @@ mod tests {
         assert!(process.cpu_percent.is_finite());
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn keeps_command_lines_and_memory_out_of_the_discovery_table() {
         let mut collector = Collector::new();

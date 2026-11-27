@@ -600,7 +600,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     command: string,
     processEnvironment = environment,
   ) {
-    if (command.includes("/") || command.includes("\\")) {
+    if (command.includes("/")) {
       const resolved = yield* commandPath(command, processEnvironment);
       return resolved === null ? [] : [resolved];
     }

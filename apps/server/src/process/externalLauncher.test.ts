@@ -1152,27 +1152,32 @@ it.effect.skipIf(windowsHost)("ignores unusable app bundles and keeps PATH launc
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect(
-  "memoizes editor discovery and refreshes in the background after the cache window",
-  () => {
+it.effect("memoizes editor discovery and refreshes in the background after the cache window", () =>
+  Effect.gen(function* () {
+    const realFs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* realFs.makeTempDirectoryScoped({ prefix: "t3-editor-cache-" });
+    const codePath = path.join(binDir, "code");
+    yield* realFs.writeFileString(codePath, "#!/bin/sh\n");
+    yield* realFs.chmod(codePath, 0o755);
+
     let statCalls = 0;
     const rescanned = Deferred.makeUnsafe<void>();
     let initialScanDone = false;
-    const fileInfo = { type: "File", mode: 0o755 } as FileSystem.File.Info;
+    const countingFs = FileSystem.FileSystem.of({
+      ...realFs,
+      stat: (filePath) =>
+        Effect.sync(() => {
+          statCalls += 1;
+        }).pipe(
+          Effect.andThen(initialScanDone ? Deferred.succeed(rescanned, undefined) : Effect.void),
+          Effect.andThen(realFs.stat(filePath)),
+        ),
+    });
     const layerLauncher = ExternalLauncher.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          FileSystem.layerNoop({
-            stat: () =>
-              Effect.sync(() => {
-                statCalls += 1;
-                return fileInfo;
-              }).pipe(
-                Effect.tap(() =>
-                  initialScanDone ? Deferred.succeed(rescanned, undefined) : Effect.void,
-                ),
-              ),
-          }),
+          Layer.succeed(FileSystem.FileSystem, countingFs),
           Path.layer,
           Layer.succeed(
             ChildProcessSpawner.ChildProcessSpawner,
@@ -1182,7 +1187,7 @@ it.effect(
       ),
     );
 
-    return Effect.gen(function* () {
+    yield* Effect.gen(function* () {
       const launcher = yield* ExternalLauncher.ExternalLauncher;
 
       const first = yield* launcher.resolveAvailableEditors();
@@ -1213,8 +1218,7 @@ it.effect(
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                PATH: "/t3-editor-discovery-cache-test",
-                PATHEXT: ".COM;.EXE;.BAT;.CMD",
+                PATH: binDir,
               },
             }),
           ),
@@ -1222,5 +1226,5 @@ it.effect(
         ),
       ),
     );
-  },
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

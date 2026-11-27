@@ -182,14 +182,6 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
   for (const launcher of plan.launchers) yield* Console.log(`  the launcher at ${launcher}`);
   if (plan.runtimeDir !== undefined) {
     yield* Console.log(`  every downloaded version under ${plan.runtimeDir}`);
-    yield* fs
-      .remove(plan.runtimeDir, { recursive: true, force: true })
-      .pipe(
-        Effect.mapError(
-          () => new CliUninstallError({ reason: `Could not remove ${plan.runtimeDir}.` }),
-        ),
-      );
-    yield* Console.log(`Removed ${plan.runtimeDir}.`);
   }
   yield* Console.log(
     `Your projects, threads, and settings under ${plan.userdataDir} are kept. Delete that directory yourself if you want them gone too.`,
@@ -233,6 +225,14 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
     yield* Console.log(`Removed ${launcher}.`);
   }
   if (plan.runtimeDir !== undefined) {
+    yield* fs
+      .remove(plan.runtimeDir, { recursive: true, force: true })
+      .pipe(
+        Effect.mapError(
+          () => new CliUninstallError({ reason: `Could not remove ${plan.runtimeDir}.` }),
+        ),
+      );
+    yield* Console.log(`Removed ${plan.runtimeDir}.`);
   }
   yield* Console.log("");
   yield* Console.log("t3 is uninstalled. Thanks for trying T3 Code.");

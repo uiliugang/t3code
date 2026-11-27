@@ -250,7 +250,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
         return Option.some(homeDirectory);
       }
 
-      if (trimmedPath.startsWith("~/") || trimmedPath.startsWith("~\\")) {
+      if (trimmedPath.startsWith("~/")) {
         return Option.some(path.join(homeDirectory, trimmedPath.slice(2)));
       }
 

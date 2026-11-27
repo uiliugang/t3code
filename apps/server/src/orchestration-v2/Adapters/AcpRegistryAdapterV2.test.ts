@@ -1617,11 +1617,9 @@ describe("AcpRegistryAdapterV2", () => {
         new: stdio("Bearer opened-token"),
         load: stdio("Bearer rotated-token"),
       });
-      // Command Code cannot start the stdio bridge on Windows: it spawns MCP commands through
-      // cmd.exe, which splits the unquoted T3 executable path at the space.
       const commandCode = {
         source: "local",
-        commandPath: "C:\\tools\\cmdc.exe",
+        commandPath: "/usr/local/bin/cmdc",
         commandArgs: ["acp"],
       };
       // Command Code is not Copilot: no deferred tool-exposure header.
@@ -1636,7 +1634,7 @@ describe("AcpRegistryAdapterV2", () => {
       // Any other local agent keeps the stdio bridge.
       assert.deepEqual(
         yield* sessionMcpServers(
-          { source: "local", commandPath: "C:\\tools\\node.exe", commandArgs: ["agent.mjs"] },
+          { source: "local", commandPath: "/usr/local/bin/node", commandArgs: ["agent.mjs"] },
           { T3_ACP_MCP_HTTP: "1" },
         ),
         { new: stdio("Bearer opened-token"), load: stdio("Bearer rotated-token") },

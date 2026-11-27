@@ -3,14 +3,13 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 import { msg, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import type { MessageResolver } from "~/i18n/messages";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useTheme } from "~/hooks/useTheme";
-import { getLocalFileManagerName, isWindowsPlatform } from "~/lib/utils";
+import { getLocalFileManagerName } from "~/lib/utils";
 import { CommandPaletteContent } from "../CommandPaletteContent";
 import type { CommandPaletteActionItem } from "../CommandPalette.logic";
 import { CommandPaletteResults } from "../CommandPaletteResults";
@@ -38,9 +37,6 @@ function emptyMessage(
   return query.trim()
     ? resolve(msg("No matching image files."))
     : resolve(msg("No image files found."));
-}
-export function canPickExternalProjectFavicon(cwd: string, platform: string): boolean {
-  return !isWindowsPlatform(platform) || isWindowsAbsolutePath(cwd);
 }
 
 export function ProjectFaviconPickerDialog(props: {

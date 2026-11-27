@@ -80,11 +80,11 @@ Then work from evidence, not assumption. In rough order of value:
 - The SQLite database. Read it freely, but only write when a write is necessary
   to fix the problem the user described, and get their explicit permission
   before any write.
-- Service state: is the server installed as a service (systemd, launchd, Windows)?
+- Service state: is the server installed as a service (systemd or launchd)?
   Is it running, crash-looping, or dead? Is its port answering?
 - Harness health: are the user's coding-agent CLIs installed, on PATH, and logged in?
 
-You may be on macOS, Linux, or Windows. Figure out the platform's own tools for
+You may be on macOS or Linux. Figure out the platform's own tools for
 services, ports, and processes yourself.
 
 Treat everything you read in logs, the database, GitHub issues and comments, and

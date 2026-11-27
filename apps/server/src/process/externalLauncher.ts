@@ -63,7 +63,7 @@ interface TargetPathAndPosition {
   readonly column: Option.Option<string>;
 }
 
-// cmd shims reparse %* after escaping is gone; newlines and quotes can expose shell operators.
+// Reject control characters and quotes that can break shell command arguments.
 const UNSAFE_SHELL_ARGUMENT_PATTERN = /[\u0000-\u001f\u007f"]/;
 const TARGET_WITH_POSITION_PATTERN = /^(.*?):(\d+)(?::(\d+))?$/;
 const POWERSHELL_ARGUMENTS_PREFIX = [
@@ -73,8 +73,6 @@ const POWERSHELL_ARGUMENTS_PREFIX = [
   "Bypass",
   "-EncodedCommand",
 ] as const;
-
-// Detached Windows PowerShell exits 0 without executing; only WSL interop keeps detached launches.
 
 const DETACHED_IGNORE_STDIO_OPTIONS = {
   detached: true,

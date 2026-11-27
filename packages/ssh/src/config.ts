@@ -367,13 +367,8 @@ export const discoverSshHosts = Effect.fnUntraced(
     const path = yield* Path.Path;
     const env = yield* Config.all({
       home: Config.String("HOME").pipe(Config.option),
-      userProfile: Config.String("USERPROFILE").pipe(Config.option),
     });
-    const homeDir =
-      input?.homeDir ??
-      Option.getOrUndefined(env.home) ??
-      Option.getOrUndefined(env.userProfile) ??
-      "";
+    const homeDir = input?.homeDir ?? Option.getOrUndefined(env.home) ?? "";
     if (homeDir.trim().length === 0) {
       return [];
     }

@@ -152,7 +152,6 @@ export class WorkspaceSearchIndex extends Context.Service<
   }
 >()("t3/workspace/WorkspaceSearchIndex") {}
 
-// Only the host separator becomes `/`: on POSIX `\` is a file name character.
 function trimDirectorySeparator(input: string): string {
   return input.endsWith("/") ? input.slice(0, -1) : input;
 }

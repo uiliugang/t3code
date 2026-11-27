@@ -314,8 +314,8 @@ patchedDependencies:
   expo-modules-jsi@58.0.23: patches/expo-modules-jsi@58.0.23.patch
   # Observe the owned host exit independently of descendants retaining its stdio.
   "@muse-code/sdk@1.4.6": patches/@muse-code__sdk@1.4.6.patch
-  # The spawner takes an injected spawn function (and uses it for taskkill) so Windows launches
-  # can run on worker threads: apps/server/src/process/SpawnWorker.ts.
+  # The spawner takes an injected spawn function so macOS/Linux launches can run off the main
+  # thread (ProcessLauncher.ts) or on worker threads (SpawnWorker.ts).
   "@effect/platform-node-shared@4.1.5": patches/@effect__platform-node-shared@4.1.5.patch
   # Electron net requests never emit "socket", so upstream's idle timeout never fires and a
   # stalled update download hangs forever.

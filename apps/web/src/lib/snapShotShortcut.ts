@@ -9,7 +9,7 @@ import {
 import { parseKeybindingShortcut } from "@t3tools/shared/keybindings";
 
 import { formatShortcutKeyLabel, formatShortcutLabel, shortcutConflictKey } from "../keybindings";
-import { isMacPlatform, isWindowsPlatform } from "./utils";
+import { isMacPlatform } from "./utils";
 
 const DESKTOP_KEY_ALIASES: Readonly<Record<string, string>> = {
   return: "enter",
@@ -64,7 +64,7 @@ function modifierKeyLabel(modifier: SnapShotModifier, platform: string): string 
     return "⌥";
   }
   // oxlint-disable-next-line t3code/no-untranslated-copy -- key names stay English
-  if (modifier === "meta") return isWindowsPlatform(platform) ? "⊞" : "Super";
+  if (modifier === "meta") return "Super";
   return modifier === "control" ? "Ctrl" : "Alt";
 }
 

@@ -368,7 +368,7 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
               read("binaryPath"),
               ...(entry?.driver === "codex"
                 ? (entry.environment
-                    ?.filter((variable) => variable.name.toUpperCase() === "PATH")
+                    ?.filter((variable) => variable.name === "PATH")
                     .map((variable) => variable.value) ?? [])
                 : []),
             ];

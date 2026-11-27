@@ -82,6 +82,72 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("t3 uninstall com
       assert.include(output, input.output);
     }),
   );
+
+  it.effect("keeps runtimeDir intact when non-interactive uninstall refuses without --yes", () =>
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          [process.stdin, process.stdout].map((stream) => {
+            const descriptor = Object.getOwnPropertyDescriptor(stream, "isTTY");
+            Object.defineProperty(stream, "isTTY", { configurable: true, value: false });
+            return { stream, descriptor };
+          }),
+        ),
+        (saved) =>
+          Effect.sync(() => {
+            for (const { stream, descriptor } of saved) {
+              if (descriptor === undefined) Reflect.deleteProperty(stream, "isTTY");
+              else Object.defineProperty(stream, "isTTY", descriptor);
+            }
+          }),
+      );
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-uninstall-notty-test-" });
+      const runtimeDir = path.join(baseDir, "runtime");
+      yield* fs.makeDirectory(path.join(runtimeDir, "versions", "1.0.0"), { recursive: true });
+      vi.spyOn(BootService, "layer").mockReturnValue(
+        Layer.succeed(
+          BootService.BootService,
+          BootService.BootService.of({
+            status: Effect.succeed({
+              supported: false,
+              installed: false,
+              current: false,
+              unitPath: "",
+              logPath: "",
+            }),
+            withStopped: (operation) => operation,
+            restart: Effect.die("unexpected restart"),
+            install: () => Effect.die("unexpected install"),
+            uninstall: Effect.die("unexpected uninstall"),
+          }),
+        ),
+      );
+
+      const result = yield* Command.runWith(uninstallCommand, { version: packageJson.version })([
+        "--base-dir",
+        baseDir,
+      ]).pipe(
+        Effect.result,
+        Effect.provideService(HostProcess.Environment, {}),
+        Effect.provideService(HostProcess.IsExecutable, false),
+        Effect.provide(
+          Layer.mergeAll(
+            ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })),
+            Layer.fresh(TestConsole.layer),
+          ),
+        ),
+      );
+
+      assert.equal(result._tag, "Failure");
+      if (result._tag === "Failure") {
+        assert.equal(result.failure._tag, "CliUninstallError");
+        assert.include(result.failure.message, "Not a terminal");
+      }
+      assert.isTrue(yield* fs.exists(runtimeDir));
+    }),
+  );
 });
 
 it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {

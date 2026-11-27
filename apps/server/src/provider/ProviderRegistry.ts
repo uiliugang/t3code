@@ -783,7 +783,7 @@ export const layer = Layer.effect(
     // on the new PATH. They cannot have live sessions, and installed ones keep theirs.
     // Compared with the last PATH seen here, since other features re-read the login shell too.
     const hostEnvironment = yield* HostProcess.Environment;
-    const readHostPath = () => hostEnvironment.PATH ?? hostEnvironment.Path ?? hostEnvironment.path;
+    const readHostPath = () => hostEnvironment.PATH;
     const lastHostPathRef = yield* Ref.make(readHostPath());
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const refreshHostPath = yield* refreshPathFromLoginShell().pipe(

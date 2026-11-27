@@ -852,15 +852,18 @@ it.layer(layerTest)("ProjectService", (it) => {
     }),
   );
 
-  it.effect.each([String.raw`C:\work\project`, String.raw`\\wsl.localhost\Ubuntu\home\repo`])(
-    "refuses to create or move a project at a Windows path: %s",
-    (foreignPath) =>
+  it.effect.each([
+    { slug: "drive", foreignPath: String.raw`C:\work\project` },
+    { slug: "wsl-unc", foreignPath: String.raw`\\wsl.localhost\Ubuntu\home\repo` },
+  ])(
+    "refuses to create or move a project at a Windows path: $foreignPath",
+    ({ slug, foreignPath }) =>
       Effect.gen(function* () {
         const service = yield* ProjectService.ProjectService;
-        const projectId = ProjectId.make("project:foreign-path");
+        const projectId = ProjectId.make(`project:foreign-path:${slug}`);
         const refused = yield* service
           .create({
-            commandId: CommandId.make("command:foreign-path"),
+            commandId: CommandId.make(`command:foreign-path:${slug}`),
             projectId,
             title: "Foreign path",
             workspaceRoot: foreignPath,
@@ -871,14 +874,14 @@ it.layer(layerTest)("ProjectService", (it) => {
         assert.isTrue(Option.isNone(yield* service.getById(projectId)));
 
         const current = yield* service.create({
-          commandId: CommandId.make("command:local-path"),
+          commandId: CommandId.make(`command:local-path:${slug}`),
           projectId,
           title: "Local path",
-          workspaceRoot: "/work/local-project",
+          workspaceRoot: `/work/local-project-${slug}`,
         });
         const move = yield* service
           .update({
-            commandId: CommandId.make("command:foreign-path:move"),
+            commandId: CommandId.make(`command:foreign-path:move:${slug}`),
             projectId,
             workspaceRoot: foreignPath,
           })

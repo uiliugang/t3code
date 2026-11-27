@@ -114,7 +114,6 @@ const make = Effect.gen(function* () {
           ([key, value]) =>
             isNativeCliCredential(key) ||
             key === "HOME" ||
-            key === "USERPROFILE" ||
             launch.environmentKeys?.includes(key) ||
             value !== hostEnvironment[key],
         )

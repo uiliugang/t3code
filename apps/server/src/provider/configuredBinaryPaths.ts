@@ -56,7 +56,7 @@ export const configuredBinaryPaths = Effect.fn("ProviderInstallation.configuredB
       for (const rawBinary of candidates) {
         const binary = expandHomePath(rawBinary, home);
         if (!binary) continue;
-        const searchPath = !binary.includes("/") && !binary.includes("\\");
+        const searchPath = !binary.includes("/");
         const unresolved = environment?.find(
           ({ name, value }) => typeof value !== "string" && searchPath && name === "PATH",
         );

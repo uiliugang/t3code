@@ -23,7 +23,6 @@ import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 
@@ -1338,85 +1337,6 @@ describe("providerMaintenanceRunner", () => {
       );
     }),
   );
-
-  it.effect("resolves npm to a .cmd shim from the provider's PATH on win32", () => {
-    const captured: Array<{
-      readonly command: string;
-      readonly args: ReadonlyArray<string>;
-      readonly shell: boolean | string | undefined;
-      readonly env: NodeJS.ProcessEnv | undefined;
-    }> = [];
-    return Effect.gen(function* () {
-      const { registry } = yield* makeRegistry(baseProvider, {
-        installedVersionAfterUpdate: "1.0.0",
-      });
-      const runner = yield* makeTestRunner({
-        ...registry,
-        getProviderMaintenanceCapabilitiesForInstance: () =>
-          Effect.succeed(
-            makeProviderMaintenanceCapabilities({
-              provider: CODEX_DRIVER,
-              packageName: "@openai/codex",
-              updateExecutable: "npm",
-              updateArgs: ["install", "-g", "@openai/codex@latest"],
-              updateLockKey: "npm-global",
-              env: { PATH: "C:\\fake\\npm" },
-            }),
-          ),
-      });
-
-      const result = yield* runner.updateProvider(CODEX_DRIVER);
-
-      assert.strictEqual(captured.length, 1);
-      const call = captured[0];
-      assert.ok(call, "expected the spawner to be invoked once");
-      assert.strictEqual(
-        call.command,
-        '^"C:\\fake\\npm\\npm.cmd^" ^"install^" ^"-g^" ^"@openai/codex@latest^"',
-      );
-      assert.deepEqual(call.args, []);
-      assert.strictEqual(call.shell, true);
-      assert.deepStrictEqual(call.env, { PATH: "C:\\fake\\npm" });
-      assert.strictEqual(result.providers[0]?.updateState?.status, "succeeded");
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          Layer.succeed(HostProcess.Platform, "win32"),
-          // Only the provider's PATH has npm.
-          Layer.succeed(HostProcess.Environment, {
-            PATH: "C:\\Windows\\System32",
-            PATHEXT: ".COM;.EXE;.BAT;.CMD",
-          }),
-          Layer.succeed(SpawnExecutableResolution, (command, _platform, env) =>
-            command === "npm" && env.PATH === "C:\\fake\\npm"
-              ? "C:\\fake\\npm\\npm.cmd"
-              : undefined,
-          ),
-          layerLatestVersionHttpClient("1.0.0"),
-          Layer.succeed(
-            ChildProcessSpawner.ChildProcessSpawner,
-            ChildProcessSpawner.make((command) => {
-              const childProcess = command as unknown as {
-                readonly command: string;
-                readonly args: ReadonlyArray<string>;
-                readonly options: {
-                  readonly shell?: boolean | string | undefined;
-                  readonly env?: NodeJS.ProcessEnv | undefined;
-                };
-              };
-              captured.push({
-                command: childProcess.command,
-                args: childProcess.args,
-                shell: childProcess.options.shell,
-                env: childProcess.options.env,
-              });
-              return Effect.succeed(mockHandle({ stdout: "updated" }));
-            }),
-          ),
-        ),
-      ),
-    );
-  });
 });
 
 it.effect.each([

@@ -19,7 +19,7 @@ export function sanitizeAcpStderrExcerpt(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
   let result = text.replaceAll("\0", "");
-  const homes = [environment.HOME, environment.USERPROFILE, homeDirectory].filter(
+  const homes = [environment.HOME, homeDirectory].filter(
     (value): value is string => typeof value === "string" && value.length > 1,
   );
   for (const home of new Set(homes)) {

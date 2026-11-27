@@ -247,6 +247,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
   const runner = yield* ProcessRunner.ProcessRunner;
   const httpClient = yield* HttpClient.HttpClient;
   const environment = yield* HostProcess.Environment;
+  const homeDirectory = yield* HostProcess.HomeDirectory;
   const workingDirectory = yield* HostProcess.WorkingDirectory;
   const hostPlatform = yield* HostProcess.Platform;
   // Resolved per use: the desktop shell snapshot can select another SDK after the host exists.
@@ -254,6 +255,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     Effect.provideService(FileSystem.FileSystem, fs),
     Effect.provideService(Path.Path, path),
     Effect.provideService(HostProcess.Environment, environment),
+    Effect.provideService(HostProcess.HomeDirectory, homeDirectory),
   );
   const currentHostEnvironment = currentSdk.pipe(
     Effect.map((sdk) => deviceHostEnvironment(environment, sdk.root, path)),

@@ -50,14 +50,9 @@ const make = Effect.gen(function* () {
       for (const entry of instance.environment ?? []) {
         if (
           entry.valueRedacted ||
-          ![
-            "HOME",
-            "USERPROFILE",
-            "CODEX_HOME",
-            "CLAUDE_CONFIG_DIR",
-            "GROK_HOME",
-            "XDG_CONFIG_HOME",
-          ].includes(entry.name)
+          !["HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "GROK_HOME", "XDG_CONFIG_HOME"].includes(
+            entry.name,
+          )
         )
           continue;
         const value =
@@ -66,7 +61,7 @@ const make = Effect.gen(function* () {
           return yield* new SkillManagerError({ operation: "targets", reason: "authentication" });
         env[entry.name] = value;
       }
-      const userHome = env.HOME || env.USERPROFILE || home;
+      const userHome = env.HOME || home;
       const configuredHome = config.homePath?.trim()
         ? expandHomePath(config.homePath, home)
         : undefined;

@@ -159,7 +159,7 @@ class TerminalSubprocessCheckError extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("TerminalSubprocessCheckError", {
   cause: Schema.optional(Schema.Defect()),
-  command: Schema.Literals(["powershell", "ps", "resource-monitor"]),
+  command: Schema.Literals(["ps", "resource-monitor"]),
   exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
   timedOut: Schema.optional(Schema.Boolean),
   stdoutTruncated: Schema.optional(Schema.Boolean),
@@ -1888,7 +1888,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           )
         : processRunner
             .run({
-              command: posixPsCommand ?? "ps",
+              command: posixPsCommand,
               args: ["-o", "tpgid=", "-p", String(terminalPid)],
               timeout: CLOSE_IDLE_QUERY_TIMEOUT,
               timeoutBehavior: "timedOutResult",

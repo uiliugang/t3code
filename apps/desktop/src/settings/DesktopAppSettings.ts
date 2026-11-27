@@ -36,7 +36,6 @@ export interface DesktopSettings {
   readonly tailscaleServePort: number;
   readonly updateChannel: DesktopUpdateChannel;
   readonly updateChannelConfiguredByUser: boolean;
-  // Requires restart because the pool chooses its primary spec at layer initialization.
 }
 
 export interface DesktopSettingsChange {

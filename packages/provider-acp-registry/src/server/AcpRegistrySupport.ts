@@ -2279,7 +2279,6 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
             const home = yield* HostProcess.HomeDirectory;
             const pathVariables = new Set([
               "HOME",
-              "USERPROFILE",
               "PATH",
               "CODEX_HOME",
               "CLAUDE_CONFIG_DIR",

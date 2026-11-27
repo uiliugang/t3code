@@ -159,7 +159,9 @@ const imageProps = {
       </section>
     </div>
 
-    <p class="releases-link"><a href={WEB_APP_URL}>{messagesFor(locale).home.openWebApp}</a></p>
+    <p class="releases-link" data-rise style="--d:440ms">
+      <a href={WEB_APP_URL}>{messagesFor(locale).home.openWebApp}</a>
+    </p>
 
     <p class="releases-link" data-rise style="--d:480ms">
       {templateParts(t.allBuilds).map((part) =>
