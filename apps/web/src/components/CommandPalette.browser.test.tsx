@@ -367,6 +367,8 @@ describe("CommandPalette open intents", () => {
 
     await userEvent.keyboard("{Escape}");
     await expect.element(palette).toHaveAttribute("data-palette-mode", "command");
+    // Base UI may restore focus to the popup one frame after the file picker unmounts.
+    await act(() => palette.element().focus());
     await expect
       .element(page.getByPlaceholder("Search commands, projects, and threads..."))
       .toHaveFocus();

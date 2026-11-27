@@ -414,6 +414,12 @@ function CommandPaletteDialog(props: {
       data-command-palette="true"
       data-palette-mode={props.mode}
       data-testid="command-palette"
+      onFocus={(event) => {
+        // Base UI can restore focus to the popup after the replaced search input has already mounted.
+        if (props.mode === "command" && event.target === event.currentTarget) {
+          event.currentTarget.querySelector("input")?.focus();
+        }
+      }}
       finalFocus={() => {
         if (restoreWorkspaceFocusFromPalette()) return false;
         const returnFocus = getCommandPaletteReturnFocus();
