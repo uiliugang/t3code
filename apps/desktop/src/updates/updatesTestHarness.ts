@@ -233,6 +233,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
                     }),
                   ),
                 ),
+          setCloudSandboxEnabled: () => Effect.die("unexpected Cloud Sandbox toggle"),
           setLocalEnvironmentEnabled: () => Effect.die("unexpected local environment toggle"),
         } satisfies DesktopAppSettings.DesktopAppSettings["Service"])
       : DesktopAppSettings.layer;

@@ -65,6 +65,7 @@ export const SET_CONNECTION_CATALOG_CHANNEL = "desktop:set-connection-catalog";
 export const DISCOVER_SSH_HOSTS_CHANNEL = "desktop:discover-ssh-hosts";
 export const RESOLVE_SSH_HOST_CHANNEL = "desktop:resolve-ssh-host";
 export const ENSURE_SSH_ENVIRONMENT_CHANNEL = "desktop:ensure-ssh-environment";
+export const CLOUD_SANDBOX_ENABLED_CHANNEL = "desktop:cloud-sandbox-enabled";
 export const GET_CLOUD_SANDBOX_CONFIG_CHANNEL = "desktop:get-cloud-sandbox-config";
 export const SAVE_CLOUD_SANDBOX_CONFIG_CHANNEL = "desktop:save-cloud-sandbox-config";
 export const CLEAR_CLOUD_SANDBOX_CONFIG_CHANNEL = "desktop:clear-cloud-sandbox-config";

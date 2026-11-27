@@ -57,12 +57,17 @@ it.layer(NodeCrypto.layer)("DaXiang messages", (it) => {
             ],
           });
         }
+        const settings = yield* Settings.ServerSettingsService;
         const count = paths.length;
-        yield* (yield* Settings.ServerSettingsService).updateSettings({
-          meituanIntegrationEnabled: false,
-        });
+        yield* settings.updateSettings({ meituanDaxiangEnabled: false });
         assert.equal((yield* service.sendLink(input).pipe(Effect.result))._tag, "Failure");
         assert.equal(paths.length, count);
+        yield* settings.updateSettings({ meituanDaxiangEnabled: true });
+        assert.equal((yield* service.sendLink(input).pipe(Effect.result))._tag, "Success");
+        const restoredCount = paths.length;
+        yield* settings.updateSettings({ meituanIntegrationEnabled: false });
+        assert.equal((yield* service.sendLink(input).pipe(Effect.result))._tag, "Failure");
+        assert.equal(paths.length, restoredCount);
       }).pipe(
         Effect.provide(Daxiang.layer),
         Effect.provideService(HttpClient.HttpClient, http),

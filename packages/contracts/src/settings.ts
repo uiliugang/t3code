@@ -1760,6 +1760,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   meituanRequirementsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  meituanDaxiangEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   daxiang: Schema.Struct({
     clientId: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
     clientSecret: secretSetting(Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("")))),
@@ -1830,17 +1831,21 @@ export function isMeituanServiceEnabled(
         readonly meituanIntegrationEnabled: boolean;
         readonly meituanSourceControlEnabled?: boolean;
         readonly meituanRequirementsEnabled?: boolean;
+        readonly meituanDaxiangEnabled?: boolean;
       }
     | null
     | undefined,
-  service: "sourceControl" | "requirements",
+  service: "sourceControl" | "requirements" | "daxiang",
 ): boolean {
-  return (
-    settings?.meituanIntegrationEnabled === true &&
-    (service === "sourceControl"
-      ? settings.meituanSourceControlEnabled !== false
-      : settings.meituanRequirementsEnabled !== false)
-  );
+  if (settings?.meituanIntegrationEnabled !== true) return false;
+  switch (service) {
+    case "sourceControl":
+      return settings.meituanSourceControlEnabled !== false;
+    case "requirements":
+      return settings.meituanRequirementsEnabled !== false;
+    case "daxiang":
+      return settings.meituanDaxiangEnabled !== false;
+  }
 }
 
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
@@ -2247,6 +2252,7 @@ export const ServerSettingsPatch = Schema.Struct({
   meituanIntegrationEnabled: Schema.optionalKey(Schema.Boolean),
   meituanSourceControlEnabled: Schema.optionalKey(Schema.Boolean),
   meituanRequirementsEnabled: Schema.optionalKey(Schema.Boolean),
+  meituanDaxiangEnabled: Schema.optionalKey(Schema.Boolean),
   daxiang: Schema.optionalKey(
     Schema.Struct({
       clientId: Schema.optionalKey(Schema.String),

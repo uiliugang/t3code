@@ -26,6 +26,7 @@ import {
 import {
   bootstrapSshBearerSession,
   clearCloudSandboxConfig,
+  cloudSandboxEnabled,
   disconnectSshEnvironment,
   discoverSshHosts,
   ensureSshEnvironment,
@@ -142,6 +143,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(discoverSshHosts);
   yield* ipc.handle(resolveSshHost);
   yield* ipc.handle(ensureSshEnvironment);
+  yield* ipc.handle(cloudSandboxEnabled);
   yield* ipc.handle(getCloudSandboxConfig);
   yield* ipc.handle(saveCloudSandboxConfig);
   yield* ipc.handle(clearCloudSandboxConfig);

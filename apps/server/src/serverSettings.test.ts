@@ -84,9 +84,11 @@ it.effect.each([
       assert.propertyVal(saved, "meituanIntegrationEnabled", enabled);
       assert.isTrue(settings.meituanSourceControlEnabled);
       assert.isTrue(settings.meituanRequirementsEnabled);
+      assert.isTrue(settings.meituanDaxiangEnabled);
       yield* service.updateSettings({
         meituanSourceControlEnabled: false,
         meituanRequirementsEnabled: false,
+        meituanDaxiangEnabled: false,
       });
       yield* service.updateSettings({ meituanIntegrationEnabled: false });
       assert.isFalse((yield* service.getSettings).meituanIntegrationEnabled);
@@ -96,6 +98,7 @@ it.effect.each([
       );
       assert.isFalse(reloaded.meituanSourceControlEnabled);
       assert.isFalse(reloaded.meituanRequirementsEnabled);
+      assert.isFalse(reloaded.meituanDaxiangEnabled);
     }).pipe(
       Effect.provide(
         layerServerSettings().pipe(

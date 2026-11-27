@@ -269,6 +269,8 @@ function EnvironmentMeituanSettings({
   const enabled = settings.meituanIntegrationEnabled;
   const codeEnabled = isMeituanServiceEnabled(settings, "sourceControl");
   const issuesEnabled = isMeituanServiceEnabled(settings, "requirements");
+  const daxiangEnabled = isMeituanServiceEnabled(settings, "daxiang");
+  const canToggleDaxiang = capabilities.meituanDaxiangToggle === true;
   const associations = useMeituanProjectAssociations(
     environmentId,
     settings,
@@ -289,7 +291,7 @@ function EnvironmentMeituanSettings({
           code: codeEnabled,
           issues: issuesEnabled,
           skills: skillsEnabled,
-          daxiang: enabled && settings.daxiang.approvalMonitor.enabled,
+          daxiang: daxiangEnabled && settings.daxiang.approvalMonitor.enabled,
         });
   const discovery = useEnvironmentQuery(
     codeEnabled ? sourceControlEnvironment.discovery({ environmentId, input: {} }) : null,
@@ -333,7 +335,7 @@ function EnvironmentMeituanSettings({
     )
       void refreshTools({ environmentId, input: {} });
   };
-  const saveService = async (service: "code" | "issues" | "skills", value: boolean) => {
+  const saveService = async (service: "code" | "issues" | "daxiang" | "skills", value: boolean) => {
     if (
       !enabled ||
       busy ||
@@ -342,6 +344,11 @@ function EnvironmentMeituanSettings({
     )
       return;
     setBusy(true);
+    if (service === "daxiang") {
+      await update({ environmentId, input: { patch: { meituanDaxiangEnabled: value } } });
+      setBusy(false);
+      return;
+    }
     if (service === "skills") {
       const sources: ReadonlyArray<SkillSource> = skillSources.length
         ? skillSources
@@ -393,6 +400,11 @@ function EnvironmentMeituanSettings({
       disabled: !canToggle || !enabled || !allowed || busy,
       onChange: (value: boolean) => void saveService("issues", value),
     },
+    daxiang: {
+      checked: settings.meituanDaxiangEnabled,
+      disabled: !canToggleDaxiang || !enabled || !allowed || busy,
+      onChange: (value: boolean) => void saveService("daxiang", value),
+    },
     skills: {
       checked: skillSourceEnabled,
       disabled: !canToggle || !enabled || !skillsAllowed || busy || !skillQuery.data,
@@ -406,7 +418,9 @@ function EnvironmentMeituanSettings({
         ? issuesEnabled
         : active === "skills"
           ? skillsEnabled
-          : enabled;
+          : active === "daxiang"
+            ? daxiangEnabled
+            : enabled;
   const selected = (view?: MeituanSection) => {
     if (!view && hash) void navigate({ hash: "", replace: true });
     onSectionChange(view);
@@ -424,7 +438,7 @@ function EnvironmentMeituanSettings({
             <ArrowLeftIcon />
           </Button>
           <h2 className="min-w-0 flex-1 text-lg font-semibold">{t(titles[active])}</h2>
-          {active !== "daxiang" && canToggle ? (
+          {(active === "daxiang" ? canToggleDaxiang : canToggle) ? (
             <Switch
               aria-label={t("Enable {name}", { name: t(titles[active]) })}
               checked={toggles[active].checked}
@@ -518,11 +532,14 @@ function EnvironmentMeituanSettings({
             status={t(
               !enabled
                 ? "Paused"
-                : settings.daxiang.clientId && settings.daxiang.clientSecret
-                  ? "Configured"
-                  : "Not configured",
+                : !daxiangEnabled
+                  ? "Disabled"
+                  : settings.daxiang.clientId && settings.daxiang.clientSecret
+                    ? "Configured"
+                    : "Not configured",
             )}
             onClick={() => selected("daxiang")}
+            {...(canToggleDaxiang ? { toggle: toggles.daxiang } : {})}
           />
           <ServiceRow
             icon={BookOpenIcon}

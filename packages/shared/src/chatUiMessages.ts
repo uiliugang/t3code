@@ -277,7 +277,7 @@ export const chatUiMessages: Readonly<Record<string, string>> = {
   "Go to quoted response: {label}": "前往引用的回复：{label}",
   "Go to the response this replies to: {label}": "前往此消息所回复的响应：{label}",
   "Goal objective": "目标内容",
-  group: "群组",
+  group: "分组",
   Guest: "访客",
   "Guest link": "访客链接",
   "Guest link active": "访客链接有效",

@@ -265,6 +265,7 @@ function layerTest(input: {
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const layerDesktopAppSettings = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
+    setCloudSandboxEnabled: () => Effect.die("unexpected Cloud Sandbox toggle"),
     get: Effect.sync(() => desktopSettings),
     load: Effect.sync(() => desktopSettings),
     setMainWindowBounds: (bounds, isMaximized) =>

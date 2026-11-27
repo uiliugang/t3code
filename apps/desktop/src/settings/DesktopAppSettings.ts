@@ -28,6 +28,7 @@ import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 
 export interface DesktopSettings {
   readonly localEnvironmentEnabled: boolean;
+  readonly cloudSandboxEnabled: boolean;
   readonly linuxPasswordStore: LinuxPasswordStorePreference;
   readonly mainWindowBounds: DesktopWindowBounds | null;
   readonly mainWindowMaximized: boolean;
@@ -65,6 +66,7 @@ export const DEFAULT_MAIN_WINDOW_SIZE = {
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   localEnvironmentEnabled: true,
+  cloudSandboxEnabled: true,
   linuxPasswordStore: DEFAULT_LINUX_PASSWORD_STORE,
   mainWindowBounds: null,
   mainWindowMaximized: false,
@@ -89,6 +91,7 @@ const optionalReadableKey = <S extends Schema.Top>(schema: S) =>
 
 const DesktopSettingsDocument = Schema.Struct({
   localEnvironmentEnabled: optionalReadableKey(Schema.Boolean),
+  cloudSandboxEnabled: optionalReadableKey(Schema.Boolean),
   linuxPasswordStore: optionalReadableKey(Schema.Unknown),
   mainWindowBounds: optionalReadableKey(Schema.NullOr(DesktopWindowBoundsDocument)),
   mainWindowMaximized: optionalReadableKey(Schema.Boolean),
@@ -141,6 +144,9 @@ export class DesktopAppSettings extends Context.Service<
   {
     readonly load: Effect.Effect<DesktopSettings>;
     readonly get: Effect.Effect<DesktopSettings>;
+    readonly setCloudSandboxEnabled: (
+      enabled: boolean,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setLocalEnvironmentEnabled: (
       enabled: boolean,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
@@ -192,6 +198,7 @@ function normalizeDesktopSettingsDocument(
 
   return {
     localEnvironmentEnabled: parsed.localEnvironmentEnabled !== false,
+    cloudSandboxEnabled: parsed.cloudSandboxEnabled !== false,
     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
     mainWindowBounds,
     mainWindowMaximized: mainWindowBounds !== null && parsed.mainWindowMaximized === true,
@@ -216,6 +223,9 @@ function toDesktopSettingsDocument(
     document.localEnvironmentEnabled = settings.localEnvironmentEnabled;
   }
 
+  if (settings.cloudSandboxEnabled !== defaults.cloudSandboxEnabled) {
+    document.cloudSandboxEnabled = settings.cloudSandboxEnabled;
+  }
   if (settings.linuxPasswordStore !== defaults.linuxPasswordStore) {
     document.linuxPasswordStore = settings.linuxPasswordStore;
   }
@@ -299,6 +309,12 @@ function setUpdateChannel(
         updateChannel: requestedChannel,
         updateChannelConfiguredByUser: true,
       };
+}
+
+function setCloudSandboxEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
+  return settings.cloudSandboxEnabled === enabled
+    ? settings
+    : { ...settings, cloudSandboxEnabled: enabled };
 }
 
 function setLocalEnvironmentEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
@@ -492,6 +508,11 @@ export const make = Effect.gen(function* () {
 
       return yield* persist((settings) => setUpdateChannel(settings, channel));
     }),
+    setCloudSandboxEnabled: Effect.fn("desktop.settings.setCloudSandboxEnabled")(
+      function (enabled) {
+        return persist((settings) => setCloudSandboxEnabled(settings, enabled));
+      },
+    ),
     setLocalEnvironmentEnabled: Effect.fn("desktop.settings.setLocalEnvironmentEnabled")(
       function* (enabled) {
         yield* Effect.annotateCurrentSpan({ enabled });
@@ -540,6 +561,11 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
         setUpdateChannel: Effect.fn("DesktopAppSettings.setUpdateChannel")(function (channel) {
           return update((settings) => setUpdateChannel(settings, channel));
         }),
+        setCloudSandboxEnabled: Effect.fn("DesktopAppSettings.setCloudSandboxEnabled")(
+          function (enabled) {
+            return update((settings) => setCloudSandboxEnabled(settings, enabled));
+          },
+        ),
         setLocalEnvironmentEnabled: Effect.fn("DesktopAppSettings.setLocalEnvironmentEnabled")(
           function (enabled) {
             return update((settings) => setLocalEnvironmentEnabled(settings, enabled));

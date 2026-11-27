@@ -72,8 +72,8 @@ export function isMeituanToolEnabled(
   if (id === "mtskills") return settings?.meituanIntegrationEnabled === true;
   if (id === "dumbo-web")
     return (
-      settings?.meituanIntegrationEnabled === true &&
-      settings.daxiang?.approvalMonitor?.enabled === true
+      isMeituanServiceEnabled(settings, "daxiang") &&
+      settings?.daxiang?.approvalMonitor?.enabled === true
     );
   return isMeituanServiceEnabled(settings, "requirements");
 }
