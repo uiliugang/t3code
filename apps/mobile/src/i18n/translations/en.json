@@ -2790,6 +2790,8 @@
     },
     " and cannot be changed here."
   ],
+  "9cccb579c58c2760": "All usage locations",
+  "f79a7b63689d62c2": "{name} (unavailable)",
   "32568cf8de392361": "Sign in",
   "c2b2df67dab7d511": "A far higher API rate limit than a personal token or CLI login.",
   "b725843fd45b74aa": "Credentials",
