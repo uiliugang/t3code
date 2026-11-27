@@ -20,6 +20,7 @@ import {
   skillPolicies,
   skillJobNames,
   skillFilters,
+  skillLocationName,
   skillRows,
   skillGroups,
   skillSelection,
@@ -901,6 +902,7 @@ function Source({
 }
 function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const insets = useSafeAreaInsets();
   const { environments } = useEnvironments();
   const showCopy =
@@ -918,6 +920,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SkillFilter>("all");
   const [selectedSourceFilter, setSourceFilter] = useState<string | null>(null);
+  const [selectedLocationFilter, setLocationFilter] = useState<string | null>(null);
   const [showExternal, setShowExternal] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -1000,18 +1003,27 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
       : null;
   const failedSource = skillSourceFailure(data);
   const configurationFeedback = skillConfigurationFeedback(data);
-  const { rows, counts, sourceCounts } = skillRows(
-    data,
-    search,
-    filter,
-    showExternal,
-    sourceFilter,
-  );
+  const {
+    rows,
+    counts,
+    sourceCounts,
+    locationFilter,
+    locations: filterLocations,
+  } = skillRows(data, search, filter, showExternal, sourceFilter, selectedLocationFilter);
+  const namedLocations = filterLocations.map((location) => ({
+    ...location,
+    name: skillLocationName(location.targets, t),
+  }));
+  const locationName = namedLocations.find(
+    (location) => location.directory === locationFilter,
+  )?.name;
   const chosen = data.skills.filter((skill) => selected.includes(skill.id));
   const discovered = data.discovered.filter(
     (skill) => selected.includes(skill.identity ?? skill.path) && !skill.external,
   );
-  const detail = skillRows(data, "", "all", true).rows.find((row) => row.key === detailKey);
+  const detail = detailKey
+    ? skillRows(data, "", "all", true).rows.find((row) => row.key === detailKey)
+    : undefined;
   const selectedSourceDisabled = chosen.some(
     (skill) => !data.sources.some((source) => source.id === skill.sourceId && source.enabled),
   );
@@ -1393,6 +1405,29 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                         title: `${sourceFilter === source.id ? "✓ " : ""}${source.label} (${sourceCounts[source.id] ?? 0})`,
                       })),
                       {
+                        id: "locations",
+                        title: t("Usage locations"),
+                        subactions: [
+                          {
+                            id: "location:",
+                            title: gt("All usage locations"),
+                            state: locationFilter === null ? "on" : "off",
+                          },
+                          ...namedLocations.map(({ directory, name, available, count }) => {
+                            const label = available ? name : gt("{name} (unavailable)", { name });
+                            const sameName = namedLocations.some(
+                              (other) => other.name === name && other.directory !== directory,
+                            );
+                            return {
+                              id: `location:${directory}`,
+                              title: `${label} (${count})${sameName ? ` · ${directory}` : ""}`,
+                              state:
+                                locationFilter === directory ? ("on" as const) : ("off" as const),
+                            };
+                          }),
+                        ],
+                      },
+                      {
                         id: "external",
                         title: `${showExternal ? "✓ " : ""}${t("Show externally maintained skills")}`,
                       },
@@ -1410,6 +1445,8 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                       if (nativeEvent.event === "source-all") setSourceFilter(null);
                       else if (nativeEvent.event.startsWith("source:"))
                         setSourceFilter(nativeEvent.event.slice(7));
+                      else if (nativeEvent.event.startsWith("location:"))
+                        setLocationFilter(nativeEvent.event.slice(9) || null);
                       else if (nativeEvent.event === "external") setShowExternal(!showExternal);
                       else setFilter(nativeEvent.event as SkillFilter);
                       setSelected([]);
@@ -1417,7 +1454,10 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
                   >
                     <ControlPill
                       icon={
-                        filter === "all" && sourceFilter === null && !showExternal
+                        filter === "all" &&
+                        sourceFilter === null &&
+                        locationFilter === null &&
+                        !showExternal
                           ? "line.3.horizontal.decrease.circle"
                           : "line.3.horizontal.decrease.circle.fill"
                       }
@@ -1430,6 +1470,7 @@ function EnvironmentSkills({ environmentId }: { environmentId: EnvironmentId }) 
             {filter !== "all" && (
               <Text className="text-xs text-foreground-muted">{t(skillFilters[filter])}</Text>
             )}
+            {locationName && <Text className="text-xs text-foreground-muted">{locationName}</Text>}
             {!rows.length && (
               <Text className="text-foreground-muted">
                 {t(counts.all ? "No matching skills" : "No skills found in this environment")}

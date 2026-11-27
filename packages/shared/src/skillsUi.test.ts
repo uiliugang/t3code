@@ -180,6 +180,51 @@ describe("skill management views", () => {
     }
   });
 
+  it("filters by physical usage location across target aliases and saved bindings", () => {
+    const current = { id: "codex", label: "Codex", directory: "/current" };
+    const alias = { ...current, id: "alias" };
+    const legacy = { ...current, directory: "/legacy", status: "missing" as const };
+    const data: SkillSnapshot = {
+      ...snapshot,
+      targets: [current, alias, { ...current, id: "different", directory: "/empty" }],
+      skills: [
+        { ...skill, bindings: [legacy, { ...alias, status: "linked" }] },
+        { ...skill, id: "unbound", name: "unbound" },
+      ],
+      discovered: [
+        { ...snapshot.discovered[0]!, targetIds: [current.id] },
+        { ...snapshot.discovered[1]!, targetIds: [current.id, alias.id, "removed"] },
+      ],
+    };
+    const atCurrent = skillRows(data, "", "all", false, null, current.directory);
+    expect(atCurrent.rows.map((row) => row.name)).toEqual(["local", "review"]);
+    expect(
+      atCurrent.locations.map(({ directory, count, available }) => [directory, count, available]),
+    ).toEqual([
+      [current.directory, 2, true],
+      ["/empty", 0, true],
+      [legacy.directory, 1, false],
+    ]);
+    expect(
+      skillRows(data, "", "all", false, null, legacy.directory).rows.map((row) => row.key),
+    ).toEqual([skill.id]);
+    expect(
+      skillRows(data, "review", "managed", true, "local", current.directory).rows.map(
+        (row) => row.key,
+      ),
+    ).toEqual([skill.id]);
+    expect(skillRows(data, "review", "unmanaged", true, "local", current.directory).rows).toEqual(
+      [],
+    );
+    expect(
+      skillRows(data, "", "all", true, null, current.directory).rows.map((row) => row.name),
+    ).toEqual(["external", "local", "review"]);
+    expect(skillRows(data, "", "all", false, null, "/empty").rows).toEqual([]);
+    const missingLocation = skillRows(data, "", "all", false, null, "/removed");
+    expect(missingLocation.locationFilter).toBeNull();
+    expect(missingLocation.rows.map((row) => row.name)).toEqual(["local", "review", "unbound"]);
+  });
+
   it("keeps matching source failures local without hiding unrelated errors", () => {
     const failed: SkillSnapshot = {
       ...snapshot,
