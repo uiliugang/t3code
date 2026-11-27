@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
+import { useGT } from "gt-react";
 import {
   skillFailureMessage,
   type DiscoveredSkill,
@@ -18,6 +19,7 @@ import {
   skillPolicies,
   skillJobNames,
   skillFilters,
+  skillLocationName,
   skillRows,
   skillGroups,
   skillSelection,
@@ -1846,6 +1848,7 @@ function EnvironmentSkills({
   connected: boolean;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const tabsId = useId();
   const { environments } = useEnvironments();
   const showCopy =
@@ -1862,6 +1865,7 @@ function EnvironmentSkills({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SkillFilter>("all");
   const [selectedSourceFilter, setSourceFilter] = useState<string | null>(null);
+  const [selectedLocationFilter, setLocationFilter] = useState<string | null>(null);
   const [showExternal, setShowExternal] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [install, setInstall] = useState(false);
@@ -1923,13 +1927,22 @@ function EnvironmentSkills({
     visibleSources.some((source) => source.id === selectedSourceFilter)
       ? selectedSourceFilter
       : null;
-  const { rows, counts, sourceCounts, hiddenExternal } = skillRows(
+  const { rows, counts, sourceCounts, locationFilter, locations, hiddenExternal } = skillRows(
     data,
     search,
     filter,
     showExternal,
     sourceFilter,
+    selectedLocationFilter,
   );
+  const allLocations = gt("All usage locations");
+  const locationOptions = locations.map(({ directory, targets, available, count }) => {
+    const name = skillLocationName(targets, t);
+    return {
+      value: directory,
+      label: `${available ? name : gt("{name} (unavailable)", { name })} (${count})`,
+    };
+  });
   const sourceOptions = [
     { value: "all", label: `${t("All sources")} ${counts.all}` },
     ...visibleSources.map((source) => ({
@@ -2257,7 +2270,10 @@ function EnvironmentSkills({
                   render={
                     <Button
                       variant={
-                        filter !== "all" || sourceFilter !== null || showExternal
+                        filter !== "all" ||
+                        sourceFilter !== null ||
+                        locationFilter !== null ||
+                        showExternal
                           ? "secondary"
                           : "ghost"
                       }
@@ -2268,7 +2284,7 @@ function EnvironmentSkills({
                 >
                   <ListFilterIcon />
                 </PopoverTrigger>
-                <PopoverPopup align="end" width="sm">
+                <PopoverPopup align="end" width="md">
                   <div className="space-y-3">
                     <PopoverTitle>{t("Filter skills")}</PopoverTitle>
                     <div className="flex flex-col items-start gap-1">
@@ -2314,6 +2330,42 @@ function EnvironmentSkills({
                         </SelectPopup>
                       </Select>
                     </div>
+                    <div className="space-y-2 border-t border-border pt-3">
+                      <label className="text-xs font-medium" htmlFor={`${tabsId}-location-filter`}>
+                        {t("Usage locations")}
+                      </label>
+                      <Select
+                        items={[{ value: "", label: allLocations }, ...locationOptions]}
+                        value={locationFilter ?? ""}
+                        onValueChange={(value) => {
+                          setLocationFilter(value || null);
+                          setSelected([]);
+                        }}
+                      >
+                        <SelectTrigger
+                          id={`${tabsId}-location-filter`}
+                          aria-label={t("Usage locations")}
+                          title={locationFilter ?? undefined}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectPopup className="w-(--anchor-width)" alignItemWithTrigger={false}>
+                          <SelectItem value="">{allLocations}</SelectItem>
+                          {locationOptions.map((option) => (
+                            <SelectItem
+                              key={option.value}
+                              value={option.value}
+                              label={option.label}
+                            >
+                              <span className="block wrap-anywhere">{option.label}</span>
+                              <span className="block font-mono text-xs text-muted-foreground wrap-anywhere">
+                                {option.value}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    </div>
                     <label className="flex items-center gap-2 border-t border-border pt-3 text-xs">
                       <Checkbox
                         checked={showExternal}
@@ -2350,6 +2402,7 @@ function EnvironmentSkills({
                       setSearch("");
                       setFilter("all");
                       setSourceFilter(null);
+                      setLocationFilter(null);
                     }}
                   >
                     {t("Clear filters")}
