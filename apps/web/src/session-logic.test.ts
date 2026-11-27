@@ -1206,6 +1206,42 @@ describe("native provider presentation in the v2 timeline", () => {
     expect(rows.some((row) => row.kind === "message")).toBe(false);
   });
 
+  it.each(["showAll", "zen"] as const)(
+    "keeps the final reply boundary when an unmarked response is whitespace in %s",
+    (toolCallVisibility) => {
+      const reply = (id: string, text: string) =>
+        visible({
+          ...base,
+          id: TurnItemId.make(id),
+          type: "assistant_message",
+          messageId: MessageId.make(id),
+          text,
+          streaming: false,
+        });
+      const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [
+          reply("progress", "I’ll inspect the README."),
+          visible({
+            ...base,
+            id: TurnItemId.make("readme-command"),
+            type: "command_execution",
+            input: "cat README.md",
+          }),
+          reply("answer", "\n\n"),
+        ],
+        optimisticMessages: [],
+      });
+      const rows = deriveMessagesTimelineRows({
+        timelineEntries,
+        toolCallVisibility,
+        isWorking: false,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+      expect(rows.flatMap((row) => (row.kind === "message" ? [row.id] : []))).toEqual(["answer"]);
+    },
+  );
+
   it("keeps async answers in the question row, including incrementally appended replies", () => {
     const requestId = RuntimeRequestId.make("question");
     const question: OrchestrationV2TurnItem = {
