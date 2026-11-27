@@ -249,12 +249,19 @@ function BatchBindings({
   onClose: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<string[]>([]);
   const [mode, setMode] = useState<"add" | "remove">("add");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const operations = skillBatchBindingOperations(skills, data.targets, selected, mode);
+  const operations = skillBatchBindingOperations(
+    skills,
+    data.targets,
+    selected,
+    mode,
+    data.incrementalLocationChanges,
+  );
   const unavailable =
     disabled ||
     saving ||
@@ -289,7 +296,7 @@ function BatchBindings({
         />
         {operations === null && (
           <Text accessibilityRole="alert" className="text-danger-foreground">
-            {t("Some usage locations are unavailable. Refresh skills and try again.")}
+            {gt("Update this environment to change skills with unavailable usage locations.")}
           </Text>
         )}
         {skills.length > 200 && (

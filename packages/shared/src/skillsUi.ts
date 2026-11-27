@@ -78,6 +78,19 @@ export function skillConfigurationJob(skill: ManagedSkill, jobs: ReadonlyArray<S
     ? undefined
     : job;
 }
+function skillConfigurationMatches(skill: ManagedSkill, job: SkillJob) {
+  const change = job.input.type === "configure" ? job.input.locationChange : undefined;
+  if (!change) return skill.bindings.every((binding) => binding.status === "linked");
+  return change.directories.every((directory) =>
+    change.mode === "remove"
+      ? !skill.bindings.some((binding) => binding.directory === directory)
+      : skill.bindings.some(
+          (binding) =>
+            binding.directory === directory &&
+            (skill.activeDigest === null || binding.status === "linked"),
+        ),
+  );
+}
 export function skillConfigurationFeedback(data: Pick<SkillSnapshot, "skills" | "jobs">) {
   const configurations = data.skills.map((skill) => ({
     skill,
@@ -97,9 +110,7 @@ export function skillConfigurationFeedback(data: Pick<SkillSnapshot, "skills" | 
     return { status: "pending" as const, message: "Updating usage locations..." };
   if (
     configurations.some(
-      ({ skill, job }) =>
-        job?.status === "completed" &&
-        skill.bindings.every((binding) => binding.status === "linked"),
+      ({ skill, job }) => job?.status === "completed" && skillConfigurationMatches(skill, job),
     )
   )
     return {
@@ -266,10 +277,12 @@ export function skillBatchBindingOperations(
   targets: ReadonlyArray<SkillTarget>,
   selected: ReadonlyArray<string>,
   mode: "add" | "remove",
+  incrementalLocationChanges = false,
 ): SkillAction[] | null {
   const locations = skillTargetGroups(targets).filter(
     (group) => group.enabled && group.targets.some((target) => selected.includes(target.id)),
   );
+  const directories = locations.map((group) => group.directory);
   const operations: SkillAction[] = [];
   for (const skill of skills) {
     const bindings = skill.bindings;
@@ -279,6 +292,10 @@ export function skillBatchBindingOperations(
         : bindings.some((binding) => binding.directory === group.directory),
     );
     if (!changes) continue;
+    if (incrementalLocationChanges) {
+      operations.push({ type: "configure", id: skill.id, locationChange: { mode, directories } });
+      continue;
+    }
     const retained = bindings.filter(
       (binding) =>
         mode === "add" || !locations.some((group) => group.directory === binding.directory),

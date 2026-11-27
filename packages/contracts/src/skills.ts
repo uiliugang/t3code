@@ -163,6 +163,19 @@ export const SkillCopyInput = Schema.Struct({
   package: SkillCopyPackage,
 });
 export type SkillCopyInput = typeof SkillCopyInput.Type;
+const SkillConfigure = Schema.Struct({
+  type: Schema.Literal("configure"),
+  id: SkillKey,
+  policy: Schema.optionalKey(SkillUpdatePolicy),
+  targetIds: Schema.optionalKey(Schema.Array(Schema.String)),
+  locationChange: Schema.optionalKey(
+    Schema.Struct({
+      mode: Schema.Literals(["add", "remove"]),
+      directories: Schema.Array(Schema.String),
+    }),
+  ),
+});
+type SkillConfigure = typeof SkillConfigure.Type;
 export const SkillAction = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("copy"),
@@ -215,12 +228,29 @@ export const SkillAction = Schema.Union([
     skill: Schema.String,
   }),
   Schema.Struct({ type: Schema.Literal("policy"), id: SkillKey, policy: SkillUpdatePolicy }),
-  Schema.Struct({
-    type: Schema.Literal("configure"),
-    id: SkillKey,
-    policy: SkillUpdatePolicy,
-    targetIds: Schema.Array(Schema.String),
-  }),
+  SkillConfigure.pipe(
+    Schema.refine(
+      (
+        action,
+      ): action is SkillConfigure &
+        (
+          | { readonly locationChange: NonNullable<SkillConfigure["locationChange"]> }
+          | {
+              readonly locationChange?: never;
+              readonly policy: SkillUpdatePolicy;
+              readonly targetIds: ReadonlyArray<string>;
+            }
+        ) =>
+        action.locationChange !== undefined ||
+        (action.policy !== undefined && action.targetIds !== undefined),
+      {
+        message: "Provide a location change or both policy and target IDs.",
+        toJsonSchema: () => ({
+          anyOf: [{ required: ["locationChange"] }, { required: ["policy", "targetIds"] }],
+        }),
+      },
+    ),
+  ),
   Schema.Struct({ type: Schema.Literal("source.save"), source: SkillSource }),
   Schema.Struct({ type: Schema.Literal("source.prepare"), sourceId: SkillKey }),
   Schema.Struct({ type: Schema.Literal("source.check"), sourceId: SkillKey }),
@@ -232,7 +262,7 @@ export const SkillAction = Schema.Union([
     targetId: Schema.String,
     enabled: Schema.Boolean,
   }),
-]);
+]).annotate({ identifier: "SkillAction" });
 export type SkillAction = typeof SkillAction.Type;
 export const SkillMutation = Schema.Union([
   SkillAction,
@@ -279,6 +309,7 @@ export const SkillCatalog = Schema.Struct({
 export type SkillCatalog = typeof SkillCatalog.Type;
 export const SkillSnapshot = Schema.Struct({
   ...SkillCatalog.fields,
+  incrementalLocationChanges: Schema.optionalKey(Schema.Boolean),
   operation: Schema.NullOr(Schema.String),
   targets: Schema.Array(SkillTarget),
   discovered: Schema.Array(DiscoveredSkill),
