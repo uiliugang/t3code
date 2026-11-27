@@ -3,7 +3,6 @@
 import { expect } from "e2e";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
 
 import { T3_HOME } from "../e2e.config.ts";
 import { runPromise, test, WEB } from "./t3.ts";
@@ -11,9 +10,6 @@ import { runPromise, test, WEB } from "./t3.ts";
 // gcc prints a file compiled from its own folder by bare name.
 const DIAGNOSTIC = "main.c:1:25: error: 'missing' undeclared";
 const EDITOR_ARGS = `${T3_HOME}/editor-args.txt`;
-
-const hostPath = (...segments: ReadonlyArray<string>) =>
-  runPromise(Effect.map(Path.Path, (path) => path.join(...segments)));
 
 /** The file's lines, or none while it does not exist. */
 const readLines = (file: string) =>
@@ -45,8 +41,8 @@ test(
     // The input mounts before fonts and WASM finish loading and its handlers are installed.
     await expect(input).toHaveAttribute("data-workspace-focus-default", "");
     await input.focus();
-    await browser.keyboard.type("cat build.log; echo done > cat.done\n");
-    await expect.poll(() => readLines(`${project}/cat.done`), { timeout: 30_000 }).not.toEqual([]);
+    await browser.keyboard.type("cat build.log; touch cat.done\n");
+    await expect.poll(() => readLines(`${project}/cat.done`), { timeout: 30_000 }).toEqual([""]);
     await app.screenshot("diagnostic-printed");
 
     // The terminal draws on a canvas, so point at the first cells of its middle row.
@@ -67,6 +63,6 @@ test(
 
     await expect
       .poll(() => readLines(EDITOR_ARGS), { timeout: 15_000 })
-      .toEqual(["--classic", "--goto", `${await hostPath(project, "main.c")}:1:25`]);
+      .toEqual(["--classic", "--goto", `${project}/main.c:1:25`]);
   },
 );

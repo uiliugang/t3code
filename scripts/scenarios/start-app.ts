@@ -4,7 +4,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { writeFakeCli } from "@t3tools/provider-testing/fakeCli";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NetService from "@t3tools/shared/Net";
 import * as Console from "effect/Console";
@@ -58,20 +57,15 @@ export const prepareHome = Effect.fn("startApp.prepareHome")(function* (home: st
   yield* fs.makeDirectory(path.join(home, "userdata"), { recursive: true });
   yield* fs.makeDirectory(path.join(home, "bin"));
   // Editor discovery is cached, so the recording shim must exist before the server starts.
-  writeFakeCli({
-    directory: path.join(home, "bin"),
-    name: "cursor",
-    source: [
-      'import { writeFileSync } from "node:fs";',
-      "const lines = process.argv.slice(2).map((arg) => `${arg}\\n`);",
-      'writeFileSync(new URL("../editor-args.txt", import.meta.url), lines.join(""));',
-    ].join("\n"),
-  });
-  const noModel = writeFakeCli({
-    directory: path.join(home, "bin"),
-    name: "no-model",
-    source: 'process.stderr.write("scenarios run no model\\n");\nprocess.exit(1);',
-  });
+  const editor = path.join(home, "bin", "cursor");
+  yield* fs.writeFileString(
+    editor,
+    `#!/bin/sh\nprintf '%s\\n' "$@" > "$(dirname "$0")/../editor-args.txt"\n`,
+  );
+  yield* fs.chmod(editor, 0o755);
+  const noModel = path.join(home, "bin/no-model");
+  yield* fs.writeFileString(noModel, "#!/bin/sh\necho 'scenarios run no model' >&2\nexit 1\n");
+  yield* fs.chmod(noModel, 0o755);
   yield* fs.writeFileString(
     path.join(home, "userdata/settings.json"),
     yield* encodeSettings({
@@ -134,9 +128,7 @@ const startApp = Effect.fn("startApp")(function* (input: {
   yield* prepareHome(input.home);
   const env = {
     ...hostEnvironment,
-    PATH: [path.join(input.home, "bin"), hostEnvironment.PATH ?? ""].join(
-      (yield* HostProcess.Platform) === "win32" ? ";" : ":",
-    ),
+    PATH: `${path.join(input.home, "bin")}:${hostEnvironment.PATH ?? ""}`,
     T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
     ...SCENARIO_MACHINE_ENV,
   };

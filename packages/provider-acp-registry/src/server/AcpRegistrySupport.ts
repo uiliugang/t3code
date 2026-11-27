@@ -736,15 +736,13 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     left: string,
     right: string,
   ) {
-    const normalize = (value: string) =>
-      platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
-    if (normalize(left) === normalize(right)) return true;
+    if (path.relative(left, right) === "") return true;
     const leftReal = yield* fileSystem.realPath(left).pipe(Effect.option);
     const rightReal = yield* fileSystem.realPath(right).pipe(Effect.option);
     return (
       Option.isSome(leftReal) &&
       Option.isSome(rightReal) &&
-      normalize(leftReal.value) === normalize(rightReal.value)
+      path.relative(leftReal.value, rightReal.value) === ""
     );
   });
   const packageReceiptsDirectory = path.join(registryDirectory, "package-installs");

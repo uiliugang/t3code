@@ -79,13 +79,14 @@ export const lowEntropyClientHints = (
   chromeVersion: string,
   platform: NodeJS.Platform,
 ): Record<string, string> => {
+  if (platform !== "darwin" && platform !== "linux") return {};
   const major = Number.parseInt(chromeVersion, 10);
   const grease = `"Not${GREASE_CHARS[major % 11]}A${GREASE_CHARS[(major + 1) % 11]}Brand";v="${GREASE_VERSIONS[major % 3]}"`;
   const chromium = `"Chromium";v="${major}"`;
   return {
     "sec-ch-ua": major % 2 === 0 ? `${grease}, ${chromium}` : `${chromium}, ${grease}`,
     "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": `"${platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : "Linux"}"`,
+    "sec-ch-ua-platform": `"${platform === "darwin" ? "macOS" : "Linux"}"`,
   };
 };
 

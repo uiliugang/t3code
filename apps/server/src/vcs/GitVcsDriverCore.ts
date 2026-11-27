@@ -1364,8 +1364,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         prefix: "push-",
       });
       for (const { name, file } of hooks) {
-        // Git for Windows starts hooks with its own sh, which reads forward slashes.
-        const target = hostPlatform === "win32" ? file.replaceAll("\\", "/") : file;
+        const target = file.split(path.sep).join("/");
         yield* writeScript(
           path.join(directory, name),
           `#!/bin/sh\nexec '${target.replaceAll("'", "'\\''")}' "$@"\n`,
@@ -1383,8 +1382,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           }),
       ),
     );
-    // Windows has no such permission: Git's sh starts any file there.
-    if (hostPlatform === "win32") return directory;
     // Not a hook's name, so Git would not start it, and gone again before the push.
     const probe = path.join(directory, "started");
     const cannotStart = (cause?: unknown) =>

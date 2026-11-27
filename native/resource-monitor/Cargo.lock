@@ -219,7 +219,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
- "windows",
 ]
 
 [[package]]

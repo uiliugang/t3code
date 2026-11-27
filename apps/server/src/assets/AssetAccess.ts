@@ -74,7 +74,6 @@ import {
   openMediaFile,
   readMediaFileBytes,
   statMediaFile,
-  realPathWithoutNativeResolver,
   type OpenMediaFile,
 } from "./MediaFile.ts";
 import * as WorkspacePreviewRevisions from "./WorkspacePreviewRevisions.ts";
@@ -317,20 +316,15 @@ const resolveCanonicalFile = Effect.fn("AssetAccess.resolveCanonicalFile")(funct
   filePath: string,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
-  const nativeCanonicalFile = yield* ProjectFaviconResolver.optionOnNotFound(
+  const canonicalFile = yield* ProjectFaviconResolver.optionOnNotFound(
     fileSystem.realPath(filePath),
   );
-  // Windows' native realpath returns ENOENT on drives without a mount-manager name
-  // (some USB and RAM-disk drivers) although the file is readable.
-  const canonicalFile = Option.isSome(nativeCanonicalFile)
-    ? nativeCanonicalFile.value
-    : yield* realPathWithoutNativeResolver(filePath);
-  if (canonicalFile === null) return null;
+  if (Option.isNone(canonicalFile)) return null;
 
-  const info = yield* ProjectFaviconResolver.optionOnNotFound(fileSystem.stat(canonicalFile));
+  const info = yield* ProjectFaviconResolver.optionOnNotFound(fileSystem.stat(canonicalFile.value));
   if (Option.isNone(info) || info.value.type !== "File") return null;
   const isServerInternalPath = yield* makeIsServerInternalPath;
-  return (yield* isServerInternalPath(canonicalFile)) ? null : canonicalFile;
+  return (yield* isServerInternalPath(canonicalFile.value)) ? null : canonicalFile.value;
 });
 
 const resolveCanonicalWorkspaceFile = Effect.fn("AssetAccess.resolveCanonicalWorkspaceFile")(

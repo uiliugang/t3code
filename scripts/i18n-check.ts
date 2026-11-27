@@ -9,10 +9,9 @@ import * as NodePath from "node:path";
 
 const TRANSLATED_SOURCES = ["apps/web/src", "apps/mobile/src"];
 // Desktop only depends on gt-i18n, so the gt CLI hides `generate` there; its script adds it back.
-// The gt CLI runs through Node because the `.bin/gt` shim is a shell script Windows cannot spawn.
 const GENERATE: Record<string, readonly [string, ...string[]]> = {
-  "apps/web": [process.execPath, "node_modules/gt/bin/main.js", "generate"],
-  "apps/mobile": [process.execPath, "node_modules/gt/bin/main.js", "generate"],
+  "apps/web": ["node_modules/.bin/gt", "generate"],
+  "apps/mobile": ["node_modules/.bin/gt", "generate"],
   "apps/desktop": [process.execPath, "scripts/i18n-generate.mjs"],
 };
 const APPS = Object.keys(GENERATE);

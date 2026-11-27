@@ -116,18 +116,16 @@ const makeLinuxCliArchiveFixture = Effect.fn("test.makeLinuxCliArchiveFixture")(
     yield* fs.makeDirectory(path.dirname(memberPath), { recursive: true });
     yield* fs.writeFileString(memberPath, member);
   }
-  const archiveName = `${input.stem}.tar.gz`;
+  const archivePath = path.join(input.root, `${input.stem}.tar.gz`);
   const tar = yield* spawner.spawn(
-    // GNU tar reads a drive letter in an absolute archive path as a remote host.
-    ChildProcess.make("tar", ["-czf", archiveName, "-C", contentRoot, "."], {
-      cwd: input.root,
+    ChildProcess.make("tar", ["-czf", archivePath, "-C", contentRoot, "."], {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "pipe",
     }),
   );
   assert.equal(Number(yield* tar.exitCode), 0);
-  return path.join(input.root, archiveName);
+  return archivePath;
 });
 
 function mockProcess(exitCode: number, stdout = "") {
