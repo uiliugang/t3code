@@ -45,6 +45,9 @@ vi.mock("react", () => ({
 vi.mock("../../lib/useUiTranslation", () => ({
   useUiTranslation: () => (message: string) => message,
 }));
+vi.mock("../../lib/useStableCallback", () => ({
+  useStableCallback: (callback: unknown) => callback,
+}));
 vi.mock("react-native", () => ({
   Alert: {
     alert: (title: string, _message: string, buttons?: { text: string; onPress?: () => void }[]) =>
@@ -69,6 +72,8 @@ vi.mock("../archive/useArchivedThreadSnapshots", () => ({
 vi.mock("../../state/session", () => ({
   readEnvironmentScope: (environmentId: string, scope: string) =>
     state.scopes.get(environmentId)?.has(scope) === true,
+  readEnvironmentScopeDenied: (environmentId: string, scope: string) =>
+    state.scopes.get(environmentId)?.has(scope) !== true,
 }));
 vi.mock("../../state/presentation", () => ({
   connectedEnvironmentIdsAtom: "connected-environments",
@@ -91,7 +96,7 @@ vi.mock("../../state/atom-registry", async () => {
             ? state.holdingRows
             : atom === "thread-shells"
               ? state.shells
-              : atom === "queued-thread-keys"
+              : atom === "queued-thread-keys" || atom === "pending-sync"
                 ? new Set<string>()
                 : new Map(
                     [...state.scopes.keys()].map((environmentId) => [
@@ -148,39 +153,42 @@ vi.mock("../../state/threads", () => ({
   environmentThreadShells: { threadShellsAtom: "thread-shells" },
   steadyNavigationThreadShellsAtom: "thread-shells",
   steadyShellsHoldingAtom: "steady-shells-holding",
-  threadEnvironment: Object.fromEntries(
-    [
-      "archive",
-      "unarchive",
-      "delete",
-      "settle",
-      "unsettle",
-      "snooze",
-      "unsnooze",
-      "pin",
-      "unpin",
-      "reorderPin",
-      "reorderActive",
-      "updateMetadata",
-      "regenerateTitle",
-    ].map((action) => [
-      action,
-      async (request: {
-        environmentId: string;
-        input: { threadId: string; orderKey?: string };
-      }) => {
-        state.requests.push({ action, ...request });
-        await state.heldActions.get(action);
-        if (!state.scopes.get(request.environmentId)?.has(AuthOrchestrationOperateScope)) {
-          return AsyncResult.failure(Cause.fail(new Error("Thread operation denied")));
-        }
-        if (action === state.failedAction)
-          return AsyncResult.failure(Cause.fail(new Error("Server rejected action")));
-        state.afterRequest?.();
-        return AsyncResult.success(action === "regenerateTitle" ? state.titleOutcome : undefined);
-      },
-    ]),
-  ),
+  threadEnvironment: {
+    pendingSyncAtom: () => "pending-sync",
+    ...Object.fromEntries(
+      [
+        "archive",
+        "unarchive",
+        "delete",
+        "settle",
+        "unsettle",
+        "snooze",
+        "unsnooze",
+        "pin",
+        "unpin",
+        "reorderPin",
+        "reorderActive",
+        "updateMetadata",
+        "regenerateTitle",
+      ].map((action) => [
+        action,
+        async (request: {
+          environmentId: string;
+          input: { threadId: string; orderKey?: string };
+        }) => {
+          state.requests.push({ action, ...request });
+          await state.heldActions.get(action);
+          if (!state.scopes.get(request.environmentId)?.has(AuthOrchestrationOperateScope)) {
+            return AsyncResult.failure(Cause.fail(new Error("Thread operation denied")));
+          }
+          if (action === state.failedAction)
+            return AsyncResult.failure(Cause.fail(new Error("Server rejected action")));
+          state.afterRequest?.();
+          return AsyncResult.success(action === "regenerateTitle" ? state.titleOutcome : undefined);
+        },
+      ]),
+    ),
+  },
 }));
 
 import { appAtomRegistry } from "../../state/atom-registry";

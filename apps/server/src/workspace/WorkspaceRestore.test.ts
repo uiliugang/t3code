@@ -113,6 +113,7 @@ it.effect(
               captureCheckpoint: ({ cwd, checkpointRef }) =>
                 Effect.sync(() => {
                   snapshots.set(`${cwd}:${checkpointRef}`, contents.get(cwd)!);
+                  return null;
                 }),
               restoreCheckpoint: ({ cwd, checkpointRef }) =>
                 Effect.gen(function* () {

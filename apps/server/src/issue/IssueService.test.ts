@@ -598,6 +598,86 @@ describe("IssueService", () => {
     }),
   );
 
+  it.effect("shares one tracker read of an issue until a write or an explicit refresh", () =>
+    Effect.gen(function* () {
+      let reads = 0;
+      const service = yield* makeService({
+        projects: [
+          project({ id: "web", repository: "acme/web" }),
+          project({ id: "worktree", repository: "acme/web" }),
+        ],
+        trackers: [
+          fakeTracker({
+            snapshotIssueRead: (input) =>
+              Effect.succeed({
+                credentialFingerprint: "unchanged-credential",
+                read: Effect.sync(() => (reads++, issue(input.key))),
+              }),
+          }),
+        ],
+      });
+      const ref = { projectId: "web" as ProjectId, tracker: GITHUB, scope: "acme/web", key: "42" };
+      // Every client and project polling one issue costs the tracker one read.
+      yield* Effect.all(
+        [
+          service.detail(ref),
+          service.detail(ref),
+          service.detail({ ...ref, projectId: "worktree" as ProjectId }),
+        ],
+        { concurrency: "unbounded" },
+      );
+      expect((yield* service.detail(ref)).projectId).toBe("web");
+      expect(reads).toBe(1);
+      yield* service.detail({ ...ref, key: "43" });
+      expect(reads).toBe(2);
+
+      yield* service.comment({ ...ref, body: "Repro attached." });
+      yield* service.detail(ref);
+      expect(reads).toBe(3);
+
+      // An explicit refresh sees what changed on the tracker itself.
+      yield* service.detail({ ...ref, refresh: true });
+      yield* service.detail(ref);
+      expect(reads).toBe(4);
+    }),
+  );
+
+  it.effect("does not serve cached GitHub details when the host credential changes", () =>
+    Effect.gen(function* () {
+      let credential = "writer";
+      let reads = 0;
+      const service = yield* makeService({
+        projects: [project({ id: "web", repository: "acme/web" })],
+        trackers: [
+          fakeTracker({
+            getIssue: (input) => Effect.sync(() => ({ ...issue(input.key), title: credential })),
+            snapshotIssueRead: (input) =>
+              Effect.sync(() => {
+                const authorizedAs = credential;
+                return {
+                  credentialFingerprint: authorizedAs,
+                  read: Effect.sync(() => {
+                    reads++;
+                    return { ...issue(input.key), title: authorizedAs };
+                  }),
+                };
+              }),
+          }),
+        ],
+      });
+      const ref = { projectId: "web" as ProjectId, tracker: GITHUB, scope: "acme/web", key: "42" };
+      expect((yield* service.detail(ref)).title).toBe("writer");
+      credential = "reader";
+      expect((yield* service.detail(ref)).title).toBe("reader");
+      expect((yield* service.detail(ref)).title).toBe("reader");
+      expect(reads).toBe(2);
+      yield* service.comment({ ...ref, body: "Update" });
+      credential = "writer";
+      expect((yield* service.detail(ref)).title).toBe("writer");
+      expect(reads).toBe(3);
+    }),
+  );
+
   it.effect("refuses what the tracker did not declare before calling it", () =>
     Effect.gen(function* () {
       let calls = 0;
@@ -756,6 +836,35 @@ describe("IssueService", () => {
 });
 
 describe("IssueService with a standalone tracker", () => {
+  it.effect("reads the current standalone workspace after a credential changes", () =>
+    Effect.gen(function* () {
+      let workspace = "acme";
+      const service = yield* makeService({
+        projects: [project({ id: "eng" })],
+        trackers: [
+          fakeStandaloneTracker({
+            getIssue: ({ key }) =>
+              Effect.sync(() => ({
+                ...issue(key),
+                url: `https://linear.app/${workspace}/issue/${key}/canonical-title`,
+              })),
+          }),
+        ],
+        bindings: { eng: { tracker: LINEAR, scope: "ENG" } },
+      });
+      const ref = {
+        projectId: "eng" as ProjectId,
+        tracker: LINEAR,
+        scope: "ENG",
+        key: "ENG-1",
+      };
+
+      expect((yield* service.detail(ref)).url).toContain("/acme/");
+      workspace = "other-workspace";
+      expect((yield* service.detail(ref)).url).toContain("/other-workspace/");
+    }),
+  );
+
   it.effect("keeps a workflow's unqualified issue reference read-only across projects", () =>
     Effect.gen(function* () {
       const otherAccount = IssueTrackerAccountId.make("second");
@@ -1296,6 +1405,62 @@ describe("IssueService with a standalone tracker", () => {
         _tag: "IssueOperationError",
         operation: "listProjects",
       });
+    }),
+  );
+
+  it.effect("orders merged entries by createdAt when sort is created and updatedAt otherwise", () =>
+    Effect.gen(function* () {
+      const seenSorts: string[] = [];
+      const service = yield* makeService({
+        projects: [
+          project({ id: "web", repository: "acme/web" }),
+          project({ id: "api", repository: "acme/api" }),
+        ],
+        trackers: [
+          fakeTracker({
+            listIssues: (input) => {
+              seenSorts.push(input.sort);
+              if (input.scope === "acme/web") {
+                return Effect.succeed({
+                  items: [
+                    {
+                      ...issue("old-created-recent-update"),
+                      createdAt: "2026-07-06T01:00:00+02:00",
+                      updatedAt: "2026-07-10T00:00:00Z",
+                    },
+                  ],
+                  nextCursor: null,
+                });
+              }
+              return Effect.succeed({
+                items: [
+                  {
+                    ...issue("new-created-older-update"),
+                    createdAt: "2026-07-05T23:30:00Z",
+                    updatedAt: "2026-07-06T00:00:00Z",
+                  },
+                ],
+                nextCursor: null,
+              });
+            },
+          }),
+        ],
+      });
+
+      const byCreated = yield* service.list({ state: "open", sort: "created" });
+      expect(seenSorts).toEqual(["created", "created"]);
+      expect(byCreated.entries.map((entry) => entry.key)).toEqual([
+        "new-created-older-update",
+        "old-created-recent-update",
+      ]);
+
+      seenSorts.length = 0;
+      const byUpdated = yield* service.list({ state: "open" });
+      expect(seenSorts).toEqual(["updated", "updated"]);
+      expect(byUpdated.entries.map((entry) => entry.key)).toEqual([
+        "old-created-recent-update",
+        "new-created-older-update",
+      ]);
     }),
   );
 });

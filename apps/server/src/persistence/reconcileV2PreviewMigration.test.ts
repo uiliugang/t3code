@@ -27,25 +27,45 @@ const seedPreview = Effect.gen(function* () {
 });
 
 describe("V2 preview upgrade", () => {
-  it.effect("keeps the published Noise migrations and adds the superseded attempt index", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 128 });
-      assert.deepStrictEqual(yield* runMigrations(), [[129, "SupersededRunAttemptIndex"]]);
-      assert.deepStrictEqual(
-        yield* sql`SELECT name FROM effect_sql_migrations WHERE migration_id >= 127 ORDER BY migration_id`,
-        [
-          { name: "ConnectNoiseApproval" },
-          { name: "PeerNoisePin" },
-          { name: "SupersededRunAttemptIndex" },
-        ],
-      );
-      assert.deepStrictEqual(
-        yield* sql`SELECT name FROM sqlite_master
+  it.effect(
+    "keeps the published Noise migrations and adds later migrations without renumbering",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: 128 });
+        assert.deepStrictEqual(yield* runMigrations(), [
+          [129, "SupersededRunAttemptIndex"],
+          [130, "LayoutCommandApprovals"],
+          [131, "WorkflowSkippedRuns"],
+          [132, "WorkflowRunIndexes"],
+          [133, "WorkflowRunTags"],
+          [134, "ForkHistoryMembership"],
+          [135, "WorkflowMailSender"],
+          [136, "WorkflowPools"],
+          [137, "WorkflowRunSubject"],
+        ]);
+        assert.deepStrictEqual(
+          yield* sql`SELECT name FROM effect_sql_migrations WHERE migration_id >= 127 ORDER BY migration_id`,
+          [
+            { name: "ConnectNoiseApproval" },
+            { name: "PeerNoisePin" },
+            { name: "SupersededRunAttemptIndex" },
+            { name: "LayoutCommandApprovals" },
+            { name: "WorkflowSkippedRuns" },
+            { name: "WorkflowRunIndexes" },
+            { name: "WorkflowRunTags" },
+            { name: "ForkHistoryMembership" },
+            { name: "WorkflowMailSender" },
+            { name: "WorkflowPools" },
+            { name: "WorkflowRunSubject" },
+          ],
+        );
+        assert.deepStrictEqual(
+          yield* sql`SELECT name FROM sqlite_master
           WHERE type = 'index' AND name = 'orchestration_v2_projection_run_attempts_superseded_idx'`,
-        [{ name: "orchestration_v2_projection_run_attempts_superseded_idx" }],
-      );
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+          [{ name: "orchestration_v2_projection_run_attempts_superseded_idx" }],
+        );
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
   it.effect("upgrades a published preview without replaying V2 or losing import progress", () =>
@@ -130,6 +150,14 @@ describe("V2 preview upgrade", () => {
         [127, "ConnectNoiseApproval"],
         [128, "PeerNoisePin"],
         [129, "SupersededRunAttemptIndex"],
+        [130, "LayoutCommandApprovals"],
+        [131, "WorkflowSkippedRuns"],
+        [132, "WorkflowRunIndexes"],
+        [133, "WorkflowRunTags"],
+        [134, "ForkHistoryMembership"],
+        [135, "WorkflowMailSender"],
+        [136, "WorkflowPools"],
+        [137, "WorkflowRunSubject"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(
@@ -287,6 +315,14 @@ describe("V2 preview upgrade", () => {
         [127, "ConnectNoiseApproval"],
         [128, "PeerNoisePin"],
         [129, "SupersededRunAttemptIndex"],
+        [130, "LayoutCommandApprovals"],
+        [131, "WorkflowSkippedRuns"],
+        [132, "WorkflowRunIndexes"],
+        [133, "WorkflowRunTags"],
+        [134, "ForkHistoryMembership"],
+        [135, "WorkflowMailSender"],
+        [136, "WorkflowPools"],
+        [137, "WorkflowRunSubject"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

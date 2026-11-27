@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as TestHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as Deferred from "effect/Deferred";
@@ -10,6 +11,10 @@ import * as Result from "effect/Result";
 import { make } from "./MCodeAuthorization.ts";
 
 const host = "git.sankuai.com";
+// Keep CLI discovery hermetic: only the executable served by the process stub is on PATH.
+const withMCodeCli = Effect.provideService(SpawnExecutableResolution, (executable) =>
+  executable === "code-cli" ? "/test/bin/code-cli" : undefined,
+);
 const settings = (mis = "", attempted: readonly string[] = []) => ({
   ...DEFAULT_SERVER_SETTINGS,
   sourceControlHosts: { meituan: { mis, authorizationAttemptedMis: attempted } },
@@ -55,7 +60,7 @@ describe("Meituan authorization", () => {
               }),
             ),
           );
-          yield* auth.discovery.probe("/repo");
+          yield* auth.discovery.probe("/repo").pipe(withMCodeCli);
           expect(logins).toBe(0);
           expect(yield* auth.signIn.start(host)).toMatchObject({ delivery: "moa" });
           expect(yield* auth.signIn.wait(host)).toEqual({ account: "zhangsan" });
@@ -84,7 +89,7 @@ describe("Meituan authorization", () => {
   ] as const)("does not send for $name status", ({ name, stdout, expected }) =>
     Effect.scoped(
       Effect.gen(function* () {
-        let logins = 0;
+        const commands: Array<ReadonlyArray<string>> = [];
         const auth = yield* make.pipe(
           Effect.provide(
             TestHost.layer({
@@ -92,7 +97,7 @@ describe("Meituan authorization", () => {
               process: {
                 run: (input) => {
                   expect(input.env?.MCODE_SKIP_MOA).not.toBe("1");
-                  if (input.args.includes("login")) logins++;
+                  commands.push(input.args);
                   return input.args[0] === "--version"
                     ? runProbe(input)
                     : Effect.succeed(
@@ -105,8 +110,10 @@ describe("Meituan authorization", () => {
             }),
           ),
         );
-        expect((yield* auth.discovery.probe("/repo")).auth.status).toBe(expected);
-        expect(logins).toBe(0);
+        expect((yield* auth.discovery.probe("/repo").pipe(withMCodeCli)).auth.status).toBe(
+          expected,
+        );
+        expect(commands).toEqual([["--version"], ["auth", "status"]]);
       }),
     ),
   );
@@ -180,7 +187,7 @@ describe("Meituan authorization", () => {
           yield* auth.signIn.start(host);
           const result = yield* auth.signIn.wait(host).pipe(Effect.result);
           expect(Result.isFailure(result)).toBe(true);
-          const discovered = yield* auth.discovery.probe("/repo");
+          const discovered = yield* auth.discovery.probe("/repo").pipe(withMCodeCli);
           expect(discovered.authorization?.status).toBe("failed");
           expect(discovered.authorization?.detail).toContain("MOA sign-in failed");
           expect(logins).toBe(1);
@@ -215,7 +222,9 @@ describe("Meituan authorization", () => {
         yield* auth.signIn.cancel(host);
         yield* Deferred.await(stopped);
         expect(Result.isFailure(yield* Fiber.join(waiting))).toBe(true);
-        expect((yield* auth.discovery.probe("/repo")).authorization?.status).toBe("idle");
+        expect(
+          (yield* auth.discovery.probe("/repo").pipe(withMCodeCli)).authorization?.status,
+        ).toBe("idle");
       }),
     ),
   );

@@ -45,7 +45,6 @@ import {
   DialogTrigger,
 } from "../ui/dialog";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button } from "../ui/button";
 import { SshPasswordField } from "./SshPasswordField";
@@ -74,6 +73,7 @@ import {
   parseRemotePairingFields,
   formatDesktopSshConnectionError,
 } from "./ConnectionsSettings.logic";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const SSH_PROTOCOL_NAME = "SSH";
 const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
@@ -714,7 +714,7 @@ export function AddEnvironmentDialog({
                     {t("Loading hosts…")}
                   </div>
                 ) : filteredDiscoveredSshHosts.length > 0 ? (
-                  <AutocompleteList className="max-h-72">
+                  <AutocompleteList scrollAreaClassName="max-h-72">
                     {filteredDiscoveredSshHosts.map((target, index) => {
                       const address = formatDesktopSshTarget(target);
                       const shortcutCommand = index < 9 ? threadJumpCommandForIndex(index) : null;
@@ -863,21 +863,20 @@ export function AddEnvironmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <DialogTrigger
-              render={
-                <Button size="xs" variant="ghost-muted" aria-label={t("Add environment")}>
-                  <PlusIcon className="size-3" />
-                  <span>{t("Add environment")}</span>
-                </Button>
-              }
-            />
-          }
-        />
-        <TooltipPopup side="top">{t("Add environment")}</TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={
+          <DialogTrigger
+            render={
+              <Button size="xs" variant="ghost-muted" aria-label={t("Add environment")}>
+                <PlusIcon className="size-3" />
+                <span>{t("Add environment")}</span>
+              </Button>
+            }
+          />
+        }
+        label={t("Add environment")}
+        side="top"
+      />
       <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>

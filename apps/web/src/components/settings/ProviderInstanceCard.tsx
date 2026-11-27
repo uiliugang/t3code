@@ -55,7 +55,6 @@ import { ManagedControl, ManagedNotice } from "../ManagedPolicy";
 import { managedInstanceLocks, useManagedPolicy } from "../../state/managedPolicy";
 import { disallowedProviderMessage, isManagedDriverAllowed } from "@t3tools/contracts";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type {
   ProviderClientDefinition,
   ProviderEnvironmentField,
@@ -89,6 +88,7 @@ import {
   getProviderVersionLabel,
   providerAuthLabel,
 } from "./providerStatus";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const ENVIRONMENT_VARIABLE_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
@@ -100,12 +100,7 @@ function ProviderStatusDiagnostic({
   children: ReactElement;
 }) {
   if (!detail) return children;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={children} />
-      <TooltipPopup side="top">{detail}</TooltipPopup>
-    </Tooltip>
-  );
+  return <SharedTooltipTrigger render={children} label={detail} />;
 }
 
 const ENVIRONMENT_VARIABLE_NAME_PLACEHOLDER = "VARIABLE_NAME";
@@ -520,40 +515,37 @@ export function ProviderEnvironmentSection(props: {
             );
             const sensitiveToggle =
               typeof variable.value === "string" ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        type="button"
-                        size="icon-micro"
-                        variant="ghost-muted"
-                        disabled={variable.valueRedacted === true}
-                        onClick={() => {
-                          const sensitive = !variable.sensitive;
-                          updateVariable(variable.id, {
-                            sensitive,
-                            ...(sensitive && variable.valueRedacted === undefined
-                              ? {}
-                              : { valueRedacted: sensitive ? variable.valueRedacted : false }),
-                          });
-                        }}
-                        aria-pressed={variable.sensitive}
-                        aria-label={t("Mark environment variable {name} as sensitive", {
-                          name: variable.name || index + 1,
-                        })}
-                      >
-                        {variable.sensitive ? (
-                          <LockIcon className="size-3" />
-                        ) : (
-                          <LockOpenIcon className="size-3" />
-                        )}
-                      </Button>
-                    }
-                  />
-                  <TooltipPopup side="top">
-                    {variable.sensitive ? t("Sensitive, stored separately") : t("Plain text")}
-                  </TooltipPopup>
-                </Tooltip>
+                <SharedTooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-micro"
+                      variant="ghost-muted"
+                      disabled={variable.valueRedacted === true}
+                      onClick={() => {
+                        const sensitive = !variable.sensitive;
+                        updateVariable(variable.id, {
+                          sensitive,
+                          ...(sensitive && variable.valueRedacted === undefined
+                            ? {}
+                            : { valueRedacted: sensitive ? variable.valueRedacted : false }),
+                        });
+                      }}
+                      aria-pressed={variable.sensitive}
+                      aria-label={t("Mark environment variable {name} as sensitive", {
+                        name: variable.name || index + 1,
+                      })}
+                    >
+                      {variable.sensitive ? (
+                        <LockIcon className="size-3" />
+                      ) : (
+                        <LockOpenIcon className="size-3" />
+                      )}
+                    </Button>
+                  }
+                  label={variable.sensitive ? t("Sensitive, stored separately") : t("Plain text")}
+                  side="top"
+                />
               ) : null;
             const layout = (source: ReactNode, value: ReactNode) => (
               <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border p-2">
@@ -648,24 +640,23 @@ function ProjectOverrideInheritance({
   ];
   return (
     <Popover>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  size="icon-micro"
-                  variant="ghost-muted"
-                  aria-label={t("Overridden for this project. Show where this value comes from")}
-                />
-              }
-            />
-          }
-        >
-          <LayersIcon className="size-3 text-primary" />
-        </TooltipTrigger>
-        <TooltipPopup side="top">{t("Overridden for this project")}</TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={
+          <PopoverTrigger
+            render={
+              <Button
+                size="icon-micro"
+                variant="ghost-muted"
+                aria-label={t("Overridden for this project. Show where this value comes from")}
+              />
+            }
+          />
+        }
+        label={t("Overridden for this project")}
+        side="top"
+      >
+        <LayersIcon className="size-3 text-primary" />
+      </SharedTooltipTrigger>
       <PopoverPopup align="end" width="md" padding="none">
         <ol role="list" className="px-3 py-2.5 text-sm">
           {layers.map((layer) => (
@@ -1111,39 +1102,36 @@ export function ProviderInstanceCard({
     );
   const versionAdvisoryNode = versionAdvisory ? (
     <Popover>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  type="button"
-                  size={mode === "list" ? "icon-micro" : "icon-xs"}
-                  variant="ghost-muted"
-                  className={mode === "list" ? "pointer-events-auto relative shrink-0" : undefined}
-                  aria-label={t("{status}, view details", {
-                    status: updateProgress ? t("Updating") : versionAdvisory.title,
-                  })}
-                >
-                  {updateProgress ? (
-                    <Spinner tone="muted" {...(mode === "list" ? { size: "sm" as const } : {})} />
-                  ) : (
-                    <VersionAdvisoryIcon
-                      className={cn(
-                        mode === "list" && "size-3.5",
-                        hasCompatibilityWarning && "text-warning",
-                      )}
-                    />
-                  )}
-                </Button>
-              }
-            />
-          }
-        />
-        <TooltipPopup side="top">
-          {updateProgress ? t("Updating") : versionAdvisory.title}
-        </TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={
+          <PopoverTrigger
+            render={
+              <Button
+                type="button"
+                size={mode === "list" ? "icon-micro" : "icon-xs"}
+                variant="ghost-muted"
+                className={mode === "list" ? "pointer-events-auto relative shrink-0" : undefined}
+                aria-label={t("{status}, view details", {
+                  status: updateProgress ? t("Updating") : versionAdvisory.title,
+                })}
+              >
+                {updateProgress ? (
+                  <Spinner tone="muted" {...(mode === "list" ? { size: "sm" as const } : {})} />
+                ) : (
+                  <VersionAdvisoryIcon
+                    className={cn(
+                      mode === "list" && "size-3.5",
+                      hasCompatibilityWarning && "text-warning",
+                    )}
+                  />
+                )}
+              </Button>
+            }
+          />
+        }
+        label={updateProgress ? t("Updating") : versionAdvisory.title}
+        side="top"
+      />
       <PopoverPopup side="bottom" align="end" width="md" aria-label={versionAdvisory.title}>
         <div className="grid min-w-0 gap-3">
           <div className="grid gap-0.5">
@@ -1203,23 +1191,22 @@ export function ProviderInstanceCard({
               <code className="min-w-0 flex-1 truncate font-mono text-2xs text-foreground">
                 {updateCommand}
               </code>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      size="icon-xs"
-                      variant="ghost-muted"
-                      className="shrink-0"
-                      onClick={() => copyToClipboard(updateCommand, { providerName: displayName })}
-                      aria-label={t("Copy update command")}
-                    >
-                      <CopyIcon className="size-3" />
-                    </Button>
-                  }
-                />
-                <TooltipPopup side="top">{t("Copy command")}</TooltipPopup>
-              </Tooltip>
+              <SharedTooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    className="shrink-0"
+                    onClick={() => copyToClipboard(updateCommand, { providerName: displayName })}
+                    aria-label={t("Copy update command")}
+                  >
+                    <CopyIcon className="size-3" />
+                  </Button>
+                }
+                label={t("Copy command")}
+                side="top"
+              />
             </div>
           ) : null}
         </div>

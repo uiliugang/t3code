@@ -52,6 +52,7 @@ import { environmentThreadShells } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePullToRefresh } from "../../state/use-pull-to-refresh";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
+import { WorkflowRunsAbout } from "../workflows/WorkflowRunsAbout";
 import { useAndroidWorkspaceBack } from "../layout/workspace/useAndroidWorkspaceNavigation";
 import { PullRequestDescription } from "../pull-requests/PullRequestDescription";
 import {
@@ -710,7 +711,13 @@ export function IssueRoute({
             refreshControl={
               <RefreshControl
                 refreshing={pullRefresh.refreshing}
-                onRefresh={() => void pager.refresh(registry, pullRefresh.onRefresh)}
+                onRefresh={() =>
+                  void pager.refresh(registry, () =>
+                    pullRefresh.onRefresh(async () =>
+                      issueEnvironment.oweDetailRefresh(registry, target),
+                    ),
+                  )
+                }
               />
             }
             contentContainerStyle={{
@@ -773,6 +780,17 @@ export function IssueRoute({
                       <LinkedPullRequests params={params} links={detail.linkedPullRequests} />
                     ) : null}
                     <LinkedThreads params={params} host={detail.host} url={detail.url} />
+                    <WorkflowRunsAbout
+                      environmentId={target.environmentId}
+                      item={{
+                        subject: detail.url,
+                        issue: {
+                          ...target.input,
+                          host: params.host ?? detail.host,
+                          url: detail.url,
+                        },
+                      }}
+                    />
                     {detail.capabilities.comment ||
                     detail.capabilities.events ||
                     timeline.length > 0 ||

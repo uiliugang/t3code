@@ -17,7 +17,7 @@ const ExactName = Schema.String.check(
 
 const WorkflowTool = Tool.make("t3_workflow", {
   description:
-    "Durable workflow runs on this server. start: `workflow`, `input`, `idempotencyKey` (same key, same run). list: runs, by `status`. read: one run and its steps. questions: what runs ask a person. hooks: the URL paths that start runs. store: what workflows keep, under keys starting with `key`; store_set a `key` to `value`; store_delete. signal: wake a wait with `value`, addressed by `runId` and `wait`, or by `workflow` and `channel`; answers a question as `{choice, reason?}`. resume: run a paused run's failed step again. cancel.",
+    "Workflow runs. start(workflow,input,idempotencyKey): same key, same run. list by status/tag/subject (URL or thread ID). read(runId): run and steps. questions by kind. hooks: start URLs. store: key prefix; store_set(key,value); store_delete(key). signal(value): runId+wait or workflow+channel; answer with {choice,reason?}. withdraw(runId,wait,reason?): unanswered, resumes as on timeout. resume retries the failed step; cancel stops the run.",
   parameters: Schema.Struct({
     action: Schema.Literals([
       ...WORKFLOW_READ_ACTIONS,
@@ -26,6 +26,7 @@ const WorkflowTool = Tool.make("t3_workflow", {
       "signal",
       "resume",
       "cancel",
+      "withdraw",
       "store_set",
       "store_delete",
     ]),
@@ -34,6 +35,9 @@ const WorkflowTool = Tool.make("t3_workflow", {
     idempotencyKey: Schema.optional(TrimmedNonEmptyString),
     runId: Schema.optional(TrimmedNonEmptyString),
     status: Schema.optional(WorkflowRunStatus),
+    tag: Schema.optional(ExactName),
+    subject: Schema.optional(ExactName),
+    kind: Schema.optional(ExactName),
     wait: Schema.optional(ExactName),
     key: Schema.optional(ExactName),
     channel: Schema.optional(ExactName),
@@ -55,6 +59,7 @@ const WorkflowTool = Tool.make("t3_workflow", {
       Schema.Array(Schema.Struct({ key: Schema.String, value: Schema.Json })),
     ),
     delivery: Schema.optional(Schema.Literals(["delivered", "buffered"])),
+    withdrawal: Schema.optional(Schema.Literals(["withdrawn", "not_open"])),
   }),
   failure: OrchestratorMcpFailure,
   failureMode: "return" as const,

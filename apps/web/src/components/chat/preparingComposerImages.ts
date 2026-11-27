@@ -1,11 +1,15 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import * as Equal from "effect/Equal";
 import { useEffect, useRef } from "react";
 import { create } from "zustand";
 
 import {
+  composerDraftHasUserContent,
   composerTargetKey,
+  type ComposerThreadDraftState,
   type ComposerThreadTarget,
+  type DraftId,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -134,6 +138,7 @@ const useHeldSendStore = create<{ readonly targetKeys: Readonly<Record<string, t
   targetKeys: {},
 }));
 let preparedImagesJoiningDraft = false;
+let applyingWorkspaceFor: DraftId | null = null;
 
 function invalidatePendingSubmit(targetKey: string) {
   cancelGenerations.set(targetKey, (cancelGenerations.get(targetKey) ?? 0) + 1);
@@ -159,6 +164,66 @@ export function joinPreparedImagesToDraft<T>(insert: () => T): T {
   }
 }
 
+/** Applies a pending workspace default or PR checkout without cancelling an image-held send. */
+export function applyPendingDraftWorkspaceUpdate<T>(draftId: DraftId, update: () => T): T {
+  const previous = applyingWorkspaceFor;
+  applyingWorkspaceFor = draftId;
+  try {
+    return update();
+  } finally {
+    applyingWorkspaceFor = previous;
+  }
+}
+
+function composerSendSettingsChanged(
+  before: ComposerThreadDraftState | null,
+  after: ComposerThreadDraftState | null,
+): boolean {
+  const modelsChanged =
+    before && after
+      ? !Equal.equals(before.modelSelectionByProvider, after.modelSelectionByProvider)
+      : Object.keys((before ?? after)?.modelSelectionByProvider ?? {}).length > 0;
+  return (
+    modelsChanged ||
+    (before?.activeProvider ?? null) !== (after?.activeProvider ?? null) ||
+    (before?.runtimeMode ?? null) !== (after?.runtimeMode ?? null) ||
+    (before?.interactionMode ?? null) !== (after?.interactionMode ?? null)
+  );
+}
+
+/** Watches for edits and attachment invalidation while a send waits for routing. */
+export function watchComposerSendEdits(
+  draftTarget: ComposerThreadTarget,
+): () => "ready" | "edited" | "attachments-cancelled" {
+  const targetKey = composerTargetKey(draftTarget);
+  const submittedImages = new Set(getPreparingComposerImages(targetKey));
+  const cancelGeneration = cancelGenerations.get(targetKey);
+  let draft = useComposerDraftStore.getState().getComposerDraft(draftTarget);
+  let changed = false;
+  const stopWatchingDraft = useComposerDraftStore.subscribe((state) => {
+    const next = state.getComposerDraft(draftTarget);
+    if (!preparedImagesJoiningDraft) {
+      changed ||=
+        composerSendSettingsChanged(draft, next) ||
+        (draft && next
+          ? composerDraftContentChanged(draft, next)
+          : composerDraftHasUserContent(draft ?? next));
+    }
+    draft = next;
+  });
+  const stopWatchingImages = usePreparingComposerImageStore.subscribe(() => {
+    if (getPreparingComposerImages(targetKey).some((image) => !submittedImages.has(image))) {
+      changed = true;
+    }
+  });
+  return () => {
+    stopWatchingDraft();
+    stopWatchingImages();
+    if (cancelGenerations.get(targetKey) !== cancelGeneration) return "attachments-cancelled";
+    return changed ? "edited" : "ready";
+  };
+}
+
 /**
  * Holds a send made while the draft still has images compressing. Resolves ready once they join
  * the draft, or cancelled if the draft is edited or the send cancelled. Null means nothing needs
@@ -172,7 +237,7 @@ export function holdComposerSend(
   if (heldSends.has(targetKey)) return Promise.resolve({ status: "cancelled" });
   return new Promise((resolve) => {
     const drafts = useComposerDraftStore.getState();
-    const draftThread = drafts.getDraftThread(draftTarget);
+    let draftThread = drafts.getDraftThread(draftTarget);
     let draft = drafts.getComposerDraft(draftTarget);
     const settle = (result: HeldComposerSendResult) => {
       if (heldSends.get(targetKey) !== settle) return;
@@ -193,18 +258,20 @@ export function holdComposerSend(
       queueMicrotask(() => settle({ status: "ready" }));
     });
     const stopWatchingDraft = useComposerDraftStore.subscribe((state) => {
+      const nextDraftThread = state.getDraftThread(draftTarget);
       const next = state.getComposerDraft(draftTarget);
+      const applyingWorkspace =
+        applyingWorkspaceFor !== null &&
+        nextDraftThread !== null &&
+        state.getDraftSession(applyingWorkspaceFor) === nextDraftThread;
       if (
-        draftThread !== state.getDraftThread(draftTarget) ||
+        (!applyingWorkspace && draftThread !== nextDraftThread) ||
         (!preparedImagesJoiningDraft &&
-          (composerDraftContentChanged(draft, next) ||
-            draft?.modelSelectionByProvider !== next?.modelSelectionByProvider ||
-            draft?.activeProvider !== next?.activeProvider ||
-            draft?.runtimeMode !== next?.runtimeMode ||
-            draft?.interactionMode !== next?.interactionMode))
+          (composerDraftContentChanged(draft, next) || composerSendSettingsChanged(draft, next)))
       ) {
         settle({ status: "cancelled" });
       }
+      draftThread = nextDraftThread;
       draft = next;
     });
     useHeldSendStore.setState((state) => ({

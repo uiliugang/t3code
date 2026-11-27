@@ -4,12 +4,17 @@ import { expect, it } from "vite-plus/test";
 
 import { composerTargetKey, DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import {
+  trackPendingDraftCheckout,
+  trackPendingWorkspaceDefault,
+} from "../../lib/draftWorkspaceDefaults";
+import {
   addPreparingComposerImages,
   cancelHeldComposerSend,
   cancelPreparingComposerImages,
   holdComposerSend,
   joinPreparedImagesToDraft,
   removePreparingComposerImages,
+  watchComposerSendEdits,
 } from "./preparingComposerImages";
 
 function preparingImage(id: string) {
@@ -81,4 +86,143 @@ it("cancels an image-held send when its draft's worktree base changes", async ()
   drafts.setDraftThreadContext(id, { branch: "release" });
   removePreparingComposerImages(targetKey, new Set(["held-worktree"]));
   await expect(held).resolves.toEqual({ status: "cancelled" });
+});
+
+it("keeps an image-held send alive when a pending workspace default or PR checkout settles", async () => {
+  const environmentId = EnvironmentId.make("environment-held");
+  const defaultProjectRef = scopeProjectRef(environmentId, ProjectId.make("project-held-defaults"));
+  const checkoutProjectRef = scopeProjectRef(
+    environmentId,
+    ProjectId.make("project-held-checkout"),
+  );
+  const drafts = useComposerDraftStore.getState();
+
+  const defaultId = DraftId.make("held-image-default");
+  const defaultTargetKey = composerTargetKey(defaultId);
+  drafts.setProjectDraftThreadId(defaultProjectRef, defaultId, {
+    envMode: "local",
+    startFromOrigin: false,
+  });
+
+  const checkoutId = DraftId.make("held-image-checkout");
+  const checkoutTargetKey = composerTargetKey(checkoutId);
+  drafts.setProjectDraftThreadId(checkoutProjectRef, checkoutId, {
+    envMode: "local",
+  });
+
+  using _store = {
+    [Symbol.dispose]: () => {
+      cancelPreparingComposerImages(defaultTargetKey);
+      cancelPreparingComposerImages(checkoutTargetKey);
+      drafts.clearDraftThread(defaultId);
+      drafts.clearDraftThread(checkoutId);
+    },
+  };
+
+  let resolveDefault!: (value: { envMode: "worktree"; startFromOrigin: true }) => void;
+  trackPendingWorkspaceDefault(
+    defaultId,
+    defaultProjectRef,
+    { envMode: "local", startFromOrigin: false },
+    new Promise((resolve) => {
+      resolveDefault = resolve;
+    }),
+  );
+  addPreparingComposerImages(defaultTargetKey, [preparingImage("held-default")]);
+  const heldDefault = holdComposerSend(defaultId);
+  resolveDefault({ envMode: "worktree", startFromOrigin: true });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(drafts.getDraftSession(defaultId)?.envMode).toBe("worktree");
+  removePreparingComposerImages(defaultTargetKey, new Set(["held-default"]));
+  await expect(heldDefault).resolves.toEqual({ status: "ready" });
+
+  let resolveCheckout!: (value: { branch: string; worktreePath: string }) => void;
+  const pendingCheckout = trackPendingDraftCheckout(
+    checkoutId,
+    checkoutProjectRef,
+    new Promise<{ branch: string; worktreePath: string }>((resolve) => {
+      resolveCheckout = resolve;
+    }),
+    ({ branch, worktreePath }) => {
+      drafts.setDraftThreadContext(checkoutId, {
+        branch,
+        worktreePath,
+        envMode: "worktree",
+        workspaceExplicit: true,
+        environmentSelection: "manual",
+      });
+      return true;
+    },
+    () => false,
+  );
+  addPreparingComposerImages(checkoutTargetKey, [preparingImage("held-checkout")]);
+  const heldCheckout = holdComposerSend(checkoutId);
+  resolveCheckout({ branch: "pr-branch", worktreePath: "/tmp/pr-worktree" });
+  await pendingCheckout;
+  expect(drafts.getDraftSession(checkoutId)?.worktreePath).toBe("/tmp/pr-worktree");
+  removePreparingComposerImages(checkoutTargetKey, new Set(["held-checkout"]));
+  await expect(heldCheckout).resolves.toEqual({ status: "ready" });
+});
+
+it("distinguishes draft edits from attachment progress while routing a send", () => {
+  const environmentId = EnvironmentId.make("environment-routing");
+  const draftTarget = scopeThreadRef(environmentId, ThreadId.make("routing"));
+  const target = composerTargetKey(draftTarget);
+  const drafts = useComposerDraftStore.getState();
+  using _store = {
+    [Symbol.dispose]: () => {
+      cancelPreparingComposerImages(target);
+      drafts.clearComposerContent(draftTarget);
+    },
+  };
+  const file = new File(["text"], "notes.txt", { type: "text/plain" });
+  drafts.setPrompt(draftTarget, "read these");
+  const setEffort = (value: string) =>
+    drafts.setProviderModelOptions(draftTarget, ProviderDriverKind.make("codex"), [
+      { id: "reasoningEffort", value },
+    ]);
+  setEffort("medium");
+  const finishSameEffortSend = watchComposerSendEdits(draftTarget);
+  setEffort("medium");
+  expect(finishSameEffortSend()).toBe("ready");
+
+  drafts.addFiles(draftTarget, [
+    { type: "file", id: "notes", name: file.name, mimeType: file.type, sizeBytes: file.size, file },
+  ]);
+  const image = preparingImage("submitted");
+  addPreparingComposerImages(target, [image]);
+  const finishUnchangedSend = watchComposerSendEdits(draftTarget);
+  drafts.setPrompt(draftTarget, drafts.getComposerDraft(draftTarget)!.prompt);
+  drafts.setFileUpload(draftTarget, "notes", environmentId, "uploaded-notes");
+  joinPreparedImagesToDraft(() =>
+    drafts.addImages(draftTarget, [
+      {
+        type: "image",
+        id: image.id,
+        name: image.name,
+        mimeType: "image/png",
+        sizeBytes: image.file.size,
+        previewUrl: URL.createObjectURL(image.file),
+        file: image.file,
+      },
+    ]),
+  );
+  removePreparingComposerImages(target, new Set([image.id]));
+  expect(finishUnchangedSend()).toBe("ready");
+
+  for (const edit of [
+    () => drafts.setPrompt(draftTarget, "replacement"),
+    () => setEffort("high"),
+    () => addPreparingComposerImages(target, [preparingImage("unsubmitted")]),
+  ]) {
+    const finishEditedSend = watchComposerSendEdits(draftTarget);
+    edit();
+    expect(finishEditedSend()).toBe("edited");
+  }
+
+  const finishCancelledSend = watchComposerSendEdits(draftTarget);
+  drafts.setPrompt(draftTarget, "another edit");
+  removePreparingComposerImages(target, new Set(["unsubmitted"]), { cancelSubmission: true });
+  expect(finishCancelledSend()).toBe("attachments-cancelled");
 });

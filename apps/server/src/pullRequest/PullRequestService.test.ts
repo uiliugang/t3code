@@ -4001,7 +4001,15 @@ it.effect(
             getChangeRequest: () =>
               Effect.succeed({
                 ...hostedChangeRequest("Description"),
-                checks: [{ name: "build", status: "success", description: null, url: null }],
+                checks: [
+                  {
+                    name: "build",
+                    status: "action-required",
+                    description: null,
+                    url: null,
+                  },
+                ],
+                workflowApprovalsRequired: 1,
               }),
             getChangeRequestChecks: () =>
               Effect.sync(() => {
@@ -4017,6 +4025,7 @@ it.effect(
         state: detail.state,
         checks: detail.checks,
         observedAt: detail.observedAt,
+        workflowApprovalsRequired: 1,
       });
       expect(reads).toBe(0);
       yield* TestClock.adjust("16 seconds");

@@ -13,6 +13,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { initializeI18n } from "../i18n/initializeI18n";
 import { act, render } from "../../test/render";
 
 const monitor = vi.hoisted(() => ({
@@ -76,6 +77,8 @@ const startError = "The resource monitor is not available.";
 const historyError = "Resource history could not start.";
 
 function setup({ retryFails = false, holdRetry = false } = {}) {
+  // GTProvider leaves its locale in a cookie; this sets it back to English.
+  initializeI18n(() => {});
   const readAt = DateTime.makeUnsafe(0);
   const aggregate = {
     processCount: 0,

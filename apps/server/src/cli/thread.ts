@@ -1,4 +1,5 @@
 import {
+  NonNegativeInt,
   OrchestratorMcpFailure,
   OrchestratorMcpThreadListResult,
   OrchestratorMcpThreadReadResult,
@@ -260,6 +261,7 @@ export const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function*
   flags: {
     readonly baseDir: Option.Option<string>;
     readonly json: boolean;
+    readonly clientLabel?: string;
   },
   run: (tools: ThreadTools) => Effect.Effect<A, E, R>,
   resolvedConfig?: ServerConfig.ServerConfig["Service"],
@@ -277,7 +279,7 @@ export const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function*
     const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const issued = yield* Effect.acquireRelease(
       environmentAuth.issueMcpClientSession({
-        label: "t3 thread cli",
+        label: flags.clientLabel ?? "t3 thread cli",
         // The CLI runs as the machine's owner. New threads still start at
         // the project's default mode, never at this ceiling by default.
         access: "full-access",
@@ -1057,6 +1059,7 @@ const threadShowCommand = Command.make("show", {
   ...projectLocationFlags,
   thread: threadArgument,
   messages: Flag.Int("messages").pipe(
+    Flag.withSchema(NonNegativeInt),
     Flag.withDescription("How many of the latest messages to print."),
     Flag.withDefault(10),
   ),

@@ -143,10 +143,23 @@ What the commands can rely on, and what they must do:
 - **One command runs at a time per project**, so a command can update a shared file in the project
   folder without its own locking.
 - **Each command has ten minutes.**
-- **The commands run only for requests that may run commands on the host.** A client paired
-  without `orchestration:operate` and `terminal:operate`, and a thread started through a
-  [linked environment](remote-access.md#link-another-environment) paired below full access, get no worktree in a project
-  that declares a layout, and their cleanup leaves `remove` out.
+
+#### Command approval and security
+
+Approve the exact `create` and `remove` commands separately on web or desktop, under
+**Settings → Projects → Worktree layout** or when opening a worktree thread. Approval needs
+`terminal:operate` and stays with that environment's project. Editing either command requires
+approval of the new text. T3 Code rechecks approval and requester access immediately before the
+command starts, including after waiting for Git's worktree registration lock.
+
+A linked client needs both `orchestration:operate` and `terminal:operate` for project layout
+commands. Mobile clients, scheduled tasks, and agents cannot approve commands. An agent needs Full
+access to trigger the project layout or a worktree setup script. Administrators can disable layout
+commands with [`worktreeLayoutCommands`](./managed-policy.md#other-capabilities).
+
+If `create` is blocked during a new launch, no custom worktree is started. When restoring a missing
+worktree, T3 Code instead tries to put back plain checkouts. Cleanup skips an unapproved `remove`
+and keeps files it cannot clean up safely.
 
 A project with no other repository can declare a layout too. This example gives each thread
 a worktree with its submodules checked out. The command runs in `sh`, and in `cmd.exe` on Windows,

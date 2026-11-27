@@ -21,8 +21,8 @@ export function useDiffFileFilters() {
     setHideMarkdownFiles,
     isFileVisible: (path: string, requestedPath?: string | null) =>
       path === requestedPath ||
-      ((!hideTestFiles || !isTestChangedFile(path)) &&
-        (!hideMarkdownFiles || !path.toLowerCase().endsWith(".md"))),
+      ((!hideMarkdownFiles || !path.toLowerCase().endsWith(".md")) &&
+        (!hideTestFiles || !isTestChangedFile(path))),
     clear: () => {
       setHideTestFiles(false);
       setHideMarkdownFiles(false);

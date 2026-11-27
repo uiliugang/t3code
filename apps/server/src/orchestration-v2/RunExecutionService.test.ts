@@ -47,6 +47,7 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -976,7 +977,11 @@ it.effect("passes the thread's MCP app context to the provider under a safe key"
 
     const input = yield* Deferred.await(started);
     assert.deepEqual(input.appContext, [
-      { key: "mcp_app_turn-item_provider_codex_native-item_call-1", text: "2 overdue" },
+      {
+        key: "mcp_app_turn-item_provider_codex_native-item_call-1",
+        text: "2 overdue",
+        updatedAt: "2026-11-23T14:02:17.000Z",
+      },
     ]);
   }).pipe(
     Effect.provide(
@@ -992,6 +997,7 @@ it.effect("passes the thread's MCP app context to the provider under a safe key"
                     server: "my tools>",
                     tool: "list",
                     text: "2 overdue",
+                    updatedAt: "2026-11-23T14:02:17.000Z",
                   },
                 ]),
             }),
@@ -1225,6 +1231,10 @@ it.effect.each([
       ...(workspace ? { workspace: workspaceFixture() } : {}),
     } as OrchestrationV2CheckpointScope;
     const providerStarts = yield* Ref.make(0);
+    const logs: Array<{ readonly level: string; readonly args: ReadonlyArray<unknown> }> = [];
+    const logger = Logger.make(({ logLevel, message }) => {
+      logs.push({ level: logLevel, args: Array.isArray(message) ? message : [message] });
+    });
     const writes = yield* Ref.make<
       ReadonlyArray<{
         events: ReadonlyArray<OrchestrationV2DomainEvent>;
@@ -1323,9 +1333,36 @@ it.effect.each([
           },
         },
       });
-    }).pipe(Effect.provide(layerTest));
+    }).pipe(
+      Effect.provide(
+        layerTest.pipe(Layer.provideMerge(Logger.layer([logger], { mergeWithExisting: false }))),
+      ),
+    );
 
     assert.equal(yield* Ref.get(providerStarts), workspace ? 0 : 1);
+
+    const baselineWarning = logs.find(
+      ({ level, args }) =>
+        level === "Warn" &&
+        args[0] ===
+          "orchestration V2 checkpoint baseline capture failed; starting provider without a baseline",
+    );
+    const preparationError = logs.find(
+      ({ level, args }) =>
+        level === "Error" && args[0] === "orchestration V2 run preparation failed",
+    );
+    assert.equal(baselineWarning !== undefined, !workspace);
+    assert.equal(preparationError !== undefined, workspace);
+    const fields = (workspace ? preparationError : baselineWarning)?.args[1] as
+      | { runId?: unknown; cause?: unknown }
+      | undefined;
+    assert.equal(fields?.runId, runId);
+    assert.isTrue(Cause.isCause(fields?.cause));
+    if (Cause.isCause(fields?.cause)) {
+      const renderedCause = Cause.pretty(fields.cause);
+      assert.include(renderedCause, "CheckpointBaselineCaptureError");
+      assert.include(renderedCause, "VCS process timed out");
+    }
 
     const events = (yield* Ref.get(writes)).flatMap((write) => [...write.events]);
     const failedEvent = events.find(

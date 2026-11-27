@@ -41,7 +41,7 @@ const entryIdentity = (info: NodeFS.Stats | null) =>
 const watchDirectoryEntry = (
   path: string,
   ready: Deferred.Deferred<void>,
-  consumeMissingObservation?: Effect.Effect<boolean>,
+  filterEntryReplays = false,
 ) => {
   const directory = NodePath.dirname(path);
   const name = NodePath.basename(path);
@@ -73,26 +73,20 @@ const watchDirectoryEntry = (
       ).pipe(Effect.tap(() => Deferred.succeed(ready, undefined))),
     { bufferSize: 1, strategy: "sliding" },
   );
-  const checks = consumeMissingObservation
-    ? notifications.pipe(Stream.merge(Stream.tick("1 second"), { haltStrategy: "left" }))
-    : notifications;
+  if (!filterEntryReplays) return notifications;
   const statEntry = Effect.promise(() => NodeFS.promises.lstat(path).catch(() => null));
   return Stream.unwrap(
     Effect.map(statEntry, (initial) => {
       let current = entryIdentity(initial);
       // FSEvents can replay creation of the entry after registration without replacing it.
-      return checks.pipe(
+      return notifications.pipe(
         Stream.filterEffect(() =>
-          statEntry.pipe(
-            Effect.flatMap((info) => {
-              const next = entryIdentity(info);
-              const replaced = next !== current;
-              current = next;
-              return info?.isDirectory() && consumeMissingObservation
-                ? Effect.map(consumeMissingObservation, (sawMissing) => replaced || sawMissing)
-                : Effect.succeed(replaced);
-            }),
-          ),
+          Effect.map(statEntry, (info) => {
+            const next = entryIdentity(info);
+            const replaced = next !== current;
+            current = next;
+            return replaced;
+          }),
         ),
       );
     }),
@@ -132,13 +126,10 @@ export const watchDirectoryPath = (
 ) => {
   const entry = NodePath.resolve(directory);
   return watchDirectoryReplacements(
-    (ready) => watchDirectoryEntry(entry, ready, consumeMissingObservation),
+    (ready) => watchDirectoryEntry(entry, ready, true),
     Stream.unwrap(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        const link = yield* fs.readLink(entry).pipe(Effect.option);
-        if (Option.isNone(link)) return watchChild;
-
         let childEnded = false;
         const watchContents = Stream.suspend(() => {
           childEnded = false;
@@ -151,13 +142,30 @@ export const watchDirectoryPath = (
           );
         });
 
-        // One stat per second for linked paths catches ancestor replacements the watches cannot see.
-        const identity = fs.stat(entry).pipe(
-          Effect.map(
-            (info) =>
-              `${info.dev}:${info.ino.valueOrUndefined}:${info.birthtime.valueOrUndefined?.getTime()}`,
-          ),
-          Effect.orElseSucceed(() => null),
+        const statIdentity = fs
+          .stat(entry)
+          .pipe(
+            Effect.map(
+              (info) =>
+                `${info.dev}:${info.ino.valueOrUndefined}:${info.birthtime.valueOrUndefined?.getTime()}`,
+            ),
+          );
+        // One probe per second catches replacements the watches cannot see: a link target's
+        // ancestors, or the entry becoming a link before macOS has armed the parent watch.
+        // A missing entry probes as null and a link whose target is missing as "".
+        const identity = fs.readLink(entry).pipe(
+          Effect.matchEffect({
+            onSuccess: (link) =>
+              statIdentity.pipe(
+                Effect.map((id) => `link:${id}:${link}`),
+                Effect.orElseSucceed(() => ""),
+              ),
+            onFailure: () =>
+              statIdentity.pipe(
+                Effect.map((id) => `plain:${id}`),
+                Effect.orElseSucceed(() => null),
+              ),
+          }),
         );
         // The identity of the tree the current watches were acquired on.
         let previous: string | null | undefined;
@@ -171,7 +179,7 @@ export const watchDirectoryPath = (
               Stream.mapEffect(([current, tick]) =>
                 Effect.gen(function* () {
                   // A catalog read can see the path missing even if both probes see the same inode.
-                  const sawMissing = current !== null && (yield* consumeMissingObservation);
+                  const sawMissing = Boolean(current) && (yield* consumeMissingObservation);
                   const replaced = previous !== undefined && current !== previous;
                   const firstProbe = previous === undefined;
                   previous = current;
@@ -182,7 +190,7 @@ export const watchDirectoryPath = (
                   }
                   if (firstProbe) return false;
                   if (replaced || sawMissing) return true;
-                  if (!childEnded || current === null || tick < nextRetry) return false;
+                  if (!childEnded || !current || tick < nextRetry) return false;
 
                   // A stable inode can stay unwatchable due to permissions or OS watch limits.
                   retryDelay = Math.min(60, retryDelay * 2);
@@ -202,7 +210,10 @@ export const watchDirectoryPath = (
                   previous = acquired;
                 }),
               ),
-              Effect.andThen(resolveLinkedPath(entry, link.value)),
+              Effect.andThen(fs.readLink(entry).pipe(Effect.option)),
+              Effect.flatMap((link) =>
+                Option.isSome(link) ? resolveLinkedPath(entry, link.value) : Effect.succeed(entry),
+              ),
               Effect.map((target) => {
                 if (target === entry || target === NodePath.dirname(target)) return watchContents;
                 const ancestors: string[] = [];

@@ -86,8 +86,6 @@
         "@t3tools/web",
         "@napi-rs/keyring",
         "zod",
-        // Disabled hosting integrations remain installed so their entries can be re-enabled.
-        "@t3tools/source-control-gitlab",
         "ffi-rs",
         "transcribe-cpp",
       ],

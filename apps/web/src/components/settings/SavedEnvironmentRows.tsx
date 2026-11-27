@@ -50,6 +50,7 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/men
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import { Button, InlineButton } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import {
@@ -62,7 +63,7 @@ import { useT3ConnectTurnOn } from "~/cloud/useT3ConnectTurnOn";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { useManagedTunnelUsage } from "~/cloud/managedRelayState";
 import { useT3ConnectAccountPage } from "../clerk/T3ConnectAccountPages";
-import { TunnelLimitAlert, TunnelUsageMeter } from "../cloud/TunnelUsage";
+import { TunnelLimitAlert, TunnelUsageMeter, TunnelUsageMeterSkeleton } from "../cloud/TunnelUsage";
 import { environmentCatalog } from "~/connection/catalog";
 import { readEnvironmentScope } from "~/state/session";
 import { type EnvironmentPresentation, useRelayEnvironmentDiscovery } from "~/state/environments";
@@ -455,41 +456,37 @@ export function SavedBackendListRow({
         />
       ) : null}
       {installProgress !== undefined && !isRemoving ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost-muted"
-                size="icon-xs"
-                aria-label={gt("Cancel installation")}
-                onClick={() => onSetEnabled(environmentId, false)}
-              />
-            }
-          >
-            <XIcon />
-          </TooltipTrigger>
-          <TooltipPopup side="top">{gt("Cancel installation")}</TooltipPopup>
-        </Tooltip>
-      ) : null}
-      <Tooltip>
-        <TooltipTrigger
+        <SharedTooltipTrigger
           render={
-            <Switch
-              size="sm"
-              checked={enabled}
-              disabled={isRemoving || blocked}
-              aria-label={t(enabled ? "Switch off {environment}" : "Switch on {environment}", {
-                environment: environment.label,
-              })}
-              onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
+            <Button
+              type="button"
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label={gt("Cancel installation")}
+              onClick={() => onSetEnabled(environmentId, false)}
             />
           }
-        />
-        <TooltipPopup side="top">
-          {t(blocked ? "Client not supported" : enabled ? "Switch off" : "Switch on")}
-        </TooltipPopup>
-      </Tooltip>
+          label={gt("Cancel installation")}
+          side="top"
+        >
+          <XIcon />
+        </SharedTooltipTrigger>
+      ) : null}
+      <SharedTooltipTrigger
+        render={
+          <Switch
+            size="sm"
+            checked={enabled}
+            disabled={isRemoving || blocked}
+            aria-label={t(enabled ? "Switch off {environment}" : "Switch on {environment}", {
+              environment: environment.label,
+            })}
+            onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
+          />
+        }
+        label={t(blocked ? "Client not supported" : enabled ? "Switch off" : "Switch on")}
+        side="top"
+      />
       <Menu>
         <MenuTrigger
           render={
@@ -558,10 +555,10 @@ function CloudLinkSwitch({
     />
   );
   return disabledReason ? (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex">{control}</span>} />
-      <TooltipPopup side="top">{disabledReason}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={<span className="inline-flex">{control}</span>}
+      label={disabledReason}
+    />
   ) : (
     control
   );
@@ -603,6 +600,8 @@ function T3ConnectTunnelUsage({ tunnelLimit }: { readonly tunnelLimit: number | 
           ) : null
         }
       />
+    ) : usage.loading ? (
+      <TunnelUsageMeterSkeleton />
     ) : null;
   return (
     <>

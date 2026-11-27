@@ -60,6 +60,7 @@ import { sourceControlInstallHintText } from "@t3tools/client-runtime/contract-l
 import { isSourceControlProviderOffered } from "@t3tools/client-runtime/operations/projects";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { sourceControlIcon } from "~/sourceControlPresentation";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const EMPTY_DISCOVERY_RESULT: SourceControlDiscoveryResult = {
   versionControlSystems: [],
@@ -285,30 +286,29 @@ function DiscoveryItemRow({
               </Tooltip>
             ) : null}
             {offered ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Switch
-                      checked={offered.checked}
-                      disabled={offered.disabled}
-                      onCheckedChange={offered.onChange}
-                      aria-label={t(
-                        item.kind === "meituan"
-                          ? "Enable {name}"
-                          : "Offer {name} when adding or publishing a project",
-                        {
-                          name: item.label,
-                        },
-                      )}
-                    />
-                  }
-                />
-                <TooltipPopup side="top">
-                  {item.kind === "meituan"
+              <SharedTooltipTrigger
+                render={
+                  <Switch
+                    checked={offered.checked}
+                    disabled={offered.disabled}
+                    onCheckedChange={offered.onChange}
+                    aria-label={t(
+                      item.kind === "meituan"
+                        ? "Enable {name}"
+                        : "Offer {name} when adding or publishing a project",
+                      {
+                        name: item.label,
+                      },
+                    )}
+                  />
+                }
+                label={
+                  item.kind === "meituan"
                     ? t("Enable {name}", { name: item.label })
-                    : t("Offer when adding or publishing a project")}
-                </TooltipPopup>
-              </Tooltip>
+                    : t("Offer when adding or publishing a project")
+                }
+                side="top"
+              />
             ) : null}
           </div>
         </div>
@@ -574,22 +574,21 @@ export function SourceControlSettingsPanel({
     );
   };
   const scanButton = (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost-muted"
-            onClick={handleScan}
-            disabled={discovery.isPending}
-            aria-label={t("Rescan server environment")}
-          >
-            <RefreshIcon refreshing={discovery.isPending} />
-          </Button>
-        }
-      />
-      <TooltipPopup side="top">{t("Rescan Git and hosting integrations")}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Button
+          size="icon-xs"
+          variant="ghost-muted"
+          onClick={handleScan}
+          disabled={discovery.isPending}
+          aria-label={t("Rescan server environment")}
+        >
+          <RefreshIcon refreshing={discovery.isPending} />
+        </Button>
+      }
+      label={t("Rescan Git and hosting integrations")}
+      side="top"
+    />
   );
 
   return (

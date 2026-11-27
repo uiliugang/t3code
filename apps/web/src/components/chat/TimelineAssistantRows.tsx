@@ -1,3 +1,4 @@
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/assistantInsights";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { MessageId, type TurnItemId } from "@t3tools/contracts";
@@ -24,7 +25,6 @@ import {
 import { MessageCopyButton } from "./MessageCopyButton";
 import { AssistantCitationSource } from "./AssistantCitationSource";
 import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { readThreadTurnItems } from "../../state/entities";
@@ -32,6 +32,7 @@ import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
 import { openThreadHandoff, useCanOpenThreadHandoff } from "./ThreadHandoffDialog";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -68,6 +69,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
               }
               threadRef={ctx.threadRef ?? undefined}
               isStreaming={Boolean(row.message.streaming)}
+              streamingId={row.message.id}
               lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
               skills={ctx.skills}
               headingLevelOffset={MESSAGE_HEADING_LEVEL}
@@ -187,27 +189,26 @@ function AssistantForkButton({
 
   return (
     <Menu>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <MenuTrigger
-              render={
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  data-fork-busy={busy ? "true" : undefined}
-                  aria-label={label}
-                />
-              }
-              disabled={busy}
-            />
-          }
-        >
-          {busy ? <Spinner size="xs" /> : <GitForkIcon className="size-3" />}
-        </TooltipTrigger>
-        <TooltipPopup side="top">{label}</TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={
+          <MenuTrigger
+            render={
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                data-fork-busy={busy ? "true" : undefined}
+                aria-label={label}
+              />
+            }
+            disabled={busy}
+          />
+        }
+        label={label}
+        side="top"
+      >
+        {busy ? <Spinner size="xs" /> : <GitForkIcon className="size-3" />}
+      </SharedTooltipTrigger>
       <MenuPopup align="start">
         <MenuItem onClick={() => runFork("current")}>
           <GitForkIcon />
@@ -296,20 +297,12 @@ function AssistantMessageMeta({
       ) : null}
       {!message.streaming && ctx.threadRef ? <AssistantHandoffButton /> : null}
       {!message.streaming && (
-        <Tooltip>
-          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-            {formatDayAwareTimestamp(
-              message.updatedAt,
-              ctx.timestampFormat,
-              undefined,
-              undefined,
-              m,
-            )}
-          </TooltipTrigger>
-          <TooltipPopup>
-            {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat, m)}
-          </TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={<p className="text-muted-foreground text-xs tabular-nums" />}
+          label={formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat, m)}
+        >
+          {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat, undefined, undefined, m)}
+        </SharedTooltipTrigger>
       )}
     </div>
   );
@@ -372,22 +365,21 @@ function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemI
   };
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost-muted"
-            onClick={reply}
-            aria-label={t("Reply to this response")}
-          />
-        }
-      >
-        <ReplyIcon className="size-3" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{t("Reply to this response")}</TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost-muted"
+          onClick={reply}
+          aria-label={t("Reply to this response")}
+        />
+      }
+      label={t("Reply to this response")}
+      side="top"
+    >
+      <ReplyIcon className="size-3" />
+    </SharedTooltipTrigger>
   );
 }
 

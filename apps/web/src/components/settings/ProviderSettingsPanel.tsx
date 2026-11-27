@@ -1,3 +1,4 @@
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { SettingsGroup } from "./SettingsGroup";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -97,7 +98,6 @@ import {
 } from "../ui/empty";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { useManagedPolicy } from "~/state/managedPolicy";
@@ -140,6 +140,7 @@ import {
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const isServerSettingsError = Schema.is(ServerSettingsError);
 
@@ -418,32 +419,33 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
             const detail = providerEnvironmentDetail(environment, m);
             const statusText = connectionStatusTitle(environment.connection, t);
             return (
-              <Tooltip key={environment.environmentId}>
-                <TooltipTrigger
-                  render={
-                    <Toggle value={environment.environmentId}>
-                      <EnvironmentMachineIcon
-                        kind={machine}
-                        className="size-3.5 shrink-0"
-                        aria-hidden
+              <SharedTooltipTrigger
+                key={environment.environmentId}
+                render={
+                  <Toggle value={environment.environmentId}>
+                    <EnvironmentMachineIcon
+                      kind={machine}
+                      className="size-3.5 shrink-0"
+                      aria-hidden
+                    />
+                    <span className="max-w-40 truncate">{environment.label}</span>
+                    {environment.connection.phase !== "connected" ? (
+                      <ConnectionStatusDot
+                        dotClassName={connectionPhaseDotClassName(environment.connection.phase)}
+                        pingClassName={connectionPhasePingClassName(environment.connection.phase)}
                       />
-                      <span className="max-w-40 truncate">{environment.label}</span>
-                      {environment.connection.phase !== "connected" ? (
-                        <ConnectionStatusDot
-                          dotClassName={connectionPhaseDotClassName(environment.connection.phase)}
-                          pingClassName={connectionPhasePingClassName(environment.connection.phase)}
-                        />
-                      ) : null}
-                      <span className="sr-only">
-                        {detail}, {statusText}
-                      </span>
-                    </Toggle>
-                  }
-                />
-                <TooltipPopup side="top">
-                  {detail} · {statusText}
-                </TooltipPopup>
-              </Tooltip>
+                    ) : null}
+                    <span className="sr-only">
+                      {detail}, {statusText}
+                    </span>
+                  </Toggle>
+                }
+                label={
+                  <>
+                    {detail} · {statusText}
+                  </>
+                }
+              />
             );
           })}
         </ToggleGroup>
@@ -1039,21 +1041,19 @@ export function EnvironmentProviderSettings({
         variant="plain"
         titleAction={
           canAddProvider ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    onClick={() => setIsAddInstanceDialogOpen(true)}
-                    aria-label={t("Add provider")}
-                  >
-                    <PlusIcon />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">{t("Add provider")}</TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  onClick={() => setIsAddInstanceDialogOpen(true)}
+                  aria-label={t("Add provider")}
+                >
+                  <PlusIcon />
+                </Button>
+              }
+              label={t("Add provider")}
+            />
           ) : null
         }
         headerAction={

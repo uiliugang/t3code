@@ -69,7 +69,6 @@
   "929a11e234f6e5d9": "Install the Azure command-line tools ({cli}), then enable Azure DevOps support with {command}.",
   "ad599e9de33538dd": "Add a Bitbucket token in Settings → Source control & issues.",
   "d810ecd91e8cf9d0": "Install the Origin CLI with {install}, then run {login}.",
-  "eb0f60ef4f92ab7d": "Install {fj} 0.6 or later from {fjUrl} and run {fjLogin}, or install {tea} 0.16 or later from {teaUrl} and run {teaLogin} for each Forgejo or Gitea server.",
   "d026a85e2e50e675": "Install the GitCafe CLI with {install}, then run {login}, save a token in Settings, or set {variable} on the server.",
   "22d3c0c48a34b5b3": "Install the TanStack Source CLI with {install}, then run {login}, save a token in Settings, or set {variable} on the server.",
   "79d776428f4d0650": "The file could not be loaded. Reconnect and try again.",
@@ -1129,7 +1128,6 @@
   "c13753167634f7aa": "Read file",
   "5ce648cd03020fd9": "Read {path} +{count} more",
   "5d6c2898401c94e6": "Read {path}",
-  "612170d804b03320": "{count, plural, one {{count} malformed or inconsistent usage record(s) were skipped; usage may be incomplete.} other {{count} malformed or inconsistent usage record(s) were skipped; usage may be incomplete.}}",
   "ee448ceb6820ce2f": "{environment} runs an older server version and is excluded from totals.",
   "732708950237004e": "This client is older than the server on {environment}; its usage is excluded from totals.",
   "9758c2ede06aa19b": "{hour} today",
@@ -2011,7 +2009,6 @@
   "a6eeff30440d26a2": "Issue {key}",
   "c0e2d952114e7d59": "by {author}",
   "2195cdd7774c1c23": "unknown author",
-  "093394ace72dbd79": "{count, plural, other {{count} comments}}",
   "a749275f1ad66618": "Unknown author",
   "c3b4753a085d71b0": "Add labels",
   "60d19f004e2eef22": "Edit labels",
@@ -2433,7 +2430,6 @@
   "2bc714a245998c04": "Neutral",
   "b28db58c44b25db3": "{passed} of {total}",
   "8e64d98f747bf650": "{count, plural, one {{count} check failing} other {{count} checks failing}}",
-  "ff4514103a353d8e": "{count, plural, one {{count} need attention} other {{count} need attention}}",
   "078bb63ea2f3ee40": "Checks need attention",
   "fd63b391898889f9": "{count, plural, one {{count} awaiting action} other {{count} awaiting action}}",
   "a39948e68089494f": "{count, plural, one {{count} pending} other {{count} pending}}",
@@ -3291,7 +3287,6 @@
   "55b562c00e37321b": "Could not force stop the agent",
   "ede15a83eedec569": "Turn stopped; the agent is still shutting down",
   "f360accf1ccac178": "Turn stopped; the agent process kept running",
-  "967f83de030790dd": "{count, plural, =0 {It is shared with other working threads. Stop those to free it.} one {It is shared with {count} working thread. Stop those to free it.} other {It is shared with {count} working threads. Stop those to free it.}}",
   "5536ab75119ee3f9": "Could not update thread",
   "04c7bba52daa6f53": "Could not update goal",
   "b3fb8cf724de33c2": "Wake now",
@@ -3681,9 +3676,7 @@
   "811008ce95331531": "Segment {index}, {account}, {remaining}% left",
   "bfb2d0ef476d295b": "Segment {index}, {account}, {remaining}% left, {timeLeft}% of the window left",
   "e71c96e5114f7718": "Show account details",
-  "27cd137302298f71": "Segment {index}, {account}, {remaining}% left, {resetsIn}, {credits, plural, other {{credits} reset credits banked}}",
   "288ade531cfcf90c": "Segment {index}, {account}, {remaining}% left, {resetsIn}",
-  "f78edbddd70ee41d": "Segment {index}, {account}, {remaining}% left, {credits, plural, other {{credits} reset credits banked}}",
   "9217e0c91cee3cf8": "Signed in",
   "5f12a194d158f9b1": "Source",
   "65a7507ffde6d3f8": [
@@ -3760,7 +3753,6 @@
   "66ab3e4edb2b4fe7": "Daily cost",
   "08f867ac9eaa7508": "Daily processed tokens",
   "212d974007cacf3f": "* if billed at full API rate",
-  "82bc7f1cc5a039fc": "{count, plural, other {Across {sessions} sessions}}",
   "2a57181a9d128463": "{share} of cost · {tokens} tokens",
   "d8a6a99fbdda0d3e": "{share} of tokens · {cost}",
   "19a3f4f2ba09e787": "Totals",
@@ -3884,7 +3876,6 @@
   "4a00305dda1a153e": "New chat",
   "90896a7348c4e7ce": "Open settings",
   "a3bd0ffad2733714": "Review guide",
-  "ffd7529d1f50e0a6": "{count, plural, one {{count} stops} other {{count} stops}}",
   "9830004326e7d8c0": "{count, plural, one {through {count} file} other {through {count} files}}",
   "e6035bad35419efa": "Guide options",
   "b9dba35bf970552b": "A tradeoff to weigh",
@@ -4003,5 +3994,100 @@
   "f001fa7b329c8fbf": "Hide successful",
   "ad208e3e32c85029": "Hide all",
   "3328503592789bed": "Zen",
-  "856812e7e1fc445e": "Tool calls in chat"
+  "856812e7e1fc445e": "Tool calls in chat",
+  "035aab5e99159bd8": "{count, plural, one {… {hidden} character in the middle is not shown.} other {… {hidden} characters in the middle are not shown.}} The text ends with:",
+  "069e0382ff2496f5": "Your organization's Claude settings turn auto mode off.",
+  "8ccf7e0def66d339": "Your Claude settings turn auto mode off.",
+  "04ac2410d2cc0666": "This project's Claude settings turn auto mode off.",
+  "7e27789f5d58960e": "Claude's settings turn auto mode off.",
+  "1a04c8d36a7b29d3": "Install {fj} 0.6 or later from {fjUrl} and run {fjLogin}, or install {gt} 2.0 or later from {gtUrl} and run {gtLogin} for each Forgejo or Gitea server.",
+  "13b14784f8707ddd": "0 bytes",
+  "1b799ebfa94c2408": "Push hooks approval",
+  "81d703184fe5112e": "Run this repository's push hooks?",
+  "027b0d65c7a67af6": "Hook file",
+  "ade585910165bb52": "Configured hook",
+  "69150fe436b3a0c2": "{count, plural, one {{count} malformed or inconsistent usage record was skipped; usage may be incomplete.} other {{count} malformed or inconsistent usage records were skipped; usage may be incomplete.}}",
+  "6f321f153b8711bb": "Choose an option",
+  "796b81c4875c4feb": [
+    "The ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " app needs a newer ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " server on this environment. Update the server to use it."
+  ],
+  "72e41eb83e88cefa": "{count, plural, =0 {It is shared with other working threads. Stop those to free it.} one {It is shared with {count} working thread. Stop that thread to free it.} other {It is shared with {count} working threads. Stop those to free it.}}",
+  "d71048f4fb9cf44a": "Waiting to sync",
+  "e339cc2761dac83a": "Segment {index}, {account}, {remaining}% left, {resetsIn}, {credits, plural, one {{credits} reset credit banked} other {{credits} reset credits banked}}",
+  "d0d366d02d9fd98e": "Segment {index}, {account}, {remaining}% left, {credits, plural, one {{credits} reset credit banked} other {{credits} reset credits banked}}",
+  "45340a7dc1f89d51": "{count, plural, one {Across {sessions} session} other {Across {sessions} sessions}}",
+  "fc9c3a00cfc18b55": "All kinds",
+  "e4d1316c85ed7066": "No questions of this kind wait on you.",
+  "45a94c724845ec1d": "Other",
+  "e093a6c02ff2c19f": "{count, plural, one {{count} stop} other {{count} stops}}",
+  "89bf40eb2503b6c5": "New device signed in to {environment}",
+  "c94b5fe9ef372bc0": "{device} connected through {product}. If this was not you, remove it in Settings → Access in T3 Code on that computer.",
+  "bec67d0ed485f885": "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. If this was not you, remove them in Settings → Access in T3 Code on that computer.",
+  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
+  "7150557773b3818b": "Queued",
+  "efbeb3993ee2c3f5": "Queued for {pool}",
+  "0398ca6c1d24b92d": "queued, next in line",
+  "0af6d5ffd5166214": "{count, plural, one {queued, {count} ahead} other {queued, {count} ahead}}",
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " needs a reason."
+  ],
+  "7e1fd2eb570a372b": "{who} answered {choice}",
+  "a3c43735e1a81498": "Reason for {title}",
+  "bfad234f016cfa3f": "Why, in a sentence. It goes with whichever answer you pick.",
+  "3759768c5d342c22": [
+    "answered",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "8afa4fbe16f95bcf": [
+    "by ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ",",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "0f93532dd76391fc": "You answered {choice}",
+  "235902a19e95833b": [
+    "by you,",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "1a1beecff68a6e61": "Verify Google account",
+  "99451a5d2d40440f": "Withdrawn by {by}.",
+  "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
+  "201490988858b511": "withdrawn by {by}",
+  "46d614fa7b4bf1e5": "Workflow runs"
 }

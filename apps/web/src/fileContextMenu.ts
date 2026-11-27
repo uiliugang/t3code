@@ -11,6 +11,7 @@ import {
 import { resolveDiffPathForWorkspace } from "./diffFileActions";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { isAbsolutePath } from "@t3tools/shared/path";
+import { useUiTranslation } from "./hooks/useUiTranslation";
 import { useComposerHandleContext } from "./composerHandleContext";
 import { writeTextToClipboard } from "./hooks/useCopyToClipboard";
 import {
@@ -34,6 +35,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, useMessages } from "gt-react";
 
+import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import type { MessageResolver } from "./i18n/messages";
 
 export type FileContextMenuAction =
@@ -41,6 +43,7 @@ export type FileContextMenuAction =
   | "open"
   /** Submenu parent; never the activated id. */
   | "open-with"
+  | "copy-path"
   | "copy-mention"
   | "add-to-chat"
   | `editor:${EditorId}`;
@@ -52,6 +55,7 @@ export interface FileContextMenuTarget {
   readonly workspaceRoot: string | undefined;
   readonly repositoryRoot?: string | undefined;
   readonly isDirectory?: boolean;
+  readonly includeCopyPath?: boolean;
 }
 
 export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget): string | null {
@@ -79,6 +83,8 @@ export interface FileContextMenuCapabilities {
 
 function buildFileContextMenuItems(input: {
   readonly hasAbsolutePath: boolean;
+  readonly includeCopyPath: boolean;
+  readonly t: UiTranslator;
   readonly capabilities: FileContextMenuCapabilities;
   readonly editorIcons: ReadonlyMap<EditorId, string>;
   readonly resolve: MessageResolver;
@@ -114,6 +120,7 @@ function buildFileContextMenuItems(input: {
       }),
     });
   }
+  if (input.includeCopyPath) items.push({ id: "copy-path", label: input.t("Copy path") });
   items.push(
     { id: "copy-mention", label: input.resolve(msg("Copy mention")) },
     { id: "add-to-chat", label: input.resolve(msg("Add to chat")) },
@@ -122,6 +129,7 @@ function buildFileContextMenuItems(input: {
 }
 
 export function useFileContextMenu(environmentId: EnvironmentId | null) {
+  const t = useUiTranslation();
   const composerRef = useComposerHandleContext();
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, { reportFailure: false });
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
@@ -168,6 +176,20 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
   ): Promise<void> => {
     const absolutePath = resolveFileContextMenuAbsolutePath(target);
     if (absolutePath === null || environmentId === null) return;
+
+    if (action === "copy-path") {
+      if (!target.includeCopyPath) return;
+      try {
+        await writeTextToClipboard(absolutePath);
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: t("Failed to copy path"),
+          description: thrownErrorMessage(error, resolve) ?? t("An error occurred."),
+        });
+      }
+      return;
+    }
 
     if (action === "copy-mention" || action === "add-to-chat") {
       const workspaceFilePath = resolveDiffPathForWorkspace({
@@ -260,6 +282,8 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
     const api = readLocalApi();
     const items = buildFileContextMenuItems({
       hasAbsolutePath: resolveFileContextMenuAbsolutePath(target) !== null,
+      includeCopyPath: target.includeCopyPath === true,
+      t,
       capabilities,
       editorIcons,
       resolve,
@@ -274,6 +298,8 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
     buildItems: (target: FileContextMenuTarget) =>
       buildFileContextMenuItems({
         hasAbsolutePath: resolveFileContextMenuAbsolutePath(target) !== null,
+        includeCopyPath: target.includeCopyPath === true,
+        t,
         capabilities,
         editorIcons,
         resolve,

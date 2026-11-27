@@ -21,7 +21,6 @@ const MAX_PROCESS_NAME_BYTES: usize = 1_024;
 const MAX_PROCESS_COMMAND_BYTES: usize = 16 * 1_024;
 const MAX_PROCESS_STATUS_BYTES: usize = 256;
 const HISTORY_CHUNK_SNAPSHOTS: usize = 32;
-const TWO_STAGE_PROCESS_REFRESH: bool = cfg!(any(target_os = "linux", target_os = "macos"));
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +67,9 @@ enum Command {
         request_id: String,
     },
     ProcessTable {
+        #[cfg(target_os = "macos")]
+        #[serde(default)]
+        identities: bool,
         version: u32,
         request_id: String,
     },
@@ -111,6 +113,7 @@ struct Capabilities {
     io_bytes: bool,
     process_start_time: bool,
     process_tree: bool,
+    process_identities: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -162,12 +165,96 @@ struct ProcessTableEntry {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ProcessTableEvent<'a> {
+struct ProcessTableEvent<'a, T> {
     version: u32,
     #[serde(rename = "type")]
     event_type: &'static str,
     request_id: &'a str,
-    processes: Vec<ProcessTableEntry>,
+    processes: Vec<T>,
+}
+
+#[cfg(target_os = "macos")]
+mod mac_process_identities {
+    use serde::Serialize;
+    use std::ffi::{CStr, c_char, c_void};
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Identity {
+        pid: i32,
+        ppid: i32,
+        pgid: i32,
+        start_time_micros: i64,
+        name: String,
+    }
+
+    unsafe extern "C" {
+        fn t3_process_identities(
+            context: *mut c_void,
+            visit: extern "C" fn(*mut c_void, i32, i32, i32, i64, *const c_char),
+        ) -> i32;
+    }
+
+    extern "C" fn visit(
+        context: *mut c_void,
+        pid: i32,
+        ppid: i32,
+        pgid: i32,
+        start_time_micros: i64,
+        name: *const c_char,
+    ) {
+        // The C function calls back synchronously with the vector passed by read().
+        let rows = unsafe { &mut *context.cast::<Vec<Identity>>() };
+        rows.push(Identity {
+            pid,
+            ppid,
+            pgid,
+            start_time_micros,
+            name: unsafe { CStr::from_ptr(name) }
+                .to_string_lossy()
+                .into_owned(),
+        });
+    }
+
+    pub fn read() -> Vec<Identity> {
+        let mut rows = Vec::<Identity>::new();
+        if unsafe { t3_process_identities((&raw mut rows).cast(), visit) } != 0 {
+            rows.clear();
+        }
+        rows
+    }
+    #[test]
+    fn reports_the_same_process_group_and_start_second_as_ps() {
+        use std::process::{Command, id};
+        let row = read()
+            .into_iter()
+            .find(|row| row.pid == id() as i32)
+            .unwrap();
+        let output = Command::new("ps")
+            .env("TZ", "UTC0")
+            .env("LC_ALL", "C")
+            .args(["-p", &id().to_string(), "-o", "ppid=,pgid=,lstart="])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let text = String::from_utf8(output.stdout).unwrap();
+        let mut fields = text.split_whitespace();
+        assert_eq!(fields.next().unwrap().parse::<i32>().unwrap(), row.ppid);
+        assert_eq!(fields.next().unwrap().parse::<i32>().unwrap(), row.pgid);
+        let date = Command::new("date")
+            .env("LC_ALL", "C")
+            .args([
+                "-u",
+                "-r",
+                &(row.start_time_micros / 1_000_000).to_string(),
+                "+%a %b %e %T %Y",
+            ])
+            .output()
+            .unwrap();
+        assert!(date.status.success());
+        let utc = String::from_utf8(date.stdout).unwrap();
+        assert!(fields.eq(utc.split_whitespace()));
+    }
 }
 
 impl ProcessSample {
@@ -480,7 +567,7 @@ impl Collector {
         roots.insert(config.root_pid);
         let tracked = select_tracked_pids(&rows, &roots);
         let tracked_process_count = tracked.len();
-        let process_details = if TWO_STAGE_PROCESS_REFRESH && !tracked.is_empty() {
+        let process_details = if !tracked.is_empty() {
             let monitor_pid = Pid::from_u32(std::process::id());
             let mut detail_pids = tracked
                 .iter()
@@ -587,11 +674,7 @@ impl Collector {
 
 // Keep CPU baselines separate. Even a metadata refresh resets Linux process times.
 fn process_discovery_refresh_kind() -> ProcessRefreshKind {
-    if TWO_STAGE_PROCESS_REFRESH {
-        ProcessRefreshKind::nothing().with_cpu().without_tasks()
-    } else {
-        process_refresh_kind()
-    }
+    ProcessRefreshKind::nothing().with_cpu().without_tasks()
 }
 
 fn process_refresh_kind() -> ProcessRefreshKind {
@@ -845,6 +928,7 @@ fn main() -> io::Result<()> {
                 io_bytes: true,
                 process_start_time: true,
                 process_tree: true,
+                process_identities: cfg!(target_os = "macos"),
             },
         },
     )?;
@@ -969,6 +1053,22 @@ fn main() -> io::Result<()> {
                                 true,
                             )?;
                         }
+                    }
+                    #[cfg(target_os = "macos")]
+                    Command::ProcessTable {
+                        identities: true,
+                        request_id,
+                        ..
+                    } => {
+                        write_event(
+                            &mut writer,
+                            &ProcessTableEvent {
+                                version: PROTOCOL_VERSION,
+                                event_type: "processTable",
+                                request_id: &request_id,
+                                processes: mac_process_identities::read(),
+                            },
+                        )?;
                     }
                     Command::ProcessTable { request_id, .. } => {
                         let event = ProcessTableEvent {

@@ -14,7 +14,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import { PullRequestDetailTitleRow } from "./PullRequestDetailLayout";
 import { PullRequestEditButton } from "./PullRequestEditButton";
 import { readableFailure } from "./pullRequestDetail.logic";
@@ -71,16 +71,14 @@ export function PullRequestTitleEditor({
   if (titleDraft === null) {
     return (
       <PullRequestDetailTitleRow className="group gap-1">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <h1 className="min-w-0 flex-1 truncate text-base font-semibold leading-snug">
-                {detail.title}
-              </h1>
-            }
-          />
-          <TooltipPopup side="top">{detail.title}</TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <h1 className="min-w-0 flex-1 truncate text-base font-semibold leading-snug">
+              {detail.title}
+            </h1>
+          }
+          label={detail.title}
+        />
         {canEditPullRequestChangeRequest(detail) ? (
           <PullRequestEditButton
             aria-label={t("Edit title")}
@@ -108,6 +106,7 @@ export function PullRequestTitleEditor({
             void saveTitle(titleDraft);
           } else if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
             setTitleScope(null);
           }
         }}

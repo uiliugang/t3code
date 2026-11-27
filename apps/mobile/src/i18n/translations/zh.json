@@ -69,7 +69,6 @@
   "929a11e234f6e5d9": "请安装 Azure 命令行工具（{cli}），然后使用 {command} 启用 Azure DevOps 支持。",
   "ad599e9de33538dd": "请在“设置 → 版本控制与 issue”中添加 Bitbucket token。",
   "d810ecd91e8cf9d0": "请使用 {install} 安装 Origin CLI，然后运行 {login}。",
-  "eb0f60ef4f92ab7d": "请从 {fjUrl} 安装 {fj} 0.6 或更高版本并运行 {fjLogin}，或从 {teaUrl} 安装 {tea} 0.16 或更高版本，并为每个 Forgejo 或 Gitea 服务器运行 {teaLogin}。",
   "d026a85e2e50e675": "请使用 {install} 安装 GitCafe CLI，然后运行 {login}、在设置中保存 token，或在服务器上设置 {variable}。",
   "22d3c0c48a34b5b3": "用 {install} 安装 TanStack Source CLI，然后运行 {login}、在设置中保存令牌，或在服务器上设置 {variable}。",
   "79d776428f4d0650": "无法加载文件，请重新连接后重试。",
@@ -1129,7 +1128,6 @@
   "c13753167634f7aa": "已读取文件",
   "5ce648cd03020fd9": "已读取 {path}，另有 {count} 个",
   "5d6c2898401c94e6": "已读取 {path}",
-  "612170d804b03320": "{count, plural, other {已跳过 {count} 条格式错误或不一致的用量记录；用量可能不完整。}}",
   "ee448ceb6820ce2f": "{environment} 的服务端版本较旧，其用量未计入汇总。",
   "732708950237004e": "当前客户端版本低于 {environment} 的服务端，其用量未计入汇总。",
   "9758c2ede06aa19b": "今天 {hour}",
@@ -2014,7 +2012,6 @@
   "a6eeff30440d26a2": "issue {key}",
   "c0e2d952114e7d59": "作者：{author}",
   "2195cdd7774c1c23": "未知作者",
-  "093394ace72dbd79": "{count, plural, other {{count} 条评论}}",
   "a749275f1ad66618": "未知作者",
   "c3b4753a085d71b0": "添加标签",
   "60d19f004e2eef22": "编辑标签",
@@ -2428,7 +2425,6 @@
   "2bc714a245998c04": "中立",
   "b28db58c44b25db3": "{passed}/{total}",
   "8e64d98f747bf650": "{count, plural, other {{count} 项检查失败}}",
-  "ff4514103a353d8e": "{count, plural, other {{count} 个需要关注}}",
   "078bb63ea2f3ee40": "检查需要处理",
   "fd63b391898889f9": "{count, plural, other {{count} 个等待操作}}",
   "a39948e68089494f": "{count, plural, other {{count} 个待定}}",
@@ -3274,7 +3270,6 @@
   "55b562c00e37321b": "无法强制停止智能体",
   "ede15a83eedec569": "回合已停止；智能体仍在关闭中",
   "f360accf1ccac178": "回合已停止；智能体进程仍在运行",
-  "967f83de030790dd": "{count, plural, =0 {它被其他正在工作的会话共用。停止那些会话即可释放。} other {它被 {count} 个正在工作的会话共用。停止那些会话即可释放。}}",
   "5536ab75119ee3f9": "无法更新会话",
   "04c7bba52daa6f53": "无法更新目标",
   "b3fb8cf724de33c2": "立即唤醒",
@@ -3664,9 +3659,7 @@
   "811008ce95331531": "分段 {index}，{account}，剩余 {remaining}%",
   "bfb2d0ef476d295b": "分段 {index}，{account}，剩余 {remaining}%，窗口剩余 {timeLeft}%",
   "e71c96e5114f7718": "显示账户详情",
-  "27cd137302298f71": "分段 {index}，{account}，剩余 {remaining}%，{resetsIn}，{credits, plural, other {已存有 {credits} 个重置额度}}",
   "288ade531cfcf90c": "分段 {index}，{account}，剩余 {remaining}%，{resetsIn}",
-  "f78edbddd70ee41d": "分段 {index}，{account}，剩余 {remaining}%，{credits, plural, other {已存有 {credits} 个重置额度}}",
   "9217e0c91cee3cf8": "已登录",
   "5f12a194d158f9b1": "来源",
   "65a7507ffde6d3f8": [
@@ -3744,7 +3737,6 @@
   "66ab3e4edb2b4fe7": "每日费用",
   "08f867ac9eaa7508": "每日处理 Token",
   "212d974007cacf3f": "* 按完整 API 费率计算",
-  "82bc7f1cc5a039fc": "{count, plural, other {共 {sessions} 个会话}}",
   "2a57181a9d128463": "占总费用 {share} · {tokens} Token",
   "d8a6a99fbdda0d3e": "占总 Token {share} · {cost}",
   "19a3f4f2ba09e787": "总计",
@@ -3866,7 +3858,6 @@
   "4a00305dda1a153e": "新建会话",
   "90896a7348c4e7ce": "打开设置",
   "a3bd0ffad2733714": "评审导览",
-  "ffd7529d1f50e0a6": "{count, plural, other {{count} 个站点}}",
   "9830004326e7d8c0": "{count, plural, other {涵盖 {count} 个文件}}",
   "e6035bad35419efa": "导览选项",
   "b9dba35bf970552b": "需要权衡的取舍",
@@ -3985,5 +3976,97 @@
   "f001fa7b329c8fbf": "隐藏成功项",
   "ad208e3e32c85029": "全部隐藏",
   "3328503592789bed": "专注模式",
-  "856812e7e1fc445e": "聊天中的工具调用"
+  "856812e7e1fc445e": "聊天中的工具调用",
+  "035aab5e99159bd8": "{count, plural, other {… 中间的 {hidden} 个字符未显示。}} 文本结尾为：",
+  "069e0382ff2496f5": "你所在组织的 Claude 设置关闭了自动模式。",
+  "8ccf7e0def66d339": "你的 Claude 设置关闭了自动模式。",
+  "04ac2410d2cc0666": "此项目的 Claude 设置关闭了自动模式。",
+  "7e27789f5d58960e": "Claude 的设置关闭了自动模式。",
+  "1a04c8d36a7b29d3": "请从 {fjUrl} 安装 {fj} 0.6 或更高版本并运行 {fjLogin}，或从 {gtUrl} 安装 {gt} 2.0 或更高版本，并为每个 Forgejo 或 Gitea 服务器运行 {gtLogin}。",
+  "13b14784f8707ddd": "0 字节",
+  "1b799ebfa94c2408": "推送钩子审批",
+  "81d703184fe5112e": "运行此仓库的推送钩子？",
+  "027b0d65c7a67af6": "钩子文件",
+  "ade585910165bb52": "已配置的钩子",
+  "69150fe436b3a0c2": "{count, plural, other {已跳过 {count} 条格式错误或不一致的用量记录；用量可能不完整。}}",
+  "6f321f153b8711bb": "选择一个选项",
+  "796b81c4875c4feb": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " 应用需要此环境中有更新的 ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " 服务器。请更新服务器后再使用。"
+  ],
+  "72e41eb83e88cefa": "{count, plural, =0 {它被其他正在工作的会话共用。停止那些会话即可释放。} other {它被 {count} 个正在工作的会话共用。停止那些会话即可释放。}}",
+  "d71048f4fb9cf44a": "等待同步",
+  "e339cc2761dac83a": "分段 {index}，{account}，剩余 {remaining}%，{resetsIn}，{credits, plural, other {已存有 {credits} 个重置额度}}",
+  "d0d366d02d9fd98e": "分段 {index}，{account}，剩余 {remaining}%，{credits, plural, other {已存有 {credits} 个重置额度}}",
+  "45340a7dc1f89d51": "{count, plural, other {共 {sessions} 个会话}}",
+  "fc9c3a00cfc18b55": "所有类型",
+  "e4d1316c85ed7066": "没有此类型的问题在等你。",
+  "45a94c724845ec1d": "其他",
+  "e093a6c02ff2c19f": "{count, plural, other {{count} 个站点}}",
+  "89bf40eb2503b6c5": "有新设备登录了 {environment}",
+  "c94b5fe9ef372bc0": "{device} 已通过 {product} 连接。如果不是你本人，请在那台电脑的 T3 Code 中前往 设置 → 访问权限 将其移除。",
+  "bec67d0ed485f885": "{count, plural, other {{count} 台设备}}已通过 {product} 连接。如果不是你本人，请在那台电脑的 T3 Code 中前往 设置 → 访问权限 将其移除。",
+  "e0856d6a402ad821": "{organization} 的策略不允许使用项目的工作树布局命令。",
+  "7150557773b3818b": "已加入队列",
+  "efbeb3993ee2c3f5": "正在排队等待 {pool}",
+  "0398ca6c1d24b92d": "排队中，下一个",
+  "0af6d5ffd5166214": "{count, plural, other {排队中，前面还有 {count} 个}}",
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "需要填写理由。"
+  ],
+  "7e1fd2eb570a372b": "{who}回答了 {choice}",
+  "a3c43735e1a81498": "{title} 的理由",
+  "bfad234f016cfa3f": "用一句话说明理由。无论你选哪个回答，它都会一并附上。",
+  "3759768c5d342c22": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "回答"
+  ],
+  "8afa4fbe16f95bcf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "，",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "0f93532dd76391fc": "你回答了 {choice}",
+  "235902a19e95833b": [
+    "你，",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "1a1beecff68a6e61": "验证 Google 账户",
+  "99451a5d2d40440f": "已由 {by} 撤回。",
+  "3ee30a50b70fffab": "已由 {by} 撤回：{reason}",
+  "201490988858b511": "已由 {by} 撤回",
+  "46d614fa7b4bf1e5": "工作流运行"
 }

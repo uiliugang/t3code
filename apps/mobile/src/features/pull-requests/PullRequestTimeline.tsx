@@ -25,6 +25,7 @@ import { RelativeTime } from "../../components/RelativeTime";
 import { PullRequestAvatar } from "./PullRequestPresentation";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestCommentFooter } from "./PullRequestReactions";
+import { collapsedTimelineCommentMarkdown } from "./PullRequestTimeline.logic";
 import { pullRequestDescriptionContent } from "./pullRequestDescriptionContent";
 import { discussionCommentCountLabel } from "./pullRequestDiffComments";
 import { normalizedReviewState } from "./pullRequestStatus";
@@ -136,7 +137,9 @@ function TimelineComment({
         >
           <View style={long && !expanded ? { maxHeight: 240, overflow: "hidden" } : undefined}>
             <PullRequestMarkdown
-              markdown={long && !expanded ? comment.body.slice(0, 1200) : comment.body}
+              markdown={
+                long && !expanded ? collapsedTimelineCommentMarkdown(comment.body) : comment.body
+              }
               imageGroupMarkdown={comment.body}
             />
           </View>

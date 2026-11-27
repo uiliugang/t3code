@@ -52,6 +52,7 @@ import { issueEnvironment, refreshIssueLists } from "~/state/issues";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -81,6 +82,7 @@ import {
 import { IssueCommentComposer } from "./IssueCommentComposer";
 import { IssueDetailGhost } from "./IssueDetailGhost";
 import { IssueThreadLinks } from "./IssueThreadLinks";
+import { WorkflowRunsAbout } from "../workflows/WorkflowRunsAbout";
 import { ReactionBar } from "../pullRequest/PullRequestReactions";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { issueTrackerPresentation, issueStatePresentation } from "./issuePresentation";
@@ -144,7 +146,7 @@ function IssueLabelPicker({
   );
   const update = useAtomCommand(issueEnvironment.update, { reportFailure: false });
   const applied = new Set(detail.labels.map((label) => label.name));
-  const needle = query.toLowerCase();
+  const needle = query.trim().toLowerCase();
   const candidates = (candidatesQuery.data?.labels ?? []).filter(
     (label) =>
       needle.length === 0 ||
@@ -258,7 +260,7 @@ function IssueAssigneePicker({
     open ? issueEnvironment.candidates({ environmentId, input: reference }) : null,
   );
   const update = useAtomCommand(issueEnvironment.update, { reportFailure: false });
-  const needle = query.toLowerCase();
+  const needle = query.trim().toLowerCase();
   const candidates = (candidatesQuery.data?.assignees ?? []).filter(
     (candidate) =>
       needle.length === 0 ||
@@ -439,7 +441,7 @@ export function IssueLinkUnavailable({ url }: { url?: string | undefined }) {
       title={gt("Issues unavailable")}
       error={gt("Update this environment's T3 Code server to browse issues.")}
       {...(url && (protocol === "https:" || protocol === "http:")
-        ? { host: { url, openLabel: gt("Open in browser") } }
+        ? { host: { url, openLabel: gt("Open in browser"), threadRef: null } }
         : {})}
     />
   );
@@ -491,6 +493,7 @@ function IssueDetailContent({
   const loadComments = useAtomCommand(issueEnvironment.comments, { reportFailure: false });
   const update = useAtomCommand(issueEnvironment.update, { reportFailure: false });
   const setState = useAtomCommand(issueEnvironment.setState, { reportFailure: false });
+  const openLink = useOpenLink(threadRef);
   const [editing, setEditing] = useState<"title" | "body" | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -689,6 +692,10 @@ function IssueDetailContent({
                 tracker: tracker.providerName,
               })}
               render={<a href={detail.url} target="_blank" rel="noopener noreferrer" />}
+              onClick={(event) => {
+                event.preventDefault();
+                void openLink(detail.url, { event }).catch(console.error);
+              }}
             >
               {detail.displayKey}
               <ExternalLinkIcon aria-hidden className="size-2.5" />
@@ -708,9 +715,13 @@ function IssueDetailContent({
               aria-label={t("Refresh issue")}
               disabled={detailQuery.isPending}
               onClick={() =>
-                void pager.refresh(registry, () =>
-                  executeAtomQuery(registry, detailAtom, { refresh: true, reportFailure: false }),
-                )
+                void pager.refresh(registry, () => {
+                  issueEnvironment.oweDetailRefresh(registry, { environmentId, input: reference });
+                  return executeAtomQuery(registry, detailAtom, {
+                    refresh: true,
+                    reportFailure: false,
+                  });
+                })
               }
             >
               <RefreshIcon size="sm" refreshing={detailQuery.isPending} />
@@ -743,7 +754,10 @@ function IssueDetailContent({
                 disabled={saving}
                 onChange={(event) => setTitleDraft(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Escape") setEditing(null);
+                  if (event.key !== "Escape") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setEditing(null);
                 }}
               />
               <Button type="submit" size="sm" disabled={saving}>
@@ -795,6 +809,14 @@ function IssueDetailContent({
             {detail.writable ? null : <span>{t("Read-only")}</span>}
           </PullRequestMetaLine>
 
+          <WorkflowRunsAbout
+            environmentId={environmentId}
+            item={{
+              subject: detail.url,
+              issue: { ...reference, host: reference.host ?? detail.host },
+            }}
+          />
+
           <div className="mt-4 space-y-2">
             {detail.capabilities.labels || detail.labels.length > 0 ? (
               <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label={t("Labels")}>
@@ -818,7 +840,7 @@ function IssueDetailContent({
                       detail={detail}
                       allowed={canLabel}
                       disabledReason={
-                        blocked ?? gt("Changing labels needs triage access on this tracker.")
+                        blocked ?? t("Changing labels needs triage access on this tracker.")
                       }
                     />
                   ) : null}
@@ -842,7 +864,7 @@ function IssueDetailContent({
                       detail={detail}
                       allowed={canAssign}
                       disabledReason={
-                        blocked ?? gt("Changing assignees needs triage access on this tracker.")
+                        blocked ?? t("Changing assignees needs triage access on this tracker.")
                       }
                     />
                   ) : null}
@@ -969,6 +991,10 @@ function IssueDetailContent({
                                 rel="noopener noreferrer"
                               />
                             }
+                            onClick={(event) => {
+                              event.preventDefault();
+                              void openLink(item.comment.url!, { event }).catch(console.error);
+                            }}
                           >
                             {formatRelativeTimeLabel(item.comment.createdAt, undefined, language)}
                           </InlineButton>

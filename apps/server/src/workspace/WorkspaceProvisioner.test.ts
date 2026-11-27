@@ -134,6 +134,7 @@ it.live.each([
                   Ref.update(baselines, (current) => [...current, generated]),
                 ),
                 Effect.orDie,
+                Effect.as(null),
               ),
           }),
         ),
@@ -343,7 +344,9 @@ it.live(
           }),
         ),
         Layer.provide(
-          Layer.mock(CheckpointStore.CheckpointStore)({ captureCheckpoint: () => Effect.void }),
+          Layer.mock(CheckpointStore.CheckpointStore)({
+            captureCheckpoint: () => Effect.succeed(null),
+          }),
         ),
         Layer.provide(ServerConfig.layerTest(temp, path.join(temp, "state"))),
       );

@@ -10,8 +10,8 @@ import {
   ComboboxPopup,
   ComboboxTrigger,
 } from "../ui/combobox";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PullRequestPeopleGhost } from "./PullRequestGhosts";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export function PullRequestCandidatePicker<T>({
   icon,
@@ -68,16 +68,15 @@ export function PullRequestCandidatePicker<T>({
 }) {
   if (!allowed) {
     return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button size="icon-xs" variant="ghost" aria-disabled="true" aria-label={label}>
-              {icon}
-            </Button>
-          }
-        />
-        <TooltipPopup side="bottom">{disabledReason}</TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={
+          <Button size="icon-xs" variant="ghost" aria-disabled="true" aria-label={label}>
+            {icon}
+          </Button>
+        }
+        label={disabledReason}
+        side="bottom"
+      />
     );
   }
 
@@ -136,7 +135,7 @@ export function PullRequestCandidatePicker<T>({
         {listLabel ? (
           <p className="px-3 pt-2 text-xs font-medium text-muted-foreground">{listLabel}</p>
         ) : null}
-        <ComboboxList className="max-h-72">
+        <ComboboxList scrollAreaClassName="max-h-72">
           {isPending ? (
             <PullRequestPeopleGhost rows={4} />
           ) : error !== null ? (

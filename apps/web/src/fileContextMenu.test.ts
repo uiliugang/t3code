@@ -6,6 +6,7 @@ import type { RemoteOpenResolution } from "./remoteOpen";
 
 const state = vi.hoisted(() => ({
   remoteOpen: { state: { mode: "local-exec" }, isResolved: true } as RemoteOpenResolution,
+  copy: vi.fn(async (_text: string) => {}),
   openInEditor: vi.fn(async () => ({ _tag: "Success" })),
   openRemoteEditorUrl: vi.fn(async (_url: string) => true),
 }));
@@ -26,6 +27,10 @@ vi.mock(import("./state/session"), async (original) => ({
   ...(await original()),
   useEnvironmentScope: () => true,
 }));
+vi.mock("./hooks/useUiTranslation", () => ({
+  useUiTranslation: () => (message: string) => message,
+}));
+vi.mock("./hooks/useCopyToClipboard", () => ({ writeTextToClipboard: state.copy }));
 vi.mock("./editorMenuIcons", () => ({ useEditorMenuIcons: () => new Map() }));
 vi.mock("./composerHandleContext", () => ({ useComposerHandleContext: () => null }));
 vi.mock("./state/use-atom-command", () => ({ useAtomCommand: () => state.openInEditor }));
@@ -91,6 +96,20 @@ describe("useFileContextMenu", () => {
     ]);
     await menu.activate("open", BASE_TARGET);
     await menu.activate("editor:vscode", BASE_TARGET);
+    expect(state.openInEditor).not.toHaveBeenCalled();
+  });
+
+  it("copies the exact file-tree path without opening it on the host", async () => {
+    state.remoteOpen = { state: { mode: "remote-unavailable" }, isResolved: true };
+    state.copy.mockClear();
+    state.openInEditor.mockClear();
+    const menu = useFileContextMenu(BASE_TARGET.environmentId);
+    const target = { ...BASE_TARGET, includeCopyPath: true };
+    expect(menu.buildItems(target).map((item) => item.id)).toContain("copy-path");
+    expect(menu.buildItems(BASE_TARGET).map((item) => item.id)).not.toContain("copy-path");
+    await menu.activate("copy-path", target);
+    await menu.activate("copy-path", BASE_TARGET);
+    expect(state.copy.mock.calls).toEqual([["/workspace/project/src/index.ts"]]);
     expect(state.openInEditor).not.toHaveBeenCalled();
   });
 

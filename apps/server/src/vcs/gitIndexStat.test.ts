@@ -8,7 +8,12 @@ import { assert, describe, it } from "@effect/vitest";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import * as Effect from "effect/Effect";
 
-import { indexEntryStat, parseIndex, restatIndex } from "./gitIndexStat.ts";
+import {
+  indexEntryStat,
+  invalidateChangedIndexStats,
+  parseIndex,
+  restatIndex,
+} from "./gitIndexStat.ts";
 
 const git = (cwd: string, args: ReadonlyArray<string>, env: NodeJS.ProcessEnv = {}) =>
   NodeChildProcess.execFileSync("git", args, {
@@ -124,7 +129,36 @@ describe.skipIf(!symlinksSupported)("restatIndex", () => {
       const { repo, source, sourceIndex } = yield* makeCopiedCheckout;
       const env = { GIT_INDEX_FILE: sourceIndex };
       git(repo, [`--work-tree=${source}`, "update-index", "--index-version", "4"], env);
-      assert.isNull(parseIndex(NodeFS.readFileSync(sourceIndex)));
+      const original = NodeFS.readFileSync(sourceIndex);
+      assert.isNull(parseIndex(original));
+      assert.deepEqual(
+        parseIndex(original, { allowVersion4: true })?.entries.map((entry) => entry.path),
+        [".gitattributes", "a.txt", "link", "nested/b.txt", "run.sh"],
+      );
     }),
+  );
+
+  it.effect(
+    "keeps cached stat data for executable-bit differences when ignoreFileMode is set",
+    () =>
+      Effect.gen(function* () {
+        const { source, sourceIndex } = yield* makeCopiedCheckout;
+        const parsed = parseIndex(NodeFS.readFileSync(sourceIndex))!;
+        const paths = parsed.entries.map((entry) => entry.path);
+        const stats = statAll(source, paths).map((stat, index) =>
+          paths[index] === "a.txt" && stat ? { ...stat, kind: "executable" as const } : stat,
+        );
+        const aStat = stats[paths.indexOf("a.txt")]!;
+        const timestamp = Math.max(aStat.ctimeSeconds, aStat.mtimeSeconds) + 1;
+        const aOffset = parsed.entries.find((entry) => entry.path === "a.txt")!.offset;
+
+        const strict = invalidateChangedIndexStats(parsed, stats, timestamp);
+        assert.equal(new DataView(strict.buffer).getUint32(aOffset + 36), 0);
+
+        const relaxed = invalidateChangedIndexStats(parsed, stats, timestamp, {
+          ignoreFileMode: true,
+        });
+        assert.notEqual(new DataView(relaxed.buffer).getUint32(aOffset + 36), 0);
+      }),
   );
 });

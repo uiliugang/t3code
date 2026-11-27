@@ -8,7 +8,7 @@ import { hexToHsv, hsvToHex, type HsvColor } from "../../lib/color";
 import { ColorHueSlider, ColorSaturationValuePlane } from "../ui/color-picker";
 import { Input } from "../ui/input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 const THEME_ROLE_LABELS: Partial<Record<ThemeColorRole, string>> = {
   canvas: msg("Background"),
   input: msg("Input field"),
@@ -275,6 +275,15 @@ function ThemeColorPicker({
   return (
     <Popover
       onOpenChange={(open, eventDetails) => {
+        // Base UI's dismiss skips composing keys but not a bare keyCode 229 from an IME.
+        if (
+          !open &&
+          eventDetails.reason === "escape-key" &&
+          eventDetails.event instanceof KeyboardEvent &&
+          eventDetails.event.keyCode === 229
+        ) {
+          return eventDetails.cancel();
+        }
         cancelledRef.current = !open && eventDetails.reason === "escape-key";
         if (open) {
           onEditStart?.();
@@ -284,29 +293,28 @@ function ThemeColorPicker({
         if (cancelledRef.current) onEditCancel?.();
       }}
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <button
-                  aria-label={t("Choose {color} color", { color: t(label) })}
-                  className="relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-foreground/30 transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring"
-                  onFocus={onInteract}
-                  onPointerDown={onInteract}
-                  type="button"
-                >
-                  <span
-                    className="absolute inset-0 rounded-full shadow-sm"
-                    style={{ backgroundColor: value }}
-                  />
-                </button>
-              }
-            />
-          }
-        />
-        <TooltipPopup side="top">{gt("Choose {label} color", { label })}</TooltipPopup>
-      </Tooltip>
+      <SharedTooltipTrigger
+        render={
+          <PopoverTrigger
+            render={
+              <button
+                aria-label={t("Choose {color} color", { color: t(label) })}
+                className="relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-foreground/30 transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                onFocus={onInteract}
+                onPointerDown={onInteract}
+                type="button"
+              >
+                <span
+                  className="absolute inset-0 rounded-full shadow-sm"
+                  style={{ backgroundColor: value }}
+                />
+              </button>
+            }
+          />
+        }
+        label={gt("Choose {label} color", { label })}
+        side="top"
+      />
       <PopoverPopup
         align="end"
         padding="none"
@@ -369,30 +377,29 @@ export const ThemeColorField = memo(function ThemeColorField({
       )}
       data-theme-color-role={role}
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              aria-label={
-                selected
-                  ? t("Hide {color} usage", { color: label })
-                  : t("Show {color} usage", { color: label })
-              }
-              aria-pressed={selected}
-              className="flex min-w-0 flex-1 cursor-pointer items-center rounded-md text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              onClick={() => onToggleSelected?.(role)}
-              type="button"
-            >
-              <span className="min-w-0 flex-1 truncate">{label}</span>
-            </button>
-          }
-        />
-        <TooltipPopup side="top">
-          {selected
+      <SharedTooltipTrigger
+        render={
+          <button
+            aria-label={
+              selected
+                ? t("Hide {color} usage", { color: label })
+                : t("Show {color} usage", { color: label })
+            }
+            aria-pressed={selected}
+            className="flex min-w-0 flex-1 cursor-pointer items-center rounded-md text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            onClick={() => onToggleSelected?.(role)}
+            type="button"
+          >
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+          </button>
+        }
+        label={
+          selected
             ? t("Hide where {color} is used", { color: label })
-            : t("Show where {color} is used", { color: label })}
-        </TooltipPopup>
-      </Tooltip>
+            : t("Show where {color} is used", { color: label })
+        }
+        side="top"
+      />
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <ThemeColorPicker
           label={label}

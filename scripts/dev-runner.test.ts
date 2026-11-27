@@ -2,12 +2,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NetService from "@t3tools/shared/Net";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { assert, describe, it } from "@effect/vitest";
+import { afterAll, assert, describe, it } from "@effect/vitest";
 import * as ByteSize from "effect/ByteSize";
+import * as Cause from "effect/Cause";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -18,6 +20,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
+import { vi } from "vite-plus/test";
 
 import {
   checkPortAvailabilityOnHosts,
@@ -30,6 +33,7 @@ import {
 const emptyConfigLayer = ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }));
 const netServiceLayer = Layer.succeed(NetService.NetService, {
   canListenOnHost: () => Effect.succeed(true),
+  probeListenOnHost: () => Effect.succeed(true),
   isPortAvailableOnLoopback: () => Effect.succeed(true),
   hasListenerOnHost: () => Effect.succeed(false),
   reserveLoopbackPort: () => Effect.succeed(49_152),
@@ -55,9 +59,13 @@ function mockProcess(exit: number | PlatformError.PlatformError) {
   });
 }
 
+// The runner locks its home on disk, so tests never point it at a shared path.
+const devServerHome = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-dev-runner-"));
+afterAll(() => NodeFS.rmSync(devServerHome, { recursive: true, force: true }));
+
 const devServerInput = {
   mode: "dev:server",
-  t3Home: "/tmp/t3code-dev-runner",
+  t3Home: devServerHome,
   browser: undefined,
   autoBootstrapProjectFromCwd: undefined,
   logWebSocketEvents: undefined,
@@ -285,6 +293,34 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
 
         assert.equal(offset, 833);
       }),
+    );
+
+    it.effect.each(["EPERM", "EACCES"])(
+      "stops at the first port when binding is denied with %s",
+      (code) =>
+        Effect.gen(function* () {
+          let listenCalls = 0;
+          const spy = vi.spyOn(NodeNet.Server.prototype, "listen").mockImplementation(function (
+            this: NodeNet.Server,
+          ) {
+            listenCalls += 1;
+            process.nextTick(() => this.emit("error", Object.assign(new Error(code), { code })));
+            return this;
+          });
+          const exit = yield* findFirstAvailableOffset({
+            startOffset: 0,
+            requireServerPort: true,
+            requireWebPort: true,
+          }).pipe(Effect.provide(NetService.layer), Effect.exit);
+          spy.mockRestore();
+
+          assert.isTrue(exit._tag === "Failure");
+          const cause = exit._tag === "Failure" ? Cause.pretty(exit.cause) : "";
+          assert.notInclude(cause, "DevRunnerPortExhaustedError");
+          assert.include(cause, code);
+          assert.include(cause, "13773");
+          assert.isBelow(listenCalls, 10);
+        }),
     );
   });
 
@@ -812,6 +848,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
               HostProcess.Environment,
               input.ambientHome === undefined ? {} : { T3CODE_HOME: input.ambientHome },
             ),
+            // Each invocation models a separate runner exiting and releasing its state lock.
+            Effect.scoped,
           );
 
           return captured?.T3CODE_HOME;
@@ -825,7 +863,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           const home = yield* spawnedHome({
             t3Home: explicitHome,
             cwd: root,
-            ambientHome: "/home/user/.t3",
+            ambientHome: path.join(root, "ambient-home"),
           });
           assert.equal(home, explicitHome);
         }).pipe(Effect.scoped),
@@ -838,7 +876,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           const home = yield* spawnedHome({
             t3Home: "   ",
             cwd: root,
-            ambientHome: "/home/user/.t3",
+            ambientHome: path.join(root, "ambient-home"),
           });
           assert.equal(home, path.join(path.resolve(root), ".t3"));
         }).pipe(Effect.scoped),
@@ -851,7 +889,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           const home = yield* spawnedHome({
             t3Home: undefined,
             cwd: root,
-            ambientHome: "/home/user/.t3",
+            ambientHome: path.join(root, "ambient-home"),
           });
           assert.equal(home, path.join(path.resolve(root), ".t3"));
         }).pipe(Effect.scoped),
@@ -901,13 +939,18 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           NodeFS.mkdirSync(NodePath.join(stopped, "userdata"), { recursive: true });
           NodeFS.symlinkSync(other, alias, "junction");
           const t3Home = NodePath.join(alias, ".t3");
+          const otherHome = NodePath.join(other, ".t3");
+          const isolatedHome = NodePath.join(other, "isolated-home");
           for (const cwd of [main, root]) {
             const input = { t3Home, cwd, ambientHome: undefined, seed: false };
-            assert.equal(yield* spawnedHome(input), NodePath.join(other, ".t3"));
-            NodeFS.symlinkSync(stopped, NodePath.join(other, ".t3"), "junction");
+            assert.equal(yield* spawnedHome(input), otherHome);
+            // The successful run materializes its state lock under this path.
+            NodeFS.renameSync(otherHome, isolatedHome);
+            NodeFS.symlinkSync(stopped, otherHome, "junction");
             const error = yield* spawnedHome(input).pipe(Effect.flip);
             assert.match(error.message, /Refusing to modify a live T3 Code database/);
-            NodeFS.unlinkSync(NodePath.join(other, ".t3"));
+            NodeFS.unlinkSync(otherHome);
+            NodeFS.renameSync(isolatedHome, otherHome);
           }
         }).pipe(Effect.scoped),
       );
@@ -928,6 +971,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           assert.isUndefined(yield* spawnedHome(input));
 
           const dev = NodePath.join(defaultHome, "dev");
+          NodeFS.renameSync(dev, NodePath.join(defaultHome, "isolated-dev"));
           NodeFS.symlinkSync(userdata, dev, "junction");
           const linkedDir = yield* spawnedHome(input).pipe(Effect.flip);
           assert.match(linkedDir.message, /Refusing to modify a live T3 Code database/);
@@ -1005,7 +1049,10 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
                   readonly args: readonly string[];
                 };
                 if (args.some((arg) => arg.endsWith("migrate-dev-db.ts"))) {
-                  NodeFS.symlinkSync(liveState, path.join(worktreeHome, "userdata"), "junction");
+                  const userdata = path.join(worktreeHome, "userdata");
+                  // Move the fixture's locked directory aside rather than discarding its lock.
+                  NodeFS.renameSync(userdata, path.join(worktreeHome, "isolated-userdata"));
+                  NodeFS.symlinkSync(liveState, userdata, "junction");
                   return mockProcess(1);
                 }
                 if (executable === "vp") attemptedBackend = true;
@@ -1023,6 +1070,11 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           );
           assert.match(error.message, /Refusing to modify a live T3 Code database/);
           assert.isFalse(attemptedBackend);
+          assert.deepEqual(NodeFS.readdirSync(liveState), ["statev2.sqlite"]);
+          assert.equal(
+            NodeFS.readFileSync(path.join(liveState, "statev2.sqlite"), "utf8"),
+            "live data",
+          );
         }).pipe(Effect.scoped),
       );
 
@@ -1060,6 +1112,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
                   HostProcess.Environment,
                   ambientHome === undefined ? {} : { T3CODE_HOME: ambientHome },
                 ),
+                // Each test invocation acts as a runner that releases its state lock.
+                Effect.scoped,
               );
               return spawned.filter(({ args }) =>
                 args.some((arg) => arg.endsWith("migrate-dev-db.ts")),

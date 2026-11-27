@@ -23,8 +23,8 @@ import { m } from "../../i18n/messages";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 class LicenseManifestLoadError extends Schema.TaggedError<
   LicenseManifestLoadError,
@@ -170,22 +170,21 @@ function LicenseHeaderAction({
     return (
       <div className="flex items-center gap-1.5">
         <LicenseCount filteredCount={filteredCount} totalCount={totalCount} />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                aria-label={t("Search open-source licenses")}
-                onClick={() => onSearchOpenChange(true)}
-                size="icon-micro"
-                type="button"
-                variant="ghost-muted"
-              >
-                <SearchIcon className="size-3" />
-              </Button>
-            }
-          />
-          <TooltipPopup side="top">{t("Search licenses")}</TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <Button
+              aria-label={t("Search open-source licenses")}
+              onClick={() => onSearchOpenChange(true)}
+              size="icon-micro"
+              type="button"
+              variant="ghost-muted"
+            >
+              <SearchIcon className="size-3" />
+            </Button>
+          }
+          label={t("Search licenses")}
+          side="top"
+        />
       </div>
     );
   }

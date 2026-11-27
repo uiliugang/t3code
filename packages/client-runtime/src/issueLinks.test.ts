@@ -11,6 +11,7 @@ import {
   githubIssueScopeFromUrl,
   issueLinkedPullRequestTarget,
   issueReferenceCompatible,
+  mayContainStandaloneIssueLink,
   resolveIssueLinkTarget,
 } from "./issueLinks.ts";
 
@@ -275,5 +276,15 @@ describe("resolveIssueLinkTarget", () => {
     "http://github.com/acme/web/issues/7",
   ])("leaves %s an ordinary link", (url) => {
     expect(resolveIssueLinkTarget({ url, projects })).toBeNull();
+  });
+});
+
+describe("mayContainStandaloneIssueLink", () => {
+  it.each([
+    ["[issue](https://linear.app/acme/issue/WEB-17)", true],
+    ["[issue](https://LINEAR.APP/acme/issue/WEB-17)", true],
+    ["[issue](https://github.com/acme/web/issues/7)", false],
+  ])("classifies %s as %s", (text, expected) => {
+    expect(mayContainStandaloneIssueLink(text)).toBe(expected);
   });
 });

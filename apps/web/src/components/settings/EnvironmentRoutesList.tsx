@@ -38,7 +38,7 @@ import type { EnvironmentPresentation } from "~/state/environments";
 import { usePreparedConnection } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export function EnvironmentRoutesList({
   environment,
@@ -217,22 +217,21 @@ function SortableRouteRow({
         <GripVerticalIcon className="size-3.5" />
       </button>
       {removable ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost-muted"
-                size="icon-xs"
-                aria-label={t("Remove {route} route", { route: t(label) })}
-                onClick={onRemove}
-              />
-            }
-          >
-            <XIcon className="size-3" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">{t("Remove route")}</TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label={t("Remove {route} route", { route: t(label) })}
+              onClick={onRemove}
+            />
+          }
+          label={t("Remove route")}
+          side="top"
+        >
+          <XIcon className="size-3" />
+        </SharedTooltipTrigger>
       ) : null}
     </li>
   );

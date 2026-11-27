@@ -32,11 +32,11 @@ import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
   THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS,
 } from "./threadDetailsPanelStyles";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 const STATUS_DOT_CLASS: Record<ScheduledTask["lastRunStatus"], string> = {
   never: "bg-muted-foreground/40",
@@ -150,27 +150,25 @@ export function ThreadAutomationsPanel(props: {
       title={t("Automations")}
       data-thread-automations-panel
       actions={
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <ThreadDetailsControl
-                size="icon-xs"
-                variant="ghost"
-                part="icon"
-                aria-label={t("Manage scheduled tasks")}
-                onClick={() =>
-                  void navigate({
-                    to: "/settings/scheduled-tasks",
-                    search: { environmentId: props.environmentId },
-                  })
-                }
-              >
-                <Settings2Icon className="size-3.5" />
-              </ThreadDetailsControl>
-            }
-          />
-          <TooltipPopup>{t("Manage scheduled tasks")}</TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <ThreadDetailsControl
+              size="icon-xs"
+              variant="ghost"
+              part="icon"
+              aria-label={t("Manage scheduled tasks")}
+              onClick={() =>
+                void navigate({
+                  to: "/settings/scheduled-tasks",
+                  search: { environmentId: props.environmentId },
+                })
+              }
+            >
+              <Settings2Icon className="size-3.5" />
+            </ThreadDetailsControl>
+          }
+          label={t("Manage scheduled tasks")}
+        />
       }
     >
       <ul className="m-0 max-h-[13.5rem] list-none overflow-y-auto p-0">
@@ -192,64 +190,63 @@ export function ThreadAutomationsPanel(props: {
                 aria-hidden
               />
             </span>
-            <Tooltip>
-              <TooltipTrigger render={<div className="min-w-0 flex-1" />}>
-                <span className="block truncate text-sm font-medium text-foreground/80">
-                  {task.title}
-                </span>
-                <p className="truncate text-2xs text-muted-foreground">
-                  {taskScheduleLine(task, timestampFormat, tasksQuery.data?.timeZone, m, t)}
-                </p>
-              </TooltipTrigger>
-              <TooltipPopup side="left">
-                <p className="font-medium">{task.title}</p>
-                <p className="text-muted-foreground">
-                  {taskScheduleLine(task, timestampFormat, tasksQuery.data?.timeZone, m, t)}
-                </p>
-              </TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
+            <SharedTooltipTrigger
+              render={<div className="min-w-0 flex-1" />}
+              label={
+                <>
+                  <p className="font-medium">{task.title}</p>
+                  <p className="text-muted-foreground">
+                    {taskScheduleLine(task, timestampFormat, tasksQuery.data?.timeZone, m, t)}
+                  </p>
+                </>
+              }
+              side="left"
+            >
+              <span className="block truncate text-sm font-medium text-foreground/80">
+                {task.title}
+              </span>
+              <p className="truncate text-2xs text-muted-foreground">
+                {taskScheduleLine(task, timestampFormat, tasksQuery.data?.timeZone, m, t)}
+              </p>
+            </SharedTooltipTrigger>
+            <SharedTooltipTrigger
+              render={
+                <ThreadDetailsControl
+                  size="icon-xs"
+                  variant="ghost"
+                  part="icon"
+                  aria-label={t("Edit {title}", { title: task.title })}
+                  onClick={() =>
+                    void navigate({
+                      to: "/settings/scheduled-tasks",
+                      search: { environmentId: props.environmentId, taskId: task.id },
+                    })
+                  }
+                >
+                  <PencilIcon className="size-3.5" />
+                </ThreadDetailsControl>
+              }
+              label={t("Edit automation")}
+            />
+            {/* Webhook tasks need a request from their URL. */}
+            {task.schedule.type === "webhook" ? null : (
+              <SharedTooltipTrigger
                 render={
                   <ThreadDetailsControl
                     size="icon-xs"
                     variant="ghost"
                     part="icon"
-                    aria-label={t("Edit {title}", { title: task.title })}
-                    onClick={() =>
-                      void navigate({
-                        to: "/settings/scheduled-tasks",
-                        search: { environmentId: props.environmentId, taskId: task.id },
-                      })
+                    aria-label={t("Run {title} now", { title: task.title })}
+                    disabled={
+                      !canOperate || busyTaskId !== null || task.lastRunStatus === "running"
                     }
+                    onClick={() => void runNow(task)}
                   >
-                    <PencilIcon className="size-3.5" />
+                    <PlayIcon className="size-3.5" />
                   </ThreadDetailsControl>
                 }
+                label={t("Run now")}
               />
-              <TooltipPopup>{t("Edit automation")}</TooltipPopup>
-            </Tooltip>
-            {/* Webhook tasks need a request from their URL. */}
-            {task.schedule.type === "webhook" ? null : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <ThreadDetailsControl
-                      size="icon-xs"
-                      variant="ghost"
-                      part="icon"
-                      aria-label={t("Run {title} now", { title: task.title })}
-                      disabled={
-                        !canOperate || busyTaskId !== null || task.lastRunStatus === "running"
-                      }
-                      onClick={() => void runNow(task)}
-                    >
-                      <PlayIcon className="size-3.5" />
-                    </ThreadDetailsControl>
-                  }
-                />
-                <TooltipPopup>{t("Run now")}</TooltipPopup>
-              </Tooltip>
             )}
             <Switch
               checked={task.enabled}

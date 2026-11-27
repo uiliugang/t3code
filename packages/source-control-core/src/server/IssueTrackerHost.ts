@@ -48,6 +48,7 @@ export function asIssueTrackerAccount(
     return credential === undefined ? bound : credential(bound);
   };
   const {
+    snapshotIssueRead,
     getIssueLink,
     create,
     comment,
@@ -65,6 +66,14 @@ export function asIssueTrackerAccount(
     getViewer: (input) => as(api.getViewer(input)),
     listIssues: (input) => as(api.listIssues(input)),
     getIssue: (input) => as(api.getIssue(input)),
+    snapshotIssueRead:
+      snapshotIssueRead &&
+      ((input) =>
+        as(snapshotIssueRead(input)).pipe(
+          Effect.map((snapshot) =>
+            snapshot === null ? null : { ...snapshot, read: as(snapshot.read) },
+          ),
+        )),
     getComments: (input) => as(api.getComments(input)),
     getIssueLink: getIssueLink && ((input) => as(getIssueLink(input))),
     create: create && ((input) => as(create(input))),

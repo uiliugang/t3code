@@ -1,7 +1,8 @@
 # Source control
 
-This build enables GitHub and Meituan Code to clone and publish repositories, create pull requests,
-and review changes. The other hosting integrations described below are disabled in this build.
+This build includes GitHub, GitLab, and Meituan Code. TanStack Source remains behind its private-beta
+feature flag. Linear and MEP ONES are issue trackers, not Git hosts. Other upstream hosting
+integrations are not enabled by this build.
 
 ## Manage local branches and worktrees
 
@@ -156,6 +157,9 @@ Install [GitLab CLI](https://gitlab.com/gitlab-org/cli), then sign in:
 ```bash
 glab auth login
 ```
+
+GitLab.com's `altssh.gitlab.com` SSH remote still opens merge requests on `gitlab.com`. A self-hosted
+GitLab HTTP or HTTPS remote keeps its web port in merge request links.
 
 ### Meituan Code
 
@@ -377,6 +381,8 @@ and their marks follow the same rules as on web and desktop.
 - **GitHub sign-in cannot be verified:** update GitHub CLI to at least 2.81.0, or save a token in Settings → Source control & issues.
 - **Push fails despite a connected account:** check the Git remote's credentials. SSH and HTTPS
   remotes can require separate setup from the hosting provider's API access.
+- **Fork PR badge missing:** check whether the branch has an upstream. Set one only if it is the
+  intended tracking branch: `git branch --set-upstream-to=<remote>/<branch>`.
 - **A review cannot load:** open it on the host website while resolving connectivity, permissions,
   or rate limits.
 

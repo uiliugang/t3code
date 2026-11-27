@@ -97,9 +97,6 @@ vi.mock(import("../../state/terminalSessions"), async (importOriginal) => ({
   ...(await importOriginal()),
   useKnownTerminalSessions: () => [],
 }));
-vi.mock(import("../../hooks/useT3ProjectFileScripts"), () => ({
-  useT3ProjectFileScripts: () => [],
-}));
 vi.mock(import("./ThreadDetailsCard"), () => ({
   ThreadDetailsCard: ({ children }: { children: (density: "full") => React.ReactNode }) => (
     <>{children("full")}</>

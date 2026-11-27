@@ -11,7 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import type * as Path from "effect/Path";
+import * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { SCAN_CACHE_FILE_NAME } from "./usage/usageScanCache.ts";
@@ -29,6 +29,7 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
+import * as CheckpointCaptureIndex from "./vcs/checkpointCaptureIndex.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
 import { layerTaskFoldersWithGit } from "./workspace/TaskFolders.testkit.ts";
@@ -1122,22 +1123,31 @@ describe("checkpoint ref cleanup", () => {
             checkoutRoot: index === 0 ? worktree : secondary,
             identity: { ...resource.identity, commonDir: `${index === 0 ? repo : secondary}/.git` },
           }));
-          yield* addThread("deleted", {
+          const deleted = yield* addThread("deleted", {
             deleted: true,
             ...(multiRepository ? { workspace: { ...workspace, resources } } : {}),
           });
           yield* addThread("imported-deleted", { deleted: true, legacyOnly: true });
+          const active = yield* addThread("active");
           const retained = [
-            ...(yield* addThread("active")),
+            ...active,
             ...(yield* addThread("archived", { archived: true })),
             legacyCheckpointRef("unknown-owner", 0),
           ];
+          const indexRoot = CheckpointCaptureIndex.storeRoot(yield* Path.Path, `${repo}/.git`);
+          const captureIndexOf = (ref: string) =>
+            `${indexRoot}/${CheckpointCaptureIndex.scopeDirectoryPrefix(ref.slice(0, ref.lastIndexOf("/") + 1))}cwd`;
+          for (const ref of [deleted.at(-1)!, active.at(-1)!]) {
+            yield* fs.makeDirectory(captureIndexOf(ref), { recursive: true });
+          }
           yield* command(repo, ["update-ref", retained.at(-1)!, "HEAD"]);
           yield* command(repo, ["pack-refs", "--all"]);
           yield* command(repo, ["worktree", "remove", worktree]);
           yield* service.runNow;
           expect(yield* listRefs()).toEqual(retained.sort());
           expect(yield* listRefs(secondary)).toEqual([]);
+          expect(yield* fs.exists(captureIndexOf(deleted.at(-1)!))).toBe(false);
+          expect(yield* fs.exists(captureIndexOf(active.at(-1)!))).toBe(true);
         }).pipe(Effect.provide(Sqlite.layerMemory)),
       ),
   );
@@ -1965,7 +1975,7 @@ it.live.each([false, true])(
           branch: "task",
           projectStart: { refName: "main", baseRefName: "main" },
           startFromOrigin: false,
-          projectCommands: true,
+          projectCommands: "permitted",
         });
         const root = taskFolder.root;
         setTaskFolders(taskFolders);

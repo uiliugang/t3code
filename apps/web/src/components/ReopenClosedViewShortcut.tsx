@@ -55,6 +55,7 @@ import {
   requirementsSearchFromIssuesSearch,
   type RequirementSearchPatch,
 } from "./requirements/requirementPanelSearch";
+import { readPullRequestListPreferences } from "./pullRequest/pullRequestListPreferences";
 
 declare module "@tanstack/react-router" {
   interface HistoryState {
@@ -171,9 +172,8 @@ export function ReopenClosedViewShortcut() {
         ref,
       );
       destination = linkOptions({
-        from: "/pull-requests",
         to: "/pull-requests",
-        search: (previous) => pullRequestsSearchForRestore(previous, selected),
+        search: pullRequestsSearchForRestore(readPullRequestListPreferences(), selected),
       });
     } else if (globalIssues) {
       const selected = selectSelectedRightPanelSurface(

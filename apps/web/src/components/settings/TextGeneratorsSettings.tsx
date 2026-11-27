@@ -13,7 +13,7 @@ import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { CheckIcon, MoreVertical, PlusIcon, ServerIcon } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
@@ -280,6 +280,7 @@ function TextGeneratorWizard({
   const t = useUiTranslation();
   const messages = useMessages();
   const gt = useGT();
+  const formId = useId();
   const existing = editing === "new" ? null : editing.config;
   const [step, setStep] = useState(0);
   const [preset, setPreset] = useState(TEXT_GENERATOR_PRESETS[0]!);
@@ -368,6 +369,7 @@ function TextGeneratorWizard({
         <WizardPanel>
           {step === 0 ? (
             <form
+              id={formId}
               className="grid gap-4"
               onSubmit={(event) => {
                 event.preventDefault();
@@ -491,10 +493,15 @@ function TextGeneratorWizard({
           ) : (
             <div className="grid gap-4">
               <p className="text-sm text-muted-foreground">
-                {t(
-                  "{name} is connected and lists {count} models. Switch any of these to it, or keep what they use now.",
-                  { name, count: modelCount },
-                )}
+                {modelCount === 1
+                  ? t(
+                      "{name} is connected and lists 1 model. Switch any of these to it, or keep what they use now.",
+                      { name },
+                    )
+                  : t(
+                      "{name} is connected and lists {count} models. Switch any of these to it, or keep what they use now.",
+                      { name, count: modelCount },
+                    )}
               </p>
               {/* One grid for all rows, so pickers and Test buttons line up in columns. */}
               <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-4">
@@ -525,7 +532,7 @@ function TextGeneratorWizard({
               <Button variant="outline" onClick={onClose}>
                 {t("Cancel")}
               </Button>
-              <Button onClick={() => void connect()} disabled={!canConnect || checking}>
+              <Button type="submit" form={formId} disabled={!canConnect || checking}>
                 {checking ? <Spinner /> : null}
                 {checking ? t("Connecting") : existing ? t("Save and continue") : t("Connect")}
               </Button>

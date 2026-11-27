@@ -33,8 +33,8 @@ import {
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { T, useGT, useMessages } from "gt-react";
 
+import { useOpenLink } from "~/browser/useOpenLink";
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { RelativeTime } from "~/components/RelativeTime";
 
@@ -42,7 +42,6 @@ import { Button } from "../ui/button";
 import { PullRequestEditButton } from "./PullRequestEditButton";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { toastManager } from "../ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   buildPullRequestTimeline,
   groupPullRequestTimelineConversations,
@@ -71,6 +70,8 @@ import {
 import { PullRequestGlyph } from "./pullRequestIcons";
 import { pullRequestCompletionScope } from "./PullRequestMarkdownTextarea";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
+
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 interface ReactionSurface {
   revealAnchor?: string | null;
@@ -197,28 +198,33 @@ function AddToChatButton({
   const gt = useGT();
   const onAddToChat = reactions.onAddToChat;
   return onAddToChat === undefined ? null : (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost-muted"
-            className="-mt-1 shrink-0"
-            aria-label={gt("Add to chat")}
-            onClick={() => onAddToChat(comment)}
-          />
-        }
-      >
-        <MessageSquarePlusIcon className="size-3" />
-      </TooltipTrigger>
-      <TooltipPopup>
-        <T>Add to chat</T>
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={
+        <Button
+          size="icon-xs"
+          variant="ghost-muted"
+          className="-mt-1 shrink-0"
+          aria-label={gt("Add to chat")}
+          onClick={() => onAddToChat(comment)}
+        />
+      }
+      label={
+        <>
+          <T>Add to chat</T>
+        </>
+      }
+    >
+      <MessageSquarePlusIcon className="size-3" />
+    </SharedTooltipTrigger>
   );
 }
 
-function OpenOnHostButton({ url, onOpen }: { url: string | null; onOpen: (url: string) => void }) {
+type OpenOnHost = (
+  url: string,
+  event: { readonly metaKey: boolean; readonly ctrlKey: boolean; readonly button?: number },
+) => void;
+
+function OpenOnHostButton({ url, onOpen }: { url: string | null; onOpen: OpenOnHost }) {
   const t = useUiTranslation();
   return url === null ? null : (
     <Button
@@ -226,7 +232,7 @@ function OpenOnHostButton({ url, onOpen }: { url: string | null; onOpen: (url: s
       variant="ghost-muted"
       className="-mr-1 shrink-0"
       aria-label={t("Open activity on host")}
-      onClick={() => onOpen(url)}
+      onClick={(event) => onOpen(url, event)}
     >
       <ExternalLinkIcon className="size-3" />
     </Button>
@@ -246,7 +252,7 @@ function ConversationCard({
   event: PullRequestTimelineEvent;
   editable: PullRequestComment | null;
   cwd: string;
-  onOpen: (url: string) => void;
+  onOpen: OpenOnHost;
   reactions: ReactionSurface;
   showPath?: boolean;
   /** A reply goes with its conversation, from the card that heads it. */
@@ -383,7 +389,7 @@ function ConversationGroup({
   events: ReadonlyArray<PullRequestTimelineEvent>;
   editable: ReadonlyMap<string, PullRequestComment>;
   cwd: string;
-  onOpen: (url: string) => void;
+  onOpen: OpenOnHost;
   reactions: ReactionSurface;
 }) {
   const t = useUiTranslation();
@@ -472,7 +478,7 @@ function ReviewThreadEvent({
   detail: PullRequestDetailView;
   editable: ReadonlyMap<string, PullRequestComment>;
   cwd: string;
-  onOpen: (url: string) => void;
+  onOpen: OpenOnHost;
   reactions: ReactionSurface;
 }) {
   const gt = useGT();
@@ -588,7 +594,7 @@ function ReviewThreadEvent({
       ) : null}
       {thread.hasMoreReplies ? (
         <div className="px-2">
-          <PullRequestMoreReplies {...thread} />
+          <PullRequestMoreReplies {...thread} threadRef={reactions.threadRef} />
         </div>
       ) : null}
     </div>
@@ -699,7 +705,7 @@ function ReviewVerdictEvent({
   outcome: PullRequestReviewOutcome;
   stale: boolean;
   cwd: string;
-  onOpen: (url: string) => void;
+  onOpen: OpenOnHost;
   reactions: ReactionSurface;
 }) {
   const gt = useGT();
@@ -716,30 +722,29 @@ function ReviewVerdictEvent({
         <div className="min-w-0 flex-1">
           <h2 className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
             <ActorName actor={event.actor} />
-            <Tooltip disabled={!stale}>
-              <TooltipTrigger
-                render={
-                  <span
-                    className={cn(
-                      "font-medium lowercase",
-                      stale
-                        ? "text-muted-foreground opacity-70"
-                        : pullRequestReviewOutcomeToneClassName(outcome),
-                    )}
-                  />
-                }
-              >
-                {stale ? (
-                  <>
-                    <span aria-hidden>{pullRequestReviewOutcomeLabel(outcome, resolve)}</span>
-                    <span className="sr-only">{staleReviewOutcomeLabel(outcome, gt)}</span>
-                  </>
-                ) : (
-                  pullRequestReviewOutcomeLabel(outcome, resolve)
-                )}
-              </TooltipTrigger>
-              <TooltipPopup>{pullRequestReviewOutcomeStaleLabel(outcome, resolve)}</TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              disabled={!stale}
+              render={
+                <span
+                  className={cn(
+                    "font-medium lowercase",
+                    stale
+                      ? "text-muted-foreground opacity-70"
+                      : pullRequestReviewOutcomeToneClassName(outcome),
+                  )}
+                />
+              }
+              label={pullRequestReviewOutcomeStaleLabel(outcome, resolve)}
+            >
+              {stale ? (
+                <>
+                  <span aria-hidden>{pullRequestReviewOutcomeLabel(outcome, resolve)}</span>
+                  <span className="sr-only">{staleReviewOutcomeLabel(outcome, gt)}</span>
+                </>
+              ) : (
+                pullRequestReviewOutcomeLabel(outcome, resolve)
+              )}
+            </SharedTooltipTrigger>
           </h2>
           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <PullRequestMetaLine className="flex-wrap text-2xs text-muted-foreground">
@@ -877,8 +882,9 @@ export function PullRequestTimelineTab({
   }, [revealUrl, targetIndex]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the hold observes DOM outside React and must end with the tab
   useEffect(() => () => stopHolding.current?.(), []);
-  const openOnHost = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
+  const openLink = useOpenLink(threadRef);
+  const openOnHost: OpenOnHost = (url, event) => {
+    void openLink(url, { event }).catch(console.error);
   };
 
   const rowKey = (row: PullRequestTimelineRow) => {

@@ -18,10 +18,6 @@ import { KeybindingsConfigError, MAX_KEYBINDINGS_COUNT } from "@t3tools/contract
 const KeybindingsConfigJson = Schema.fromJsonString(KeybindingsConfig);
 const encodeKeybindingsConfigJson = Schema.encodeEffect(KeybindingsConfigJson);
 const decodeKeybindingsConfigJson = Schema.decodeUnknownEffect(KeybindingsConfigJson);
-const CHAT_NEW_BINDINGS_AT_LIMIT =
-  MAX_KEYBINDINGS_COUNT -
-  SharedKeybindings.DEFAULT_RESOLVED_KEYBINDINGS.length +
-  SharedKeybindings.DEFAULT_RESOLVED_KEYBINDINGS.findIndex((rule) => rule.command === "chat.new");
 
 const layerKeybindings = () => {
   return Keybindings.layer.pipe(
@@ -56,6 +52,17 @@ const readKeybindingsConfig = (configPath: string) =>
     const rawConfig = yield* fileSystem.readFileString(configPath);
     return yield* decodeKeybindingsConfigJson(rawConfig);
   });
+
+function scriptBindingsAtChatNewCutoff(hiddenChatNewBindings: 0 | 1) {
+  const defaults = SharedKeybindings.DEFAULT_RESOLVED_KEYBINDINGS;
+  const firstChatNew = defaults.findIndex((binding) => binding.command === "chat.new");
+  assert.isAtLeast(firstChatNew, 0);
+  const visibleDefaults = defaults.length - firstChatNew - hiddenChatNewBindings;
+  return Array.from({ length: MAX_KEYBINDINGS_COUNT - visibleDefaults }, (_, index) => ({
+    key: "mod+alt+f1",
+    command: `script.filler-${index}.run` as const,
+  }));
+}
 
 it.layer(NodeServices.layer)("keybindings", (it) => {
   it.effect("parses shortcuts including plus key", () =>
@@ -538,13 +545,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       const keybindings = yield* Keybindings.Keybindings;
-      yield* writeKeybindingsConfig(
-        keybindingsConfigPath,
-        Array.from({ length: CHAT_NEW_BINDINGS_AT_LIMIT + 1 }, (_, index) => ({
-          key: "mod+alt+f1",
-          command: `script.filler-${index}.run` as const,
-        })),
-      );
+      yield* writeKeybindingsConfig(keybindingsConfigPath, scriptBindingsAtChatNewCutoff(1));
 
       const target = { key: "mod+t", command: "chat.new", when: "!terminalFocus" } as const;
       const local = { ...target, key: "mod+shift+n", command: "chat.newLocal" } as const;
@@ -571,13 +572,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       Effect.gen(function* () {
         const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
         const keybindings = yield* Keybindings.Keybindings;
-        yield* writeKeybindingsConfig(
-          keybindingsConfigPath,
-          Array.from({ length: CHAT_NEW_BINDINGS_AT_LIMIT }, (_, index) => ({
-            key: "mod+alt+f1",
-            command: `script.filler-${index}.run` as const,
-          })),
-        );
+        yield* writeKeybindingsConfig(keybindingsConfigPath, scriptBindingsAtChatNewCutoff(0));
 
         const target = { key: "mod+n", command: "chat.new", when: "!terminalFocus" } as const;
         const sibling = { ...target, key: "mod+t" };
