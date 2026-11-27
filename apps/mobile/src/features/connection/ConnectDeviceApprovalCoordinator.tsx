@@ -70,7 +70,8 @@ function EnvironmentConnectDevices(props: {
           environmentLabel={props.environmentLabel}
         />
       ) : null}
-      {props.approvalSetting !== undefined ? (
+      {props.approvalSetting !== undefined &&
+      (Platform.OS !== "android" || prepared._tag === "Some") ? (
         <NewConnectDeviceWatcher
           environmentId={props.environmentId}
           environmentLabel={props.environmentLabel}

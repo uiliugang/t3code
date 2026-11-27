@@ -327,12 +327,9 @@ export default function ProjectScriptsControl({
               />
             }
             label={
-              <>
-                {" "}
-                {onRunScript
-                  ? t("Run {name}", { name: primaryScript.name })
-                  : t("Pair this client again with permission to run terminal commands.")}{" "}
-              </>
+              onRunScript
+                ? t("Run {name}", { name: primaryScript.name })
+                : t("Pair this client again with permission to run terminal commands.")
             }
             side="top"
           >
@@ -373,7 +370,7 @@ export default function ProjectScriptsControl({
                   }
                 />
               }
-              label={<> {t("Script actions")} </>}
+              label={t("Script actions")}
               side="top"
             >
               <ChevronDownIcon
@@ -464,7 +461,7 @@ export default function ProjectScriptsControl({
               onClick={openAddDialog}
             />
           }
-          label={<> {isPanel ? t("Add project script") : t("Add action")} </>}
+          label={isPanel ? t("Add project script") : t("Add action")}
           side="top"
         >
           <PlusIcon className="size-3.5" />

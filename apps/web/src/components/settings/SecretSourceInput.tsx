@@ -200,7 +200,7 @@ function SecretCheckButton(props: {
           </Button>
         </span>
       }
-      label={<> {t(description)} </>}
+      label={t(description)}
       side="top"
     />
   );

@@ -653,7 +653,7 @@ function MiniPlayerShell({
                     onClick={onOpenInPanel}
                   />
                 }
-                label={<>{t("Open in right panel")}</>}
+                label={t("Open in right panel")}
               >
                 <PanelRightIcon />
               </SharedTooltipTrigger>
@@ -668,7 +668,7 @@ function MiniPlayerShell({
                     onClick={close}
                   />
                 }
-                label={<>{t("Close floating preview")}</>}
+                label={t("Close floating preview")}
               >
                 <XIcon />
               </SharedTooltipTrigger>

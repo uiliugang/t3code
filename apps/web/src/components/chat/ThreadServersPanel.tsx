@@ -302,7 +302,7 @@ function ThreadServersList(props: ThreadServersPanelProps) {
                           onClick={() => void stop(server)}
                         />
                       }
-                      label={<> {t("Stop server")} </>}
+                      label={t("Stop server")}
                       side="left"
                     >
                       {stoppingKey === key ? (

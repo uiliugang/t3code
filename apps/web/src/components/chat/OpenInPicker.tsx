@@ -345,7 +345,7 @@ export const OpenInPicker = memo(function OpenInPicker({
               }
             />
           }
-          label={<> {t("Choose editor")} </>}
+          label={t("Choose editor")}
           side="top"
         >
           <ChevronDownIcon

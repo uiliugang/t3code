@@ -68,7 +68,7 @@ const MenuTriggerButton = () => {
           }
         />
       }
-      label={<> {t("More")} </>}
+      label={t("More")}
     >
       <MoreVertical />
     </SharedTooltipTrigger>

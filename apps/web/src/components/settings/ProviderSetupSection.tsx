@@ -320,7 +320,7 @@ function ProviderSetupActions({
                       onClick={() => void removeRuntime()}
                     />
                   }
-                  label={<> {t("Remove downloaded runtime")} </>}
+                  label={t("Remove downloaded runtime")}
                 >
                   <Trash2Icon className="size-3.5" />
                 </SharedTooltipTrigger>

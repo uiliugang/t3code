@@ -874,7 +874,7 @@ export function AddEnvironmentDialog({
             }
           />
         }
-        label={<> {t("Add environment")} </>}
+        label={t("Add environment")}
         side="top"
       />
       <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">

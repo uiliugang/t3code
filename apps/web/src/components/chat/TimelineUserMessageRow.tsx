@@ -179,7 +179,7 @@ function UserFileCard({
                 onClick={() => ctx.onFileDownload(file)}
               />
             }
-            label={<> {t("Download {name}", { name: label })} </>}
+            label={t("Download {name}", { name: label })}
             side="top"
           >
             <DownloadIcon />
@@ -1065,7 +1065,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                               onClick={() => ctx.onFileDownload(file)}
                             />
                           }
-                          label={<> {t("Download {name}", { name: label })} </>}
+                          label={t("Download {name}", { name: label })}
                           side="top"
                         >
                           <DownloadIcon />
@@ -1152,16 +1152,13 @@ function UserMessageIntentMarker({
         />
       }
       label={
-        <>
-          {" "}
-          {unread
-            ? t(
-                "Waiting for the agent to read this. It reads steers between steps, after a running command finishes.",
-              )
-            : intent === "promoted_queued_to_steer"
-              ? t("Originally queued, then promoted to steer the active turn")
-              : t("Steered the active turn")}{" "}
-        </>
+        unread
+          ? t(
+              "Waiting for the agent to read this. It reads steers between steps, after a running command finishes.",
+            )
+          : intent === "promoted_queued_to_steer"
+            ? t("Originally queued, then promoted to steer the active turn")
+            : t("Steered the active turn")
       }
       side="top"
     >
@@ -1194,7 +1191,7 @@ function RevertUserMessageButton({
           aria-label={t("Edit from here")}
         />
       }
-      label={<> {t("Edit from here")} </>}
+      label={t("Edit from here")}
       side="top"
     >
       <PencilIcon className="size-3" />

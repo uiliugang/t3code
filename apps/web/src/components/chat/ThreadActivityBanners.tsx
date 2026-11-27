@@ -323,17 +323,12 @@ export function branchMismatchBannerItem(
           {mismatch.threadBranch}
         </code>
       }
-      label={
-        <>
-          {" "}
-          {resolve(
-            msg("This thread last ran on {branch}. Sending will continue on {currentBranch}.", {
-              branch: mismatch.threadBranch,
-              currentBranch: mismatch.currentBranch,
-            }),
-          )}{" "}
-        </>
-      }
+      label={resolve(
+        msg("This thread last ran on {branch}. Sending will continue on {currentBranch}.", {
+          branch: mismatch.threadBranch,
+          currentBranch: mismatch.currentBranch,
+        }),
+      )}
       side="top"
     />
   );

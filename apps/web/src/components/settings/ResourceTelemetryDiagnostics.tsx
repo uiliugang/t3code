@@ -1073,7 +1073,7 @@ function ResourceTelemetryDiagnosticsBody({
                   <RefreshIcon size="xs" refreshing={telemetry.isPending} />
                 </Button>
               }
-              label={<> {t("Refresh telemetry snapshot")} </>}
+              label={t("Refresh telemetry snapshot")}
               side="top"
             />
           </div>

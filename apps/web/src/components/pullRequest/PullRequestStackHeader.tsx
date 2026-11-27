@@ -20,7 +20,7 @@ export function PullRequestStackHeader({
         {notice ? (
           <SharedTooltipTrigger
             render={<span role="status" className="text-xs font-normal" />}
-            label={<> {t(notice)} </>}
+            label={t(notice)}
           >
             {stale ? t("May be stale") : t("Refreshing…")}
           </SharedTooltipTrigger>

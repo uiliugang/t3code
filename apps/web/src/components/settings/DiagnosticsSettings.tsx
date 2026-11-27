@@ -108,7 +108,7 @@ function StatBlock({
                 <InfoIcon className="size-3" />
               </button>
             }
-            label={<> {tooltip} </>}
+            label={tooltip}
             side="top"
           />
         ) : null}
@@ -1153,7 +1153,7 @@ function DiagnosticsSettingsBody() {
                   <FolderOpenIcon />
                 </Button>
               }
-              label={<> {t("Open logs folder")} </>}
+              label={t("Open logs folder")}
               side="top"
             />
             <DiagnosticsRefreshButton

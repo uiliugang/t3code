@@ -75,7 +75,7 @@ function RefreshFilesButton(props: { isPending: boolean; onRefresh: () => void }
           onClick={props.onRefresh}
         />
       }
-      label={<> {props.isPending ? t("Refreshing…") : t("Refresh files")} </>}
+      label={props.isPending ? t("Refreshing…") : t("Refresh files")}
     >
       <RefreshIcon refreshing={props.isPending} />
     </SharedTooltipTrigger>
@@ -609,12 +609,9 @@ export default function FileBrowserPanel({
               />
             }
             label={
-              <>
-                {" "}
-                {expandAll || allDirectoriesExpanded
-                  ? t("Collapse all folders")
-                  : t("Expand all folders")}{" "}
-              </>
+              expandAll || allDirectoriesExpanded
+                ? t("Collapse all folders")
+                : t("Expand all folders")
             }
           >
             {allDirectoriesExpanded ? (

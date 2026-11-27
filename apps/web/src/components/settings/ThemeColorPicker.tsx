@@ -312,7 +312,7 @@ function ThemeColorPicker({
             }
           />
         }
-        label={<> {gt("Choose {label} color", { label })} </>}
+        label={gt("Choose {label} color", { label })}
         side="top"
       />
       <PopoverPopup
@@ -394,12 +394,9 @@ export const ThemeColorField = memo(function ThemeColorField({
           </button>
         }
         label={
-          <>
-            {" "}
-            {selected
-              ? t("Hide where {color} is used", { color: label })
-              : t("Show where {color} is used", { color: label })}{" "}
-          </>
+          selected
+            ? t("Hide where {color} is used", { color: label })
+            : t("Show where {color} is used", { color: label })
         }
         side="top"
       />

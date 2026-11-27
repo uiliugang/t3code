@@ -454,7 +454,7 @@ export function BackgroundActivitySettingsRow() {
                   <SettingsIcon className="size-4" />
                 </Button>
               }
-              label={<> {t("Configure background activity")} </>}
+              label={t("Configure background activity")}
               side="top"
             />
           ) : null}

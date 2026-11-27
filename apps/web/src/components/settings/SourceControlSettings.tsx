@@ -303,12 +303,9 @@ function DiscoveryItemRow({
                   />
                 }
                 label={
-                  <>
-                    {" "}
-                    {item.kind === "meituan"
-                      ? t("Enable {name}", { name: item.label })
-                      : t("Offer when adding or publishing a project")}{" "}
-                  </>
+                  item.kind === "meituan"
+                    ? t("Enable {name}", { name: item.label })
+                    : t("Offer when adding or publishing a project")
                 }
                 side="top"
               />
@@ -589,7 +586,7 @@ export function SourceControlSettingsPanel({
           <RefreshIcon refreshing={discovery.isPending} />
         </Button>
       }
-      label={<> {t("Rescan Git and hosting integrations")} </>}
+      label={t("Rescan Git and hosting integrations")}
       side="top"
     />
   );

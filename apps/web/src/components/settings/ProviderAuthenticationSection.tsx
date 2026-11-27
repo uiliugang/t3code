@@ -268,7 +268,7 @@ export function ProviderAuthenticationSection({
                     <CopyIcon />
                   </Button>
                 }
-                label={<> {t("Copy sign-in link")} </>}
+                label={t("Copy sign-in link")}
               />
             </>
           ) : null}

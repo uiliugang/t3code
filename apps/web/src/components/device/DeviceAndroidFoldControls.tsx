@@ -91,7 +91,7 @@ export function DeviceAndroidFoldControls(props: {
               onClick={() => change("closed")}
             />
           }
-          label={<>{t("Fold device")}</>}
+          label={t("Fold device")}
           side="left"
         >
           <DeviceDuoGlyph pose="closed" />
@@ -107,7 +107,7 @@ export function DeviceAndroidFoldControls(props: {
               onClick={() => change("opened")}
             />
           }
-          label={<>{t("Unfold device")}</>}
+          label={t("Unfold device")}
           side="left"
         >
           <DeviceDuoGlyph pose="open" />

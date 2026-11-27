@@ -425,6 +425,7 @@ function codexHistoryBase(records: ReadonlyArray<DecodedTranscriptRecord>) {
 
 // Where the run of sticky `block` matches at the start of `text` ends.
 function leadingBlocksEnd(text: string, block: RegExp): number {
+  block.lastIndex = 0;
   let end = 0;
   while (block.test(text)) {
     end = block.lastIndex;
@@ -434,19 +435,8 @@ function leadingBlocksEnd(text: string, block: RegExp): number {
 
 // Claude Code records its own UI as user turns: slash commands, `!` shell runs and
 // their output, task notifications. Keep what the user typed, as they typed it.
-function claudeTaskNotificationEnd(text: string): number {
-  return leadingBlocksEnd(
-    text,
-    /<task-notification>[\s\S]*?<\/task-notification>\s*(?:<tools-used-before-summary>[\s\S]*?<\/tools-used-before-summary>\s*)?/y,
-  );
-}
-
-function claudeUiOutputEnd(text: string): number {
-  return leadingBlocksEnd(
-    text,
-    /<(local-command-stdout|local-command-stderr|local-command-caveat|bash-stdout|bash-stderr)>[\s\S]*?<\/\1>\s*/y,
-  );
-}
+const CLAUDE_OUTPUT_BLOCK =
+  /(?:<task-notification>[\s\S]*?<\/task-notification>\s*(?:<tools-used-before-summary>[\s\S]*?<\/tools-used-before-summary>\s*)?|<(local-command-stdout|local-command-stderr|local-command-caveat|bash-stdout|bash-stderr)>[\s\S]*?<\/\1>\s*)/y;
 
 // Shell payloads can print closing tags verbatim, so a complete envelope is
 // judged by its outer tags; prose after a quoted block stays visible.
@@ -475,8 +465,7 @@ function claudeCommand(text: string): { readonly text: string; readonly titleTex
   return { text: args.length === 0 ? name : `${name} ${args}`, titleText: args };
 }
 
-const claudeOutputEnd = (text: string) =>
-  claudeTaskNotificationEnd(text) || claudeUiOutputEnd(text);
+const claudeOutputEnd = (text: string) => leadingBlocksEnd(text, CLAUDE_OUTPUT_BLOCK);
 
 function isClaudeUiOutput(text: string, outputEnd = claudeOutputEnd(text)): boolean {
   return (
@@ -888,19 +877,14 @@ function createClaudeHistoryWindow() {
   };
 }
 
-function normalizeForWorktreeMatch(value: string, caseFold: boolean): string {
-  const normalized = `${value.replaceAll("\\", "/")}/`;
-  return caseFold ? normalized.toLowerCase() : normalized;
+function normalizeForWorktreeMatch(value: string): string {
+  return `${value.replaceAll("\\", "/")}/`;
 }
 
-function isT3ManagedWorktree(
-  candidatePath: string,
-  worktreesDir: string,
-  caseFold: boolean,
-): boolean {
-  const normalized = normalizeForWorktreeMatch(candidatePath, caseFold);
+function isT3ManagedWorktree(candidatePath: string, worktreesDir: string): boolean {
+  const normalized = normalizeForWorktreeMatch(candidatePath);
   return (
-    normalized.startsWith(normalizeForWorktreeMatch(worktreesDir, caseFold)) ||
+    normalized.startsWith(normalizeForWorktreeMatch(worktreesDir)) ||
     normalized.includes("/.t3/worktrees/")
   );
 }
@@ -1001,8 +985,6 @@ export const make = Effect.gen(function* () {
     worktreesDir: yield* realPathOf(configuredT3Dirs.worktreesDir),
   };
   const platform = yield* HostProcess.Platform;
-  const isWindows = platform === "win32";
-  const foldWorktreeCase = isWindows;
   const hostEnvironment = yield* HostProcess.Environment;
   const homeDir = yield* HostProcess.HomeDirectory;
   // `/private/tmp` is what macOS reports for sessions started in `/tmp`.
@@ -1019,14 +1001,12 @@ export const make = Effect.gen(function* () {
   const isScratchPath = (candidatePath: string) =>
     excludedProjectRoots.has(normalizeProjectPathForComparison(candidatePath)) ||
     excludedProjectAncestors.some((ancestor) =>
-      normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
-        normalizeForWorktreeMatch(ancestor, foldWorktreeCase),
-      ),
+      normalizeForWorktreeMatch(candidatePath).startsWith(normalizeForWorktreeMatch(ancestor)),
     );
   const isT3OwnedPath = (candidatePath: string, t3Dirs = configuredT3Dirs) =>
-    normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
-      normalizeForWorktreeMatch(t3Dirs.baseDir, foldWorktreeCase),
-    ) || isT3ManagedWorktree(candidatePath, t3Dirs.worktreesDir, foldWorktreeCase);
+    normalizeForWorktreeMatch(candidatePath).startsWith(
+      normalizeForWorktreeMatch(t3Dirs.baseDir),
+    ) || isT3ManagedWorktree(candidatePath, t3Dirs.worktreesDir);
   const isExcludedProjectPath = (candidatePath: string, t3Dirs = configuredT3Dirs) =>
     isScratchPath(candidatePath) || isT3OwnedPath(candidatePath, t3Dirs);
 
@@ -1106,10 +1086,6 @@ export const make = Effect.gen(function* () {
     const contents = yield* Effect.forEach(
       unique,
       (filePath) => {
-        // No privacy prompts or FIFOs to block open() here.
-        if (isWindows) {
-          return fileSystem.readFileString(filePath).pipe(Effect.orElseSucceed(() => ""));
-        }
         if ((blockedGitFilePaths.get(filePath) ?? 0) > now) return Effect.succeed("");
         blockedGitFilePaths.delete(filePath);
         return processRunner
@@ -1134,7 +1110,7 @@ export const make = Effect.gen(function* () {
             Effect.orElseSucceed(() => ""),
           );
       },
-      { concurrency: isWindows ? 1 : GIT_FILE_READ_CONCURRENCY },
+      { concurrency: GIT_FILE_READ_CONCURRENCY },
     );
     return new Map(unique.map((filePath, index) => [filePath, contents[index]!]));
   });

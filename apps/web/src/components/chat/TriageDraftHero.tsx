@@ -31,14 +31,9 @@ export function TriageDraftHero(props: {
       <p className="mt-2 flex h-6 w-full items-center justify-center gap-1.5 text-sm">
         <SharedTooltipTrigger
           render={<span tabIndex={0} className="min-w-0 truncate font-medium text-foreground" />}
-          label={
-            <>
-              {" "}
-              {t(
-                "The agent reads T3 Code's logs and source here, and asks before it applies a fix or posts anything.",
-              )}{" "}
-            </>
-          }
+          label={t(
+            "The agent reads T3 Code's logs and source here, and asks before it applies a fix or posts anything.",
+          )}
           side="bottom"
         >
           {props.machineLabel ?? t("This machine")}
@@ -57,7 +52,7 @@ export function TriageDraftHero(props: {
               onClick={() => copyToClipboard(TRIAGE_CLI_COMMAND, undefined)}
             />
           }
-          label={<> {t("Copy command, for a terminal")} </>}
+          label={t("Copy command, for a terminal")}
           side="bottom"
         >
           {t(isCopied ? "Copied" : "or run")}

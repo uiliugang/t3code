@@ -282,14 +282,9 @@ export function ComposerAttachmentMediaRow({
                       <CircleAlertIcon className="size-3" />
                     </span>
                   }
-                  label={
-                    <>
-                      {" "}
-                      {t(
-                        "Draft attachment could not be saved locally and may be lost on navigation.",
-                      )}{" "}
-                    </>
-                  }
+                  label={t(
+                    "Draft attachment could not be saved locally and may be lost on navigation.",
+                  )}
                   side="top"
                 />
               )}
@@ -320,7 +315,7 @@ export function ComposerAttachmentMediaRow({
                       aria-label={t("Retry upload for {name}", { name: image.name })}
                     />
                   }
-                  label={<> {attachmentUploadFailureText(upload, messages)} </>}
+                  label={attachmentUploadFailureText(upload, messages)}
                   side="top"
                 >
                   <RefreshIcon />
@@ -417,7 +412,7 @@ export function ComposerAttachmentMediaRow({
                     aria-label={t("Retry upload for {name}", { name: file.name })}
                   />
                 }
-                label={<> {attachmentUploadFailureText(upload, messages)} </>}
+                label={attachmentUploadFailureText(upload, messages)}
                 side="top"
               >
                 <RefreshIcon />
@@ -524,7 +519,7 @@ export function ComposerAttachmentFileList({
                     aria-label={t("Retry upload for {name}", { name: file.name })}
                   />
                 }
-                label={<> {attachmentUploadFailureText(upload, messages)} </>}
+                label={attachmentUploadFailureText(upload, messages)}
                 side="top"
               >
                 <RefreshIcon />
@@ -765,7 +760,7 @@ export function ComposerAttachButton({ onOpenPicker }: { readonly onOpenPicker: 
           aria-label={t("Attach files")}
         />
       }
-      label={<> {t("Attach files")} </>}
+      label={t("Attach files")}
     >
       {/* The clip's weight sits in its upper loop; 1px down reads as centered on the row. */}
       <PaperclipIcon className="translate-y-px" />

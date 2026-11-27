@@ -543,14 +543,7 @@ export function ProviderEnvironmentSection(props: {
                       )}
                     </Button>
                   }
-                  label={
-                    <>
-                      {" "}
-                      {variable.sensitive
-                        ? t("Sensitive, stored separately")
-                        : t("Plain text")}{" "}
-                    </>
-                  }
+                  label={variable.sensitive ? t("Sensitive, stored separately") : t("Plain text")}
                   side="top"
                 />
               ) : null;
@@ -659,7 +652,7 @@ function ProjectOverrideInheritance({
             }
           />
         }
-        label={<> {t("Overridden for this project")} </>}
+        label={t("Overridden for this project")}
         side="top"
       >
         <LayersIcon className="size-3 text-primary" />
@@ -1136,7 +1129,7 @@ export function ProviderInstanceCard({
             }
           />
         }
-        label={<> {updateProgress ? t("Updating") : versionAdvisory.title} </>}
+        label={updateProgress ? t("Updating") : versionAdvisory.title}
         side="top"
       />
       <PopoverPopup side="bottom" align="end" width="md" aria-label={versionAdvisory.title}>
@@ -1211,7 +1204,7 @@ export function ProviderInstanceCard({
                     <CopyIcon className="size-3" />
                   </Button>
                 }
-                label={<> {t("Copy command")} </>}
+                label={t("Copy command")}
                 side="top"
               />
             </div>

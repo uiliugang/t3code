@@ -227,7 +227,7 @@ function SortableRouteRow({
               onClick={onRemove}
             />
           }
-          label={<> {t("Remove route")} </>}
+          label={t("Remove route")}
           side="top"
         >
           <XIcon className="size-3" />

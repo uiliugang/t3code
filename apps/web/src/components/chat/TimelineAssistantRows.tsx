@@ -204,7 +204,7 @@ function AssistantForkButton({
             disabled={busy}
           />
         }
-        label={<> {label} </>}
+        label={label}
         side="top"
       >
         {busy ? <Spinner size="xs" /> : <GitForkIcon className="size-3" />}
@@ -375,7 +375,7 @@ function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemI
           aria-label={t("Reply to this response")}
         />
       }
-      label={<> {t("Reply to this response")} </>}
+      label={t("Reply to this response")}
       side="top"
     >
       <ReplyIcon className="size-3" />

@@ -181,7 +181,7 @@ export function ThreadLineageWorkflowRow({
                   onClick={onStop}
                 />
               }
-              label={<> {t("Stop entire workflow")} </>}
+              label={t("Stop entire workflow")}
               side="left"
             >
               {stopping ? (

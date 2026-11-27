@@ -137,7 +137,7 @@ export function PullRequestBaseBranch({
       render={
         <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">{label}</span>
       }
-      label={<> {stacked ? t("Stacked on {branch}", { branch: baseBranch }) : baseBranch} </>}
+      label={stacked ? t("Stacked on {branch}", { branch: baseBranch }) : baseBranch}
       side="top"
     />
   );

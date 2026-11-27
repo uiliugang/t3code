@@ -1234,14 +1234,9 @@ function ConnectionsSettingsContent({
                 />
               </span>
             }
-            label={
-              <>
-                {" "}
-                {t(
-                  "Network exposure changes restart the backend and must be controlled where the server process is launched.",
-                )}{" "}
-              </>
-            }
+            label={t(
+              "Network exposure changes restart the backend and must be controlled where the server process is launched.",
+            )}
             side="top"
           />
         ) : undefined

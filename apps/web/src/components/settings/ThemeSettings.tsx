@@ -358,7 +358,7 @@ function ThemeLibraryCard({
                         <CopyIcon />
                       </Button>
                     }
-                    label={<>{t("Duplicate theme")}</>}
+                    label={t("Duplicate theme")}
                   />
                 ) : null}
                 {onEdit ? (
@@ -376,7 +376,7 @@ function ThemeLibraryCard({
                         <PenLineIcon />
                       </Button>
                     }
-                    label={<>{t("Edit theme")}</>}
+                    label={t("Edit theme")}
                   />
                 ) : null}
                 {onDownload ? (
@@ -394,7 +394,7 @@ function ThemeLibraryCard({
                         <UploadIcon />
                       </Button>
                     }
-                    label={<>{t("Export theme file")}</>}
+                    label={t("Export theme file")}
                   />
                 ) : null}
                 {onRemove ? (

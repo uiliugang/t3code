@@ -311,7 +311,9 @@ export function QueuedRunsControl({
                                 shortcut: props.steerShortcutLabel,
                               })
                             : workflow?.promoteSkipsCompaction
-                              ? t("Skip compaction and send this message")
+                              ? t("Skip compaction and send this message ({shortcut})", {
+                                  shortcut: props.steerShortcutLabel,
+                                })
                               : movesCommandFirst
                                 ? t("Move this command to the front of the queue ({shortcut})", {
                                     shortcut: props.steerShortcutLabel,
@@ -408,7 +410,7 @@ export function QueuedRunsControl({
                           }}
                         />
                       }
-                      label={<> {t("Remove from queue")} </>}
+                      label={t("Remove from queue")}
                     >
                       <XIcon />
                     </SharedTooltipTrigger>

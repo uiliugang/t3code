@@ -105,7 +105,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
           <SharedTooltipTrigger
             key={option.decision}
             render={button}
-            label={<> {t(option.warning)} </>}
+            label={t(option.warning)}
             side="top"
           />
         ) : (
@@ -152,7 +152,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
                 <SharedTooltipTrigger
                   key={option.decision}
                   render={item}
-                  label={<> {t(option.warning)} </>}
+                  label={t(option.warning)}
                   side="top"
                 />
               ) : (

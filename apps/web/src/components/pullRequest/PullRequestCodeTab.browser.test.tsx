@@ -251,16 +251,26 @@ it("keeps the diff after a refresh that brings back the same page", async () => 
   await expect.element(screen.getByText("1 file", { exact: true })).toBeVisible();
 });
 
-it("can show test files again from the narrow Code tab empty state", async () => {
+it("can show all files again from the narrow Code tab empty state", async () => {
   setup({ paged: false });
   mocks.onlyTestFiles = true;
+  using _preferences = {
+    [Symbol.dispose]() {
+      window.localStorage.removeItem("t3code.diffHideTestFiles");
+      window.localStorage.removeItem("t3code.diffHideMarkdownFiles");
+    },
+  };
   const container = document.createElement("div");
   container.className = "h-[700px] w-[429px]";
   await using screen = await render(tab(0), { container });
-  await screen.getByRole("button", { name: "Hide test files", exact: true }).click();
+  await screen.getByRole("button", { name: "Filter files", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Hide test files", exact: true }).click();
+  await userEvent.keyboard("{Escape}");
 
-  await expect.element(screen.getByText("1 test file hidden", { exact: true })).toBeVisible();
-  await screen.getByRole("button", { name: "Show test files", exact: true }).click();
+  await expect
+    .element(screen.getByText("All files are hidden by filters.", { exact: true }))
+    .toBeVisible();
+  await screen.getByRole("button", { name: "Show all files", exact: true }).click();
   await expect.element(screen.getByText("a.test.ts", { exact: true }).first()).toBeVisible();
 });
 
@@ -429,7 +439,9 @@ it("keeps a linked test file expanded when a refresh changes the rest of the dif
   const container = document.createElement("div");
   container.className = "flex h-[700px] w-[900px]";
   await using screen = await render(tab(0), { container });
-  await screen.getByRole("button", { name: "Hide test files" }).click();
+  await screen.getByRole("button", { name: "Filter files", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Hide test files", exact: true }).click();
+  await userEvent.keyboard("{Escape}");
 
   const path = "early-1.test.ts";
   const url = `${detail.url}/files#diff-${bytesToHex(sha256(new TextEncoder().encode(path)))}`;
@@ -545,17 +557,19 @@ it("keeps a later test file folded by hand through a refresh and bulk toggles wh
   const lateTest = await diffToggle("late.test.ts");
   await lateTest.click();
   await expect.element(lateTest).toHaveAttribute("aria-expanded", "false");
-  await screen.getByRole("button", { name: "Hide test files", exact: true }).click();
+  await screen.getByRole("button", { name: "Filter files", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Hide test files", exact: true }).click();
+  await userEvent.keyboard("{Escape}");
 
   // A refresh drops the loaded later page, so the bulk toggles below run without it.
   await screen.rerender(tab(1));
   await expect
-    .element(screen.getByRole("button", { name: "1 test file hidden", exact: true }))
+    .element(screen.getByRole("button", { name: "1 file hidden", exact: true }))
     .toBeVisible();
   await screen.getByRole("button", { name: "Collapse all files", exact: true }).click();
   await screen.getByRole("button", { name: "Expand all files", exact: true }).click();
   await loadNextPage();
-  await screen.getByRole("button", { name: "Show test files", exact: true }).click();
+  await screen.getByRole("button", { name: "2 files hidden", exact: true }).click();
 
   await expect.element(screen.getByText("4 files", { exact: true })).toBeVisible();
   await expect.element(await diffToggle("late.test.ts")).toHaveAttribute("aria-expanded", "false");

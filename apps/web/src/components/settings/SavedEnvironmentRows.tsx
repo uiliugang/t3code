@@ -466,7 +466,7 @@ export function SavedBackendListRow({
               onClick={() => onSetEnabled(environmentId, false)}
             />
           }
-          label={<> {gt("Cancel installation")} </>}
+          label={gt("Cancel installation")}
           side="top"
         >
           <XIcon />
@@ -484,7 +484,7 @@ export function SavedBackendListRow({
             onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
           />
         }
-        label={<> {t(blocked ? "Client not supported" : enabled ? "Switch off" : "Switch on")} </>}
+        label={t(blocked ? "Client not supported" : enabled ? "Switch off" : "Switch on")}
         side="top"
       />
       <Menu>

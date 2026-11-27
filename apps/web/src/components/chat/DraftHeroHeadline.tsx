@@ -551,7 +551,7 @@ export function DraftHeroHeadline({
                 ) : null}
                 <SharedTooltipTrigger
                   render={<span className="min-w-0 flex-1 text-sm" />}
-                  label={<> {item.label} </>}
+                  label={item.label}
                   side="top"
                 >
                   <ProjectLabel name={item.label} project={entry?.group} />

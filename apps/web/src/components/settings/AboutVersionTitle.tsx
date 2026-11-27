@@ -40,7 +40,7 @@ export function AboutVersionTitle() {
               {APP_VERSION}
             </InlineButton>
           }
-          label={<> {t("Copy version")} </>}
+          label={t("Copy version")}
         />
       </code>
     </span>

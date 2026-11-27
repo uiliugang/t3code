@@ -289,7 +289,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
             <h3 className="text-sm font-medium text-foreground">{primaryLabel}</h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            <SharedTooltipTrigger render={<span />} label={<> {expiresAbsolute} </>} side="top">
+            <SharedTooltipTrigger render={<span />} label={expiresAbsolute} side="top">
               {formatExpiresInLabel(pairingLink.expiresAt, nowMs, uiLanguage)}
             </SharedTooltipTrigger>
             <span aria-hidden> · </span>

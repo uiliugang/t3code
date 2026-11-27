@@ -123,11 +123,29 @@ function kindForMode(mode: number): IndexEntryStat["kind"] {
   }
 }
 
+function matchesEntryKind(
+  statKind: IndexEntryStat["kind"],
+  entryKind: IndexEntryStat["kind"],
+  ignoreFileMode: boolean,
+): boolean {
+  if (statKind === entryKind) return true;
+  if (
+    ignoreFileMode &&
+    (statKind === "file" || statKind === "executable") &&
+    (entryKind === "file" || entryKind === "executable")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function invalidateChangedIndexStats(
   parsed: ParsedIndex,
   stats: ReadonlyArray<IndexEntryStat | undefined>,
   timestamp: number,
+  options?: { readonly ignoreFileMode?: boolean },
 ): Uint8Array {
+  const ignoreFileMode = options?.ignoreFileMode === true;
   const bytes = new Uint8Array(parsed.bytes);
   const view = new DataView(bytes.buffer);
   for (const [index, entry] of parsed.entries.entries()) {
@@ -148,7 +166,7 @@ export function invalidateChangedIndexStats(
     if (
       stat &&
       stat.kind !== "directory" &&
-      stat.kind === kindForMode(view.getUint32(entry.offset + 24)) &&
+      matchesEntryKind(stat.kind, kindForMode(view.getUint32(entry.offset + 24)), ignoreFileMode) &&
       stat.mtimeSeconds < timestamp &&
       stat.ctimeSeconds < timestamp &&
       fields?.every(([offset, value]) => view.getUint32(entry.offset + offset) === value)

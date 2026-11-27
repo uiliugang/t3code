@@ -1,6 +1,7 @@
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import { flushSync } from "react-dom";
 
+import { applyPendingDraftWorkspaceUpdate } from "../components/chat/preparingComposerImages";
 import { type DraftId, type DraftSessionState, useComposerDraftStore } from "../composerDraftStore";
 
 type DraftWorkspaceDefault = Pick<DraftSessionState, "envMode" | "startFromOrigin">;
@@ -101,7 +102,7 @@ export function trackPendingDraftCheckout<T>(
   const prepared = checkout.then((value) => {
     const current = canApply();
     stopWatching();
-    const applied = current && apply(value);
+    const applied = current && applyPendingDraftWorkspaceUpdate(draftId, () => apply(value));
     const workspace = applied ? workspaceKey(get()) : null;
     const outcome: DraftCheckoutOutcome =
       workspace !== null
@@ -152,12 +153,14 @@ export function trackPendingWorkspaceDefault(
         return;
       // A send waiting on this promise must see the resolved workspace when it resumes.
       flushSync(() =>
-        setDraftThreadContext(draftId, {
-          envMode: resolved.envMode,
-          ...(draft.startFromOrigin === workspace.startFromOrigin
-            ? { startFromOrigin: resolved.startFromOrigin }
-            : {}),
-        }),
+        applyPendingDraftWorkspaceUpdate(draftId, () =>
+          setDraftThreadContext(draftId, {
+            envMode: resolved.envMode,
+            ...(draft.startFromOrigin === workspace.startFromOrigin
+              ? { startFromOrigin: resolved.startFromOrigin }
+              : {}),
+          }),
+        ),
       );
     })
     .finally(() => {

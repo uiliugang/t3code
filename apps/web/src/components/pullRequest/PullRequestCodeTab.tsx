@@ -48,7 +48,6 @@ import {
   ChevronRightIcon,
   Columns2Icon,
   FolderTreeIcon,
-  FlaskConicalIcon,
   InfoIcon,
   MessageSquareOffIcon,
   PilcrowIcon,
@@ -528,7 +527,6 @@ function PullRequestCodeTab({
     Schema.Boolean,
   );
   const fileFilters = useDiffFileFilters();
-  const { hideTestFiles, setHideTestFiles } = fileFilters;
   const [selectedLines, setSelectedLines] = useState<{
     id: string;
     range: SelectedLineRange;
@@ -826,23 +824,13 @@ function PullRequestCodeTab({
     readonly path: string;
   } | null>(null);
   const linkPath = pendingLinkPath ?? (revealedLink?.scope === scopeKey ? revealedLink.path : null);
-  const filesMatchingFilters = loadedFiles.filter((file) => {
+  const files = loadedFiles.filter((file) => {
     const path = resolveFileDiffPath(file);
     if (path === linkPath) return true;
 
-    return fileFilters.isVisibleIgnoringTestFilter(path, revealRequest?.path);
+    return fileFilters.isFileVisible(path, revealRequest?.path);
   });
-  const testFileCount = loadedFiles.filter((file) =>
-    isTestChangedFile(resolveFileDiffPath(file)),
-  ).length;
-  const files = hideTestFiles
-    ? filesMatchingFilters.filter((file) => {
-        const path = resolveFileDiffPath(file);
-        return path === revealRequest?.path || path === linkPath || !isTestChangedFile(path);
-      })
-    : filesMatchingFilters;
-  const hiddenFileCount = loadedFiles.length - filesMatchingFilters.length;
-  const hiddenTestFileCount = filesMatchingFilters.length - files.length;
+  const hiddenFileCount = loadedFiles.length - files.length;
   const nextCursor = loadedSlices.at(-1)?.nextCursor ?? null;
   const draftFile =
     draft === null
@@ -1150,7 +1138,7 @@ function PullRequestCodeTab({
       foldAllPullRequestDiffs(
         current,
         allFilesCollapsed ? "expanded" : "folded",
-        hideTestFiles ? { shownKeys: shownTestKeys } : null,
+        fileFilters.hideTestFiles ? { shownKeys: shownTestKeys } : null,
       ),
     );
   };
@@ -1490,12 +1478,6 @@ function PullRequestCodeTab({
 
   const selectedCommit = orderedCommits.find((entry) => entry.oid === commit);
   const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : t("All commits");
-  const hiddenTestFilesLabel =
-    hiddenTestFileCount > 0
-      ? gt("{count, plural, one {{count} test file hidden} other {{count} test files hidden}}", {
-          count: hiddenTestFileCount,
-        })
-      : null;
   const changeIgnoreWhitespace = (next: boolean) => {
     setIgnoreWhitespace(next);
     setDraft(null);
@@ -1563,24 +1545,7 @@ function PullRequestCodeTab({
             {t(files.length === 1 ? "{count} file" : "{count} files", { count: files.length })}
             {nextCursor === null ? "" : "+"}
           </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            {hiddenTestFilesLabel !== null && (files.length > 0 || nextCursor !== null) ? (
-              <span className="hidden items-center gap-1.5 @2xl:flex">
-                <span aria-hidden className="text-muted-foreground/50">
-                  ·
-                </span>
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="link"
-                  onClick={() => setHideTestFiles(false)}
-                >
-                  {hiddenTestFilesLabel}
-                </Button>
-              </span>
-            ) : null}
-          </span>
-          {hiddenFileCount > 0 ? (
+          {hiddenFileCount > 0 && (files.length > 0 || nextCursor !== null) ? (
             <Button type="button" size="xs" variant="link" onClick={fileFilters.clear}>
               {t(hiddenFileCount === 1 ? "{count} file hidden" : "{count} files hidden", {
                 count: hiddenFileCount,
@@ -1821,28 +1786,6 @@ function PullRequestCodeTab({
             )}
           </SharedTooltipTrigger>
         ) : null}
-        {(testFileCount > 0 || hideTestFiles) &&
-        !(
-          rawSlicesView === null &&
-          hiddenTestFilesLabel !== null &&
-          files.length === 0 &&
-          nextCursor === null
-        ) ? (
-          <SharedTooltipTrigger
-            render={
-              <Toggle
-                aria-label={hideTestFiles ? t("Show test files") : t("Hide test files")}
-                variant="ghost"
-                size="sm"
-                pressed={hideTestFiles}
-                onPressedChange={(pressed) => setHideTestFiles(Boolean(pressed))}
-              />
-            }
-            label={hideTestFiles ? t("Show test files") : t("Hide test files")}
-          >
-            <FlaskConicalIcon className="size-3.5" />
-          </SharedTooltipTrigger>
-        ) : null}
         <DiffFileFilterMenu filters={fileFilters} />
         {fileKeys.length > 0 ? (
           <SharedTooltipTrigger
@@ -1973,23 +1916,19 @@ function PullRequestCodeTab({
   }
 
   if (items.length === 0 && nextCursor === null) {
-    if (hiddenTestFilesLabel !== null && files.length === 0) {
+    if (hiddenFileCount > 0) {
       return withToolbar(
         <div className="flex flex-wrap items-center gap-2 px-4 py-5 text-sm text-muted-foreground">
-          <p>{hiddenTestFilesLabel}</p>
-          <InlineButton onClick={() => setHideTestFiles(false)}>
-            {gt("Show test files")}
-          </InlineButton>
+          <p>{t("All files are hidden by filters.")}</p>
+          <InlineButton onClick={fileFilters.clear}>{t("Show all files")}</InlineButton>
         </div>,
       );
     }
     return withToolbar(
       <p className="px-4 py-5 text-sm text-muted-foreground">
-        {hiddenFileCount > 0
-          ? t("All files are hidden by filters.")
-          : commit === null
-            ? t("This {term} has no file changes.", { term: t(term) })
-            : t("This commit has no file changes.")}
+        {commit === null
+          ? t("This {term} has no file changes.", { term: t(term) })
+          : t("This commit has no file changes.")}
       </p>,
     );
   }

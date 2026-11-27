@@ -57,7 +57,12 @@ export function makeCheckpointIndexCache() {
     }).pipe(Effect.orElseSucceed(() => undefined)),
   );
   const prepare = Effect.fn("CheckpointIndexCache.prepare")(
-    (target: string, root: string, timestamp: number) =>
+    (
+      target: string,
+      root: string,
+      timestamp: number,
+      options?: { readonly ignoreFileMode?: boolean },
+    ) =>
       Effect.tryPromise({
         try: async (signal) => {
           const parsed = parseIndex(await NodeFSP.readFile(target), { allowVersion4: true });
@@ -78,7 +83,7 @@ export function makeCheckpointIndexCache() {
               )),
             );
           }
-          return invalidateChangedIndexStats(parsed, stats, timestamp);
+          return invalidateChangedIndexStats(parsed, stats, timestamp, options);
         },
         catch: (cause) => new CheckpointIndexCacheError({ operation: "prepare", cause }),
       }).pipe(

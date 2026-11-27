@@ -128,7 +128,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
               />
             </Button>
           }
-          label={<> {t(props.isFavorite ? "Remove from favorites" : "Add to favorites")} </>}
+          label={t(props.isFavorite ? "Remove from favorites" : "Add to favorites")}
           side="top"
           align="center"
         />

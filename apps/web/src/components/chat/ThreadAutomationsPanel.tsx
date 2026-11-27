@@ -167,7 +167,7 @@ export function ThreadAutomationsPanel(props: {
               <Settings2Icon className="size-3.5" />
             </ThreadDetailsControl>
           }
-          label={<> {t("Manage scheduled tasks")} </>}
+          label={t("Manage scheduled tasks")}
         />
       }
     >

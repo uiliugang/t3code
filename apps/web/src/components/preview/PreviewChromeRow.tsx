@@ -112,7 +112,7 @@ export function PreviewChromeRow({
                 type="button"
               />
             }
-            label={<>{t("Back")}</>}
+            label={t("Back")}
           >
             <ArrowLeft />
           </SharedTooltipTrigger>
@@ -127,7 +127,7 @@ export function PreviewChromeRow({
                 type="button"
               />
             }
-            label={<>{t("Forward")}</>}
+            label={t("Forward")}
           >
             <ArrowRight />
           </SharedTooltipTrigger>
@@ -204,7 +204,7 @@ export function PreviewChromeRow({
                       type="button"
                     />
                   }
-                  label={<>{t("Open in system browser")}</>}
+                  label={t("Open in system browser")}
                 >
                   <ExternalLink />
                 </SharedTooltipTrigger>

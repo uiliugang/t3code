@@ -187,7 +187,7 @@ function DiffFileCollapseToggle({
           }}
         />
       }
-      label={<> {collapsed ? t("Expand diff") : t("Collapse diff")} </>}
+      label={collapsed ? t("Expand diff") : t("Collapse diff")}
       side="top"
     >
       {collapsed ? (
@@ -1399,7 +1399,7 @@ export default function DiffPanel({
             </Tooltip>
             <SharedTooltipTrigger
               render={<span aria-hidden className="hidden @max-[20rem]/diff-refs:inline" />}
-              label={<> {`${comparisonHeadRef} → ${comparisonBaseRef}`} </>}
+              label={`${comparisonHeadRef} → ${comparisonBaseRef}`}
               side="top"
             >
               {t("vs")}
@@ -1493,7 +1493,7 @@ export default function DiffPanel({
                                   />
                                 </span>
                               }
-                              label={<> {t("Remote only")} </>}
+                              label={t("Remote only")}
                               side="top"
                             />
                           ) : null}

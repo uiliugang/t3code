@@ -1164,10 +1164,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     "core.fsyncMethod=fsync",
   ] as const;
 
-  // Checkpoints must handle existing paths beyond Windows MAX_PATH, even when
-  // core.longpaths is disabled in the user's Git configuration.
-  const longPaths = hostPlatform === "win32" ? ["-c", "core.longpaths=true"] : [];
-
   // Newest first: the commit each HEAD move landed on, when, and Git's reason for it.
   const readHeadMoves = (cwd: string) =>
     execute({
@@ -1315,6 +1311,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         // would hide later edits of them from add -A.
         "-c",
         "core.ignorestat=false",
+        // Untracked cache writes the UNTR extension, which parseIndex rejects.
+        "-c",
+        "core.untrackedCache=false",
       ];
       const { gitCommonDir, indexPath, prefix, headExists, worktreeRoot, topLevel, head } =
         yield* resolveCaptureRepository(input.cwd);
@@ -1520,6 +1519,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               });
         const previousTree = claimedIndex?.tree;
         const trustCtime = CheckpointCaptureIndex.lastConfigValue(config.stdout, "core.trustctime");
+        const fileMode = CheckpointCaptureIndex.lastConfigValue(config.stdout, "core.filemode");
+        const ignoreFileMode = fileMode !== undefined && !CheckpointCaptureIndex.gitBool(fileMode);
         const minimalStat =
           CheckpointCaptureIndex.lastConfigValue(config.stdout, "core.checkstat") === "minimal";
         if (claimedIndex !== undefined) {
@@ -1540,7 +1541,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           const timestamp = Math.min(claimedIndex.timestamp, userBoundary ?? Infinity);
           if (
             timestamp <= 0 ||
-            !(yield* checkpointIndexes.prepare(tempIndexPath, topLevel!, timestamp))
+            !(yield* checkpointIndexes.prepare(tempIndexPath, topLevel!, timestamp, {
+              ignoreFileMode,
+            }))
           ) {
             return yield* new CheckpointCaptureIndex.StaleCaptureIndex();
           }
@@ -1581,7 +1584,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             });
             if (
               indexSeed?.cached &&
-              !(yield* checkpointIndexes.prepare(tempIndexPath, worktreeRoot!, indexTime))
+              !(yield* checkpointIndexes.prepare(tempIndexPath, worktreeRoot!, indexTime, {
+                ignoreFileMode,
+              }))
             )
               return false;
             // read-tree can rewrite the index, so restore its racy timestamp afterward.
@@ -1821,7 +1826,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             args: [
               ...indexConfig,
               ...durableWrite,
-              ...longPaths,
               // safecrlf=true refuses LF files under CRLF conversion; capture them as Git's default does.
               "-c",
               "core.safecrlf=false",
@@ -1857,15 +1861,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                 const untracked = yield* execute({
                   operation,
                   cwd: input.cwd,
-                  args: [
-                    ...longPaths,
-                    "ls-files",
-                    "--others",
-                    "--exclude-standard",
-                    "-z",
-                    "--",
-                    ".",
-                  ],
+                  args: ["ls-files", "--others", "--exclude-standard", "-z", "--", "."],
                   env: commitEnv,
                   maxOutputBytes: WORKSPACE_FILES_MAX_OUTPUT_BYTES,
                 });
@@ -2419,12 +2415,11 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         ),
       );
       const resetIndex = Effect.gen(function* () {
-        // On Windows clean can remove './' and exit 0.
         yield* recreateWorkspace;
         yield* execute({
           operation,
           cwd: input.cwd,
-          args: [...longPaths, "reset", "--quiet", "--", ...scope],
+          args: ["reset", "--quiet", "--", ...scope],
         });
       });
       let mutationStarted = false;
@@ -2464,7 +2459,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       );
       // An empty index and checkpoint have nothing for git restore's pathspec to match.
       if (tracked.stdout.length > 0) {
-        const restore = [...longPaths, "restore", "--source", commitOid, "--worktree", "--staged"];
+        const restore = ["restore", "--source", commitOid, "--worktree", "--staged"];
         // restore leaves skip-worktree paths alone. Outside a sparse checkout every such bit was
         // set by hand and capture recorded the file, so override them all.
         yield* restoreFromCheckpoint([
@@ -2545,7 +2540,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       const clean = execute({
         operation,
         cwd: input.cwd,
-        args: [...longPaths, "clean", "-fd", "--", ...scope],
+        args: ["clean", "-fd", "--", ...scope],
         env: { LC_ALL: "C" },
         allowNonZeroExit: true,
         onSpawn,
@@ -2565,7 +2560,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         const remaining = yield* execute({
           operation,
           cwd: input.cwd,
-          args: [...longPaths, "clean", "-dn", "--", ...scope],
+          args: ["clean", "-dn", "--", ...scope],
           env: { LC_ALL: "C" },
         });
         if (/^Would remove /m.test(remaining.stdout)) {

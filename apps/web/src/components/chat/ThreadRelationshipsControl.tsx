@@ -1026,7 +1026,7 @@ export function ThreadRelationshipsPanel(props: {
                   onClick={() => void stopSubagent(threadId, agent)}
                 />
               }
-              label={<> {t("Stop subagent")} </>}
+              label={t("Stop subagent")}
               side="left"
             >
               {stoppingId === threadId ? (

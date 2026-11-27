@@ -176,7 +176,7 @@ function StopGenerationButton({
           aria-label={t(stopPhase === "pending" ? "Stopping" : "Stop generation")}
         />
       }
-      label={<> {t(stopPhase === "pending" ? "Stopping…" : "Interrupt")} </>}
+      label={t(stopPhase === "pending" ? "Stopping…" : "Interrupt")}
     >
       <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
         <rect x="2" y="2" width="8" height="8" rx="1.5" />
@@ -523,7 +523,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         }
         label={
           <>
-            {" "}
             <div>
               {keepFullHistory
                 ? t("Next send keeps all {count} tokens.", { count: compactTokens })
@@ -531,7 +530,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             </div>
             <div>
               {keepFullHistory ? t("Click to compact first") : t("Click to keep full history")}
-            </div>{" "}
+            </div>
           </>
         }
       >

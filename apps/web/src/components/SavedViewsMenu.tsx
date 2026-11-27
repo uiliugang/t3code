@@ -159,7 +159,7 @@ export function SavedViewsMenu<Preferences extends Stored, Stored, Encoded>({
               aria-label={savedViewsLabel}
             />
           }
-          label={<> {selectedView?.name ?? savedViewsLabel} </>}
+          label={selectedView?.name ?? savedViewsLabel}
         >
           <BookmarkIcon aria-hidden className="size-4" />
           <span className="max-w-40 truncate">

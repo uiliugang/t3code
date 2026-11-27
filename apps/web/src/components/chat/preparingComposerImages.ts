@@ -9,6 +9,7 @@ import {
   composerTargetKey,
   type ComposerThreadDraftState,
   type ComposerThreadTarget,
+  type DraftId,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -137,6 +138,7 @@ const useHeldSendStore = create<{ readonly targetKeys: Readonly<Record<string, t
   targetKeys: {},
 }));
 let preparedImagesJoiningDraft = false;
+let applyingWorkspaceFor: DraftId | null = null;
 
 function invalidatePendingSubmit(targetKey: string) {
   cancelGenerations.set(targetKey, (cancelGenerations.get(targetKey) ?? 0) + 1);
@@ -159,6 +161,17 @@ export function joinPreparedImagesToDraft<T>(insert: () => T): T {
     return insert();
   } finally {
     preparedImagesJoiningDraft = false;
+  }
+}
+
+/** Applies a pending workspace default or PR checkout without cancelling an image-held send. */
+export function applyPendingDraftWorkspaceUpdate<T>(draftId: DraftId, update: () => T): T {
+  const previous = applyingWorkspaceFor;
+  applyingWorkspaceFor = draftId;
+  try {
+    return update();
+  } finally {
+    applyingWorkspaceFor = previous;
   }
 }
 
@@ -224,7 +237,7 @@ export function holdComposerSend(
   if (heldSends.has(targetKey)) return Promise.resolve({ status: "cancelled" });
   return new Promise((resolve) => {
     const drafts = useComposerDraftStore.getState();
-    const draftThread = drafts.getDraftThread(draftTarget);
+    let draftThread = drafts.getDraftThread(draftTarget);
     let draft = drafts.getComposerDraft(draftTarget);
     const settle = (result: HeldComposerSendResult) => {
       if (heldSends.get(targetKey) !== settle) return;
@@ -245,14 +258,20 @@ export function holdComposerSend(
       queueMicrotask(() => settle({ status: "ready" }));
     });
     const stopWatchingDraft = useComposerDraftStore.subscribe((state) => {
+      const nextDraftThread = state.getDraftThread(draftTarget);
       const next = state.getComposerDraft(draftTarget);
+      const applyingWorkspace =
+        applyingWorkspaceFor !== null &&
+        nextDraftThread !== null &&
+        state.getDraftSession(applyingWorkspaceFor) === nextDraftThread;
       if (
-        draftThread !== state.getDraftThread(draftTarget) ||
+        (!applyingWorkspace && draftThread !== nextDraftThread) ||
         (!preparedImagesJoiningDraft &&
           (composerDraftContentChanged(draft, next) || composerSendSettingsChanged(draft, next)))
       ) {
         settle({ status: "cancelled" });
       }
+      draftThread = nextDraftThread;
       draft = next;
     });
     useHeldSendStore.setState((state) => ({

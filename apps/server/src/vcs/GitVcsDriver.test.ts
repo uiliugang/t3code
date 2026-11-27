@@ -2197,6 +2197,7 @@ it.effect("checkpoint captures reuse validated stat data without rereading an un
       path.join(cwd, ".git/filter.cjs"),
       'require("node:fs").appendFileSync(".git/reads", "read\\n"); process.stdin.pipe(process.stdout);',
     );
+    yield* git(["config", "core.untrackedCache", "true"]);
     yield* git(["config", "filter.probe.clean", "node .git/filter.cjs"]);
     yield* fs.utimes(path.join(cwd, "stable"), 1_700_000_000, 1_700_000_000);
     yield* git(["add", "."]);

@@ -182,19 +182,14 @@ export function ProviderUpdatesAction({
             : t(allEnvironments ? "Update all environments" : "Update providers")}
         </Button>
       }
-      label={
-        <>
-          {" "}
-          {machines.map((machine) => (
-            <div key={machine.environmentId}>
-              {machine.label}:{" "}
-              {machine.candidates
-                .map((candidate) => PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver)
-                .join(", ")}
-            </div>
-          ))}{" "}
-        </>
-      }
+      label={machines.map((machine) => (
+        <div key={machine.environmentId}>
+          {machine.label}:{" "}
+          {machine.candidates
+            .map((candidate) => PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver)
+            .join(", ")}
+        </div>
+      ))}
       side="top"
     />
   );

@@ -3323,6 +3323,7 @@ const zhCN: Readonly<Record<string, string>> = {
     "暂存区最多保存 {max} 条提示词。请恢复或删除一条腾出空间；当前编辑内容未更改。",
   "Dismiss ({shortcut})": "关闭（{shortcut}）",
   "Start a turn with this message ({shortcut})": "用这条消息开始一轮（{shortcut}）",
+  "Skip compaction and send this message ({shortcut})": "跳过压缩并发送这条消息（{shortcut}）",
   "Move this command to the front of the queue ({shortcut})": "将此命令移到队首（{shortcut}）",
   "Send into the current turn ({shortcut})": "发送到当前轮次（{shortcut}）",
   "Android Devices": "Android 设备",

@@ -688,13 +688,8 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                           </Button>
                         }
                         label={
-                          <>
-                            {" "}
-                            {readiness.hint ??
-                              gt(
-                                "Open Settings -> Source control & issues to configure this provider.",
-                              )}{" "}
-                          </>
+                          readiness.hint ??
+                          gt("Open Settings -> Source control & issues to configure this provider.")
                         }
                         side="top"
                         align="end"
@@ -1146,8 +1141,6 @@ function CheckoutGitActionsControl({
   // Changed-file paths are repository-relative, so they must resolve against
   // the worktree root from the same status snapshot, not the project cwd.
   const workingTreeRoot = gitStatusForActions?.workingTree.rootPath ?? null;
-  // A feature-branch action may switch branches before the commit fails. Keep
-  // exclusions on that worktree so a retry does not include unchecked files.
   const selectionScope = JSON.stringify([
     activeEnvironmentId,
     gitCwd,
@@ -1155,12 +1148,34 @@ function CheckoutGitActionsControl({
     workingTreeRoot,
   ]);
   const [previousSelectionScope, setPreviousSelectionScope] = useState(selectionScope);
+  const [selectionBranch, setSelectionBranch] = useState(gitStatusForActions?.refName ?? null);
+  const [preserveBranchSwitchExclusions, setPreserveBranchSwitchExclusions] = useState<{
+    readonly scope: string;
+    readonly fromRefName: string | null;
+    readonly toRefName?: string | null;
+  } | null>(null);
   if (gitStatusForActions && previousSelectionScope !== selectionScope) {
     setPreviousSelectionScope(selectionScope);
+    setSelectionBranch(gitStatusForActions.refName);
+    setPreserveBranchSwitchExclusions(null);
     setExcludedFiles(new Set());
     setDialogCommitMessage("");
     setIsCommitDialogOpen(false);
     setIsEditingFiles(false);
+  } else if (gitStatusForActions && selectionBranch !== gitStatusForActions.refName) {
+    setSelectionBranch(gitStatusForActions.refName);
+    // A feature-branch action may switch branches before the commit fails. Keep
+    // exclusions once for that retry, but reset on any other branch switch.
+    const keepForFeatureBranchRetry =
+      preserveBranchSwitchExclusions !== null &&
+      preserveBranchSwitchExclusions.scope === selectionScope &&
+      preserveBranchSwitchExclusions.fromRefName === selectionBranch &&
+      (preserveBranchSwitchExclusions.toRefName === undefined ||
+        preserveBranchSwitchExclusions.toRefName === gitStatusForActions.refName);
+    setPreserveBranchSwitchExclusions(null);
+    if (!keepForFeatureBranchRetry) {
+      setExcludedFiles(new Set());
+    }
   }
   // A stash can temporarily hide excluded paths. Only current files affect the commit.
   const selectedFiles = allFiles.filter((f) => !excludedFiles.has(f.path));
@@ -1290,6 +1305,11 @@ function CheckoutGitActionsControl({
 
     const scopedToastData = threadToastData ? { ...threadToastData } : undefined;
     const actionId = randomUUID();
+    const pendingBranchSwitch =
+      featureBranch && includesCommit && excludedFiles.size > 0
+        ? { scope: selectionScope, fromRefName: actionBranch }
+        : null;
+    setPreserveBranchSwitchExclusions(pendingBranchSwitch);
 
     const result = await runImmediateGitAction.run({
       actionId,
@@ -1302,6 +1322,20 @@ function CheckoutGitActionsControl({
     });
 
     if (result._tag === "Failure") {
+      if (pendingBranchSwitch && gitCwd !== null) {
+        // A failure can occur either side of checkout. Limit the retry to the branch it left behind.
+        const refreshed = await refreshVcsStatus({
+          environmentId: activeEnvironmentId,
+          input: { cwd: gitCwd, localOnly: true },
+        });
+        setPreserveBranchSwitchExclusions((current) =>
+          current !== pendingBranchSwitch
+            ? current
+            : refreshed._tag === "Success" && refreshed.value.refName !== actionBranch
+              ? { ...pendingBranchSwitch, toRefName: refreshed.value.refName }
+              : null,
+        );
+      }
       if (isAtomCommandInterrupted(result)) {
         return false;
       }
@@ -1321,6 +1355,7 @@ function CheckoutGitActionsControl({
     }
 
     const actionResult = result.value;
+    setPreserveBranchSwitchExclusions(null);
     if (actionResult.commit.status === "created") {
       setExcludedFiles((current) => (current === excludedFiles ? new Set() : current));
     }

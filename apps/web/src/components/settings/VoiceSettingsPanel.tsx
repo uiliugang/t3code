@@ -1472,7 +1472,7 @@ export function VoiceSettingsPanel() {
                   <RefreshCwIcon />
                 </Button>
               }
-              label={<>{t("Refresh microphones")}</>}
+              label={t("Refresh microphones")}
             />
           }
         >

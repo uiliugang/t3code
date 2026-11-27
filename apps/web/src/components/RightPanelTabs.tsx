@@ -1060,7 +1060,7 @@ function RightPanelTab(
               )}
             </button>
           }
-          label={<> {audio === "muted" ? t("Unmute tab") : t("Mute tab")} </>}
+          label={audio === "muted" ? t("Unmute tab") : t("Mute tab")}
         />
       )}
       {props.renaming ? (
@@ -1670,7 +1670,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   </Button>
                 </span>
               }
-              label={<>{t("Scroll tabs left")}</>}
+              label={t("Scroll tabs left")}
             />
             <SharedTooltipTrigger
               render={
@@ -1686,7 +1686,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   </Button>
                 </span>
               }
-              label={<>{t("Scroll tabs right")}</>}
+              label={t("Scroll tabs right")}
             />
           </div>
         ) : null}

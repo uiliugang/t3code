@@ -461,7 +461,7 @@ function SnoozeMenuButton(props: {
             }
           />
         }
-        label={<> {t("Snooze thread")} </>}
+        label={t("Snooze thread")}
       >
         <ClockIcon className="size-3" />
       </SharedTooltipTrigger>
@@ -1238,7 +1238,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           className="inline-flex shrink-0 items-center"
         />
       }
-      label={<> {t("Unsent draft")} </>}
+      label={t("Unsent draft")}
       side="top"
     >
       <SquarePenIcon aria-hidden className={draftPenClassName} />
@@ -1257,7 +1257,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             className="group/unpin inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           />
         }
-        label={<> {t("Unpin thread")} </>}
+        label={t("Unpin thread")}
       >
         <PinIcon
           aria-hidden

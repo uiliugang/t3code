@@ -1326,11 +1326,8 @@ function OpenCommandPaletteDialog(props: {
               </Button>
             }
             label={
-              <>
-                {" "}
-                {disabledHint ??
-                  gt("Open Settings -> Source control & issues to configure this provider.")}{" "}
-              </>
+              disabledHint ??
+              gt("Open Settings -> Source control & issues to configure this provider.")
             }
             align="end"
             side="left"

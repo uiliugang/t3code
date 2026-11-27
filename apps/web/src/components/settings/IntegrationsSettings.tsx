@@ -480,7 +480,7 @@ function BrowserViewportSetting({ disabled }: { readonly disabled: boolean }) {
                     <ScreenRotationIcon />
                   </Button>
                 }
-                label={<>{t("Rotate")}</>}
+                label={t("Rotate")}
               />
             </div>
           ) : null}

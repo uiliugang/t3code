@@ -1368,7 +1368,7 @@ function NewKeybindingCancelIcon({
           onClick={onCancel}
         />
       }
-      label={<> {t("Cancel")} </>}
+      label={t("Cancel")}
       side="top"
     >
       <XIcon className="size-3.5" />
@@ -1705,7 +1705,7 @@ export function KeybindingsSettingsPanel() {
                 <FileJsonIcon aria-hidden className="size-4" />
               </Button>
             }
-            label={<> {t("Open keybindings.json")} </>}
+            label={t("Open keybindings.json")}
             side="top"
           />
         </div>

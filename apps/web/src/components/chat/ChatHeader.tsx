@@ -287,7 +287,7 @@ export const ChatHeader = memo(function ChatHeader({
                     className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   />
                 }
-                label={<> {t("New thread in {project}", { project: activeProjectName ?? "" })} </>}
+                label={t("New thread in {project}", { project: activeProjectName ?? "" })}
                 side="top"
               >
                 <ProjectFavicon project={activeProject} className="size-3.5" />
@@ -333,7 +333,12 @@ export const ChatHeader = memo(function ChatHeader({
                 }
                 label={parentThreadLink.title}
               >
-                <WorkspaceBreadcrumbText>{parentThreadLink.title}</WorkspaceBreadcrumbText>
+                <WorkspaceBreadcrumbText
+                  aria-hidden
+                  className={collapseParentTitle ? "w-0" : undefined}
+                >
+                  {parentThreadLink.title}
+                </WorkspaceBreadcrumbText>
                 {collapseParentTitle ? (
                   <span aria-hidden data-parent-breadcrumb-ellipsis>
                     ...
@@ -408,14 +413,9 @@ export const ChatHeader = memo(function ChatHeader({
           {renamingTitle === null && activeThreadLinkOrigin ? (
             <SharedTooltipTrigger
               render={<Badge variant="info" size="sm" />}
-              label={
-                <>
-                  {" "}
-                  {t("Started by an agent on {origin} through a linked environment.", {
-                    origin: activeThreadLinkOrigin,
-                  })}{" "}
-                </>
-              }
+              label={t("Started by an agent on {origin} through a linked environment.", {
+                origin: activeThreadLinkOrigin,
+              })}
               side="top"
             >
               {t("From {origin}", { origin: activeThreadLinkOrigin })}

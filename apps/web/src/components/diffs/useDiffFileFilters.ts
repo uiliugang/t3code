@@ -14,17 +14,15 @@ export function useDiffFileFilters() {
     false,
     Schema.Boolean,
   );
-  const isVisibleIgnoringTestFilter = (path: string, requestedPath?: string | null) =>
-    path === requestedPath || !hideMarkdownFiles || !path.toLowerCase().endsWith(".md");
   return {
     hideTestFiles,
     setHideTestFiles,
     hideMarkdownFiles,
     setHideMarkdownFiles,
-    isVisibleIgnoringTestFilter,
     isFileVisible: (path: string, requestedPath?: string | null) =>
-      isVisibleIgnoringTestFilter(path, requestedPath) &&
-      (path === requestedPath || !hideTestFiles || !isTestChangedFile(path)),
+      path === requestedPath ||
+      ((!hideMarkdownFiles || !path.toLowerCase().endsWith(".md")) &&
+        (!hideTestFiles || !isTestChangedFile(path))),
     clear: () => {
       setHideTestFiles(false);
       setHideMarkdownFiles(false);

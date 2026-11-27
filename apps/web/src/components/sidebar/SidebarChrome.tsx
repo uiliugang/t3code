@@ -178,7 +178,7 @@ function SidebarUtilityItem({
             {icon}
           </SidebarMenuButton>
         }
-        label={<> {label} </>}
+        label={label}
         side="top"
       />
     </SidebarMenuItem>

@@ -96,7 +96,7 @@ export function ReactionBar({
               onClick={() => void toggle(reaction.content, !reaction.viewerHasReacted)}
             />
           }
-          label={<> {pullRequestReactionTooltip(reaction, t)} </>}
+          label={pullRequestReactionTooltip(reaction, t)}
           side="top"
         >
           <span aria-hidden>{pullRequestReactionEmoji(reaction.content)}</span>

@@ -182,7 +182,7 @@ function LicenseHeaderAction({
               <SearchIcon className="size-3" />
             </Button>
           }
-          label={<> {t("Search licenses")} </>}
+          label={t("Search licenses")}
           side="top"
         />
       </div>

@@ -123,7 +123,7 @@ export function HtmlRenderFrame(props: {
                   }}
                 />
               }
-              label={<> {t("Open full screen")} </>}
+              label={t("Open full screen")}
               side="left"
             >
               <Maximize2Icon className="size-3.5" />

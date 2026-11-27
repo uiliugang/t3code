@@ -238,12 +238,9 @@ export function PullRequestActionsMenu({
           </MenuTrigger>
         }
         label={
-          <>
-            {" "}
-            {refreshing
-              ? t("Refreshing {term}", { term: t(terminology.singular) })
-              : t("More {term} actions", { term: t(terminology.singular) })}{" "}
-          </>
+          refreshing
+            ? t("Refreshing {term}", { term: t(terminology.singular) })
+            : t("More {term} actions", { term: t(terminology.singular) })
         }
       />
       <MenuPopup align="end" side="bottom">

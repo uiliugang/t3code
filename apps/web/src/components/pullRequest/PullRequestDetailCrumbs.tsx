@@ -55,7 +55,7 @@ function BackButton({ onBack, focusable }: { onBack: () => void; focusable: bool
           <ArrowLeftIcon aria-hidden className="size-3.5" />
         </Button>
       }
-      label={<> {t("Back to pull requests")} </>}
+      label={t("Back to pull requests")}
       side="top"
     />
   );
@@ -100,7 +100,7 @@ function NumberLink({
           <ExternalLinkIcon aria-hidden className="size-2.5" />
         </button>
       }
-      label={<> {openOnHostText} </>}
+      label={openOnHostText}
       side="top"
     />
   );
@@ -169,12 +169,9 @@ export function PullRequestDetailCrumbs({
                 )
               }
               label={
-                <>
-                  {" "}
-                  {repositoryUrl
-                    ? t("Open {repository} repository", { repository: detail.repository })
-                    : detail.repository}{" "}
-                </>
+                repositoryUrl
+                  ? t("Open {repository} repository", { repository: detail.repository })
+                  : detail.repository
               }
               side="top"
             />

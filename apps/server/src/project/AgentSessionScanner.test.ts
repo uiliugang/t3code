@@ -3644,6 +3644,8 @@ describe("parseAgentSessionTranscript", () => {
           "<bash-input>npm test</bash-input>",
           "<bash-stdout>1 passed</bash-stdout><bash-stderr></bash-stderr>",
           "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>",
+          "<task-notification>\n<task-id>a2</task-id>\n<status>completed</status>\n</task-notification>\n<local-command-caveat>Caveat</local-command-caveat>",
+          "<local-command-caveat>Caveat</local-command-caveat>\n<task-notification>\n<task-id>a3</task-id>\n<status>completed</status>\n</task-notification>",
           "<task-notification> 这个标签如何解析？",
           "[Request interrupted by user for tool use]",
         ].map((content) =>

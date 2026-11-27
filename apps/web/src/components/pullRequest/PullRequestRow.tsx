@@ -232,7 +232,7 @@ function PullRequestRowImpl({
                   render={
                     <span className="flex min-w-6 items-center gap-1 overflow-hidden rounded-full border border-border/60 px-1 text-3xs" />
                   }
-                  label={<> {t("Matched in the description")} </>}
+                  label={t("Matched in the description")}
                   side="top"
                 >
                   <span className="sr-only">{t("matched in the description")}</span>

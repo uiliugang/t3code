@@ -256,7 +256,7 @@ export default function SideThreadPane(props: {
                 {t("Read only")}
               </span>
             }
-            label={<> {t("Files may change while the main thread works.")} </>}
+            label={t("Files may change while the main thread works.")}
             side="bottom"
           />
           <SharedTooltipTrigger
@@ -271,14 +271,9 @@ export default function SideThreadPane(props: {
                 <GitForkIcon />
               </Button>
             }
-            label={
-              <>
-                {" "}
-                {t(
-                  mergeRun ? "Continue in isolated worktree" : "Available after a finished reply.",
-                )}{" "}
-              </>
-            }
+            label={t(
+              mergeRun ? "Continue in isolated worktree" : "Available after a finished reply.",
+            )}
             side="bottom"
           />
           <SharedTooltipTrigger
@@ -293,11 +288,7 @@ export default function SideThreadPane(props: {
               </Button>
             }
             label={
-              <>
-                {" "}
-                {bringBackBlockedReason ??
-                  gt("Adds this side chat to the main thread's next message.")}{" "}
-              </>
+              bringBackBlockedReason ?? gt("Adds this side chat to the main thread's next message.")
             }
             side="bottom"
           />
