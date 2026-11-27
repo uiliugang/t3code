@@ -1,3 +1,4 @@
+import { translateUi } from "@t3tools/shared/uiLocale";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
@@ -16,7 +17,12 @@ const state = vi.hoisted(() => ({
   ran: [] as object[],
 }));
 
+vi.mock("../../../lib/useUiTranslation", () => ({
+  useUiTranslation: () => (text: string, values?: Parameters<typeof translateUi>[2]) =>
+    translateUi("en", text, values),
+}));
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   View: ({ children }: { children: ReactNode }) => children,
   Pressable: (props: PressProps & { children: ReactNode }) => {
     state.pressables.push(props);
@@ -55,6 +61,9 @@ vi.mock("../../../state/query", () => ({
 }));
 vi.mock("../../../state/use-thread-selection", () => ({
   useThreadSelection: () => ({ selectedThread: { environmentId: "environment" } }),
+}));
+vi.mock("../../../state/use-thread-repository", () => ({
+  useThreadRepository: () => ({ selectionTarget: undefined }),
 }));
 vi.mock("../../../state/use-selected-thread-worktree", () => ({
   useSelectedThreadWorktree: () => ({ selectedThreadCwd: "/repo" }),

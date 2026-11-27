@@ -14,6 +14,9 @@ vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("../../components/ui/Dialog", () => ({}));
+// This test drives stream startup, not the native select-menu sheet.
+vi.mock("../../components/ui/ListChoiceRow", () => ({ ListChoiceRow: () => null }));
+vi.mock("../../components/ui/Sheet", () => ({ Sheet: () => null }));
 vi.mock("@t3tools/mobile-preview-stream", () => ({ default: "" }));
 vi.mock("react-native", () => ({
   Platform: { OS: "android" },
