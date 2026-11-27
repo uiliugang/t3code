@@ -7895,8 +7895,6 @@
   ],
   "4672f332c89dbcd9": "Review",
   "fcaffe60c85338e2": "Could not load older threads. Retry",
-  "ccd5fc4db08374d7": "{count, plural, one {{count} test file hidden} other {{count} test files hidden}}",
-  "a92edf8d81354772": "Show test files",
   "c12888742e7bd0ce": "This file has been pushed to since you marked it viewed.",
   "d4ccbc96f4d05950": "Changed",
   "d27b1db7f856ec3a": "This host keeps no shared record of which files you have read, so these ticks are kept by this environment. They follow you between the apps connected to it, but the host's own web UI will not show them.",
