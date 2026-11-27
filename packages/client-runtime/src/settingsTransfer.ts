@@ -119,6 +119,7 @@ const applicationServerSettingsTransferPolicy = {
   guestSharingEnabled: "portable",
   linkedEnvironmentsEnabled: "portable",
   workflowsEnabled: "local",
+  workflowSkippedRunsKept: "local",
   promptSuggestionsEnabled: "portable",
   backgroundActivity: "portable",
   automaticGitFetchInterval: "portable",

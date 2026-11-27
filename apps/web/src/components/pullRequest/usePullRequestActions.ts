@@ -18,6 +18,7 @@ import type {
 } from "@t3tools/contracts";
 import { msg } from "gt-react";
 import { useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   capitalizeTerm,
   sourceControlClients,
@@ -38,6 +39,7 @@ import { usePrimaryEnvironmentId } from "~/state/environments";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { usePreparePullRequestThreadAction } from "~/state/sourceControlActions";
+import { trackPendingDraftCheckout } from "~/lib/draftWorkspaceDefaults";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 
@@ -328,6 +330,44 @@ export function writeHandoffToComposer(
   store.setReviewComments(target, next.reviewComments);
 }
 
+type PreparedCheckout = Awaited<
+  ReturnType<ReturnType<typeof usePreparePullRequestThreadAction>["run"]>
+>;
+
+/**
+ * Moves the draft opened for a checkout onto it once it is ready, keeping whatever the user
+ * typed meanwhile. A send from that draft waits for this so it starts in the checkout.
+ */
+export function prepareDraftCheckout(
+  draftId: DraftId,
+  projectRef: ReturnType<typeof scopeProjectRef>,
+  checkout: Promise<PreparedCheckout>,
+  isCancelled: () => boolean = () => false,
+) {
+  return trackPendingDraftCheckout(
+    draftId,
+    projectRef,
+    checkout,
+    (prepared) => {
+      if (prepared._tag === "Failure") return false;
+      const { branch, worktreePath, pullRequest } = prepared.value;
+      // A waiting send resumes right after this and must render the checkout first.
+      flushSync(() =>
+        useComposerDraftStore.getState().setDraftThreadContext(draftId, {
+          branch,
+          worktreePath,
+          envMode: worktreePath === null ? "local" : "worktree",
+          workspaceExplicit: true,
+          environmentSelection: "manual",
+          checkoutPullRequest: { url: pullRequest.url, branch },
+        }),
+      );
+      return true;
+    },
+    isCancelled,
+  );
+}
+
 export type PullRequestHandoffDetail = Pick<
   PullRequestDetail,
   "projectId" | "workspaceRoot" | "url"
@@ -424,7 +464,7 @@ export function usePullRequestHandoffs({
     });
     const projectRef = scopeProjectRef(environmentId, detail.projectId);
     // Checkout setup requires the thread to exist first.
-    const opened = await newThread(projectRef).then(
+    const opened = await newThread(projectRef, { envMode: mode, workspaceExplicit: true }).then(
       (session) => session,
       () => null,
     );
@@ -441,11 +481,16 @@ export function usePullRequestHandoffs({
       });
       return;
     }
-    const prepared = await prepareThread.run({
-      reference: detail.url,
-      mode,
-      threadId: opened.threadId,
-    });
+    const { value: prepared, applied } = await prepareDraftCheckout(
+      opened.draftId,
+      projectRef,
+      prepareThread.run({
+        reference: detail.url,
+        mode,
+        threadId: opened.threadId,
+      }),
+      () => cancelled,
+    );
     if (cancelled) {
       setHandoff(null);
       return;
@@ -461,22 +506,10 @@ export function usePullRequestHandoffs({
       });
       return;
     }
-    const pointed = await newThread(projectRef, {
-      branch: prepared.value.branch,
-      worktreePath: prepared.value.worktreePath,
-      envMode: prepared.value.worktreePath === null ? "local" : "worktree",
-    }).then(
-      (session) => session,
-      () => null,
-    );
-    if (cancelled) {
-      setHandoff(null);
-      return;
-    }
-    if (pointed === null) {
-      setHandoff(null);
+    setHandoff(null);
+    if (!applied) {
       toastManager.update(toastId, {
-        type: "error",
+        type: "warning",
         title: t("Checked out, but the thread stayed where it was"),
         description: t(
           "The checkout is ready on `{branch}`. Point a thread at it from the branch picker, then ask again.",
@@ -485,14 +518,6 @@ export function usePullRequestHandoffs({
       });
       return;
     }
-    // The draft carries the pull request until its first send makes it a thread, which links it.
-    useComposerDraftStore.getState().setDraftThreadContext(pointed.draftId, {
-      checkoutPullRequest: {
-        url: prepared.value.pullRequest.url,
-        branch: prepared.value.branch,
-      },
-    });
-    setHandoff(null);
     if (task === null) {
       toastManager.update(
         toastId,
@@ -513,9 +538,7 @@ export function usePullRequestHandoffs({
       );
       return;
     }
-    // The task goes on the checkout draft: if the user typed into `opened` while the
-    // checkout ran, that is no longer the draft the user is looking at.
-    await openThreadWithTask(projectRef, task, pointed);
+    await openThreadWithTask(projectRef, task, opened);
     toastManager.update(
       toastId,
       prepared.value.isOnPullRequestHead

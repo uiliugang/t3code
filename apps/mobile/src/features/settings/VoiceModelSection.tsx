@@ -1,4 +1,3 @@
-import type { EnvironmentId, EnvironmentSpeechModel } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
@@ -9,7 +8,12 @@ import {
   installEnvironmentSpeechModel,
   selectEnvironmentSpeechModel,
 } from "@t3tools/client-runtime/voice-input";
-import { AuthSettingsWriteScope } from "@t3tools/contracts";
+import {
+  AuthSettingsWriteScope,
+  type EnvironmentId,
+  type EnvironmentSpeechModel,
+} from "@t3tools/contracts";
+import { speechModelDownloadPercent } from "@t3tools/shared/speech";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useState } from "react";
 import { Platform, Text as NativeText, View } from "react-native";
@@ -257,7 +261,7 @@ export function VoiceModelRow(props: {
             model.state === "verifying"
               ? t("Verifying download…")
               : t("{percent}% downloaded · Tap to cancel", {
-                  percent: Math.round((progress ?? 0) * 100),
+                  percent: speechModelDownloadPercent(model.downloaded ?? 0, model.size),
                 })
           }
           disabled={!voice.canManage || voice.busy}
@@ -316,8 +320,6 @@ export function LocalModelChoice(props: {
 
   const active = status.state === "missing-model" ? null : status;
   const pending = voice.models.find(isDownloading);
-  const progress =
-    pending?.downloaded === undefined ? undefined : pending.downloaded / pending.size;
   return (
     <ListRow
       label={active?.model ?? t("Local model")}
@@ -327,7 +329,7 @@ export function LocalModelChoice(props: {
             ? t("Verifying {model}…", { model: pending.name })
             : t("Downloading {model} · {percent}%", {
                 model: pending.name,
-                percent: Math.round((progress ?? 0) * 100),
+                percent: speechModelDownloadPercent(pending.downloaded ?? 0, pending.size),
               })
           : active
             ? t("Local model · {size}", { size: formatBytes(active.size) })

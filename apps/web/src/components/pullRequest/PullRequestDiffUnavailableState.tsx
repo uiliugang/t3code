@@ -1,8 +1,9 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
-import type { SourceControlProviderKind } from "@t3tools/contracts";
+import type { ScopedThreadRef, SourceControlProviderKind } from "@t3tools/contracts";
 import { useMessages } from "gt-react";
 import { ExternalLinkIcon, TriangleAlertIcon } from "lucide-react";
 
+import { useOpenLink } from "~/browser/useOpenLink";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
 import { Button } from "../ui/button";
@@ -15,15 +16,18 @@ export function PullRequestDiffUnavailableState({
   error,
   provider,
   url,
+  threadRef,
   onRetry,
 }: {
   error: string;
   provider: SourceControlProviderKind;
   url: string;
+  threadRef: ScopedThreadRef | null;
   onRetry: () => void;
 }) {
   const t = useUiTranslation();
   const m = useMessages();
+  const openLink = useOpenLink(threadRef);
   const { providerName, terminology } = getSourceControlPresentationForKind(provider);
   const { title, description } = describePullRequestDiffError(
     error,
@@ -50,6 +54,10 @@ export function PullRequestDiffUnavailableState({
           size="sm"
           variant="outline"
           render={<a href={url} target="_blank" rel="noopener noreferrer" />}
+          onClick={(event) => {
+            event.preventDefault();
+            void openLink(url, { event }).catch(console.error);
+          }}
         >
           <ExternalLinkIcon aria-hidden />
           {t("Open on {host}", { host: providerName })}

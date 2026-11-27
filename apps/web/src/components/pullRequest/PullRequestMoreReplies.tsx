@@ -1,4 +1,7 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import type { ScopedThreadRef } from "@t3tools/contracts";
+
+import { useOpenLink } from "~/browser/useOpenLink";
 
 import type { PullRequestReplyAvailability } from "./pullRequestDetail.logic";
 
@@ -6,7 +9,9 @@ export function PullRequestMoreReplies({
   moreReplies,
   hasMoreReplies,
   url,
-}: PullRequestReplyAvailability) {
+  threadRef,
+}: PullRequestReplyAvailability & { threadRef: ScopedThreadRef | null }) {
+  const openLink = useOpenLink(threadRef);
   const t = useUiTranslation();
   if (!hasMoreReplies) return null;
   return (
@@ -24,6 +29,10 @@ export function PullRequestMoreReplies({
           target="_blank"
           rel="noopener noreferrer"
           className="hover:text-foreground hover:underline"
+          onClick={(event) => {
+            event.preventDefault();
+            void openLink(url, { event }).catch(console.error);
+          }}
         >
           {t("View on host")}
         </a>

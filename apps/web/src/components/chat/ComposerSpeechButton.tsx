@@ -9,8 +9,8 @@ import { VoiceInputPill, VoiceWaveform } from "./VoiceInputPill";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { resolveSpeechPresentation } from "./ComposerSpeechButton.logic";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 type DownloadProgress = { downloaded: number; total: number } | null;
 
@@ -70,13 +70,15 @@ function ShortcutTooltip(props: {
   children: ReactElement;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={props.children} />
-      <TooltipPopup side="top">
-        {props.label}
-        {props.shortcut ? ` (${props.shortcut})` : ""}
-      </TooltipPopup>
-    </Tooltip>
+    <SharedTooltipTrigger
+      render={props.children}
+      label={
+        <>
+          {props.label}
+          {props.shortcut ? ` (${props.shortcut})` : ""}
+        </>
+      }
+    />
   );
 }
 

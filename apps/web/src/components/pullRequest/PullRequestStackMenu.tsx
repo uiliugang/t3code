@@ -1,5 +1,4 @@
 import { useUiTranslation } from "~/hooks/useUiTranslation";
-import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import type {
   EnvironmentId,
   PullRequestRef,
@@ -38,6 +37,7 @@ import {
 } from "./pullRequestDetail.logic";
 
 import { changeRequestTermKind } from "./changeRequestTerm";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export function PullRequestStackMenu({
   hostLabel,
@@ -227,37 +227,36 @@ export function PullRequestStackMenu({
   return (
     <>
       <Menu open={open} onOpenChange={setOpen}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <MenuTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    aria-label={t("Stack {number}, layer {position} of {total}", {
-                      number: stack.number,
-                      position,
-                      total: stack.layers.length,
-                    })}
-                  />
-                }
-              >
-                <PullRequestGlyph.stack aria-hidden className="size-3.5" /> {position}/
-                {stack.layers.length}
-                {onRetry ? <TriangleAlertIcon aria-hidden className="size-3 text-warning" /> : null}
-              </MenuTrigger>
-            }
-          />
-          <TooltipPopup>
-            {t("View stack #{number}, layer {position} of {total}", {
-              number: stack.number,
-              position,
-              total: stack.layers.length,
-            })}
-            {notice ? ` · ${notice}` : null}
-          </TooltipPopup>
-        </Tooltip>
+        <SharedTooltipTrigger
+          render={
+            <MenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-label={t("Stack {number}, layer {position} of {size}", {
+                    number: stack.number,
+                    position,
+                    size: stack.layers.length,
+                  })}
+                />
+              }
+            >
+              <PullRequestGlyph.stack aria-hidden className="size-3.5" /> {position}/
+              {stack.layers.length}
+              {onRetry ? <TriangleAlertIcon aria-hidden className="size-3 text-warning" /> : null}
+            </MenuTrigger>
+          }
+          label={
+            <>
+              <T>
+                View stack #<Var>{stack.number}</Var>, layer <Var>{position}</Var> of{" "}
+                <Var>{stack.layers.length}</Var>
+              </T>
+              {notice ? ` · ${notice}` : null}
+            </>
+          }
+        />
         <MenuPopup align="start">
           <MenuGroup>
             <PullRequestStackHeader number={stack.number} notice={notice} stale={!!onRetry} />
@@ -321,43 +320,44 @@ export function PullRequestStackMenu({
         </MenuPopup>
       </Menu>
       {(leadsWithAutoMerge || canMerge) && !autoMergeArmed && selectedLayer?.state === "open" ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span className="inline-flex">
-                <Button
-                  variant="default"
-                  size="xs"
-                  disabled={mergeDisabled && !stale}
-                  aria-disabled={mergeDisabled || undefined}
-                  aria-description={stale ? staleReason : undefined}
-                  onClick={
-                    mergeDisabled
-                      ? undefined
-                      : () => setConfirmation(leadsWithAutoMerge ? "enable-auto-merge" : "merge")
-                  }
-                >
-                  {leadsWithAutoMerge ? (
-                    <ClockIcon aria-hidden className="size-3.5" />
-                  ) : (
-                    <PullRequestGlyph.merged aria-hidden className="size-3.5" />
-                  )}
-                  {leadsWithAutoMerge ? <T>Auto-merge stack</T> : <T>Merge stack</T>}
-                </Button>
-              </span>
-            }
-          />
-          <TooltipPopup>
-            {stale
+        <SharedTooltipTrigger
+          render={
+            <span className="inline-flex">
+              <Button
+                variant="default"
+                size="xs"
+                disabled={mergeDisabled && !stale}
+                aria-disabled={mergeDisabled || undefined}
+                aria-description={stale ? staleReason : undefined}
+                onClick={
+                  mergeDisabled
+                    ? undefined
+                    : () => setConfirmation(leadsWithAutoMerge ? "enable-auto-merge" : "merge")
+                }
+              >
+                {leadsWithAutoMerge ? (
+                  <ClockIcon aria-hidden className="size-3.5" />
+                ) : (
+                  <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                )}
+                {leadsWithAutoMerge ? <T>Auto-merge stack</T> : <T>Merge stack</T>}
+              </Button>
+            </span>
+          }
+          label={
+            stale
               ? staleReason
-              : t("Merge stack through #{number} into {branch} ({count} {term})", {
-                  number: reference.number,
-                  branch: stack.base,
-                  count: mergeLayers.length,
-                  term: t(mergeLayers.length === 1 ? terminology.singular : terminology.plural),
-                })}
-          </TooltipPopup>
-        </Tooltip>
+              : gt(
+                  "{count, plural, one {Merge stack through '#'{number} into {base} ({count} {term, select, mr {merge request} cr {change request} other {pull request}})} other {Merge stack through '#'{number} into {base} ({count} {term, select, mr {merge requests} cr {change requests} other {pull requests}})}}",
+                  {
+                    count: mergeLayers.length,
+                    number: reference.number,
+                    base: stack.base,
+                    term: changeRequestTermKind(terminology),
+                  },
+                )
+          }
+        />
       ) : null}
       <Dialog
         open={confirmation !== null}

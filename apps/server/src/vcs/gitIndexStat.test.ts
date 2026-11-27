@@ -124,7 +124,12 @@ describe.skipIf(!symlinksSupported)("restatIndex", () => {
       const { repo, source, sourceIndex } = yield* makeCopiedCheckout;
       const env = { GIT_INDEX_FILE: sourceIndex };
       git(repo, [`--work-tree=${source}`, "update-index", "--index-version", "4"], env);
-      assert.isNull(parseIndex(NodeFS.readFileSync(sourceIndex)));
+      const original = NodeFS.readFileSync(sourceIndex);
+      assert.isNull(parseIndex(original));
+      assert.deepEqual(
+        parseIndex(original, { allowVersion4: true })?.entries.map((entry) => entry.path),
+        [".gitattributes", "a.txt", "link", "nested/b.txt", "run.sh"],
+      );
     }),
   );
 });

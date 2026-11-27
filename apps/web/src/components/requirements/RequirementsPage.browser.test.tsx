@@ -1054,6 +1054,29 @@ it("preserves the PR target and original URL in requirements deep links and trac
       },
     }),
   );
+  // Closing a tracker selection uses the same panel and route as other requirements.
+  await expect.element(screen.getByTestId("tracker-detail:42")).toBeVisible();
+  await act(() => {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "w", altKey: true, bubbles: true, cancelable: true }),
+    );
+  });
+  await expect.element(screen.getByTestId("tracker-detail:42")).not.toBeInTheDocument();
+  expect(router.state.location.pathname).toBe("/requirements");
+  expect(router.state.location.search).not.toHaveProperty("issueId");
+  await act(() =>
+    router.navigate({
+      to: "/requirements",
+      search: {
+        detailEnvironmentId: EnvironmentId.make("local"),
+        issueProjectId: ProjectId.make("project"),
+        issueHost: "forge.test:8443",
+        issueTracker: "github",
+        issueScope: "acme/app",
+        issueId: "42",
+      },
+    }),
+  );
   await screen.getByRole("button", { name: "Linked tracker PR" }).click();
   const linkedPrUrl = "https://forge.test:8443/acme/app/pull/8";
   await expect

@@ -1,7 +1,6 @@
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { fileDisplayName } from "@t3tools/shared/path";
-import { useLocation } from "@tanstack/react-router";
 import { CheckIcon, ChevronDownIcon, FolderIcon, InfoIcon, LayersIcon } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 import { useMessages } from "gt-react";
@@ -51,6 +50,7 @@ import {
   settingsScopeEnvironmentLabels,
   settingsScopeProjectMachines,
 } from "./settingsScopeAxis";
+import { useRenderedSettingsPathname } from "./useRenderedSettingsPathname";
 
 export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/general",
@@ -76,7 +76,7 @@ interface SettingsScopeMenuProps {
 export function SettingsScopeSentence() {
   const t = useUiTranslation();
   const scope = useOptionalSettingsScope();
-  const pathname = useLocation({ select: (location) => location.pathname });
+  const pathname = useRenderedSettingsPathname();
   const { environments } = useEnvironments();
   if (scope === null || SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
   const props: SettingsScopeMenuProps = {

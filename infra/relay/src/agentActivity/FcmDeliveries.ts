@@ -229,7 +229,10 @@ const make = Effect.gen(function* () {
       if (!user) return;
       const targets = yield* devices.listTargets({ userId: user.userId });
       const target = targets.find(
-        (row) => row.device_id === job.deviceId && row.push_token === job.token,
+        (row) =>
+          row.platform === "android" &&
+          row.device_id === job.deviceId &&
+          row.push_token === job.token,
       );
       if (target) yield* wakeDevice(job.environmentId, user, target);
     }),

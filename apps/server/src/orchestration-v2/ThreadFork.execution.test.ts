@@ -851,7 +851,12 @@ const createParent = (threadId: ThreadId) =>
     });
   });
 
-const forkSideChat = (commandId: string, sourceThreadId: ThreadId, targetThreadId: ThreadId) =>
+const forkSideChat = (
+  commandId: string,
+  sourceThreadId: ThreadId,
+  targetThreadId: ThreadId,
+  workspaceThreadId?: ThreadId,
+) =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     return yield* orchestrator.dispatch({
@@ -861,6 +866,7 @@ const forkSideChat = (commandId: string, sourceThreadId: ThreadId, targetThreadI
       targetThreadId,
       sourcePoint: { type: "latest_stable" },
       sideChat: true,
+      ...(workspaceThreadId ? { workspaceThreadId } : {}),
       createdBy: "user",
       creationSource: "web",
     });
@@ -1226,6 +1232,29 @@ it.effect("a side chat waits for the parent's new worktree, also after its setup
       ).pipe(Effect.flip);
       assert.include(String(rejected.cause), "has no worktree yet", status);
     }
+  }).pipe(Effect.provide(forkCases[0]!.layer)),
+);
+
+it.effect("a side chat rejects an unfinished worktree on a separate workspace thread", () =>
+  Effect.gen(function* () {
+    const source = ThreadId.make("side-chat-separate-source");
+    const workspace = ThreadId.make("side-chat-separate-workspace");
+    yield* createParent(source);
+    yield* createParent(workspace);
+    yield* writeParentRun({
+      threadId: workspace,
+      runId: RunId.make("side-chat-separate-workspace-run"),
+      ordinal: 1,
+      status: "preparing",
+      text: "Prepare worktree",
+    });
+    const rejected = yield* forkSideChat(
+      "side-chat-separate-fork",
+      source,
+      ThreadId.make("side-chat-separate-child"),
+      workspace,
+    ).pipe(Effect.flip);
+    assert.include(String(rejected.cause), "has no worktree yet");
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 

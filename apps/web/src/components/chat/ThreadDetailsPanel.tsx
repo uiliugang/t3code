@@ -5,9 +5,6 @@ import type { ProjectScript } from "@t3tools/contracts";
 import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import type { ThreadId } from "@t3tools/contracts";
 import type { WorkspaceRootId } from "@t3tools/contracts";
-import type { ComposerThreadTarget } from "../../composerDraftStore";
-import type { DraftId } from "../../composerDraftStore";
-import type { EnvMode, EnvironmentOption } from "../BranchToolbar.logic";
 import type { BranchToolbarHandle } from "../BranchToolbar";
 import type { NewProjectScriptInput } from "../ProjectScriptsControl";
 import type { ProjectScriptActionResult } from "../ProjectScriptsControl";
@@ -26,8 +23,9 @@ import { BranchIssueAssociationProvider } from "./branchIssueAssociation";
 
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 
-import { useT3ProjectFileScripts } from "../../hooks/useT3ProjectFileScripts";
-
+import type { ComposerThreadTarget, DraftId } from "../../composerDraftStore";
+import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
+import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
 import GitActionsControl from "../GitActionsControl";
 import ProjectScriptsControl from "../ProjectScriptsControl";
@@ -145,7 +143,7 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
   const issuesPlacement = useClientSettings((settings) => settings.branchIssuesPlacement);
   const showIssues = visible.issues && !(props.draftId && props.envMode === "worktree");
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const fileScripts = useT3ProjectFileScripts(
+  const t3File = useT3ProjectFileState(
     props.environmentId,
     props.activeProjectScripts && visible.scripts ? props.gitCwd : null,
   );
@@ -350,7 +348,8 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                         displayMode="panel"
                         scripts={props.activeProjectScripts}
                         repositories={project?.workspaceConfig?.roots}
-                        fileScripts={fileScripts}
+                        fileScripts={t3File.scripts}
+                        onActionsMenuOpen={t3File.refresh}
                         preferredScriptId={props.preferredScriptId}
                         onRunScript={props.onRunProjectScript}
                         onAddScript={props.onAddProjectScript}

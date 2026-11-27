@@ -37,15 +37,19 @@ const UNSAFE_EXTENSIONS = new Set(["link", "FSMN", "sdir", "UNTR"]);
 const decoder = new TextDecoder();
 
 /**
- * Reads a SHA-1 index that T3 wrote itself (versions 2 and 3). Anything else, including
+ * Reads a SHA-1 index that T3 wrote itself (versions 2 and 3; 4 when explicitly allowed). Other
+ * layouts, including
  * conflicts, sparse entries, split indexes and fsmonitor data, returns null so callers use Git.
  */
-export function parseIndex(bytes: Uint8Array): ParsedIndex | null {
+export function parseIndex(
+  bytes: Uint8Array,
+  options?: { readonly allowVersion4: boolean },
+): ParsedIndex | null {
   if (bytes.length < 12 + SHA1_BYTES) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (decoder.decode(bytes.subarray(0, 4)) !== "DIRC") return null;
   const version = view.getUint32(4);
-  if (version !== 2 && version !== 3) return null;
+  if (version !== 2 && version !== 3 && !(version === 4 && options?.allowVersion4)) return null;
   const expected = NodeCrypto.createHash("sha1")
     .update(bytes.subarray(0, bytes.length - SHA1_BYTES))
     .digest();
@@ -54,6 +58,7 @@ export function parseIndex(bytes: Uint8Array): ParsedIndex | null {
   const count = view.getUint32(8);
   const entries: Array<{ offset: number; path: string }> = [];
   let offset = 12;
+  let previousName: Uint8Array = new Uint8Array();
   for (let index = 0; index < count; index++) {
     if (offset + ENTRY_FIXED_BYTES > bytes.length - SHA1_BYTES) return null;
     const flags = view.getUint16(offset + 60);
@@ -62,6 +67,30 @@ export function parseIndex(bytes: Uint8Array): ParsedIndex | null {
     if (flags & FLAG_EXTENDED) {
       if (version < 3 || view.getUint16(nameStart) & EXTENDED_SKIP_WORKTREE) return null;
       nameStart += 2;
+    }
+    if (version === 4) {
+      // Version 4 removes a variable-length suffix from the previous raw path before appending
+      // this entry's NUL-terminated suffix. It has no alignment padding.
+      const dataEnd = bytes.length - SHA1_BYTES;
+      if (nameStart >= dataEnd) return null;
+      let next = bytes[nameStart++]!;
+      let remove = next & 0x7f;
+      while (next >= 0x80) {
+        if (nameStart >= dataEnd || remove >= previousName.length) return null;
+        next = bytes[nameStart++]!;
+        remove = (remove + 1) * 128 + (next & 0x7f);
+      }
+      const end = bytes.indexOf(0, nameStart);
+      if (remove > previousName.length || end === -1 || end >= dataEnd) return null;
+      const kept = previousName.length - remove;
+      const name = new Uint8Array(kept + end - nameStart);
+      name.set(previousName.subarray(0, kept));
+      name.set(bytes.subarray(nameStart, end), kept);
+      if (name.length === 0) return null;
+      entries.push({ offset, path: decoder.decode(name) });
+      previousName = name;
+      offset = end + 1;
+      continue;
     }
     const nameLength = flags & FLAG_NAME_LENGTH;
     const nameEnd =

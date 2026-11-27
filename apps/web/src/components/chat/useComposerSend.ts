@@ -1,3 +1,4 @@
+import * as Equal from "effect/Equal";
 import { msg } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
@@ -14,7 +15,7 @@ import {
   formatOutgoingPrompt,
   optimisticMessageAttachments,
   planComposerTurn,
-  sendTitleFallbackLabels,
+  deriveComposerSendTitle,
   snapshotComposerSend,
   withMessageContext,
   makeThreadErrorSetter,
@@ -34,7 +35,6 @@ import {
   ProviderInteractionMode,
   RuntimeMode,
 } from "@t3tools/contracts";
-import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
 import {
   declinePendingApprovals,
@@ -68,10 +68,16 @@ import { recordPromptSent } from "../GitHubStarPrompt";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { newMessageId, newProjectId, newThreadId } from "~/lib/utils";
-import { readPendingWorkspaceDefault, useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { readProjects } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { resolveDraftProjectSelection, workspaceCreateInput } from "../createWorkspace";
+import {
+  readPendingWorkspaceDefault,
+  readPendingDraftCheckout,
+  readPreparedDraftCheckout,
+  readDraftWorkspaceKey,
+} from "../../lib/draftWorkspaceDefaults";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,
@@ -125,16 +131,22 @@ import {
   startAttachmentUpload,
 } from "../../lib/attachmentUploadQueue";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
-import { countPreparingComposerImages, holdComposerSend } from "./preparingComposerImages";
+import {
+  countPreparingComposerImages,
+  holdComposerSend,
+  watchComposerSendEdits,
+} from "./preparingComposerImages";
 import { fileAttachmentCapabilityBlockReason } from "./composerAttachmentFiles";
 import { useLinkedEnvironments } from "../../state/peerLinks";
 import { readEnvironmentScope } from "../../state/session";
+import { ensureWorktreeLayoutApproved } from "../../worktreeLayoutApproval";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   threadContextsOutsideEnvironment,
 } from "@t3tools/shared/composerContextReferences";
 import {
+  draftFanoutSelectionsAtom,
   draftSendState,
   type MultipleModelTarget,
   resolveMultipleModelTargets,
@@ -484,9 +496,23 @@ export function useComposerSend(input: ComposerSendInput) {
     detachedOverride?: {
       readonly prompt: string;
       readonly sendContext: ReturnType<NonNullable<ComposerHandleRef["current"]>["getSendContext"]>;
+      readonly preparedCheckout?: DraftSessionState;
     },
   ) => {
     e?.preventDefault();
+    const preparedCheckout = detachedOverride?.preparedCheckout;
+    const draftWorkspaceAtSend = draftId === null ? null : readDraftWorkspaceKey(draftId);
+    // A detached voice send captured an older render; only its verified checkout may replace
+    // the captured workspace, not its original project, model or permission context.
+    const resolvedEnvMode = preparedCheckout?.envMode ?? sendEnvMode;
+    const resolvedBranch = preparedCheckout ? preparedCheckout.branch : activeThreadBranch;
+    const resolvedWorktreePath = preparedCheckout
+      ? preparedCheckout.worktreePath
+      : (activeThread?.worktreePath ?? null);
+    const resolvedStartFromOrigin = preparedCheckout?.startFromOrigin ?? startFromOrigin;
+    const resolvedWorktreeRepositories = preparedCheckout
+      ? preparedCheckout.worktreeRepositories?.map((path) => ({ path }))
+      : worktreeRepositories;
     // What the user pressed send on; uploads below can take a while, and a redirect must not
     // decline approvals for a draft that changed meanwhile.
     let promptAtSend = detachedOverride ? detachedOverride.prompt : promptRef.current;
@@ -568,7 +594,7 @@ export function useComposerSend(input: ComposerSendInput) {
       }
       return;
     }
-    if (needsLoadBalancing) {
+    if (needsLoadBalancing && preparedCheckout === undefined) {
       const draft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
       toastManager.add({
         type: "warning",
@@ -759,14 +785,7 @@ export function useComposerSend(input: ComposerSendInput) {
               })),
             }),
           }),
-          titleSeed: deriveThreadTitleSeed(
-            {
-              text: snapshot.messageText,
-              attachments: snapshot.attachments,
-              fallbackLabels: sendTitleFallbackLabels(snapshot),
-            },
-            m,
-          ),
+          titleSeed: deriveComposerSendTitle(snapshot),
         });
       }).finally(() => {
         sendInFlightRef.current = false;
@@ -835,7 +854,7 @@ export function useComposerSend(input: ComposerSendInput) {
                 .capabilities.requiredWorktreeBootstrap === true,
             isLocalDraftThread,
             isGitRepo,
-            branch: activeThreadBranch,
+            branch: resolvedBranch,
           });
     if (multipleModelBlock === "server-outdated") {
       setThreadError(activeThread.id, t("Update this server before starting multiple models."));
@@ -1076,9 +1095,9 @@ export function useComposerSend(input: ComposerSendInput) {
       sendQueuesBehindSetup,
       isServerThread,
       activeMessageCount,
-      sendEnvMode,
-      worktreePath: activeThread.worktreePath,
-      activeThreadBranch,
+      sendEnvMode: resolvedEnvMode,
+      worktreePath: resolvedWorktreePath,
+      activeThreadBranch: resolvedBranch,
       projectIsGitRepo: isGitRepo,
       plainProjectBaseBranch: readWorktreeBaseBranch(activeProject),
       isScratchProject: activeProjectIsScratch,
@@ -1094,6 +1113,51 @@ export function useComposerSend(input: ComposerSendInput) {
         t("Select a base branch before sending in New worktree mode."),
       );
       return;
+    }
+    // A project may set its worktrees up with its own commands, which run only once a person
+    // has approved their text. Asking takes as long as the user does, so the draft is compared
+    // across it like any other wait before a send.
+    if (baseBranchForWorktree || multipleModelSelections !== null) {
+      const draftBeforeApproval = useComposerDraftStore
+        .getState()
+        .getComposerDraft(composerDraftTarget);
+      sendInFlightRef.current = true;
+      // The commands are read as they are now, which takes a round trip, so the send shows as sending.
+      const showsWait = isCurrentRouteThread();
+      if (showsWait) {
+        beginLocalDispatch({
+          preparingWorktree: true,
+          submissionIntent:
+            submissionIntent === "background" && !isLocalDraftThread
+              ? "foreground"
+              : submissionIntent,
+        });
+      }
+      const layoutApproval = await ensureWorktreeLayoutApproved({
+        environmentId,
+        projectId: activeProject.id,
+        projectTitle: activeProject.title,
+      }).finally(() => {
+        sendInFlightRef.current = false;
+        if (showsWait && isCurrentRouteThread()) resetLocalDispatch();
+      });
+      if (layoutApproval.status === "cancelled") return;
+      if (layoutApproval.status === "blocked") {
+        setThreadError(threadIdForSend, layoutApproval.message);
+        return;
+      }
+      if (
+        composerDraftContentChanged(
+          draftBeforeApproval,
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+        )
+      ) {
+        setThreadError(
+          threadIdForSend,
+          m(msg("Draft changed while preparing this message. Review it and send again.")),
+        );
+        return;
+      }
     }
     // Records bind attachments by the id each side knows: the local id for the optimistic
     // row, the upload id (or local id on the data-URL path) on the wire; the server
@@ -1155,6 +1219,13 @@ export function useComposerSend(input: ComposerSendInput) {
       .getState()
       .getComposerDraft(composerDraftTarget);
     const draftChangedDuringPreparation = () => {
+      if (
+        draftId !== null &&
+        draftWorkspaceAtSend !== null &&
+        readDraftWorkspaceKey(draftId) !== draftWorkspaceAtSend
+      ) {
+        return true;
+      }
       if (isCurrentRouteThread() && composerRef.current?.hasPendingAttachments() === true)
         return true;
       const draft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
@@ -1434,7 +1505,7 @@ export function useComposerSend(input: ComposerSendInput) {
         if (draftId && targetProject.id !== activeProject.id) {
           useComposerDraftStore.getState().setDraftThreadContext(draftId, {
             projectRef: scopeProjectRef(environmentId, targetProject.id),
-            branch: activeThreadBranch,
+            branch: resolvedBranch,
             envMode: "worktree",
             selectedProjectIds: null,
             groupTitle: null,
@@ -1444,7 +1515,7 @@ export function useComposerSend(input: ComposerSendInput) {
       await sendToMultipleModels({
         threadId: threadIdForSend,
         project: targetProject,
-        branch: activeThreadBranch!,
+        branch: resolvedBranch!,
         selections: multipleModelSelections,
         targets: multipleTargets,
         sendSnapshot,
@@ -1515,14 +1586,7 @@ export function useComposerSend(input: ComposerSendInput) {
       composerRef.current?.resetCursorState();
     }
 
-    const title = deriveThreadTitleSeed(
-      {
-        text: messageTextForSend,
-        attachments: composerAttachmentsSnapshot,
-        fallbackLabels: sendTitleFallbackLabels(sendSnapshot),
-      },
-      m,
-    );
+    const title = deriveComposerSendTitle(sendSnapshot);
     const threadCreateModelSelection = createModelSelection(
       ctxSelectedModelSelection.instanceId,
       ctxSelectedModel || activeProjectDefaultModelSelection?.model || DEFAULT_MODEL,
@@ -1594,7 +1658,7 @@ export function useComposerSend(input: ComposerSendInput) {
         if (draftId && targetProject.id !== activeProject.id) {
           useComposerDraftStore.getState().setDraftThreadContext(draftId, {
             projectRef: scopeProjectRef(environmentId, targetProject.id),
-            branch: activeThreadBranch,
+            branch: resolvedBranch,
             envMode: "worktree",
             selectedProjectIds: null,
             groupTitle: null,
@@ -1617,8 +1681,8 @@ export function useComposerSend(input: ComposerSendInput) {
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
                       interactionMode: DEFAULT_INTERACTION_MODE,
-                      branch: activeThreadBranch,
-                      worktreePath: activeThread.worktreePath,
+                      branch: resolvedBranch,
+                      worktreePath: resolvedWorktreePath,
                       createdAt: activeThread.createdAt,
                     },
                   }
@@ -1628,8 +1692,10 @@ export function useComposerSend(input: ComposerSendInput) {
                     prepareWorktree: {
                       projectCwd: targetProject.workspaceRoot,
                       baseBranch: baseBranchForWorktree,
-                      startFromOrigin,
-                      ...(worktreeRepositories ? { repositories: worktreeRepositories } : {}),
+                      startFromOrigin: resolvedStartFromOrigin,
+                      ...(resolvedWorktreeRepositories
+                        ? { repositories: resolvedWorktreeRepositories }
+                        : {}),
                     },
                     runSetupScript: true,
                   }
@@ -1679,9 +1745,9 @@ export function useComposerSend(input: ComposerSendInput) {
             await handleNewThread(
               scopeProjectRef(targetProject.environmentId, targetProject.id),
               resolveBackgroundDraftWorkspaceOptions({
-                envMode: sendEnvMode,
-                branch: activeThreadBranch,
-                startFromOrigin,
+                envMode: resolvedEnvMode,
+                branch: resolvedBranch,
+                startFromOrigin: resolvedStartFromOrigin,
               }),
             ),
           );
@@ -1866,32 +1932,86 @@ export function useComposerSend(input: ComposerSendInput) {
   };
 
   const onSendLatest = useStableCallback(onSend);
+  const waitBeforeSend = async <T>(pending: Promise<T>) => {
+    const finishWatching = watchComposerSendEdits(composerDraftTarget);
+    const fanoutSelectionsAtom = draftFanoutSelectionsAtom(routeThreadKey);
+    const fanoutSelections = appAtomRegistry.get(fanoutSelectionsAtom);
+    sendInFlightRef.current = true;
+    const result = await pending
+      .catch((error: unknown) => {
+        finishWatching();
+        return Promise.reject(error);
+      })
+      .finally(() => {
+        sendInFlightRef.current = false;
+      });
+    const watchedStatus = finishWatching();
+    const draftStatus =
+      watchedStatus === "ready" &&
+      !Equal.equals(fanoutSelections, appAtomRegistry.get(fanoutSelectionsAtom))
+        ? "edited"
+        : watchedStatus;
+    const sameRoute = currentRouteThreadKeyRef.current === routeThreadKey;
+    if (draftStatus === "edited" && sameRoute && activeThread) {
+      setThreadError(
+        activeThread.id,
+        m(msg("Draft changed while preparing this message. Review it and send again.")),
+      );
+    }
+    return { result, draftReady: draftStatus === "ready", sameRoute };
+  };
   const sendWithEnvironmentRefresh = async (...args: Parameters<typeof onSend>) => {
     const refresh =
       args[3] || sendInFlightRef.current || readPendingEnvironmentChange() !== null
         ? null
         : refreshBeforeSend();
     if (refresh === null) return onSend(...args);
-    sendInFlightRef.current = true;
-    const ready = await refresh.finally(() => {
-      sendInFlightRef.current = false;
-    });
-    if (ready) return onSendLatest(...args);
+    const { result: ready, draftReady } = await waitBeforeSend(refresh);
+    if (ready && draftReady) return onSendLatest(...args);
   };
   const sendWithEnvironmentRefreshLatest = useStableCallback(sendWithEnvironmentRefresh);
   const onSendWithRouting = async (...args: Parameters<typeof onSend>) => {
     args[0]?.preventDefault();
+    const pendingCheckout =
+      draftId && !sendInFlightRef.current ? readPendingDraftCheckout(draftId) : null;
+    if (draftId && pendingCheckout) {
+      const { result, draftReady, sameRoute } = await waitBeforeSend(pendingCheckout);
+      if (
+        !draftReady ||
+        !sameRoute ||
+        result.status !== "ready" ||
+        !readPreparedDraftCheckout(draftId, result.workspace)
+      )
+        return;
+      return onSendLatest(...args);
+    }
     const workspaceDefault =
       draftId && !sendInFlightRef.current ? readPendingWorkspaceDefault(draftId) : null;
     if (workspaceDefault === null) return sendWithEnvironmentRefresh(...args);
-    sendInFlightRef.current = true;
-    await workspaceDefault.finally(() => {
-      sendInFlightRef.current = false;
-    });
+    const { result, draftReady, sameRoute } = await waitBeforeSend(workspaceDefault);
+    if (!result || !draftReady || !sameRoute) return;
     return sendWithEnvironmentRefreshLatest(...args);
   };
-  // No load-balancing refresh: it bails once the draft is no longer displayed, which is the
-  // only time a detached send runs, so the draft keeps the environment it was dictated for.
-  const captureDetachedSend = useStableCallback(() => onSend);
+  // A detached dictation retains the checkout operation even if it settled before transcription.
+  // Its stale render must not re-run load balancing or use the pre-checkout path.
+  const captureDetachedSend = useStableCallback(() => {
+    const captured = draftId === null ? null : readPendingDraftCheckout(draftId);
+    return async (...args: Parameters<typeof onSend>) => {
+      const pending = captured ?? (draftId === null ? null : readPendingDraftCheckout(draftId));
+      if (draftId === null || pending === null || !args[4]) return onSend(...args);
+      const outcome = await pending;
+      if (outcome.status !== "ready") return;
+      const preparedCheckout = readPreparedDraftCheckout(draftId, outcome.workspace);
+      if (
+        !preparedCheckout ||
+        preparedCheckout.environmentId !== environmentId ||
+        preparedCheckout.projectId !== activeProject?.id ||
+        preparedCheckout.threadId !== activeThread?.id
+      )
+        return;
+      const [event, mode, intent, annotation, override] = args;
+      return onSend(event, mode, intent, annotation, { ...override, preparedCheckout });
+    };
+  });
   return { onSend: onSendWithRouting, captureDetachedSend };
 }

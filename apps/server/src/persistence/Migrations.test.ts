@@ -7,6 +7,16 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 import { EventId } from "@t3tools/contracts";
+import * as Ref from "effect/Ref";
+import * as Logger from "effect/Logger";
+import * as Console from "effect/Console";
+import * as NodeUtil from "node:util";
+import type { DatabaseMigrationProgress as Progress } from "@t3tools/contracts";
+import {
+  databaseMigrationProgress,
+  DATABASE_MIGRATION_PROGRESS_MESSAGE,
+} from "@t3tools/shared/databaseMigrationLog";
+import * as DatabaseMigrationProgress from "./DatabaseMigrationProgress.ts";
 
 import { migrationManifest, runMigrations } from "./Migrations.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -75,7 +85,7 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102, 108, 126])(
+  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102, 108, 119, 126, 129])(
     "upgrades a database at exactly %s",
     (id) =>
       Effect.gen(function* () {
@@ -162,6 +172,58 @@ describe("runMigrations", () => {
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
+  it.effect("upgrades a database at exactly 54, then rechecks it without a write lock", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 54 });
+      const current = yield* Ref.make<Progress | null>(null);
+      const steps: Array<Progress | null> = [];
+      const loggedSteps: Array<Progress | null> = [];
+      let output = "";
+      const pretty = Logger.consolePretty({ mode: "tty", colors: false });
+      const logger = Logger.make((options) => {
+        pretty.log(options);
+        if (String(options.message).startsWith(DATABASE_MIGRATION_PROGRESS_MESSAGE)) {
+          steps.push(Ref.getUnsafe(current));
+          loggedSteps.push(databaseMigrationProgress(output.slice(-4_000)));
+        }
+      });
+      assert.deepStrictEqual(
+        yield* runMigrations().pipe(
+          Effect.provideService(DatabaseMigrationProgress.DatabaseMigrationProgress, { current }),
+          Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
+          Effect.provideService(Console.Console, {
+            ...globalThis.console,
+            log: (...args) => {
+              output += `${NodeUtil.format(...args)}\n`;
+            },
+          }),
+        ),
+        v2Migrations,
+      );
+      assert.deepStrictEqual(
+        steps,
+        v2Migrations.map((_, index) => ({ current: index + 1, total: v2Migrations.length })),
+      );
+      assert.deepStrictEqual(loggedSteps, steps);
+      assert.isNull(yield* Ref.get(current));
+      assert.deepStrictEqual(
+        yield* runMigrations().pipe(
+          Effect.provideService(DatabaseMigrationProgress.DatabaseMigrationProgress, { current }),
+        ),
+        [],
+      );
+      assert.isNull(yield* Ref.get(current));
+      assert.deepStrictEqual(yield* history, migrationManifest);
+      assert.isAbove(yield* v2TableCount, 0);
+
+      // query_only rejects BEGIN IMMEDIATE, which CLI startup would otherwise take on the live database.
+      yield* sql`PRAGMA query_only = ON`;
+      assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* history, migrationManifest);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
   it.effect("drops the unused correlation index and keeps correlation values", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -241,9 +303,15 @@ describe("runMigrations", () => {
       yield* runMigrations({ toMigrationInclusive: 92 });
       yield* sql`CREATE TABLE orchestration_v2_projection_turn_item_counts (thread_id TEXT)`;
 
-      const exit = yield* Effect.exit(runMigrations());
+      const current = yield* Ref.make<Progress | null>(null);
+      const exit = yield* Effect.exit(
+        runMigrations().pipe(
+          Effect.provideService(DatabaseMigrationProgress.DatabaseMigrationProgress, { current }),
+        ),
+      );
 
       assert.isTrue(Exit.isFailure(exit));
+      assert.isNull(yield* Ref.get(current));
       assert.deepStrictEqual(
         yield* history,
         migrationManifest.filter(([id]) => id <= 95),

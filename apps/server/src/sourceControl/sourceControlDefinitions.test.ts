@@ -51,6 +51,7 @@ it.each([
     "group/sub/web",
     "7",
   ],
+  ["https://gitlab.com/acme/web/-/issues/incident/12", "gitlab", "gitlab.com", "acme/web", "12"],
 ] as const)("reads %s as an issue on its host", (url, kind, host, scope, key) => {
   const parsed = sourceControlDefinitions.parseIssueUrl(url);
   expect(parsed?.definition.kind).toBe(kind);
@@ -63,6 +64,7 @@ it.each([
   "https://dev.azure.com/acme/Web%20App/_workitems/edit/9",
   "https://example.test/acme/web/issues/42",
   "https://github.com/acme/web/issues/0",
+  "https://gitlab.com/groups/acme/-/work_items/12",
 ])("does not read %s as an issue", (url) => {
   expect(sourceControlDefinitions.parseIssueUrl(url)).toBeNull();
 });
@@ -71,12 +73,17 @@ it.each([
   ["gh pr merge 19 --squash", [19]],
   ['gh pr merge "19" --squash', [19]],
   ['/bin/zsh -lc "gh pr merge 19"', [19]],
+  ['/bin/zsh -lc "gh pr merge 19" > "merge.log"', [19]],
+  [`/bin/zsh -lc 'gh pr merge 19' > 'merge.log'`, [19]],
   ['gh pr merge 19 --squash --subject "Release 20"', [19]],
   [`/bin/zsh -lc "gh pr merge 19 --subject 'Release 20'"`, [19]],
   ["gh pr merge 19 --body 'see https://github.com/o/r/pull/20'", [19]],
   ["gh pr merge 19 --body https://github.com/o/r/pull/20", [19]],
   ["gh pr merge 19 # then 20", [19]],
   ["gh pr merge --squash --match-head-commit 3b2f958 #19", [19]],
+  ["gh pr merge --squash --subject=2026 42", [42]],
+  ['gh pr merge --squash --subject="2026" 42', [42]],
+  ["gh pr merge --body=https://github.com/o/r/pull/20 19", [19]],
   ["gh pr close https://github.com/o/r/pull/19 && gh pr merge 20", [19, 20]],
   ["glab mr merge https://gitlab.com/o/r/-/merge_requests/7", [7]],
   ["sleep 30; code-cli pr merge 26271", [26271]],

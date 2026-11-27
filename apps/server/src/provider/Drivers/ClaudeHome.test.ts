@@ -83,6 +83,40 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
       }),
     );
 
+    it.effect("gives a symlinked Claude home the continuation key of its target", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.realPath(yield* fileSystem.makeTempDirectoryScoped());
+        const target = path.join(root, ".claude");
+        const link = path.join(root, ".claude-second-account");
+        yield* fileSystem.makeDirectory(target);
+        yield* fileSystem.symlink(target, link);
+
+        const direct = yield* makeClaudeContinuationGroupKey({ homePath: target });
+        expect(yield* makeClaudeContinuationGroupKey({ homePath: link })).toBe(direct);
+        expect(
+          yield* makeClaudeContinuationGroupKey({ homePath: "" }, { CLAUDE_CONFIG_DIR: link }),
+        ).toBe(direct);
+        const native = { ANTHROPIC_BASE_URL: "https://byok.test" };
+        const openAI = { ...native, T3_CLAUDE_API_FORMAT: "openai" };
+        const byokDirect = { homePath: target, customModelsOnly: true };
+        const byokLink = { homePath: link, customModelsOnly: true };
+        const nativeDirect = yield* makeClaudeContinuationGroupKey(byokDirect, native);
+        const openAIDirect = yield* makeClaudeContinuationGroupKey(byokDirect, openAI);
+        expect(yield* makeClaudeContinuationGroupKey(byokLink, native)).toBe(nativeDirect);
+        expect(yield* makeClaudeContinuationGroupKey(byokLink, openAI)).toBe(openAIDirect);
+        expect(openAIDirect).not.toBe(nativeDirect);
+        expect(
+          yield* makeClaudeContinuationGroupKey(byokLink, {
+            ANTHROPIC_BASE_URL: "https://other-byok.test",
+          }),
+        ).not.toBe(nativeDirect);
+        // The spawned process keeps the literal path, because Claude keys its login by that path.
+        expect((yield* makeClaudeEnvironment({ homePath: link })).CLAUDE_CONFIG_DIR).toBe(link);
+      }).pipe(Effect.scoped),
+    );
+
     it.effect("separates capability probes by cwd", () =>
       Effect.gen(function* () {
         const config = { binaryPath: "claude", homePath: "" };

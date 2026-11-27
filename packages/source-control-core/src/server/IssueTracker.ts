@@ -137,6 +137,15 @@ export interface IssueTrackerApi {
   /** The issue with its first page of conversation, in one read where the tracker allows. */
   readonly getIssue: (input: IssueTarget) => Effect.Effect<TrackerIssueDetail, IssueTrackerError>;
 
+  /**
+   * Optional cacheable read. The read must use the same credential that supplied the
+   * fingerprint, with no fallback to another credential. Null opts out of caching.
+   */
+  readonly snapshotIssueRead?: (input: IssueTarget) => Effect.Effect<{
+    readonly credentialFingerprint: string;
+    readonly read: Effect.Effect<TrackerIssueDetail, IssueTrackerError>;
+  } | null>;
+
   /** Confirms an issue exists and names it for a thread link. */
   readonly getIssueLink?: (
     input: IssueTarget,

@@ -38,6 +38,7 @@ export const olderSettledThreads = createOlderSettledThreadAtoms(
 export const threadEnvironment = createThreadEnvironmentAtoms(
   connectionAtomRuntime,
   threadFamilies.snapshotAtom,
+  environmentShell.statusAtom,
   (registry) => {
     const preferences = registry.get(mobilePreferencesAtom);
     return AsyncResult.isSuccess(preferences)

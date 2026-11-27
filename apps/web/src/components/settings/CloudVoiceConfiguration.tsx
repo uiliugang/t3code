@@ -129,7 +129,7 @@ function ModelPicker({
         />
         <ComboboxPopup>
           <ComboboxEmpty>{t("No transcription model matches.")}</ComboboxEmpty>
-          <ComboboxList className="max-h-64">
+          <ComboboxList scrollAreaClassName="max-h-64">
             {(model: CloudSpeechModel) => (
               <ComboboxItem key={model.id} value={model}>
                 <span className="flex min-w-0 flex-col">

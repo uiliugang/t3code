@@ -70,6 +70,7 @@ function LinkPullRequestDialog({
   const t = useUiTranslation();
   const resolve = useMessages();
   const inputRef = useRef<HTMLInputElement>(null);
+  const submittingRef = useRef(false);
   const [reference, setReference] = useState("");
   const [dirty, setDirty] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -102,13 +103,16 @@ function LinkPullRequestDialog({
   );
 
   const submit = async () => {
+    if (submittingRef.current) return;
     setDirty(true);
     if (resolved === null || "error" in resolved) return;
+    submittingRef.current = true;
     setSubmitError(null);
     setPending(true);
     const result = await settlePromise(() =>
       linking.changeLink(threadRef, resolved.link.url, true),
     );
+    submittingRef.current = false;
     setPending(false);
     if (result._tag === "Failure") {
       const error = squashAtomCommandFailure(result);
@@ -144,12 +148,20 @@ function LinkPullRequestDialog({
             ref={inputRef}
             placeholder={t("Pull request URL or #42")}
             value={reference}
+            readOnly={pending}
             onChange={(event) => {
               setDirty(true);
               setReference(event.target.value);
             }}
             onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
+              if (
+                event.key !== "Enter" ||
+                event.repeat ||
+                event.nativeEvent.isComposing ||
+                event.keyCode === 229
+              ) {
+                return;
+              }
               event.preventDefault();
               void submit();
             }}

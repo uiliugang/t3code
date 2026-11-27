@@ -25,6 +25,7 @@ import type {
 import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import { fakeSourceControlProvider } from "@t3tools/source-control-testing/fakeSourceControlDriver";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
@@ -96,6 +97,8 @@ const managedCli = (
   probe: () => Effect.die("unused"),
   refineUnknownRemote: refine,
 });
+
+const onPath = (command: string) => `/usr/bin/${command}`;
 
 function makeRegistry(input: {
   readonly remotes: ReadonlyArray<{
@@ -656,7 +659,7 @@ it.effect("asks again once discovery finds a new sign-in, not on every discovery
     yield* registry.discover;
     assert.strictEqual((yield* resolveUnknown(registry, "c")).provider.kind, "gitlab");
     assert.strictEqual(refinements, 2);
-  }),
+  }).pipe(Effect.provideService(SpawnExecutableResolution, onPath)),
 );
 
 it.effect("answers discovery without waiting on a hosting API that stalls", () =>
@@ -681,5 +684,5 @@ it.effect("answers discovery without waiting on a hosting API that stalls", () =
     assert.strictEqual(bitbucket?.status, "available");
     assert.strictEqual(bitbucket?.auth.status, "unknown");
     assert.strictEqual(items.find((item) => item.kind === "gitlab")?.status, "available");
-  }),
+  }).pipe(Effect.provideService(SpawnExecutableResolution, onPath)),
 );

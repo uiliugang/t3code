@@ -34,7 +34,7 @@ export function UsageProviderSettings({
   const t = useUiTranslation();
   const searchableSetting = useSearchableSetting();
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<"cliproxy" | "http" | null>(null);
   const entries = Object.entries(sources);
 
   return (
@@ -43,17 +43,24 @@ export function UsageProviderSettings({
         {...searchableSetting("usage-providers")}
         headerAction={
           !readOnly ? (
-            <Button size="xs" variant="outline" onClick={() => setAdding(true)}>
-              <PlusIcon className="size-3" aria-hidden />
-              {t("Add hub")}
-            </Button>
+            <div className="flex gap-2">
+              <Button size="xs" variant="outline" onClick={() => setAdding("cliproxy")}>
+                <PlusIcon className="size-3" aria-hidden />
+                {t("Add hub")}
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => setAdding("http")}>
+                <PlusIcon className="size-3" aria-hidden />
+                {t("Add HTTP source")}
+              </Button>
+            </div>
           ) : null
         }
       >
         {entries.length === 0 ? (
-          <SettingsRow title={t("No hubs configured.")} />
+          <SettingsRow title={t("No usage sources configured.")} />
         ) : (
           entries.map(([id, source]) => {
+            const kindLabel = source.kind === "http" ? t("HTTP quota source") : CLI_PROXY_NAME;
             const label = source.label?.trim() || source.url;
             return (
               <SettingsRow
@@ -61,8 +68,7 @@ export function UsageProviderSettings({
                 title={label}
                 description={
                   <span className="break-all">
-                    {CLI_PROXY_NAME}
-                    {source.enabled ? "" : t(" · Disabled")}
+                    {source.enabled ? kindLabel : t("{name} · Disabled", { name: kindLabel })}
                     {label !== source.url ? ` · ${source.url}` : ""}
                   </span>
                 }
@@ -82,7 +88,10 @@ export function UsageProviderSettings({
       {adding && !readOnly ? (
         <AddUsageLimitSourceDialog
           open
-          onOpenChange={setAdding}
+          kind={adding}
+          onOpenChange={(open) => {
+            if (!open) setAdding(null);
+          }}
           environmentId={environmentId}
           environmentLabel={environmentLabel}
           sources={sources}
@@ -111,9 +120,7 @@ function RemoveUsageProviderButton({
           <AlertDialogHeader>
             <AlertDialogTitle>{t("Remove {name}?", { name: label })}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t(
-                "The hub's management key is deleted from this server. Its accounts leave the Limits view; the hub itself is untouched. Add it again with the URL and key to bring them back.",
-              )}
+              {t("The saved connection and its credentials are removed from this environment.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -125,7 +132,7 @@ function RemoveUsageProviderButton({
                 onConfirm();
               }}
             >
-              {t("Remove hub")}
+              {t("Remove")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>

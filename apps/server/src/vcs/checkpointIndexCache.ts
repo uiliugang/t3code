@@ -60,7 +60,7 @@ export function makeCheckpointIndexCache() {
     (target: string, root: string, timestamp: number) =>
       Effect.tryPromise({
         try: async (signal) => {
-          const parsed = parseIndex(await NodeFSP.readFile(target));
+          const parsed = parseIndex(await NodeFSP.readFile(target), { allowVersion4: true });
           if (!parsed) return null;
           const stats = [];
           for (let start = 0; start < parsed.entries.length; start += 32) {

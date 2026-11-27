@@ -141,6 +141,7 @@ const group = GraphQLGroup.merge(
 
 export const make = Effect.gen(function* () {
   const api = yield* GitHubRest.GitHubRest;
+  const policy = yield* GitHubRequestPolicy.GitHubRequestPolicy;
   const client = yield* GraphQLClient.make(group).pipe(Effect.provide(GitHubGraphQlClient.layer));
 
   const fail =
@@ -232,7 +233,7 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  return {
+  const tracker = {
     kind: KIND,
     capabilities: CAPABILITIES,
 
@@ -265,13 +266,17 @@ export const make = Effect.gen(function* () {
 
     getIssue: Effect.fn("GitHubIssueTracker.getIssue")(function* (input) {
       const { owner, name, number } = yield* issue(input, "getIssue");
-      const [result, statusRead] = yield* Effect.all(
-        [
-          client.IssueDetail({ owner, name, number }).pipe(graphql(input.host, "getIssue")),
-          issueStatuses(input, owner, name, number, "getIssue"),
-        ],
-        { concurrency: 2 },
+      const legacy = client.IssueDetail({ owner, name, number }).pipe(
+        graphql(input.host, "getIssue"),
+        Effect.map((result) => ({ result, statusRead: null })),
       );
+      const { result, statusRead } = yield* asksStatuses(input.host)
+        ? client.IssueDetailWithStatus({ owner, name, number }).pipe(
+            graphql(input.host, "getIssue"),
+            Effect.map((result) => ({ result, statusRead: result.repository })),
+            Effect.catchIf(statusesRefused, () => legacy),
+          )
+        : legacy;
       const repository = result.repository;
       const raw = repository?.issue;
       if (repository == null || raw == null) return yield* notFound("getIssue");
@@ -592,6 +597,30 @@ export const make = Effect.gen(function* () {
             ? Effect.fail(notFound("listCandidates"))
             : Effect.succeed(toIssueCandidates(repository)),
         ),
+      ),
+  } satisfies IssueTrackerApi;
+  return {
+    ...tracker,
+    snapshotIssueRead: (input) =>
+      policy.credential(input.host).pipe(
+        Effect.map((credential) => {
+          // The app sign-in can fall back to a personal credential on refusal.
+          // Its response is not safe to cache under the first credential's identity.
+          if (credential.source === undefined || credential.source === "app") return null;
+          return {
+            credentialFingerprint: credential.fingerprint,
+            read: tracker.getIssue(input).pipe(
+              Effect.provideService(GitHubRequestPolicy.PinnedGitHubCredential, {
+                host: input.host,
+                token: credential.token,
+                credentialFingerprint: credential.fingerprint,
+                source: credential.source,
+              }),
+            ),
+          };
+        }),
+        // Use the normal path when a credential cannot be resolved; it maps tracker errors.
+        Effect.orElseSucceed(() => null),
       ),
   } satisfies IssueTrackerApi;
 });

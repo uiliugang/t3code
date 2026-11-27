@@ -20,7 +20,7 @@ import {
   ComboboxPopup,
   ComboboxStatus,
 } from "./ui/combobox";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { SharedTooltipTrigger } from "./ui/shared-tooltip";
 
 export function BranchPicker({
   items,
@@ -159,33 +159,31 @@ export function BranchPicker({
             </ComboboxListVirtualized>
           </div>
           {originControl ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <label
-                    htmlFor={startFromOriginSwitchId}
-                    className="flex cursor-pointer items-center justify-between gap-3 border-t border-border/60 px-3 py-2 text-xs"
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-muted-foreground">
-                      <RefreshIcon aria-hidden="true" className="size-3 shrink-0" />
-                      <span className="truncate">{t("Start from remote")}</span>
-                    </span>
-                    <Switch
-                      id={startFromOriginSwitchId}
-                      checked={originControl.checked}
-                      size="sm"
-                      aria-label={t("Start worktree from remote")}
-                      onCheckedChange={(checked) => originControl.onCheckedChange(Boolean(checked))}
-                    />
-                  </label>
-                }
-              />
-              <TooltipPopup side="top" className="max-w-72 whitespace-normal">
-                {t(
-                  "Uses the latest commit of the base branch’s tracked remote branch, or the same-named branch on origin. If that remote branch is missing, new worktree creation stops. Turn this off to use a local branch.",
-                )}
-              </TooltipPopup>
-            </Tooltip>
+            <SharedTooltipTrigger
+              render={
+                <label
+                  htmlFor={startFromOriginSwitchId}
+                  className="flex cursor-pointer items-center justify-between gap-3 border-t border-border/60 px-3 py-2 text-xs"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium text-muted-foreground">
+                    <RefreshIcon aria-hidden="true" className="size-3 shrink-0" />
+                    <span className="truncate">{t("Start from remote")}</span>
+                  </span>
+                  <Switch
+                    id={startFromOriginSwitchId}
+                    checked={originControl.checked}
+                    size="sm"
+                    aria-label={t("Start worktree from remote")}
+                    onCheckedChange={(checked) => originControl.onCheckedChange(Boolean(checked))}
+                  />
+                </label>
+              }
+              label={t(
+                "Uses the latest commit of the base branch’s tracked remote branch, or the same-named branch on origin. If that remote branch is missing, new worktree creation stops. Turn this off to use a local branch.",
+              )}
+              side="top"
+              className="max-w-72 whitespace-normal"
+            />
           ) : null}
           {notice ? <ComboboxStatus>{notice}</ComboboxStatus> : null}
           {statusText ? <ComboboxStatus>{statusText}</ComboboxStatus> : null}

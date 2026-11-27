@@ -168,6 +168,20 @@ export function officePreviewKind(file: {
   return null;
 }
 
+// GB18030 (a superset of GBK) covers Chinese sources that are not UTF-8. Hermes lacks it, so mobile
+// installs a TextDecoder polyfill; any other runtime without it keeps the UTF-8-only error.
+const FILE_PREVIEW_ENCODINGS = ["utf-8", "gb18030"] as const;
+
+function decodeBoundedText(bounded: Uint8Array, truncated: boolean) {
+  for (const encoding of FILE_PREVIEW_ENCODINGS) {
+    try {
+      // `stream` drops a multi-byte character the byte cap cut in half instead of failing on it.
+      return new TextDecoder(encoding, { fatal: true }).decode(bounded, { stream: truncated });
+    } catch {}
+  }
+  return null;
+}
+
 export function decodeFilePreviewText(
   bytes: Uint8Array,
   truncated = false,
@@ -176,15 +190,11 @@ export function decodeFilePreviewText(
   const bounded = bytes.subarray(0, maxBytes);
   if (bounded.some((byte) => byte === 0))
     throw new Error("This file contains binary data and cannot be shown as text.");
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  try {
-    return {
-      text: decoder.decode(bounded, { stream: truncated || bytes.length > bounded.length }),
-      truncated: truncated || bytes.length > bounded.length,
-    };
-  } catch {
+  const isTruncated = truncated || bytes.length > bounded.length;
+  const text = decodeBoundedText(bounded, isTruncated);
+  if (text === null)
     throw new Error("This file is not UTF-8 text. Open it in another app to view its contents.");
-  }
+  return { text, truncated: isTruncated };
 }
 
 export const WORKSPACE_BROWSER_PREVIEW_EXTENSIONS = [".htm", ".html", ".pdf"] as const;
