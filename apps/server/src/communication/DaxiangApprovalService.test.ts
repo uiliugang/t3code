@@ -3,15 +3,19 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
   type ServerConfig as ClientConfig,
+  type ServerSettings as SettingsSnapshot,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -131,6 +135,10 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
         const approved: string[] = [];
         const opened: string[] = [];
         const watchArgs: ReadonlyArray<string>[] = [];
+        const settingsChanges = yield* PubSub.unbounded<SettingsSnapshot>();
+        const loginStarted = yield* Deferred.make<void>();
+        const finishLogin = yield* Deferred.make<void>();
+        const watchStopped = yield* Deferred.make<void>();
         const kmsUrl = "https://kms.mws.sankuai.com/key-management/workflow?uid=42";
         const envelope = {
           event: "message",
@@ -151,7 +159,12 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
         ];
         const context = yield* Layer.build(Approval.layer).pipe(
           Effect.provide(Layer.mock(ServerBrowser.ServerBrowser)({})),
-          Effect.provideService(ServerSettings.ServerSettingsService, settings),
+          Effect.provideService(ServerSettings.ServerSettingsService, {
+            ...settings,
+            subscribeChanges: PubSub.subscribe(settingsChanges).pipe(
+              Effect.map((subscription) => Stream.fromSubscription(subscription)),
+            ),
+          }),
           Effect.provideService(Executor.DaxiangApprovalExecutor, {
             execute: (target) =>
               Effect.gen(function* () {
@@ -180,7 +193,7 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
             run: ({ args = [] }) => {
               const version = args.at(-1) === "--version";
               const patched = version && args.length > 1 && args[0] !== entry;
-              return Effect.succeed({
+              const result = Effect.succeed({
                 stdout: version ? "v22.0.0" : JSON.stringify({ uid: "owner", fields: { u: true } }),
                 stderr: patched ? "Cannot load the patched CLI" : "",
                 code: ChildProcessSpawner.ExitCode(patched ? 1 : 0),
@@ -190,6 +203,12 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
                 stdoutInvalidUtf8: false,
                 stderrInvalidUtf8: false,
               });
+              return args.includes("login")
+                ? Deferred.succeed(loginStarted, undefined).pipe(
+                    Effect.andThen(Deferred.await(finishLogin)),
+                    Effect.andThen(result),
+                  )
+                : result;
             },
           }),
           Effect.provideService(
@@ -202,6 +221,8 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
                   pid: ChildProcessSpawner.ProcessId(123),
                   stdout: Stream.fromIterable(cards).pipe(
                     Stream.map((card) => new TextEncoder().encode(`${JSON.stringify(card)}\n`)),
+                    Stream.concat(Stream.never),
+                    Stream.ensuring(Deferred.succeed(watchStopped, undefined)),
                   ),
                   stderr: Stream.empty,
                   all: Stream.empty,
@@ -259,6 +280,18 @@ it.effect.each(["unsupported launcher", "broken patched copy"])(
             );
           }
         }
+        const login = yield* service.mutate({ type: "login" }, "owner").pipe(Effect.forkScoped);
+        yield* Deferred.await(loginStarted);
+        const disabledSettings = yield* settings.updateSettings({ meituanDaxiangEnabled: false });
+        yield* PubSub.publish(settingsChanges, disabledSettings);
+        yield* Deferred.await(watchStopped);
+        const disabled = yield* service.subscribe().pipe(
+          Stream.filter((state) => state.status === "disabled"),
+          Stream.runHead,
+        );
+        assert.isFalse(Option.getOrThrow(disabled).loggedIn);
+        yield* Deferred.succeed(finishLogin, undefined);
+        yield* Fiber.join(login);
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
 );

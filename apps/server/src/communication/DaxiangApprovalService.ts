@@ -570,8 +570,19 @@ const make = Effect.gen(function* () {
     yield* Deferred.succeed(session.done, undefined);
   }, Effect.uninterruptible);
 
+  const scheduleDisabledBrowserLoginClose = Effect.gen(function* () {
+    if (!loginSession) return;
+    const saved = yield* settings.getSettings;
+    if (!isMeituanServiceEnabled(saved, "daxiang")) yield* closeBrowserLogin();
+  }).pipe(
+    loginLock.withPermits(1),
+    Effect.ignoreCause({ log: true }),
+    Effect.forkIn(scope),
+    Effect.asVoid,
+  );
+
   const reconcile = Effect.fn("DaxiangApprovalService.reconcile")(
-    function* () {
+    function* (closeLoginOnDisable: Effect.Effect<void>) {
       if (watchFiber) {
         yield* Fiber.interrupt(watchFiber);
         watchFiber = undefined;
@@ -581,10 +592,11 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
       );
       const enabled = isMeituanServiceEnabled(saved, "daxiang");
-      if (!enabled) yield* closeBrowserLogin();
       if (!enabled || !saved.daxiang.approvalMonitor.enabled) {
         yield* publishCredentials({ loggedIn: false });
-        return yield* publishStatus("disabled");
+        yield* publishStatus("disabled");
+        if (!enabled) yield* closeLoginOnDisable;
+        return;
       }
       const invocation = yield* resolveInvocation();
       const statusOutput = yield* runDumbo(["status"]);
@@ -633,7 +645,8 @@ const make = Effect.gen(function* () {
         }
         return;
       }
-      if (input.type === "refresh" || input.type === "restart") return yield* reconcile();
+      if (input.type === "refresh" || input.type === "restart")
+        return yield* reconcile(closeBrowserLogin());
 
       const saved = yield* settings.getSettings.pipe(
         Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
@@ -698,7 +711,7 @@ const make = Effect.gen(function* () {
           ),
         );
       }
-      yield* reconcile();
+      yield* reconcile(closeBrowserLogin());
     },
     Effect.map((result) => result ?? undefined),
     loginLock.withPermits(1),
@@ -723,9 +736,7 @@ const make = Effect.gen(function* () {
       yield* Stream.unwrap(changes).pipe(
         Stream.changes,
         Stream.runForEach(() =>
-          loginLock
-            .withPermits(1)(reconcile())
-            .pipe(Effect.ignoreCause({ log: true })),
+          reconcile(scheduleDisabledBrowserLoginClose).pipe(Effect.ignoreCause({ log: true })),
         ),
         Effect.forkScoped,
       );

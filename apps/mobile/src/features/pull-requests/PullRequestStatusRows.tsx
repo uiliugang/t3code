@@ -389,7 +389,7 @@ export function PullRequestReviewersRow(props: RowProps) {
           {props.pr.reviewers
             .filter(
               (reviewer) =>
-                props.pr.provider !== "meituan" &&
+                !showDaxiang &&
                 !summary.reviews.some((review) => review.author?.login === reviewer.login),
             )
             .map((reviewer) => (
