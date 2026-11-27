@@ -119,17 +119,35 @@ describe("skill management views", () => {
     expect(
       skillConfigurationFeedback({ skills: [withMissingBinding], jobs: [completed] }),
     ).toBeNull();
+    const addition = {
+      ...completed,
+      input: { ...completed.input, locationChange: { mode: "add", directories: ["/new"] } },
+    } satisfies SkillJob;
+    const removal = {
+      ...completed,
+      input: { ...completed.input, locationChange: { mode: "remove", directories: ["/new"] } },
+    } satisfies SkillJob;
+    const newBinding = { id: "new", label: "New", directory: "/new", status: "linked" as const };
+    const linked = {
+      ...withMissingBinding,
+      bindings: [...withMissingBinding.bindings, newBinding],
+    };
+    expect(skillConfigurationFeedback({ skills: [linked], jobs: [addition] })?.status).toBe(
+      "completed",
+    );
     expect(
-      skillConfigurationFeedback({
-        skills: [withMissingBinding],
-        jobs: [
-          {
-            ...completed,
-            input: { ...completed.input, locationChange: { mode: "add", directories: ["/new"] } },
-          },
-        ],
-      })?.status,
+      skillConfigurationFeedback({ skills: [withMissingBinding], jobs: [addition] }),
+    ).toBeNull();
+    const missing = { ...first, bindings: [{ ...newBinding, status: "missing" as const }] };
+    expect(skillConfigurationFeedback({ skills: [missing], jobs: [addition] })).toBeNull();
+    expect(
+      skillConfigurationFeedback({ skills: [{ ...missing, activeDigest: null }], jobs: [addition] })
+        ?.status,
     ).toBe("completed");
+    expect(
+      skillConfigurationFeedback({ skills: [withMissingBinding], jobs: [removal] })?.status,
+    ).toBe("completed");
+    expect(skillConfigurationFeedback({ skills: [linked], jobs: [removal] })).toBeNull();
   });
 
   it("keeps configuration failures only while they match the current skill error", () => {

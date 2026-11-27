@@ -69,6 +69,19 @@ export function skillConfigurationJob(skill: ManagedSkill, jobs: ReadonlyArray<S
     ? undefined
     : job;
 }
+function skillConfigurationMatches(skill: ManagedSkill, job: SkillJob) {
+  const change = job.input.type === "configure" ? job.input.locationChange : undefined;
+  if (!change) return skill.bindings.every((binding) => binding.status === "linked");
+  return change.directories.every((directory) =>
+    change.mode === "remove"
+      ? !skill.bindings.some((binding) => binding.directory === directory)
+      : skill.bindings.some(
+          (binding) =>
+            binding.directory === directory &&
+            (skill.activeDigest === null || binding.status === "linked"),
+        ),
+  );
+}
 export function skillConfigurationFeedback(data: Pick<SkillSnapshot, "skills" | "jobs">) {
   const configurations = data.skills.map((skill) => ({
     skill,
@@ -88,10 +101,7 @@ export function skillConfigurationFeedback(data: Pick<SkillSnapshot, "skills" | 
     return { status: "pending" as const, message: "Updating usage locations..." };
   if (
     configurations.some(
-      ({ skill, job }) =>
-        job?.status === "completed" &&
-        ((job.input.type === "configure" && job.input.locationChange !== undefined) ||
-          skill.bindings.every((binding) => binding.status === "linked")),
+      ({ skill, job }) => job?.status === "completed" && skillConfigurationMatches(skill, job),
     )
   )
     return {

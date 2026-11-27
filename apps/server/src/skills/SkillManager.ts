@@ -7,7 +7,7 @@ import {
   SkillCatalog,
   skillFailureMessage,
   SkillAction,
-  type SkillJob,
+  SkillJob,
   type SkillInspect,
   type SkillInspection,
   type DiscoveredSkill,
@@ -46,11 +46,24 @@ import * as SkillHost from "./SkillHost.ts";
 import { makeSkillCopy } from "./SkillCopy.ts";
 
 const actionKey = Schema.encodeSync(Schema.fromJsonString(SkillAction));
-const codec = Schema.fromJsonString(SkillCatalog);
+const StoredSkillCatalog = Schema.Struct({
+  ...SkillCatalog.fields,
+  jobs: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        ...SkillJob.fields,
+        pendingLocationStatus: Schema.optionalKey(
+          Schema.Literals(["queued", "running", "waiting"]),
+        ),
+      }),
+    ),
+  ),
+});
+const codec = Schema.fromJsonString(StoredSkillCatalog);
 const decode = Schema.decodeUnknownEffect(codec);
 const encode = Schema.encodeEffect(codec);
 const isSkillManagerError = Schema.is(SkillManagerError);
-const initial: SkillCatalog = {
+const initial: typeof StoredSkillCatalog.Type = {
   lastFailure: null,
   skills: [],
   customTargets: [],
@@ -126,7 +139,21 @@ const make = Effect.gen(function* () {
   });
   const root = path.join(config.stateDir, "skills");
   const stored = yield* sql<{ payload: string }>`SELECT payload FROM skill_catalog WHERE id = 1`;
-  const state = yield* Ref.make(stored[0] ? yield* decode(stored[0].payload) : initial);
+  const catalog = stored[0] ? yield* decode(stored[0].payload) : initial;
+  const state = yield* Ref.make<SkillCatalog>({
+    ...catalog,
+    ...(catalog.jobs && {
+      jobs: catalog.jobs.map(({ pendingLocationStatus, ...job }) => {
+        const input = job.input;
+        if (input.type !== "configure" || !input.locationChange) return job;
+        return {
+          ...job,
+          input: { type: "configure", id: input.id, locationChange: input.locationChange },
+          status: pendingLocationStatus ?? job.status,
+        };
+      }),
+    }),
+  });
   const revision = yield* SubscriptionRef.make(0);
   const writeLock = yield* Semaphore.make(1);
   const jobLock = yield* Semaphore.make(1);
@@ -138,7 +165,27 @@ const make = Effect.gen(function* () {
   const operation = yield* Ref.make<string | null>(null);
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const persist = Effect.fn("SkillManager.persist")(function* (next: SkillCatalog) {
-    const payload = yield* encode(next);
+    const payload = yield* encode({
+      ...next,
+      ...(next.jobs && {
+        jobs: next.jobs.map((job) => {
+          const input = job.input;
+          if (input.type !== "configure" || !input.locationChange) return job;
+          const pending =
+            job.status === "queued" || job.status === "running" || job.status === "waiting";
+          // Older runtimes must decode these records without replaying a full replacement.
+          return {
+            ...job,
+            input: {
+              ...input,
+              policy: input.policy ?? "automatic",
+              targetIds: input.targetIds ?? [],
+            },
+            ...(pending ? { status: "cancelled" as const, pendingLocationStatus: job.status } : {}),
+          };
+        }),
+      }),
+    });
     yield* sql`INSERT INTO skill_catalog (id, payload) VALUES (1, ${payload}) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload`;
     yield* Ref.set(state, next);
     yield* SubscriptionRef.update(revision, (n) => n + 1);
@@ -220,10 +267,10 @@ const make = Effect.gen(function* () {
     );
   });
   const selectedTargets = Effect.fn("SkillManager.selectedTargets")(function* (
+    targets: ReadonlyArray<SkillTarget>,
     selection: ReadonlyArray<string>,
     key: "id" | "directory" = "id",
   ) {
-    const targets = yield* allTargets;
     const selected: SkillTarget[] = [];
     for (const value of new Set(selection)) {
       const target = targets.find((entry) => entry[key] === value);
@@ -821,7 +868,7 @@ const make = Effect.gen(function* () {
     if (existing && existing.activeDigest !== data.digest)
       return yield* new SkillManagerError({ operation: "adopt", reason: "candidate-changed" });
     const id = (yield* Ref.get(runningJob)) ?? (yield* random.uuidV4().pipe(Effect.orDie));
-    const targets = yield* selectedTargets(input.targetIds);
+    const targets = yield* selectedTargets(yield* allTargets, input.targetIds);
     const requestedOrigin = input.origin ?? description.origin;
     const source = current.sources.find(
       (entry) => entry.id === (existing?.sourceId ?? requestedOrigin?.sourceId ?? "local"),
@@ -1156,7 +1203,7 @@ const make = Effect.gen(function* () {
         );
         if (existing)
           return yield* new SkillManagerError({ operation: "install", reason: "conflict" });
-        const targets = yield* selectedTargets(input.targetIds);
+        const targets = yield* selectedTargets(yield* allTargets, input.targetIds);
         const id = (yield* Ref.get(runningJob)) ?? (yield* random.uuidV4().pipe(Effect.orDie));
         const sourceLabel =
           source.id === "community" &&
@@ -1359,9 +1406,10 @@ const make = Effect.gen(function* () {
             break;
           case "configure": {
             const change = input.locationChange;
+            const registered = yield* allTargets;
             const targets = yield* change
-              ? selectedTargets(change.directories, "directory")
-              : selectedTargets(input.targetIds);
+              ? selectedTargets(registered, change.directories, "directory")
+              : selectedTargets(registered, input.targetIds);
             const selectedDirectories = new Set(targets.map((target) => target.directory));
             const previousBindings = yield* Effect.forEach(skill.bindings, (binding) =>
               canonicalDirectory(binding.directory).pipe(
@@ -1432,7 +1480,11 @@ const make = Effect.gen(function* () {
               failureReason: failed ? "conflict" : recovered ? null : (skill.failureReason ?? null),
               failureDiagnostics: recovered ? null : (skill.failureDiagnostics ?? null),
             });
-            yield* host.refresh(change ? targets : [...skill.bindings, ...linked.bindings]);
+            yield* host.refresh(
+              change
+                ? registered.filter((target) => selectedDirectories.has(target.directory))
+                : [...skill.bindings, ...linked.bindings],
+            );
             break;
           }
         }
