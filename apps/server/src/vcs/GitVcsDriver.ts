@@ -6,6 +6,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -600,6 +601,40 @@ const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const FLAGGED_INDEX_ENTRIES_MAX_BYTES = 1024 * 1024;
 const CHECKPOINT_RECOVERY_MAX_CANDIDATES = 64;
 const CHECKPOINT_RECOVERY_TIMEOUT = "5 seconds";
+
+const checkpointDiffPathspecs = (included: ReadonlySet<string>) => {
+  if (included.size < 1_000) return [[]];
+  const workers = included.size >= 5_000 ? 6 : 4;
+  const parts: Array<{ path: string; count: number }> = [];
+  const limit = Math.ceil(included.size / (2 * workers));
+  const split = (files: ReadonlyArray<string>, offset: number) => {
+    const children = new Map<string, string[]>();
+    for (const file of files) {
+      const end = file.indexOf("/", offset);
+      const prefix = end === -1 ? file : file.slice(0, end + 1);
+      const child = children.get(prefix);
+      if (child) child.push(file);
+      else children.set(prefix, [file]);
+    }
+    for (const [prefix, child] of children) {
+      if (child.length > limit) split(child, prefix.length);
+      else parts.push({ path: prefix, count: child.length });
+    }
+  };
+  split([...included], 0);
+  const batches = Array.from({ length: workers }, () => ({ count: 0, paths: [] as string[] }));
+  for (const part of parts.sort((left, right) => right.count - left.count)) {
+    const batch = batches.reduce((left, right) => (left.count <= right.count ? left : right));
+    batch.count += part.count;
+    batch.paths.push(part.path);
+  }
+  // Bound argv for wide trees. One unpartitioned scan covers the same paths.
+  return batches.some(
+    ({ paths }) => paths.reduce((sum, path) => sum + Buffer.byteLength(path) + 1, 0) > 48_000,
+  )
+    ? [[]]
+    : batches.filter(({ count }) => count > 0).map(({ paths }) => paths);
+};
 const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
 // Reflog subjects that only point a ref at an existing commit. Anything else counts as creating
 // one, so an unknown subject keeps its commit attributed.
@@ -1277,6 +1312,342 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     else if (indexStat !== null) unflaggedIndexes.set(cwd, indexStat);
     return flagged;
   });
+
+  const readCheckpointConfig = (cwd: string) =>
+    execute({
+      operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+      cwd,
+      args: [
+        "config",
+        "--null",
+        "--get-regexp",
+        "^(core\\.(sparsecheckout|sparsecheckoutcone|autocrlf|eol|filemode|symlinks|ignorecase|precomposeunicode|checkstat|trustctime|ignorestat|splitindex|attributesfile|checkroundtripencoding)|filter\\..*)$",
+      ],
+      allowNonZeroExit: true,
+    });
+
+  let sparseAddSupported = false;
+  const supportsSparseAdd = Effect.fn("GitVcsDriver.checkpoints.supportsSparseAdd")(function* (
+    cwd: string,
+    reuseProbe: boolean,
+  ) {
+    if (reuseProbe && sparseAddSupported) return true;
+    const help = yield* execute({
+      operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+      cwd,
+      args: ["add", "-h"],
+      allowNonZeroExit: true,
+    });
+    const usage = `${help.stdout}${help.stderr}`;
+    const supported = /--(?:\[no-\])?sparse\b/.test(usage);
+    if (reuseProbe && supported) sparseAddSupported = true;
+    return supported;
+  });
+
+  const probeCheckpointIndex = Effect.fn("GitVcsDriver.probeCheckpointIndex")(function* (
+    cwd: string,
+    head: string,
+    indexPath: string,
+  ) {
+    const operation = VcsProcess.CHECKPOINT_CAPTURE_OPERATION;
+    const metadata = Effect.gen(function* () {
+      const index = yield* fileSystem.stat(indexPath);
+      if (Option.isNone(index.ino) || Option.isNone(index.mtime)) return null;
+      if (yield* fileSystem.exists(`${indexPath}.lock`)) return null;
+      const rulesPath = path.join(path.dirname(indexPath), "info", "sparse-checkout");
+      const rules = (yield* fileSystem.exists(rulesPath))
+        ? yield* fileSystem.readFileString(rulesPath)
+        : null;
+      return {
+        index: `${index.dev}:${index.ino.value}:${index.size}:${index.mtime.value.getTime()}`,
+        timestamp: Math.floor((index.mtime.value.getTime() - 1) / 1000),
+        rules,
+      };
+    }).pipe(Effect.orElseSucceed(() => null));
+    const start = yield* metadata;
+    if (start === null || start.timestamp <= 0) return null;
+
+    const cleanHint = yield* Effect.forEach(
+      [
+        checkpointIndexes.worktreeStatsMatch(indexPath, cwd),
+        ...(start.rules === null
+          ? []
+          : [
+              execute({
+                operation,
+                cwd,
+                args: [
+                  "-c",
+                  "core.fsmonitor=false",
+                  "-c",
+                  "core.untrackedCache=false",
+                  "-c",
+                  "sparse.expectFilesOutsideOfPatterns=false",
+                  "-c",
+                  "index.sparse=true",
+                  "ls-files",
+                  "--others",
+                  "--exclude-standard",
+                  "--directory",
+                  "--no-empty-directory",
+                  "-z",
+                ],
+                env: { GIT_OPTIONAL_LOCKS: "0" },
+                maxOutputBytes: 1,
+                outputMode: "truncate",
+              }).pipe(
+                Effect.map(
+                  (output) =>
+                    !output.stdoutTruncated &&
+                    !output.stderrTruncated &&
+                    output.stdout === "" &&
+                    output.stderr === "",
+                ),
+              ),
+            ]),
+      ],
+      (check) =>
+        check.pipe(
+          Effect.filterOrFail(
+            (ok) => ok,
+            () => false,
+          ),
+        ),
+      { concurrency: 2, discard: true },
+    ).pipe(
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
+      Effect.forkScoped,
+    );
+
+    const [staged, config, listing] = yield* Effect.all(
+      [
+        execute({
+          operation,
+          cwd,
+          args: [
+            "-c",
+            "core.fsmonitor=false",
+            "diff-index",
+            "--cached",
+            "--quiet",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules=none",
+            "--ita-visible-in-index",
+            head,
+            "--",
+          ],
+          allowNonZeroExit: true,
+          env: { GIT_OPTIONAL_LOCKS: "0" },
+        }),
+        readCheckpointConfig(cwd),
+        execute({
+          operation,
+          cwd,
+          args: [
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "sparse.expectFilesOutsideOfPatterns=false",
+            ...(start.rules !== null ? ["-c", "index.sparse=true"] : []),
+            "ls-files",
+            "--stage",
+            "-v",
+            "-z",
+            ...(start.rules !== null ? ["--sparse"] : []),
+          ],
+          env: { GIT_OPTIONAL_LOCKS: "0" },
+          maxOutputBytes: WORKSPACE_FILES_MAX_OUTPUT_BYTES,
+          outputMode: "error",
+        }),
+      ],
+      { concurrency: 3 },
+    );
+    if (staged.exitCode !== 0) return null;
+    if (config.stdoutTruncated || (config.exitCode !== 0 && config.exitCode !== 1)) return null;
+    const value = (key: string) => CheckpointCaptureIndex.lastConfigValue(config.stdout, key);
+    const enabled = (key: string, defaultValue = false) => {
+      const configured = value(key);
+      return configured === undefined ? defaultValue : CheckpointCaptureIndex.gitBool(configured);
+    };
+    if (
+      enabled("core.ignorestat") ||
+      enabled("core.splitindex") ||
+      !enabled("core.trustctime", true) ||
+      value("core.checkstat")?.toLowerCase() === "minimal" ||
+      config.stdout.split("\0").some((entry) => entry.startsWith("filter."))
+    ) {
+      return null;
+    }
+    const sparse = enabled("core.sparsecheckout");
+    if (sparse && (start.rules === null || !enabled("core.sparsecheckoutcone"))) return null;
+
+    if (listing.stdoutInvalidUtf8 || (listing.stdout !== "" && !listing.stdout.endsWith("\0"))) {
+      return null;
+    }
+    const files: string[] = [];
+    const included = new Set<string>();
+    const absent: string[] = [];
+    const emptyGitlinks: string[] = [];
+    for (const entry of splitNullSeparatedGitStdoutPaths(listing)) {
+      const fields = /^([HS]) (100644|100755|120000|160000|040000) [0-9a-f]+ 0\t/.exec(entry);
+      if (fields === null) return null;
+      const name = entry.slice(fields[0].length);
+      if (fields[2] === "040000" || (fields[2] === "160000" && fields[1] === "S")) {
+        if (!sparse || fields[1] !== "S") return null;
+        absent.push(name);
+        // A sparse directory is Git's representation of a wholly excluded tree.
+        if (fields[2] === "040000") continue;
+      }
+      if (fields[2] === "160000" && fields[1] === "H") emptyGitlinks.push(name);
+      files.push(name);
+      if (fields[1] === "H") included.add(name);
+      else if (!sparse) return null;
+    }
+    if (sparse && files.length > 0) {
+      const stdin = files.join("\0") + "\0";
+      const selected = yield* execute({
+        operation,
+        cwd,
+        args: ["sparse-checkout", "check-rules", "-z"],
+        stdin,
+        env: { GIT_OPTIONAL_LOCKS: "0" },
+        maxOutputBytes: Buffer.byteLength(stdin),
+        outputMode: "error",
+      });
+      if (selected.stdoutInvalidUtf8) return null;
+      const expected = splitNullSeparatedGitStdoutPaths(selected);
+      if (expected.length !== included.size || expected.some((name) => !included.has(name)))
+        return null;
+    }
+    const outsidePathsAbsent = Effect.gen(function* () {
+      for (const name of absent) {
+        if (yield* fileSystem.exists(path.join(cwd, name))) return false;
+      }
+      return true;
+    });
+    if (!(yield* outsidePathsAbsent)) return null;
+    const gitlinksUninitialized = Effect.gen(function* () {
+      for (const name of emptyGitlinks) {
+        if ((yield* fileSystem.readDirectory(path.join(cwd, name))).length > 0) return false;
+      }
+      return true;
+    });
+    if (!(yield* gitlinksUninitialized)) return null;
+
+    // The capture span and its Git subprocess spans already time this recheck.
+    const confirmIndex = Effect.fnUntraced(
+      function* (current: VcsProcess.VcsProcessOutput, includeTree: boolean) {
+        if (
+          current.stdoutTruncated ||
+          current.exitCode !== config.exitCode ||
+          current.stdout !== config.stdout
+        )
+          return null;
+        const resolved = yield* execute({
+          operation,
+          cwd,
+          args: includeTree
+            ? ["rev-parse", "HEAD", "HEAD^{tree}"]
+            : ["rev-parse", "--verify", "HEAD"],
+        });
+        const [currentHead, tree] = resolved.stdout.trim().split("\n");
+        if (currentHead !== head || (includeTree && !/^[0-9a-f]{40,64}$/.test(tree ?? "")))
+          return null;
+        const end = yield* metadata;
+        return end?.index === start.index &&
+          end.rules === start.rules &&
+          (yield* outsidePathsAbsent) &&
+          (yield* gitlinksUninitialized)
+          ? { tree: tree ?? null }
+          : null;
+      },
+      Effect.orElseSucceed(() => null),
+    );
+    return {
+      timestamp: start.timestamp,
+      sparse,
+      included,
+      confirmIndex,
+      mayBeClean: yield* Fiber.join(cleanHint),
+    };
+  }, Effect.scoped);
+
+  const findCheckpointAdditions = Effect.fn("GitVcsDriver.findCheckpointAdditions")(function* (
+    cwd: string,
+    included: ReadonlySet<string>,
+    indexConfig: ReadonlyArray<string>,
+    env: NodeJS.ProcessEnv,
+    sparse: boolean,
+  ) {
+    const checks = checkpointDiffPathspecs(included).map((pathspec) => [
+      "diff-files",
+      "--quiet",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--ignore-submodules=none",
+      "--",
+      ...pathspec,
+    ]);
+    const tracked = Effect.forEach(
+      checks,
+      (args) =>
+        execute({
+          operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+          cwd,
+          args: [...indexConfig, "--literal-pathspecs", "-c", "core.safecrlf=false", ...args],
+          env: { ...env, GIT_OPTIONAL_LOCKS: "0" },
+          allowNonZeroExit: true,
+          maxOutputBytes: 1,
+          outputMode: "truncate",
+        }).pipe(
+          Effect.filterOrFail(
+            (output) =>
+              output.exitCode === 0 &&
+              !output.stdoutTruncated &&
+              !output.stderrTruncated &&
+              output.stdout === "" &&
+              output.stderr === "",
+            () => false,
+          ),
+        ),
+      { concurrency: "unbounded", discard: true },
+    );
+    const untracked = sparse
+      ? Effect.succeed([])
+      : execute({
+          operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+          cwd,
+          args: [
+            ...indexConfig,
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--directory",
+            "--no-empty-directory",
+            "-z",
+          ],
+          env: { ...env, GIT_OPTIONAL_LOCKS: "0" },
+          maxOutputBytes: WORKSPACE_FILES_MAX_OUTPUT_BYTES,
+          outputMode: "error",
+        }).pipe(
+          Effect.flatMap((output) =>
+            output.stdoutInvalidUtf8 ||
+            output.stdoutTruncated ||
+            output.stderr !== "" ||
+            output.stderrTruncated ||
+            (output.stdout !== "" && !output.stdout.endsWith("\0"))
+              ? Effect.fail(false)
+              : Effect.succeed(splitNullSeparatedGitStdoutPaths(output)),
+          ),
+        );
+    return yield* Effect.all([tracked, untracked], { concurrency: 2 }).pipe(
+      Effect.map(([, paths]) => paths),
+      Effect.orElseSucceed(() => null),
+    );
+  });
+
   const captureIndexes = yield* CheckpointCaptureIndex.make(execute, fileSystem, path);
 
   type CaptureInput = VcsDriver.VcsCaptureCheckpointInput & { readonly rebuildIndex?: true };
@@ -1317,10 +1688,23 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       ];
       const { gitCommonDir, indexPath, prefix, headExists, worktreeRoot, topLevel, head } =
         yield* resolveCaptureRepository(input.cwd);
+      const checkoutProbe =
+        input.reuseCheckoutIndex &&
+        !input.rebuildIndex &&
+        input.previousCheckpointRef === undefined &&
+        exclusionPathspecs.length === 0 &&
+        prefix === "" &&
+        indexPath !== undefined &&
+        head !== undefined
+          ? probeCheckpointIndex(input.cwd, head, indexPath).pipe(Effect.orElseSucceed(() => null))
+          : Effect.succeed(null);
       let indexSeed: Effect.Success<ReturnType<typeof checkpointIndexes.load>>;
       // Read before the snapshot and pinned to the same HEAD: a switch that lands while files are
       // being staged then belongs to the next checkpoint instead of being applied to this one.
-      const headMoves = head === undefined ? [] : yield* readHeadMoves(input.cwd);
+      const [probe, headMoves] = yield* Effect.all(
+        [checkoutProbe, head === undefined ? Effect.succeed([]) : readHeadMoves(input.cwd)],
+        { concurrency: input.reuseCheckoutIndex ? 2 : 1 },
+      );
       const lastMove = headMoves.at(0);
       // Moves share a second, so the mark also counts how many of that second it has seen.
       const headMark =
@@ -1449,18 +1833,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       );
 
       const range = yield* Effect.gen(function* () {
-        // One read for sparse checkout and the config deciding the blobs of unchanged files.
-        const config = yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: [
-            "config",
-            "--null",
-            "--get-regexp",
-            "^(core\\.(sparsecheckout|autocrlf|eol|filemode|symlinks|ignorecase|precomposeunicode|checkstat|trustctime|ignorestat|attributesfile|checkroundtripencoding)|filter\\..*)$",
-          ],
-          allowNonZeroExit: true,
-        });
+        const config = yield* readCheckpointConfig(input.cwd);
         const sparseValue = CheckpointCaptureIndex.lastConfigValue(
           config.stdout,
           "core.sparsecheckout",
@@ -1468,13 +1841,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         let sparseCheckout =
           sparseValue !== undefined && CheckpointCaptureIndex.gitBool(sparseValue);
         if (sparseCheckout) {
-          const help = yield* execute({
-            operation,
-            cwd: input.cwd,
-            args: ["add", "-h"],
-            allowNonZeroExit: true,
-          });
-          sparseCheckout = /--(?:\[no-\])?sparse\b/.test(`${help.stdout}${help.stderr}`);
+          sparseCheckout = yield* supportsSparseAdd(input.cwd, input.reuseCheckoutIndex === true);
         }
         // The working-tree root is never ignored. Probe a subdirectory without the trailing slash
         // Git adds to ".", which a blank or whitespace-only ignore line matches as an empty pattern.
@@ -1551,7 +1918,36 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             .utimes(tempIndexPath, timestamp, timestamp)
             .pipe(Effect.mapError(() => new CheckpointCaptureIndex.StaleCaptureIndex()));
         }
-        if (headExists && previousTree === undefined) {
+        const verifiedIndexConfig = sparseCheckout
+          ? [...indexConfig, "-c", "index.sparse=true"]
+          : indexConfig;
+        const verifiedIndex =
+          indexPath !== undefined &&
+          probe !== null &&
+          probe.sparse === sparseCheckout &&
+          previousTree === undefined &&
+          head !== undefined
+            ? yield* Effect.gen(function* () {
+                yield* fileSystem.copyFile(indexPath, tempIndexPath);
+                yield* fileSystem.utimes(tempIndexPath, probe.timestamp, probe.timestamp);
+                const additions = probe.mayBeClean
+                  ? yield* findCheckpointAdditions(
+                      input.cwd,
+                      probe.included,
+                      indexConfig,
+                      commitEnv,
+                      probe.sparse,
+                    )
+                  : null;
+                const verified = yield* probe.confirmIndex(config, additions?.length === 0);
+                if (verified !== null) return { ...verified, additions };
+                yield* cleanupTempIndex;
+                return null;
+              }).pipe(Effect.orElseSucceed(() => null))
+            : null;
+        const reusedVerifiedIndex = verifiedIndex !== null;
+        yield* Effect.annotateCurrentSpan("checkpoint.checkout_index_reused", reusedVerifiedIndex);
+        if (headExists && previousTree === undefined && !reusedVerifiedIndex) {
           const reusedIndex = yield* Effect.gen(function* () {
             const userIndexPath =
               indexPath ??
@@ -1819,27 +2215,33 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           }
         }
 
-        const stageFiles = (exclusions: ReadonlyArray<string>, ignoreErrors = false) =>
+        const stagingIndexConfig = reusedVerifiedIndex ? verifiedIndexConfig : indexConfig;
+        const stageFiles = (
+          exclusions: ReadonlyArray<string>,
+          ignoreErrors = false,
+          additions?: ReadonlyArray<string>,
+        ) =>
           execute({
             operation,
             cwd: input.cwd,
             args: [
-              ...indexConfig,
+              ...stagingIndexConfig,
               ...durableWrite,
               // safecrlf=true refuses LF files under CRLF conversion; capture them as Git's default does.
               "-c",
               "core.safecrlf=false",
+              ...(additions === undefined ? [] : ["--literal-pathspecs"]),
               "add",
               // Unreadable files keep their indexed version and unreadable new files are left out.
               ...(ignoreErrors ? ["--ignore-errors"] : []),
               ...(sparseCheckout ? ["--sparse"] : []),
               // add -A rejects ignored directories even when they contain tracked files.
               workspaceIgnored ? "-u" : "-A",
-              "--",
-              ".",
-              ...exclusionPathspecs,
-              ...exclusions,
+              ...(additions === undefined
+                ? ["--", ".", ...exclusionPathspecs, ...exclusions]
+                : ["--pathspec-from-file=-", "--pathspec-file-nul"]),
             ],
+            ...(additions === undefined ? {} : { stdin: `${additions.join("\0")}\0` }),
             env: commitEnv,
           }).pipe(
             // With --ignore-errors, exit 1 only reports the files it skipped.
@@ -1849,7 +2251,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               () => Effect.void,
             ),
           );
-        yield* stageFiles([]).pipe(
+        const cleanTree = verifiedIndex?.tree ?? null;
+        yield* Effect.annotateCurrentSpan("checkpoint.head_tree_reused", cleanTree !== null);
+        const stage = stageFiles([]).pipe(
           Effect.catchTags({
             VcsProcessExitError: (error) =>
               Effect.gen(function* () {
@@ -1901,14 +2305,27 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               ),
           }),
         );
+        if (cleanTree === null) {
+          const additions = verifiedIndex?.additions;
+          if (additions?.length) {
+            yield* stageFiles([], false, additions).pipe(
+              Effect.catchTags({
+                VcsProcessExitError: () => new CheckpointCaptureIndex.StaleCaptureIndex(),
+              }),
+            );
+          } else {
+            yield* stage;
+          }
+        }
 
-        const writeTreeResult = yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: [...indexConfig, ...durableWrite, "write-tree"],
-          env: commitEnv,
-        });
-        const treeOid = writeTreeResult.stdout.trim();
+        const treeOid =
+          cleanTree ??
+          (yield* execute({
+            operation,
+            cwd: input.cwd,
+            args: [...stagingIndexConfig, ...durableWrite, "write-tree"],
+            env: commitEnv,
+          })).stdout.trim();
         if (treeOid.length === 0) {
           return yield* new VcsProcessExitError({
             operation,

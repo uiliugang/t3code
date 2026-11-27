@@ -23,8 +23,13 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import type { SourceControlProcessInput } from "@t3tools/source-control-core/server/SourceControlHost";
 
-import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import { outcomeFromExit } from "../observability/Attributes.ts";
+import {
+  gitCheckpointCommandDuration,
+  gitCommandDuration,
+  gitCommandsTotal,
+  withMetrics,
+} from "../observability/Metrics.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { checkpointSubcommand, makeCheckpointGitTrace } from "./checkpointGitTrace.ts";
 
@@ -84,6 +89,26 @@ export const GIT_INDEX_LOCKED_DETAIL =
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
 const CHECKPOINT_CLEAN_HEAD_OPERATION = "GitVcsDriver.checkpoints.resolveCleanHead";
 const SLOW_CHECKPOINT_GIT_MS = 1_000;
+
+const checkpointGitStage = (subcommand: string, args: ReadonlyArray<string>) => {
+  switch (subcommand) {
+    case "read-tree":
+    case "write-tree":
+    case "commit-tree":
+    case "update-ref":
+      return subcommand;
+    case "ls-files":
+    case "sparse-checkout":
+    case "update-index":
+      return "inspect-index";
+    case "add":
+      return args.at(-1) === "-h" && !args.includes("--") ? "probe" : "stage";
+    default:
+      return "probe";
+  }
+};
+
+type CheckpointGitStage = ReturnType<typeof checkpointGitStage>;
 
 // Caller operations are diagnostic strings; only known labels may become metric attributes.
 const gitMetricOperations = new Set([
@@ -246,6 +271,7 @@ export const make = Effect.gen(function* () {
     input: VcsProcessInput,
     baseError: VcsProcessErrorContext,
     trace?: ReturnType<typeof makeCheckpointGitTrace>,
+    stage?: CheckpointGitStage,
   ) {
     let failedExit = false;
     const processTrace = trace?.startProcess();
@@ -325,14 +351,20 @@ export const make = Effect.gen(function* () {
             }),
           )
         : execution;
-    return yield* processTrace
+    const traced = processTrace
       ? measured.pipe(Effect.ensuring(Effect.sync(processTrace.finish)))
       : measured;
+    if (stage === undefined) return yield* traced;
+    yield* Effect.annotateCurrentSpan("checkpoint.git_stage", stage);
+    return yield* traced.pipe(
+      withMetrics({ timer: gitCheckpointCommandDuration, attributes: { stage } }),
+    );
   });
 
   const runUnbounded = Effect.fn("VcsProcess.runUnbounded")(function* (
     input: VcsProcessInput,
     trace?: ReturnType<typeof makeCheckpointGitTrace>,
+    stage?: CheckpointGitStage,
   ) {
     const baseError = {
       operation: input.operation,
@@ -341,7 +373,7 @@ export const make = Effect.gen(function* () {
       argumentCount: input.args.length,
     };
 
-    let result = yield* spawn(input, baseError, trace);
+    let result = yield* spawn(input, baseError, trace, stage);
 
     if (
       hostPlatform === "darwin" &&
@@ -362,6 +394,7 @@ export const make = Effect.gen(function* () {
         },
         baseError,
         trace,
+        stage,
       );
     }
 
@@ -420,6 +453,7 @@ export const make = Effect.gen(function* () {
     ) {
       const retryCapture = capture && input.onStdoutChunk === undefined;
       const subcommand = checkpointSubcommand(input.args);
+      const stage = capture ? checkpointGitStage(subcommand, input.args) : undefined;
       yield* Effect.annotateCurrentSpan("git.subcommand", subcommand);
       const clock = yield* Clock.Clock;
       const now = () => Number(clock.currentTimeNanosUnsafe() / 1_000_000n);
@@ -430,28 +464,37 @@ export const make = Effect.gen(function* () {
         const bounded = vcsProcesses.withPermits(1)(
           Effect.suspend(() => {
             acquired = now();
-            return runUnbounded(input, trace);
+            return runUnbounded(input, trace, stage);
           }),
         );
         const runAttempt =
           !retryCapture && input.concurrency ? keyedPermit(input.concurrency)(bounded) : bounded;
         return runAttempt.pipe(
-          Effect.onExit((exit) => {
-            const end = now();
-            const totalMs = end - start;
-            if (totalMs < SLOW_CHECKPOINT_GIT_MS) return Effect.void;
-            const timing = {
-              subcommand,
-              totalMs,
-              queueMs: (acquired ?? end) - start,
-              executionMs: acquired === undefined ? 0 : end - acquired,
-              outcome: outcomeFromExit(exit),
-              ...trace?.summary(),
-            };
-            return Effect.annotateCurrentSpan("git.slow_call", timing).pipe(
-              Effect.andThen(Effect.logWarning("slow checkpoint Git command", timing)),
-            );
-          }),
+          Effect.onExit((exit) =>
+            Effect.gen(function* () {
+              const end = now();
+              const totalMs = end - start;
+              const queueMs = (acquired ?? end) - start;
+              if (stage !== undefined) {
+                yield* Effect.annotateCurrentSpan({
+                  "checkpoint.git_stage": stage,
+                  "checkpoint.git_permit_acquired": acquired !== undefined,
+                  "checkpoint.git_permit_wait_ms": queueMs,
+                });
+              }
+              if (totalMs < SLOW_CHECKPOINT_GIT_MS) return;
+              const timing = {
+                subcommand,
+                totalMs,
+                queueMs,
+                executionMs: acquired === undefined ? 0 : end - acquired,
+                outcome: outcomeFromExit(exit),
+                ...trace?.summary(),
+              };
+              yield* Effect.annotateCurrentSpan("git.slow_call", timing);
+              yield* Effect.logWarning("slow checkpoint Git command", timing);
+            }),
+          ),
         );
       });
       if (!retryCapture) return yield* attempt;

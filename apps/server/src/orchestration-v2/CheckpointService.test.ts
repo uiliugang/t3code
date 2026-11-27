@@ -51,8 +51,17 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
             isGitRepository: () => Effect.succeed(true),
             hasCheckpointRef: ({ cwd, checkpointRef }) =>
               Effect.succeed(refs.get(checkpointRef) === cwd),
-            captureCheckpoint: ({ cwd, checkpointRef, previousCheckpointRef }) =>
+            captureCheckpoint: ({
+              cwd,
+              checkpointRef,
+              previousCheckpointRef,
+              reuseCheckoutIndex,
+            }) =>
               Effect.sync(() => {
+                assert.strictEqual(
+                  reuseCheckoutIndex,
+                  previousCheckpointRef === undefined ? true : undefined,
+                );
                 refs.set(checkpointRef, cwd);
                 return previousCheckpointRef && refs.has(previousCheckpointRef)
                   ? {

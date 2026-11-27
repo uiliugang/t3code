@@ -4,17 +4,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import type { CheckpointStoreError } from "./Errors.ts";
-import type { VcsCheckpointOps, VcsCheckpointRange } from "../vcs/VcsDriver.ts";
+import type {
+  VcsCaptureCheckpointInput,
+  VcsCheckpointOps,
+  VcsCheckpointRange,
+} from "../vcs/VcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
-export interface CaptureCheckpointInput {
-  readonly cwd: string;
-  readonly checkpointRef: CheckpointRef;
-  /** The checkpoint this one follows, so a turn that switched branches starts where it landed. */
-  readonly previousCheckpointRef?: CheckpointRef;
-  /** Folders below `cwd` (relative, `/`-separated) that have their own checkpoints. */
-  readonly excludePaths?: ReadonlyArray<string>;
-}
+export type CaptureCheckpointInput = VcsCaptureCheckpointInput;
 
 export type CheckpointRange = VcsCheckpointRange;
 

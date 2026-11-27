@@ -16,6 +16,7 @@ export interface VcsCaptureCheckpointInput {
   readonly checkpointRef: CheckpointRef;
   /** The checkpoint this one follows, so a turn that switched branches starts where it landed. */
   readonly previousCheckpointRef?: CheckpointRef;
+  readonly reuseCheckoutIndex?: true;
   /** Folders below `cwd` (relative, `/`-separated) that other checkpoints own, such as nested clones. */
   readonly excludePaths?: ReadonlyArray<string>;
 }

@@ -21,7 +21,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
-import type * as Duration from "effect/Duration";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -406,8 +406,34 @@ export const layer: Layer.Layer<
       WorkspaceRepositoryResolver.WorkspaceRepositoryResolver,
     );
     const workspaceLocks = yield* KeyedLock.make<string>();
-    const withWorkspaceLock = <A, E, R>(cwd: string, effect: Effect.Effect<A, E, R>) =>
-      workspaceLocks.withLock(cwd, effect);
+    const withWorkspaceLock = Effect.fn("CheckpointService.withWorkspaceLock")(function* <A, E, R>(
+      cwd: string,
+      effect: Effect.Effect<A, E, R>,
+    ) {
+      const queuedAt = yield* Clock.monotonicTimeNanos;
+      const recordWait = (acquired: boolean) =>
+        Clock.monotonicTimeNanos.pipe(
+          Effect.flatMap((now) =>
+            Effect.annotateCurrentSpan({
+              "checkpoint.workspace_lock_acquired": acquired,
+              "checkpoint.workspace_lock_wait_ms": Duration.toMillis(
+                Duration.nanos(now - queuedAt),
+              ),
+            }),
+          ),
+        );
+      let acquired = false;
+      return yield* workspaceLocks
+        .withLock(
+          cwd,
+          Effect.gen(function* () {
+            acquired = true;
+            yield* recordWait(true);
+            return yield* effect;
+          }),
+        )
+        .pipe(Effect.onInterrupt(() => (acquired ? Effect.void : recordWait(false))));
+    });
 
     const captureTimeouts = yield* Cache.make<string, number>({
       capacity: 128,
@@ -435,12 +461,20 @@ export const layer: Layer.Layer<
         baseline = false,
         captureBudget: Duration.Input = BASELINE_CAPTURE_BUDGET,
       ) {
+        yield* Effect.annotateCurrentSpan("checkpoint.baseline", baseline);
+        if (baseline) {
+          yield* Effect.annotateCurrentSpan(
+            "checkpoint.budget_ms",
+            Duration.toMillis(captureBudget),
+          );
+        }
         const capture = checkpointStore.captureCheckpoint(input);
         const bounded: Effect.Effect<
           CheckpointStore.CheckpointRange | null,
           CheckpointStoreError | Cause.TimeoutError
         > = baseline ? capture.pipe(Effect.timeout(captureBudget)) : capture;
         return yield* bounded.pipe(
+          Effect.tapError((error) => Effect.annotateCurrentSpan("checkpoint.failure", error._tag)),
           Effect.tap(() =>
             Effect.andThen(
               Cache.invalidate(captureTimeouts, input.cwd),
@@ -502,6 +536,7 @@ export const layer: Layer.Layer<
         readonly scope: OrchestrationV2CheckpointScope;
         readonly ordinalWithinScope: number;
         readonly excludePaths: ReadonlyArray<string> | undefined;
+        readonly reuseCheckoutIndex?: true;
       },
       captureBudget: Duration.Input = BASELINE_CAPTURE_BUDGET,
     ) =>
@@ -536,6 +571,7 @@ export const layer: Layer.Layer<
             {
               cwd: input.scope.cwd,
               checkpointRef,
+              ...(input.reuseCheckoutIndex ? { reuseCheckoutIndex: true } : {}),
               ...(input.excludePaths === undefined ? {} : { excludePaths: input.excludePaths }),
             },
             true,
@@ -1281,7 +1317,12 @@ export const layer: Layer.Layer<
             input.scope.workspace.resources,
             (resource) =>
               captureScopeBaseline(
-                { ...input, scope: resourceScope(input.scope, resource), excludePaths: undefined },
+                {
+                  ...input,
+                  scope: resourceScope(input.scope, resource),
+                  excludePaths: undefined,
+                  reuseCheckoutIndex: true,
+                },
                 WORKSPACE_BASELINE_CAPTURE_BUDGET,
               ).pipe(
                 Effect.andThen(

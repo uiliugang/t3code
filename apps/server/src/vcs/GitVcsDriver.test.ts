@@ -245,6 +245,275 @@ const makeCheckpointFixture = Effect.fn("makeCheckpointFixture")(function* (
   return { git, checkpointRef };
 });
 
+const makeCleanCheckpointFixture = Effect.fn("makeCleanCheckpointFixture")(function* (
+  driver: Effect.Success<ReturnType<typeof GitVcsDriver.makeVcsDriverShape>>,
+  cwd: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
+  yield* git(["reset", "--hard", "HEAD"]);
+  for (const directory of ["in", "out"]) {
+    yield* fs.makeDirectory(path.join(cwd, directory));
+    yield* fs.writeFileString(path.join(cwd, directory, "file.txt"), "baseline\n");
+  }
+  yield* git(["add", "."]);
+  yield* git(["commit", "-m", "baseline"]);
+  return { git, checkpointRef };
+});
+
+it.effect.each([
+  "ordinary",
+  "ordinary with empty gitlink",
+  "cone",
+  "linked cone",
+  "cone with absent gitlink",
+] as const)(
+  "a clean $0 checkpoint reuses the HEAD tree and restores the full snapshot's contents",
+  (mode) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-clean-checkpoint-" });
+      const liveProcess = yield* VcsProcess.VcsProcess;
+      const staged: string[] = [];
+      const driver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
+        Effect.provideService(VcsProcess.VcsProcess, {
+          run: (input) => {
+            if (
+              input.operation === VcsProcess.CHECKPOINT_CAPTURE_OPERATION &&
+              input.env?.GIT_INDEX_FILE !== undefined
+            ) {
+              staged.push(...input.args);
+            }
+            return liveProcess.run({
+              ...input,
+              env: {
+                ...input.env,
+                GIT_CONFIG_GLOBAL: path.join(root, ".git", "empty-global-config"),
+                GIT_CONFIG_NOSYSTEM: "1",
+              },
+            });
+          },
+        }),
+      );
+      const { git: originalGit, checkpointRef } = yield* makeCleanCheckpointFixture(driver, root);
+      const cwd = mode === "linked cone" ? path.join(root, "linked") : root;
+      if (mode === "linked cone") {
+        yield* originalGit(["worktree", "add", "--detach", cwd, "HEAD"]);
+      }
+      const git = (args: ReadonlyArray<string>) =>
+        driver.execute({ operation: "checkpoint-test", cwd, args });
+      if (mode === "cone with absent gitlink" || mode === "ordinary with empty gitlink") {
+        const parent = (yield* git(["rev-parse", "HEAD"])).stdout.trim();
+        yield* fs.writeFileString(
+          path.join(cwd, ".gitmodules"),
+          '[submodule "nested"]\n  path = out/nested\n  url = ../nested\n',
+        );
+        yield* git(["add", ".gitmodules"]);
+        yield* git(["update-index", "--add", "--cacheinfo", `160000,${parent},out/nested`]);
+        yield* git(["commit", "-m", "add excluded submodule"]);
+        if (mode === "ordinary with empty gitlink")
+          yield* fs.makeDirectory(path.join(cwd, "out", "nested"));
+      }
+      if (!mode.startsWith("ordinary")) {
+        yield* git(["sparse-checkout", "set", "--cone", "--sparse-index", "in"]);
+      }
+      const head = (yield* git(["rev-parse", "HEAD"])).stdout.trim();
+      const indexPath = (yield* git([
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-path",
+        "index",
+      ])).stdout.trim();
+      const index = yield* fs.readFile(indexPath);
+      const full = CheckpointRef.make("refs/t3/checkpoints/full/ordinal/0");
+      yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef: full });
+      assert.include(staged, "add");
+      staged.length = 0;
+      yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef, reuseCheckoutIndex: true });
+      assert.notInclude(staged, "add");
+      assert.notInclude(staged, "read-tree");
+      assert.notInclude(staged, "write-tree");
+      assert.deepEqual(yield* fs.readFile(indexPath), index);
+      const objects = (yield* git([
+        "rev-parse",
+        `${checkpointRef}^{tree}`,
+        `${full}^{tree}`,
+        `${checkpointRef}^1`,
+      ])).stdout
+        .trim()
+        .split("\n");
+      assert.strictEqual(objects[0], objects[1]);
+      assert.strictEqual(objects[2], head);
+
+      for (const ref of [checkpointRef, full]) {
+        yield* fs.writeFileString(path.join(cwd, "in", "file.txt"), "changed\n");
+        yield* fs.writeFileString(path.join(cwd, "in", "created.txt"), "new\n");
+        yield* git(["add", "in"]);
+        assert.isTrue(yield* driver.checkpoints.restoreCheckpoint({ cwd, checkpointRef: ref }));
+        assert.strictEqual(
+          yield* fs.readFileString(path.join(cwd, "in", "file.txt")),
+          "baseline\n",
+        );
+        assert.isFalse(yield* fs.exists(path.join(cwd, "in", "created.txt")));
+        assert.strictEqual(
+          yield* fs.exists(path.join(cwd, "out", "file.txt")),
+          mode.startsWith("ordinary"),
+        );
+        if (mode === "cone with absent gitlink") {
+          assert.isFalse(yield* fs.exists(path.join(cwd, "out", "nested")));
+        }
+        assert.strictEqual((yield* git(["rev-parse", "HEAD"])).stdout.trim(), head);
+      }
+    }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+);
+
+it.effect.each([
+  "dirty",
+  "dirty cone",
+  "staged only",
+  "untracked",
+  "untracked vanishes before staging",
+  "untracked outside cone",
+  "deleted tracked path",
+  "same-size edit",
+  "assume-unchanged",
+  "skip inside cone",
+  "outside cone edit",
+  "skip cleared outside cone",
+  "concurrent index edit",
+  "edit during clean verification",
+] as const)("a $0 workspace still captures the working tree", (scenario) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-checkpoint-fallback-" });
+    const liveProcess = yield* VcsProcess.VcsProcess;
+    const full = CheckpointRef.make("refs/t3/checkpoints/full/ordinal/0");
+    let changedIndex = false;
+    let inspectedIndex = false;
+    let verifiedDuringEdit = false;
+    let staged = false;
+    let stagedAdditions = false;
+    let resetIndex = false;
+    const concurrent = scenario === "concurrent index edit";
+    const vanishes = scenario === "untracked vanishes before staging";
+    const changedFile =
+      scenario === "outside cone edit" || scenario === "skip cleared outside cone"
+        ? "out/file.txt"
+        : scenario === "untracked outside cone"
+          ? "out/[new] file.txt"
+          : scenario === "untracked" || vanishes
+            ? "in/[new] file.txt"
+            : "in/file.txt";
+    const change = fs.writeFileString(path.join(cwd, changedFile), "user edit\n");
+    const driver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
+      Effect.provideService(VcsProcess.VcsProcess, {
+        run: (input) => {
+          const command = liveProcess.run({
+            ...input,
+            env: {
+              ...input.env,
+              GIT_CONFIG_GLOBAL: path.join(cwd, ".git", "empty-global-config"),
+              GIT_CONFIG_NOSYSTEM: "1",
+            },
+          });
+          if (input.operation === VcsProcess.CHECKPOINT_CAPTURE_OPERATION) {
+            if (input.args.includes("add") && input.env?.GIT_INDEX_FILE !== undefined) {
+              staged = true;
+              stagedAdditions ||= input.args.includes("--pathspec-from-file=-");
+              if (vanishes && input.args.includes("--pathspec-from-file=-"))
+                return fs
+                  .remove(path.join(cwd, changedFile))
+                  .pipe(Effect.orDie, Effect.andThen(command));
+            }
+            if (input.args.includes("read-tree")) resetIndex = true;
+            if (
+              input.args.includes("ls-files") &&
+              input.args.includes("--stage") &&
+              input.env?.GIT_INDEX_FILE === undefined
+            )
+              inspectedIndex = true;
+            if (
+              scenario === "edit during clean verification" &&
+              input.args.includes("diff-files") &&
+              !verifiedDuringEdit
+            ) {
+              verifiedDuringEdit = true;
+              return change.pipe(Effect.orDie, Effect.andThen(command));
+            }
+            if (input.args.includes("config") && concurrent && inspectedIndex && !changedIndex) {
+              changedIndex = true;
+              const hideEdit = liveProcess.run({
+                operation: "checkpoint-test",
+                command: "git",
+                cwd,
+                args: ["update-index", "--assume-unchanged", changedFile],
+              });
+              return hideEdit.pipe(
+                Effect.andThen(change.pipe(Effect.orDie)),
+                Effect.andThen(command),
+              );
+            }
+          }
+          return command;
+        },
+      }),
+    );
+    const { git, checkpointRef } = yield* makeCleanCheckpointFixture(driver, cwd);
+    if (scenario.includes("cone")) {
+      yield* git(["sparse-checkout", "set", "--cone", "in"]);
+    }
+    if (scenario === "assume-unchanged") {
+      yield* git(["update-index", "--assume-unchanged", changedFile]);
+    }
+    if (scenario === "skip inside cone") {
+      yield* git(["update-index", "--skip-worktree", changedFile]);
+      yield* fs.remove(path.join(cwd, changedFile));
+    } else if (scenario === "skip cleared outside cone") {
+      yield* git(["update-index", "--no-skip-worktree", "--", changedFile]);
+    } else if (scenario === "deleted tracked path") {
+      yield* fs.remove(path.join(cwd, changedFile));
+    } else if (scenario === "same-size edit") {
+      const filename = path.join(cwd, changedFile);
+      const { mtime } = yield* fs.stat(filename);
+      if (Option.isNone(mtime)) return yield* Effect.die("Missing fixture mtime");
+      yield* fs.writeFileString(filename, "modified\n");
+      yield* fs.utimes(filename, mtime.value, mtime.value);
+    } else if (!concurrent && scenario !== "edit during clean verification") {
+      if (scenario === "outside cone edit" || scenario === "untracked outside cone")
+        yield* fs.makeDirectory(path.join(cwd, "out"));
+      yield* change;
+      if (scenario === "staged only") {
+        yield* git(["add", changedFile]);
+        yield* fs.writeFileString(path.join(cwd, changedFile), "baseline\n");
+      }
+    }
+
+    yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef, reuseCheckoutIndex: true });
+    assert.isTrue(staged);
+    assert.strictEqual(stagedAdditions, scenario === "untracked" || vanishes);
+    assert.strictEqual(changedIndex, concurrent);
+    assert.strictEqual(verifiedDuringEdit, scenario === "edit during clean verification");
+    const expectedReuse = [
+      "dirty",
+      "dirty cone",
+      "untracked",
+      "untracked outside cone",
+      "deleted tracked path",
+      "same-size edit",
+      "edit during clean verification",
+    ].includes(scenario);
+    assert.strictEqual(resetIndex, !expectedReuse);
+    yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef: full });
+    const trees = (yield* git(["rev-parse", `${checkpointRef}^{tree}`, `${full}^{tree}`])).stdout
+      .trim()
+      .split("\n");
+    assert.strictEqual(trees[0], trees[1]);
+  }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+);
+
 it.effect.each(["interrupt", "timeout", "success"] as const)(
   "checkpoint bulk staging cleans operation-owned packs after $0 and can retry",
   (stop) =>
@@ -3322,6 +3591,18 @@ it.effect("restores and deletes checkpoints inside populated submodules", () =>
       path.join(root, file),
     );
     const checkpointRef = CheckpointRef.make("refs/t3/checkpoints/submodules");
+    const cleanRef = CheckpointRef.make("refs/t3/checkpoints/clean-submodules");
+    yield* driver.checkpoints.captureCheckpoint({
+      cwd: root,
+      checkpointRef: cleanRef,
+      reuseCheckoutIndex: true,
+    });
+    assert.isTrue(
+      yield* driver.checkpoints.hasCheckpointRef({
+        cwd: path.join(root, "library", "nested"),
+        checkpointRef: cleanRef,
+      }),
+    );
     yield* fileSystem.writeFileString(files[1]!, "captured\n");
     yield* driver.checkpoints.captureCheckpoint({ cwd: root, checkpointRef });
 
@@ -3343,7 +3624,10 @@ it.effect("restores and deletes checkpoints inside populated submodules", () =>
     );
     for (const file of files) assert.isFalse(yield* fileSystem.exists(`${file}.added`));
 
-    yield* driver.checkpoints.deleteCheckpointRefs({ cwd: root, checkpointRefs: [checkpointRef] });
+    yield* driver.checkpoints.deleteCheckpointRefs({
+      cwd: root,
+      checkpointRefs: [checkpointRef, cleanRef],
+    });
     for (const cwd of [root, path.join(root, "library"), path.join(root, "library", "nested")]) {
       const ref = yield* git(cwd, ["for-each-ref", "refs/t3"]);
       assert.strictEqual(ref.stdout, "");

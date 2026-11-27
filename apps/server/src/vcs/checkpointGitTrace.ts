@@ -5,6 +5,8 @@ const commands = new Set([
   "commit-tree",
   "config",
   "diff",
+  "diff-files",
+  "diff-index",
   "diff-tree",
   "log",
   "ls-files",
@@ -19,7 +21,9 @@ const commands = new Set([
 
 export function checkpointSubcommand(args: readonly string[]) {
   let index = 0;
-  while (args[index] === "-c" || args[index] === "-C") index += 2;
+  while (args[index] === "-c" || args[index] === "-C" || args[index] === "--literal-pathspecs") {
+    index += args[index] === "--literal-pathspecs" ? 1 : 2;
+  }
   const name = args[index];
   return name && commands.has(name) ? name : "other";
 }
