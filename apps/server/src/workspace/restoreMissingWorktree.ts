@@ -46,7 +46,7 @@ export {
   type WorktreeThread,
 };
 
-// `git worktree remove` skips pnpm junctions on Windows, leaving these behind without a checkout.
+// Known dependency directories that may remain after removing a worktree.
 const LEFTOVER_WORKTREE_ENTRIES = new Set(["node_modules", ".next"]);
 
 export const makeRestoreMissingWorktree = Effect.gen(function* () {
@@ -102,7 +102,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
   // `git worktree add` refuses a non-empty target but accepts an empty one. Keep the folder
-  // itself: Windows cannot remove a folder that is still a terminal's or provider's cwd.
+  // itself when a terminal or provider may still have it open.
   const clearLeftovers = (worktreePath: string) =>
     fileSystem
       .readDirectory(worktreePath)

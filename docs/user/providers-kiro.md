@@ -6,7 +6,6 @@ Run the [Kiro CLI](https://kiro.dev/docs/cli/) (V3 engine) in T3 Code with your 
 
 1. Install the Kiro CLI on the server machine:
    - macOS / Linux: `curl -fsSL https://cli.kiro.dev/install | bash`
-   - Windows 11 (PowerShell): `irm 'https://cli.kiro.dev/install.ps1' | iex`
 2. Run `kiro-cli login` (or set `KIRO_API_KEY` in the instance's environment variables on Kiro Pro+).
 3. Open **Settings → Providers**, enable **Kiro**, and refresh. Set **Binary path** if `kiro-cli` (typically `~/.local/bin`) isn't on `PATH`.
 

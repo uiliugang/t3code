@@ -55,7 +55,6 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -64,7 +63,7 @@ import { formatComposerModelMention } from "@t3tools/client-runtime/composer-mod
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { type FolderDropTarget, folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
+import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
@@ -3067,21 +3066,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const insertComposerTextAtEndStable = useStableCallback(insertComposerTextAtEnd);
 
-  const insertComposerFolders = async (
-    folders: File[],
-    target: FolderDropTarget,
-    draftKey: string,
-  ) => {
+  const insertComposerFolders = (folders: File[], draftKey: string) => {
     const bridge = window.desktopBridge;
     for (const folder of folders) {
-      const droppedPath = resolveDroppedFolderPath(folder, bridge?.getPathForFile);
-      const path =
-        droppedPath === null || typeof target === "string"
-          ? droppedPath
-          : ((await bridge
-              ?.toLocalBackendPath(target.wslBackendId, droppedPath)
-              .catch(() => null)) ?? null);
-      // ChatView is reused across threads, so a slow conversion must not land in the next draft.
+      const path = resolveDroppedFolderPath(folder, bridge?.getPathForFile);
       if (!composerMountedRef.current || attachmentTargetKeyRef.current !== draftKey) return;
       if (path === null) {
         toastManager.add({
@@ -3113,14 +3101,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       primaryEnvironmentId,
       connection: readPreparedConnection(environmentId),
       isDesktopRenderer: window.desktopBridge !== undefined,
-      primaryRunsInWsl:
-        window.desktopBridge
-          ?.getLocalEnvironmentBootstraps()
-          .some(
-            (bootstrap) =>
-              bootstrap.id === PRIMARY_LOCAL_ENVIRONMENT_ID &&
-              typeof bootstrap.runningDistro === "string",
-          ) === true,
     });
     if (target === "remote") {
       toastManager.add({
@@ -3129,12 +3109,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       return;
     }
-    const draftKey = attachmentTargetKeyRef.current;
-    // Hold send until every conversion lands, or the folder misses the message.
-    pendingDraftWork.begin(draftKey);
-    void insertComposerFolders(folders, target, draftKey).finally(() =>
-      pendingDraftWork.end(draftKey),
-    );
+    insertComposerFolders(folders, attachmentTargetKeyRef.current);
   };
   const addComposerFoldersStable = useStableCallback(addComposerFolders);
 

@@ -13,7 +13,6 @@ import {
 } from "@t3tools/contracts";
 import type { AcpRegistryDistributionPreference } from "../settings.ts";
 import type { AcpRegistrySettings } from "../settings.ts";
-import { cliArchiveTarCommand } from "@t3tools/shared/cliRelease";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 import {
@@ -36,7 +35,6 @@ import * as Path from "effect/Path";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 import * as PlatformError from "effect/PlatformError";
 import * as Ref from "effect/Ref";
-import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -239,22 +237,13 @@ export type AcpRegistryPlatformTarget =
   | "darwin-aarch64"
   | "darwin-x86_64"
   | "linux-aarch64"
-  | "linux-x86_64"
-  | "windows-aarch64"
-  | "windows-x86_64";
+  | "linux-x86_64";
 
 function resolveAcpRegistryPlatformTarget(
   platform: NodeJS.Platform,
   architecture: NodeJS.Architecture,
 ): AcpRegistryPlatformTarget | undefined {
-  const os =
-    platform === "darwin"
-      ? "darwin"
-      : platform === "linux"
-        ? "linux"
-        : platform === "win32"
-          ? "windows"
-          : undefined;
+  const os = platform === "darwin" || platform === "linux" ? platform : undefined;
   const arch = architecture === "arm64" ? "aarch64" : architecture === "x64" ? "x86_64" : undefined;
   return os && arch ? (`${os}-${arch}` as AcpRegistryPlatformTarget) : undefined;
 }
@@ -263,10 +252,6 @@ function resolveAcpRegistryPlatformTargetCandidates(
   platformTarget: AcpRegistryPlatformTarget | undefined,
 ): ReadonlyArray<AcpRegistryPlatformTarget> {
   if (platformTarget === undefined) return [];
-  // Windows 11 ARM can emulate x86_64 binaries when no native build exists.
-  if (platformTarget === "windows-aarch64") {
-    return ["windows-aarch64", "windows-x86_64"];
-  }
   return [platformTarget];
 }
 
@@ -311,28 +296,6 @@ function packageCommandCandidates(
   );
 }
 
-function readEnvironmentPath(
-  environment: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform,
-): string | undefined {
-  if (platform !== "win32") return environment.PATH;
-  return (
-    environment.PATH ??
-    Object.entries(environment).find(([key]) => key.toLowerCase() === "path")?.[1]
-  );
-}
-
-// Windows env keys are case-insensitive, and an inherited NPM_CONFIG_PREFIX would win over ours.
-function withoutNpmPrefix(
-  environment: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform,
-): NodeJS.ProcessEnv {
-  if (platform !== "win32") return environment;
-  return Object.fromEntries(
-    Object.entries(environment).filter(([key]) => key.toLowerCase() !== "npm_config_prefix"),
-  );
-}
-
 function withPreferredPath(
   environment: NodeJS.ProcessEnv,
   directory: string,
@@ -340,7 +303,7 @@ function withPreferredPath(
 ): NodeJS.ProcessEnv {
   return {
     ...environment,
-    PATH: mergePathEntries(directory, readEnvironmentPath(environment, platform), platform),
+    PATH: mergePathEntries(directory, environment.PATH, platform),
   };
 }
 
@@ -376,7 +339,7 @@ export const acpRegistryManagedBinaryDirectories = Effect.fn("acpRegistryManaged
             receipt.value.agentId,
             encodeURIComponent(receipt.value.agentVersion),
             receipt.value.distribution === "npx" ? "npm" : "python",
-            ...(receipt.value.distribution === "npx" && input.platform === "win32" ? [] : ["bin"]),
+            "bin",
           ) &&
         path.dirname(receipt.value.executablePath) === receipt.value.binDirectory &&
         (yield* fileSystem
@@ -565,7 +528,7 @@ export const layerFromHost = Layer.merge(
       return layer({
         cacheDir: paths.providerStatusCacheDir,
         toolsDir: path.join(paths.baseDir, "tools"),
-        // Beside the built-in driver's runtime temp, short for Windows' 260-character path limit.
+        // Beside the built-in driver's runtime temp.
         runtimeTempDir: path.join(paths.stateDir, "antigravity-tmp", "acp-registry"),
       });
     }),
@@ -729,9 +692,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
   const packageInstallRoot = (agent: AcpRegistryAgent, distribution: "npx" | "uvx") =>
     path.join(agentInstallRoot(agent), distribution === "npx" ? "npm" : "python");
   const packageBinDirectory = (agent: AcpRegistryAgent, distribution: "npx" | "uvx") =>
-    distribution === "npx" && platform === "win32"
-      ? packageInstallRoot(agent, distribution)
-      : path.join(packageInstallRoot(agent, distribution), "bin");
+    path.join(packageInstallRoot(agent, distribution), "bin");
   const isSamePath = Effect.fn("AcpRegistryCatalog.isSamePath")(function* (
     left: string,
     right: string,
@@ -808,7 +769,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     );
   }
 
-  // One directory per process, removed after it exits; the next server start sweeps what Windows kept.
+  // One directory per process, removed after it exits.
   const acquireRuntimeTempEnvironment = Effect.fn("AcpRegistryCatalog.acquireRuntimeTemp")(
     function* (root: string, environment: NodeJS.ProcessEnv) {
       const directory = yield* Effect.acquireRelease(
@@ -823,22 +784,16 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
               }),
           ),
         ),
-        (directory) => {
-          const remove = fileSystem.remove(directory, { recursive: true, force: true });
-          // Windows keeps a killed process's files locked for a few seconds after it exits.
-          const retry = remove.pipe(
-            Effect.retry({ schedule: Schedule.spaced("2 seconds"), times: 30 }),
-            Effect.catch(() => Effect.logWarning("Could not remove an ACP agent temp directory.")),
-          );
-          return remove.pipe(Effect.catch(() => Effect.asVoid(Effect.forkDetach(retry))));
-        },
+        (directory) =>
+          fileSystem
+            .remove(directory, { recursive: true, force: true })
+            .pipe(
+              Effect.catch(() =>
+                Effect.logWarning("Could not remove an ACP agent temp directory."),
+              ),
+            ),
       );
-      if (platform !== "win32") return { ...environment, TMPDIR: directory };
-      // Windows env keys are case-insensitive; drop aliases so ours win.
-      const rest = Object.fromEntries(
-        Object.entries(environment).filter(([key]) => !["temp", "tmp"].includes(key.toLowerCase())),
-      );
-      return { ...rest, TEMP: directory, TMP: directory };
+      return { ...environment, TMPDIR: directory };
     },
   );
 
@@ -1450,7 +1405,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       }
       const commandName = npmCommandName(agent, packageIdentity.name, manifest.value);
       if (commandName === undefined) return Option.none<AcpRegistryPackageInstallReceipt>();
-      const binDirectory = platform === "win32" ? globalPrefix : path.join(globalPrefix, "bin");
+      const binDirectory = path.join(globalPrefix, "bin");
       const executablePath = yield* resolveExecutable(
         path.join(binDirectory, commandName),
         environment,
@@ -1549,7 +1504,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     );
     const packageEnvironment =
       distribution === "npx"
-        ? { ...withoutNpmPrefix(environment, platform), npm_config_prefix: packageRoot }
+        ? { ...environment, npm_config_prefix: packageRoot }
         : {
             ...environment,
             UV_TOOL_DIR: packageRoot,
@@ -1685,11 +1640,11 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
       });
     }
     // chmod follows symlinks, so only change the mode once the real path is known to be inside.
-    if (options?.makeExecutable && platform !== "win32") {
+    if (options?.makeExecutable) {
       yield* fileSystem.chmod(executableRealPath, 0o755);
     }
     const info = yield* fileSystem.stat(executableRealPath);
-    const hasExecutableMode = platform === "win32" || (info.mode & 0o111) !== 0;
+    const hasExecutableMode = (info.mode & 0o111) !== 0;
     if (info.type !== "File" || !hasExecutableMode) {
       return yield* new AcpRegistryError({
         reason: "archive_invalid",
@@ -1877,36 +1832,28 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
         yield* fileSystem.makeDirectory(path.dirname(targetPath), { recursive: true });
         yield* fileSystem.rename(archivePath, targetPath);
       } else {
-        const tarCommand =
-          platformTarget === "windows-aarch64" &&
-          paths.platformTarget === "windows-x86_64" &&
-          kind === "zip"
-            ? cliArchiveTarCommand(platform, hostEnvironment)
-            : "tar";
         const listArgs =
           kind === "tar_gz"
             ? ["-tzf", archivePath]
             : kind === "tar_bz2"
               ? ["-tjf", archivePath]
-              : platform === "win32"
-                ? ["-tf", archivePath]
-                : undefined;
+              : undefined;
         const listingOptions = { maxStdoutBytes: MAX_ARCHIVE_LISTING_BYTES };
         const entries =
           listArgs === undefined
             ? yield* runCommand("unzip", ["-Z1", archivePath], listingOptions)
-            : yield* runCommand(tarCommand, listArgs, listingOptions);
+            : yield* runCommand("tar", listArgs, listingOptions);
         if (!validateArchiveEntries(entries)) {
           return yield* new AcpRegistryError({
             reason: "archive_invalid",
             detail: `ACP Registry agent ${agent.id} archive contains an unsafe path.`,
           });
         }
-        if (kind === "zip" && platform !== "win32") {
+        if (kind === "zip") {
           yield* runCommand("unzip", ["-q", archivePath, "-d", extractionRoot]);
         } else {
-          const extractFlag = kind === "tar_gz" ? "-xzf" : kind === "tar_bz2" ? "-xjf" : "-xf";
-          yield* runCommand(tarCommand, [extractFlag, archivePath, "-C", extractionRoot]);
+          const extractFlag = kind === "tar_gz" ? "-xzf" : "-xjf";
+          yield* runCommand("tar", [extractFlag, archivePath, "-C", extractionRoot]);
         }
       }
 
@@ -2046,24 +1993,12 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
     },
   );
 
-  const validateLocalExecutable = (command: string) =>
-    platform === "win32" && /\.(?:cmd|bat)$/iu.test(command)
-      ? Effect.fail(
-          new AcpRegistryError({
-            reason: "runner_unavailable",
-            detail:
-              "Local ACP commands launch without a shell. For a Windows batch wrapper, configure the underlying executable (for example node.exe) and pass the script path as an argument.",
-          }),
-        )
-      : Effect.void;
-
   const inspect: AcpRegistryCatalog["Service"]["inspect"] = Effect.fn("AcpRegistryCatalog.inspect")(
     function* (settings, environment) {
       if (settings.source === "local") {
         const command = settings.commandPath.trim();
         if (!command) return { status: "unconfigured" } as const;
         const executable = yield* resolveExecutable(command, environment ?? hostEnvironment);
-        if (executable !== undefined) yield* validateLocalExecutable(executable);
         return executable === undefined
           ? ({
               status: "missing_runner",
@@ -2278,7 +2213,6 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
             detail: "Local ACP executable is not available on this environment's PATH.",
           });
         }
-        yield* validateLocalExecutable(command);
         const root = path.parse(command).root;
         // Resolve only the base so symlink/.. segments keep filesystem semantics.
         const absoluteCommand = path.isAbsolute(command)
@@ -2361,16 +2295,11 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
                 const environment = yield* mergeProviderInstanceEnvironment(instance.environment);
                 const candidates: string[] = [];
                 for (const variable of instance.environment ?? []) {
-                  const name = platform === "win32" ? variable.name.toUpperCase() : variable.name;
+                  const name = variable.name;
                   if (!pathVariables.has(name)) continue;
                   if (typeof variable.value !== "string") return true;
                   const value = environment[name];
-                  if (value)
-                    candidates.push(
-                      ...(name === "PATH"
-                        ? value.split(platform === "win32" ? ";" : ":")
-                        : [value]),
-                    );
+                  if (value) candidates.push(...(name === "PATH" ? value.split(":") : [value]));
                 }
                 for (const name of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "CURSOR_CONFIG_DIR"]) {
                   if (environment[name]) candidates.push(environment[name]);

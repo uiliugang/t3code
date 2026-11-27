@@ -20,11 +20,9 @@ import {
   type AuthPairingLink,
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
-  type DesktopBridge,
   type DesktopServerExposureState,
   type DesktopSshEnvironmentTarget,
   type DesktopUpdateState,
-  type DesktopWslState,
   type EnvironmentId,
   type ServerAuthPolicy,
   type ServerDirectEndpoint,
@@ -59,8 +57,6 @@ export function canRevokeOtherClients(
   return clientSessions === null || clientSessions.some((session) => !session.current);
 }
 
-type WslEnableBridge = Pick<DesktopBridge, "setWslBackendEnabled" | "setWslDistro" | "setWslOnly">;
-
 /** Never offer loopback URLs as QR targets; scanning devices would connect to themselves. */
 export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
   return endpoint.status !== "unavailable" && endpoint.reachability !== "loopback";
@@ -91,14 +87,6 @@ export function resolveTailscaleServeBaseUrl(
   } catch {
     return endpoint.httpBaseUrl;
   }
-}
-
-export function isWslSettingsRowVisible(input: {
-  readonly state: DesktopWslState | null;
-  readonly error: string | null;
-}): boolean {
-  const { state, error } = input;
-  return state ? state.available || state.enabled || state.wslOnly : error !== null;
 }
 
 /**
@@ -153,22 +141,6 @@ export function selectQrEndpointOption<T extends QrEndpointOption>(
     options[0] ??
     null
   );
-}
-
-export async function applyWslEnableSelection(input: {
-  readonly bridge: WslEnableBridge;
-  readonly mode: "both" | "wsl-only";
-  readonly nextDistro: string | null;
-  readonly persistedDistro: string | null;
-}): Promise<DesktopWslState> {
-  const { bridge, mode, nextDistro, persistedDistro } = input;
-
-  // Stage preferences before enabling; only the final call should relaunch WSL with the complete selection.
-  await bridge.setWslOnly(mode === "wsl-only");
-  if (persistedDistro !== nextDistro) {
-    await bridge.setWslDistro(nextDistro);
-  }
-  return await bridge.setWslBackendEnabled(true);
 }
 
 const accessTimestampFormatter = new Intl.DateTimeFormat(undefined, {

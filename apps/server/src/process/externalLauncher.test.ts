@@ -1,4 +1,3 @@
-// @effect-diagnostics nodeBuiltinImport:off - the Windows launch smoke tests use filesystem notifications to observe real PowerShell launches.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -21,7 +20,6 @@ import { resolveEditorCommand } from "@t3tools/shared/editor";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
-import { WindowsVerbatimSpawn } from "./windowsVerbatimSpawn.ts";
 
 // Windows drive letters break mocked POSIX PATH splitting; these tests also require /bin/sh stubs.
 const windowsHost = HostProcess.Platform.defaultValue() === "win32";
@@ -459,49 +457,6 @@ it.effect.skipIf(windowsHost)(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect("launches an installed editor with platform-safe arguments", () =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
-    yield* fileSystem.writeFileString(path.join(binDir, "code.CMD"), "@echo off\r\n");
-
-    let spawned: ChildProcess.StandardCommand | undefined;
-    yield* Effect.gen(function* () {
-      const launcher = yield* ExternalLauncher.ExternalLauncher;
-      yield* launcher.launchEditor({
-        editor: "vscode",
-        cwd: "C:\\workspace with spaces\\src\\index.ts:12:4",
-      });
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          platform: "win32",
-          env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-          resolveExecutable: (command) =>
-            command === "code" ? "C:\\Program Files\\Microsoft VS Code\\bin\\code.CMD" : command,
-          onSpawn: (command) => {
-            spawned = command;
-          },
-        }),
-      ),
-    );
-
-    assert.ok(spawned);
-    assert.equal(
-      spawned.command,
-      [
-        '^"C:\\Program^ Files\\Microsoft^ VS^ Code\\bin\\code.CMD^"',
-        '^"--goto^"',
-        '^"C:\\workspace^ with^ spaces\\src\\index.ts:12:4^"',
-      ].join(" "),
-    );
-    assert.deepEqual(spawned.args, []);
-    assert.equal(spawned.options.shell, true);
-    assert.equal(spawned.options.detached, true);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-);
-
 const wslpathSpawner = (out: string | undefined) =>
   Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
@@ -534,112 +489,6 @@ it.effect.each([
     assert.equal(result, expected);
   }).pipe(Effect.provide(wslpathSpawner(wslpath))),
 );
-
-it.live.skipIf(!windowsHost)("opens Windows folders through the default shell handler", () =>
-  Effect.gen(function* () {
-    let spawned: ChildProcess.StandardCommand | undefined;
-    yield* Effect.gen(function* () {
-      const launcher = yield* ExternalLauncher.ExternalLauncher;
-      yield* launcher.launchEditor({
-        editor: "file-manager",
-        cwd: "C:/workspace [draft]/author's ‘left’ ‚low‛ $media/’; Write-Output injected; #",
-      });
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          platform: "win32",
-          env: { PATH: "C:\\Windows", PATHEXT: ".EXE" },
-          onSpawn: (command) => {
-            spawned = command;
-          },
-        }),
-      ),
-    );
-    assert.ok(spawned);
-    assert.equal(spawned.options.detached, false);
-    const source = Buffer.from(String(spawned.args.at(-1) ?? ""), "base64").toString("utf16le");
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const output = yield* spawner.string(
-      ChildProcess.make(spawned.command, [
-        ...spawned.args.slice(0, -1),
-        Buffer.from(
-          `[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); function Invoke-Item { param($LiteralPath) Write-Output $LiteralPath }; ${source}`,
-          "utf16le",
-        ).toString("base64"),
-      ]),
-    );
-    assert.equal(
-      output.trim(),
-      "C:\\workspace [draft]\\author's ‘left’ ‚low‛ $media\\’; Write-Output injected; #",
-    );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-);
-
-for (const [replacement, verb, handler, target, expected] of [
-  ["none", "none", "", "C:/repo/file.txt", 'explorer.exe /select,"C:\\repo\\file.txt"'],
-  ["Directory", "openindopus", "dopusrt.exe", "C:/repo/file.txt", "shell:C:\\repo"],
-  ["Folder", "openindopus", "dopusrt.exe", "C:/repo/file.txt", "shell:C:\\repo"],
-  [
-    "Folder",
-    "open",
-    '"C:\\Windows\\explorer.exe"',
-    "C:/repo/file.txt",
-    'explorer.exe /select,"C:\\repo\\file.txt"',
-  ],
-  [
-    "Folder",
-    "open",
-    "ExplorerDelegate",
-    "C:/repo/file.txt",
-    'explorer.exe /select,"C:\\repo\\file.txt"',
-  ],
-  [
-    "Drive",
-    "openindopus",
-    "dopusrt.exe",
-    "C:/repo/file.txt",
-    'explorer.exe /select,"C:\\repo\\file.txt"',
-  ],
-  ["Drive", "openindopus", "dopusrt.exe", "C:/file.txt", "shell:C:\\"],
-] as const) {
-  it.live.skipIf(!windowsHost)(
-    `reveals ${target} with ${replacement}/${verb} handled by ${handler}`,
-    () =>
-      Effect.gen(function* () {
-        let spawned: ChildProcess.StandardCommand | undefined;
-        yield* Effect.gen(function* () {
-          const launcher = yield* ExternalLauncher.ExternalLauncher;
-          yield* launcher.launchEditor({
-            editor: "file-manager",
-            cwd: target,
-            reveal: true,
-          });
-        }).pipe(
-          Effect.provide(
-            layerTest({
-              platform: "win32",
-              env: { PATH: "C:\\Windows", PATHEXT: ".EXE" },
-              existingPaths: [target],
-              onSpawn: (command) => {
-                spawned = command;
-              },
-            }),
-          ),
-        );
-        assert.ok(spawned);
-        const source = Buffer.from(String(spawned.args.at(-1) ?? ""), "base64").toString("utf16le");
-        const stubs = `function Get-ItemProperty { param($LiteralPath, $ErrorAction) @{ '(default)' = if ($LiteralPath -eq 'Registry::HKEY_CLASSES_ROOT\\${replacement}\\shell') { '${verb}' } elseif ($LiteralPath -eq 'Registry::HKEY_CLASSES_ROOT\\${replacement}\\shell\\${verb}\\command') { '${handler}' } else { 'none' }; DelegateExecute = if ('${handler}' -eq 'ExplorerDelegate') { '{11dbb47c-a525-400b-9e80-a54615a090c0}' } else { '' } } }; function Invoke-Item { param($LiteralPath) Write-Output "shell:$LiteralPath" }; function Start-Process { param($FilePath, $ArgumentList) Write-Output "$FilePath $ArgumentList" }; `;
-        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-        const output = yield* spawner.string(
-          ChildProcess.make(spawned.command, [
-            ...spawned.args.slice(0, -1),
-            Buffer.from(stubs + source, "utf16le").toString("base64"),
-          ]),
-        );
-        assert.equal(output.trim(), expected);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-}
 
 it.effect.skipIf(windowsHost)(
   "reveals a WSL file in Windows File Explorer through its UNC path",
@@ -696,106 +545,6 @@ it.effect.skipIf(windowsHost)(
         "'\\\\wsl.localhost\\Ubuntu-24.04\\home\\t3\\workspace [draft]\\author''s ‘‘$media\\clip|draft.mp4'",
       );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-);
-
-const STOCK_FOLDER_VERB =
-  "\r\nHKEY_CLASSES_ROOT\\Directory\\shell\r\n    (Default)    REG_SZ    none\r\n\r\n";
-
-it.effect.each([
-  ["selects the file with Explorer on stock Windows", { stdout: STOCK_FOLDER_VERB }, true],
-  [
-    "keeps the PowerShell reveal for a replacement file manager",
-    { stdout: "    (Default)    REG_SZ    open\r\n" },
-    false,
-  ],
-  ["keeps the PowerShell reveal when the registry lookup fails", { exitCode: 1 }, false],
-] as const)("%s", ([, registry, native]) =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
-    yield* fileSystem.writeFileString(path.join(binDir, "explorer.EXE"), "");
-    const spawned: ChildProcess.StandardCommand[] = [];
-    const verbatim: Array<readonly [string, ReadonlyArray<string>]> = [];
-    const exit = yield* Effect.gen(function* () {
-      const launcher = yield* ExternalLauncher.ExternalLauncher;
-      return yield* launcher
-        .launchEditor({
-          editor: "file-manager",
-          cwd: "C:/Users/t3/my project/a,b.ts",
-          reveal: true,
-        })
-        .pipe(Effect.exit);
-    }).pipe(
-      Effect.provideService(WindowsVerbatimSpawn, (command, args) =>
-        Effect.sync(() => verbatim.push([command, args])),
-      ),
-      Effect.provide(
-        layerTest({
-          platform: "win32",
-          env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD", SYSTEMROOT: "C:\\Windows" },
-          existingPaths: ["C:/Users/t3/my project/a,b.ts"],
-          onSpawn: (command) => spawned.push(command),
-          spawnResult: (command) => (command.command.endsWith("reg.exe") ? registry : undefined),
-        }),
-      ),
-    );
-
-    assert.deepEqual(
-      spawned.map((command) => command.command),
-      ["C:\\Windows\\System32\\reg.exe"],
-    );
-    if (native) {
-      assert.isTrue(Exit.isSuccess(exit));
-      assert.deepEqual(verbatim, [
-        ["C:\\Windows\\explorer.exe", ['/select,"C:\\Users\\t3\\my project\\a,b.ts"']],
-      ]);
-    } else {
-      assert.deepEqual(verbatim, []);
-      // The PowerShell launch is reached; this host has no powershell.exe to run it.
-      assert.isTrue(Exit.isFailure(exit));
-      if (Exit.isFailure(exit)) {
-        const error = Cause.squash(exit.cause);
-        assert.instanceOf(error, ExternalLauncher.ExternalLauncherCommandNotFoundError);
-        assert.equal(
-          (error as ExternalLauncher.ExternalLauncherCommandNotFoundError).command,
-          "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-        );
-      }
-    }
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-);
-
-// Explorer answers /select of a missing path by opening its default folder, not the parent.
-it.effect("does not ask Explorer to select a file that does not exist", () =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
-    yield* fileSystem.writeFileString(path.join(binDir, "explorer.EXE"), "");
-    const missing = path.join(binDir, "CLAUDE.md");
-    const verbatim: Array<readonly [string, ReadonlyArray<string>]> = [];
-    yield* Effect.gen(function* () {
-      const launcher = yield* ExternalLauncher.ExternalLauncher;
-      yield* launcher
-        .launchEditor({ editor: "file-manager", cwd: missing, reveal: true })
-        .pipe(Effect.exit);
-    }).pipe(
-      Effect.provideService(WindowsVerbatimSpawn, (command, args) =>
-        Effect.sync(() => verbatim.push([command, args])),
-      ),
-      Effect.provide(
-        layerTest({
-          platform: "win32",
-          env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD", SYSTEMROOT: "C:\\Windows" },
-          spawnResult: (command) =>
-            command.command.endsWith("reg.exe") ? { stdout: STOCK_FOLDER_VERB } : undefined,
-        }),
-      ),
-    );
-
-    assert.deepEqual(verbatim, []);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 for (const wsl of [false, true]) {
@@ -1284,16 +1033,9 @@ it.effect.each([
     suffix: "",
   },
   { platform: "linux", scripts: ".local/share/JetBrains/Toolbox/scripts", suffix: "" },
-  { platform: "win32", scripts: "JetBrains/Toolbox/scripts", suffix: ".cmd" },
-  {
-    platform: "win32",
-    scripts: "JetBrains/Toolbox/scripts",
-    suffix: ".cmd",
-    install: "Programs/IntelliJ IDEA/bin/idea64.exe",
-  },
 ] as const)(
   "discovers a numbered JetBrains Toolbox script on $platform",
-  ({ platform, scripts, suffix, ...row }) =>
+  ({ platform, scripts, suffix }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -1304,12 +1046,6 @@ it.effect.each([
         yield* fs.writeFileString(path.join(dir, `${name}${suffix}`), "#!/bin/sh\n");
         yield* fs.chmod(path.join(dir, `${name}${suffix}`), 0o755);
       }
-      const install = "install" in row ? path.join(home, row.install) : undefined;
-      if (install) {
-        yield* fs.makeDirectory(path.dirname(install), { recursive: true });
-        yield* fs.writeFileString(install, "");
-      }
-
       const editor = EDITORS.find((editor) => editor.id === "idea")!;
       const resolved = yield* resolveEditorCommand(editor, {
         HOME: home,
@@ -1328,7 +1064,7 @@ it.effect.each([
 
       assert.deepEqual(
         resolved,
-        Option.some({ command: install ?? path.join(dir, `idea2${suffix}`), baseArgs: [] }),
+        Option.some({ command: path.join(dir, `idea2${suffix}`), baseArgs: [] }),
       );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
@@ -1336,9 +1072,8 @@ it.effect.each([
 for (const { platform, installPath, onPath } of [
   { platform: "darwin", installPath: ".local/bin/agy", onPath: true },
   { platform: "linux", installPath: ".local/bin/agy", onPath: false },
-  { platform: "win32", installPath: "agy/bin/agy.cmd", onPath: true },
 ] as const) {
-  it.effect.skipIf(windowsHost && platform !== "win32")(
+  it.effect.skipIf(windowsHost)(
     `does not report the agy CLI as the Antigravity IDE on ${platform}`,
     () =>
       Effect.gen(function* () {
@@ -1423,7 +1158,7 @@ it.effect(
     let statCalls = 0;
     const rescanned = Deferred.makeUnsafe<void>();
     let initialScanDone = false;
-    const fileInfo = { type: "File" } as FileSystem.File.Info;
+    const fileInfo = { type: "File", mode: 0o755 } as FileSystem.File.Info;
     const layerLauncher = ExternalLauncher.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -1474,11 +1209,11 @@ it.effect(
       Effect.provide(
         Layer.mergeAll(
           layerLauncher,
-          Layer.succeed(HostProcess.Platform, "win32"),
+          Layer.succeed(HostProcess.Platform, "linux"),
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                PATH: "C:\\t3-editor-discovery-cache-test",
+                PATH: "/t3-editor-discovery-cache-test",
                 PATHEXT: ".COM;.EXE;.BAT;.CMD",
               },
             }),
@@ -1488,116 +1223,4 @@ it.effect(
       ),
     );
   },
-);
-
-it.effect.each(["Zed Nightly", "Zed Preview"])(
-  "launches stable Zed on Windows when %s comes first on PATH",
-  (channel) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-zed-channels-" });
-      // A user folder naming Zed and a channel does not mark either install.
-      const programs = path.join(root, "Users", "zedpreview", "Programs");
-      const prereleaseBin = path.join(programs, channel, "bin");
-      const stableBin = path.join(programs, "Zed", "bin");
-      for (const dir of [prereleaseBin, stableBin]) {
-        yield* fs.makeDirectory(dir, { recursive: true });
-        yield* fs.writeFileString(path.join(dir, "zed.EXE"), "");
-      }
-      const env = { PATH: `${prereleaseBin};${stableBin}`, PATHEXT: ".COM;.EXE;.BAT;.CMD" };
-
-      const launchZed = Effect.gen(function* () {
-        let spawned: ChildProcess.StandardCommand | undefined;
-        yield* Effect.gen(function* () {
-          const launcher = yield* ExternalLauncher.ExternalLauncher;
-          yield* launcher.launchEditor({ editor: "zed", cwd: "C:\\workspace" });
-        }).pipe(
-          Effect.provide(
-            layerTest({
-              platform: "win32",
-              env,
-              onSpawn: (command) => {
-                spawned = command;
-              },
-            }),
-          ),
-        );
-        assert.ok(spawned);
-        return spawned;
-      });
-
-      const stable = yield* launchZed;
-      assert.equal(stable.command, path.join(stableBin, "zed.EXE"));
-      assert.deepEqual(stable.args, ["C:\\workspace"]);
-
-      env.PATH = `${stableBin};${prereleaseBin}`;
-      assert.equal((yield* launchZed).command, "zed");
-
-      env.PATH = `${prereleaseBin};${stableBin}`;
-      // With only the prerelease install left, it still opens by name.
-      yield* fs.remove(path.join(stableBin, "zed.EXE"));
-      assert.equal((yield* launchZed).command, "zed");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-);
-
-const launchWindowsShimEditor = (cwd: string) =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
-    yield* fileSystem.writeFileString(path.join(binDir, "code.CMD"), "@echo off\r\n");
-    let spawned: ChildProcess.StandardCommand | undefined;
-    const exit = yield* Effect.gen(function* () {
-      const launcher = yield* ExternalLauncher.ExternalLauncher;
-      return yield* launcher.launchEditor({ editor: "vscode", cwd }).pipe(Effect.exit);
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          platform: "win32",
-          env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
-          resolveExecutable: (command) =>
-            command === "code" ? "C:\\Program Files\\Microsoft VS Code\\bin\\code.CMD" : command,
-          onSpawn: (command) => {
-            spawned = command;
-          },
-        }),
-      ),
-    );
-    return { exit, spawned };
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
-
-it.effect.each([
-  ["CRLF", "C:\\workspace\\file.ts\r\ncalc.exe"],
-  ["LF", "C:\\workspace\\file.ts\ncalc.exe"],
-  ["double quote", 'C:\\workspace\\file.ts" & calc.exe & "'],
-] as const)("does not start a Windows command shim for a path with a $0", ([, cwd]) =>
-  Effect.gen(function* () {
-    const { exit, spawned } = yield* launchWindowsShimEditor(cwd);
-    assert.equal(spawned, undefined);
-    assert.isTrue(Exit.isFailure(exit));
-    if (Exit.isFailure(exit)) {
-      assert.instanceOf(
-        Cause.squash(exit.cause),
-        ExternalLauncher.ExternalLauncherUnsupportedTargetError,
-      );
-    }
-  }),
-);
-
-it.effect("starts a Windows command shim for unicode paths with cmd metacharacters", () =>
-  Effect.gen(function* () {
-    const { exit, spawned } = yield* launchWindowsShimEditor(
-      "C:\\Users\\jö\\R&D (100%)\\naïve ^file!.ts:3:7",
-    );
-    assert.isTrue(Exit.isSuccess(exit));
-    assert.ok(spawned);
-    assert.equal(spawned.options.shell, true);
-    assert.deepEqual(spawned.args, []);
-    assert.isTrue(
-      spawned.command.endsWith(
-        ' ^"--goto^" ^"C:\\Users\\jö\\R^&D^ ^(100^%^)\\naïve^ ^^file^!.ts:3:7^"',
-      ),
-    );
-  }),
 );

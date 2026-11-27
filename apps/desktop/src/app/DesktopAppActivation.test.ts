@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off -- This adapter test binds a real local socket or Windows named pipe and verifies its cleanup.
+// @effect-diagnostics nodeBuiltinImport:off -- This adapter test binds a real local socket and verifies its cleanup.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
@@ -40,7 +40,7 @@ function request(requestId: string, platform: NodeJS.Platform): DesktopAppActiva
     requestId,
     type: "open-workspace",
     workspaceRoot: NodePath.join(NodeOS.tmpdir(), "project"),
-    platform: platform === "win32" ? "win32" : platform === "darwin" ? "darwin" : "linux",
+    platform: platform === "darwin" ? "darwin" : "linux",
   };
 }
 
@@ -123,7 +123,6 @@ describe("desktop app control server", () => {
     Effect.gen(function* () {
       const platform = yield* HostProcess.Platform;
       const userId = yield* HostProcess.UserId;
-      if (platform === "win32") return;
       yield* Effect.promise(async () => {
         const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-app-takeover-test-"));
         const target = makeTarget(NodePath.join(root, "userdata"), platform, userId);
@@ -144,7 +143,6 @@ describe("desktop app control server", () => {
     Effect.gen(function* () {
       const platform = yield* HostProcess.Platform;
       const userId = yield* HostProcess.UserId;
-      if (platform === "win32") return;
       yield* Effect.promise(async () => {
         const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-app-reclaim-test-"));
         const target = makeTarget(NodePath.join(root, "userdata"), platform, userId);

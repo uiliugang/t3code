@@ -71,31 +71,31 @@ releaseDate: '2026-03-07T10:36:07.540Z'
 
   it("rejects mismatched manifest versions", () => {
     const primary = parsePlatformUpdateManifest(
-      "win",
+      "mac",
       `version: 0.0.4
 files:
-  - url: T3-Code-0.0.4-arm64.exe
-    sha512: arm64exe
+  - url: T3-Code-0.0.4-arm64.zip
+    sha512: arm64zip
     size: 1
 releaseDate: '2026-03-07T10:32:14.587Z'
 `,
-      "latest-win-arm64.yml",
+      "latest-mac-arm64.yml",
     );
 
     const secondary = parsePlatformUpdateManifest(
-      "win",
+      "mac",
       `version: 0.0.5
 files:
-  - url: T3-Code-0.0.5-x64.exe
-    sha512: x64exe
+  - url: T3-Code-0.0.5-x64.zip
+    sha512: x64zip
     size: 1
 releaseDate: '2026-03-07T10:36:07.540Z'
 `,
-      "latest-win-x64.yml",
+      "latest-mac-x64.yml",
     );
 
     assert.throws(
-      () => mergePlatformUpdateManifests("win", primary, secondary),
+      () => mergePlatformUpdateManifests("mac", primary, secondary),
       /different versions/,
     );
   });
@@ -124,21 +124,21 @@ releaseDate: '2026-03-07T10:36:07.540Z'
 
   it("round-trips numeric-looking versions as strings", () => {
     const original = parsePlatformUpdateManifest(
-      "win",
+      "mac",
       `version: '1.0'
 files:
-  - url: T3-Code-1.0-x64.exe
-    sha512: exesha
+  - url: T3-Code-1.0-x64.zip
+    sha512: zipsha
     size: 1
 releaseDate: '2026-03-07T10:36:07.540Z'
 `,
-      "latest-win-x64.yml",
+      "latest-mac-x64.yml",
     );
 
-    const serialized = serializePlatformUpdateManifest("win", original);
+    const serialized = serializePlatformUpdateManifest("mac", original);
     assert.ok(serialized.includes("version: '1.0'"));
 
-    const reparsed = parsePlatformUpdateManifest("win", serialized, "latest-win-x64.yml");
+    const reparsed = parsePlatformUpdateManifest("mac", serialized, "latest-mac-x64.yml");
     assert.equal(reparsed.version, "1.0");
   });
 });

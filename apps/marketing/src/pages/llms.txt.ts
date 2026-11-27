@@ -14,12 +14,11 @@ This site distributes the ${GITHUB_REPOSITORY} fork. Desktop and CLI builds come
 
 ## Links
 
-- [Download T3 Code](${absoluteUrl("/download")}): macOS, Windows, and Linux installers
+- [Download T3 Code](${absoluteUrl("/download")}): macOS and Linux installers
 - [Web app](https://app.t3.codes): connect to a T3 Code server from a browser
 - [Source code](${GITHUB_REPOSITORY_URL}): the MIT-licensed repository
 - [Releases](${GITHUB_REPOSITORY_URL}/releases): release builds and changelogs
 - [Unix CLI installer](${INSTALL_SCRIPTS_URL}/install.sh)
-- [Windows CLI installer](${INSTALL_SCRIPTS_URL}/install.ps1)
 - [iOS app](${IOS_APP_STORE_URL})
 - [Android app](${ANDROID_PLAY_STORE_URL})
 

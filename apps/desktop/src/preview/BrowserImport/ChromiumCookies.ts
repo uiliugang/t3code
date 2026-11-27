@@ -14,7 +14,6 @@ import { ChildProcessSpawner } from "effect/process";
 import {
   ChromiumKeyError,
   ChromiumKeyFailure,
-  readWindowsKey,
   resolveChromiumKeys,
   type ChromiumKeyMaterial,
 } from "./ChromiumKeys.ts";
@@ -28,8 +27,6 @@ import {
 
 /** OSCrypt's CBC mode uses a fixed IV of 16 spaces rather than a per-record one. */
 const AES_CBC_IV = Buffer.alloc(16, 0x20);
-const AES_GCM_NONCE_LENGTH = 12;
-const AES_GCM_TAG_LENGTH = 16;
 const isChromiumKeyError = Schema.is(ChromiumKeyError);
 
 export const ChromiumCookieReadReason = Schema.Literals([
@@ -117,27 +114,7 @@ const decryptCbc = (
   }
 };
 
-const decryptGcm = (
-  payload: Buffer,
-  key: Buffer,
-  domain: string,
-  schemaVersion: number,
-): string | null => {
-  if (payload.length < AES_GCM_NONCE_LENGTH + AES_GCM_TAG_LENGTH) return null;
-  try {
-    const nonce = payload.subarray(0, AES_GCM_NONCE_LENGTH);
-    const ciphertext = payload.subarray(AES_GCM_NONCE_LENGTH, -AES_GCM_TAG_LENGTH);
-    const tag = payload.subarray(-AES_GCM_TAG_LENGTH);
-    const decipher = NodeCrypto.createDecipheriv("aes-256-gcm", key, nonce);
-    decipher.setAuthTag(tag);
-    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-    return stripDomainBinding(plaintext, domain, schemaVersion)?.toString("utf8") ?? null;
-  } catch {
-    return null;
-  }
-};
-
-export function decryptChromiumValue(
+function decryptChromiumValue(
   encrypted: Uint8Array,
   keys: ChromiumKeyMaterial,
   domain: string,
@@ -148,13 +125,6 @@ export function decryptChromiumValue(
   if (buffer.length === 0) return "";
   const prefix = buffer.subarray(0, 3).toString("latin1");
   const payload = buffer.subarray(3);
-
-  // Windows v10 uses AES-256-GCM; app-bound v20 records have no key here.
-  if (platform === "win32") {
-    return prefix === "v10" && keys.gcmV10
-      ? decryptGcm(payload, keys.gcmV10, domain, schemaVersion)
-      : null;
-  }
 
   // Retry the empty-passphrase key used by some Linux clients (crbug.com/1195256).
   if (prefix === "v10") {
@@ -262,7 +232,6 @@ export interface ChromiumCookieSource {
   readonly keychainService: string | undefined;
   readonly keychainAccount: string | undefined;
   readonly linuxSecretApplication: string | undefined;
-  readonly windowsLocalStatePath?: string;
   readonly platform: NodeJS.Platform;
 }
 
@@ -273,16 +242,12 @@ export const readChromiumCookies = Effect.fn("ChromiumCookies.readChromiumCookie
   ChromiumCookieReadError,
   FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
 > {
-  const keys = yield* (
-    source.platform === "win32" && source.windowsLocalStatePath
-      ? readWindowsKey(source.windowsLocalStatePath).pipe(Effect.map((gcmV10) => ({ gcmV10 })))
-      : resolveChromiumKeys({
-          platform: source.platform,
-          keychainService: source.keychainService,
-          keychainAccount: source.keychainAccount,
-          linuxSecretApplication: source.linuxSecretApplication,
-        })
-  ).pipe(
+  const keys = yield* resolveChromiumKeys({
+    platform: source.platform,
+    keychainService: source.keychainService,
+    keychainAccount: source.keychainAccount,
+    linuxSecretApplication: source.linuxSecretApplication,
+  }).pipe(
     Effect.mapError(
       (cause: ChromiumKeyError) =>
         new ChromiumCookieReadError({

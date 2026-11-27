@@ -1,40 +1,29 @@
 import { assert, describe, it } from "@effect/vitest";
-import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { getDefaultBuildArch } from "./build-target-arch.ts";
 
-const compactEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
-  Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-  );
-
-const withHostRuntime = (
-  platform: NodeJS.Platform,
-  arch: NodeJS.Architecture,
-  env: Readonly<Record<string, string | undefined>> = {},
-) =>
-  Effect.provide(
-    Layer.mergeAll(
-      Layer.succeed(HostProcess.Platform, platform),
-      Layer.succeed(HostProcess.Architecture, arch),
-      ConfigProvider.layer(ConfigProvider.fromEnv({ env: compactEnv(env) })),
-    ),
-  );
-
 describe("build-target-arch", () => {
-  it.effect("uses the resolved host arch when selecting the default Windows build arch", () =>
-    Effect.gen(function* () {
-      const arch = yield* getDefaultBuildArch("win", { archChoices: ["x64", "arm64"] }).pipe(
-        withHostRuntime("win32", "x64", {
-          PROCESSOR_ARCHITECTURE: "AMD64",
-          PROCESSOR_ARCHITEW6432: "ARM64",
-        }),
-      );
+  it.effect.each(["x64", "arm64"] as const)(
+    "selects the supported native %s architecture",
+    (arch) =>
+      Effect.gen(function* () {
+        const result = yield* getDefaultBuildArch(["arm64", "x64", "universal"]).pipe(
+          Effect.provideService(HostProcess.Architecture, arch),
+        );
+        assert.equal(result, arch);
+      }),
+  );
 
-      assert.equal(arch, "arm64");
-    }),
+  it.effect(
+    "falls back to the first available target when the native architecture is unavailable",
+    () =>
+      Effect.gen(function* () {
+        const result = yield* getDefaultBuildArch(["x64", "arm64"]).pipe(
+          Effect.provideService(HostProcess.Architecture, "ppc64"),
+        );
+        assert.equal(result, "x64");
+      }),
   );
 });

@@ -158,32 +158,6 @@ describe("Antigravity process environment", () => {
     ).toBe("127.0.0.1 0 127.0.0.1 0");
   });
 
-  it("isolates TEMP and TMP to the profile directory on Windows", () => {
-    const windowsProfile: AntigravityProfile = {
-      platform: "win32",
-      geminiHome: "C:\\state\\providers\\antigravity\\profile",
-      acpDirectory: "C:\\state\\providers\\antigravity\\profile\\antigravity-acp",
-      tokenPath: "C:\\state\\providers\\antigravity\\profile\\antigravity-acp\\acp_token.json",
-      tempDirectory: "C:\\state\\providers\\antigravity\\profile\\antigravity-acp\\tmp",
-      browserCommand: "managed-browser-helper",
-    };
-    const input = {
-      installation: { executablePath: "C:\\release\\agy.exe" },
-      profile: windowsProfile,
-      cwd: "C:\\project",
-      baseEnv: { PATH: "C:\\Windows\\system32", TEMP: "C:\\Users\\user\\AppData\\Local\\Temp" },
-    };
-    const shared = buildAntigravityAcpSpawnInput(input);
-    expect(shared.env?.TEMP).toBe(windowsProfile.tempDirectory);
-    expect(shared.env?.TMP).toBe(windowsProfile.tempDirectory);
-    const perRun = buildAntigravityAcpSpawnInput({
-      ...input,
-      runtimeTempDirectory: `${windowsProfile.tempDirectory}\\run-1`,
-    });
-    expect(perRun.env?.TEMP).toBe(`${windowsProfile.tempDirectory}\\run-1`);
-    expect(perRun.env?.TMP).toBe(`${windowsProfile.tempDirectory}\\run-1`);
-  });
-
   it.effect("keeps accounts separate even when instance IDs differ only by case", () =>
     Effect.gen(function* () {
       const first = yield* resolveAntigravityInstanceDirectories(
@@ -200,26 +174,6 @@ describe("Antigravity process environment", () => {
       expect(first.profile.toLowerCase()).not.toBe(second.profile.toLowerCase());
       expect(first.runtimeTemp.toLowerCase()).not.toBe(second.runtimeTemp.toLowerCase());
     }).pipe(Effect.provide(Layer.mergeAll(NodeCrypto.layer, NodePath.layerPosix))),
-  );
-
-  it.effect("keeps the unpacked Windows runtime under MAX_PATH for long user names", () =>
-    Effect.gen(function* () {
-      const path = yield* Path.Path;
-      // Deepest member of the official agy_acp_server_1.1.1 windows-x86_64 bundle.
-      const deepestMember =
-        "google3\\cloud\\developer_experience\\antigravity_extensions\\acp_server\\_private__agy_acp_server_bin.lazy_imports_info.json";
-      const directories = yield* resolveAntigravityInstanceDirectories(
-        "C:\\Users\\a-twenty-char-person\\.t3\\userdata",
-        ProviderInstanceId.make("antigravity"),
-      );
-      const extracted = (tempDirectory: string) =>
-        path.join(tempDirectory, "run-AbC123", "_MEI000012ab2", deepestMember);
-      // MAX_PATH is 260 including the terminating NUL.
-      expect(extracted(directories.runtimeTemp).length).toBeLessThan(260);
-      expect(
-        extracted(path.join(directories.profile, "antigravity-acp", "tmp")).length,
-      ).toBeGreaterThanOrEqual(260);
-    }).pipe(Effect.provide(Layer.mergeAll(NodeCrypto.layer, NodePath.layerWin32))),
   );
 });
 
@@ -535,8 +489,7 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
     }).env;
   });
 
-  // A Windows Node path cannot preflight the browser helper as a POSIX host.
-  const caTest = it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32");
+  const caTest = it.effect;
 
   caTest(
     "launches Linux agents with the first available CA bundle, preferring absolute Nix paths",
@@ -731,46 +684,6 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
       }),
   );
 
-  it.effect("copies the user's global rule files on Windows and keeps the profile's own", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const temporaryDirectory = yield* fs.makeTempDirectoryScoped();
-      const userHome = path.join(temporaryDirectory, "home");
-      const profileDirectory = path.join(temporaryDirectory, "profile");
-      const userGemini = path.join(userHome, ".gemini");
-      const prepare = prepareAntigravityProfile({ profileDirectory, userHome, platform: "win32" });
-      const profileAgents = path.join(profileDirectory, "AGENTS.md");
-      const profileGemini = path.join(profileDirectory, "GEMINI.md");
-      const profileSkillsJson = path.join(profileDirectory, "config", "skills.json");
-      const userSkillsJson = path.join(userGemini, "config", "skills.json");
-      yield* fs.makeDirectory(path.join(userGemini, "config"), { recursive: true });
-      yield* fs.writeFileString(path.join(userGemini, "AGENTS.md"), "global agents rule");
-      yield* fs.writeFileString(path.join(userGemini, "GEMINI.md"), "global gemini rule");
-      yield* fs.writeFileString(userSkillsJson, '{"entries":[]}');
-
-      yield* prepare;
-      expect(yield* fs.readFileString(profileAgents)).toBe("global agents rule");
-      expect(yield* fs.readFileString(profileGemini)).toBe("global gemini rule");
-      expect(yield* fs.readFileString(profileSkillsJson)).toBe('{"entries":[]}');
-
-      yield* fs.writeFileString(path.join(userGemini, "AGENTS.md"), "edited agents rule");
-      yield* fs.remove(path.join(userGemini, "GEMINI.md"));
-      yield* fs.writeFileString(userSkillsJson, '{"entries":[{"path":"/skills"}]}');
-      yield* prepare;
-      expect(yield* fs.readFileString(profileAgents)).toBe("edited agents rule");
-      expect(yield* fs.exists(profileGemini)).toBe(false);
-      expect(yield* fs.readFileString(profileSkillsJson)).toBe('{"entries":[{"path":"/skills"}]}');
-
-      yield* fs.writeFileString(profileGemini, "profile's own rule");
-      yield* fs.writeFileString(path.join(userGemini, "GEMINI.md"), "global gemini rule");
-      yield* fs.remove(userSkillsJson);
-      yield* prepare;
-      expect(yield* fs.readFileString(profileGemini)).toBe("profile's own rule");
-      expect(yield* fs.exists(profileSkillsJson)).toBe(false);
-    }),
-  );
-
   it.effect("rewrites the GCP block on every launch and never stores the API key", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -892,12 +805,12 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const temporaryDirectory = yield* fs.makeTempDirectoryScoped();
-      for (const platform of ["linux", "win32"] as const) {
+      for (const platform of ["linux", "darwin"] as const) {
         const profileDirectory = path.join(temporaryDirectory, platform);
         const result = yield* prepareAntigravityProfile({
           profileDirectory,
           platform,
-          runtimeExecutablePath: platform === "win32" ? "C:/bad;path/node.exe" : "/bad:path/node",
+          runtimeExecutablePath: "/bad:path/node",
         }).pipe(Effect.result);
         expect(Result.isFailure(result)).toBe(true);
         expect(yield* fs.exists(profileDirectory)).toBe(false);

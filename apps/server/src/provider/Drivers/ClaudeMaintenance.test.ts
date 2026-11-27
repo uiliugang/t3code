@@ -46,7 +46,6 @@ const snapshot: ServerProvider = {
 const fixture = Effect.fn("ClaudeMaintenance.test.fixture")(function* (
   install: "native" | "xdgNative" | "npm" | "wrapper" = "native",
   platform: NodeJS.Platform = "linux",
-  programFiles?: string,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -54,10 +53,10 @@ const fixture = Effect.fn("ClaudeMaintenance.test.fixture")(function* (
   const binaryPath =
     install === "npm"
       ? path.join(directory, "lib/node_modules/@anthropic-ai/claude-code/cli.js")
-      : path.join(directory, ".local/bin", platform === "win32" ? "claude.exe" : "claude");
-  // Unix native installs link the launcher to a versioned binary; Windows places a real .exe.
+      : path.join(directory, ".local/bin", "claude");
+  // Native installs link the launcher to a versioned binary.
   const realBinaryPath =
-    install === "native" && platform !== "win32"
+    install === "native"
       ? path.join(directory, ".local/share/claude/versions/2.1.314")
       : install === "xdgNative"
         ? path.join(directory, "xdg/data/claude/versions/2.1.314")
@@ -74,11 +73,7 @@ const fixture = Effect.fn("ClaudeMaintenance.test.fixture")(function* (
   const settingsPath = path.join(configDirectory, "settings.json");
   const managed = new Map<string, string>();
   const managedDirectory =
-    platform === "win32"
-      ? `${programFiles ?? "C:/Program Files"}/ClaudeCode`
-      : platform === "darwin"
-        ? "/Library/Application Support/ClaudeCode"
-        : "/etc/claude-code";
+    platform === "darwin" ? "/Library/Application Support/ClaudeCode" : "/etc/claude-code";
   const npmPath = path.join(directory, "bin/npm");
   if (install === "npm") {
     yield* fs.makeDirectory(path.dirname(npmPath), { recursive: true });
@@ -123,7 +118,6 @@ const fixture = Effect.fn("ClaudeMaintenance.test.fixture")(function* (
         PATH: install === "npm" ? path.dirname(npmPath) : "",
         CLAUDE_CONFIG_DIR: configDirectory,
         HTTPS_PROXY: "http://instance-proxy:8080",
-        ...(programFiles ? { PROGRAMFILES: programFiles } : {}),
       },
     }).pipe(
       Effect.provideService(
@@ -157,7 +151,6 @@ const fixture = Effect.fn("ClaudeMaintenance.test.fixture")(function* (
       Effect.provideService(HostProcess.Environment, {
         PATH: "",
         CLAUDE_CONFIG_DIR: path.join(directory, "server-config"),
-        ...(programFiles ? { PROGRAMFILES: programFiles } : {}),
       }),
     ),
   };
@@ -295,15 +288,13 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
   );
 
   it.effect.each([
-    { name: "Linux", platform: "linux", programFiles: undefined },
-    { name: "macOS", platform: "darwin", programFiles: undefined },
-    { name: "Windows default path", platform: "win32", programFiles: undefined },
-    { name: "Windows custom path", platform: "win32", programFiles: "D:/Programs" },
+    { name: "Linux", platform: "linux" },
+    { name: "macOS", platform: "darwin" },
   ] as const)(
     "separates channel caches and honors $name managed overrides and feed invalidation",
     (row) =>
       Effect.gen(function* () {
-        const f = yield* fixture("native", row.platform, row.programFiles);
+        const f = yield* fixture("native", row.platform);
         const requests: string[] = [];
         const client = HttpClient.make((request) => {
           requests.push(request.url);

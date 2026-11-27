@@ -31,8 +31,6 @@ export const output = (program: string, args: ReadonlyArray<string>, cwd?: strin
     Effect.map(({ stdout }) => stdout.trim()),
     Effect.option,
   );
-export const powershell = (script: string) =>
-  output("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
 
 /** Milliseconds on a monotonic clock, for intervals only. */
 export const nowMs = Effect.map(Clock.monotonicTimeNanos, (nanos) => Number(nanos) / 1e6);
@@ -40,7 +38,7 @@ export const nowMs = Effect.map(Clock.monotonicTimeNanos, (nanos) => Number(nano
 export const httpServerOn = (port: number) =>
   NodeHttpServer.layer(() => NodeHttp.createServer(), { port, host: "127.0.0.1" });
 
-/** Every process below `pid`. Windows needs none: taskkill /T stops the tree. */
+/** Every process below `pid` on a supported host. */
 export const descendantsOf = Effect.fn("serverMetrics.descendantsOf")(function* (pid: number) {
   const platform = yield* HostProcess.Platform;
   const children = new Map<number, number[]>();
@@ -86,11 +84,6 @@ export const freePort = Effect.scoped(
 
 export const machineLoad = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
-  if (platform === "win32") {
-    return yield* powershell(
-      "(Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average",
-    );
-  }
   if (platform === "linux") {
     const fs = yield* FileSystem.FileSystem;
     const load = yield* fs.readFileString("/proc/loadavg").pipe(Effect.option);
@@ -153,7 +146,6 @@ const MACHINE_SAMPLE_SECONDS = 10;
 
 const load1 = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
-  if (platform === "win32") return Option.none<number>();
   if (platform === "linux") {
     const fs = yield* FileSystem.FileSystem;
     const text = yield* fs.readFileString("/proc/loadavg").pipe(Effect.option);

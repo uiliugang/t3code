@@ -12,7 +12,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { listManageableSettings } from "../policy/managedSettings.ts";
-import { macosProfile, windowsAdml, windowsAdmx } from "../policy/policyTemplates.ts";
+import { macosProfile } from "../policy/policyTemplates.ts";
 import { expandHomePath } from "../os-jank.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
@@ -125,9 +125,7 @@ const templatesCommand = Command.make("templates", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription(
-    "Write the Windows Group Policy template and a macOS configuration profile.",
-  ),
+  Command.withDescription("Write a macOS configuration profile."),
   Command.withHandler(
     Effect.fn("cli.policy.templates")(function* ({ directory, policy }) {
       const fs = yield* FileSystem.FileSystem;
@@ -154,8 +152,6 @@ const templatesCommand = Command.make("templates", {
       }
       const outputDir = yield* expandHomePath(directory);
       const files = [
-        [path.join(outputDir, "windows", "t3code.admx"), windowsAdmx()],
-        [path.join(outputDir, "windows", "en-US", "t3code.adml"), windowsAdml()],
         [path.join(outputDir, "macos", "t3code.mobileconfig"), profile.profile],
       ] as const;
       for (const [file, contents] of files) {

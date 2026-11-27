@@ -98,13 +98,13 @@ const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
     const installDirName = path.basename(installDir).toLowerCase();
     const home = path.dirname(installDir);
     // `grok update` installs under `$GROK_HOME`, so a script install keeps its own home even if the
-    // instance sets another: `<home>/bin/grok` links into `<home>/downloads`, or on Windows is a copy
-    // beside it. Only an install script creates `downloads`, so a bare `bin/grok` elsewhere is not one.
+    // instance sets another: `<home>/bin/grok` links into `<home>/downloads`. Only an install
+    // script creates `downloads`, so a bare `bin/grok` elsewhere is not one.
     const isScriptInstall =
       (installDirName === "downloads" && name.startsWith("grok-")) ||
       (installDirName === "bin" &&
         (/^grok-\d/.test(name) ||
-          ((name === "grok" || name === "grok.exe") &&
+          (name === "grok" &&
             (yield* fileSystem
               .exists(path.join(home, "downloads"))
               .pipe(Effect.orElseSucceed(() => false))))));

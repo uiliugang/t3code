@@ -400,7 +400,6 @@ export function SnapShotSettings() {
                   aria-label={t("Enable snapshots")}
                   onCheckedChange={(checked) => {
                     if (!checked) void save({ snapShotEnabled: false });
-                    else if (state?.windows) void save({ snapShotEnabled: true });
                     else void openSetup();
                   }}
                 />

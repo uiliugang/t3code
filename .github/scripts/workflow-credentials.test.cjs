@@ -39,6 +39,80 @@ test("npm publishing is bound to the environment that admits only main and v* ta
   assert.match(publish, /^ {4}environment: production$/m);
 });
 
+test("the native desktop release matrix builds and requires only macOS and Linux artifacts", () => {
+  const releaseJobs = jobs("workflows/release.yml");
+  const desktopJobs = Object.entries(releaseJobs)
+    .filter(([, block]) => /^ {4}uses: .+\/release-desktop\.yml$/m.test(block))
+    .map(([name]) => name);
+  assert.deepEqual(desktopJobs.sort(), [
+    "desktop_linux_arm64",
+    "desktop_linux_x64",
+    "desktop_mac_arm64",
+    "desktop_mac_x64",
+  ]);
+  const release = releaseJobs.release;
+  for (const job of desktopJobs) {
+    assert.match(release, new RegExp("\\b" + job + ","));
+    assert.match(release, new RegExp("needs\\." + job + "\\.result == 'success'"));
+  }
+  assert.doesNotMatch(release, /desktop_win|verify_runner/);
+  assert.match(release, /archives=\(t3-\*\.tar\.gz\)/);
+  assert.deepEqual(Object.keys(jobs("workflows/release-desktop.yml")), ["build"]);
+});
+
+test("strict release upload finds all macOS and Linux files without a Windows installer", () => {
+  const release = jobs("workflows/release.yml").release;
+  const resolveFiles = steps(release).find((step) => /name: Resolve release asset list/.test(step));
+  assert.ok(resolveFiles);
+  const run = resolveFiles.split(/^ {8}run: \|\n/m)[1]?.replace(/^ {10}/gm, "");
+  assert.ok(run);
+  assert.match(release, /fail_on_unmatched_files: true/);
+  const directory = mkdtempSync(join(tmpdir(), "t3-release-upload-"));
+  try {
+    const assets = [
+      "T3-Code-1.0.0-arm64.dmg",
+      "T3-Code-1.0.0-x64.zip",
+      "T3-Code-arm64.AppImage",
+      "T3-Code-x64.deb",
+      "T3-Code-1.0.0-arm64.zip.blockmap",
+      "latest-mac.yml",
+      "latest-linux.yml",
+      "t3-1.0.0-darwin-arm64.tar.gz",
+      "t3-1.0.0-linux-x64.tar.gz",
+      "SHA256SUMS",
+    ];
+    mkdirSync(join(directory, "release-assets"));
+    for (const asset of assets) writeFileSync(join(directory, "release-assets", asset), "");
+    for (const channel of ["stable", "preview"]) {
+      const output = join(directory, "github-output");
+      writeFileSync(output, "");
+      execFileSync(
+        "bash",
+        [
+          "-eu",
+          "-c",
+          run
+            .replaceAll("${{ needs.preflight.outputs.release_channel }}", channel)
+            .replaceAll("${{ steps.android_apk.outcome }}", "skipped"),
+        ],
+        { cwd: directory, env: { ...process.env, GITHUB_OUTPUT: output } },
+      );
+      const patterns = readFileSync(output, "utf8").trim().split("\n").slice(1, -1);
+      const files = assets.map((name) => `release-assets/${name}`);
+      for (const pattern of patterns) {
+        assert.ok(
+          files.some((file) => require("node:path").matchesGlob(file, pattern)),
+          `${channel} requires absent asset ${pattern}`,
+        );
+      }
+      assert.equal(patterns.includes("release-assets/*.yml"), channel === "stable");
+      assert.equal(patterns.includes("release-assets/*.blockmap"), channel === "stable");
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("the web preview gives the Vercel token to the deploy step only, after an install without lifecycle scripts", () => {
   const deploy = jobs("workflows/web-preview.yml").deploy;
   assert.doesNotMatch(deploy.split(/^ {4}steps:\n/m)[0], /secrets\./);

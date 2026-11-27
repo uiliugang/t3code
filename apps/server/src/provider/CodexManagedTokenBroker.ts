@@ -3,7 +3,6 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import * as NodeCrypto from "node:crypto";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -45,12 +44,9 @@ const io = <A>(f: () => Promise<A>) =>
 const acquireListener = Effect.gen(function* () {
   const identity = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
-  const platform = yield* HostProcess.Platform;
   const uid = yield* HostProcess.UserId;
   const owned = yield* Effect.acquireRelease(
     io(async () => {
-      if (platform === "win32")
-        return { endpoint: `\\\\.\\pipe\\t3-token-${NodeCrypto.randomUUID()}` };
       if (uid === undefined) throw new Error("Missing IPC owner");
       const acquireDirectory = async (candidate: string) => {
         const parent = await NodeFSP.realpath(candidate);
@@ -88,7 +84,6 @@ const acquireListener = Effect.gen(function* () {
     }),
     (owned) =>
       Effect.promise(async () => {
-        if (!("directory" in owned)) return;
         // Never recursively remove a replaced directory or another process's files.
         const current = await NodeFSP.lstat(owned.directory).catch(() => undefined);
         if (
@@ -137,7 +132,6 @@ const acquireListener = Effect.gen(function* () {
     let transferred = false;
     runConnection(
       Effect.gen(function* () {
-        // Windows pipes permit read-only peers by default; send no bytes until a complete request.
         const request = yield* Protocol.readFrame(
           socket,
           Protocol.REQUEST_BYTES,
@@ -204,7 +198,7 @@ const acquireListener = Effect.gen(function* () {
     }
     return Effect.sync(() => server.off("error", onError));
   });
-  if (platform !== "win32") yield* io(() => NodeFSP.chmod(owned.endpoint, 0o600));
+  yield* io(() => NodeFSP.chmod(owned.endpoint, 0o600));
   return { endpoint: owned.endpoint, awaitIdle: FiberSet.awaitEmpty(jobs) };
 });
 const make = Effect.gen(function* () {

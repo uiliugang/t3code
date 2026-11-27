@@ -10,7 +10,6 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import {
   ensureTailscaleServe,
@@ -75,13 +74,8 @@ function mockHandle(result: { stdout?: string; stderr?: string; code?: number })
   });
 }
 
-// The executable name depends on the host platform (`tailscale.exe` on
-// Windows), so pin it: these tests assert the posix spelling.
 function layerSpawner(spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]) {
-  return Layer.merge(
-    Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
-    Layer.succeed(HostProcess.Platform, "linux"),
-  );
+  return Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
 }
 
 function layerMockSpawner(

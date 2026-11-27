@@ -398,7 +398,7 @@ Manage pairing links and active client sessions in **Settings → Sharing & acce
 
 ## Desktop app as a remote only
 
-Switch off **Settings → Environments → Local environment** in the desktop app to run with no local server, WSL backend, or incoming connections while continuing to drive remote hosts (if a local background service uses the same T3 home, **Open in** still works locally).
+Switch off **Settings → Environments → Local environment** in the desktop app to run with no local server or incoming connections while continuing to drive remote hosts (if a local background service uses the same T3 home, **Open in** still works locally).
 
 ## Troubleshooting
 

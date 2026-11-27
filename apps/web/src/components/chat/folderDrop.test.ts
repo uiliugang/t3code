@@ -19,7 +19,6 @@ const thinClient = {
   environmentId,
   primaryEnvironmentId: null,
   isDesktopRenderer: true,
-  primaryRunsInWsl: false,
 };
 
 describe("folderDropTarget", () => {
@@ -33,17 +32,6 @@ describe("folderDropTarget", () => {
         connection: null,
       },
       "local",
-    ],
-    [
-      "the bundled primary running in WSL",
-      {
-        ...thinClient,
-        localEnvironmentDisabled: false,
-        primaryEnvironmentId: environmentId,
-        primaryRunsInWsl: true,
-        connection: null,
-      },
-      { wslBackendId: "primary" },
     ],
     [
       "a saved loopback server on desktop",
@@ -61,9 +49,9 @@ describe("folderDropTarget", () => {
       "remote",
     ],
     [
-      "a desktop WSL backend",
+      "a legacy desktop-managed backend whose filesystem is no longer local",
       { ...thinClient, connection: savedServer("http://127.0.0.1:3774", "local:wsl:Ubuntu") },
-      { wslBackendId: "wsl:Ubuntu" },
+      "remote",
     ],
     [
       "an SSH forward on loopback",

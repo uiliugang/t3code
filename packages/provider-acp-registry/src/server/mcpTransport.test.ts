@@ -13,36 +13,31 @@ describe("prefersHttpMcpTransport", () => {
   it("uses HTTP for the vendored Command Code launcher", () => {
     expect(
       prefersHttpMcpTransport(
-        local("C:\\Users\\me\\.t3\\bin\\cmdcode\\node.exe", [
-          "C:\\Users\\me\\.t3\\bin\\cmdcode\\node_modules\\command-code\\dist\\index.mjs",
+        local("/usr/local/bin/node", [
+          "/home/me/.t3/bin/cmdcode/node_modules/command-code/dist/index.mjs",
           "acp",
         ]),
       ),
     ).toBe(true);
     expect(
       prefersHttpMcpTransport(
-        local("C:\\tools\\node.exe", ["C:\\src\\command-code\\dist\\cli.mjs", "acp"]),
+        local("/usr/local/bin/node", ["/src/command-code/dist/cli.mjs", "acp"]),
       ),
     ).toBe(true);
   });
 
   it("uses HTTP for the global Command Code executable", () => {
-    expect(prefersHttpMcpTransport(local("C:\\tools\\cmdc.exe", ["acp"]))).toBe(true);
     expect(prefersHttpMcpTransport(local("/usr/local/bin/cmdc"))).toBe(true);
-  });
-
-  it("keeps the stdio bridge for a batch shim T3 refuses to launch", () => {
-    expect(prefersHttpMcpTransport(local("C:\\tools\\cmdc.cmd", ["acp"]))).toBe(false);
   });
 
   it("keeps the stdio bridge for other local agents", () => {
     expect(
       prefersHttpMcpTransport(
-        local("C:\\tools\\node.exe", ["C:\\tools\\some-other-agent\\dist\\index.mjs", "acp"]),
+        local("/usr/local/bin/node", ["/tools/some-other-agent/dist/index.mjs", "acp"]),
       ),
     ).toBe(false);
-    expect(prefersHttpMcpTransport(local("C:\\tools\\claude-agent-acp.exe"))).toBe(false);
-    expect(prefersHttpMcpTransport(local("C:\\tools\\command-code\\runner.mjs"))).toBe(false);
+    expect(prefersHttpMcpTransport(local("/usr/local/bin/claude-agent-acp"))).toBe(false);
+    expect(prefersHttpMcpTransport(local("/tools/command-code/runner.mjs"))).toBe(false);
   });
 
   it("keeps the stdio bridge for registry agents", () => {

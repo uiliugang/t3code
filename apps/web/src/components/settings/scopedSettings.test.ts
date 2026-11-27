@@ -97,7 +97,6 @@ const group: SidebarProjectSnapshot = {
   groupedProjectCount: 2,
   environmentPresence: "remote-only",
   allRemoteMembersAreDesktopLocal: false,
-  allRemoteMembersAreWsl: false,
   remoteEnvironmentLabels: [server.label, laptop.label],
   pinned: false,
   archived: false,

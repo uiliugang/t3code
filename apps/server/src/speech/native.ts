@@ -219,8 +219,7 @@ const loaderEntry = `
       const unpacked = directory.replace(/\\.asar([\\\\/])/g, ".asar.unpacked$1");
       // Koffi opens native libraries outside Electron's ASAR-aware filesystem.
       if (unpacked !== directory) process.env.TRANSCRIBE_LIBRARY = join(unpacked,
-        process.platform === "win32" ? "transcribe.dll"
-          : process.platform === "darwin" ? "libtranscribe.dylib" : "libtranscribe.so");
+        process.platform === "darwin" ? "libtranscribe.dylib" : "libtranscribe.so");
     }
     return speech;
   };

@@ -15,12 +15,17 @@ import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import * as DirectEndpoints from "./DirectEndpoints.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
 import { readIsolatedLinuxBridges, resolveBoundEndpoints } from "./DirectEndpoints.ts";
+
+vi.mock(import("node:os"), async (original) => ({
+  ...(await original()),
+  networkInterfaces: () => INTERFACES,
+}));
 
 const INTERFACES: ReturnType<typeof NodeOS.networkInterfaces> = {
   lo0: [
@@ -162,49 +167,18 @@ describe("resolveBoundEndpoints", () => {
     ]);
   });
 
-  it("keeps a Windows alias matching a Linux container prefix eligible", () => {
+  it("keeps a macOS interface matching a Linux container prefix eligible", () => {
     const interfaces = {
       ...INTERFACES,
       "ve-office": virtualInterface("192.168.1.30"),
     };
     expect(
-      resolveBoundEndpoints({ platform: "win32", host: "0.0.0.0", port: 3773, interfaces }),
+      resolveBoundEndpoints({ platform: "darwin", host: "0.0.0.0", port: 3773, interfaces }),
     ).toEqual([
       { kind: "lan", httpBaseUrl: "http://192.168.1.10:3773/" },
       { kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" },
       { kind: "lan", httpBaseUrl: "http://192.168.1.30:3773/" },
     ]);
-  });
-
-  it("omits Windows host-only adapters without excluding guest NICs or explicit binds", () => {
-    const interfaces = {
-      ...INTERFACES,
-      "VirtualBox-Host-Only-Netzwerk": virtualInterface("192.168.56.1", "0A:00:27:00:01:01"),
-      "Ethernet 2": virtualInterface("192.168.150.1", "00:50:56:c0:00:01"),
-      "Renamed network": virtualInterface("192.168.151.1", "00:50:56:c0:00:08"),
-      guest1: virtualInterface("192.168.1.30", "08:00:27:5e:1a:22"),
-      guest2: virtualInterface("192.168.1.31", "00:50:56:2b:8c:01"),
-      guest3: virtualInterface("192.168.1.32", "00:0c:29:4f:8e:35"),
-      guest4: virtualInterface("192.168.1.33", "00:50:56:80:8c:01"),
-    };
-    const input = { host: "0.0.0.0", port: 3773, interfaces };
-    const retained = [
-      { kind: "lan", httpBaseUrl: "http://192.168.1.10:3773/" },
-      { kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" },
-      ...[30, 31, 32, 33].map((last) => ({
-        kind: "lan",
-        httpBaseUrl: `http://192.168.1.${last}:3773/`,
-      })),
-    ];
-    expect(resolveBoundEndpoints({ ...input, platform: "win32" })).toEqual(retained);
-    for (const platform of ["linux", "darwin"] as const) {
-      expect(resolveBoundEndpoints({ ...input, platform })).toHaveLength(retained.length + 3);
-    }
-    for (const host of ["192.168.56.1", "192.168.150.1", "192.168.151.1"]) {
-      expect(resolveBoundEndpoints({ ...input, platform: "win32", host })).toEqual([
-        { kind: "lan", httpBaseUrl: `http://${host}:3773/` },
-      ]);
-    }
   });
 
   it("tags only addresses on Tailscale's interface as tailnet, not other VPNs in its range", () => {

@@ -20,10 +20,9 @@ import {
   type ThreadId,
   type WorkspaceRootId,
 } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Clock from "effect/Clock";
-import { isWslSharePath } from "@t3tools/shared/path";
+import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -454,18 +453,16 @@ export const make = Effect.gen(function* () {
     ).pipe(Effect.andThen(withDiscovered(workspaceRoot, normalized)));
   };
 
-  // Git for Windows can't trust an index written inside the distro and rereads every file across the
-  // share, so git status can hit its timeout. Checked before normalizing, which already stats the share.
-  const rejectWslSharePath = Effect.fn("ProjectService.rejectWslSharePath")(function* (
-    projectId: ProjectId,
-    workspaceRoot: string,
-  ) {
-    if (!isWslSharePath(workspaceRoot) || !(yield* HostProcess.isWindows)) return;
-    return yield* new ProjectInvalidError({
-      projectId,
-      detail: `${workspaceRoot.trim()} is inside WSL. Add it to the WSL backend instead of the Windows one.`,
-    });
-  });
+  // Reject foreign absolute paths before POSIX resolution interprets them as a local relative path.
+  const rejectWindowsWorkspacePath = Effect.fn("ProjectService.rejectWindowsWorkspacePath")(
+    function* (projectId: ProjectId, workspaceRoot: string) {
+      if (!isWindowsAbsolutePath(workspaceRoot.trim())) return;
+      return yield* new ProjectInvalidError({
+        projectId,
+        detail: `Windows-style workspace path '${workspaceRoot.trim()}' is not supported on this server. Use a path on the selected Linux or macOS host.`,
+      });
+    },
+  );
 
   const normalizeWorkspaceConfig = Effect.fn("ProjectService.normalizeWorkspaceConfig")(function* (
     projectId: ProjectId,
@@ -473,7 +470,7 @@ export const make = Effect.gen(function* () {
     previousRoots?: ReadonlySet<string>,
   ) {
     for (const { sourcePath } of config.roots) {
-      if (!previousRoots?.has(sourcePath)) yield* rejectWslSharePath(projectId, sourcePath);
+      if (!previousRoots?.has(sourcePath)) yield* rejectWindowsWorkspacePath(projectId, sourcePath);
     }
     const roots = yield* Effect.forEach(config.roots, (root) =>
       normalizeWorkspaceRoot({ projectId, workspaceRoot: root.sourcePath }).pipe(
@@ -713,7 +710,7 @@ export const make = Effect.gen(function* () {
       const requestedRoot =
         workspaceConfig?.roots.find((root) => root.id === workspaceConfig.primaryRootId)
           ?.sourcePath ?? input.workspaceRoot;
-      yield* rejectWslSharePath(input.projectId, requestedRoot);
+      yield* rejectWindowsWorkspacePath(input.projectId, requestedRoot);
       const workspaceRoot = yield* normalizeWorkspaceRoot({
         projectId: input.projectId,
         workspaceRoot: requestedRoot,
@@ -777,7 +774,7 @@ export const make = Effect.gen(function* () {
           (root) => root.id === input.workspaceConfig?.primaryRootId,
         )?.sourcePath ?? input.workspaceRoot;
       if (requestedSourcePath !== undefined && requestedSourcePath !== previousRoot) {
-        yield* rejectWslSharePath(input.projectId, requestedSourcePath);
+        yield* rejectWindowsWorkspacePath(input.projectId, requestedSourcePath);
       }
       const workspaceConfig =
         input.workspaceConfig === undefined

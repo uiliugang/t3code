@@ -58,7 +58,6 @@ type ActiveTransition = {
 type SnapShotTransitionOptions = {
   readonly showWindow?: ((window: Electron.BaseWindow) => void) | undefined;
   readonly boundOverlayToCaptureDisplays?: boolean | undefined;
-  readonly waitForCompositorFrame?: boolean | undefined;
   readonly alwaysOnTopLevel?:
     | NonNullable<Parameters<Electron.BrowserWindow["setAlwaysOnTop"]>[1]>
     | undefined;
@@ -203,7 +202,6 @@ window.prepareCaptureTransition=async destination=>{
 export class SnapShotTransition {
   private active: ActiveTransition | undefined;
   private readonly boundOverlayToCaptureDisplays: boolean;
-  private readonly waitForCompositorFrame: boolean;
   private readonly alwaysOnTopLevel: SnapShotTransitionOptions["alwaysOnTopLevel"];
   private readonly showWindow: (window: Electron.BaseWindow) => void;
 
@@ -213,7 +211,6 @@ export class SnapShotTransition {
 
   constructor(options: SnapShotTransitionOptions = {}) {
     this.boundOverlayToCaptureDisplays = options.boundOverlayToCaptureDisplays ?? false;
-    this.waitForCompositorFrame = options.waitForCompositorFrame ?? false;
     this.alwaysOnTopLevel = options.alwaysOnTopLevel;
     this.showWindow = options.showWindow ?? ((window) => window.showInactive());
   }
@@ -309,15 +306,6 @@ export class SnapShotTransition {
           );
         }
       }
-      if (this.waitForCompositorFrame) {
-        // Renderer frames alone can leave a transparent gap; composite the snapshot before revealing T3.
-        await Promise.all(
-          overlays.map(async (overlay) => {
-            if (this.active !== active || overlay.window.isDestroyed()) return;
-            await overlay.window.webContents.capturePage({ x: 0, y: 0, width: 1, height: 1 });
-          }),
-        );
-      }
       if (this.active !== active) return;
       if (flash) {
         await Promise.all(
@@ -406,10 +394,6 @@ export class SnapShotTransition {
           })})`,
         );
         if (this.active !== active || overlay.window.isDestroyed()) return;
-        if (this.waitForCompositorFrame) {
-          // Read back one pixel to flush compositor work before starting any display's animation clock.
-          await overlay.window.webContents.capturePage({ x: 0, y: 0, width: 1, height: 1 });
-        }
         return overlay;
       }),
     );

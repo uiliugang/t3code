@@ -76,7 +76,6 @@ const make = Effect.gen(function* () {
   const digester = yield* Digest.Digest;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const config = yield* ServerConfig.ServerConfig;
-  const platform = yield* HostProcess.Platform;
   const skillInstallerNode = yield* makeSkillInstallerNode;
   const inside = (root: string, file: string) => file === root || file.startsWith(root + path.sep);
 
@@ -183,7 +182,7 @@ const make = Effect.gen(function* () {
         directory,
         "node_modules",
         ".bin",
-        `${source.kind === "skills" ? "skills" : "mtskills"}${platform === "win32" ? ".cmd" : ""}`,
+        source.kind === "skills" ? "skills" : "mtskills",
       );
     },
     Effect.mapError((cause) =>

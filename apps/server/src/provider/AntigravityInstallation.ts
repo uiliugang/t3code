@@ -1,7 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest or free-space query.
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ModelManifest from "./ModelManifest.ts";
-import { cliArchiveTarCommand } from "@t3tools/shared/cliRelease";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
   ProviderDriverKind,
@@ -22,10 +21,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import type { PlatformError } from "effect/PlatformError";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
-import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -200,7 +197,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     options.releaseAsset === undefined
       ? antigravityCliTarget(platform, arch) !== null
       : options.releaseAsset !== null;
-  const cliExecutableName = platform === "win32" ? "agy.exe" : "antigravity";
+  const cliExecutableName = "antigravity";
   const managedDirectory = path.join(
     options.baseDir,
     "tools",
@@ -209,18 +206,6 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
   );
   const versionsDirectory = path.join(managedDirectory, "versions");
   const activePath = path.join(managedDirectory, "active.json");
-  // Windows briefly keeps handles on fresh runtime files after taskkill or an antivirus scan; retry for up to 10 seconds.
-  const retryWhileWindowsHoldsHandles = <A, R>(effect: Effect.Effect<A, PlatformError, R>) =>
-    effect.pipe(
-      Effect.retry({
-        times: platform === "win32" ? 40 : 0,
-        schedule: Schedule.spaced("250 millis"),
-        while: (error) =>
-          error.reason._tag === "PermissionDenied" ||
-          error.reason._tag === "Busy" ||
-          error.reason._tag === "Unknown",
-      }),
-    );
   const gate = yield* Semaphore.make(1);
   const leases = new Map<string, number>();
   let running: { readonly operationId: string; readonly fiber: Fiber.Fiber<void> } | undefined;
@@ -279,7 +264,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       Option.isSome(info) &&
       info.value.type === "File" &&
       (bytes === undefined || Number(info.value.size) === bytes) &&
-      (platform === "win32" || (info.value.mode & 0o111) !== 0)
+      (info.value.mode & 0o111) !== 0
     );
   });
 
@@ -330,7 +315,6 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     executablePath: string,
     strict: boolean,
   ) {
-    if (platform === "win32") return;
     const recordPath = path.join(directory, RELEASE_RECORD);
     const apply = Effect.gen(function* () {
       if (
@@ -361,7 +345,6 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
   const unlockDirectoryTree = Effect.fn("AntigravityInstallation.unlockDirectoryTree")(function* (
     directory: string,
   ): Effect.fn.Return<void> {
-    if (platform === "win32") return;
     if (
       (yield* hasSymlinkedManagedRoot) ||
       (yield* isSymlink(directory)) ||
@@ -388,9 +371,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
   const removeReleaseDirectory = Effect.fn("AntigravityInstallation.removeReleaseDirectory")(
     function* (directory: string) {
       yield* unlockDirectoryTree(directory);
-      yield* fs
-        .remove(directory, { recursive: true, force: true })
-        .pipe(retryWhileWindowsHoldsHandles);
+      yield* fs.remove(directory, { recursive: true, force: true });
     },
   );
 
@@ -437,11 +418,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         () => Effect.succeed(null),
       ),
     );
-    if (
-      info === null ||
-      info.type !== "File" ||
-      (platform !== "win32" && (info.mode & 0o111) === 0)
-    ) {
+    if (info === null || info.type !== "File" || (info.mode & 0o111) === 0) {
       return "incomplete" as const;
     }
     return Number(info.size) === expectedBytes ? ("ok" as const) : ("changed" as const);
@@ -627,12 +604,8 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       const resolved = yield* commandPath(command, processEnvironment);
       return resolved === null ? [] : [resolved];
     }
-    const pathValue =
-      platform === "win32"
-        ? Object.entries(processEnvironment).findLast(([key]) => key.toUpperCase() === "PATH")?.[1]
-        : processEnvironment.PATH;
     const candidates: string[] = [];
-    for (const entry of (pathValue ?? "").split(platform === "win32" ? ";" : ":")) {
+    for (const entry of (processEnvironment.PATH ?? "").split(":")) {
       if (entry.length === 0) continue;
       const resolved = yield* commandPath(command, { ...processEnvironment, PATH: entry });
       if (resolved !== null) candidates.push(resolved);
@@ -751,19 +724,14 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     options.validate ??
     Effect.fn("AntigravityInstallation.validate")(
       function* (executable: AntigravityExecutable, expectedVersion: string) {
-        const validationScope = yield* Effect.scope;
         const profileDirectory = yield* Effect.acquireRelease(
           fs.makeTempDirectory({ prefix: "t3-antigravity-validate-" }),
-          (directory) =>
-            fs
-              .remove(directory, { recursive: true, force: true })
-              .pipe(retryWhileWindowsHoldsHandles, Effect.orDie),
+          (directory) => fs.remove(directory, { recursive: true, force: true }).pipe(Effect.orDie),
         );
         const profile = yield* prepareAntigravityProfile({
           profileDirectory,
           platform,
           baseEnv: environment,
-          // A shallow scoped profile cleans up unpacked files within Windows' path limit.
           tempDirectory: profileDirectory,
         });
         const runtime = yield* makeAntigravityAcpRuntime({
@@ -774,20 +742,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
             baseEnv: environment,
           }),
           cwd: profileDirectory,
-          childProcessSpawner:
-            platform === "win32"
-              ? ChildProcessSpawner.make(
-                  Effect.fnUntraced(function* (command) {
-                    const child = yield* spawner.spawn(command);
-                    // Stop PyInstaller's tree before ACP closes pipes; after launcher exit, taskkill cannot reach children holding DLLs open.
-                    yield* Scope.addFinalizer(
-                      validationScope,
-                      child.kill({ forceKillAfter: "1 second" }).pipe(Effect.orDie),
-                    );
-                    return child;
-                  }),
-                )
-              : spawner,
+          childProcessSpawner: spawner,
         });
         const initialized = yield* runtime.initialize();
         if (
@@ -1038,52 +993,48 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
 
       yield* report("extracting", "Extracting the verified runtime.");
       const executablePath = path.join(pairDirectory, asset.executable.name);
-      if (asset.format === "executable") {
-        yield* fs.copyFile(archivePath, executablePath);
-      } else {
-        const tar = cliArchiveTarCommand(platform, environment);
-        const list = yield* spawner.string(ChildProcess.make(tar, ["-tzf", archivePath]));
-        const types = yield* spawner.string(ChildProcess.make(tar, ["-tvzf", archivePath]));
-        if (
-          list.trim() !== asset.executable.name ||
-          types.trim().split(/\r?\n/u).length !== 1 ||
-          !types.startsWith("-")
-        ) {
+      const tar = "tar";
+      const list = yield* spawner.string(ChildProcess.make(tar, ["-tzf", archivePath]));
+      const types = yield* spawner.string(ChildProcess.make(tar, ["-tvzf", archivePath]));
+      if (
+        list.trim() !== asset.executable.name ||
+        types.trim().split(/\r?\n/u).length !== 1 ||
+        !types.startsWith("-")
+      ) {
+        return yield* installationError(
+          "extract",
+          "The Antigravity archive must contain one regular executable.",
+        );
+      }
+      yield* Effect.gen(function* () {
+        const child = yield* spawner.spawn(
+          ChildProcess.make(tar, ["-xOzf", archivePath, asset.executable.name], {
+            stdout: "pipe",
+            stderr: "pipe",
+          }),
+        );
+        let extractedBytes = 0;
+        yield* child.stdout.pipe(
+          Stream.tap((chunk) =>
+            Effect.gen(function* () {
+              extractedBytes += chunk.byteLength;
+              if (extractedBytes > MAX_EXECUTABLE_BYTES)
+                return yield* installationError(
+                  "extract",
+                  "The Antigravity executable exceeded its size limit.",
+                );
+            }),
+          ),
+          Stream.run(fs.sink(executablePath, { flag: "wx", mode: 0o700 })),
+        );
+        if ((yield* child.exitCode) !== 0 || extractedBytes === 0)
           return yield* installationError(
             "extract",
-            "The Antigravity archive must contain one regular executable.",
+            "Could not extract the Antigravity executable.",
           );
-        }
-        yield* Effect.gen(function* () {
-          const child = yield* spawner.spawn(
-            ChildProcess.make(tar, ["-xOzf", archivePath, asset.executable.name], {
-              stdout: "pipe",
-              stderr: "pipe",
-            }),
-          );
-          let extractedBytes = 0;
-          yield* child.stdout.pipe(
-            Stream.tap((chunk) =>
-              Effect.gen(function* () {
-                extractedBytes += chunk.byteLength;
-                if (extractedBytes > MAX_EXECUTABLE_BYTES)
-                  return yield* installationError(
-                    "extract",
-                    "The Antigravity executable exceeded its size limit.",
-                  );
-              }),
-            ),
-            Stream.run(fs.sink(executablePath, { flag: "wx", mode: 0o700 })),
-          );
-          if ((yield* child.exitCode) !== 0 || extractedBytes === 0)
-            return yield* installationError(
-              "extract",
-              "Could not extract the Antigravity executable.",
-            );
-        }).pipe(Effect.scoped);
-      }
+      }).pipe(Effect.scoped);
       yield* fs.remove(archivePath);
-      if (platform !== "win32") yield* fs.chmod(executablePath, 0o755);
+      yield* fs.chmod(executablePath, 0o755);
       yield* report("verifying", "Checking the downloaded runtime.");
       yield* validate(
         {
@@ -1109,10 +1060,8 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       );
       // Lock files read-only before publishing; the directory itself is locked after cross-parent rename
       // because macOS requires write permission on a moved directory to update its `..` entry.
-      if (platform !== "win32") {
-        yield* fs.chmod(executablePath, 0o555);
-        yield* fs.chmod(path.join(pairDirectory, RELEASE_RECORD), 0o400);
-      }
+      yield* fs.chmod(executablePath, 0o555);
+      yield* fs.chmod(path.join(pairDirectory, RELEASE_RECORD), 0o400);
       const publishWithPaths = (binaryPaths: ReadonlyArray<string> | null) =>
         Effect.scoped(
           Effect.gen(function* () {
@@ -1129,7 +1078,6 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
                     (yield* fs.exists(destination)) || (yield* isSymlink(destination));
                   if (!destinationExisted) {
                     const renameError = yield* fs.rename(pairDirectory, destination).pipe(
-                      retryWhileWindowsHoldsHandles,
                       Effect.as(null),
                       Effect.catch((cause) => Effect.succeed(cause)),
                     );
@@ -1175,24 +1123,23 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
                   // Move the damaged release aside into staging so failure can restore it.
                   const displaced = path.join(staging, "displaced");
                   yield* unlockDirectoryTree(destination);
-                  yield* fs.rename(destination, displaced).pipe(
-                    retryWhileWindowsHoldsHandles,
-                    Effect.mapError((cause) =>
-                      installationError(
-                        "activate",
-                        "Could not replace the damaged Antigravity runtime. Check for open processes and try again.",
-                        cause,
+                  yield* fs
+                    .rename(destination, displaced)
+                    .pipe(
+                      Effect.mapError((cause) =>
+                        installationError(
+                          "activate",
+                          "Could not replace the damaged Antigravity runtime. Check for open processes and try again.",
+                          cause,
+                        ),
                       ),
-                    ),
-                  );
+                    );
                   const publishError = yield* fs.rename(pairDirectory, destination).pipe(
-                    retryWhileWindowsHoldsHandles,
                     Effect.as(null),
                     Effect.catch((cause) => Effect.succeed(cause)),
                   );
                   if (publishError !== null) {
                     const restored = yield* fs.rename(displaced, destination).pipe(
-                      retryWhileWindowsHoldsHandles,
                       Effect.as(true),
                       Effect.orElseSucceed(() => false),
                     );
@@ -1211,7 +1158,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
                   if (activateError !== null) {
                     const rolledBack = yield* Effect.gen(function* () {
                       yield* removeReleaseDirectory(destination);
-                      yield* fs.rename(displaced, destination).pipe(retryWhileWindowsHoldsHandles);
+                      yield* fs.rename(displaced, destination);
                     }).pipe(
                       Effect.as(true),
                       Effect.orElseSucceed(() => false),
@@ -1466,9 +1413,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
                     yield* unlockDirectoryTree(versionsDirectory);
                   }
                 }
-                yield* fs
-                  .remove(managedDirectory, { recursive: true, force: true })
-                  .pipe(retryWhileWindowsHoldsHandles);
+                yield* fs.remove(managedDirectory, { recursive: true, force: true });
               }),
             );
           }

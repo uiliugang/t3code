@@ -52,8 +52,6 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const hostEnvironment = yield* HostProcess.Environment;
-  const isWindows = yield* HostProcess.isWindows;
   const localBinary = expandHomePath(options.config.binaryPath, yield* HostProcess.HomeDirectory);
   const broker = yield* CodexManagedTokenBroker.CodexManagedTokenBroker;
   const environmentIdentity = yield* ServerEnvironment.ServerEnvironmentIdentity;
@@ -135,11 +133,6 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
       CODEX_HOME: homePath,
     };
     for (const key of managedCodexEnvironmentOverrides) environment[key] = undefined;
-    if (isWindows) {
-      for (const key of [...Object.keys(hostEnvironment), ...Object.keys(environment)]) {
-        if (managedCodexEnvironmentOverrides.has(key.toUpperCase())) environment[key] = undefined;
-      }
-    }
     return {
       config: decodeSettings({
         enabled: options.enabled,

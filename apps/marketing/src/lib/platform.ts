@@ -1,4 +1,4 @@
-import { ANDROID_PLAY_STORE_URL, IOS_APP_STORE_URL } from "./site";
+import { ANDROID_PLAY_STORE_URL, IOS_APP_STORE_URL, WEB_APP_URL } from "./site";
 
 export type Platform = { os: "mac" | "win" | "linux" | "ios" | "android" };
 
@@ -15,7 +15,8 @@ export function detectPlatform(userAgent: string, maxTouchPoints: number): Platf
   return null;
 }
 
-export function getMobileStoreUrl(platform: Platform): string | null {
+export function getPlatformAppUrl(platform: Platform): string | null {
+  if (platform.os === "win") return WEB_APP_URL;
   if (platform.os === "ios") return IOS_APP_STORE_URL;
   if (platform.os === "android") return ANDROID_PLAY_STORE_URL;
   return null;

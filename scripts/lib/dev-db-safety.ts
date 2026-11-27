@@ -25,6 +25,7 @@ const STRICT_INSTALLED_MARKERS = [
   ["runtime", "versions"],
   ["userdata", "logs", "boot-service.log"],
   ["bin", "t3"],
+  // Older installs may still have this marker, even when inspected from a supported host.
   ["bin", "t3.cmd"],
   ["userdata", "cli-command-first-launch"],
 ] as const;
@@ -76,14 +77,11 @@ const nativeRealPath = (targetPath: string) =>
 
 export const splitPathParentAndLeaf = (
   rawPath: string,
-  platform: NodeJS.Platform,
 ): { readonly parent: string; readonly leaf: string } | undefined => {
-  const pathOps = platform === "win32" ? NodePath.win32 : NodePath.posix;
-  const separatorPattern = platform === "win32" ? /[\\/]+$/ : /\/+$/;
-  const parsedRoot = pathOps.parse(rawPath).root;
+  const parsedRoot = NodePath.posix.parse(rawPath).root;
   let trimmed = rawPath;
   if (trimmed.length > parsedRoot.length) {
-    trimmed = trimmed.replace(separatorPattern, "");
+    trimmed = trimmed.replace(/\/+$/, "");
     if (trimmed.length < parsedRoot.length) {
       trimmed = parsedRoot;
     }
@@ -92,10 +90,7 @@ export const splitPathParentAndLeaf = (
     return undefined;
   }
   const afterRoot = trimmed.slice(parsedRoot.length);
-  const slashIndex =
-    platform === "win32"
-      ? Math.max(afterRoot.lastIndexOf("/"), afterRoot.lastIndexOf("\\"))
-      : afterRoot.lastIndexOf("/");
+  const slashIndex = afterRoot.lastIndexOf("/");
   const leaf = slashIndex === -1 ? afterRoot : afterRoot.slice(slashIndex + 1);
   const parent =
     slashIndex === -1
@@ -117,7 +112,6 @@ export const resolveFilesystemPath = Effect.fn("resolveFilesystemPath")(function
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
   const direct = yield* nativeRealPath(rawPath).pipe(Effect.option);
   if (Option.isSome(direct)) return direct;
   const missingTail: Array<string> = [];
@@ -132,7 +126,7 @@ export const resolveFilesystemPath = Effect.fn("resolveFilesystemPath")(function
     if (!Option.exists(cursorStat, (state) => state === "missing")) {
       return Option.none<string>();
     }
-    const split = splitPathParentAndLeaf(cursor, platform);
+    const split = splitPathParentAndLeaf(cursor);
     if (split === undefined) {
       return Option.none<string>();
     }
@@ -245,16 +239,15 @@ export const expectedDevHomePath = Effect.fn("expectedDevHomePath")(function* (h
   return path.join(parent.canonical, path.basename(home));
 });
 
-const devHomePathParts = (candidate: string, platform: NodeJS.Platform) => {
-  let split = splitPathParentAndLeaf(candidate, platform);
-  while (split?.leaf === ".") split = splitPathParentAndLeaf(split.parent, platform);
+const devHomePathParts = (candidate: string) => {
+  let split = splitPathParentAndLeaf(candidate);
+  while (split?.leaf === ".") split = splitPathParentAndLeaf(split.parent);
   return split;
 };
 
 export const isDotT3Home = (candidate: string, platform: NodeJS.Platform) => {
-  const pathOps = platform === "win32" ? NodePath.win32 : NodePath.posix;
-  return [candidate, pathOps.resolve(candidate)].some((file) => {
-    const parts = devHomePathParts(file, platform);
+  return [candidate, NodePath.posix.resolve(candidate)].some((file) => {
+    const parts = devHomePathParts(file);
     return parts !== undefined && comparableDevDbPath(parts.leaf, platform) === ".t3";
   });
 };
@@ -268,7 +261,7 @@ export const selectWorktreeDevHome = Effect.fn("selectWorktreeDevHome")(function
   const platform = yield* HostProcess.Platform;
   const comparable = (file: string) => comparableDevDbPath(file, platform);
   if (comparable(path.resolve(candidate)) === comparable(worktreeHome)) return worktreeHome;
-  const split = devHomePathParts(candidate, platform);
+  const split = devHomePathParts(candidate);
   if (split === undefined || comparable(split.leaf) !== comparable(path.basename(worktreeHome))) {
     return undefined;
   }
@@ -293,7 +286,7 @@ export const inspectIsolatedDevDirectory = Effect.fn("inspectIsolatedDevDirector
   if (stateSubdir === "userdata") {
     const fs = yield* FileSystem.FileSystem;
     for (const candidate of new Set([baseDir, normalized])) {
-      const parts = devHomePathParts(candidate, platform);
+      const parts = devHomePathParts(candidate);
       if (!parts || comparableDevDbPath(parts.leaf, platform) !== ".t3") continue;
       const parent = yield* inspectPath(parts.parent);
       const expected = path.join(parent.canonical, parts.leaf);

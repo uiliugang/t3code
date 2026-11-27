@@ -79,9 +79,8 @@ export const pruneRuntimesOnStart = Effect.fn("cloud.server_self_update.prune_on
   function* (input: { readonly baseDir: string; readonly managed: boolean }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const platform = yield* HostProcess.Platform;
     const executablePath = yield* HostProcess.ExecutablePath;
-    const { entryPath } = pinnedRuntimePaths(path, input.baseDir, packageJson.version, platform);
+    const { entryPath } = pinnedRuntimePaths(path, input.baseDir, packageJson.version);
     // The executable path is resolved, so it names the real path of a symlinked T3 home.
     const realEntryPath = yield* fs.realPath(entryPath).pipe(Effect.orElseSucceed(() => entryPath));
     if (!input.managed && executablePath !== entryPath && executablePath !== realEntryPath) {

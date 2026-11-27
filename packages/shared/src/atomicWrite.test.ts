@@ -1,14 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
-import * as TestClock from "effect/testing/TestClock";
 
 import { writeFileStringAtomically } from "./atomicWrite.ts";
 import * as HostProcess from "./HostProcess.ts";
@@ -154,46 +151,38 @@ it.layer(NodeServices.layer)("writeFileStringAtomically", (it) => {
     }),
   );
 
-  it.effect("does not replace a newer save that landed while the lock was held", () =>
+  it.effect("surfaces a failed rename without retrying or changing the destination", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
       const filePath = path.join(root, "settings.json");
       yield* fs.writeFileString(filePath, "before");
-      const firstAttempt = yield* Deferred.make<void>();
+      const failure = renameError("EBUSY", filePath);
       let attempts = 0;
-      const lockedOnce = FileSystem.make({
+      const failing = FileSystem.make({
         ...fs,
-        rename: (from, to) =>
+        rename: () =>
           Effect.suspend(() => {
             attempts += 1;
-            return attempts === 1
-              ? Deferred.succeed(firstAttempt, undefined).pipe(
-                  Effect.andThen(Effect.fail(renameError("EBUSY", to))),
-                )
-              : fs.rename(from, to);
+            return Effect.fail(failure);
           }),
       });
 
-      const stale = yield* writeFileStringAtomically({ filePath, contents: "stale" }).pipe(
-        Effect.provideService(FileSystem.FileSystem, lockedOnce),
-        Effect.provideService(HostProcess.Platform, "win32"),
+      const result = yield* writeFileStringAtomically({ filePath, contents: "after" }).pipe(
+        Effect.provideService(FileSystem.FileSystem, failing),
         Effect.exit,
-        Effect.forkChild,
       );
-      yield* Deferred.await(firstAttempt);
-      yield* writeFileStringAtomically({ filePath, contents: "newer" });
 
-      yield* TestClock.adjust("100 millis");
-      assert.isTrue(Exit.isFailure(yield* Fiber.join(stale)));
-      assert.strictEqual(yield* fs.readFileString(filePath), "newer");
+      assert.deepStrictEqual(result, Exit.fail(failure));
+      assert.strictEqual(attempts, 1);
+      assert.strictEqual(yield* fs.readFileString(filePath), "before");
       assert.deepStrictEqual(yield* fs.readDirectory(root), ["settings.json"]);
     }),
   );
 
   // Read-only and unreadable targets still save, since the mode lands after the temp file opens.
-  it.effect.each(HostProcess.Platform.defaultValue() === "win32" ? [] : ["644", "444", "000"])(
+  it.effect.each(["644", "444", "000"])(
     "keeps the %s permissions of the file it replaces",
     (octal) =>
       Effect.gen(function* () {
@@ -213,42 +202,38 @@ it.layer(NodeServices.layer)("writeFileStringAtomically", (it) => {
       }),
   );
 
-  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
-    "creates a new file readable only by its owner",
-    () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
-        const filePath = path.join(root, "settings.json");
+  it.effect("creates a new file readable only by its owner", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
+      const filePath = path.join(root, "settings.json");
 
-        yield* writeFileStringAtomically({ filePath, contents: "fresh" });
+      yield* writeFileStringAtomically({ filePath, contents: "fresh" });
 
-        assert.strictEqual(((yield* fs.stat(filePath)).mode & 0o777).toString(8), "600");
-      }),
+      assert.strictEqual(((yield* fs.stat(filePath)).mode & 0o777).toString(8), "600");
+    }),
   );
 
   // Root ignores the missing read bit, so only a regular user sees the failure.
-  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32" || process.getuid?.() === 0)(
-    "saves when the umask removes owner read access",
-    () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
-        const filePath = path.join(root, "settings.json");
-        yield* fs.writeFileString(filePath, "before");
-        yield* fs.chmod(filePath, 0o600);
-        yield* Effect.acquireRelease(
-          Effect.sync(() => process.umask(0o400)),
-          (previous) => Effect.sync(() => process.umask(previous)),
-        );
+  it.effect.skipIf(process.getuid?.() === 0)("saves when the umask removes owner read access", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
+      const filePath = path.join(root, "settings.json");
+      yield* fs.writeFileString(filePath, "before");
+      yield* fs.chmod(filePath, 0o600);
+      yield* Effect.acquireRelease(
+        Effect.sync(() => process.umask(0o400)),
+        (previous) => Effect.sync(() => process.umask(previous)),
+      );
 
-        yield* writeFileStringAtomically({ filePath, contents: "after" });
+      yield* writeFileStringAtomically({ filePath, contents: "after" });
 
-        assert.strictEqual(yield* fs.readFileString(filePath), "after");
-        assert.strictEqual((yield* fs.stat(filePath)).mode & 0o777, 0o600);
-      }),
+      assert.strictEqual(yield* fs.readFileString(filePath), "after");
+      assert.strictEqual((yield* fs.stat(filePath)).mode & 0o777, 0o600);
+    }),
   );
 
   it.effect("syncs the contents before the rename and the directory after it", () =>
@@ -294,25 +279,15 @@ it.layer(NodeServices.layer)("writeFileStringAtomically", (it) => {
       );
 
       assert.strictEqual(yield* fs.readFileString(filePath), "after");
-      // Windows cannot open a directory to sync it.
-      assert.deepStrictEqual(
-        events,
-        HostProcess.Platform.defaultValue() === "win32"
-          ? ["sync temp file", "rename temp file"]
-          : ["sync temp file", "rename temp file", "sync directory"],
-      );
+      assert.deepStrictEqual(events, ["sync temp file", "rename temp file", "sync directory"]);
     }),
   );
 
   // EIO means the rename may not survive a crash; ENOTSUP means directories cannot sync at all.
-  it.effect.each(
-    HostProcess.Platform.defaultValue() === "win32"
-      ? []
-      : [
-          { code: "EIO", fails: true },
-          { code: "ENOTSUP", fails: false },
-        ],
-  )("handles a directory sync failing with $code after the rename", ({ code, fails }) =>
+  it.effect.each([
+    { code: "EIO", fails: true },
+    { code: "ENOTSUP", fails: false },
+  ])("handles a directory sync failing with $code after the rename", ({ code, fails }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -350,35 +325,33 @@ it.layer(NodeServices.layer)("writeFileStringAtomically", (it) => {
   );
 
   // Injected because root ignores a chmod that drops read access.
-  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
-    "saves when its directory cannot be opened for the sync",
-    () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
-        const filePath = path.join(root, "settings.json");
-        yield* fs.writeFileString(filePath, "before");
-        const openFailure = PlatformError.systemError({
-          _tag: "PermissionDenied",
-          module: "FileSystem",
-          method: "open",
-          pathOrDescriptor: root,
-        });
-        const unopenableDirectory = FileSystem.make({
-          ...fs,
-          open: (openedPath, options) =>
-            openedPath === root ? Effect.fail(openFailure) : fs.open(openedPath, options),
-        });
+  it.effect("saves when its directory cannot be opened for the sync", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
+      const filePath = path.join(root, "settings.json");
+      yield* fs.writeFileString(filePath, "before");
+      const openFailure = PlatformError.systemError({
+        _tag: "PermissionDenied",
+        module: "FileSystem",
+        method: "open",
+        pathOrDescriptor: root,
+      });
+      const unopenableDirectory = FileSystem.make({
+        ...fs,
+        open: (openedPath, options) =>
+          openedPath === root ? Effect.fail(openFailure) : fs.open(openedPath, options),
+      });
 
-        const exit = yield* writeFileStringAtomically({ filePath, contents: "after" }).pipe(
-          Effect.provideService(FileSystem.FileSystem, unopenableDirectory),
-          Effect.exit,
-        );
+      const exit = yield* writeFileStringAtomically({ filePath, contents: "after" }).pipe(
+        Effect.provideService(FileSystem.FileSystem, unopenableDirectory),
+        Effect.exit,
+      );
 
-        assert.deepStrictEqual(exit, Exit.void);
-        assert.strictEqual(yield* fs.readFileString(filePath), "after");
-      }),
+      assert.deepStrictEqual(exit, Exit.void);
+      assert.strictEqual(yield* fs.readFileString(filePath), "after");
+    }),
   );
 
   it.effect("succeeds when the write lands but its temp directory cannot be removed", () =>

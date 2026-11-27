@@ -111,7 +111,6 @@ const isTrustworthyOrigin = (origin: string) => {
   );
 };
 
-// Chromium already delegates to Windows Hello.
 const backendFor = (platform: NodeJS.Platform): PasskeyBackend | undefined =>
   platform === "darwin" ? macPasskeyBackend : undefined;
 

@@ -264,9 +264,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     options.settings.commandArgs[0]
       ?.replaceAll("\\", "/")
       .endsWith("/apps/server/scripts/dev-replay-agent.ts");
-  // Copilot CLI 1.0.105 rejects stdio MCP servers from the client, and Command Code cannot
-  // start the stdio bridge on Windows (it spawns MCP commands through cmd.exe, which splits
-  // the unquoted "T3 Code (Beta).exe" path). Both take T3's MCP endpoint over ACP HTTP.
+  // Copilot and Command Code use the HTTP MCP transport.
   const useHttpMcpServers =
     copilotRouting !== undefined || prefersHttpMcpTransport(options.settings);
   const flavor: AcpAdapterV2Flavor = {

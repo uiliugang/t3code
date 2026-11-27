@@ -36,7 +36,7 @@ T3 Code is an open-source control plane for coding agents. It gives the coding a
 
 ### Getting started
 
-- [Install T3 Code](./install.md) — Desktop app, `t3` CLI, mobile app, WSL, and provider setup.
+- [Install T3 Code](./install.md) — Desktop app, `t3` CLI, mobile app, Windows browser and standalone WSL access, and provider setup.
 - [Welcome page](./welcome-page.md) — First-run setup and importing existing Claude, Codex, and Pi sessions.
 - [FAQ](./faq.md) — Common questions on pricing, subscriptions, privacy, limits, and troubleshooting.
 - [Threads from older T3 Code versions](./thread-migration.md) — V1 → V2 database migration and recovery backups.
@@ -80,7 +80,7 @@ T3 Code is an open-source control plane for coding agents. It gives the coding a
 
 - [Codex](./providers-codex.md) — ChatGPT sign-in, CLI/shadow-home multi-account, image generation, async questions, Daybreak.
 - [Claude](./providers-claude.md) — Multi-account `CLAUDE_CONFIG_DIR`, idle compaction, skills, MCP OAuth, Claude in Chrome, OpenRouter.
-- [Cursor](./cursor.md) — Local Cursor SDK sign-in, MCP/plugins, and Windows sandbox notes.
+- [Cursor](./cursor.md) — Local Cursor SDK sign-in, sandbox modes, and MCP/plugins.
 - [Grok Build](./providers-grok.md) — Grok CLI setup, `XAI_API_KEY`, `GROK_HOME`, and permissions.
 - [Antigravity](./providers-antigravity.md) — Managed runtime, Google/Vertex sign-in methods, skills, and quotas.
 - [OpenCode](./providers-opencode.md) — OpenCode 1.x/2.x, local vs. external servers, compaction, and approvals.
@@ -110,5 +110,5 @@ T3 Code is an open-source control plane for coding agents. It gives the coding a
 - [CLI reference (`t3`)](./cli.md) — Complete overview of `t3` subcommands.
 - [Product usage data and diagnostics](./telemetry.md) — Telemetry opt-outs, agent feedback, mobile diagnostics, and OTLP export.
 - [Triage an issue](./triage.md) — Letting an agent investigate a T3 Code bug and draft an issue.
-- [Managed policy](./managed-policy.md) — Machine-wide enterprise configuration via JSON, macOS profiles, and Windows GPO/registry.
+- [Managed policy](./managed-policy.md) — Machine-wide enterprise configuration via JSON and macOS profiles.
 - [Open source licenses](./open-source-licenses.md) — Viewing third-party license notices in the app.

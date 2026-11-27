@@ -74,14 +74,12 @@ interface Options {
 const UA_PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
   darwin: "macOS",
   linux: "Linux",
-  win32: "Windows",
 };
 
 // Chrome froze its user agent apart from the major version.
 const UA_SYSTEMS: Partial<Record<NodeJS.Platform, string>> = {
   darwin: "Macintosh; Intel Mac OS X 10_15_7",
   linux: "X11; Linux x86_64",
-  win32: "Windows NT 10.0; Win64; x64",
 };
 
 const chromeToken = (major: string) => `Chrome/${major}.0.0.0`;

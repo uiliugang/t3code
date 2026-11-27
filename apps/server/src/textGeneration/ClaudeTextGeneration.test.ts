@@ -35,7 +35,6 @@ function makeFakeClaudeBinary(dir: string, lifecyclePort?: number) {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
     const fs = yield* FileSystem.FileSystem;
-    const platform = yield* HostProcess.Platform;
     const binDir = path.join(dir, "bin");
     const fixturePath = yield* path.fromFileUrl(
       new URL("./testing/ClaudeTextGeneration.fixture.mjs", import.meta.url),
@@ -44,7 +43,6 @@ function makeFakeClaudeBinary(dir: string, lifecyclePort?: number) {
     writeFakeCli({
       directory: binDir,
       name: "claude",
-      platform,
       source:
         lifecyclePort === undefined
           ? source
@@ -78,7 +76,7 @@ function withFakeClaudeEnv<A, E, R>(
     const fs = yield* FileSystem.FileSystem;
     const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-claude-text-" });
     const binDir = yield* makeFakeClaudeBinary(tempDir, input.lifecyclePort);
-    const pathDelimiter = (yield* HostProcess.isWindows) ? ";" : ":";
+    const pathDelimiter = ":";
     const hostEnv = yield* HostProcess.Environment;
     const fakeClaudeEnv: Record<string, string | undefined> = {
       T3_FAKE_CLAUDE_OUTPUT: input.output,

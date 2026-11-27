@@ -25,7 +25,6 @@ import {
   isSourceRunning,
   listSourceProfiles,
   sourcePathContext,
-  windowsChromiumCookiesAreHeld,
 } from "./Sources.ts";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
@@ -84,39 +83,6 @@ const writeFirefoxCookieDatabase = (
   });
 
 describe("isSourceRunning", () => {
-  it.effect("uses the held cookie database as Chromium's Windows running signal", () =>
-    run(
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3code-helium-windows-lock-",
-        });
-        const context = yield* sourcePathContext.pipe(
-          Effect.provideService(HostProcess.Environment, {
-            HOME: home,
-            LOCALAPPDATA: home,
-          }),
-          Effect.provideService(HostProcess.Platform, "win32"),
-        );
-        const profile = context.path.join(helium.userDataDirectory(context)!, "Default");
-        const database = context.path.join(profile, "Network", "Cookies");
-        yield* fileSystem.makeDirectory(context.path.join(profile, "Network"), { recursive: true });
-        yield* writeCookieDatabase(database, 1);
-
-        const probed: string[] = [];
-        assert.isTrue(
-          yield* windowsChromiumCookiesAreHeld(helium, context, (path) =>
-            Effect.sync(() => {
-              probed.push(path);
-              return true;
-            }),
-          ),
-        );
-        assert.deepEqual(probed, [database]);
-      }),
-    ),
-  );
-
   it.effect.skipIf(!symlinksSupported)(
     "reads Chromium's dangling SingletonLock symlink as a running browser",
     () =>
@@ -391,15 +357,6 @@ describe("Zen", () => {
           }),
           Effect.provideService(HostProcess.Platform, "darwin"),
         );
-        const windowsContext = yield* sourcePathContext.pipe(
-          Effect.provideService(HostProcess.Environment, {
-            HOME: "C:\\Users\\zen-user",
-            APPDATA: "C:\\Users\\zen-user\\AppData\\Roaming",
-            LOCALAPPDATA: "C:\\Users\\zen-user\\AppData\\Local",
-            XDG_CONFIG_HOME: "/custom-config",
-          }),
-          Effect.provideService(HostProcess.Platform, "win32"),
-        );
         const linuxContext = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: "/home/zen-user" }),
           Effect.provideService(HostProcess.Platform, "linux"),
@@ -407,14 +364,10 @@ describe("Zen", () => {
 
         assert.equal(zen.name, "Zen");
         assert.equal(zen.engine, "firefox");
-        assert.deepEqual([...zen.platforms], ["darwin", "win32", "linux"]);
+        assert.deepEqual([...zen.platforms], ["darwin", "linux"]);
         assert.equal(
           zen.userDataDirectory(darwinContext),
           darwinContext.path.join("/Users/zen-user", "Library", "Application Support", "zen"),
-        );
-        assert.equal(
-          zen.userDataDirectory(windowsContext),
-          windowsContext.path.join("C:\\Users\\zen-user\\AppData\\Roaming", "zen"),
         );
         assert.equal(
           zen.userDataDirectory(linuxContext),
@@ -431,15 +384,6 @@ describe("Zen", () => {
             "Library",
             "Application Support",
             "net.imput.helium",
-          ),
-        );
-        assert.equal(
-          helium.userDataDirectory(windowsContext),
-          windowsContext.path.join(
-            "C:\\Users\\zen-user\\AppData\\Local",
-            "imput",
-            "Helium",
-            "User Data",
           ),
         );
       }),
@@ -722,7 +666,6 @@ describe("listSourceProfiles Firefox fallback", () => {
   const cases = [
     { platform: "linux" as const, profileDirectory: "linux.default" },
     { platform: "darwin" as const, profileDirectory: NodePath.join("Profiles", "macos.default") },
-    { platform: "win32" as const, profileDirectory: NodePath.join("Profiles", "windows.default") },
   ];
 
   it.effect.each(cases)(
@@ -735,11 +678,9 @@ describe("listSourceProfiles Firefox fallback", () => {
           const home = yield* fileSystem.makeTempDirectoryScoped({
             prefix: `t3code-firefox-${platform}-`,
           });
-          const appData = path.join(home, "AppData", "Roaming");
           const context = yield* sourcePathContext.pipe(
             Effect.provideService(HostProcess.Environment, {
               HOME: home,
-              APPDATA: appData,
             }),
             Effect.provideService(HostProcess.Platform, platform),
           );
@@ -923,30 +864,6 @@ describe("isSourceRunning for Firefox", () => {
       assert.isTrue(yield* firefoxSymlinkLockIsHeld("garbage", local, alive));
       assert.isTrue(yield* firefoxSymlinkLockIsHeld("10.0.0.7:+9999", local, alive));
     }),
-  );
-
-  it.effect("does not treat a stale parent.lock file as a running browser", () =>
-    run(
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-firefox-" });
-        const context = yield* sourcePathContext.pipe(
-          // Without APPDATA, the Windows Firefox fixture would escape into the repo.
-          Effect.provideService(HostProcess.Environment, {
-            HOME: home,
-            APPDATA: `${home}/AppData/Roaming`,
-          }),
-          Effect.provideService(HostProcess.Platform, "win32"),
-        );
-        const root = firefox.userDataDirectory(context)!;
-        const profile = `${root}/Profiles/gx7x7fqx.default-release`;
-        yield* fileSystem.makeDirectory(profile, { recursive: true });
-        yield* fileSystem.writeFileString(`${profile}/cookies.sqlite`, "db");
-
-        yield* fileSystem.writeFileString(`${profile}/parent.lock`, "");
-        assert.isFalse(yield* isSourceRunning(firefox, context));
-      }),
-    ),
   );
 });
 

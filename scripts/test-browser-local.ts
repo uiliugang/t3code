@@ -9,7 +9,6 @@ import * as Path from "effect/Path";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { createCLI } from "vite-plus/test/node";
 
-import { vitePlusCommand } from "./check-changed-command.ts";
 import {
   installSighupForwarding,
   resolveGitCommonDir,
@@ -72,7 +71,6 @@ export const runBrowserTestLocal = Effect.fn("testBrowserLocal.run")(function* (
   }
 
   const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fileParallelismEnv = Option.getOrElse(
     yield* Config.option(Config.String("T3_BROWSER_FILE_PARALLELISM")),
@@ -86,17 +84,14 @@ export const runBrowserTestLocal = Effect.fn("testBrowserLocal.run")(function* (
     commonDir,
     Effect.scoped(
       Effect.gen(function* () {
-        const [command, commandArgs] = vitePlusCommand(
-          [
-            "test",
-            "run",
-            ...(disableFileParallelism ? ["--no-file-parallelism"] : []),
-            ...parsed.forwardedArgs,
-          ],
-          platform,
-        );
+        const commandArgs = [
+          "test",
+          "run",
+          ...(disableFileParallelism ? ["--no-file-parallelism"] : []),
+          ...parsed.forwardedArgs,
+        ];
         const handle = yield* spawner.spawn(
-          ChildProcess.make(command, commandArgs, {
+          ChildProcess.make("vp", commandArgs, {
             cwd: root,
             extendEnv: true,
             stdin: "inherit",

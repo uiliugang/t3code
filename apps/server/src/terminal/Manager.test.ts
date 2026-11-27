@@ -72,14 +72,6 @@ vi.mock("effect/SynchronizedRef", async (importOriginal) => {
 
 // The server omits DOM types, which include TypeScript's WebAssembly declarations.
 
-const POWERSHELL_ARGS = [
-  "-NoLogo",
-  "-NoExit",
-  "-Command",
-  "[Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new()",
-];
-const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
-
 class FakePtyProcess implements PtyAdapter.PtyProcess {
   readonly writes: Array<string | Buffer> = [];
   readonly resizeCalls: Array<{ cols: number; rows: number }> = [];
@@ -1397,27 +1389,26 @@ it.layer(
     }),
   );
 
-  it.effect.each([
-    ["linux", ["SIGHUP", "SIGTERM"]],
-    ["win32", ["SIGTERM"]],
-  ] as const)("closing a %s terminal hangs up the shell's jobs", ([platform, signals]) =>
-    Effect.gen(function* () {
-      const { manager, ptyAdapter } = yield* createManager(5).pipe(
-        Effect.provide(layerWithHostPlatform(platform)),
-      );
-      yield* manager.open(openInput());
-      const shell = ptyAdapter.processes[0]!;
-      const terminated = yield* Deferred.make<void>();
-      shell.onKill = (signal) => {
-        if (signal === "SIGTERM") Deferred.doneUnsafe(terminated, Effect.void);
-      };
+  it.effect.each([["linux", ["SIGHUP", "SIGTERM"]]] as const)(
+    "closing a %s terminal hangs up the shell's jobs",
+    ([platform, signals]) =>
+      Effect.gen(function* () {
+        const { manager, ptyAdapter } = yield* createManager(5).pipe(
+          Effect.provide(layerWithHostPlatform(platform)),
+        );
+        yield* manager.open(openInput());
+        const shell = ptyAdapter.processes[0]!;
+        const terminated = yield* Deferred.make<void>();
+        shell.onKill = (signal) => {
+          if (signal === "SIGTERM") Deferred.doneUnsafe(terminated, Effect.void);
+        };
 
-      yield* manager.close({ threadId: "thread-1" });
-      yield* Deferred.await(terminated);
+        yield* manager.close({ threadId: "thread-1" });
+        yield* Deferred.await(terminated);
 
-      expect(shell.killSignals).toEqual(signals);
-      shell.emitExit({ exitCode: 0, signal: 0 });
-    }).pipe(Effect.provide(TestClock.layer())),
+        expect(shell.killSignals).toEqual(signals);
+        shell.emitExit({ exitCode: 0, signal: 0 });
+      }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("keeps a terminal whose shell was replaced by exec open on settlement", () =>
@@ -1544,7 +1535,6 @@ it.layer(
   // Answers process-table queries after `queryDuration`, honoring the caller's
   // timeout the way ProcessRunner's `timedOutResult` mode does.
   const slowProcessTable = (
-    platform: "linux" | "win32",
     queryDuration: Duration.Input,
     queries: Array<{ start: number; end?: number }>,
     started: ReadonlyArray<Deferred.Deferred<void>>,
@@ -1560,11 +1550,7 @@ it.layer(
         );
         query.end = yield* Clock.currentTimeMillis;
         return {
-          stdout: Option.isNone(completed)
-            ? ""
-            : platform === "win32"
-              ? "100|9000|node.exe\n"
-              : "  100  9000 node\n",
+          stdout: Option.isNone(completed) ? "" : "  100  9000 node\n",
           stderr: "",
           code: Option.isSome(completed) ? ChildProcessSpawner.ExitCode(0) : null,
           timedOut: Option.isNone(completed),
@@ -1577,7 +1563,7 @@ it.layer(
   });
 
   const createFallbackManager = (
-    platform: "linux" | "win32",
+    platform: "linux" | "darwin",
     runner: ProcessRunner.ProcessRunner["Service"],
   ) =>
     createManager(5, { subprocessPollIntervalMs: 1_000, processKillGraceMs: 0 }).pipe(
@@ -1585,7 +1571,7 @@ it.layer(
       Effect.provide(layerWithHostPlatform(platform)),
     );
 
-  it.effect.each(["linux", "win32"] as const)(
+  it.effect.each(["linux", "darwin"] as const)(
     "reports activity from a slow but successful %s process-table query",
     (platform) =>
       Effect.gen(function* () {
@@ -1593,7 +1579,7 @@ it.layer(
         const queries: Array<{ start: number; end?: number }> = [];
         const { manager, getEvents } = yield* createFallbackManager(
           platform,
-          slowProcessTable(platform, "5 seconds", queries, [started]),
+          slowProcessTable("5 seconds", queries, [started]),
         );
 
         yield* manager.open(openInput());
@@ -1617,7 +1603,7 @@ it.layer(
       const queries: Array<{ start: number; end?: number }> = [];
       const { manager } = yield* createFallbackManager(
         "linux",
-        slowProcessTable("linux", "5 seconds", queries, [started]),
+        slowProcessTable("5 seconds", queries, [started]),
       );
 
       yield* manager.open(openInput());
@@ -1639,8 +1625,8 @@ it.layer(
       const started = yield* Deferred.make<void>();
       const queries: Array<{ start: number; end?: number }> = [];
       const { manager } = yield* createFallbackManager(
-        "win32",
-        slowProcessTable("win32", "1 day", queries, [started]),
+        "linux",
+        slowProcessTable("1 day", queries, [started]),
       );
 
       yield* manager.open(openInput());
@@ -1658,7 +1644,7 @@ it.layer(
 
   it.effect.each([
     ["linux", 1_000],
-    ["win32", 1_500],
+    ["darwin", 1_000],
   ] as const)(
     "bounds closeIdle's %s query so other operations on the thread still run",
     ([platform, budgetMs]) =>
@@ -1667,7 +1653,7 @@ it.layer(
         const queries: Array<{ start: number; end?: number }> = [];
         const { manager, ptyAdapter } = yield* createFallbackManager(
           platform,
-          slowProcessTable(platform, "1 day", queries, [started]),
+          slowProcessTable("1 day", queries, [started]),
         );
         yield* manager.open(openInput());
 
@@ -2632,9 +2618,7 @@ it.layer(
 
   it.effect("retries with fallback shells when preferred shell spawn fails", () =>
     Effect.gen(function* () {
-      const platform = yield* HostProcess.Platform;
-      const missingShell =
-        platform === "win32" ? "C:\\definitely\\missing-shell.exe" : "/definitely/missing-shell -l";
+      const missingShell = "/definitely/missing-shell -l";
       const { manager, ptyAdapter } = yield* createManager(5, {
         shellResolver: () => missingShell,
       });
@@ -2644,26 +2628,12 @@ it.layer(
 
       assert.equal(snapshot.status, "running");
       expect(ptyAdapter.spawnInputs.length).toBeGreaterThanOrEqual(2);
-      expect(ptyAdapter.spawnInputs[0]?.shell).toBe(
-        platform === "win32" ? missingShell : "/definitely/missing-shell",
-      );
-
-      if (platform === "win32") {
-        expect(
-          ptyAdapter.spawnInputs.some(
-            (input) =>
-              input.shell === "pwsh.exe" ||
-              input.shell === "powershell.exe" ||
-              input.shell === "cmd.exe",
-          ),
-        ).toBe(true);
-      } else {
-        expect(
-          ptyAdapter.spawnInputs
-            .slice(1)
-            .some((input) => input.shell !== "/definitely/missing-shell"),
-        ).toBe(true);
-      }
+      expect(ptyAdapter.spawnInputs[0]?.shell).toBe("/definitely/missing-shell");
+      expect(
+        ptyAdapter.spawnInputs
+          .slice(1)
+          .some((input) => input.shell !== "/definitely/missing-shell"),
+      ).toBe(true);
     }),
   );
 
@@ -2797,36 +2767,35 @@ it.layer(
       }),
   );
 
-  it.effect.each([
-    { platform: "win32", shell: String.raw`C:\Program Files\Git\bin\bash.exe` },
-    { platform: "linux", shell: "/opt/custom shell/bin/bash" },
-  ] as const)("prefers the configured terminal shell on $platform: $shell", ({ platform, shell }) =>
-    Effect.gen(function* () {
-      const { manager, ptyAdapter } = yield* createManager(5, {
-        env: { T3CODE_TERMINAL_SHELL: ` ${shell} `, SHELL: "/bin/zsh" },
-      }).pipe(Effect.provide(layerWithHostPlatform(platform)));
+  it.effect.each([{ platform: "linux", shell: "/opt/custom shell/bin/bash" }] as const)(
+    "prefers the configured terminal shell on $platform: $shell",
+    ({ platform, shell }) =>
+      Effect.gen(function* () {
+        const { manager, ptyAdapter } = yield* createManager(5, {
+          env: { T3CODE_TERMINAL_SHELL: ` ${shell} `, SHELL: "/bin/zsh" },
+        }).pipe(Effect.provide(layerWithHostPlatform(platform)));
 
-      yield* manager.open(openInput());
+        yield* manager.open(openInput());
 
-      expect(ptyAdapter.spawnInputs[0]?.shell).toBe(shell);
-    }),
+        expect(ptyAdapter.spawnInputs[0]?.shell).toBe(shell);
+      }),
   );
 
   it.effect("lets script terminals keep the default shell without changing other terminals", () =>
     Effect.gen(function* () {
-      const gitBash = String.raw`C:\Program Files\Git\bin\bash.exe`;
+      const userShell = "/opt/custom shell/bin/sh";
       const { manager, ptyAdapter } = yield* createManager(5, {
-        env: { T3CODE_TERMINAL_SHELL: gitBash },
-      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
+        env: { T3CODE_TERMINAL_SHELL: userShell, SHELL: "/bin/bash" },
+      }).pipe(Effect.provide(layerWithHostPlatform("linux")));
 
       yield* manager.open(openInput({ env: { T3CODE_TERMINAL_SHELL: "" } }));
       yield* manager.open(openInput({ terminalId: "interactive" }));
 
-      expect(ptyAdapter.spawnInputs.map((input) => input.shell)).toEqual(["pwsh.exe", gitBash]);
+      expect(ptyAdapter.spawnInputs.map((input) => input.shell)).toEqual(["/bin/bash", userShell]);
     }),
   );
 
-  // POSIX exec failures are asynchronous in node-pty; ConPTY has a separate readiness protocol.
+  // POSIX exec failures are asynchronous in node-pty.
   it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     "resolves configured shells and falls back from invalid paths with the real PTY adapter",
     () =>
@@ -2882,7 +2851,7 @@ it.layer(
       }),
   );
 
-  it.effect("preserves Windows Path casing when appending managed ACP binaries", () =>
+  it.effect("appends managed ACP binaries after the system PATH", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -2894,14 +2863,14 @@ it.layer(
         "tools",
         "example-agent",
         "1.2.3",
-        "windows-x86_64",
+        "linux-x86_64",
         "bin",
       );
       yield* fileSystem.makeDirectory(installBin, { recursive: true });
       yield* fileSystem.makeDirectory(path.join(cacheDir, "acp-registry"), { recursive: true });
       yield* fileSystem.writeFileString(
         path.join(cacheDir, "acp-registry", "registry.json"),
-        encodeUnknownJson({
+        JSON.stringify({
           version: "1.0.0",
           agents: [
             {
@@ -2911,9 +2880,9 @@ it.layer(
               description: "ACP Registry test agent",
               distribution: {
                 binary: {
-                  "windows-x86_64": {
-                    archive: "https://registry.test/example-agent.zip",
-                    cmd: "bin/example-agent.exe",
+                  "linux-x86_64": {
+                    archive: "https://registry.test/example-agent.tar.gz",
+                    cmd: "bin/example-agent",
                   },
                 },
               },
@@ -2924,15 +2893,11 @@ it.layer(
       const { manager, ptyAdapter } = yield* createManager(5, {
         managedBinaryCacheDir: cacheDir,
         managedBinaryToolsDir: path.join(cacheDir, "tools"),
-        env: {
-          ComSpec: "C:\\Windows\\System32\\cmd.exe",
-          Path: "C:\\Windows\\System32",
-          SystemRoot: "C:\\Windows",
-        },
+        env: { PATH: "/usr/bin" },
       }).pipe(
         Effect.provide(
           Layer.merge(
-            layerWithHostPlatform("win32"),
+            layerWithHostPlatform("linux"),
             Layer.succeed(HostProcess.Architecture, "x64"),
           ),
         ),
@@ -2941,93 +2906,7 @@ it.layer(
       yield* manager.open(openInput());
 
       const spawnEnv = ptyAdapter.spawnInputs[0]?.env;
-      expect(spawnEnv?.PATH).toBeUndefined();
-      expect(spawnEnv?.Path).toBe(`C:\\Windows\\System32;${installBin}`);
-    }),
-  );
-
-  it.effect("falls back to built-in PowerShell by absolute path on Windows", () =>
-    Effect.gen(function* () {
-      const ptyAdapter = new FakePtyAdapter();
-      const { manager } = yield* createManager(5, {
-        ptyAdapter,
-        env: {
-          T3CODE_TERMINAL_SHELL: "C:\\missing\\custom-shell.exe",
-          ComSpec: "C:\\Windows\\System32\\cmd.exe",
-          PATH: "C:\\Windows\\System32",
-          SystemRoot: "C:\\Windows",
-        },
-      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
-      ptyAdapter.spawnFailures.push(
-        new Error("spawn custom-shell.exe ENOENT"),
-        new Error("spawn pwsh.exe ENOENT"),
-      );
-
-      yield* manager.open(openInput());
-
-      expect(ptyAdapter.spawnInputs.map((input) => input.shell)).toEqual([
-        "C:\\missing\\custom-shell.exe",
-        "pwsh.exe",
-        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-      ]);
-      expect(ptyAdapter.spawnInputs[1]?.args).toEqual(POWERSHELL_ARGS);
-      expect(ptyAdapter.spawnInputs[2]?.args).toEqual(POWERSHELL_ARGS);
-    }),
-  );
-
-  it.effect("closes an idle cmd fallback before rejecting its completion wrapper", () =>
-    Effect.gen(function* () {
-      const { manager, ptyAdapter, baseDir } = yield* createManager(5, {
-        env: { SystemRoot: "C:\\Windows" },
-        subprocessInspector: () =>
-          Effect.succeed({
-            hasRunningSubprocess: false,
-            childCommand: null,
-            processIds: [],
-          }),
-      }).pipe(Effect.provide(layerWithHostPlatform("win32")));
-      ptyAdapter.spawnFailures.push(
-        new Error("spawn pwsh ENOENT"),
-        new Error("spawn WindowsPowerShell ENOENT"),
-        new Error("spawn powershell ENOENT"),
-      );
-      const runner = yield* ProjectSetupScriptRunner.make.pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            Layer.succeed(TerminalManager.TerminalManager, manager),
-            Layer.mock(ProjectService.ProjectService)({}),
-            Layer.mock(ProjectionStore.ProjectionStoreV2)({
-              getThreadShell: () => Effect.succeed(null),
-            }),
-            ServerSettings.layerTest(),
-          ),
-        ),
-      );
-      const error = yield* runner
-        .runForThread({
-          threadId: "thread-cmd-fallback",
-          worktreePath: baseDir,
-          project: {
-            id: ProjectId.make("project-cmd-fallback"),
-            workspaceRoot: baseDir,
-            scripts: [
-              {
-                id: "setup",
-                name: "Setup",
-                command: "echo setup-ready",
-                icon: "play",
-                runOnWorktreeCreate: true,
-              },
-            ],
-          },
-          observeCompletion: {},
-        })
-        .pipe(Effect.flip);
-
-      expect(error._tag).toBe("ProjectSetupScriptUnsupportedShellError");
-      expect(ptyAdapter.spawnInputs.at(-1)?.shell).toBe("C:\\Windows\\System32\\cmd.exe");
-      expect(ptyAdapter.processes[0]?.writes).toEqual([]);
-      expect(ptyAdapter.processes[0]?.killed).toBe(true);
+      expect(spawnEnv?.PATH).toBe(`/usr/bin:${installBin}`);
     }),
   );
 
@@ -3059,36 +2938,6 @@ it.layer(
           { fish_features: "qmark-noglob" },
           { fish_features: "qmark-noglob,no-query-term" },
         ],
-        [
-          "win32",
-          { FISH_FEATURES: "qmark-noglob" },
-          {},
-          { FISH_FEATURES: "qmark-noglob,no-query-term" },
-        ],
-        [
-          "win32",
-          { Fish_Features: "qmark-noglob,query-term" },
-          {},
-          { Fish_Features: "qmark-noglob,query-term" },
-        ],
-        [
-          "win32",
-          { FISH_FEATURES: "qmark-noglob,no-query-term" },
-          {},
-          { FISH_FEATURES: "qmark-noglob,no-query-term" },
-        ],
-        [
-          "win32",
-          { Fish_Features: "query-term" },
-          { fish_features: "qmark-noglob" },
-          { Fish_Features: "qmark-noglob,no-query-term" },
-        ],
-        [
-          "win32",
-          { FISH_FEATURES: "no-query-term" },
-          { fish_features: "qmark-noglob,query-term" },
-          { FISH_FEATURES: "qmark-noglob,query-term" },
-        ],
       ] as const) {
         const { manager, ptyAdapter } = yield* createManager(5, {
           env,
@@ -3109,11 +2958,6 @@ it.layer(
       platform: "linux",
       parentEnv: { TERM_PROGRAM: "Apple_Terminal", TERM_PROGRAM_VERSION: "455" },
       runtimeEnv: { TERM_PROGRAM: "", TERM_PROGRAM_VERSION: "custom-version" },
-    },
-    {
-      platform: "win32",
-      parentEnv: { term_program: "Apple_Terminal", Term_Program_Version: "455" },
-      runtimeEnv: { Term_Program: "", term_program_version: "custom-version" },
     },
   ] as const)(
     "identifies as T3 Code unless the terminal env overrides it on $platform",
@@ -3248,20 +3092,6 @@ it.layer(
     }),
   );
 
-  it.effect("expands a provider home named in any case on Windows", () =>
-    Effect.gen(function* () {
-      const path = yield* Path.Path;
-      const home = yield* HostProcess.HomeDirectory;
-      const { manager, ptyAdapter } = yield* createManager(5, {
-        env: { GROK_HOME: "C:\\inherited-grok" },
-      });
-
-      yield* manager.open(openInput({ env: { grok_home: "~/.grok-work" } }));
-
-      expect(ptyAdapter.spawnInputs[0]?.env.GROK_HOME).toBe(path.join(home, ".grok-work"));
-    }).pipe(Effect.provide(layerWithHostPlatform("win32"))),
-  );
-
   it.effect("fails closed when a provider instance is missing", () =>
     Effect.gen(function* () {
       const providerInstanceId = ProviderInstanceId.make("deleted_instance");
@@ -3372,10 +3202,7 @@ it.layer(
       yield* TestClock.adjust("1 second");
       yield* Fiber.join(shutdown);
 
-      const platform = yield* HostProcess.Platform;
-      expect(process.killSignals).toEqual(
-        platform === "win32" ? ["SIGTERM", "SIGKILL"] : ["SIGHUP", "SIGTERM", "SIGKILL"],
-      );
+      expect(process.killSignals).toEqual(["SIGHUP", "SIGTERM", "SIGKILL"]);
       expect(process.exitListenerCount).toBe(0);
     }).pipe(Effect.provide(TestClock.layer())),
   );
@@ -3410,18 +3237,15 @@ it.layer(
     }),
   );
 
-  it.effect("starts bash as a login shell on macOS and Windows", () =>
+  it.effect("starts bash as a login shell on macOS", () =>
     Effect.gen(function* () {
       for (const [platform, shell, args] of [
         ["darwin", "/bin/bash", ["-l"]],
         ["darwin", "/opt/homebrew/bin/bash", ["-l"]],
         ["linux", "/bin/bash", undefined],
-        ["win32", "C:\\Program Files\\Git\\bin\\bash.exe", ["--login", "-i"]],
-        ["win32", "C:/Program Files/Git/bin/bash.exe", ["--login", "-i"]],
         ["darwin", "/bin/zsh", ["-o", "nopromptsp"]],
         ["linux", "/bin/zsh", ["-o", "nopromptsp"]],
         ["linux", "/opt/team\\zsh", undefined],
-        ["win32", "pwsh.exe", POWERSHELL_ARGS],
       ] as const) {
         const { manager, ptyAdapter } = yield* createManager(5, {
           shellResolver: () => shell,

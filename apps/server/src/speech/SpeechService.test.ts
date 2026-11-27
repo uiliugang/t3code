@@ -736,12 +736,12 @@ it.effect("reports unsupported hosts without wrapping a synthetic cause", () =>
     }).pipe(
       Effect.provide(layer),
       Effect.provideService(HostProcess.Platform, "win32"),
-      Effect.provideService(HostProcess.Architecture, "arm64"),
+      Effect.provideService(HostProcess.Architecture, "x64"),
     );
     expect(Result.isFailure(result) && result.failure).toMatchObject({
       _tag: "SpeechUnsupportedPlatformError",
       platform: "win32",
-      architecture: "arm64",
+      architecture: "x64",
     });
   }),
 );

@@ -24,7 +24,7 @@ export const ja: Messages = {
     heroSub:
       "Claude Code、Codex、Antigravity、OpenCode、Cursor、Grok をひとつの画面からオーケストレーション。サブスクリプションは手持ちのものをそのまま。まるごとフォークも自由です。",
     downloadForMac: "macOS 版をダウンロード",
-    downloadForWindows: "Windows 版をダウンロード",
+    openWebApp: "ウェブ版を開く",
     downloadForLinux: "Linux 版をダウンロード",
     downloadForIos: "iOS 版をダウンロード",
     downloadForAndroid: "Android 版をダウンロード",
@@ -79,9 +79,9 @@ export const ja: Messages = {
     otherPlatforms: "ほかのプラットフォーム",
   },
   download: {
-    title: "T3 Code をダウンロード（macOS、Windows、Linux）| T3 Code",
+    title: "T3 Code をダウンロード（macOS、Linux）| T3 Code",
     description:
-      "公式の T3 Code デスクトップアプリ（macOS、Windows、Linux）や、iOS・Android アプリをダウンロードできます。公式のダウンロードサイトは t3.codes だけです。",
+      "公式の T3 Code デスクトップアプリ（macOS、Linux）や、iOS・Android アプリをダウンロードできます。公式のダウンロードサイトは t3.codes だけです。",
     breadcrumb: "ダウンロード",
     heading: "T3 Code をダウンロード",
     channelLabel: "リリースチャンネル",

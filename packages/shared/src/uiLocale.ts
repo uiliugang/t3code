@@ -1595,11 +1595,6 @@ const zhCN: Readonly<Record<string, string>> = {
   "Setup required": "需要配置",
   "Reachable at": "可访问地址",
   "Enable network access": "启用网络访问",
-  "Switch to Windows": "切换到 Windows",
-  "WSL backend couldn't start:": "WSL 后端无法启动：",
-  "Default distro": "默认发行版",
-  "WSL only": "仅 WSL",
-  "Run WSL only": "仅运行 WSL",
   "Enable Tailscale HTTPS": "启用 Tailscale HTTPS",
   "Network exposure changes restart the backend and must be controlled where the server process is launched.":
     "更改网络访问范围会重启后端，需在启动服务器进程的位置操作。",
@@ -1764,7 +1759,6 @@ const zhCN: Readonly<Record<string, string>> = {
   "Local environment": "本地环境",
   "Network access": "网络访问",
   "Tailscale HTTPS": "Tailscale HTTPS",
-  "WSL backend": "WSL 后端",
   "Hold webhooks while offline": "离线时保留 Webhook",
   "Publish agent activity": "发布智能体活动",
   "This machine": "本机",
@@ -1850,13 +1844,6 @@ const zhCN: Readonly<Record<string, string>> = {
     "选择一个已连接的环境以导入或导出应用设置。",
   "Local identity: Git metadata is unavailable, or this project contains multiple repositories.":
     "本地标识：Git 元数据不可用，或此项目包含多个仓库。",
-  "Couldn't load the WSL backend state.": "无法加载 WSL 后端状态。",
-  "WSL is unavailable, so Windows is running instead. Turn WSL off to clear this preference.":
-    "WSL 不可用，当前使用 Windows。关闭 WSL 可清除此偏好。",
-  "Run the selected WSL distro alongside Windows. Projects remain on their current filesystem.":
-    "同时运行所选 WSL 发行版与 Windows。项目保留在当前文件系统中。",
-  "Run only the WSL backend. T3 Code restarts when this changes.":
-    "仅运行 WSL 后端。更改后 T3 Code 将重启。",
   "Authorized clients": "已授权客户端",
   "Connect an environment to view its settings and access.": "连接环境以查看其设置与访问权限。",
   "Reclaim freed database space": "回收数据库空闲空间",
@@ -3283,7 +3270,6 @@ const zhCN: Readonly<Record<string, string>> = {
   "Your next message starts a fresh session.": "下一条消息将启动全新的智能体会话。",
   "Go to file": "转到文件",
   "Search project contents": "搜索项目内容",
-  "Open WSL folder": "打开 WSL 文件夹",
   "Open pull requests": "打开合并请求",
   "Open usage": "查看用量",
   "Project settings": "项目设置",
@@ -3305,9 +3291,6 @@ const zhCN: Readonly<Record<string, string>> = {
   "Thread search is unavailable on this server.": "此服务器不支持会话搜索。",
   "Update the server to enable it.": "更新服务器后可启用此功能。",
   "Unable to run command": "无法执行命令",
-  "Could not add WSL project": "无法添加 WSL 项目",
-  "Start the matching WSL backend, then choose the folder again.":
-    "启动对应的 WSL 后端，然后重新选择文件夹。",
   "Each model starts in its own worktree.": "每个模型在独立的工作树中启动。",
   "Run on": "运行位置",
   "Auto balance": "自动均衡",

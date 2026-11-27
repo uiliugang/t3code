@@ -79,7 +79,7 @@ export class DesktopAppRequestFailedError extends Schema.TaggedError<
 }
 
 function isDesktopPlatform(platform: NodeJS.Platform): platform is DesktopAppActivationPlatform {
-  return platform === "darwin" || platform === "linux" || platform === "win32";
+  return platform === "darwin" || platform === "linux";
 }
 
 async function sendDesktopAppActivationRequest(input: {

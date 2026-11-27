@@ -1,17 +1,12 @@
-import { useMessages } from "gt-react";
 import { hasFeatureFlag } from "@t3tools/client-runtime/state/server";
 import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
 
 import { usePrimaryCloudLinkState } from "~/cloud/cloudLinkState";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
-import { isElectron } from "~/env";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
-import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { usePeerLinkHosts } from "~/state/peerLinks";
-import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentScope } from "~/state/session";
-import { isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
 import { isProviderSettingsEnvironmentAvailable } from "./ProviderSettingsPanel.logic";
 import {
   filterAvailableSettingsSearchItems,
@@ -64,13 +59,7 @@ export function useAvailableSettingsSearchItems() {
     (cloudLinkState?.managedTunnelActive ?? cloudLinkState?.linked ?? false) === true;
   const localEnvironmentDisabled = isLocalEnvironmentDisabled() === true;
   const canManageLocalBackend = !localEnvironmentDisabled && canMaintain;
-  const desktopWsl = useEnvironmentQuery(
-    isElectron && canManageLocalBackend ? desktopWslStateAtom : null,
-    useMessages(),
-  );
   const cloudPublicConfig = hasCloudPublicConfig() === true;
-  const wslSettingsRowVisible =
-    isWslSettingsRowVisible({ state: desktopWsl.data, error: desktopWsl.error }) === true;
 
   return filterAvailableSettingsSearchItems({
     localEnvironmentDisabled,
@@ -78,7 +67,6 @@ export function useAvailableSettingsSearchItems() {
     hasEnvironment,
     hasProviderSettingsEnvironment,
     canManageLocalBackend,
-    isWslSettingsRowVisible: wslSettingsRowVisible,
     hasThreadAutoSettlement,
     managedTunnelActive,
     hasPeerLinkHost,

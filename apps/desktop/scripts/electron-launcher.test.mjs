@@ -250,13 +250,10 @@ it("dev supervisor stops Electron and exits once its parent process goes away", 
   assert.lengthOf(exitCodes, 1, "supervisor did not exit after its parent process went away");
 });
 
-it
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Native pgrep is unavailable on Windows.
-  .skipIf(NodeOS.platform() === "win32")
-  .each([
-    "/tmp/t3-feature.one/apps/desktop",
-    "/tmp/t3-feature.one [two](three)+?^${four}|back\\slash*/apps/desktop",
-  ])("dev cleanup matches only the literal root argument: %s", async (desktopDir) => {
+it.each([
+  "/tmp/t3-feature.one/apps/desktop",
+  "/tmp/t3-feature.one [two](three)+?^${four}|back\\slash*/apps/desktop",
+])("dev cleanup matches only the literal root argument: %s", async (desktopDir) => {
   const pattern = await startupCleanupPattern(desktopDir);
   const flag = `--t3code-dev-root=${desktopDir}`;
   const argvCases = [

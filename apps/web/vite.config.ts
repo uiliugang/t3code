@@ -85,7 +85,6 @@ const unitTestProject = {
     hookTimeout: 15_000,
     testTimeout: 15_000,
     setupFiles: [
-      "../../packages/shared/src/testing/longTempDir.ts",
       "../../packages/shared/src/testing/providerEnv.ts",
       "../../packages/shared/src/testing/gitEnv.ts",
     ],

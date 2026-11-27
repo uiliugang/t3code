@@ -77,7 +77,7 @@ export function resolveRemoteOpenState(input: {
     return LOCAL_EXEC;
   }
   if (target._tag === "PrimaryConnectionTarget") {
-    // Desktop owns its primary even at a non-loopback WSL2 NAT address.
+    // Desktop owns its primary even when the configured HTTP address is not loopback.
     if (input.isDesktopRenderer) {
       return LOCAL_EXEC;
     }

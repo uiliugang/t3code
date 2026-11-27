@@ -1,7 +1,6 @@
 import { DESKTOP_UPDATE_RESTART_MARKER_FILE } from "@t3tools/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Cross-process launcher contention uses real filesystem leases and IPC barriers.
 import * as NodeChildProcess from "node:child_process";
-import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -19,15 +18,11 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
-import { serviceLauncherLockPath } from "../serviceLauncher.ts";
 import * as BootService from "./bootService.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
 import { RESTORE_OOMD_WATCH_SCRIPT } from "./userManagerOom.ts";
 import {
-  decodeServiceUnit,
-  disabledServiceTask,
   parseServiceState,
-  serviceTaskIsDisabled,
   SERVICE_ENV_FILE,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_RESTART_PENDING_FILE,
@@ -53,15 +48,7 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-const SCHTASKS = "D:\\WinNT\\System32\\schtasks.exe";
-
-const windowsTaskOptions = {
-  userId: "PC\\theo",
-  homeDir: "C:\\Users\\theo",
-  conhostPath: "C:\\Windows\\System32\\conhost.exe",
-};
-
-it("reads the served T3 home and log back out of a rendered unit, plist, or task", () => {
+it("reads the served T3 home and log back out of a rendered unit or plist", () => {
   const plan = (baseDir: string) => ({
     program: [`${baseDir}/runtime/versions/1.2.3/t3`, "__service-launcher"],
     baseDir,
@@ -96,11 +83,6 @@ it("reads the served T3 home and log back out of a rendered unit, plist, or task
       }),
     ),
   ).toBe("/Users/theo/a&b");
-  expect(
-    BootService.bootServiceBaseDirOf(
-      BootService.renderBootServiceTask(plan("C:\\Users\\theo\\T3 a&b\\"), windowsTaskOptions),
-    ),
-  ).toBe("C:\\Users\\theo\\T3 a&b\\");
   expect(BootService.bootServiceBaseDirOf("[Service]\nExecStart=/x\n")).toBeUndefined();
 });
 
@@ -130,12 +112,6 @@ it.each([
     "/Users/theo/a&b <c>",
     (plan: BootService.BootServicePlan) =>
       BootService.renderBootServicePlist(plan, { homeDir: "/Users/theo", environmentPath: "" }),
-  ],
-  [
-    "a task",
-    "C:\\Users\\theo\\T3 a&b <c>",
-    (plan: BootService.BootServicePlan) =>
-      BootService.renderBootServiceTask(plan, windowsTaskOptions),
   ],
 ] as const)("reads the launcher back out of %s", (_, baseDir, render) => {
   const program = `${baseDir}/runtime/versions/1.2.3/t3`;
@@ -203,7 +179,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   );
   const baseDir = path.join(home, ".t3");
   const statePath = path.join(baseDir, "runtime", "service-state.json");
-  const runtime = pinnedRuntimePaths(path, baseDir, "1.2.3", platform);
+  const runtime = pinnedRuntimePaths(path, baseDir, "1.2.3");
   yield* fs.makeDirectory(path.dirname(runtime.entryPath), { recursive: true });
   yield* fs.writeFileString(runtime.entryPath, "#!/bin/sh\n");
   yield* fs.writeFileString(runtime.sentinelPath, "1.2.3\n");
@@ -227,10 +203,6 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     active: boolean;
     /** systemd refuses starts until `reset-failed`, as after `StartLimitBurst` trips. */
     startLimitHit: boolean;
-    /** A Windows launcher: it holds its lock until its task ends. */
-    launcher?: { readonly close: () => void };
-    /** Task Scheduler's own copy of the task. */
-    task?: { xml: string; enabled: boolean };
   } = {
     failCommand: undefined,
     linger: "yes",
@@ -252,15 +224,11 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         command === "systemctl --user stop t3code.service" ||
         command === "systemctl --user disable --now t3code.service" ||
         command === "systemctl --user restart --no-block t3code.service" ||
-        command.startsWith("launchctl bootout --wait ") ||
-        (input.command === SCHTASKS && input.args[0] === "/End")
+        command.startsWith("launchctl bootout --wait ")
       ) {
         markersAtStop.push(yield* fs.exists(marker));
       }
-      if (
-        command === "systemctl --user daemon-reload" ||
-        (input.command === SCHTASKS && input.args[0] === "/Create")
-      ) {
+      if (command === "systemctl --user daemon-reload") {
         markersAtPreparation.push(yield* fs.exists(marker));
       }
       if (command === control.interruptCommand) return yield* Effect.interrupt;
@@ -282,19 +250,6 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
           command.startsWith("launchctl enable "))
       ) {
         control.enabled = true;
-      }
-      const taskMissing =
-        input.command === SCHTASKS && input.args[0] !== "/Create" && control.task === undefined;
-      if (input.command === SCHTASKS && !failed) {
-        if (input.args[0] === "/Create") {
-          const xml = decodeServiceUnit(yield* fs.readFile(input.args[2] ?? ""));
-          control.task = { xml, enabled: !serviceTaskIsDisabled(xml) };
-        }
-        if (control.task !== undefined && input.args[0] === "/Change") {
-          control.task.enabled = input.args.includes("/ENABLE");
-        }
-        if (input.args[0] === "/Delete") delete control.task;
-        if (input.args[0] === "/End") control.launcher?.close();
       }
       if (
         !refusedStart &&
@@ -337,37 +292,30 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
               })
             : input.args[0] === "--version"
               ? `t3 v${/versions[\\/]([^\\/]+)[\\/]/.exec(input.command)?.[1] ?? "1.2.3"}\n`
-              : input.command === SCHTASKS && input.args.includes("/XML")
-                ? control.task?.enabled === false
-                  ? disabledServiceTask(control.task.xml)
-                  : (control.task?.xml ?? "")
-                : input.command === "loginctl" && input.args[0] === "show-user"
-                  ? `${control.linger ?? ""}\n`
-                  : input.command === "launchctl" && input.args[0] === "print-disabled"
-                    ? `disabled services = {\n\t"${BootService.BOOT_SERVICE_LAUNCHD_LABEL}" => ${control.enabled ? "enabled" : "disabled"}\n}\n`
-                    : input.args[1] === "is-enabled"
-                      ? control.enabled
-                        ? "enabled\n"
-                        : "disabled\n"
-                      : "",
+              : input.command === "loginctl" && input.args[0] === "show-user"
+                ? `${control.linger ?? ""}\n`
+                : input.command === "launchctl" && input.args[0] === "print-disabled"
+                  ? `disabled services = {\n\t"${BootService.BOOT_SERVICE_LAUNCHD_LABEL}" => ${control.enabled ? "enabled" : "disabled"}\n}\n`
+                  : input.args[1] === "is-enabled"
+                    ? control.enabled
+                      ? "enabled\n"
+                      : "disabled\n"
+                    : "",
         stderr: "",
         code: ChildProcessSpawner.ExitCode(
-          taskMissing && input.args.includes("/HRESULT")
-            ? 0x80070002
-            : failed ||
-                taskMissing ||
-                unitOutsideManager ||
-                ((command === "systemctl --user show-environment" || input.command === "busctl") &&
-                  (!control.managerReachable ||
-                    (control.busNeedsRuntimeDir && input.env?.XDG_RUNTIME_DIR === undefined))) ||
-                (input.command === "loginctl" &&
-                  input.args[0] === "show-user" &&
-                  control.linger === undefined) ||
-                (input.args[1] === "is-active" && !control.active) ||
-                (input.command === "launchctl" && input.args[0] === "print" && !control.active) ||
-                (input.args[1] === "is-enabled" && !control.enabled)
-              ? 1
-              : 0,
+          failed ||
+            unitOutsideManager ||
+            ((command === "systemctl --user show-environment" || input.command === "busctl") &&
+              (!control.managerReachable ||
+                (control.busNeedsRuntimeDir && input.env?.XDG_RUNTIME_DIR === undefined))) ||
+            (input.command === "loginctl" &&
+              input.args[0] === "show-user" &&
+              control.linger === undefined) ||
+            (input.args[1] === "is-active" && !control.active) ||
+            (input.command === "launchctl" && input.args[0] === "print" && !control.active) ||
+            (input.args[1] === "is-enabled" && !control.enabled)
+            ? 1
+            : 0,
         ),
         timedOut: false,
         stdoutTruncated: false,
@@ -387,7 +335,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     serviceInstallBinDir: string | null | undefined = installBinDir,
   ) =>
     Effect.gen(function* () {
-      const paths = pinnedRuntimePaths(path, serviceBaseDir, cliVersion, platform);
+      const paths = pinnedRuntimePaths(path, serviceBaseDir, cliVersion);
       yield* fs.makeDirectory(path.dirname(paths.entryPath), { recursive: true });
       yield* fs.writeFileString(paths.entryPath, "#!/bin/sh\n");
       yield* fs.writeFileString(paths.sentinelPath, `${cliVersion}\n`);
@@ -416,20 +364,10 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                   ? {}
                   : { T3CODE_INSTALL_BIN_DIR: serviceInstallBinDir }),
                 ...(xdgConfigHome === undefined ? {} : { XDG_CONFIG_HOME: xdgConfigHome }),
-                USERPROFILE: home,
-                LOCALAPPDATA: path.join(home, "AppData", "Local"),
-                USERDOMAIN: "PC",
-                windir: "D:\\WinNT",
-                USERNAME: "theo",
                 ...(environmentPath === undefined || environmentPath === ""
                   ? {}
                   : { PATH: environmentPath }),
-                ...(insideService
-                  ? {
-                      T3_BOOT_SERVICE_UNIT:
-                        platform === "win32" ? "t3code-task.xml" : "t3code.service",
-                    }
-                  : {}),
+                ...(insideService ? { T3_BOOT_SERVICE_UNIT: "t3code.service" } : {}),
                 ...(underSudo ? { SUDO_USER: "julius" } : {}),
               },
             }),
@@ -1383,7 +1321,7 @@ process.disconnect();
         `--property=StandardOutput=append:${plan.logPath}`,
         `--property=StandardError=append:${plan.logPath}`,
         "--setenv=T3_BOOT_SERVICE_UNIT=",
-        pinnedRuntimePaths(path, baseDir, "1.2.4", "linux").entryPath,
+        pinnedRuntimePaths(path, baseDir, "1.2.4").entryPath,
         "service",
         "install",
         "--base-dir",
@@ -1591,143 +1529,12 @@ process.disconnect();
     }),
   );
 
-  it.effect("installs, reports a stopped launcher, and uninstalls on Windows", () =>
+  it.effect("does not offer a boot service on Windows", () =>
     Effect.gen(function* () {
-      const { service, fs, statePath, commands, control, runtime } = yield* makeHarness("win32");
-      const path = yield* Path.Path;
-      const plan = yield* service.install();
-      const task = decodeServiceUnit(yield* fs.readFile(plan.unitPath));
-
-      expect(plan.unitPath).toBe(
-        path.join(path.dirname(plan.baseDir), "AppData", "Local", "t3code", "t3code-task.xml"),
-      );
-      expect(BootService.bootServiceProgramOf(task)).toBe(runtime.entryPath);
-      expect(BootService.bootServiceBaseDirOf(task)).toBe(plan.baseDir);
-      expect(task).toContain("<UserId>PC\\theo</UserId>");
-      expect(task).toContain("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>");
-      // schtasks decodes undeclared UTF-8 with the ANSI code page; UTF-16LE with a BOM is read as is.
-      expect([...(yield* fs.readFile(plan.unitPath)).subarray(0, 2)]).toEqual([0xff, 0xfe]);
-      expect(parseServiceState(yield* fs.readFileString(statePath))).toEqual({
-        protocol: SERVICE_LAUNCHER_PROTOCOL,
-        activeVersion: "1.2.3",
-      });
-      expect(commands.filter((command) => command.startsWith(`${SCHTASKS} `))).toEqual([
-        `${SCHTASKS} /Create /XML ${plan.unitPath} /TN t3code-PC-theo /F`,
-        `${SCHTASKS} /Run /TN t3code-PC-theo`,
-      ]);
-      // No launcher holds the lock here.
-      expect(yield* service.status).toMatchObject({
-        installed: true,
-        current: false,
-        problems: ["service-stopped"],
-      });
-
-      // A task that Task Scheduler refuses to delete stays installed, so a retry finds it.
-      control.failCommand = `${SCHTASKS} /Delete /TN t3code-PC-theo /F`;
-      expect((yield* service.uninstall.pipe(Effect.flip))._tag).toBe("BootServiceCommandError");
-      expect((yield* service.status).installed).toBe(true);
-      control.failCommand = undefined;
-
-      commands.length = 0;
-      expect(yield* service.uninstall).toBe(true);
-      expect(commands).toEqual([
-        `${SCHTASKS} /Change /TN t3code-PC-theo /DISABLE`,
-        `${SCHTASKS} /End /TN t3code-PC-theo`,
-        `${SCHTASKS} /Delete /TN t3code-PC-theo /F`,
-      ]);
-      expect(control.task).toBeUndefined();
-      expect((yield* service.status).installed).toBe(false);
-
-      // One removed by hand leaves nothing to disable or delete.
-      yield* service.install();
-      delete control.task;
-      expect(yield* service.uninstall).toBe(true);
-    }),
-  );
-
-  it.effect("stops a Windows launcher by ending its task, and restarts one left disabled", () =>
-    Effect.gen(function* () {
-      const { service, commands, control, makeService } = yield* makeHarness("win32");
-      const plan = yield* service.install();
-      const launcher = new NodeSqlite.DatabaseSync(serviceLauncherLockPath(plan.baseDir));
-      launcher.exec("BEGIN EXCLUSIVE");
-      control.launcher = launcher;
-
-      // Task Scheduler runs its own copy of the task, so a deferred restart registers the new one.
-      const newer = yield* makeService(undefined, "1.2.4");
-      yield* newer.install({ start: false });
-      const newerRuntime = pinnedRuntimePaths(yield* Path.Path, plan.baseDir, "1.2.4", "win32");
-      expect(BootService.bootServiceProgramOf(control.task?.xml ?? "")).toBe(
-        newerRuntime.entryPath,
-      );
-      expect(control.task?.enabled).toBe(true);
-
-      // An interrupted stop disables the task and leaves its launcher running.
-      yield* service.install({ start: false, allowDowngrade: true });
-      control.task = { xml: control.task?.xml ?? "", enabled: false };
-      yield* newer.install({ start: false });
-      expect(control.task).toMatchObject({ enabled: false });
-      expect(BootService.bootServiceProgramOf(control.task.xml)).toBe(newerRuntime.entryPath);
-      expect((yield* service.status).problems).toEqual(["service-disabled", "restart-pending"]);
-
-      commands.length = 0;
-      yield* service.withStopped(Effect.sync(() => commands.push("repair")));
-      expect(commands.filter((command) => !command.includes("/Query"))).toEqual([
-        `${SCHTASKS} /Change /TN t3code-PC-theo /DISABLE`,
-        `${SCHTASKS} /End /TN t3code-PC-theo`,
-        "repair",
-        `${SCHTASKS} /Change /TN t3code-PC-theo /ENABLE`,
-        `${SCHTASKS} /Run /TN t3code-PC-theo`,
-      ]);
-    }),
-  );
-
-  it.effect("hands an in-service install and restart to Task Scheduler on Windows", () =>
-    Effect.gen(function* () {
-      const {
-        service,
-        fs,
-        statePath,
-        commands,
-        control,
-        makeService,
-        markersAtStop,
-        markersAtPreparation,
-      } = yield* makeHarness("win32");
-      const plan = yield* service.install();
-      const inside = yield* makeService(undefined, "1.2.4", undefined, true);
-      const relayMarker = `${plan.baseDir}/runtime/${DESKTOP_UPDATE_RESTART_MARKER_FILE}`;
-      const handoff = [
-        `${SCHTASKS} /Create /XML ${plan.unitPath} /TN t3code-PC-theo /F`,
-        `${SCHTASKS} /End /TN t3code-PC-theo`,
-        `${SCHTASKS} /Run /TN t3code-PC-theo`,
-      ];
-      commands.length = 0;
-
-      expect(yield* inside.install()).toMatchObject({ handedOff: true, logPath: plan.logPath });
-      expect(commands.filter((command) => command.startsWith(`${SCHTASKS} `))).toEqual(handoff);
-      expect(parseServiceState(yield* fs.readFileString(statePath))?.activeVersion).toBe("1.2.4");
-      expect(
-        yield* fs.readFileString(`${plan.baseDir}/runtime/${SERVICE_RESTART_PENDING_FILE}`),
-      ).toBe("1.2.4\n");
-
-      expect(markersAtStop).toEqual([true]);
-      expect(yield* fs.exists(relayMarker)).toBe(true);
-      yield* fs.remove(relayMarker);
-
-      commands.length = 0;
-      expect(yield* inside.restart).toBe("queued");
-      expect(commands).toEqual(handoff);
-      expect(markersAtStop).toEqual([true, true]);
-      expect(yield* fs.exists(relayMarker)).toBe(true);
-      yield* fs.remove(relayMarker);
-
-      expect(markersAtPreparation).not.toContain(true);
-      control.failCommand = handoff[0];
-      expect((yield* inside.restart.pipe(Effect.flip))._tag).toBe("BootServiceCommandError");
-      expect(yield* fs.exists(relayMarker)).toBe(false);
-      expect(markersAtPreparation.at(-1)).toBe(false);
-      expect(markersAtStop).toEqual([true, true]);
+      const { service, commands } = yield* makeHarness("win32");
+      expect(yield* service.status).toMatchObject({ supported: false, installed: false });
+      expect((yield* service.install().pipe(Effect.flip))._tag).toBe("BootServiceUnsupportedError");
+      expect(commands).toEqual([]);
     }),
   );
 
@@ -1772,7 +1579,7 @@ process.disconnect();
       const { makeService, fs, baseDir, runtime } = yield* makeHarness("darwin");
       const path = yield* Path.Path;
       const previous = runtime.versionDir;
-      const installed = pinnedRuntimePaths(path, baseDir, "1.2.4", "darwin").versionDir;
+      const installed = pinnedRuntimePaths(path, baseDir, "1.2.4").versionDir;
       // The 1.2.3 CLI, or the 1.2.3 service's own PATH, installs 1.2.4.
       const updated = yield* makeService(
         `/usr/bin:${previous}:/bin`,

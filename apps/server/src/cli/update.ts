@@ -25,8 +25,6 @@ import * as BootService from "../cloud/bootService.ts";
 import {
   ensurePinnedRuntimeInstalled,
   findPosixLauncher,
-  generatedWindowsShimTarget,
-  launcherOwnsVersionsDir,
   isUnpublishedRelease,
   pinnedRuntimePaths,
   PinnedRuntimePreflightBlockedError,
@@ -34,7 +32,6 @@ import {
   prunePinnedRuntimes,
   recordPinnedRuntimeLauncher,
   resolveLauncherPath,
-  windowsShimTarget,
   writePosixLauncher,
 } from "../cloud/pinnedRuntime.ts";
 import {
@@ -162,35 +159,15 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
   readonly baseDir: string;
   readonly targetEntryPath: string;
 }) {
-  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
   if (input.launchedAs === undefined) return Option.none<string>();
   const versionsDir = pinnedRuntimeVersionsDir(path, input.baseDir);
-  const ownsTarget = (candidate: string) => launcherOwnsVersionsDir(path, versionsDir, candidate);
   const remember = (launcher: string) =>
     recordPinnedRuntimeLauncher({ baseDir: input.baseDir, launcher }).pipe(
       Effect.mapError(
         () => new CliUpdateError({ reason: `Could not record the t3 launcher at ${launcher}.` }),
       ),
     );
-
-  if (platform === "win32") {
-    const shimPath = yield* findWindowsShim(input.launchedAs, versionsDir);
-    if (shimPath === undefined) return Option.none<string>();
-    const current = yield* fs.readFileString(shimPath).pipe(Effect.option);
-    const quoted = Option.isSome(current) ? windowsShimTarget(current.value) : undefined;
-    if (quoted === undefined || !ownsTarget(quoted)) return Option.none<string>();
-    yield* remember(shimPath);
-    yield* fs
-      .writeFileString(shimPath, `@echo off\r\n"${input.targetEntryPath}" %*`)
-      .pipe(
-        Effect.mapError(
-          () => new CliUpdateError({ reason: `Could not rewrite the t3 launcher at ${shimPath}.` }),
-        ),
-      );
-    return Option.some(shimPath);
-  }
 
   const launcher = yield* findPosixLauncher({ launchedAs: input.launchedAs, versionsDir });
   if (launcher === undefined) return Option.none<string>();
@@ -206,47 +183,6 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
     ),
   );
   return Option.some(launcher);
-});
-
-/** Windows executables see their own path, so locate the installer shim by matching its target. */
-export const findWindowsShim = Effect.fn("cli.update.find_windows_shim")(function* (
-  executablePath: string,
-  versionsDir?: string,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const environment = yield* HostProcess.Environment;
-  const candidates = [
-    ...(environment["T3CODE_INSTALL_BIN_DIR"] ? [environment["T3CODE_INSTALL_BIN_DIR"]] : []),
-    ...(environment["PATH"] ?? environment["Path"] ?? "").split(";"),
-  ]
-    .filter((entry) => entry.trim().length > 0)
-    .map((directory) => ({
-      shimPath: path.join(directory, "t3.cmd"),
-      parseTarget: windowsShimTarget,
-    }));
-  if (versionsDir !== undefined) {
-    const recorded = yield* fs
-      .readFileString(path.join(path.dirname(versionsDir), "launchers"))
-      .pipe(Effect.orElseSucceed(() => ""));
-    for (const shimPath of recorded.split(/\r?\n/)) {
-      if (path.isAbsolute(shimPath) && path.basename(shimPath).toLowerCase() === "t3.cmd") {
-        candidates.push({ shimPath, parseTarget: generatedWindowsShimTarget });
-      }
-    }
-  }
-  for (const { shimPath, parseTarget } of candidates) {
-    const contents = yield* fs.readFileString(shimPath).pipe(Effect.option);
-    if (Option.isNone(contents)) continue;
-    const target = parseTarget(contents.value);
-    if (
-      target !== undefined &&
-      path.resolve(target).toLowerCase() === path.resolve(executablePath).toLowerCase()
-    ) {
-      return shimPath;
-    }
-  }
-  return undefined;
 });
 
 const updateFlags = {
@@ -460,7 +396,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   }
 
   const alreadyOnDisk = yield* fs
-    .readFileString(pinnedRuntimePaths(path, input.baseDir, targetVersion, platform).sentinelPath)
+    .readFileString(pinnedRuntimePaths(path, input.baseDir, targetVersion).sentinelPath)
     .pipe(
       Effect.map((sentinel) => sentinel.trim() === targetVersion),
       Effect.orElseSucceed(() => false),

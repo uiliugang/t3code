@@ -2,7 +2,6 @@
 import * as NodeFS from "node:fs";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, expect, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Console from "effect/Console";
@@ -251,7 +250,6 @@ it("collects distinct descendant process groups, enforces ancestry, and skips re
   let snapshotCalls = 0;
   const signals: Array<{ pgid: number; signal: NodeJS.Signals | 0 }> = [];
   terminateTrackedProcessGroups(allGroups, {
-    platform: "darwin",
     graceMs: 25,
     snapshot: () => {
       snapshotCalls += 1;
@@ -286,8 +284,6 @@ it.live(
   "isolates nested lock cleanup from parallel sibling steps, kills double-detached grandchildren on interruption, and reaps delayed grandchildren after SIGKILL",
   () =>
     Effect.gen(function* () {
-      const platform = yield* HostProcess.Platform;
-      if (platform === "win32") return;
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;

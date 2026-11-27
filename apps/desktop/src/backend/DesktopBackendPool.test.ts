@@ -26,7 +26,6 @@ import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
-import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as DesktopBackendConfiguration from "./DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
@@ -190,12 +189,10 @@ function layerPool(
               ? Effect.succeed(options.config)
               : Effect.die("unexpected primary config resolve")),
           resolvePrimaryLabel: Ref.get(labelRef),
-          resolveWsl: () => Effect.die("unexpected WSL config resolve"),
           currentBootstrapToken: Effect.die("unexpected bootstrap token read"),
         } satisfies DesktopBackendConfiguration.DesktopBackendConfiguration["Service"]),
         DesktopAppSettings.layerTest(),
         DesktopState.layer,
-        DesktopWslEnvironment.layerTest(),
         Layer.succeed(ElectronDialog.ElectronDialog, {
           pickFolder: () => Effect.die("unexpected folder picker"),
           pickFiles: () => Effect.die("unexpected file picker"),
@@ -213,7 +210,6 @@ function layerPool(
           handleBackendReady: () => options.onReady ?? Effect.void,
           handleBackendNotReady: Effect.void,
           flushMainWindowBounds: Effect.void,
-          prepareCaptureReveal: Effect.void,
           dispatchMenuAction: () => Effect.die("unexpected menu action"),
           dispatchSnapShotEvent: () => Effect.void,
           zoomMain: () => Effect.die("unexpected zoom"),
@@ -418,14 +414,14 @@ describe("DesktopBackendPool", () => {
       const backend = yield* makeFakeBackendProcess();
       yield* Effect.gen(function* () {
         const pool = yield* DesktopBackendPool.DesktopBackendPool;
-        const id = DesktopBackendPool.BackendInstanceId("wsl:Ubuntu");
+        const id = DesktopBackendPool.BackendInstanceId("secondary");
         const ready = yield* Deferred.make<void>();
         const siblingStarted = yield* Deferred.make<void>();
         const finishSibling = yield* Deferred.make<void>();
         let siblingCompleted = false;
         const instance = yield* pool.register({
           id,
-          label: Effect.succeed("WSL (Ubuntu)"),
+          label: Effect.succeed("Secondary"),
           configResolve: Effect.succeed(runningConfig),
           onReady: () => Deferred.succeed(ready, undefined).pipe(Effect.asVoid),
         });
@@ -469,14 +465,14 @@ describe("DesktopBackendPool", () => {
 
   it.effect("unregister stops the registered instance", () =>
     Effect.gen(function* () {
-      const id = DesktopBackendPool.BackendInstanceId("wsl:Ubuntu");
+      const id = DesktopBackendPool.BackendInstanceId("secondary");
       const pool = yield* DesktopBackendPool.DesktopBackendPool;
       const instance = yield* pool.register({
         id,
-        label: Effect.succeed("WSL (Ubuntu)"),
+        label: Effect.succeed("Secondary"),
         configResolve: Effect.succeed({
           ...runningConfig,
-          preflightFailure: Option.some({ reason: "WSL starting", fatal: false }),
+          preflightFailure: Option.some({ reason: "Secondary backend starting", fatal: false }),
         }),
       });
       yield* instance.start;
@@ -489,71 +485,5 @@ describe("DesktopBackendPool", () => {
       assert.equal(stopped.restartScheduled, false);
       assert.equal(Option.isNone(yield* pool.get(id)), true);
     }).pipe(Effect.provide(layerPool(Ref.makeUnsafe("Windows")))),
-  );
-
-  it.effect("reloads a main window that read the WSL endpoint before the Windows fallback", () =>
-    Effect.gen(function* () {
-      const events: string[] = [];
-      let resolves = 0;
-      const resolvePrimary = Effect.sync(() =>
-        resolves++ === 0
-          ? {
-              ...runningConfig,
-              preflightFailure: Option.some({
-                reason: "WSL still unavailable",
-                fatal: false,
-                retryLimit: 1,
-              }),
-            }
-          : runningConfig,
-      );
-      const ready = yield* Deferred.make<void>();
-      yield* Effect.gen(function* () {
-        const primary = yield* (yield* DesktopBackendPool.DesktopBackendPool).primary;
-        yield* primary.start;
-        yield* TestClock.adjust(Duration.seconds(1));
-        yield* Deferred.await(ready);
-
-        assert.deepEqual(events, ["reload", "ready"]);
-      }).pipe(
-        Effect.provide(
-          layerPool(Ref.makeUnsafe("WSL"), {
-            resolvePrimary,
-            spawner: ChildProcessSpawner.make(() =>
-              Effect.gen(function* () {
-                const exited = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
-                const exit = Deferred.succeed(exited, ChildProcessSpawner.ExitCode(0)).pipe(
-                  Effect.asVoid,
-                );
-                yield* Effect.addFinalizer(() => exit);
-                return ChildProcessSpawner.makeHandle({
-                  pid: ChildProcessSpawner.ProcessId(123),
-                  stdout: Stream.empty,
-                  stderr: Stream.empty,
-                  all: Stream.empty,
-                  exitCode: Deferred.await(exited),
-                  isRunning: Effect.succeed(true),
-                  kill: () => exit,
-                  stdin: Sink.drain,
-                  getInputFd: () => Sink.drain,
-                  getOutputFd: () => Stream.empty,
-                  unref: Effect.succeed(Effect.void),
-                });
-              }),
-            ),
-            httpClient: HttpClient.make((request) =>
-              Effect.succeed(
-                HttpClientResponse.fromWeb(request, new Response(null, { status: 200 })),
-              ),
-            ),
-            onMainContentsCommand: (command) => Effect.sync(() => void events.push(command)),
-            onReady: Effect.sync(() => void events.push("ready")).pipe(
-              Effect.andThen(Deferred.succeed(ready, undefined)),
-              Effect.asVoid,
-            ),
-          }),
-        ),
-      );
-    }),
   );
 });

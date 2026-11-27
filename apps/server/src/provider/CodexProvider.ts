@@ -938,8 +938,7 @@ export const probeCodexSkillsForCwd = Effect.fn("probeCodexSkillsForCwd")(functi
   return parseCodexSkillsListResponse(skillsResponse, input.cwd);
 });
 
-// Long enough for a burst of workspace switches; short because the helper holds the user's
-// binary open, and Windows refuses to overwrite or delete a running executable.
+// Reuse the helper across a burst of workspace switches without retaining it for long.
 const CODEX_SKILLS_HELPER_IDLE_TTL = "30 seconds";
 
 /** Reuses one app-server per launch identity; each read passes its cwd and rescans from disk. */

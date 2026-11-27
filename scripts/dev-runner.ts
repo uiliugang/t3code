@@ -697,8 +697,7 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
   // checkout or worktree does not have yet.
   if (input.mode !== "dev:web") {
     const crate = path.join(repoRoot, "native/resource-monitor");
-    const binary =
-      (yield* HostProcess.Platform) === "win32" ? "t3-resource-monitor.exe" : "t3-resource-monitor";
+    const binary = "t3-resource-monitor";
     if (
       !(yield* exists(path.join(crate, "target/release", binary))) &&
       !(yield* exists(path.join(crate, "target/debug", binary)))
@@ -1000,10 +999,8 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     extendEnv: false,
     shell: spawnCommand.shell,
     // Its own process group: teardown signals the whole group, because vp
-    // does not pass SIGTERM on to Vite and the server. Windows tears down with
-    // taskkill /T instead, and a detached shell there leaves vp to open a
-    // visible console of its own.
-    detached: (yield* HostProcess.Platform) !== "win32",
+    // does not pass SIGTERM on to Vite and the server.
+    detached: true,
     forceKillAfter: "1500 millis",
   }).pipe(
     Effect.mapError(

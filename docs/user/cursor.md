@@ -16,7 +16,7 @@ Each Cursor instance keeps its own login separate from your Cursor editor or CLI
 - **Subagents**: Cursor `task` subagents appear as read-only child threads; message the parent thread to interact.
 - **Forking**: Uses a [portable handoff](./portable-handoffs.md) into a fresh Cursor session.
 - **Cloud agents**: Not yet supported—runs operate locally in your T3 Code workspace.
-- **Permissions**: **Full access** disables Cursor's sandbox; restricted modes enable it. On Windows, the Cursor SDK has no filesystem sandbox, so **Auto** and **Supervised** run without filesystem isolation when Cursor Auto-review is enabled, while **Auto-accept edits** cannot start on Windows.
+- **Permissions**: **Full access** disables Cursor's sandbox; restricted modes enable it.
 
 ## MCP servers and plugins
 

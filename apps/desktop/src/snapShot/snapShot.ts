@@ -12,7 +12,6 @@ import {
   snapShotShortcutModifierPair,
   type SnapShotAccessibilityNode,
   type SnapShotKeyChord,
-  type SnapShotModifier,
   type SnapShotShortcut,
 } from "@t3tools/contracts";
 
@@ -26,16 +25,6 @@ const MAX_ACCESSIBILITY_TREE_NODES = 10_000;
 // Some apps (seen in Microsoft Outlook) expose cyclic accessibility trees. xa11y's native tree()
 // recursion cannot be interrupted, and both walks recurse, so the depth must be capped.
 export const MAX_ACCESSIBILITY_TREE_DEPTH = 512;
-
-export const WINDOWS_MODIFIER_PAIR_VIRTUAL_KEYS: Record<
-  SnapShotModifier,
-  readonly [number, number]
-> = {
-  shift: [0xa0, 0xa1],
-  control: [0xa2, 0xa3],
-  alt: [0xa4, 0xa5],
-  meta: [0x5b, 0x5c],
-};
 
 export function snapShotShortcutRegistrationFailureMessage(
   shortcut: SnapShotShortcut,

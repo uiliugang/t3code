@@ -22,4 +22,4 @@ Repository and package scripts are written in TypeScript with Effect and `effect
 
 ## Exceptions
 
-Thin bootstrap shims that run before dependencies exist (such as `scripts/install.sh` / `scripts/install.ps1` and the zero-dependency `scripts/npm-launcher/t3.mjs`) and e2e test files under `scripts/scenarios/` (which run under the `e2e` runner) do not use `effect/cli`.
+Thin bootstrap shims that run before dependencies exist (such as `scripts/install.sh` and the zero-dependency `scripts/npm-launcher/t3.mjs`) and e2e test files under `scripts/scenarios/` (which run under the `e2e` runner) do not use `effect/cli`.

@@ -162,8 +162,7 @@ worktree, T3 Code instead tries to put back plain checkouts. Cleanup skips an un
 and keeps files it cannot clean up safely.
 
 A project with no other repository can declare a layout too. This example gives each thread
-a worktree with its submodules checked out. The command runs in `sh`, and in `cmd.exe` on Windows,
-so write it for the shell of the machine the project is on; this one is for `sh`:
+a worktree with its submodules checked out. The command runs in `sh` on the project host:
 
 ```json
 {

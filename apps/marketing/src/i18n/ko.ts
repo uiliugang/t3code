@@ -24,7 +24,7 @@ export const ko: Messages = {
     heroSub:
       "Claude Code, Codex, Antigravity, OpenCode, Cursor, Grok을 한 화면에서 오케스트레이션하세요. 구독은 쓰던 그대로. 통째로 포크하세요.",
     downloadForMac: "macOS용 다운로드",
-    downloadForWindows: "Windows용 다운로드",
+    openWebApp: "웹 앱 열기",
     downloadForLinux: "Linux용 다운로드",
     downloadForIos: "iOS용 다운로드",
     downloadForAndroid: "Android용 다운로드",
@@ -75,9 +75,9 @@ export const ko: Messages = {
     otherPlatforms: "다른 플랫폼",
   },
   download: {
-    title: "macOS, Windows, Linux용 T3 Code 다운로드 | T3 Code",
+    title: "macOS 및 Linux용 T3 Code 다운로드 | T3 Code",
     description:
-      "macOS, Windows, Linux용 공식 T3 Code 데스크톱 앱을 다운로드하거나 iOS 및 Android 앱을 받으세요. 공식 다운로드 사이트는 t3.codes뿐입니다.",
+      "macOS 및 Linux용 공식 T3 Code 데스크톱 앱을 다운로드하거나 iOS 및 Android 앱을 받으세요. 공식 다운로드 사이트는 t3.codes뿐입니다.",
     breadcrumb: "다운로드",
     heading: "T3 Code 다운로드",
     channelLabel: "릴리스 채널",

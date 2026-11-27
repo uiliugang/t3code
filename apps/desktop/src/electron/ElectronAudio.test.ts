@@ -44,17 +44,15 @@ it.effect("coalesces recovery and waits for its own audio utility to exit", () =
   }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
 );
 
-it.effect.each(["linux", "darwin", "win32"] as const)(
-  "leaves other processes alone on %s",
-  (platform) =>
-    Effect.gen(function* () {
-      getAppMetrics.mockReturnValue([
-        { pid: 1, type: "Utility", serviceName: "network.mojom.NetworkService" },
-      ]);
-      kill.mockReset();
-      expect(yield* restart().pipe(Effect.provideService(HostProcess.Platform, platform))).toBe(
-        false,
-      );
-      expect(kill).not.toHaveBeenCalled();
-    }),
+it.effect.each(["linux", "darwin"] as const)("leaves other processes alone on %s", (platform) =>
+  Effect.gen(function* () {
+    getAppMetrics.mockReturnValue([
+      { pid: 1, type: "Utility", serviceName: "network.mojom.NetworkService" },
+    ]);
+    kill.mockReset();
+    expect(yield* restart().pipe(Effect.provideService(HostProcess.Platform, platform))).toBe(
+      false,
+    );
+    expect(kill).not.toHaveBeenCalled();
+  }),
 );

@@ -15,69 +15,53 @@ releaseDate: '2026-10-22T00:00:00.000Z'
 `;
 
 it.layer(NodeServices.layer)("merge release update manifests", (it) => {
-  it.effect("merges complete macOS and Windows architecture pairs", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const releaseAssetsDir = yield* fs.makeTempDirectoryScoped({
-        prefix: "merge-release-update-manifests-",
-      });
-      const fixtures = {
-        "latest-mac.yml": manifest("T3-Code-1.2.3-arm64.zip"),
-        "latest-mac-x64.yml": manifest("T3-Code-1.2.3-x64.zip"),
-        "latest-win-arm64.yml": manifest("T3-Code-1.2.3-arm64.exe"),
-        "latest-win-x64.yml": manifest("T3-Code-1.2.3-x64.exe"),
-      };
-      yield* Effect.forEach(Object.entries(fixtures), ([fileName, contents]) =>
-        fs.writeFileString(path.join(releaseAssetsDir, fileName), contents),
-      );
+  it.effect(
+    "merges complete macOS pairs without Windows artifacts and leaves Linux feeds intact",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const releaseAssetsDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "merge-release-update-manifests-",
+        });
+        const fixtures = {
+          "latest-mac.yml": manifest("T3-Code-1.2.3-arm64.zip"),
+          "latest-mac-x64.yml": manifest("T3-Code-1.2.3-x64.zip"),
+          "latest-linux.yml": manifest("T3-Code-1.2.3-x64.AppImage"),
+          "latest-linux-arm64.yml": manifest("T3-Code-1.2.3-arm64.AppImage"),
+        };
+        yield* Effect.forEach(Object.entries(fixtures), ([fileName, contents]) =>
+          fs.writeFileString(path.join(releaseAssetsDir, fileName), contents),
+        );
 
-      yield* mergeReleaseUpdateManifestFiles(releaseAssetsDir);
+        yield* mergeReleaseUpdateManifestFiles(releaseAssetsDir);
 
-      const mac = yield* fs.readFileString(path.join(releaseAssetsDir, "latest-mac.yml"));
-      const win = yield* fs.readFileString(path.join(releaseAssetsDir, "latest.yml"));
-      assert.include(mac, "T3-Code-1.2.3-arm64.zip");
-      assert.include(mac, "T3-Code-1.2.3-x64.zip");
-      assert.include(win, "T3-Code-1.2.3-arm64.exe");
-      assert.include(win, "T3-Code-1.2.3-x64.exe");
-      assert.isFalse(yield* fs.exists(path.join(releaseAssetsDir, "latest-mac-x64.yml")));
-      assert.isFalse(yield* fs.exists(path.join(releaseAssetsDir, "latest-win-arm64.yml")));
-      assert.isFalse(yield* fs.exists(path.join(releaseAssetsDir, "latest-win-x64.yml")));
-    }),
+        const mac = yield* fs.readFileString(path.join(releaseAssetsDir, "latest-mac.yml"));
+        assert.include(mac, "T3-Code-1.2.3-arm64.zip");
+        assert.include(mac, "T3-Code-1.2.3-x64.zip");
+        assert.isFalse(yield* fs.exists(path.join(releaseAssetsDir, "latest-mac-x64.yml")));
+        assert.isFalse(yield* fs.exists(path.join(releaseAssetsDir, "latest.yml")));
+        for (const name of ["latest-linux.yml", "latest-linux-arm64.yml"] as const) {
+          assert.equal(yield* fs.readFileString(path.join(releaseAssetsDir, name)), fixtures[name]);
+        }
+      }),
   );
 
-  it.effect.each([
-    {
-      platform: "macOS",
-      fixtures: ["latest-mac.yml", "latest-win-arm64.yml", "latest-win-x64.yml"],
-    },
-    {
-      platform: "macOS",
-      fixtures: ["latest-mac-x64.yml", "latest-win-arm64.yml", "latest-win-x64.yml"],
-    },
-    {
-      platform: "Windows",
-      fixtures: ["latest-mac.yml", "latest-mac-x64.yml", "latest-win-arm64.yml"],
-    },
-    {
-      platform: "Windows",
-      fixtures: ["latest-mac.yml", "latest-mac-x64.yml", "latest-win-x64.yml"],
-    },
-  ] as const)("refuses a one-architecture $platform release", ({ platform, fixtures }) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const releaseAssetsDir = yield* fs.makeTempDirectoryScoped({
-        prefix: "merge-release-update-manifests-incomplete-",
-      });
-      yield* Effect.forEach(fixtures, (fileName) =>
-        fs.writeFileString(path.join(releaseAssetsDir, fileName), manifest(fileName)),
-      );
+  it.effect.each(["latest-mac.yml", "latest-mac-x64.yml"] as const)(
+    "refuses a macOS release with only %s",
+    (fileName) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const releaseAssetsDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "merge-release-update-manifests-incomplete-",
+        });
+        yield* fs.writeFileString(path.join(releaseAssetsDir, fileName), manifest(fileName));
 
-      const exit = yield* mergeReleaseUpdateManifestFiles(releaseAssetsDir).pipe(Effect.exit);
+        const exit = yield* mergeReleaseUpdateManifestFiles(releaseAssetsDir).pipe(Effect.exit);
 
-      assert.equal(exit._tag, "Failure");
-      assert.include(String(exit), `Incomplete ${platform} updater manifests`);
-    }),
+        assert.equal(exit._tag, "Failure");
+        assert.include(String(exit), "Incomplete macOS updater manifests");
+      }),
   );
 });

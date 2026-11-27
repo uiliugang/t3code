@@ -100,10 +100,6 @@ export const make = Effect.gen(function* () {
       version: Option.getOrElse(commitHash, () => "unknown"),
     });
 
-    if (environment.platform === "win32") {
-      yield* electronApp.setAppUserModelId(environment.appUserModelId);
-    }
-
     // Packaged bundles carry their icon in Info.plist; setting it again overwrites the user's custom icon.
     if (environment.platform === "darwin" && !environment.isPackaged) {
       const iconPaths = yield* assets.iconPaths;

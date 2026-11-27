@@ -15,8 +15,6 @@ describe("Antigravity CLI release manifests", () => {
     ["linux", "x64", false, "linux_amd64", "linux-x64/cli_linux_x64.tar.gz"],
     ["linux", "arm64", true, "linux_arm64_musl", "linux-arm-musl/cli_linux_arm64_musl.tar.gz"],
     ["linux", "x64", true, "linux_amd64_musl", "linux-x64-musl/cli_linux_x64_musl.tar.gz"],
-    ["win32", "arm64", false, "windows_arm64", "windows-arm/cli_windows_arm64.exe"],
-    ["win32", "x64", false, "windows_amd64", "windows-x64/cli_windows_x64.exe"],
   ] as const)("selects Google's %s-%s release (musl %s)", (platform, arch, musl, target, file) => {
     expect(antigravityCliTarget(platform, arch, musl)).toBe(target);
     expect(
@@ -31,9 +29,14 @@ describe("Antigravity CLI release manifests", () => {
       ),
     ).toMatchObject({
       version: "1.5.7",
-      format: platform === "win32" ? "executable" : "tar.gz",
-      executable: { name: platform === "win32" ? "agy.exe" : "antigravity" },
+      format: "tar.gz",
+      executable: { name: "antigravity" },
     });
+  });
+
+  it("does not select native Windows releases", () => {
+    expect(antigravityCliTarget("win32", "x64")).toBeNull();
+    expect(parseAntigravityCliRelease(manifest, "win32", "x64")).toBeNull();
   });
 
   it.each([

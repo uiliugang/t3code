@@ -190,7 +190,6 @@ export const layer = Layer.effect(
                     cwd: resource.identity.commonDir,
                     worktreePath: resource.checkoutRoot,
                     force: false,
-                    execute: git.execute,
                     run: (args) =>
                       git.execute({
                         operation: "WorkspaceCleanup.remove",

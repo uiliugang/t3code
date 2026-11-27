@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as NetAddress from "effect/net/NetAddress";
 import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vite-plus/test";
 
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as ServerConfig from "./config.ts";
@@ -32,6 +33,11 @@ const ipv4 = (address: string, internal = false): NodeOS.NetworkInterfaceInfo =>
   internal,
   cidr: `${address}/24`,
 });
+
+vi.mock(import("node:os"), async (original) => ({
+  ...(await original()),
+  networkInterfaces: () => ({ lo0: [ipv4("127.0.0.1", true)] }),
+}));
 
 it("resolves wildcard hosts to a concrete external interface when one is available", () => {
   const connectionString = resolveHeadlessConnectionString("0.0.0.0", 3773, {
@@ -87,20 +93,6 @@ it("prefers a LAN address over a tailnet one for a private-network pairing URL",
       platform: "linux",
     }),
   ).toBe("http://192.168.1.42:3773");
-});
-
-it("skips Windows VirtualBox and VMware host-only adapters for a private-network listener", () => {
-  expect(
-    resolveHeadlessConnectionString("0.0.0.0", 3773, {
-      interfaces: {
-        "VirtualBox Host-Only Network": [{ ...ipv4("192.168.56.1"), mac: "0a:00:27:00:00:0a" }],
-        "VMware Network Adapter VMnet8": [{ ...ipv4("192.168.159.1"), mac: "00:50:56:c0:00:08" }],
-        "Wi-Fi": [{ ...ipv4("192.168.1.20"), mac: "3c:22:fb:12:34:56" }],
-      },
-      privateNetworkOnly: true,
-      platform: "win32",
-    }),
-  ).toBe("http://192.168.1.20:3773");
 });
 
 it("skips NixOS container and systemd-nspawn veths for a private-network pairing URL", () => {

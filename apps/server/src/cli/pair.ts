@@ -551,10 +551,9 @@ export const pairCommand = Command.make("pair", {
       // before any local layer opens (and migrates) that database.
       const serverProtocolVersion = target.descriptor.orchestrationProtocolVersion ?? 1;
       if (serverProtocolVersion !== ORCHESTRATION_PROTOCOL_VERSION) {
-        const platform = yield* HostProcess.Platform;
         const baseDirArgs =
           explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0
-            ? ` --base-dir ${hostShellWord(platform, explicitBaseDir)}`
+            ? ` --base-dir ${hostShellWord(explicitBaseDir)}`
             : "";
         return yield* new IncompatibleServerProtocolError({
           serverVersion: target.descriptor.serverVersion,

@@ -35,11 +35,10 @@ A managed policy lets an administrator set defaults, lock settings, and restrict
 
 Use **one** source per machine (having both a native policy and a policy file prevents T3 Code from starting):
 
-| OS          | Native policy                                                                     | Policy file (admin-writable only)                 |
-| ----------- | --------------------------------------------------------------------------------- | ------------------------------------------------- |
-| **macOS**   | Device configuration profile for `com.t3tools.t3code`                             | `/Library/Application Support/T3Code/policy.json` |
-| **Windows** | GPO template or `Policy` (`REG_SZ`) under `HKLM\SOFTWARE\Policies\T3Tools\T3Code` | `C:\Program Files\T3Code\policy.json`             |
-| **Linux**   | —                                                                                 | `/etc/t3code/policy.json`                         |
+| OS        | Native policy                                         | Policy file (admin-writable only)                 |
+| --------- | ----------------------------------------------------- | ------------------------------------------------- |
+| **macOS** | Device configuration profile for `com.t3tools.t3code` | `/Library/Application Support/T3Code/policy.json` |
+| **Linux** | —                                                     | `/etc/t3code/policy.json`                         |
 
 T3 Code does not merge sources. If a machine has both a native policy and a policy file, T3 Code
 refuses to start until you remove one.
@@ -56,30 +55,6 @@ become arrays. To make the payload from a policy file you checked, run
 `macos/t3code.mobileconfig`. Install it as
 a device profile, since T3 Code ignores user profiles, and deploy only one profile for this domain.
 A profile cannot hold `null`, so use a policy file if a setting's value must be `null`.
-
-**Windows Group Policy.** Run `t3 policy templates <directory>` and copy
-`windows/t3code.admx` and `windows/en-US/t3code.adml` into your `PolicyDefinitions` folder or
-central store, or import them into Intune. The policies appear under Computer Configuration >
-Administrative Templates > T3 Code. Set **Organization** whenever you set any other T3 Code policy.
-Locks and provider fields go in the two JSON policies, as the same objects a policy file would hold.
-Machines pick up a change at the next Group Policy refresh; run `gpupdate /target:computer /force`
-to apply it now, then restart T3 Code.
-Setting **Allow T3 Connect**, **Allow webhook tasks**, or **Allow importing browser cookies** to
-**Disabled** turns that feature off. **Allow usage data** is accepted for compatibility; no value
-enables product usage reporting or T3 Connect client tracing in this fork. Setting any other T3 Code
-policy to **Disabled** restricts nothing, the same as **Not Configured**.
-
-**Windows registry value.** Instead of the template, set the `Policy` value (`REG_SZ`) to the whole policy as one line of JSON,
-from Group Policy Preferences or an Intune script. T3 Code reads it through the Windows registry
-API, so it works where registry tools such as `reg.exe` are blocked for users. Use one or the other:
-T3 Code refuses to start when the key holds both a `Policy` value and the template's settings. In
-PowerShell, as an administrator:
-
-```powershell
-$json = (Get-Content -Raw -Encoding UTF8 policy.json) -replace '\r?\n\s*', ''
-New-Item -Path HKLM:\SOFTWARE\Policies\T3Tools\T3Code -Force | Out-Null
-Set-ItemProperty -Path HKLM:\SOFTWARE\Policies\T3Tools\T3Code -Name Policy -Value $json -Type String
-```
 
 ## Check what the server loaded
 
@@ -171,5 +146,5 @@ When `maxRuntimeMode` is set, users cannot modify provider launch settings (`bin
 ## What a policy does not cover
 
 - **Provider CLIs**: Restrict underlying CLIs with their own managed settings (e.g., Claude Code managed settings).
-- **WSL**: Managed Windows desktop disables its WSL environment; a server started manually inside WSL reads `/etc/t3code/policy.json` in that distro.
+- **WSL**: A server started manually inside WSL reads `/etc/t3code/policy.json` in that distribution.
 - **Local admins / port forwarding**: Administrators can modify policies or T3 Code binaries, and users can still port-forward loopback sockets with external tools. Use OS/MDM controls for binary integrity and network isolation.

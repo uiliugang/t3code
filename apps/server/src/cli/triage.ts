@@ -4,7 +4,6 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeReadlinePromises from "node:readline/promises";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isCommandAvailable, resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
@@ -19,7 +18,6 @@ import { resolveBaseDir } from "../os-jank.ts";
 import { buildTriageLaunchPrompt } from "../triage/triagePrompt.ts";
 import { describeServerProcess, writeTriageSession } from "../triage/triageSession.ts";
 import { baseDirFlag } from "./config.ts";
-import { interactiveStdin } from "./consoleStdin.ts";
 import { resolveCliCommand } from "./invocation.ts";
 
 interface TriageAgent {
@@ -140,8 +138,7 @@ const runInteractiveSession = (input: {
   Effect.callback<number, TriageAgentSpawnError>((resume) => {
     const child = NodeChildProcess.spawn(input.command, [...input.args], {
       cwd: input.cwd,
-      // The Windows desktop launcher supplies terminal input through the reopened console.
-      stdio: [interactiveStdin(), "inherit", "inherit"],
+      stdio: ["inherit", "inherit", "inherit"],
       shell: input.shell,
     });
     child.once("error", (cause) =>
@@ -227,7 +224,7 @@ export const triageCommand = Command.make("triage", {
         selected = picked;
       }
 
-      // Windows .cmd shims cannot carry multiline argv; the prompt file also serves as the paste fallback.
+      // The prompt file also serves as the paste fallback.
       const { sessionDir, promptFilePath } = session;
 
       if (selected === undefined) {
@@ -245,12 +242,8 @@ export const triageCommand = Command.make("triage", {
 
       const model = Option.getOrUndefined(flags.model);
       const launchPrompt = buildTriageLaunchPrompt(promptFilePath);
-      // The agent starts in the session directory, so a PATH match relative to this one would
-      // be searched from there. Windows keeps the bare name for its .cmd shim handling.
-      const onPath =
-        (yield* HostProcess.Platform) === "win32"
-          ? null
-          : yield* resolveCommandPath(selected.command);
+      // Resolve relative PATH entries before changing to the session directory.
+      const onPath = yield* resolveCommandPath(selected.command);
       const command = onPath === null ? selected.command : NodePath.resolve(onPath);
       const spawnSpec = yield* resolveSpawnCommand(command, [
         ...(model === undefined ? [] : ["--model", model]),

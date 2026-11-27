@@ -41,8 +41,12 @@ let badgeFavicon: HTMLLinkElement | undefined;
 
 export function setNotificationBadge(count: number) {
   const bridge = window.desktopBridge;
+  if (bridge) {
+    void bridge.setNotificationBadge({ count }).catch(() => undefined);
+    return;
+  }
   let image: string | null = null;
-  if (count > 0 && (!bridge || bridge.getClientPlatform() === "win32")) {
+  if (count > 0) {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 64;
     const context = canvas.getContext("2d");
@@ -59,26 +63,23 @@ export function setNotificationBadge(count: number) {
       image = canvas.toDataURL("image/png");
     }
   }
-  if (!bridge) {
-    if (image) {
-      if (!badgeFavicon) {
-        originalFavicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]') ?? undefined;
-        badgeFavicon = document.createElement("link");
-        badgeFavicon.rel = "icon";
-        badgeFavicon.type = "image/png";
-        badgeFavicon.sizes.value = "64x64";
-        originalFavicon?.remove();
-        document.head.append(badgeFavicon);
-      }
-      badgeFavicon.href = image;
-    } else if (badgeFavicon) {
-      badgeFavicon.remove();
-      badgeFavicon = undefined;
-      if (originalFavicon) document.head.append(originalFavicon);
-      originalFavicon = undefined;
+  if (image) {
+    if (!badgeFavicon) {
+      originalFavicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]') ?? undefined;
+      badgeFavicon = document.createElement("link");
+      badgeFavicon.rel = "icon";
+      badgeFavicon.type = "image/png";
+      badgeFavicon.sizes.value = "64x64";
+      originalFavicon?.remove();
+      document.head.append(badgeFavicon);
     }
+    badgeFavicon.href = image;
+  } else if (badgeFavicon) {
+    badgeFavicon.remove();
+    badgeFavicon = undefined;
+    if (originalFavicon) document.head.append(originalFavicon);
+    originalFavicon = undefined;
   }
-  void bridge?.setNotificationBadge({ count, image }).catch(() => undefined);
 }
 
 let audioContext: AudioContext | undefined;

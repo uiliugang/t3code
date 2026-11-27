@@ -10,7 +10,6 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect has no free-space query.
 import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
 import * as SqlClient from "effect/sql/SqlClient";
 import { isSqlError } from "effect/sql/SqlError";
@@ -306,13 +305,7 @@ const make = Effect.gen(function* () {
             : Effect.void,
         ),
       );
-      if ((yield* HostProcess.Platform) === "win32") {
-        // Windows blocks unlink while any SQLite handle is open, including our own.
-        yield* check.pipe(Effect.provide(connection));
-        yield* removeFiles;
-      } else {
-        yield* check.pipe(Effect.andThen(removeFiles), Effect.provide(connection));
-      }
+      yield* check.pipe(Effect.andThen(removeFiles), Effect.provide(connection));
     },
     (effect, databasePath) =>
       effect.pipe(
@@ -377,7 +370,6 @@ export const runRequestedReclaim = Effect.fn("DatabaseMaintenance.runRequestedRe
 
 // SQLite's search order for its temporary files (unixTempFileDir in os_unix.c).
 const sqliteTempDirectory = Effect.gen(function* () {
-  if ((yield* HostProcess.Platform) === "win32") return NodeOS.tmpdir();
   const fs = yield* FileSystem.FileSystem;
   const env = yield* HostProcess.Environment;
   for (const directory of [env.SQLITE_TMPDIR, env.TMPDIR, "/var/tmp", "/usr/tmp", "/tmp"]) {

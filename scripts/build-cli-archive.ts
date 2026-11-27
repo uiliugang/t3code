@@ -29,11 +29,9 @@ import {
 } from "./build-desktop-artifact.ts";
 import { assertLinuxArm64PageCompatibility } from "./lib/linux-arm64-sea.ts";
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
-import { signWithJsign } from "./lib/windows-jsign.ts";
-import { windowsSystemTar } from "./lib/windows-tar.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
-const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
+const BuildPlatform = Schema.Literals(["mac", "linux"]);
 const BuildArch = Schema.Literals(["arm64", "x64"]);
 type BuildPlatform = typeof BuildPlatform.Type;
 type BuildArch = typeof BuildArch.Type;
@@ -91,7 +89,7 @@ export class CliArchiveInputMissingError extends Schema.TaggedError<
 }
 
 export function cliArchivePlatformKey(platform: BuildPlatform, arch: BuildArch): string {
-  const nodePlatform = platform === "mac" ? "darwin" : platform === "win" ? "win32" : "linux";
+  const nodePlatform = platform === "mac" ? "darwin" : "linux";
   return `${nodePlatform}-${arch}`;
 }
 
@@ -101,7 +99,7 @@ export function cliArchiveStem(version: string, platform: BuildPlatform, arch: B
 
 export function cliArchiveFileName(version: string, platform: BuildPlatform, arch: BuildArch) {
   // Minimal hosts may lack xz, but tar and Node zlib handle gzip without it.
-  return `${cliArchiveStem(version, platform, arch)}.${platform === "win" ? "zip" : "tar.gz"}`;
+  return `${cliArchiveStem(version, platform, arch)}.tar.gz`;
 }
 
 const runCommand = Effect.fn("runCommand")(function* (
@@ -507,83 +505,6 @@ export const awaitCliNotarization = Effect.fn("awaitCliNotarization")(function* 
   yield* requireAccepted(yield* notarytool(["wait", id], credentials.value));
 });
 
-const WindowsSigningConfig = Config.all({
-  endpoint: Config.String("AZURE_TRUSTED_SIGNING_ENDPOINT").pipe(Config.option),
-  accountName: Config.String("AZURE_TRUSTED_SIGNING_ACCOUNT_NAME").pipe(Config.option),
-  certificateProfileName: Config.String("AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME").pipe(
-    Config.option,
-  ),
-});
-
-/** Node's Windows --build-sea leaves a stale Authenticode offset pointing into rebuilt resources instead of certificates. */
-const stripStaleAuthenticodeEntry = Effect.fn("stripStaleAuthenticodeEntry")(function* (
-  executablePath: string,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  const bytes = yield* fs.readFile(executablePath);
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const peOffset = view.getUint32(0x3c, true);
-  if (view.getUint32(peOffset, true) !== 0x00004550) {
-    return yield* new CliArchiveInputMissingError({
-      inputPath: executablePath,
-      hint: "Expected a PE executable to strip the stale signature entry from.",
-    });
-  }
-  const optionalHeader = peOffset + 24;
-  const magic = view.getUint16(optionalHeader, true);
-  // PE data directories start at +112 (PE32+) or +96 (PE32); index 4 holds the certificate offset and size.
-  const securityEntry = optionalHeader + (magic === 0x20b ? 112 : 96) + 4 * 8;
-  const offset = view.getUint32(securityEntry, true);
-  const size = view.getUint32(securityEntry + 4, true);
-  if (offset === 0 && size === 0) return;
-  if (offset + size === bytes.byteLength) {
-    // Let signtool replace intact certificate tables ending at EOF.
-    return;
-  }
-  view.setUint32(securityEntry, 0, true);
-  view.setUint32(securityEntry + 4, 0, true);
-  yield* fs.writeFile(executablePath, bytes);
-  yield* Effect.log(
-    `[cli-archive] Cleared the stale Authenticode entry (offset ${String(offset)}, size ${String(size)}) left by --build-sea.`,
-  );
-});
-
-const signWindowsExecutable = Effect.fn("signWindowsExecutable")(function* (
-  executablePath: string,
-) {
-  const signing = yield* WindowsSigningConfig;
-  const endpoint = Option.getOrUndefined(signing.endpoint);
-  const accountName = Option.getOrUndefined(signing.accountName);
-  const profile = Option.getOrUndefined(signing.certificateProfileName);
-  if (!endpoint || !accountName || !profile) {
-    yield* Effect.log("[cli-archive] Windows signing disabled (missing Azure Trusted Signing).");
-    return;
-  }
-  yield* stripStaleAuthenticodeEntry(executablePath);
-  if ((yield* HostProcess.Platform) !== "win32") {
-    yield* signWithJsign(executablePath);
-    yield* Effect.log("[cli-archive] Signed t3.exe (Azure Trusted Signing via jsign).");
-    return;
-  }
-  const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
-  const script = [
-    "$ErrorActionPreference = 'Stop';",
-    "Invoke-TrustedSigning",
-    `-Endpoint ${quote(endpoint)}`,
-    `-CodeSigningAccountName ${quote(accountName)}`,
-    `-CertificateProfileName ${quote(profile)}`,
-    "-FileDigest 'SHA256'",
-    "-TimestampRfc3161 'http://timestamp.acs.microsoft.com'",
-    "-TimestampDigest 'SHA256'",
-    `-Files ${quote(executablePath)}`,
-  ].join(" ");
-  yield* runCommand(
-    ChildProcess.make("pwsh", ["-NoProfile", "-NonInteractive", "-Command", script]),
-    "Invoke-TrustedSigning t3.exe",
-  );
-  yield* Effect.log("[cli-archive] Signed t3.exe (Azure Trusted Signing).");
-});
-
 const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
   readonly platform: BuildPlatform;
   readonly arch: BuildArch;
@@ -596,17 +517,13 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
   const path = yield* Path.Path;
   const repoRoot = yield* RepoRoot;
   const serverDir = path.join(repoRoot, "apps/server");
-  const executableName = input.platform === "win" ? "t3.exe" : "t3";
+  const executableName = "t3";
   // tsdown suffixes cross-built executables; prefer the exact target over the plain host build.
-  const targetKey = `${input.platform === "mac" ? "darwin" : input.platform}-${input.arch}`;
-  const targetExecutable = path.join(
-    serverDir,
-    "dist-exe",
-    `t3-${targetKey}${input.platform === "win" ? ".exe" : ""}`,
-  );
+  const targetKey = cliArchivePlatformKey(input.platform, input.arch);
+  const targetExecutable = path.join(serverDir, "dist-exe", `t3-${targetKey}`);
   // The unsuffixed executable is valid only for the host platform and architecture.
   const hostPlatform = yield* HostProcess.Platform;
-  const hostKey = `${hostPlatform === "win32" ? "win" : hostPlatform}-${yield* HostProcess.Architecture}`;
+  const hostKey = `${hostPlatform}-${yield* HostProcess.Architecture}`;
   const builtExecutable = (yield* fs.exists(targetExecutable))
     ? targetExecutable
     : targetKey === hostKey
@@ -663,12 +580,8 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
       executablePath,
       notarySubmissionFile: input.notarySubmissionFile,
     });
-  } else if (input.platform === "win") {
-    yield* signWindowsExecutable(executablePath);
   }
-  if (input.platform !== "win") {
-    yield* fs.chmod(executablePath, 0o755);
-  }
+  yield* fs.chmod(executablePath, 0o755);
 
   yield* fs.makeDirectory(input.outputDir, { recursive: true });
   const archivePath = path.join(
@@ -676,35 +589,18 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
     cliArchiveFileName(input.version, input.platform, input.arch),
   );
   yield* fs.remove(archivePath, { force: true });
-  if (input.platform === "win" && hostPlatform !== "win32") {
-    yield* runCommand(
-      ChildProcess.make("zip", ["-q", "-r", "-X", path.resolve(archivePath), stem], {
-        cwd: stageRoot,
-      }),
-      "zip",
-    );
-  } else if (input.platform === "win") {
-    // Windows ships bsdtar, which writes zip natively. Name it by path: under
-    // the Git Bash shell CI uses, a bare `tar` is GNU tar, which neither
-    // writes zip nor accepts a drive-letter path.
-    yield* runCommand(
-      ChildProcess.make(windowsSystemTar(), ["-a", "-c", "-f", archivePath, "-C", stageRoot, stem]),
-      "tar (zip)",
-    );
-  } else {
-    // npm rejects Linux hardlink entries; macOS pnpm clones and bsdtar lacks this flag.
-    yield* runCommand(
-      ChildProcess.make("tar", [
-        ...(input.platform === "linux" ? ["--hard-dereference"] : []),
-        "-czf",
-        archivePath,
-        "-C",
-        stageRoot,
-        stem,
-      ]),
-      "tar (gzip)",
-    );
-  }
+  // npm rejects Linux hardlink entries; macOS pnpm clones and bsdtar lacks this flag.
+  yield* runCommand(
+    ChildProcess.make("tar", [
+      ...(input.platform === "linux" ? ["--hard-dereference"] : []),
+      "-czf",
+      archivePath,
+      "-C",
+      stageRoot,
+      stem,
+    ]),
+    "tar (gzip)",
+  );
   const stat = yield* fs.stat(archivePath);
   yield* Effect.log(`[cli-archive] Wrote ${archivePath} (${String(stat.size)} bytes).`);
   return archivePath;

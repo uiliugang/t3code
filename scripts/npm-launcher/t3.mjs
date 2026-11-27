@@ -10,7 +10,7 @@ const { version } = JSON.parse(
   fs.readFileSync(path.join(import.meta.dirname, "../package.json"), "utf8"),
 );
 
-const SUPPORTED = ["darwin-arm64", "linux-arm64", "linux-x64", "win32-arm64", "win32-x64"];
+const SUPPORTED = ["darwin-arm64", "linux-arm64", "linux-x64"];
 // Well inside launchd's 20 s ExitTimeOut, which SIGKILLs only the launcher and orphans the runtime.
 const TERMINATE_GRACE_MS = 5_000;
 
@@ -76,7 +76,7 @@ async function download(url, file) {
 }
 
 async function install(dir, key) {
-  const archive = `t3-${version}-${key}.${process.platform === "win32" ? "zip" : "tar.gz"}`;
+  const archive = `t3-${version}-${key}.tar.gz`;
   const base = (
     process.env.T3CODE_RELEASE_BASE_URL || "https://github.com/uiliugang/t3code/releases/download"
   ).replace(/\/+$/, "");
@@ -96,24 +96,17 @@ async function install(dir, key) {
     if ((await download(`${base}/v${version}/${archive}`, file)) !== line[1].toLowerCase()) {
       throw new Error(`checksum mismatch for ${archive}`);
     }
-    // Windows' own tar.exe reads zip; a Git-for-Windows tar on PATH cannot.
-    const tar =
-      process.platform === "win32" ? `${process.env.SystemRoot}\\System32\\tar.exe` : "tar";
-    const extract = spawnSync(tar, ["-xf", file, "-C", staging, "--strip-components=1"], {
+    const extract = spawnSync("tar", ["-xf", file, "-C", staging, "--strip-components=1"], {
       stdio: "inherit",
     });
     if (extract.status !== 0) throw new Error(`could not extract ${archive}`);
     fs.rmSync(file);
-    const validate = spawnSync(
-      path.join(staging, process.platform === "win32" ? "t3.exe" : "t3"),
-      ["--version"],
-      {
-        stdio: ["ignore", "ignore", "pipe"],
-        encoding: "utf8",
-        timeout: 30_000,
-        killSignal: "SIGKILL",
-      },
-    );
+    const validate = spawnSync(path.join(staging, "t3"), ["--version"], {
+      stdio: ["ignore", "ignore", "pipe"],
+      encoding: "utf8",
+      timeout: 30_000,
+      killSignal: "SIGKILL",
+    });
     if (validate.status !== 0) {
       throw executableError(
         key,
@@ -187,15 +180,11 @@ async function main() {
 
   // Service IPC and signals must reach the child; terminal Ctrl-C already does, so do not forward SIGINT twice.
   const ipc = process.send !== undefined;
-  const child = spawn(
-    path.join(dir, process.platform === "win32" ? "t3.exe" : "t3"),
-    process.argv.slice(2),
-    {
-      stdio: ipc ? ["inherit", "inherit", "inherit", "ipc"] : "inherit",
-      // The executable lives in the T3 home, so this is how it knows npm launched it.
-      env: { ...process.env, T3CODE_NPM_LAUNCHER_PATH: import.meta.filename },
-    },
-  );
+  const child = spawn(path.join(dir, "t3"), process.argv.slice(2), {
+    stdio: ipc ? ["inherit", "inherit", "inherit", "ipc"] : "inherit",
+    // The executable lives in the T3 home, so this is how it knows npm launched it.
+    env: { ...process.env, T3CODE_NPM_LAUNCHER_PATH: import.meta.filename },
+  });
   if (ipc) {
     process.on("message", (message) => child.connected && child.send(message));
     child.on("message", (message) => process.connected && process.send(message));
@@ -218,17 +207,14 @@ async function main() {
 /** SIGKILL the runtime and its providers, which a runtime stuck on shutdown never stops. */
 function killTree(child) {
   const pids = [child.pid];
-  if (process.platform !== "win32") {
-    const table =
-      spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8", timeout: 2_000 }).stdout ||
-      "";
-    const rows = table
-      .trim()
-      .split("\n")
-      .map((line) => line.trim().split(/\s+/).map(Number));
-    for (let i = 0; i < pids.length; i++) {
-      for (const [pid, ppid] of rows) if (ppid === pids[i]) pids.push(pid);
-    }
+  const table =
+    spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8", timeout: 2_000 }).stdout || "";
+  const rows = table
+    .trim()
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/).map(Number));
+  for (let i = 0; i < pids.length; i++) {
+    for (const [pid, ppid] of rows) if (ppid === pids[i]) pids.push(pid);
   }
   for (const pid of pids.slice(1)) {
     try {

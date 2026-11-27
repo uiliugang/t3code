@@ -3,7 +3,7 @@ export {
   museInitializeParams,
   museLaunch,
   museServeArgs,
-  museWorkspaceRoot,
+  museCanonicalPath,
   type MuseSdkHost,
   type MuseSdkHostOptions,
 } from "./server/sdk.ts";

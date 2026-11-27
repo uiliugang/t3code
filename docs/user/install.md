@@ -14,9 +14,6 @@ Install the fork's CLI on an Apple Silicon Mac or on x64/arm64 Linux:
 curl -fsSL https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install.sh | sh
 ```
 
-The fork does not publish Windows CLI archives. On Windows, use the upstream
-package or [run from source](../../README.md#从源码运行本分支) for the fork's changes.
-
 This installs the `t3` command to `~/.local/bin`. If that folder is not on your
 `PATH` yet, the installer says so and, for zsh, bash on Linux, and fish, prints
 a command to add it. If a `t3` that the installer or the desktop app did not
@@ -66,18 +63,17 @@ node apps/server/dist/bin.mjs
 
 ## Desktop app
 
-Download the fork's Apple Silicon DMG, Linux AppImage/DEB, or Android arm64 APK
+Download the fork's Apple Silicon DMG or Linux AppImage/DEB
 from [the fork's GitHub Releases](https://github.com/uiliugang/t3code/releases).
-For upstream builds, including Windows and Intel Macs, use
+For upstream macOS and Linux builds, including Intel Macs, use
 [upstream GitHub Releases](https://github.com/pingdotgg/t3code/releases) or a package manager:
 
-| Platform                | Command                                                          |
-| ----------------------- | ---------------------------------------------------------------- |
-| macOS                   | `brew install --cask t3-code`                                    |
-| Windows                 | `winget install T3Tools.T3Code` or `scoop install extras/t3code` |
-| Debian / Ubuntu         | `sudo apt install ./T3-Code-*.deb`                               |
-| Arch Linux              | `yay -S t3code-bin` (or `yay -S t3code-nightly-bin`)             |
-| Nix (flakes, Nix 2.30+) | `nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code`     |
+| Platform                | Command                                                      |
+| ----------------------- | ------------------------------------------------------------ |
+| macOS                   | `brew install --cask t3-code`                                |
+| Debian / Ubuntu         | `sudo apt install ./T3-Code-*.deb`                           |
+| Arch Linux              | `yay -S t3code-bin` (or `yay -S t3code-nightly-bin`)         |
+| Nix (flakes, Nix 2.30+) | `nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code` |
 
 ### Install or update with curl
 
@@ -181,13 +177,22 @@ The desktop app bundles `t3` and sets it up on first launch (manage anytime unde
 
 - **Open a folder in the running desktop app**: Run `t3 app` (or `t3 app ../my-project`) from a terminal, or drag folders from your file manager onto the desktop sidebar.
 
-### Windows Subsystem for Linux
+## Access from Windows
 
-Select a WSL distro in **Settings → Sharing & access** to run agents and projects inside WSL (install provider CLIs inside that distro). T3 Code manages its own server runtime inside WSL automatically.
+The fork does not support a native Windows desktop app, server, or CLI, and the
+desktop app does not manage WSL environments. To use T3 Code from Windows, open
+the [web app](https://app.t3.codes) and connect to a host running T3 Code.
+
+You can also install the [Linux CLI](#command-line) and your provider CLIs
+inside a WSL distribution. Start the server in that distribution and connect
+to it as a [normal remote environment](./remote-access.md), not as a
+desktop-managed backend. Keep any existing projects and T3 data in the
+distribution until you have verified your new connection.
 
 ## Mobile app
 
-Install from the [App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or [Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code) (QR codes are also in **Settings → About → Mobile app**). The mobile app connects to a server on another machine via [remote access](./remote-access.md).
+Get the fork's Android arm64 APK from [the fork's GitHub Releases](https://github.com/uiliugang/t3code/releases).
+The upstream app is available for iPhone and iPad from the [App Store](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) and for Android from [Google Play](https://play.google.com/store/apps/details?id=com.t3tools.t3code) (QR codes are also in **Settings → About → Mobile app**). The mobile app connects to a server on another machine via [remote access](./remote-access.md).
 
 - Store builds work with both Stable and Nightly servers. Optional Android beta APKs are under [Android beta releases](https://github.com/pingdotgg/t3code/releases?q=android-beta-).
 - If the mobile app crashes on launch, open **Settings → Diagnostics** on the next launch to copy recent startup crash reports.

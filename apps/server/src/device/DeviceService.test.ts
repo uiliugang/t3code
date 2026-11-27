@@ -43,6 +43,7 @@ import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
 import { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
 
 import * as DeviceService from "./DeviceService.ts";
+import { LocalDeviceHostAddresses } from "./localSshDeviceHost.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
 import { agentDeviceSession, releaseAgentDeviceSession } from "./AgentDeviceTarget.ts";
 import { ensureDeviceHub } from "./DeviceToolchain.ts";
@@ -570,14 +571,14 @@ describe("device setup consent", () => {
       exitCode: 1,
       stderr: "private diagnostics",
       expected:
-        "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.",
+        "Connected over SSH, but this host runs Windows, and SSH device hosts require macOS or Linux. Set up a device host on one of those systems and connect again.",
     },
     {
       name: "a Windows host returning 9009",
       exitCode: 9009,
       stderr: "private diagnostics",
       expected:
-        "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.",
+        "Connected over SSH, but this host runs Windows, and SSH device hosts require macOS or Linux. Set up a device host on one of those systems and connect again.",
     },
     {
       name: "missing Node on a Windows host with a POSIX shell",
@@ -889,6 +890,7 @@ it.effect.each([
     expect(decoded.message).toBe(`Probe test is unavailable: ${reason}`);
     expect(decoded.message).not.toContain("private SSH diagnostics");
   }).pipe(
+    Effect.provideService(LocalDeviceHostAddresses, new Set(["127.0.0.1", "::1"])),
     Effect.provide(
       Layer.mergeAll(
         ServerSettings.layerTest(),
@@ -1986,6 +1988,7 @@ it.effect("reconciles SSH host settings without publishing no-op changes", () =>
     expect(removed.hostStatuses[host.id]).toBeUndefined();
     expect(removedFiles).toHaveLength(1);
   }).pipe(
+    Effect.provideService(LocalDeviceHostAddresses, new Set(["127.0.0.1", "::1"])),
     Effect.scoped,
     Effect.provide(
       Layer.mergeAll(

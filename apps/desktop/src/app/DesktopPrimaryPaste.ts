@@ -42,8 +42,7 @@ export const readGtkPrimaryPasteEnabled = Effect.gen(function* () {
 const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   // Resolved before any window exists so the first preload never sees a provisional value.
-  const enabled =
-    platform === "darwin" || platform === "win32" ? true : yield* readGtkPrimaryPasteEnabled;
+  const enabled = platform === "darwin" ? true : yield* readGtkPrimaryPasteEnabled;
   return DesktopPrimaryPaste.of({ enabled });
 });
 

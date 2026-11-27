@@ -527,15 +527,9 @@ export const isPreviewEditingShortcut = (
   if (isMac && input.alt && input.shift && input.code === "KeyV") return true;
   if (key === "v" && input.shift) return input.alt === isMac;
   if (input.alt) return false;
-  if (key === "z") return !input.shift || platform !== "win32";
+  if (key === "z") return true;
   if (input.shift) return false;
-  return (
-    key === "a" ||
-    key === "c" ||
-    key === "v" ||
-    key === "x" ||
-    (key === "y" && platform === "win32")
-  );
+  return key === "a" || key === "c" || key === "v" || key === "x";
 };
 
 const isPreviewInputSignal = (value: unknown): value is PreviewInputSignal => {

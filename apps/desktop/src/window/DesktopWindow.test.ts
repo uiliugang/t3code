@@ -181,7 +181,6 @@ const layerElectronApp = Layer.mock(ElectronApp.ElectronApp)({
 
 const layerDesktopAssets = Layer.succeed(DesktopAssets.DesktopAssets, {
   iconPaths: Effect.succeed({
-    ico: Option.none<string>(),
     icns: Option.none<string>(),
     png: Option.none<string>(),
   }),
@@ -291,12 +290,7 @@ function layerTest(input: {
     setServerExposureMode: () => Effect.die("unexpected server exposure update"),
     setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
     setUpdateChannel: () => Effect.die("unexpected update channel change"),
-    setWslBackendEnabled: () => Effect.die("unexpected WSL backend toggle"),
-    setWslDistro: () => Effect.die("unexpected WSL distro change"),
-    setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
     setLocalEnvironmentEnabled: () => Effect.die("unexpected local environment toggle"),
-    applyWslWindowsFallback: Effect.die("unexpected WSL Windows fallback"),
-    applyWslWindowsFallbackInMemory: Effect.die("unexpected WSL Windows fallback"),
   } satisfies DesktopAppSettings.DesktopAppSettings["Service"]);
 
   const layerElectronWindow = Layer.succeed(ElectronWindow.ElectronWindow, {
@@ -318,7 +312,6 @@ function layerTest(input: {
         : Effect.succeedSome(input.focusedWindow),
     setMain: (window) => Ref.set(input.mainWindow, Option.some(window)),
     clearMain: () => Ref.set(input.mainWindow, Option.none()),
-    prepareReveal: () => Effect.succeed(false),
     reveal: (window) => Effect.sync(() => input.onReveal?.(window)),
     sendAll: () => Effect.void,
     destroyAll: input.destroyAll ?? Effect.void,
@@ -449,7 +442,6 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
       focusedMainOrFirst: currentMainOrFirst,
       setMain: (window) => Ref.set(mainWindow, Option.some(window)),
       clearMain: () => Ref.set(mainWindow, Option.none()),
-      prepareReveal: () => Effect.succeed(false),
       reveal: (window) => Ref.update(revealedWindows, (windows) => [...windows, window]),
       sendAll: () => Effect.void,
       destroyAll: Effect.void,
@@ -1298,7 +1290,7 @@ describe("DesktopWindow", () => {
         }
         resize();
         yield* TestClock.adjust(250);
-        // Windows reports a minimized window at -32000.
+        // Exercise a minimized window with unusable bounds.
         fakeWindow.isMinimized.mockReturnValue(true);
         fakeWindow.getBounds.mockReturnValue({ x: -32_000, y: -32_000, width: 160, height: 28 });
 
@@ -1355,7 +1347,7 @@ describe("DesktopWindow", () => {
         window: overlay.window,
         createCount: yield* Ref.make(0),
         mainWindow: yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none()),
-        platform: "win32",
+        platform: "linux",
         appearanceWindows: [
           { window: framed.window, titleBarOverlay: false },
           { window: overlay.window, titleBarOverlay: true },
@@ -1746,7 +1738,7 @@ describe("DesktopWindow", () => {
           yield* desktopWindow.showConnectingSplash;
           assert.equal(yield* Ref.get(scenario.createCalls), 1);
           yield* TestClock.adjust("1 second");
-          assert.include(splashHtml(), "Connecting to WSL…");
+          assert.include(splashHtml(), "Connecting to local backend…");
           const initialLoads = splash.loadURL.mock.calls.length;
           yield* TestClock.adjust("1 second");
           assert.equal(splash.loadURL.mock.calls.length, initialLoads);
@@ -1767,7 +1759,7 @@ describe("DesktopWindow", () => {
           assert.include(splashHtml(), "Upgrading database (3 of 7)");
           yield* Ref.set(state.databaseMigrationProgress, null);
           yield* TestClock.adjust("1 second");
-          assert.include(splashHtml(), "Connecting to WSL…");
+          assert.include(splashHtml(), "Connecting to local backend…");
           assert.notInclude(splashHtml(), "Upgrading database");
 
           yield* desktopWindow.activate;

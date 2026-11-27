@@ -294,10 +294,7 @@ export const make = Effect.gen(function* () {
             ? { label: m(msg("Close Window")), click: (_item, window) => window?.close() }
             : {
                 role: "quit",
-                label:
-                  environment.platform === "win32"
-                    ? m(msg("Exit", { $context: "File menu item, quits the app" }))
-                    : m(msg("Quit")),
+                label: m(msg("Quit")),
               },
         ],
       },

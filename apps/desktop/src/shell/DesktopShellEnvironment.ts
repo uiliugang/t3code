@@ -3,10 +3,8 @@ import {
   applyShellEnvironment,
   buildEnvironmentCaptureCommand,
   listLoginShellCandidates,
-  mergePathValues,
+  mergePathEntries,
   readUserLoginShell,
-  setWindowsPath,
-  windowsEnvironmentValueCommand,
 } from "@t3tools/shared/shell";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -43,16 +41,7 @@ interface ShellEnvironmentConfig {
   readonly budget: ProbeBudget;
 }
 
-interface WindowsProbeOptions {
-  readonly loadProfile: boolean;
-}
-
-const DesktopShellEnvironmentProbe = Schema.Literals([
-  "login-shell",
-  "launchctl-path",
-  "powershell-profile",
-  "powershell-no-profile",
-]);
+const DesktopShellEnvironmentProbe = Schema.Literals(["login-shell", "launchctl-path"]);
 type DesktopShellEnvironmentProbe = typeof DesktopShellEnvironmentProbe.Type;
 
 const desktopShellEnvironmentCommandFields = {
@@ -136,17 +125,9 @@ const LOGIN_SHELL_ENV_NAMES = [
   "JAVA_HOME",
   "PNPM_HOME",
 ] as const;
-const WINDOWS_PROFILE_ENV_NAMES = [
-  "PATH",
-  "FNM_DIR",
-  "FNM_MULTISHELL_PATH",
-  "T3CODE_TELEMETRY_ENABLED",
-  "DO_NOT_TRACK",
-] as const;
 const LOCALE_ENV_NAMES = ["LANG", "LC_ALL", "LC_CTYPE"] as const;
 const ANDROID_SDK_ENV_NAMES = ["ANDROID_HOME", "ANDROID_SDK_ROOT"] as const;
 const FALLBACK_LC_CTYPE = "en_US.UTF-8";
-const WINDOWS_SHELL_CANDIDATES = ["pwsh.exe", "powershell.exe"] as const;
 const LOGIN_SHELL_TIMEOUT = Duration.seconds(5);
 // A profile can be slow only while the machine boots; one longer wait covers it.
 const SLOW_LOGIN_SHELL_TIMEOUT = Duration.seconds(20);
@@ -173,12 +154,11 @@ const trimNonEmpty = (value: string | null | undefined): Option.Option<string> =
     Option.filter((entry) => entry.length > 0),
   );
 
-// POSIX directory names may begin or end with whitespace; mergePathValues trims only on Windows.
+// Directory names may begin or end with whitespace.
 const nonEmptyPath = (value: string | null | undefined): Option.Option<string> =>
   Option.fromNullishOr(value).pipe(Option.filter((entry) => entry.length > 0));
 
-const readEnvPath = (env: NodeJS.ProcessEnv): Option.Option<string> =>
-  nonEmptyPath(env.PATH ?? env.Path ?? env.path);
+const readEnvPath = (env: NodeJS.ProcessEnv): Option.Option<string> => nonEmptyPath(env.PATH);
 
 const normalizeRuntimeDir = (value: string): string => value.replace(/\/+$/u, "");
 
@@ -203,31 +183,10 @@ const mergePaths = (
 ): Option.Option<string> =>
   Option.fromNullishOr(
     values.reduce<string | undefined>(
-      (merged, value) => mergePathValues(merged, Option.getOrUndefined(value), platform),
+      (merged, value) => mergePathEntries(merged, Option.getOrUndefined(value), platform),
       undefined,
     ),
   );
-
-const knownWindowsCliDirs = (env: NodeJS.ProcessEnv): ReadonlyArray<string> => [
-  ...trimNonEmpty(env.APPDATA).pipe(
-    Option.match({
-      onNone: () => [],
-      onSome: (value) => [`${value}\\npm`],
-    }),
-  ),
-  ...trimNonEmpty(env.LOCALAPPDATA).pipe(
-    Option.match({
-      onNone: () => [],
-      onSome: (value) => [`${value}\\Programs\\nodejs`, `${value}\\Volta\\bin`, `${value}\\pnpm`],
-    }),
-  ),
-  ...trimNonEmpty(env.USERPROFILE).pipe(
-    Option.match({
-      onNone: () => [],
-      onSome: (value) => [`${value}\\.local\\bin`, `${value}\\.bun\\bin`, `${value}\\scoop\\shims`],
-    }),
-  ),
-];
 
 const startMarker = (name: string) => `__T3CODE_ENV_${name}_START__`;
 const endMarker = (name: string) => `__T3CODE_ENV_${name}_END__`;
@@ -243,21 +202,6 @@ const logShellEnvironmentCommandError = (
       error,
     }),
   );
-
-const captureWindowsEnvironmentCommand = (names: ReadonlyArray<string>) =>
-  [
-    "$ErrorActionPreference = 'Stop'",
-    // Redirected PowerShell output uses the console code page, which mangles non-ASCII paths.
-    "try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch {}",
-    ...names.flatMap((name) => {
-      return [
-        `Write-Output '${startMarker(name)}'`,
-        windowsEnvironmentValueCommand(name),
-        "if ($null -ne $value -and $value.Length -gt 0) { Write-Output $value }",
-        `Write-Output '${endMarker(name)}'`,
-      ];
-    }),
-  ].join("; ");
 
 const extractEnvironment = (output: string, names: ReadonlyArray<string>): EnvironmentPatch => {
   const environment: EnvironmentPatch = {};
@@ -398,83 +342,6 @@ const readLaunchctlPath = (env: NodeJS.ProcessEnv) =>
     args: ["getenv", "PATH"],
     timeout: LAUNCHCTL_TIMEOUT,
   }).pipe(orEmptyOnTimeout, Effect.map(trimNonEmpty));
-
-const readWindowsEnvironment = Effect.fn("desktop.shellEnvironment.readWindowsEnvironment")(
-  function* (
-    names: ReadonlyArray<string>,
-    options: WindowsProbeOptions,
-    env: NodeJS.ProcessEnv,
-    budget: ProbeBudget,
-  ): Effect.fn.Return<EnvironmentPatch, never, ChildProcessSpawner.ChildProcessSpawner> {
-    if (names.length === 0) return {};
-
-    const args = [
-      "-NoLogo",
-      ...(options.loadProfile ? ([] as const) : (["-NoProfile"] as const)),
-      "-NonInteractive",
-      "-Command",
-      captureWindowsEnvironmentCommand(names),
-    ];
-
-    for (const command of WINDOWS_SHELL_CANDIDATES) {
-      const output = yield* runCommandOutput({
-        probe: options.loadProfile ? "powershell-profile" : "powershell-no-profile",
-        command,
-        args,
-        env,
-        timeout: budget.timeout,
-        terminateGrace: budget.terminateGrace,
-      }).pipe(orEmptyOnTimeout);
-      const environment = extractEnvironment(output, names);
-      if (Object.keys(environment).length > 0) {
-        return environment;
-      }
-    }
-
-    return {};
-  },
-);
-
-const installWindowsEnvironment = Effect.fn("desktop.shellEnvironment.installWindowsEnvironment")(
-  function* (
-    config: ShellEnvironmentConfig,
-  ): Effect.fn.Return<boolean, never, ChildProcessSpawner.ChildProcessSpawner> {
-    const [noProfile, profile] = yield* Effect.all(
-      [
-        readWindowsEnvironment(["PATH"], { loadProfile: false }, config.env, config.budget),
-        readWindowsEnvironment(
-          WINDOWS_PROFILE_ENV_NAMES,
-          { loadProfile: true },
-          config.env,
-          config.budget,
-        ),
-      ],
-      { concurrency: 2 },
-    );
-    const mergedPath = mergePaths("win32", [
-      trimNonEmpty(profile.PATH),
-      trimNonEmpty(knownWindowsCliDirs(config.env).join(";")),
-      trimNonEmpty(noProfile.PATH),
-      readEnvPath(config.env),
-    ]);
-
-    if (Option.isSome(mergedPath)) {
-      setWindowsPath(config.env, mergedPath.value);
-    }
-    if (!config.env.FNM_DIR && profile.FNM_DIR) {
-      config.env.FNM_DIR = profile.FNM_DIR;
-    }
-    if (!config.env.FNM_MULTISHELL_PATH && profile.FNM_MULTISHELL_PATH) {
-      config.env.FNM_MULTISHELL_PATH = profile.FNM_MULTISHELL_PATH;
-    }
-    for (const name of ["T3CODE_TELEMETRY_ENABLED", "DO_NOT_TRACK"] as const) {
-      if (!config.env[name] && profile[name]) {
-        config.env[name] = profile[name];
-      }
-    }
-    return Boolean(noProfile.PATH && profile.PATH);
-  },
-);
 
 const listUserShells = (env: NodeJS.ProcessEnv): ReadonlyArray<string> =>
   [env.SHELL?.trim(), readUserLoginShell()].filter((shell): shell is string => Boolean(shell));
@@ -652,11 +519,6 @@ const installShellEnvironment = (
   never,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
 > => {
-  if (config.platform === "win32") {
-    return installWindowsEnvironment(config).pipe(
-      Effect.map((prepared) => ({ prepared, fromUserShell: prepared })),
-    );
-  }
   if (config.platform === "darwin" || config.platform === "linux") {
     return installPosixEnvironment(config);
   }

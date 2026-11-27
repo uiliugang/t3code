@@ -8,8 +8,25 @@ import {
   normalizeStorePng,
   parsePairingCredentialOutput,
   readPngMetadata,
+  resolveAndroidSdkRoot,
   validateStoreAsset,
 } from "./mobile-showcase.ts";
+
+it("keeps the macOS and Linux Android SDK defaults and honors configured overrides", () => {
+  const home = { HOME: "/tmp/example home" };
+  assert.strictEqual(
+    resolveAndroidSdkRoot(home, "darwin"),
+    "/tmp/example home/Library/Android/sdk",
+  );
+  assert.strictEqual(resolveAndroidSdkRoot(home, "linux"), "/tmp/example home/Android/Sdk");
+  assert.strictEqual(
+    resolveAndroidSdkRoot(
+      { ...home, ANDROID_HOME: "/preferred sdk", ANDROID_SDK_ROOT: "/alternate sdk" },
+      "linux",
+    ),
+    "/preferred sdk",
+  );
+});
 
 function rgbaPng(width: number, height: number): Buffer {
   const png = new PNG({ width, height });

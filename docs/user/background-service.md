@@ -1,6 +1,6 @@
 # Running T3 Code in the background
 
-Run T3 Code as a background user service on Linux, macOS, or Windows so your host stays reachable without keeping a terminal open.
+Run T3 Code as a background user service on Linux or macOS so your host stays reachable without keeping a terminal open.
 
 ## Manage the service
 
@@ -40,7 +40,6 @@ T3CODE_HOST=127.0.0.1
 
 - **Linux**: Requires systemd user services with lingering enabled so T3 Code starts at boot and survives logout.
 - **macOS**: Starts at login, stops at logout. Keep the Mac logged in and awake for unattended access. If agents can't read Desktop/Documents/Downloads, grant Full Disk Access to the `t3` path in `~/Library/LaunchAgents/com.t3tools.t3code.service.plist`.
-- **Windows**: Runs windowless via Task Scheduler (`t3code-<domain>-<user>`) while signed in and auto-restarts on exit. Lock the screen instead of signing out for unattended access.
 
 > Note: Signing out of T3 Connect does not stop or uninstall the background service.
 

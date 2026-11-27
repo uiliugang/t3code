@@ -1,21 +1,9 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import type * as PlatformError from "effect/PlatformError";
-import * as Result from "effect/Result";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 
-/** Windows open-file locks block renames; the same codes can mean permanent denial, so bound retries. */
-export const isWindowsRenameLock = (error: PlatformError.PlatformError) => {
-  const code = (error.reason.cause as NodeJS.ErrnoException | undefined)?.code;
-  return code === "EBUSY" || code === "EPERM" || code === "EACCES";
-};
-
-// Bound denial delays to about two seconds because settings saves hold their write lock.
-const LOCKED_RENAME_RETRIES = 20;
-const LOCKED_RENAME_RETRY_DELAY = "100 millis";
 const CHUNK_WRITE_LENGTH = 1 << 20;
 
 // Saves keep the replaced file's mode and create new files owner-only; chmod, since the umask narrows an open mode.
@@ -42,7 +30,6 @@ export const writeFileStringAtomically = (input: {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const platform = yield* HostProcess.Platform;
       const targetPath = yield* resolveSymlinkTarget(input.filePath);
       const targetDirectory = path.dirname(targetPath);
 
@@ -59,7 +46,6 @@ export const writeFileStringAtomically = (input: {
 
       // One write-only handle: a reopen fails when the umask or the chmod drops access.
       // Without the sync, a crash soon after the rename can leave the target empty.
-      // Closed before the rename, which Windows refuses for open files.
       yield* Effect.scoped(
         Effect.gen(function* () {
           const file = yield* fs.open(tempPath, { flag: "w" });
@@ -80,53 +66,20 @@ export const writeFileStringAtomically = (input: {
             }
             if (batchLength > 0) yield* file.writeAll(encoder.encode(batch.join("")));
           }
-          if (platform !== "win32") {
-            yield* fs.chmod(tempPath, yield* replacedMode(fs, targetPath));
-          }
+          yield* fs.chmod(tempPath, yield* replacedMode(fs, targetPath));
           yield* file.sync;
         }),
       );
-      if (platform !== "win32") {
-        yield* fs.rename(tempPath, targetPath);
-        // Persists the rename. A directory without read access cannot be opened to sync, and
-        // replacing in one needs only write and search access, so that save stands.
-        return yield* fs.open(targetDirectory, { flag: "r" }).pipe(
-          Effect.flatMap((directory) => directory.sync),
-          Effect.scoped,
-          Effect.catchIf(
-            (error) => error.reason._tag === "PermissionDenied" || isUnsupportedSync(error),
-            (error) => Effect.logWarning(error),
-          ),
-        );
-      }
-
-      // Stop retrying if another save changes the target; read-only targets also return permanent EPERM.
-      const targetVersion = fs.stat(targetPath).pipe(
-        Effect.map((info) => ({
-          id: `${Option.getOrUndefined(info.ino)}:${info.size}:${Option.getOrUndefined(info.mtime)?.getTime()}`,
-          readOnly: (info.mode & 0o200) === 0,
-        })),
+      yield* fs.rename(tempPath, targetPath);
+      // Persists the rename. A directory without read access cannot be opened to sync, and
+      // replacing in one needs only write and search access, so that save stands.
+      yield* fs.open(targetDirectory, { flag: "r" }).pipe(
+        Effect.flatMap((directory) => directory.sync),
+        Effect.scoped,
         Effect.catchIf(
-          (error) => error.reason._tag === "NotFound",
-          () => Effect.succeed({ id: "missing", readOnly: false }),
+          (error) => error.reason._tag === "PermissionDenied" || isUnsupportedSync(error),
+          (error) => Effect.logWarning(error),
         ),
-        Effect.option,
       );
-      const before = yield* targetVersion;
-      const firstAttempt = yield* Effect.result(fs.rename(tempPath, targetPath));
-      if (Result.isSuccess(firstAttempt)) return;
-      const lockError = firstAttempt.failure;
-      if (!isWindowsRenameLock(lockError) || Option.isNone(before) || before.value.readOnly) {
-        return yield* lockError;
-      }
-      for (let retry = 0; retry < LOCKED_RENAME_RETRIES; retry += 1) {
-        yield* Effect.sleep(LOCKED_RENAME_RETRY_DELAY);
-        const current = yield* targetVersion;
-        if (Option.isNone(current) || current.value.id !== before.value.id) break;
-        const attempt = yield* Effect.result(fs.rename(tempPath, targetPath));
-        if (Result.isSuccess(attempt)) return;
-        if (!isWindowsRenameLock(attempt.failure)) return yield* attempt.failure;
-      }
-      return yield* lockError;
     }),
   );

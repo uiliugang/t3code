@@ -37,7 +37,7 @@ const listeningPort = Effect.acquireRelease(
 ).pipe(Effect.map((server) => (server.address() as NodeNet.AddressInfo).port));
 
 describe("host-bound agent commands", () => {
-  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+  it.effect(
     "runs both desktop hops as Node with a stripped environment, preserving arguments and exit code",
     () =>
       Effect.gen(function* () {
@@ -370,34 +370,32 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
     ),
   );
 
-  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
-    "tells the agent to reopen the device when the runtime it was bound to is gone",
-    () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-stale-" });
-        const runtime = path.join(dir, "old-node");
-        yield* fs.writeFileString(runtime, "#!/bin/sh\nexit 0\n");
-        yield* fs.chmod(runtime, 0o755);
-        const command = yield* bindAgentDeviceLauncher({
-          entryPath: path.join(dir, "cli.mjs"),
-          stateDir: dir,
-          session: "t3-a",
-          targetArgs: ["--config", "/h.json", "--session", "t3-a"],
-        }).pipe(Effect.provideService(HostProcess.ExecutablePath, runtime));
-        yield* fs.remove(runtime);
-        yield* Effect.promise(() =>
-          expect(exec(command, ["snapshot"])).rejects.toMatchObject({
-            code: 1,
-            stderr: expect.stringContaining("Call device_open again"),
-          }),
-        );
-      }).pipe(
-        Effect.scoped,
-        Effect.provideService(HostProcess.IsExecutable, false),
-        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
-      ),
+  it.effect("tells the agent to reopen the device when the runtime it was bound to is gone", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-stale-" });
+      const runtime = path.join(dir, "old-node");
+      yield* fs.writeFileString(runtime, "#!/bin/sh\nexit 0\n");
+      yield* fs.chmod(runtime, 0o755);
+      const command = yield* bindAgentDeviceLauncher({
+        entryPath: path.join(dir, "cli.mjs"),
+        stateDir: dir,
+        session: "t3-a",
+        targetArgs: ["--config", "/h.json", "--session", "t3-a"],
+      }).pipe(Effect.provideService(HostProcess.ExecutablePath, runtime));
+      yield* fs.remove(runtime);
+      yield* Effect.promise(() =>
+        expect(exec(command, ["snapshot"])).rejects.toMatchObject({
+          code: 1,
+          stderr: expect.stringContaining("Call device_open again"),
+        }),
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(HostProcess.IsExecutable, false),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
   );
 
   it.effect("runs two hosts concurrently and only updates the reconnected host", () =>
@@ -405,11 +403,7 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const temp = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-target-" });
-      const platform = yield* HostProcess.Platform;
-      const dir = path.join(
-        temp,
-        platform === "win32" ? "paths with spaces" : "quotes '\" $HOME `literal`",
-      );
+      const dir = path.join(temp, "quotes '\" $HOME `literal`");
       yield* fs.makeDirectory(dir);
       const entryPath = path.join(dir, "cli.mjs");
       yield* fs.writeFileString(
@@ -431,15 +425,8 @@ if (process.env.AGENT_DEVICE_DAEMON_BASE_URL) process.exit(2);`,
         });
       const invoke = (file: string) =>
         exec(
-          platform === "win32" ? process.execPath : path.join(shim, "agent-device"),
-          [
-            ...(platform === "win32" ? [path.join(shim, "agent-device-launcher.mjs")] : []),
-            "snapshot",
-            "--config",
-            file,
-            "--session",
-            "test-session",
-          ],
+          path.join(shim, "agent-device"),
+          ["snapshot", "--config", file, "--session", "test-session"],
           { env: { ...process.env, AGENT_DEVICE_DAEMON_BASE_URL: "http://wrong-host" } },
         ).then((result) => JSON.parse(result.stdout));
       expect(yield* Effect.promise(() => Promise.all(files.map(invoke)))).toEqual([

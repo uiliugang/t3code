@@ -138,7 +138,6 @@ export default defineConfig({
           include: ["**/*.test.{ts,tsx,mjs}"],
           exclude: ["**/node_modules/**", ...reactTests],
           setupFiles: [
-            "../../packages/shared/src/testing/longTempDir.ts",
             "../../packages/shared/src/testing/providerEnv.ts",
             "../../packages/shared/src/testing/gitEnv.ts",
           ],

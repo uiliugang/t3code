@@ -223,8 +223,7 @@ const makeDirectBootstrapStream = (fd: number): NodeStream.Readable => {
   }
 };
 
-// WSL-inherited stdin pipes cannot be reopened via /proc/self/fd/0 (EACCES),
-// so they must be read directly.
+// Some inherited pipes cannot be reopened through /proc/self/fd; read the original descriptor.
 const isBootstrapFdPathDuplicationError = Predicate.compose(
   Predicate.hasProperty("code"),
   (_) => _.code === "ENXIO" || _.code === "EINVAL" || _.code === "EPERM" || _.code === "EACCES",
@@ -233,9 +232,6 @@ const isBootstrapFdPathDuplicationError = Predicate.compose(
 function resolveFdPath(fd: number, platform: NodeJS.Platform): string | undefined {
   if (platform === "linux") {
     return `/proc/self/fd/${fd}`;
-  }
-  if (platform === "win32") {
-    return undefined;
   }
   return `/dev/fd/${fd}`;
 }

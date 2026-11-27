@@ -196,7 +196,7 @@ export const repointLaunchers = Effect.fn("cloud.service_launcher_client.repoint
       }
     }
     const versionsDir = pinnedRuntimeVersionsDir(path, input.baseDir);
-    const target = pinnedRuntimePaths(path, input.baseDir, input.targetVersion, platform);
+    const target = pinnedRuntimePaths(path, input.baseDir, input.targetVersion);
     for (const launchedAs of candidates) {
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -242,7 +242,7 @@ export const repointLaunchers = Effect.fn("cloud.service_launcher_client.repoint
   },
 );
 
-/** Completes when the launcher asks this server to stop, which Windows cannot signal. */
+/** Completes when a legacy launcher asks this server to stop over IPC. */
 export const awaitServiceLauncherStop = Effect.fn("cloud.service_launcher_client.await_stop")(
   function* (options?: { readonly currentVersion?: string }) {
     const startup = yield* resolveStartup(options).pipe(Effect.option);

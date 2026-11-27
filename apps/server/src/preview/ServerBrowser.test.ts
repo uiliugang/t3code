@@ -5,7 +5,6 @@ import * as NodeFSP from "node:fs/promises";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { it } from "@effect/vitest";
 import {
   type BrowserRecordingFrameRate,
@@ -1097,7 +1096,7 @@ it.effect("a server started without the desktop browser channel marks its tabs h
       expect(sessions.find((session) => session.tabId === tabId)?.headless).toBe(true);
     }),
   ).pipe(
-    // A WSL-only desktop starts its backend without the browser fds.
+    // A standalone server starts without the desktop browser channel.
     Effect.provide(
       ServerBrowser.layer.pipe(
         Layer.provide(DesktopChannel.layer),
@@ -2687,9 +2686,7 @@ it.effect.each([false, true])(
         });
         expect(Option.isSome(file) && file.value.fileName).toBe("report.csv");
         expect(yield* fs.readFileString(Option.getOrThrow(file).path)).toBe("a,b");
-        if ((yield* HostProcess.Platform) !== "win32") {
-          expect((yield* fs.stat(Option.getOrThrow(file).path)).mode & 0o777).toBe(0o600);
-        }
+        expect((yield* fs.stat(Option.getOrThrow(file).path)).mode & 0o777).toBe(0o600);
         const status = yield* broker.invoke<PreviewAutomationStatus>({
           scope,
           tabId,
@@ -2712,20 +2709,18 @@ it.effect.each([false, true])(
             }),
           ),
         ).toBe(true);
-        if ((yield* HostProcess.Platform) !== "win32") {
-          const folder = (yield* Path.Path).dirname(Option.getOrThrow(file).path);
-          yield* fs.chmod(folder, 0o755);
-          page.emit("download", {
-            failure: async () => null,
-            delete: async () => {},
-            saveAs: (path: string) => NodeFSP.writeFile(path, "c"),
-            suggestedFilename: () => "again.csv",
-            url: () => "https://example.test/again.csv",
-          });
-          let again = yield* Queue.take(viewer.output);
-          while (again._tag !== "download") again = yield* Queue.take(viewer.output);
-          expect((yield* fs.stat(folder)).mode & 0o777).toBe(0o700);
-        }
+        const folder = (yield* Path.Path).dirname(Option.getOrThrow(file).path);
+        yield* fs.chmod(folder, 0o755);
+        page.emit("download", {
+          failure: async () => null,
+          delete: async () => {},
+          saveAs: (path: string) => NodeFSP.writeFile(path, "c"),
+          suggestedFilename: () => "again.csv",
+          url: () => "https://example.test/again.csv",
+        });
+        let again = yield* Queue.take(viewer.output);
+        while (again._tag !== "download") again = yield* Queue.take(viewer.output);
+        expect((yield* fs.stat(folder)).mode & 0o777).toBe(0o700);
       }),
     ).pipe(Effect.provide(layer)),
 );

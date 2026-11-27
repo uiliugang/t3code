@@ -37,7 +37,7 @@ export class SshWindowsHostError extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("SshWindowsHostError", { cause: Schema.Defect() }) {
   override get message(): string {
-    return "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.";
+    return "Connected over SSH, but this host runs Windows, and SSH device hosts require macOS or Linux. Set up a device host on one of those systems and connect again.";
   }
 }
 export const isSshWindowsHostError = Schema.is(SshWindowsHostError);
@@ -167,7 +167,7 @@ const explainWindowsHost = Effect.fn("SshDeviceHost.explainWindowsHost")(functio
   error: DeviceHost.DeviceHostError,
 ) {
   const cause = error.cause;
-  // Windows ssh.exe preserves full remote exit statuses such as 9009.
+  // Some SSH clients preserve full remote exit statuses such as 9009.
   if (
     !isSshCommandError(cause) ||
     cause.exitCode === null ||

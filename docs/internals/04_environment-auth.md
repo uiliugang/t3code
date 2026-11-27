@@ -96,7 +96,7 @@ model.
   (the directory is on a `noexec` mount, the run was refused, or it did not end in time), nothing
   is pushed and the tool says the hooks could not be started. That is checked for the launchers
   only: a hook the launcher cannot start in turn fails the push in Git, as any failing hook does.
-  Windows has no such permission and is not checked. The digest covers what it names and no more: each configured
+  The digest covers what it names and no more: each configured
   hook's name, command and the points of the push that start it, each hook file Git starts and, where that file is the shim husky 9
   and Vite+ install (`. "$(dirname "$0")/h"`), the runner `h` beside it and the script of the
   hook's name one directory up, such as `.husky/pre-push`. A named file edited after that last

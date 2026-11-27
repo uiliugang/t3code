@@ -8,11 +8,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import {
-  decryptChromiumValue,
-  readChromiumCookieDatabase,
-  readChromiumCookies,
-} from "./ChromiumCookies.ts";
+import { readChromiumCookieDatabase, readChromiumCookies } from "./ChromiumCookies.ts";
 import { ChromiumKeyError } from "./ChromiumKeys.ts";
 import { LinuxBrowserSecretPath } from "./LinuxBrowserSecret.ts";
 import { cookieScope } from "./CookieDatabase.ts";
@@ -28,13 +24,6 @@ const encryptChromium = (
 
 const encryptV10 = (value: string | Buffer, key: Buffer): Uint8Array =>
   encryptChromium("v10", value, key);
-
-const encryptWindowsV10 = (value: string | Buffer, key: Buffer): Uint8Array => {
-  const nonce = Buffer.from("0123456789ab");
-  const cipher = NodeCrypto.createCipheriv("aes-256-gcm", key, nonce);
-  const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
-  return Buffer.concat([Buffer.from("v10"), nonce, encrypted, cipher.getAuthTag()]);
-};
 
 describe("cookieScope", () => {
   it("keeps a host-only cookie host-only", () => {
@@ -57,31 +46,6 @@ describe("cookieScope", () => {
 });
 
 describe("readChromiumCookieDatabase", () => {
-  it("decrypts Windows v10 AES-GCM records and rejects app-bound v20 records", () => {
-    const key = Buffer.from("0123456789abcdef0123456789abcdef");
-    const host = ".example.test";
-    const bound = Buffer.concat([
-      NodeCrypto.createHash("sha256").update(host).digest(),
-      Buffer.from("windows value"),
-    ]);
-
-    expect(
-      decryptChromiumValue(encryptWindowsV10(bound, key), { gcmV10: key }, host, 24, "win32"),
-    ).toBe("windows value");
-    expect(
-      decryptChromiumValue(Buffer.from("v20app-bound"), { gcmV10: key }, host, 24, "win32"),
-    ).toBeNull();
-    expect(
-      decryptChromiumValue(
-        encryptWindowsV10(bound, Buffer.alloc(32, 1)),
-        { gcmV10: key },
-        host,
-        24,
-        "win32",
-      ),
-    ).toBeNull();
-  });
-
   it.effect(
     "reports the missing key when no cookies can be read, while preserving partial imports",
     () =>

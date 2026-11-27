@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+# Another project launcher is not the Vite+ executable we are probing.
+[ "${T3_PROJECT_VP_PROBE:-}" != 1 ] || exit 1
+
 t3_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 t3_node=$(tr '\n' ' ' < "$t3_root/package.json" | sed -nE 's/.*"engines"[[:space:]]*:[[:space:]]*\{[^}]*"node"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
 if ! printf '%s\n' "$t3_node" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -12,15 +15,12 @@ t3_vp=
 t3_path_ifs=$IFS
 IFS=:
 for t3_directory in $PATH; do
-  # Probing another worktree launcher would recursively search this same PATH.
-  [ ! -f "${t3_directory:-.}/scripts/project-vp.ps1" ] || continue
-  for t3_candidate in "${t3_directory:-.}/vp" "${t3_directory:-.}/vp.exe"; do
-    if [ -x "$t3_candidate" ] && [ ! "$t3_candidate" -ef "$t3_root/vp" ] &&
-      "$t3_candidate" env current --json >/dev/null 2>&1; then
-      t3_vp=$t3_candidate
-      break 2
-    fi
-  done
+  t3_candidate=${t3_directory:-.}/vp
+  if [ -x "$t3_candidate" ] && [ ! "$t3_candidate" -ef "$t3_root/vp" ] &&
+    T3_PROJECT_VP_PROBE=1 "$t3_candidate" env current --json >/dev/null 2>&1; then
+    t3_vp=$t3_candidate
+    break
+  fi
 done
 IFS=$t3_path_ifs
 if [ -z "$t3_vp" ]; then

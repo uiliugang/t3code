@@ -83,7 +83,6 @@ export function snapShotSetupComplete(
   state: DesktopSnapShotState | null,
   includeAccessibility: boolean,
 ): boolean {
-  if (state?.windows) return true;
   return (
     state?.macPermissions !== undefined &&
     captureSetupAccessReady(state) &&

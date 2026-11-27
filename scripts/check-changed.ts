@@ -40,7 +40,6 @@ import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { decide, readWorkspace } from "../.github/scripts/ci-changes.cjs";
-import { vitePlusCommand } from "./check-changed-command.ts";
 import {
   installSighupForwarding,
   resolveGitCommonDir,
@@ -190,8 +189,7 @@ export const gitLines = (cwd: string, args: ReadonlyArray<string>) =>
 const checkInput = /(^|\/)\.(generated|astro)\/|\.d\.ts$|(^|\/)\.env[^/]*$/;
 const inNodeModules = /(^|\/)node_modules\//;
 
-// Pathspecs don't stop git from walking an ignored directory, and on Windows it follows pnpm's
-// junctions in node_modules until MAX_PATH. `--directory` lists one without entering it.
+// Pathspecs don't stop git from walking an ignored directory. `--directory` lists one without entering it.
 export const ignoredCheckInputs = Effect.fn("checkChanged.ignoredCheckInputs")(function* (
   root: string,
 ) {
@@ -213,7 +211,7 @@ export const ignoredCheckInputs = Effect.fn("checkChanged.ignoredCheckInputs")(f
       entry.endsWith("/") && !inNodeModules.test(entry) && !entries[index + 1]?.startsWith(entry),
   );
   const files = entries.filter((entry) => !entry.endsWith("/"));
-  // Calls fit Windows' 32,767-character command line: 16 covers `:(literal)`, quotes, a space.
+  // Batch arguments to bound the spawn size; 16 covers the `:(literal)` prefix and overhead.
   // `.git/` matches nothing; it stops git starting its walk inside a nested repository.
   const longest = directories.reduce((max, dir) => Math.max(max, dir.length), 0);
   const size = Math.max(1, Math.floor(30_000 / (longest + 16)));
@@ -484,9 +482,8 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   const vp = (args: ReadonlyArray<string>, cwd = root) =>
     Effect.scoped(
       Effect.gen(function* () {
-        const [command, commandArgs] = vitePlusCommand(args, platform);
         const handle = yield* spawner.spawn(
-          ChildProcess.make(command, commandArgs, {
+          ChildProcess.make("vp", args, {
             cwd,
             env,
             extendEnv: true,

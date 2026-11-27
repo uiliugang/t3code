@@ -59,7 +59,7 @@ Anthropic API and the real `claude` CLI:
   `--stress`; the default reconnect is a user's 3 devices holding 10 threads each.
 - `--quick` shortens every window for a per-PR or nightly check; `compare` refuses to mix quick
   and full runs. `--help` says which scenario to trust for what.
-- Test macOS, Windows, and Linux with `--no-agent-scope`: Linux systemd agent scopes mask
+- Test macOS and Linux with `--no-agent-scope`: Linux systemd agent scopes mask
   per-process polling paths that other platforms run.
 
 ## Client switch metrics
@@ -142,7 +142,7 @@ thread's rows, composer keys, and JS and UI frames.
 - Event-store sequence cursors and startup recovery candidate selection must seek indexes rather
   than scan retained history or decode completed threads just to discover no work remains.
 - Trace and provider logs must use asynchronous, serialized writes and rotation—synchronous appends
-  stall the server event loop on slow disks (especially Windows).
+  stall the server event loop on slow disks.
 - Background awareness and settlement work must coalesce per thread and ignore high-frequency
   transcript/tool-output deltas.
 

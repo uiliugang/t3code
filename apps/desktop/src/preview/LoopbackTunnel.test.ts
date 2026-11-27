@@ -356,30 +356,6 @@ it.effect.each([
     }),
 );
 
-it.effect("serves a SOCKS client on Windows without looking up its owner", () =>
-  Effect.gen(function* () {
-    const decoy = yield* listenDecoy;
-    const endpoint = yield* listenEndpoint;
-    const commands: Array<string> = [];
-    const proxyPort = yield* routeThroughTunnel(
-      `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
-      Layer.mergeAll(
-        Layer.succeed(HostProcess.Platform, "win32"),
-        Layer.succeed(HostProcess.UserId, undefined),
-        systemTools((command) => {
-          commands.push(command);
-          return "";
-        }),
-      ),
-    );
-    const { reply } = yield* socksConnect(proxyPort, "localhost", addressPort(decoy.server));
-    expect(reply[1]).toBe(0);
-    expect(endpoint.requests.length).toBe(1);
-    expect(decoy.connections()).toBe(0);
-    expect(commands).toEqual([]);
-  }),
-);
-
 it.effect("connects straight to the environment's own forwarded origin port", () =>
   Effect.gen(function* () {
     // Over SSH the origin is a local forward, and signed file previews load from it.

@@ -156,10 +156,6 @@
       "types": "./src/appImageRuntimeEnv.ts",
       "import": "./src/appImageRuntimeEnv.ts"
     },
-    "./windowsSystem": {
-      "types": "./src/windowsSystem.ts",
-      "import": "./src/windowsSystem.ts"
-    },
     "./envTrampoline": {
       "types": "./src/envTrampoline.ts",
       "import": "./src/envTrampoline.ts"
@@ -267,10 +263,6 @@
     "./desktopBootstrapToken": {
       "types": "./src/desktopBootstrapToken.ts",
       "import": "./src/desktopBootstrapToken.ts"
-    },
-    "./desktopReadinessProof": {
-      "types": "./src/desktopReadinessProof.ts",
-      "import": "./src/desktopReadinessProof.ts"
     },
     "./dpopCommon": {
       "types": "./src/dpopCommon.ts",
@@ -443,10 +435,6 @@
     "./testing/gitRepositoryEnv": {
       "types": "./src/testing/gitRepositoryEnv.ts",
       "import": "./src/testing/gitRepositoryEnv.ts"
-    },
-    "./testing/longTempDir": {
-      "types": "./src/testing/longTempDir.ts",
-      "import": "./src/testing/longTempDir.ts"
     },
     "./testing/symlinks": {
       "types": "./src/testing/symlinks.ts",
@@ -738,7 +726,6 @@
     "@noble/hashes": "catalog:",
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
-    "ffi-rs": "1.3.2",
     "get-east-asian-width": "^1.6.0",
     "gt-i18n": "1.0.40",
     "hast-util-sanitize": "^5.0.2",

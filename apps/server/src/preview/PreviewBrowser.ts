@@ -43,14 +43,6 @@ const ARCHIVES = {
     bytes: 112_314_759,
     sha256: "dc1ac31965cb2ec7794aed8c66127aceea304ae15353cd56fc4b8bde44091548",
   },
-  win32: {
-    bytes: 122_509_314,
-    sha256: "936ad5e7f530bdd66b7261d0a2ceed76b057d429cf31b770a95fd903a7969856",
-  },
-  win64: {
-    bytes: 127_879_225,
-    sha256: "e935ea2d4633495b5e9ab7bc66bcd982806329c0ee9ecbafc1ac9596a3b34cdb",
-  },
 } as const;
 
 const chromePlatform = (platform: NodeJS.Platform, arch: NodeJS.Architecture) => {
@@ -59,9 +51,6 @@ const chromePlatform = (platform: NodeJS.Platform, arch: NodeJS.Architecture) =>
       return arch === "x64" ? "linux64" : arch === "arm64" ? "linux-arm64" : null;
     case "darwin":
       return arch === "arm64" ? "mac-arm64" : arch === "x64" ? "mac-x64" : null;
-    case "win32":
-      // There is no Windows arm64 build; Windows on Arm runs the x64 one under emulation.
-      return arch === "ia32" ? "win32" : arch === "x64" || arch === "arm64" ? "win64" : null;
     default:
       return null;
   }
@@ -183,8 +172,7 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
     "chrome-headless-shell",
     release?.platform ?? `${platform}-${arch}`,
   );
-  const executableName =
-    platform === "win32" ? "chrome-headless-shell.exe" : "chrome-headless-shell";
+  const executableName = "chrome-headless-shell";
   const gate = yield* Semaphore.make(1);
   let state: InstallState = { _tag: "idle" };
   const progress = { downloadedBytes: 0, unpacking: false };
@@ -193,7 +181,7 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
     const executable = path.join(installRoot, release.version, executableName);
     return fs.stat(executable).pipe(
       Effect.map((info) =>
-        info.type === "File" && (platform === "win32" || (info.mode & 0o111) !== 0)
+        info.type === "File" && (info.mode & 0o111) !== 0
           ? Option.some(executable)
           : Option.none<string>(),
       ),
@@ -293,7 +281,7 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
           }).pipe(Stream.run(fs.sink(target, { flag: "wx" })));
         }).pipe(Effect.scoped);
         // The binary and its shared libraries carry exec bits in the archive.
-        if (platform !== "win32" && (unixMode & 0o777) !== 0) {
+        if ((unixMode & 0o777) !== 0) {
           yield* fs.chmod(target, unixMode & 0o777);
         }
         if (relative === executableName) foundExecutable = true;

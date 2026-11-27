@@ -27,7 +27,7 @@ import {
   makeMuseEnvironment,
   museLaunch,
   museServeArgs,
-  museWorkspaceRoot,
+  museCanonicalPath,
   parseMuseVersion,
 } from "@t3tools/provider-muse/testing";
 import { provideDeterministicTestRuntime } from "../src/orchestration-v2/testkit/DeterministicRuntime.ts";
@@ -264,7 +264,7 @@ const record = Effect.gen(function* () {
       commandIds,
     },
     entries: normalizeEntries(entries, [
-      yield* museWorkspaceRoot(canonicalWorkspace),
+      yield* museCanonicalPath(canonicalWorkspace),
       canonicalWorkspace,
       workspace,
     ]),

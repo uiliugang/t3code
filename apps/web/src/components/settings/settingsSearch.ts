@@ -1,7 +1,7 @@
 import { translateUi } from "@t3tools/shared/uiLocale";
 import { HOSTED_APP_CHANNEL } from "~/branding";
 import { isElectron } from "~/env";
-import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
+import { isMacPlatform, normalizeSearchText } from "~/lib/utils";
 import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@t3tools/contracts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
@@ -63,7 +63,6 @@ export interface SettingsSearchItem {
   readonly scope?: SettingsSearchScope;
   readonly desktopOnly?: boolean;
   readonly macOnly?: boolean;
-  readonly windowsOnly?: boolean;
   readonly releaseChannelOnly?: boolean;
   readonly secretProvidersOnly?: boolean;
   readonly cloudOnly?: boolean;
@@ -72,7 +71,6 @@ export interface SettingsSearchItem {
   readonly localBackendManagementOnly?: boolean;
   readonly localEnvironmentOnly?: boolean;
   readonly primaryEnvironmentOnly?: boolean;
-  readonly wslAvailableOnly?: boolean;
   readonly managedTunnelOnly?: boolean;
   readonly peerLinksOnly?: boolean;
   readonly fastWorktreeCheckoutOnly?: boolean;
@@ -87,7 +85,6 @@ export interface SettingsSearchAvailability {
   readonly hasEnvironment: boolean;
   readonly hasProviderSettingsEnvironment: boolean;
   readonly canManageLocalBackend: boolean;
-  readonly isWslSettingsRowVisible: boolean;
   readonly hasThreadAutoSettlement: boolean;
   readonly managedTunnelActive?: boolean;
   readonly hasPeerLinkHost?: boolean;
@@ -1520,20 +1517,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     localBackendManagementOnly: true,
   },
   {
-    id: "wsl-backend",
-    title: msg("WSL backend"),
-    to: "/settings/access",
-    searchTerms: [
-      msg(
-        "windows subsystem linux distro second server projects stop windows backend restart wsl only",
-      ),
-    ],
-    desktopOnly: true,
-    windowsOnly: true,
-    localBackendManagementOnly: true,
-    wslAvailableOnly: true,
-  },
-  {
     id: "t3-connect",
     localEnvironmentOnly: true,
     title: msg("T3 Connect"),
@@ -1822,7 +1805,6 @@ export function filterAvailableSettingsSearchItems(
       (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
       (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
       (!item.primaryEnvironmentOnly || availability.hasPrimaryEnvironment === true) &&
-      (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
       (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
       (!item.managedTunnelOnly || availability.managedTunnelActive === true) &&
       (!item.peerLinksOnly || availability.hasPeerLinkHost === true) &&
@@ -1842,8 +1824,7 @@ export function settingsForThisPlatform(
     (item) =>
       (isElectron || item.desktopOnly !== true) &&
       (!item.releaseChannelOnly || isElectron || HOSTED_APP_CHANNEL !== null) &&
-      (!item.macOnly || isMacPlatform(platform)) &&
-      (!item.windowsOnly || isWindowsPlatform(platform)),
+      (!item.macOnly || isMacPlatform(platform)),
   );
 }
 

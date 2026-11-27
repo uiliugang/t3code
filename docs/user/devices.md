@@ -38,7 +38,7 @@ Device video streams through the environment server (works over LAN, Tailscale, 
 
 ## SSH device hosts
 
-Use simulators/emulators on another macOS or Linux machine (e.g., a Mac build host from Linux/Windows):
+Use simulators or emulators on another macOS or Linux machine. The SSH connection starts on your T3 server, not on the device running your browser.
 
 1. Open **Settings → Devices → Add source → Machine over SSH** and enter an SSH alias or `user@host` (uses the environment server's SSH config/keys; no password prompts).
 2. Run **Test connection** to verify SSH, Node.js 22.12+, npm, and SDK tools (Android on SSH hosts requires full SDK tools + `ffmpeg` for emulators).

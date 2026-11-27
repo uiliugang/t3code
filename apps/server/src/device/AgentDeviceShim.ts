@@ -1,5 +1,4 @@
 // @effect-diagnostics globalJsonInEffect:off - JSON string literals embed paths safely into generated JavaScript.
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveNodeExecutable } from "@t3tools/shared/nodeRuntime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -237,17 +236,10 @@ const writeLauncher = Effect.fn("AgentDeviceShim.writeLauncher")(function* (inpu
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
   const node = yield* resolveNodeExecutable("Device automation");
   yield* fs.makeDirectory(input.dir, { recursive: true });
   const launcherPath = path.join(input.dir, "agent-device-launcher.mjs");
   yield* fs.writeFileString(launcherPath, launcherSource(node, input.entryPath, input.boundArgs));
-  if (platform === "win32") {
-    const script = `@echo off\r\nsetlocal EnableExtensions DisableDelayedExpansion\r\nif not exist "${node}" (echo ${STALE_RUNTIME} 1>&2 & exit /b 1)\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n"${node}" "${launcherPath}" %*\r\n`;
-    const scriptPath = path.join(input.dir, "agent-device.cmd");
-    yield* fs.writeFileString(scriptPath, script);
-    return scriptPath;
-  }
   const script = `#!/bin/sh\n[ -x ${quoteShell(node)} ] || { echo ${quoteShell(STALE_RUNTIME)} >&2; exit 1; }\nexport ELECTRON_RUN_AS_NODE=1\nexec ${quoteShell(node)} ${quoteShell(launcherPath)} "$@"\n`;
   const scriptPath = path.join(input.dir, "agent-device");
   yield* fs.writeFileString(scriptPath, script);

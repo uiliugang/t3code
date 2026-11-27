@@ -635,67 +635,62 @@ const diagnose = (
         exists: (file) => Effect.succeed(files.includes(file)),
       }),
     ),
-    Effect.provide(platform === "win32" ? NodePath.layerWin32 : NodePath.layerPosix),
+    Effect.provide(NodePath.layerPosix),
   );
 
 describe("Android SDK availability", () => {
-  it.effect("uses the standard Windows SDK without probing PATH", () =>
+  it.effect("uses the standard Linux SDK without probing PATH", () =>
     Effect.gen(function* () {
-      const root = "C:\\Users\\test\\AppData\\Local\\Android\\Sdk";
+      const root = "/home/test/Android/Sdk";
       const probes: string[] = [];
       const sdk = yield* LocalDeviceHost.__testing.androidSdk.pipe(
         Effect.provideService(HostProcess.Environment, {
-          USERPROFILE: "C:\\Users\\test",
-          LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
-          PATH: "\\\\slow-share\\tools;C:\\other-tools",
+          HOME: "/home/test",
+          PATH: "/mnt/slow-share/tools:/other-tools",
         }),
-        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(
           FileSystem.FileSystem,
           FileSystem.makeNoop({
             exists: (file) =>
               Effect.sync(() => {
                 probes.push(file);
-                return file === `${root}\\platform-tools\\adb.exe`;
+                return file === `${root}/platform-tools/adb`;
               }),
             realPath: () => Effect.die("Standard SDK must not resolve PATH executables"),
           }),
         ),
-        Effect.provide(NodePath.layerWin32),
+        Effect.provide(NodePath.layerPosix),
       );
       expect(sdk).toMatchObject({ root, adb: true });
-      expect(probes.filter((file) => !file.startsWith("C:\\Users\\test\\"))).toEqual([]);
+      expect(probes.filter((file) => !file.startsWith("/home/test/"))).toEqual([]);
     }),
   );
 
-  it.effect("falls back to adb on the Windows Path without resolving missing entries", () =>
+  it.effect("falls back to adb on PATH without resolving missing entries", () =>
     Effect.gen(function* () {
-      const root = "D:\\Android\\Sdk";
+      const root = "/opt/Android/Sdk";
       const resolved: string[] = [];
       const sdk = yield* LocalDeviceHost.__testing.androidSdk.pipe(
         Effect.provideService(HostProcess.Environment, {
-          USERPROFILE: "C:\\Users\\test",
-          Path: "C:\\missing;C:\\shims",
+          HOME: "/home/test",
+          PATH: "/missing:/shims",
         }),
-        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(
           FileSystem.FileSystem,
           FileSystem.makeNoop({
             exists: (file) =>
-              Effect.succeed(
-                file === "C:\\shims\\adb.exe" || file === `${root}\\platform-tools\\adb.exe`,
-              ),
+              Effect.succeed(file === "/shims/adb" || file === `${root}/platform-tools/adb`),
             realPath: (file) =>
               Effect.sync(() => {
                 resolved.push(file);
-                return `${root}\\platform-tools\\adb.exe`;
+                return `${root}/platform-tools/adb`;
               }),
           }),
         ),
-        Effect.provide(NodePath.layerWin32),
+        Effect.provide(NodePath.layerPosix),
       );
       expect(sdk).toMatchObject({ root, adb: true });
-      expect(resolved).toEqual(["C:\\shims\\adb.exe"]);
+      expect(resolved).toEqual(["/shims/adb"]);
     }),
   );
 
@@ -757,7 +752,6 @@ it.effect(
         ["linux", 1000, undefined, "File", 1000, undefined],
         ["linux", undefined, undefined, "Directory", 1000, undefined],
         ["darwin", 1000, undefined, "Directory", 1000, undefined],
-        ["win32", 1000, undefined, "Directory", 1000, undefined],
       ] as const) {
         const environment = { PATH: "/usr/bin", XDG_RUNTIME_DIR: runtimeDir };
         const result = yield* LocalDeviceHost.__testing.hubEnvironment(environment).pipe(

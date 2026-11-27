@@ -42,7 +42,6 @@ import * as DesktopState from "./DesktopState.ts";
 import * as DesktopRemoteUpdates from "../updates/DesktopRemoteUpdates.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
-import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { msg } from "gt-i18n";
@@ -205,7 +204,6 @@ const startLocalBackend = Effect.gen(function* () {
   const state = yield* DesktopState.DesktopState;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
-  const desktopWindow = yield* DesktopWindow.DesktopWindow;
   yield* logBootstrapInfo("bootstrap start");
 
   const settings = yield* desktopSettings.get;
@@ -238,10 +236,7 @@ const startLocalBackend = Effect.gen(function* () {
 
   yield* DesktopBackendPool.recoverLocalBackend;
   // A backend started while another server holds this home's lock can only exit with code 78.
-  if (
-    !(settings.wslOnly && settings.wslBackendEnabled) &&
-    !(yield* DesktopHomeOwner.awaitHomeOwnershipRelease())
-  ) {
+  if (!(yield* DesktopHomeOwner.awaitHomeOwnershipRelease())) {
     const owner = yield* DesktopHomeOwner.readLiveHomeOwner();
     yield* logBootstrapWarning("bootstrap found another server owning the T3 home", {
       owner: Option.getOrNull(owner),
@@ -292,9 +287,6 @@ const startLocalBackend = Effect.gen(function* () {
   if (yield* Ref.get(state.quitting)) {
     return false;
   }
-  if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
-    yield* desktopWindow.showConnectingSplash;
-  }
   yield* primaryBackend.start;
   yield* logBootstrapInfo("bootstrap backend start requested");
   yield* Effect.forkScoped(restartOnFeatureFlagChange(primaryBackend));
@@ -330,7 +322,7 @@ const bootstrap = Effect.fn("desktop.bootstrap")(function* (backendStarted: bool
   yield* Effect.forkScoped(
     (yield* DesktopShellEnvironment.DesktopShellEnvironment).awaitUserShellDiscovery.pipe(
       Effect.flatMap((found) =>
-        found || environment.platform === "win32"
+        found
           ? installCli
           : logBootstrapInfo("skipped installing the t3 command without the shell PATH"),
       ),
@@ -358,7 +350,6 @@ const bootstrap = Effect.fn("desktop.bootstrap")(function* (backendStarted: bool
     yield* desktopWindow.ensureMain;
   }
   yield* startAppActivation;
-  yield* Effect.forkScoped((yield* DesktopWslBackend.DesktopWslBackend).reconcile);
 });
 
 const startup = Effect.gen(function* () {

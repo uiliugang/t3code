@@ -79,9 +79,13 @@ import * as LoopbackTunnel from "./preview/LoopbackTunnel.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PreviewPasskeys from "./preview/Passkeys.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
-import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
-import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
-import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
+
+// Reject unsupported native hosts before acquiring any app layers or touching local state.
+// oxlint-disable-next-line t3code/no-global-process-runtime -- Check before acquiring any Effect layers.
+const nativeHost = NodeOS.platform();
+if (nativeHost !== "darwin" && nativeHost !== "linux") {
+  throw new Error("T3 Code Desktop is supported on macOS and Linux only.");
+}
 
 if (process.argv.includes("--version")) {
   try {
@@ -197,15 +201,9 @@ const layerDesktopAppActivation = DesktopAppActivation.layer.pipe(
 const layerDesktopBackend = DesktopBackendPool.layer.pipe(
   Layer.provideMerge(DesktopAppIdentity.layer),
   Layer.provideMerge(DesktopBackendConfiguration.layer),
-  Layer.provideMerge(DesktopWslEnvironment.layer),
-  Layer.provideMerge(DesktopWslServerTree.layer),
   Layer.provideMerge(DesktopTelemetryPublisher.layer),
   Layer.provideMerge(DesktopShellEnvironment.layer),
   Layer.provideMerge(layerDesktopWindow),
-);
-
-const layerDesktopWslBackend = DesktopWslBackend.layer.pipe(
-  Layer.provideMerge(layerDesktopBackend),
 );
 
 const layerDesktopLocalEnvironmentAuth = DesktopLocalEnvironmentAuth.layer.pipe(
@@ -230,7 +228,6 @@ const layerDesktopApplication = Layer.mergeAll(
   ),
   // Updates closes the same tunnels the SSH IPC opens before quitAndInstall.
   Layer.provideMerge(layerDesktopSsh),
-  Layer.provideMerge(layerDesktopWslBackend),
   Layer.provideMerge(layerDesktopLocalEnvironmentAuth),
 );
 

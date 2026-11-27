@@ -1,6 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -54,7 +53,6 @@ describe("runDeviceAction", () => {
     "https://example.com/plain",
   ])("opens the complete Android URL %s", (url) =>
     Effect.gen(function* () {
-      if ((yield* HostProcess.Platform) === "win32") return;
       const { ready, calls } = makeReady();
       yield* runDeviceAction(ready, "android", {
         type: "openUrl",

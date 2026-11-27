@@ -25,12 +25,7 @@ import {
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
-import {
-  isLoopbackHost,
-  isPrivateNetworkAddress,
-  isVirtualInterface,
-  WINDOWS_HOST_ADAPTER_MAC,
-} from "../startupAccess.ts";
+import { isLoopbackHost, isPrivateNetworkAddress, isVirtualInterface } from "../startupAccess.ts";
 
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 
@@ -82,10 +77,7 @@ export function resolveBoundEndpoints(input: {
         )
         .filter(
           (entry) =>
-            !entry.internal &&
-            entry.family === "IPv4" &&
-            isAdvertisableAddress(entry.address) &&
-            !(input.platform === "win32" && WINDOWS_HOST_ADAPTER_MAC.test(entry.mac)),
+            !entry.internal && entry.family === "IPv4" && isAdvertisableAddress(entry.address),
         )
         .map((entry) => entry.address)
     : [input.host!].filter(

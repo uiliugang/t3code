@@ -5,7 +5,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { setWindowsPath } from "@t3tools/shared/shell";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -72,7 +71,6 @@ it.live(
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const platform = yield* HostProcess.Platform;
       const environment = yield* HostProcess.Environment;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-mtskills-protocol-" });
       const script = `${directory}/installer.mjs`;
@@ -99,17 +97,9 @@ writeFileSync(join(target, "resource.txt"), "bundled");
       yield* fs.makeDirectory(staleBin);
       yield* fs.writeFileString(`${staleBin}/node`, "#!/bin/sh\nexit 42\n");
       yield* fs.chmod(`${staleBin}/node`, 0o755);
-      const runtime = `${directory}/${platform === "win32" ? "Electron.exe" : "Electron"}`;
-      if (platform === "win32") yield* fs.copyFile(process.execPath, runtime);
-      else yield* fs.symlink(process.execPath, runtime);
-      const executable = platform === "win32" ? `${directory}/installer.cmd` : script;
-      if (platform === "win32")
-        yield* fs.writeFileString(
-          executable,
-          '@node --conditions=private-installer "%~dp0installer.mjs" %*\r\n',
-        );
+      const runtime = `${directory}/Electron`;
+      yield* fs.symlink(process.execPath, runtime);
       const isolatedEnv = { ...environment, PATH: staleBin };
-      if (platform === "win32") setWindowsPath(isolatedEnv, staleBin);
       const result = yield* Effect.gen(function* () {
         const packages = yield* SkillPackages.SkillPackages;
         return yield* packages.fetch({
@@ -118,7 +108,7 @@ writeFileSync(join(target, "resource.txt"), "bundled");
             label: "Internal market",
             kind: "mtskills",
             enabled: true,
-            executable,
+            executable: script,
             registry: "",
           },
           locator: "custom-skill",
@@ -140,7 +130,6 @@ writeFileSync(join(target, "resource.txt"), "bundled");
 it.live("preserves installer diagnostics without credentials or terminal escapes", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const platform = yield* HostProcess.Platform;
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skill-failure-" });
     const script = `${directory}/installer.mjs`;
     yield* fs.writeFileString(
@@ -153,9 +142,6 @@ process.exit(1);
 `,
     );
     yield* fs.chmod(script, 0o755);
-    const executable = platform === "win32" ? `${directory}/installer.cmd` : script;
-    if (platform === "win32")
-      yield* fs.writeFileString(executable, '@node "%~dp0installer.mjs" %*\r\n');
     const result = yield* Effect.gen(function* () {
       const packages = yield* SkillPackages.SkillPackages;
       return yield* packages.diagnose({
@@ -163,7 +149,7 @@ process.exit(1);
         label: "Custom",
         kind: "skills",
         enabled: true,
-        executable,
+        executable: script,
         registry: "",
       });
     }).pipe(

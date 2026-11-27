@@ -40,6 +40,6 @@ describe("ElectronMenu", () => {
       );
       const submenu = menu.template[1]!.submenu as Electron.MenuItemConstructorOptions[];
       assert.equal(submenu[0]!.label, "C &&&& D");
-    }).pipe(Effect.provideService(HostProcess.Platform, "win32")),
+    }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 });

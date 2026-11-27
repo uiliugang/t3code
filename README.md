@@ -39,7 +39,9 @@
 
 ### 使用本分支构建包
 
-正式安装包包括 macOS Apple Silicon（arm64）DMG、Linux x64/arm64 AppImage 与 DEB、macOS arm64 和 Linux x64/arm64 CLI，以及 Android arm64 APK。没有对应安装包的平台可从源码运行。 [下载最新正式版](https://github.com/uiliugang/t3code/releases/latest)
+正式安装包包括 macOS Apple Silicon（arm64）DMG、Linux x64/arm64 AppImage 与 DEB、macOS arm64 和 Linux x64/arm64 CLI，以及 Android arm64 APK。[下载最新正式版](https://github.com/uiliugang/t3code/releases/latest)
+
+本分支的原生桌面端与服务端面向 macOS 和 Linux，不提供原生 Windows 版本或桌面托管 WSL。Windows 用户可用浏览器连接受支持的主机，也可在 WSL 发行版内自行运行 Linux CLI，再按普通远端连接。iOS 和 iPadOS 可使用上游 App Store 客户端连接 T3 环境，本分支不分发这两种安装包。
 
 - macOS 包采用 ad hoc 签名，未经过 Apple 公证，首次打开可能需要在系统安全设置中明确允许。通过「设置 → 关于」可查找新版安装包，不会自动安装。
 - Linux AppImage 和 DEB 支持应用内更新。仍关闭更新功能的旧版需要先手动安装一次新版。
@@ -74,7 +76,7 @@ open "/Applications/T3 Code.app"
 
 ### 从源码运行本分支
 
-需要 Git。仓库的 `./vp` 启动器会准备 [package.json](package.json) 指定的 Node.js 和 [Vite+](https://viteplus.dev/guide/)；已有匹配工具链时也可直接使用 `vp`。
+在 macOS 或 Linux 上操作，需要 Git。仓库的 `./vp` 启动器会准备 [package.json](package.json) 指定的 Node.js 和 [Vite+](https://viteplus.dev/guide/)；已有匹配工具链时也可直接使用 `vp`。
 
 ```bash
 git clone https://github.com/uiliugang/t3code.git

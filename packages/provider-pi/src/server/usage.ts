@@ -134,8 +134,7 @@ export const piUsageReader: ProviderUsageReader<PiSettings, Path.Path> = {
   directories: Effect.fn("piUsageReader.directories")(function* ({ config, environment }) {
     const path = yield* Path.Path;
     const home = yield* HostProcess.HomeDirectory;
-    const platform = yield* HostProcess.Platform;
-    const launchHome = piHome(environment, home, platform);
+    const launchHome = piHome(environment, home);
     const sessionDirArg = config === undefined ? undefined : piLaunchSessionDir(config.launchArgs);
     const launchDir =
       sessionDirArg === undefined ? undefined : expandHomePath(sessionDirArg, launchHome);
@@ -162,13 +161,9 @@ function piLaunchSessionDir(launchArgs: string): string | undefined {
   return sessionDir;
 }
 
-/** The home Pi resolves `~` against: the instance's HOME (USERPROFILE on Windows), else the host's. */
-export function piHome(
-  environment: NodeJS.ProcessEnv,
-  hostHome: string,
-  platform: NodeJS.Platform,
-): string {
-  return (platform === "win32" ? environment.USERPROFILE : environment.HOME) || hostHome;
+/** The home Pi resolves `~` against. */
+export function piHome(environment: NodeJS.ProcessEnv, hostHome: string): string {
+  return environment.HOME || hostHome;
 }
 
 /** Where Pi stores session JSONL files for a provider environment, matching Pi's own lookup. */

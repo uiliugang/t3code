@@ -1,7 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { CommandAvailability, WindowsShellEnvironment } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the existing synchronous shell probe without launching the user's login shell.
 import * as NodeChildProcess from "node:child_process";
@@ -12,12 +11,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { assert, it, vi } from "vite-plus/test";
 
-import {
-  fixPath,
-  hydratePosixHome,
-  refreshPathFromLoginShell,
-  refreshWindowsPath,
-} from "./os-jank.ts";
+import { fixPath, hydratePosixHome, refreshPathFromLoginShell } from "./os-jank.ts";
 
 vi.mock("node:child_process", { spy: true });
 
@@ -244,38 +238,5 @@ effectIt.effect("re-reading an fnm login shell does not pile up its multishell f
       .split(":")
       .filter((entry) => entry.includes("fnm_multishells"));
     assert.isAtMost(multishells.length, 1, env.PATH);
-  }),
-);
-
-effectIt.effect("replaces a Path-spelled Windows PATH instead of adding a second key", () =>
-  Effect.gen(function* () {
-    const env: NodeJS.ProcessEnv = { Path: "C:\\Windows" };
-
-    yield* fixPath().pipe(
-      Effect.provideService(HostProcess.Platform, "win32"),
-      Effect.provideService(HostProcess.Environment, env),
-      Effect.provideService(WindowsShellEnvironment, () => Effect.succeed({ PATH: "C:\\Tools" })),
-      Effect.provideService(CommandAvailability, () => Effect.succeed(true)),
-      Effect.provide(NodeServices.layer),
-    );
-
-    assert.deepEqual(env, { PATH: "C:\\Tools;C:\\Windows" });
-  }),
-);
-
-effectIt.effect("adds a directory an installer wrote to the registry after launch", () =>
-  Effect.gen(function* () {
-    const env: NodeJS.ProcessEnv = { Path: "C:\\Tools;C:\\Windows" };
-    const installed = "C:\\Users\\me\\AppData\\Local\\cursor-agent";
-
-    yield* refreshWindowsPath().pipe(
-      Effect.provideService(HostProcess.Platform, "win32"),
-      Effect.provideService(HostProcess.Environment, env),
-      Effect.provideService(WindowsShellEnvironment, () =>
-        Effect.succeed({ PATH: `C:\\Windows;${installed}` }),
-      ),
-    );
-
-    assert.deepEqual(env, { PATH: `C:\\Tools;C:\\Windows;${installed}` });
   }),
 );

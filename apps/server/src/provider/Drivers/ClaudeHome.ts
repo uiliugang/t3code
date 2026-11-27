@@ -163,9 +163,7 @@ export const hasClaudeManagedMcpConfig = Effect.fn("hasClaudeManagedMcpConfig")(
   const managedMcpConfigPath =
     platform === "darwin"
       ? "/Library/Application Support/ClaudeCode/managed-mcp.json"
-      : platform === "win32"
-        ? "C:\\Program Files\\ClaudeCode\\managed-mcp.json"
-        : "/etc/claude-code/managed-mcp.json";
+      : "/etc/claude-code/managed-mcp.json";
   return yield* fileSystem.exists(managedMcpConfigPath).pipe(Effect.orElseSucceed(() => false));
 });
 
@@ -192,14 +190,13 @@ const mainCheckoutRoot = Effect.fnUntraced(function* (checkout: string) {
 });
 
 // Claude Code keeps .claude/settings.local.json at the repository root, or in cwd outside a
-// repository, on Windows, or when the root is home. Its owner check is skipped, so callers must
+// repository or when the root is home. Its owner check is skipped, so callers must
 // stay safe when Claude Code ignores the root file.
 export const claudeLocalSettingsDirectory = Effect.fn("claudeLocalSettingsDirectory")(function* (
   cwd: string,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  if ((yield* HostProcess.Platform) === "win32") return cwd;
   for (let directory = cwd; ; directory = path.dirname(directory)) {
     const isCheckout = yield* fileSystem
       .exists(path.join(directory, ".git"))

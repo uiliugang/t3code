@@ -81,10 +81,6 @@ const KNOWN_DRIVERS: ReadonlyMap<ProviderDriverKind, KnownDriver> = new Map([
   ),
 ]);
 
-/** Each driver a policy may name, with the label users see. */
-export const knownDriverLabels = () =>
-  Array.from(KNOWN_DRIVERS, ([driver, { label }]) => ({ driver, label }));
-
 const PINNED_CONFIG_FIELDS = ["binaryPath", "launchArgs"] as const;
 type PinnedConfigField = (typeof PINNED_CONFIG_FIELDS)[number];
 
@@ -308,12 +304,10 @@ const overlayInstance = (
 export function makeManagedProviders(
   limits: ManagedProviderLimits,
   maxRuntimeMode: RuntimeMode | undefined,
-  platform: NodeJS.Platform,
 ):
   | { readonly _tag: "Valid"; readonly providers: ManagedProviders }
   | { readonly _tag: "Invalid"; readonly reason: string } {
-  // Windows reads a variable name without regard to case, so there a lock covers every spelling.
-  const variableKey = (name: string) => (platform === "win32" ? name.toUpperCase() : name);
+  const variableKey = (name: string) => name;
   for (const driver of limits.allowedDrivers ?? []) {
     if (!KNOWN_DRIVERS.has(driver)) {
       return { _tag: "Invalid", reason: `"${driver}" in allowedDrivers is not a known provider` };

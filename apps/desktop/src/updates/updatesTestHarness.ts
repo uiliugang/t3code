@@ -42,8 +42,8 @@ export interface UpdatesHarnessOptions {
   readonly appVersion?: string;
   /** Starts from in-memory settings with this track saved, as after a restart. */
   readonly savedChannel?: DesktopAppSettings.DesktopSettings["updateChannel"];
-  /** Adds a WSL backend beside the primary, as on a Windows host with WSL enabled. */
-  readonly wslBackend?: boolean;
+  /** Adds a secondary backend beside the primary. */
+  readonly secondaryBackend?: boolean;
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
@@ -125,7 +125,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     focusedMainOrFirst: Effect.succeedNone,
     setMain: () => Effect.void,
     clearMain: () => Effect.void,
-    prepareReveal: () => Effect.succeed(false),
     reveal: () => Effect.void,
     sendAll: (_channel, state) =>
       Effect.sync(() => {
@@ -167,12 +166,12 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   };
   const layerBackend = DesktopBackendPool.layerTest(
     options.backendInstances ??
-      (options.wslBackend
+      (options.secondaryBackend
         ? [
             stubBackendInstance,
             {
               ...stubBackendInstance,
-              id: DesktopBackendPool.BackendInstanceId("wsl:Ubuntu"),
+              id: DesktopBackendPool.BackendInstanceId("secondary"),
               label: Effect.succeed("Ubuntu"),
             },
           ]
@@ -234,12 +233,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
                     }),
                   ),
                 ),
-          setWslBackendEnabled: () => Effect.die("unexpected WSL backend toggle"),
-          setWslDistro: () => Effect.die("unexpected WSL distro change"),
           setLocalEnvironmentEnabled: () => Effect.die("unexpected local environment toggle"),
-          setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
-          applyWslWindowsFallback: Effect.die("unexpected WSL Windows fallback"),
-          applyWslWindowsFallbackInMemory: Effect.die("unexpected WSL Windows fallback"),
         } satisfies DesktopAppSettings.DesktopAppSettings["Service"])
       : DesktopAppSettings.layer;
 

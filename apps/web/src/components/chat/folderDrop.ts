@@ -1,10 +1,10 @@
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { PRIMARY_LOCAL_ENVIRONMENT_ID, type EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 
-import { desktopLocalBackendId, isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isLoopbackHostname } from "~/environments/primary/target";
 
-export type FolderDropTarget = "local" | "remote" | { readonly wslBackendId: string };
+export type FolderDropTarget = "local" | "remote";
 
 export function folderDropTarget(input: {
   localEnvironmentDisabled: boolean;
@@ -12,18 +12,15 @@ export function folderDropTarget(input: {
   primaryEnvironmentId: EnvironmentId | null;
   connection: Pick<PreparedConnection, "target" | "httpBaseUrl"> | null;
   isDesktopRenderer: boolean;
-  primaryRunsInWsl: boolean;
 }): FolderDropTarget {
   if (
     !input.localEnvironmentDisabled &&
     input.primaryEnvironmentId !== null &&
     input.environmentId === input.primaryEnvironmentId
   ) {
-    return input.primaryRunsInWsl ? { wslBackendId: PRIMARY_LOCAL_ENVIRONMENT_ID } : "local";
+    return "local";
   }
   if (!input.isDesktopRenderer || input.connection === null) return "remote";
-  const backendId = desktopLocalBackendId(input.connection.target);
-  if (backendId?.startsWith("wsl:")) return { wslBackendId: backendId };
   return isSavedLoopbackConnection(input.connection) ? "local" : "remote";
 }
 

@@ -7,6 +7,7 @@ import { expect, it } from "vite-plus/test";
 import { cacheKey, seedPreparedCache } from "./server-compile-cache.ts";
 
 it.each([
+  { platform: "win32", hostArch: "x64", arch: 1, reason: "unsupported target win32" },
   { platform: "freebsd", hostArch: "x64", arch: 1, reason: "unsupported target freebsd" },
   { platform: "linux", hostArch: "x64", arch: 3, reason: "unexecutable target linux/arm64" },
   { platform: "linux", hostArch: "arm64", arch: 1, reason: "unexecutable target linux/x64" },
@@ -263,71 +264,68 @@ it("seeds relocated cache entries without allowing writes into shipped resources
   }
 });
 
-it.each(["app", "server"])(
-  "generates %s.asar cache with the consumer engine and falls back after damage",
-  async (archive) => {
-    const { spawnSync } = await import("node:child_process");
-    const helper = new URL("./server-compile-cache.ts", import.meta.url).href;
-    const root = NodeFS.realpathSync(
-      NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cache-engine-")),
-    );
-    const run = (code: string) => {
-      const env = {
-        ...process.env,
-        NODE_DEBUG_NATIVE: "COMPILE_CACHE",
-        NODE_COMPILE_CACHE: undefined,
-        NODE_DISABLE_COMPILE_CACHE: undefined,
-      };
-      const result = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
-        env,
-        encoding: "utf8",
-      });
-      expect(result.status, result.stderr).toBe(0);
-      return result.stderr;
+it("generates app.asar cache with the consumer engine and falls back after damage", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const helper = new URL("./server-compile-cache.ts", import.meta.url).href;
+  const root = NodeFS.realpathSync(
+    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cache-engine-")),
+  );
+  const run = (code: string) => {
+    const env = {
+      ...process.env,
+      NODE_DEBUG_NATIVE: "COMPILE_CACHE",
+      NODE_COMPILE_CACHE: undefined,
+      NODE_DISABLE_COMPILE_CACHE: undefined,
     };
-    try {
-      const producer = NodePath.join(root, "producer", "resources");
-      const consumer = NodePath.join(root, "relocated", "resources");
-      const relative = `${archive}.asar/apps/server/dist/binCli-fixture.mjs`;
-      NodeFS.mkdirSync(NodePath.dirname(NodePath.join(producer, relative)), { recursive: true });
-      NodeFS.writeFileSync(
-        NodePath.join(producer, relative),
-        "export const answer = 42; export const loadServer = () => import('./server-fixture.mjs');",
-      );
-      NodeFS.writeFileSync(
-        NodePath.join(producer, `${archive}.asar/apps/server/dist/server-fixture.mjs`),
-        "export const answer = 43;",
-      );
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
+      env,
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return result.stderr;
+  };
+  try {
+    const producer = NodePath.join(root, "producer", "resources");
+    const consumer = NodePath.join(root, "relocated", "resources");
+    const relative = `app.asar/apps/server/dist/binCli-fixture.mjs`;
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(producer, relative)), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(producer, relative),
+      "export const answer = 42; export const loadServer = () => import('./server-fixture.mjs');",
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(producer, `app.asar/apps/server/dist/server-fixture.mjs`),
+      "export const answer = 43;",
+    );
+    run(
+      `import {generatePreparedServerCache} from ${JSON.stringify(helper)}; await generatePreparedServerCache(${JSON.stringify(producer)});`,
+    );
+    NodeFS.cpSync(producer, consumer, { recursive: true });
+    const consume = (home: string, appImage = false) =>
       run(
-        `import {generatePreparedServerCache} from ${JSON.stringify(helper)}; await generatePreparedServerCache(${JSON.stringify(producer)});`,
+        `if (${appImage}) process.env.APPIMAGE = "fixture"; import {enablePreparedServerCache} from ${JSON.stringify(helper)}; import {pathToFileURL} from 'node:url'; if(!enablePreparedServerCache(${JSON.stringify(NodePath.join(consumer, relative))},${JSON.stringify(NodePath.join(root, home))})) throw Error('cache disabled'); const m = await import(pathToFileURL(${JSON.stringify(NodePath.join(consumer, relative))}).href); if(m.answer!==42 || (await m.loadServer()).answer!==43) throw Error('source fallback failed');`,
       );
-      NodeFS.cpSync(producer, consumer, { recursive: true });
-      const consume = (home: string, appImage = false) =>
-        run(
-          `if (${appImage}) process.env.APPIMAGE = "fixture"; import {enablePreparedServerCache} from ${JSON.stringify(helper)}; import {pathToFileURL} from 'node:url'; if(!enablePreparedServerCache(${JSON.stringify(NodePath.join(consumer, relative))},${JSON.stringify(NodePath.join(root, home))})) throw Error('cache disabled'); const m = await import(pathToFileURL(${JSON.stringify(NodePath.join(consumer, relative))}).href); if(m.answer!==42 || (await m.loadServer()).answer!==43) throw Error('source fallback failed');`,
-        );
-      const prepared = NodePath.join(consumer, "server-compile-cache");
-      NodeFS.chmodSync(prepared, 0o555);
-      try {
-        const first = consume("first-user");
-        expect(first).toMatch(/binCli-fixture\.mjs was accepted/);
-        expect(first).toMatch(/server-fixture\.mjs was accepted/);
-        expect(consume("appimage-user", true)).toContain("was accepted");
-        expect(NodeFS.readdirSync(NodePath.join(root, "appimage-user", "server"))).toEqual([]);
-      } finally {
-        NodeFS.chmodSync(prepared, 0o755);
-      }
-      for (const file of NodeFS.readdirSync(prepared).filter((file) => file !== "manifest.json")) {
-        NodeFS.writeFileSync(NodePath.join(prepared, file), "broken");
-      }
-      expect(consume("second-user")).toContain("was not initialized");
-      for (const file of NodeFS.readdirSync(prepared).filter((file) => file !== "manifest.json")) {
-        expect(NodeFS.readFileSync(NodePath.join(prepared, file), "utf8")).toBe("broken");
-      }
-      NodeFS.rmSync(prepared, { recursive: true });
-      expect(consume("third-user")).toContain("was not initialized");
+    const prepared = NodePath.join(consumer, "server-compile-cache");
+    NodeFS.chmodSync(prepared, 0o555);
+    try {
+      const first = consume("first-user");
+      expect(first).toMatch(/binCli-fixture\.mjs was accepted/);
+      expect(first).toMatch(/server-fixture\.mjs was accepted/);
+      expect(consume("appimage-user", true)).toContain("was accepted");
+      expect(NodeFS.readdirSync(NodePath.join(root, "appimage-user", "server"))).toEqual([]);
     } finally {
-      NodeFS.rmSync(root, { recursive: true, force: true });
+      NodeFS.chmodSync(prepared, 0o755);
     }
-  },
-);
+    for (const file of NodeFS.readdirSync(prepared).filter((file) => file !== "manifest.json")) {
+      NodeFS.writeFileSync(NodePath.join(prepared, file), "broken");
+    }
+    expect(consume("second-user")).toContain("was not initialized");
+    for (const file of NodeFS.readdirSync(prepared).filter((file) => file !== "manifest.json")) {
+      expect(NodeFS.readFileSync(NodePath.join(prepared, file), "utf8")).toBe("broken");
+    }
+    NodeFS.rmSync(prepared, { recursive: true });
+    expect(consume("third-user")).toContain("was not initialized");
+  } finally {
+    NodeFS.rmSync(root, { recursive: true, force: true });
+  }
+});

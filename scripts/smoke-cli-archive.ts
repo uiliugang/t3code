@@ -16,7 +16,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as NetService from "@t3tools/shared/Net";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { windowsSystemTar } from "./lib/windows-tar.ts";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 export class CliArchiveSmokeError extends Schema.TaggedError<
@@ -67,7 +66,7 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   const platform = yield* HostProcess.Platform;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const scratch = yield* fs.makeTempDirectory({ prefix: "t3-cli-smoke-" });
-  // Windows can briefly retain executable locks; cleanup retries but must not fail a successful smoke check.
+  // Cleanup retries must not fail a successful smoke check.
   yield* Effect.addFinalizer(() =>
     fs.remove(scratch, { recursive: true }).pipe(
       Effect.retry({ times: 10, schedule: Schedule.spaced("500 millis") }),
@@ -77,10 +76,8 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
     ),
   );
 
-  // Windows bsdtar reads zip; Git Bash's GNU tar does not.
-  const tar = platform === "win32" ? windowsSystemTar() : "tar";
   const extract = yield* spawner
-    .spawn(ChildProcess.make(tar, ["-xf", input.archive, "-C", scratch]))
+    .spawn(ChildProcess.make("tar", ["-xf", input.archive, "-C", scratch]))
     .pipe(Effect.flatMap((child) => child.exitCode));
   if (Number(extract) !== 0) {
     return yield* new CliArchiveSmokeError({
@@ -96,7 +93,7 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
     });
   }
   const contentDir = path.join(scratch, root);
-  const executable = path.join(contentDir, platform === "win32" ? "t3.exe" : "t3");
+  const executable = path.join(contentDir, "t3");
   const bundledLibatomic = path.join(contentDir, "lib/libatomic.so.1");
   for (const required of [
     executable,

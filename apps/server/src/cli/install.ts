@@ -1,5 +1,5 @@
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { CLI_INSTALL_SCRIPT_URL, CLI_INSTALL_POWERSHELL_URL } from "@t3tools/shared/cliRelease";
+import { CLI_INSTALL_SCRIPT_URL } from "@t3tools/shared/cliRelease";
 import { pathSetupCommand, resolveCommandPath } from "@t3tools/shared/shell";
 import * as Console from "effect/Console";
 import * as Duration from "effect/Duration";
@@ -14,7 +14,6 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import packageJson from "../../package.json" with { type: "json" };
 import {
-  generatedWindowsShimTarget,
   isVersionExecutable,
   readPosixLauncherTarget,
   recordPinnedRuntimeLauncher,
@@ -47,11 +46,7 @@ const standaloneRuntime = Effect.gen(function* () {
   return Option.some({ executable, versionsDir, runtimeDir });
 });
 
-const installScriptCommand = (windows: boolean) => {
-  return windows
-    ? `irm ${CLI_INSTALL_POWERSHELL_URL} | iex`
-    : `curl -fsSL ${CLI_INSTALL_SCRIPT_URL} | sh`;
-};
+const installScriptCommand = `curl -fsSL ${CLI_INSTALL_SCRIPT_URL} | sh`;
 
 /** Installs this runtime as the `t3` command the way the install scripts do, replacing only our own launcher. */
 export const installCli = Effect.fn("cli.install.install")(function* () {
@@ -61,25 +56,17 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const environment = yield* HostProcess.Environment;
   const home = yield* HostProcess.HomeDirectory;
   const runtime = yield* standaloneRuntime;
-  const windows = platform === "win32";
   if (Option.isNone(runtime)) {
-    const script = installScriptCommand(windows);
     return yield* new CliInstallError({
-      reason: `Only the standalone t3 can install itself. Use \`${script}\`, or Settings in the desktop app.`,
+      reason: `Only the standalone t3 can install itself. Use \`${installScriptCommand}\`, or Settings in the desktop app.`,
     });
   }
   const { executable, versionsDir, runtimeDir } = runtime.value;
-  // cmd.exe expands `%` and reads the shim in the OEM code page, so such a path would not run.
-  if (windows && /[%\u0080-\uffff]/.test(executable)) {
-    return yield* new CliInstallError({
-      reason: `A t3.cmd cannot run ${executable}, because the path has % or non-ASCII characters. Run this executable directly.`,
-    });
-  }
   // Absolute, so the PATH hint never adds a folder that changes with the working directory.
   const binDir = path.resolve(
     environment.T3CODE_INSTALL_BIN_DIR?.trim() || path.join(home, ".local", "bin"),
   );
-  const name = windows ? "t3.cmd" : "t3";
+  const name = "t3";
   const link = path.join(binDir, name);
   const failed = (reason: string) => (cause: unknown) => new CliInstallError({ reason, cause });
 
@@ -88,17 +75,15 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const realVersionsDir = yield* fs
     .realPath(versionsDir)
     .pipe(Effect.orElseSucceed(() => versionsDir));
-  const current = windows
-    ? yield* fs.readFileString(link).pipe(Effect.map(generatedWindowsShimTarget), Effect.option)
-    : yield* fs.readLink(link).pipe(
-        Effect.flatMap((target) =>
-          fs.realPath(link).pipe(Effect.orElseSucceed(() => path.resolve(binDir, target))),
-        ),
-        // Not a link: the script this command and the install scripts write.
-        Effect.catch(() => readPosixLauncherTarget(link)),
-        Effect.option,
-        Effect.map(Option.filter((target) => target !== undefined)),
-      );
+  const current = yield* fs.readLink(link).pipe(
+    Effect.flatMap((target) =>
+      fs.realPath(link).pipe(Effect.orElseSucceed(() => path.resolve(binDir, target))),
+    ),
+    // Not a link: the script this command and the install scripts write.
+    Effect.catch(() => readPosixLauncherTarget(link)),
+    Effect.option,
+    Effect.map(Option.filter((target) => target !== undefined)),
+  );
   // A dangling symlink is occupied too: writing the shim would follow it.
   const occupied =
     Option.isSome(current) ||
@@ -124,15 +109,9 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
     .makeDirectory(binDir, { recursive: true })
     .pipe(Effect.mapError(failed(`Could not create ${binDir}.`)));
   // An empty spot is created exclusively, so a file that appears after the check above is kept.
-  if (windows) {
-    yield* fs
-      .writeFileString(link, `@echo off\r\n"${executable}" %*`, occupied ? {} : { flag: "wx" })
-      .pipe(Effect.mapError(failed(`Could not write ${link}.`)));
-  } else {
-    yield* writePosixLauncher({ launcher: link, executable, exclusive: !occupied }).pipe(
-      Effect.mapError(failed(`Could not write ${link}.`)),
-    );
-  }
+  yield* writePosixLauncher({ launcher: link, executable, exclusive: !occupied }).pipe(
+    Effect.mapError(failed(`Could not write ${link}.`)),
+  );
 
   // Pruning keeps what recorded launchers point at; a background service cannot see binDir otherwise.
   const recorded = path.join(
@@ -151,29 +130,25 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   );
 
   // resolve() drops trailing separators, so `~/.local/bin/` on PATH still matches.
-  const normalize = (value: string) =>
-    windows ? path.resolve(value).toLowerCase() : path.resolve(value);
+  const normalize = (value: string) => path.resolve(value);
   const same = (entry: string) => entry !== "" && normalize(entry) === normalize(binDir);
-  const rawPath = environment.PATH ?? environment.Path ?? "";
-  const entries = rawPath === "" ? [] : rawPath.split(windows ? ";" : ":");
+  const rawPath = environment.PATH ?? "";
+  const entries = rawPath === "" ? [] : rawPath.split(":");
   let cwd = yield* Effect.catchDefect(HostProcess.WorkingDirectory, () => Effect.undefined);
   // A t3 earlier on PATH runs instead, and an added folder goes last. Runner caches (npx's own
   // .bin) are not installs.
   const firstOther = Effect.gen(function* () {
     for (const entry of entries) {
       const absolute = path.isAbsolute(entry);
-      if ((windows || absolute) && same(entry)) return null;
-      const dir = absolute ? entry : windows || !cwd ? undefined : path.resolve(cwd, entry);
+      if (absolute && same(entry)) return null;
+      const dir = absolute ? entry : !cwd ? undefined : path.resolve(cwd, entry);
       if (dir === undefined || detectCliRunner(`${dir}/`) !== null) continue;
-      for (const name of windows ? ["t3.cmd", "t3.exe"] : ["t3"]) {
-        const candidate = path.join(dir, name);
-        if (!(yield* resolveCommandPath(candidate, { env: environment }))) continue;
-        if (windows) return candidate;
-        const resolved = yield* fs.realPath(candidate).pipe(Effect.orElseSucceed(() => candidate));
-        if (normalize(resolved) !== normalize(recorded)) return candidate;
-        if (absolute) return null;
-        cwd = undefined; // Ours already won in cwd; later relative entries lose.
-      }
+      const candidate = path.join(dir, name);
+      if (!(yield* resolveCommandPath(candidate, { env: environment }))) continue;
+      const resolved = yield* fs.realPath(candidate).pipe(Effect.orElseSucceed(() => candidate));
+      if (normalize(resolved) !== normalize(recorded)) return candidate;
+      if (absolute) return null;
+      cwd = undefined; // Ours already won in cwd; later relative entries lose.
     }
     return undefined;
   });
@@ -186,20 +161,14 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
     pathCommand:
       found !== undefined
         ? undefined
-        : windows
-          ? // PowerShell; it covers this window only, since changing the saved PATH would flatten
-            // its %VAR% entries. A `;` would split the folder.
-            binDir.includes(";")
-            ? undefined
-            : `$env:Path += ';${binDir.replaceAll("'", "''")}'`
-          : pathSetupCommand({
-              directory: binDir,
-              home,
-              shell: environment.SHELL,
-              platform,
-              configHome: environment.XDG_CONFIG_HOME,
-              zdotdir: environment.ZDOTDIR,
-            }),
+        : pathSetupCommand({
+            directory: binDir,
+            home,
+            shell: environment.SHELL,
+            platform,
+            configHome: environment.XDG_CONFIG_HOME,
+            zdotdir: environment.ZDOTDIR,
+          }),
     binDir,
   };
 });
@@ -216,13 +185,6 @@ const reportInstalled = Effect.fn("cli.install.report")(function* (
   if (installed.onPath) return yield* Console.log("Run `t3` to get started.");
   if (installed.pathCommand === undefined) {
     return yield* Console.log(`Add ${installed.binDir} to your PATH, then run \`t3\`.`);
-  }
-  if ((yield* HostProcess.Platform) === "win32") {
-    yield* Console.log(
-      `${installed.binDir} is not on your PATH yet. In this PowerShell window, run:`,
-    );
-    yield* Console.log(`  ${installed.pathCommand}`);
-    return yield* Console.log("Then run `t3`. For new windows, add the folder to your PATH.");
   }
   yield* Console.log(`${installed.binDir} is not on your PATH yet. Add it with:`);
   yield* Console.log(`  ${installed.pathCommand}`);
@@ -282,7 +244,6 @@ export const isForegroundPs = (output: string) => {
 export const inTerminalForeground = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const platform = yield* HostProcess.Platform;
-  if (platform === "win32") return true;
   if (platform === "linux") {
     return isForegroundProcStat(
       yield* fs.readFileString("/proc/self/stat").pipe(Effect.orElseSucceed(() => "")),
@@ -316,7 +277,6 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
   const environment = yield* HostProcess.Environment;
   if (!input.interactive || environment.CI || environment.SUDO_USER) return true;
   if (environment.TERM === "dumb") return true;
@@ -333,20 +293,18 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
 
   // Any t3 already installed means no prompt: ours (even when off PATH) or another on PATH.
   // Runners put their own cache's node_modules/.bin on PATH, so skip those.
-  const windows = platform === "win32";
-  const names = windows ? ["t3.cmd", "t3.exe"] : ["t3"];
   const launchers = yield* fs
     .readFileString(path.join(runtimeDir, "launchers"))
     .pipe(Effect.orElseSucceed(() => ""));
   const candidates = [
     ...launchers.split(/\r?\n/).filter((launcher) => path.isAbsolute(launcher)),
-    path.join(path.dirname(runtimeDir), "bin", windows ? "t3.cmd" : "t3"),
-    ...(environment.PATH ?? environment.Path ?? "")
-      .split(windows ? ";" : ":")
+    path.join(path.dirname(runtimeDir), "bin", "t3"),
+    ...(environment.PATH ?? "")
+      .split(":")
       .filter(
         (directory) => path.isAbsolute(directory) && detectCliRunner(`${directory}/`) === null,
       )
-      .flatMap((directory) => names.map((name) => path.join(directory, name))),
+      .map((directory) => path.join(directory, "t3")),
   ];
   for (const candidate of candidates) {
     if (yield* resolveCommandPath(candidate, { env: environment })) return true;
@@ -358,7 +316,7 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
   if (declined.trim() === minor) return true;
   if (!(yield* input.foreground)) return true;
 
-  const installHint = `Run \`${installScriptCommand(windows)}\` any time.`;
+  const installHint = `Run \`${installScriptCommand}\` any time.`;
   const saveDecline = fs.writeFileString(declinedFile, `${minor}\n`).pipe(Effect.ignore);
   const answer = yield* input.confirm.pipe(Effect.timeoutOption(PROMPT_TIMEOUT));
   if (Option.isNone(answer)) {

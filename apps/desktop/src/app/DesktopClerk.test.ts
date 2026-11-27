@@ -132,15 +132,9 @@ describe("DesktopClerk", () => {
       userData: "/tmp/app-data/t3code-v2",
     },
     {
-      name: "packaged Windows",
-      isDevelopment: false,
-      platform: "win32" as const,
-      userData: "/tmp/app-data/t3code-v2",
-    },
-    {
       name: "development",
       isDevelopment: true,
-      platform: "win32" as const,
+      platform: "linux" as const,
       userData: "/tmp/app-data/t3code-dev",
     },
   ])(
@@ -288,7 +282,7 @@ describe("DesktopClerk", () => {
     );
   });
 
-  it.effect.each(["darwin", "win32", "linux"] as const)(
+  it.effect.each(["darwin", "linux"] as const)(
     "quits a second launch before initializing Clerk or the application runtime on %s",
     (platform) =>
       Effect.gen(function* () {
