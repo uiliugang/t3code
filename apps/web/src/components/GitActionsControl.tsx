@@ -1327,16 +1327,21 @@ function CheckoutGitActionsControl({
 
     if (result._tag === "Failure") {
       if (pendingBranchSwitch && gitCwd !== null) {
-        // A failure can occur either side of checkout. Limit the retry to the branch it left behind.
-        const refreshed = await refreshVcsStatus({
-          environmentId: activeEnvironmentId,
-          input: { cwd: gitCwd, localOnly: true },
-        });
+        // Older hosts omit createdBranch on failure; read the exact checkout as a fallback.
+        const refreshed =
+          createdBranch === undefined
+            ? await refreshVcsStatus({
+                environmentId: activeEnvironmentId,
+                input: { cwd: gitCwd, localOnly: true },
+              })
+            : null;
+        const leftOn =
+          createdBranch ?? (refreshed?._tag === "Success" ? refreshed.value.refName : null);
         setPreserveBranchSwitchExclusions((current) =>
           current !== pendingBranchSwitch
             ? current
-            : refreshed._tag === "Success" && refreshed.value.refName !== actionBranch
-              ? { ...pendingBranchSwitch, toRefName: refreshed.value.refName }
+            : leftOn !== null && leftOn !== actionBranch
+              ? { ...pendingBranchSwitch, toRefName: leftOn }
               : null,
         );
       }

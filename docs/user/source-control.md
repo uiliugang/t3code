@@ -465,7 +465,9 @@ reads its teams through the account you picked them under.
 Connect Jira Cloud with your site, account email, and an
 [API token](https://id.atlassian.com/manage-profile/security/api-tokens) under **Settings → Issue
 management → Issue trackers**, then bind Jira projects. Jira issues move through their workflow
-transitions. New issues use the Task type; reactions and linked pull requests are unavailable.
+transitions. Jira is available only for projects without a conflicting provider. Unbind Jira before
+selecting another provider. New issues use the Task type; reactions and linked pull requests are
+unavailable.
 
 With Meituan requirements enabled, expand MEP ONES in Issue management to see the environment’s ONES account and maintain its `ones2` and optional `mcm` tools. Under Project issue sources, edit a project’s MEP space IDs or restore automatic discovery. Use the ONES form to create a work item with its space's required fields. When two spaces share an issue number, use its full URL to identify the work item.
 

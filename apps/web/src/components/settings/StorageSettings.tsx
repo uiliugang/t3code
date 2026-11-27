@@ -131,7 +131,6 @@ function RetentionControl({
   onChange: (value: number | null, onFailed: () => void) => void;
   minimum?: number;
 }) {
-  const t = useUiTranslation();
   const gt = useGT();
   const [draft, setDraft] = useState(value);
   const [savedValue, setSavedValue] = useState(value);

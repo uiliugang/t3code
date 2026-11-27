@@ -141,7 +141,12 @@ export function siteOrigin(site: string): string | null {
   const trimmed = site.trim();
   const named = /^[a-z0-9-]+$/i.test(trimmed) ? `${trimmed}.atlassian.net` : trimmed;
   const url = URL.parse(/^[a-z][a-z0-9+.-]*:\/\//i.test(named) ? named : `https://${named}`);
-  return url === null || url.protocol !== "https:" || !url.hostname.includes(".")
+  return url === null ||
+    url.protocol !== "https:" ||
+    url.port !== "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    !url.hostname.endsWith(".atlassian.net")
     ? null
     : url.origin;
 }

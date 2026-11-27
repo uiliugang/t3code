@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { PasswordResponses, TextLayer, type PDFDocumentProxy } from "pdfjs-dist";
-import { msg, useGT } from "gt-react";
+import { msg } from "gt-react";
 import { m } from "~/i18n/messages";
 import { ChevronDownIcon, ChevronUpIcon, MinusIcon, PlusIcon, ScanIcon } from "lucide-react";
 import { Input } from "~/components/ui/input";

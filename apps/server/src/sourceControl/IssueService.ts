@@ -8,6 +8,7 @@ import {
   isMeituanServiceEnabled,
   mergeProjectIssueSources,
   projectIssueProvider,
+  type IssueProvider,
   repositoryIssueKind,
   IssueSource,
   SourceControlProviderError,
@@ -80,6 +81,7 @@ export class IssueService extends Context.Service<
         readonly scratchRoot: Option.Option<string>;
         readonly forProject: (project: OrchestrationProjectShell) => Effect.Effect<{
           readonly sources: ReadonlyArray<IssueSource>;
+          readonly effectiveProvider?: IssueProvider;
           readonly failure?: RequirementIssueError;
         }>;
       },
@@ -336,8 +338,15 @@ export const make = Effect.gen(function* () {
               (kind === "github" && project.repositoryIdentity?.provider !== kind));
           const resolved = discover ? yield* resolveSources(project, saved) : { sources: manual };
           const valid = resolved.sources.filter(validSource);
+          const effectiveProvider = projectIssueProvider(
+            kind,
+            resolved.sources.length > 0
+              ? resolved.sources
+              : (saved.issueProjectSources[project.id] ?? []),
+          );
           return {
             ...resolved,
+            ...(effectiveProvider === undefined ? {} : { effectiveProvider }),
             sources: normalizedSources(valid),
             ...(valid.length !== resolved.sources.length
               ? {

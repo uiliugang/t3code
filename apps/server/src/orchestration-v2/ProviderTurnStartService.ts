@@ -169,8 +169,8 @@ export function abandonedProviderTurns(
 }
 
 /**
- * The run whose ready end checkpoint is still the baseline before `run`: the last run, when every
- * run since is a queued message steered into it while it ran, after anything that message did.
+ * The candidate baseline source: a ready end checkpoint from the run that absorbed the queued
+ * messages steered into it. The checkpoint store still needs to verify the live checkout.
  */
 export const findBaselineSourceOrdinal = Effect.fn("findBaselineSourceOrdinal")(function* (
   runs: ReadonlyArray<OrchestrationV2Run>,

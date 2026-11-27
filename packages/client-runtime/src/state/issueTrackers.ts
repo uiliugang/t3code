@@ -87,6 +87,18 @@ export function issueTrackerDetailText(detail: string, resolve: MFunctionType = 
 const isConnectionError = Schema.is(IssueTrackerConnectionError);
 
 /** Why connecting failed, in the tracker's own words rather than the error's "<kind> connection failed:" prefix. */
+/** Keep existing Jira bindings visible for removal, even when the project can no longer bind. */
+export function issueTrackerProjectPickerAvailable(
+  tracker: string,
+  binding: IssueTrackerProjectBinding | undefined,
+  hasBuiltInProvider: boolean,
+): boolean {
+  if (tracker === "jira") {
+    return binding?.tracker === "jira" || (binding === undefined && !hasBuiltInProvider);
+  }
+  return binding?.tracker !== "jira" || hasBuiltInProvider;
+}
+
 export function issueTrackerConnectFailure(error: unknown): string | null {
   if (isConnectionError(error)) return error.detail;
   return error instanceof Error ? error.message : null;

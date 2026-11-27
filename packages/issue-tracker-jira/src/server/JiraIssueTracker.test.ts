@@ -132,6 +132,18 @@ const listInput = {
 } as const;
 
 describe("JiraIssueTracker", () => {
+  it("accepts the same canonical cloud sites for credentials and issue links", () => {
+    expect(JiraApi.siteOrigin("Acme")).toBe("https://acme.atlassian.net");
+    expect(JiraApi.siteOrigin("https://acme.atlassian.net:443/browse/ENG-1")).toBe(
+      "https://acme.atlassian.net",
+    );
+    expect(JiraApi.siteOrigin("https://jira.example.test")).toBeNull();
+    expect(JiraApi.siteOrigin("https://acme.atlassian.net:8443")).toBeNull();
+    expect(
+      JiraIssueTracker.parseJiraIssueUrl(new URL("https://acme.atlassian.net:8443/browse/ENG-1")),
+    ).toBeNull();
+  });
+
   it.effect("pins the Jira endpoint and credential together for a scoped operation", () =>
     Effect.gen(function* () {
       const { tracker, requests, replaceCredential } = fakeJira({

@@ -16,7 +16,10 @@ export function resolveSpeechPresentation(
       return {
         status: progress
           ? t("Downloading model {progress}%", {
-              progress: speechModelDownloadPercent(progress.downloaded, Math.max(1, progress.total)),
+              progress: speechModelDownloadPercent(
+                progress.downloaded,
+                Math.max(1, progress.total),
+              ),
             })
           : t("Starting…"),
         active: true,

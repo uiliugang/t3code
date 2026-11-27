@@ -3867,9 +3867,11 @@ it.effect("restores and deletes checkpoints inside populated submodules", () =>
 it.effect("copies a checkpoint under another name without making a commit", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const driver = yield* GitVcsDriver.makeVcsDriverShape();
     const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-checkpoint-copy-" });
     const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
+    yield* git(["reset", "--hard", "HEAD"]);
     const ref = (ordinal: number) => CheckpointRef.make(`${checkpointRef}/${ordinal}`);
     const commitOf = (ordinal: number) =>
       git(["rev-parse", ref(ordinal)]).pipe(Effect.map((result) => result.stdout));
@@ -3890,6 +3892,24 @@ it.effect("copies a checkpoint under another name without making a commit", () =
     assert.strictEqual(yield* commitOf(5), existing);
     assert.isFalse(yield* copy(1, 6));
     assert.isFalse(yield* driver.checkpoints.hasCheckpointRef({ cwd, checkpointRef: ref(6) }));
+
+    const tracked = path.join(cwd, "file.txt");
+    yield* fileSystem.writeFileString(tracked, "user-edited before the new turn\n");
+    assert.isFalse(yield* copy(2, 7), "an unstaged edit invalidates the old baseline");
+    yield* git(["add", "file.txt"]);
+    assert.isFalse(yield* copy(2, 7), "a staged edit invalidates the old baseline");
+    yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef: ref(8) });
+    yield* git(["reset", "--hard", "HEAD"]);
+    assert.isFalse(yield* copy(8, 7), "clean HEAD and the saved tree must agree");
+
+    const untracked = path.join(cwd, "new.txt");
+    yield* fileSystem.writeFileString(untracked, "new file before the new turn\n");
+    assert.isFalse(yield* copy(2, 7), "an untracked file invalidates the old baseline");
+    yield* fileSystem.remove(untracked);
+
+    yield* git(["commit", "--allow-empty", "-m", "advance HEAD without changing files"]);
+    assert.isFalse(yield* copy(2, 7), "a different HEAD invalidates checkpoint metadata");
+    assert.isFalse(yield* driver.checkpoints.hasCheckpointRef({ cwd, checkpointRef: ref(7) }));
   }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
 );
 

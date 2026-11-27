@@ -15,6 +15,8 @@ import {
   IssueTrackerAccountId,
   IssueTrackerConnectionError,
   IssueTrackerKind,
+  projectIssueProvider,
+  repositoryIssueKind,
   type IssueTrackerBindProjectInput,
   type IssueTrackerConnectInput,
   type IssueTrackerConnection,
@@ -28,6 +30,8 @@ import type {
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
 import * as IssueService from "./IssueService.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import {
   decodeIssueTrackerCredential,
   encodeIssueTrackerCredential,
@@ -60,6 +64,8 @@ const make = Effect.gen(function* () {
   const registry = yield* IssueTrackerRegistry.IssueTrackerRegistry;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const bindings = yield* IssueTrackerBindings.IssueTrackerBindingsRepository;
+  const projects = yield* ProjectService.ProjectService;
+  const settings = yield* ServerSettings.ServerSettingsService;
   // Account checks, credential writes, and removals run one at a time, so a removal cannot land
   // between a check and the write that relied on it.
   const accountLock = yield* Semaphore.make(1);
@@ -326,27 +332,67 @@ const make = Effect.gen(function* () {
   const bindProject: IssueTrackerConnections["Service"]["bindProject"] = Effect.fn(
     "IssueTrackerConnections.bindProject",
   )(function* (input) {
-    if (input.binding === null) {
-      // Older clients cannot see a project bound with an added account and offer it as unbound;
-      // an unbind that does not name the binding's account leaves it alone.
-      const current = (yield* bindings
-        .list(input.projectId)
-        .pipe(
-          Effect.mapError(secretFailure(anyTracker, "The project bindings could not be read.")),
-        )).get(input.projectId);
-      if (current !== undefined && current.accountId !== input.accountId) return;
-    } else {
-      yield* requireAccount(
-        (yield* requireTracker(input.binding.tracker)).kind,
-        input.binding.accountId,
-      );
-    }
-    // Unbinding names no tracker; the first registered one carries any report.
     const tracker = input.binding?.tracker ?? anyTracker;
-    const updatedAt = DateTime.formatIso(yield* DateTime.now);
-    yield* bindings
-      .set({ projectId: input.projectId, binding: input.binding, updatedAt })
-      .pipe(Effect.mapError(secretFailure(tracker, "The project binding could not be saved.")));
+    if (input.binding !== null) {
+      yield* requireAccount((yield* requireTracker(tracker)).kind, input.binding.accountId);
+    }
+    const current = (yield* bindings
+      .list(input.projectId)
+      .pipe(
+        Effect.mapError(secretFailure(tracker, "The project bindings could not be read.")),
+      )).get(input.projectId);
+    // Older clients cannot unbind an added account's binding without naming that account.
+    if (input.binding === null && current !== undefined && current.accountId !== input.accountId) {
+      return;
+    }
+    const store = Effect.gen(function* () {
+      const updatedAt = DateTime.formatIso(yield* DateTime.now);
+      yield* bindings
+        .set({ projectId: input.projectId, binding: input.binding, updatedAt })
+        .pipe(Effect.mapError(secretFailure(tracker, "The project binding could not be saved.")));
+    });
+    if (input.binding === null || (tracker !== "jira" && current?.tracker !== "jira")) {
+      return yield* store;
+    }
+    // Resolve Git before taking the settings lock, like ordinary requirement-source updates.
+    const project = yield* projects
+      .getShell(input.projectId, undefined, "refresh")
+      .pipe(Effect.mapError(secretFailure(tracker, "The project repository could not be read.")));
+    if (Option.isNone(project)) {
+      return yield* new IssueTrackerConnectionError({
+        tracker,
+        reason: "rejected",
+        detail: "This project no longer exists.",
+      });
+    }
+    yield* settings
+      .withSettingsSnapshot((currentSettings) => {
+        const builtIn = projectIssueProvider(
+          repositoryIssueKind(project.value.repositoryIdentity),
+          currentSettings.issueProjectSources[input.projectId] ?? [],
+        );
+        if (
+          (tracker === "jira" &&
+            (builtIn !== undefined || (current !== undefined && current.tracker !== tracker))) ||
+          (tracker !== "jira" && builtIn === undefined)
+        ) {
+          return Effect.fail(
+            new IssueTrackerConnectionError({
+              tracker,
+              reason: "rejected",
+              detail: "A project can use only one requirement provider.",
+            }),
+          );
+        }
+        return store;
+      })
+      .pipe(
+        Effect.mapError((error) =>
+          error instanceof IssueTrackerConnectionError
+            ? error
+            : secretFailure(tracker, "The project requirement settings could not be read.")(error),
+        ),
+      );
   }, accountLock.withPermits(1));
 
   return IssueTrackerConnections.of({ list, connect, bindProject });

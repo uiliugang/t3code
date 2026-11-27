@@ -13,12 +13,15 @@ import {
 } from "@t3tools/source-control-core/server/IssueTracker";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as IssueTrackerConnections from "./IssueTrackerConnections.ts";
 import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
 
 const LINEAR = IssueTrackerKind.make("linear");
+const JIRA = IssueTrackerKind.make("jira");
 
 describe("IssueTrackerConnections", () => {
   it.effect("keeps each account's key and bindings apart, and no key past its account", () => {
@@ -55,9 +58,35 @@ describe("IssueTrackerConnections", () => {
       Layer.provideMerge(
         Layer.mergeAll(
           SqlitePersistence.layerMemory,
+          ServerSettings.layerTest({
+            issueProjectSources: {
+              saved: [{ provider: "meituan", host: "ones.example.test", scope: "42" }],
+            },
+          }),
+          Layer.mock(ProjectService.ProjectService)({
+            getShell: (id) =>
+              Effect.succeed(
+                Option.some({
+                  id,
+                  repositoryIdentity:
+                    id === "github"
+                      ? { provider: "github", canonicalKey: "canonical" }
+                      : id === "meituan"
+                        ? { provider: "meituan", canonicalKey: "canonical" }
+                        : null,
+                } as never),
+              ),
+          }),
           Layer.succeed(
             IssueTrackerRegistry.IssueTrackerRegistry,
-            IssueTrackerRegistry.fromTrackers([tracker]),
+            IssueTrackerRegistry.fromTrackers([
+              tracker,
+              {
+                ...tracker,
+                kind: JIRA,
+                standalone: { ...tracker.standalone, tracker: JIRA },
+              },
+            ]),
           ),
           Layer.mock(ServerSecretStore.ServerSecretStore)({
             get: (name) =>
@@ -138,6 +167,34 @@ describe("IssueTrackerConnections", () => {
           }),
         ),
       ).toMatchObject({ detail: "This account is not saved on the server." });
+
+      yield* connections.connect({ tracker: JIRA, token: "jira" });
+      const jira = { tracker: JIRA, scope: "ENG" };
+      for (const projectId of ["work", "github", "meituan", "saved"] as ProjectId[]) {
+        expect(
+          yield* Effect.result(connections.bindProject({ projectId, binding: jira })),
+        ).toMatchObject({
+          _tag: "Failure",
+          failure: { detail: "A project can use only one requirement provider." },
+        });
+      }
+      const free = "free" as ProjectId;
+      yield* connections.bindProject({ projectId: free, binding: jira });
+      expect((yield* connections.list).bindings[free]).toMatchObject(jira);
+      expect(
+        yield* Effect.flip(
+          connections.bindProject({
+            projectId: free,
+            binding: { tracker: LINEAR, scope: "ENG" },
+          }),
+        ),
+      ).toMatchObject({ detail: "A project can use only one requirement provider." });
+      yield* connections.bindProject({ projectId: free, binding: null });
+      yield* connections.bindProject({
+        projectId: free,
+        binding: { tracker: LINEAR, scope: "ENG" },
+      });
+      yield* connections.connect({ tracker: JIRA, token: null });
 
       // An account that cannot be saved takes its new key with it.
       yield* (yield* SqlClient.SqlClient)`DROP TABLE issue_tracker_accounts`;

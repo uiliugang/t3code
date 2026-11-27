@@ -6,6 +6,7 @@ import {
   issueTrackerBindingFor,
   issueTrackerBindings,
   issueTrackerConnectFailure,
+  issueTrackerProjectPickerAvailable,
   issueTrackerScopeOptions,
   issueTrackerSummary,
 } from "@t3tools/client-runtime/state/issue-trackers";
@@ -13,11 +14,13 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { T, useGT, useMessages } from "gt-react";
 import { ChevronDownIcon, ExternalLinkIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState, type ElementType, type ReactNode } from "react";
-import type {
-  EnvironmentId,
-  IssueTrackerConnection,
-  IssueTrackerConnectionList,
-  ProjectId,
+import {
+  projectIssueProvider,
+  repositoryIssueKind,
+  type EnvironmentId,
+  type IssueTrackerConnection,
+  type IssueTrackerConnectionList,
+  type ProjectId,
 } from "@t3tools/contracts";
 
 import { useEnvironmentQuery } from "../../state/query";
@@ -34,6 +37,7 @@ import { Collapsible, CollapsibleContent } from "../ui/collapsible";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { SecretInput } from "./SecretInput";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -335,7 +339,16 @@ function ProjectBindings({
   readonly refreshFailed: boolean;
 }) {
   const gt = useGT();
-  const projects = useProjects().filter((project) => project.environmentId === environmentId);
+  const saved = useEnvironmentSettings(environmentId, (settings) => settings.issueProjectSources);
+  const projects = useProjects().filter((project) => {
+    if (project.environmentId !== environmentId) return false;
+    const binding = bindings[project.id];
+    const provider = projectIssueProvider(
+      repositoryIssueKind(project.repositoryIdentity),
+      saved[project.id] ?? [],
+    );
+    return issueTrackerProjectPickerAvailable(tracker.tracker, binding, provider !== undefined);
+  });
   const bind = useAtomCommand(issueTrackerEnvironment.bindProject, {
     label: `bind project to ${tracker.displayName}`,
   });
@@ -446,10 +459,11 @@ function CredentialFieldRows({
   readonly values: Readonly<Record<string, string>>;
   readonly onChange: (values: Readonly<Record<string, string>>) => void;
 }) {
+  const t = useUiTranslation();
   return (tracker.credential.fields ?? []).map((field) => (
     <SettingsRow
       key={field.key}
-      title={<label htmlFor={`${inputId}-${field.key}`}>{field.label}</label>}
+      title={<label htmlFor={`${inputId}-${field.key}`}>{t(field.label)}</label>}
       control={
         <div className="w-full min-w-0 @min-[32rem]/settings-row:w-56">
           <Input
@@ -477,6 +491,7 @@ function AddAccountRow({
   readonly onAdd: (token: string, values: Readonly<Record<string, string>>) => Promise<boolean>;
 }) {
   const gt = useGT();
+  const t = useUiTranslation();
   const [adding, setAdding] = useState(false);
   const [values, setValues] = useState<Readonly<Record<string, string>>>({});
   const inputId = `issue-tracker-${tracker.tracker}-add-account`;
@@ -505,7 +520,7 @@ function AddAccountRow({
         onChange={setValues}
       />
       <SettingsRow
-        title={<label htmlFor={inputId}>{tracker.credential.label}</label>}
+        title={<label htmlFor={inputId}>{t(tracker.credential.label)}</label>}
         description={
           <>
             {gt("For the new {tracker} account.", { tracker: tracker.displayName })}

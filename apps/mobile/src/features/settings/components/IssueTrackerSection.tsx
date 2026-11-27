@@ -4,15 +4,19 @@ import {
   issueTrackerBindingFor,
   issueTrackerBindings,
   issueTrackerConnectFailure,
+  issueTrackerProjectPickerAvailable,
   issueTrackerScopeOptions,
   issueTrackerSummary,
 } from "@t3tools/client-runtime/state/issue-trackers";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type {
-  EnvironmentId,
-  IssueTrackerConnection,
-  IssueTrackerConnectionList,
-  ProjectId,
+import {
+  projectIssueProvider,
+  repositoryIssueKind,
+  type EnvironmentId,
+  type IssueTrackerConnection,
+  type IssueTrackerConnectionList,
+  type ProjectId,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useNavigation } from "@react-navigation/native";
@@ -185,10 +189,10 @@ export function IssueTrackerCredentialForm(props: {
       {fields.map((field) => (
         <ConnectionFormField
           key={field.key}
-          label={field.label}
+          label={t(field.label)}
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder={field.placeholder ?? field.label}
+          placeholder={field.placeholder ?? t(field.label)}
           editable={!locked}
           value={drafts[field.key] ?? ""}
           onChangeText={(value) => setDrafts({ ...drafts, [field.key]: value })}
@@ -251,6 +255,7 @@ export function IssueTrackerProjectRows(props: {
   readonly environmentId: EnvironmentId;
   readonly tracker: IssueTrackerConnection;
   readonly bindings: IssueTrackerConnectionList["bindings"];
+  readonly sources: ServerSettings["issueProjectSources"];
   readonly refreshing: boolean;
   readonly refreshFailed: boolean;
   readonly disabled: boolean;
@@ -260,7 +265,18 @@ export function IssueTrackerProjectRows(props: {
   const bind = useAtomCommand(issueTrackerEnvironment.bindProject, {
     label: `bind project to ${tracker.displayName}`,
   });
-  const projects = useProjects().filter((project) => project.environmentId === environmentId);
+  const projects = useProjects().filter(
+    (project) =>
+      project.environmentId === environmentId &&
+      issueTrackerProjectPickerAvailable(
+        tracker.tracker,
+        props.bindings[project.id],
+        projectIssueProvider(
+          repositoryIssueKind(project.repositoryIdentity),
+          props.sources[project.id] ?? [],
+        ) !== undefined,
+      ),
+  );
   const [picks, setPicks] = useState<Partial<Record<ProjectId, ReadonlyArray<string>>>>({});
   const [saving, setSaving] = useState(false);
   const held = Object.values(picks).some((scopes) => scopes !== undefined);

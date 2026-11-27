@@ -2686,13 +2686,26 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       ),
 
     copyCheckpointRef: Effect.fn("GitVcsDriver.checkpoints.copyCheckpointRef")(function* (input) {
-      const commit = yield* resolveCheckpointCommit(input.cwd, input.fromCheckpointRef);
-      if (commit === null || (yield* listSubmodules(input.cwd)).length > 0) return false;
+      const source = yield* readPreviousCheckpoint(input.cwd, input.fromCheckpointRef);
+      if (source === null) return false;
+
+      // A prior run's checkpoint is only a candidate. Users can change the checkout after
+      // that run; compare against a proven clean live checkout before using the old snapshot.
+      const head = yield* checkpoints.resolveCleanHead(input.cwd);
+      if (head === null || source.head !== head || (yield* listSubmodules(input.cwd)).length > 0)
+        return false;
+      const { stdout: headTree } = yield* execute({
+        operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+        cwd: input.cwd,
+        args: ["rev-parse", "--verify", `${head}^{tree}`],
+      });
+      if (headTree.trim() !== source.tree) return false;
+
       return yield* execute({
         operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
         cwd: input.cwd,
         // An empty old value creates the ref only if it is absent.
-        args: [...durableWrite, "update-ref", input.toCheckpointRef, commit, ""],
+        args: [...durableWrite, "update-ref", input.toCheckpointRef, source.commit, ""],
       }).pipe(
         Effect.as(true),
         Effect.catch((error) =>

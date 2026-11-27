@@ -32,6 +32,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -2974,12 +2975,13 @@ it.effect("steers a promoted queued message with the selection it was queued wit
 );
 
 it.effect.each([
-  { label: "steered into the last turn starts from its checkpoint", steered: true },
-  { label: "removed from the queue snapshots the workspace", steered: false },
-])("a turn after a queued message $label", ({ steered }) =>
+  { label: "steered into the last turn starts from its checkpoint", steered: true, edit: false },
+  { label: "steered into the last turn preserves a later local edit", steered: true, edit: true },
+  { label: "removed from the queue snapshots the workspace", steered: false, edit: false },
+])("a turn after a queued message $label", ({ steered, edit }) =>
   Effect.gen(function* () {
     const { cwd, events, started, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
-      `baseline-after-queued-${steered}`,
+      `baseline-after-queued-${steered}-${edit}`,
     );
     yield* Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -3046,6 +3048,13 @@ it.effect.each([
       });
       yield* Fiber.join(completed);
       yield* worker.drain();
+      const localPath = "user-before-next.txt";
+      const localText = "this belongs to the next turn’s starting state\n";
+      if (edit) {
+        yield* FileSystem.FileSystem.use((fs) =>
+          fs.writeFileString(`${cwd}/${localPath}`, localText),
+        ).pipe(Effect.provide(NodeServices.layer));
+      }
       yield* send("next", { type: "start_immediately" });
       yield* worker.drain();
 
@@ -3053,17 +3062,17 @@ it.effect.each([
         (checkpoint) => checkpoint.runId === started[0]!.runId,
       )!;
       // --verify prints a commit only when the ref resolves to one.
-      const commitOf = (ref: string) =>
+      const git = (args: ReadonlyArray<string>) =>
         ChildProcessSpawner.ChildProcessSpawner.use((spawner) =>
-          spawner.string(
-            ChildProcess.make("git", ["rev-parse", "--verify", `${ref}^{commit}`], { cwd }),
-          ),
+          spawner.string(ChildProcess.make("git", args, { cwd })),
         ).pipe(Effect.provide(NodeServices.layer));
+      const commitOf = (ref: string) => git(["rev-parse", "--verify", `${ref}^{commit}`]);
       const baselineRef = `${end.ref.slice(0, end.ref.lastIndexOf("/"))}/${queuedRun.ordinal}`;
       const [baseline, source] = [yield* commitOf(baselineRef), yield* commitOf(end.ref)];
       assert.match(baseline, /^[0-9a-f]{40,64}\n$/);
       assert.match(source, /^[0-9a-f]{40,64}\n$/);
-      assert.strictEqual(baseline === source, steered);
+      assert.strictEqual(baseline === source, steered && !edit);
+      if (edit) assert.strictEqual(yield* git(["show", `${baselineRef}:${localPath}`]), localText);
     }).pipe(Effect.provide(layer));
   }),
 );

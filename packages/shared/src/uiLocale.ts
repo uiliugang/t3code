@@ -1559,6 +1559,11 @@ const zhCN: Readonly<Record<string, string>> = {
   "Select a setting": "请选择设置项",
   "What should the agent do each time?": "每次运行时智能体应执行什么？",
   "Add a CLIProxyAPI hub": "添加 CLIProxyAPI 中心",
+  "API token": "API 令牌",
+  "Account email": "账号邮箱",
+  Site: "站点",
+  "Show the quota of every Codex, Claude, and Grok account the hub pools, next to the providers on {environment}. The key stays on that server.":
+    "在 {environment} 的提供商旁显示此中心汇集的每个 Codex、Claude 和 Grok 账号的额度。密钥仅保存在该服务器上。",
   "Show the quota of every account the hub pools, next to the providers on {environment}. The key stays on that server.":
     "在 {environment} 的提供商旁展示中心内各账户的配额。密钥仅保存在该服务器上。",
   "Hub URL": "中心 URL",
@@ -3160,6 +3165,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Device hub": "设备中心",
   "Agent device access": "智能体设备访问权限",
   "Agent browser access": "智能体浏览器访问权限",
+  "Show the floating preview when an agent opens a browser or device unless the agent says otherwise, and when you close the right panel.":
+    "当代理打开浏览器或设备时（除非代理选择不显示），或关闭右侧面板时，显示浮动预览。",
   "Show the floating preview when an agent opens a browser or device unless the agent says otherwise.":
     "智能体打开浏览器或设备时显示悬浮预览，除非智能体另有指定。",
   "Auto-show floating preview": "自动显示悬浮预览",
@@ -6402,6 +6409,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Review {files}, {additions} additions, {deletions} deletions":
     "查看更改：{files}，新增 {additions} 行，删除 {deletions} 行",
   " (unavailable)": "（不可用）",
+  "{count} of {total} agent working": "{total} 个代理中有 {count} 个正在运行",
   "{count} of {total} agents working": "{total} 个代理中有 {count} 个正在运行",
   "{count} done": "{count} 个已完成",
   "{count} agent done": "{count} 个代理已完成",

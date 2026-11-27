@@ -836,6 +836,53 @@ describe("IssueService", () => {
 });
 
 describe("IssueService with a standalone tracker", () => {
+  it.effect("does not list, read or write a conflicting saved Jira binding", () =>
+    Effect.gen(function* () {
+      const jira = IssueTrackerKind.make("jira");
+      const touched: string[] = [];
+      const standalone = fakeStandaloneTracker({
+        listIssues: () =>
+          Effect.sync(() => {
+            touched.push("list");
+            return { items: [], nextCursor: null };
+          }),
+        getIssue: ({ key }) =>
+          Effect.sync(() => {
+            touched.push("detail");
+            return issue(key);
+          }),
+        comment: () =>
+          Effect.sync(() => {
+            touched.push("comment");
+          }),
+      });
+      const service = yield* makeService({
+        projects: [project({ id: "github-jira", repository: "acme/repo" })],
+        trackers: [
+          fakeTracker({}),
+          {
+            ...standalone,
+            kind: jira,
+            standalone: { ...standalone.standalone, tracker: jira, host: "atlassian.net" },
+          },
+        ],
+        bindings: { "github-jira": { tracker: jira, scope: "ENG" } },
+      });
+      const ref = {
+        projectId: "github-jira" as ProjectId,
+        tracker: jira,
+        host: "atlassian.net",
+        scope: "ENG",
+        key: "ENG-1",
+      };
+
+      yield* service.list({ state: "open", projectId: ref.projectId });
+      yield* Effect.flip(service.detail(ref));
+      yield* Effect.flip(service.comment(ref, "Must not reach Jira"));
+      expect(touched).toEqual([]);
+    }),
+  );
+
   it.effect("reads the current standalone workspace after a credential changes", () =>
     Effect.gen(function* () {
       let workspace = "acme";

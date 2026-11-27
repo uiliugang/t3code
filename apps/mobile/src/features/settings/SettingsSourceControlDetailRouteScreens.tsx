@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useEnvironments } from "../../state/environments";
+import { useUiTranslation } from "../../lib/useUiTranslation";
 import { issueTrackerEnvironment } from "../../state/issueTrackers";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -171,9 +172,13 @@ export function SettingsIssueTrackerRouteScreen({
   readonly accountId?: string;
 }>) {
   const gt = useGT();
+  const t = useUiTranslation();
   const messages = useMessages();
   const { environmentId } = route.params;
   const { environment, canWrite } = useDetailEnvironment(environmentId);
+  const settings =
+    useAtomValue(serverEnvironment.settingsValueAtom(environmentId)) ??
+    environment?.serverConfig.settings;
   const query = useEnvironmentQuery(
     issueTrackerEnvironment.connections({ environmentId, input: {} }),
   );
@@ -198,7 +203,7 @@ export function SettingsIssueTrackerRouteScreen({
           <Text selectable className="px-2 text-sm text-foreground-muted">
             {issueTrackerSummary(tracker, issueTrackerBindings(query.data), messages)}
           </Text>
-          <SettingsSection title={tracker.credential.label}>
+          <SettingsSection title={t(tracker.credential.label)}>
             <IssueTrackerCredentialForm
               environmentId={environmentId}
               tracker={tracker}
@@ -208,15 +213,20 @@ export function SettingsIssueTrackerRouteScreen({
           {usable && hasIssueTrackerTeams(tracker, issueTrackerBindings(query.data)) ? (
             <SettingsSection
               title={gt("Projects")}
-              footer={gt(
-                "Pick one or more {tracker} {scope}s for each project. Their issues list beside the repository's own, and agents file new issues in the first one unless asked for another.",
-                { tracker: tracker.displayName, scope: tracker.scopeNoun },
-              )}
+              footer={
+                tracker.tracker === "jira"
+                  ? gt("Pick Jira projects for workspaces without another requirement provider.")
+                  : gt(
+                      "Pick one or more {tracker} {scope}s for each project. Their issues list beside the repository's own, and agents file new issues in the first one unless asked for another.",
+                      { tracker: tracker.displayName, scope: tracker.scopeNoun },
+                    )
+              }
             >
               <IssueTrackerProjectRows
                 environmentId={environmentId}
                 tracker={tracker}
                 bindings={issueTrackerBindings(query.data)}
+                sources={settings?.issueProjectSources ?? {}}
                 refreshing={query.isPending}
                 refreshFailed={query.error !== null}
                 disabled={disabled}

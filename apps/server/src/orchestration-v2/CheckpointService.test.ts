@@ -43,6 +43,8 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
   Effect.gen(function* () {
     const refs = new Map<string, string>();
     const workspace = workspaceFixture();
+    const [unchanged, changed] = workspace.resources;
+    const freshSnapshots: string[] = [];
     const layer = CheckpointService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -51,8 +53,16 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
             isGitRepository: () => Effect.succeed(true),
             hasCheckpointRef: ({ cwd, checkpointRef }) =>
               Effect.succeed(refs.get(checkpointRef) === cwd),
+            copyCheckpointRef: ({ cwd, fromCheckpointRef, toCheckpointRef }) =>
+              Effect.sync(() => {
+                if (cwd !== unchanged!.checkoutRoot || refs.get(fromCheckpointRef) !== cwd)
+                  return false;
+                refs.set(toCheckpointRef, cwd);
+                return true;
+              }),
             captureCheckpoint: ({ cwd, checkpointRef, previousCheckpointRef }) =>
               Effect.sync(() => {
+                freshSnapshots.push(cwd);
                 refs.set(checkpointRef, cwd);
                 return previousCheckpointRef && refs.has(previousCheckpointRef)
                   ? {
@@ -98,6 +108,22 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
       assert.equal(new Set(checkpoint.resources?.map((member) => member.ref)).size, 2);
       assert.equal(new Set(checkpoint.resources?.map((member) => member.checkpointId)).size, 2);
       assert.equal(new Set(checkpoint.files.map((file) => file.resourceId)).size, 2);
+      freshSnapshots.length = 0;
+      yield* checkpoints.captureBaseline({
+        scope,
+        ordinalWithinScope: 2,
+        sourceOrdinalWithinScope: 1,
+      });
+      const baseline = yield* checkpoints.materializeBaselineCheckpoint({
+        scope,
+        ordinalWithinScope: 2,
+        nodeId: scope.nodeId,
+        capturedAt: scope.createdAt,
+      });
+      assert.equal(baseline.status, "ready");
+      assert.lengthOf(baseline.resources ?? [], 2);
+      assert.deepEqual(freshSnapshots, [changed!.checkoutRoot]);
+
       const partialCheckpoint = { ...checkpoint, resources: checkpoint.resources!.slice(0, 1) };
       const error = yield* checkpoints
         .restore({
@@ -122,7 +148,7 @@ it.effect.each([
     const started = yield* Deferred.make<void>();
     const release = yield* Deferred.make<void>();
     const writeBaseline = (cwd: string, checkpointRef: string) =>
-      (cwd === workspace.resources[0]!.checkoutRoot
+      (!reuse && cwd === workspace.resources[0]!.checkoutRoot
         ? Effect.void
         : Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)))
       ).pipe(Effect.andThen(Effect.sync(() => refs.set(checkpointRef, cwd))));
@@ -179,7 +205,7 @@ it.effect.each([
         capturedAt: scope.createdAt,
       });
       assert.equal(baseline.status, expected === "Success" ? "ready" : "error");
-      assert.equal(refs.size, expected === "Success" ? workspace.resources.length : 1);
+      assert.equal(refs.size, expected === "Success" ? workspace.resources.length : reuse ? 0 : 1);
     }).pipe(Effect.provide(layerTest));
   }),
 );

@@ -2843,6 +2843,7 @@
   "b725843fd45b74aa": "Credentials",
   "b239ba3ce2899a3e": "Or use your own credentials",
   "f0e6397ab4de588e": "Token",
+  "7519070743ac96f0": "Pick Jira projects for workspaces without another requirement provider.",
   "ed83b25c71c98a20": "Pick one or more {tracker} {scope}s for each project. Their issues list beside the repository's own, and agents file new issues in the first one unless asked for another.",
   "99d51127f573296b": "Another account",
   "8ec2c57414669b79": "Connect a second {tracker} workspace or user.",
