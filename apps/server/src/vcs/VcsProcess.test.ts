@@ -8,6 +8,7 @@ import * as Cause from "effect/Cause";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
@@ -53,6 +54,75 @@ const captureProcessResult = (
   );
 
 describe("VcsProcess.run", () => {
+  it.effect("retains only safe stage timings when a slow checkpoint is interrupted", () =>
+    Effect.gen(function* () {
+      const logs: unknown[] = [];
+      const started = yield* Deferred.make<void>();
+      const service = yield* VcsProcess.make.pipe(
+        Effect.provideService(HostProcess.Platform, "darwin"),
+        Effect.provideService(
+          ProcessRunner.ProcessRunner,
+          ProcessRunner.ProcessRunner.of({
+            run: (input) =>
+              Effect.gen(function* () {
+                expect(input.env?.GIT_TRACE2_EVENT).toBe("3");
+                const enter = {
+                  sid: "root",
+                  thread: "main",
+                  event: "region_enter",
+                  category: "index",
+                  label: "preload",
+                  msg: "private-path",
+                };
+                const lines = [
+                  enter,
+                  { ...enter, event: "region_leave", t_rel: 0.031 },
+                  { ...enter, category: "dir", label: "read_directory" },
+                ]
+                  .map((entry) => JSON.stringify(entry))
+                  .join("\n");
+                input.onFd3Chunk?.(Buffer.from(lines.slice(0, 13)));
+                input.onFd3Chunk?.(Buffer.from(lines.slice(13) + "\n"));
+                yield* Deferred.succeed(started, undefined);
+                return yield* Effect.never;
+              }),
+          }),
+        ),
+      );
+      const fiber = yield* service
+        .run({
+          ...baseInput,
+          operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+          args: ["-C", "/private-repo", "-c", "private-setting", "add", "--", "private-path"],
+        })
+        .pipe(
+          Effect.provide(
+            Logger.layer([Logger.make(({ message }) => logs.push(message))], {
+              mergeWithExisting: false,
+            }),
+          ),
+          Effect.forkChild,
+        );
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("2 seconds");
+      yield* Fiber.interrupt(fiber);
+      expect(logs).toEqual([
+        [
+          "slow checkpoint Git command",
+          {
+            subcommand: "add",
+            outcome: "interrupt",
+            totalMs: 2000,
+            queueMs: 0,
+            executionMs: 2000,
+            regionMs: { "index/preload": 31 },
+            unfinishedRegionMs: { "dir/read_directory": 2000 },
+          },
+        ],
+      ]);
+    }),
+  );
+
   it.effect("explains a locked Git index and allows restore after the lock is released", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

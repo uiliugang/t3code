@@ -28,6 +28,7 @@ export interface ProcessRunInput {
   readonly onStdoutChunk?: ((chunk: Uint8Array) => void) | undefined;
   /** Runs after successful spawn, before cancellation can interrupt acquisition. */
   readonly onSpawn?: (() => void) | undefined;
+  readonly onFd3Chunk?: ((chunk: Uint8Array) => void) | undefined;
   readonly maxOutputBytes?: number | undefined;
   readonly outputMode?: "error" | "truncate" | undefined;
   readonly truncatedMarker?: string | undefined;
@@ -306,6 +307,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
             }
           : {}),
         shell: spawnCommand.shell,
+        ...(input.onFd3Chunk ? { additionalFds: { fd3: { type: "output" as const } } } : {}),
         forceKillAfter: FORCE_KILL_AFTER,
       }),
     )
@@ -322,6 +324,14 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
       );
 
   const stdin = input.stdin;
+  const onFd3Chunk = input.onFd3Chunk;
+  if (onFd3Chunk) {
+    yield* child.getOutputFd(3).pipe(
+      Stream.runForEach((chunk) => Effect.sync(() => onFd3Chunk(chunk))),
+      Effect.ignoreCause,
+      Effect.forkScoped,
+    );
+  }
   const onStdoutChunk = input.onStdoutChunk;
   const writeStdin =
     stdin === undefined
