@@ -110,19 +110,26 @@ describe("skill management views", () => {
     expect(
       skillConfigurationFeedback({ ...data, jobs: [{ ...completed, status: "cancelled" }] }),
     ).toBeNull();
+    const withMissingBinding = {
+      ...first,
+      bindings: [
+        { id: "fixture", label: "Fixture", directory: "/fixture", status: "missing" as const },
+      ],
+    };
+    expect(
+      skillConfigurationFeedback({ skills: [withMissingBinding], jobs: [completed] }),
+    ).toBeNull();
     expect(
       skillConfigurationFeedback({
-        skills: [
+        skills: [withMissingBinding],
+        jobs: [
           {
-            ...first,
-            bindings: [
-              { id: "fixture", label: "Fixture", directory: "/fixture", status: "missing" },
-            ],
+            ...completed,
+            input: { ...completed.input, locationChange: { mode: "add", directories: ["/new"] } },
           },
         ],
-        jobs: [completed],
-      }),
-    ).toBeNull();
+      })?.status,
+    ).toBe("completed");
   });
 
   it("keeps configuration failures only while they match the current skill error", () => {
@@ -364,11 +371,36 @@ describe("skill management views", () => {
     ).toEqual([]);
     const orphan = {
       ...skill,
+      id: "retired-review",
       bindings: [
         { id: "removed", label: "Removed", directory: "/removed", status: "missing" as const },
       ],
     };
     expect(skillBatchBindingOperations([orphan], targets, ["shared"], "add")).toBeNull();
+    expect(
+      skillBatchBindingOperations([orphan, ...skills], targets, ["shared"], "add", true),
+    ).toEqual([
+      {
+        type: "configure",
+        id: "retired-review",
+        locationChange: { mode: "add", directories: ["/shared"] },
+      },
+      {
+        type: "configure",
+        id: "review",
+        locationChange: { mode: "add", directories: ["/shared"] },
+      },
+      { type: "configure", id: "debug", locationChange: { mode: "add", directories: ["/shared"] } },
+    ]);
+    expect(
+      skillBatchBindingOperations([orphan, ...skills], targets, ["alias"], "remove", true),
+    ).toEqual([
+      {
+        type: "configure",
+        id: "review",
+        locationChange: { mode: "remove", directories: ["/codex"] },
+      },
+    ]);
   });
 
   it("selects multiple skills without discarding policy or usage locations", () => {

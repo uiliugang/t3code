@@ -90,7 +90,8 @@ export function skillConfigurationFeedback(data: Pick<SkillSnapshot, "skills" | 
     configurations.some(
       ({ skill, job }) =>
         job?.status === "completed" &&
-        skill.bindings.every((binding) => binding.status === "linked"),
+        ((job.input.type === "configure" && job.input.locationChange !== undefined) ||
+          skill.bindings.every((binding) => binding.status === "linked")),
     )
   )
     return {
@@ -224,10 +225,12 @@ export function skillBatchBindingOperations(
   targets: ReadonlyArray<SkillTarget>,
   selected: ReadonlyArray<string>,
   mode: "add" | "remove",
+  incrementalLocationChanges = false,
 ): SkillAction[] | null {
   const locations = skillTargetGroups(targets).filter(
     (group) => group.enabled && group.targets.some((target) => selected.includes(target.id)),
   );
+  const directories = locations.map((group) => group.directory);
   const operations: SkillAction[] = [];
   for (const skill of skills) {
     const bindings = skill.bindings;
@@ -237,6 +240,10 @@ export function skillBatchBindingOperations(
         : bindings.some((binding) => binding.directory === group.directory),
     );
     if (!changes) continue;
+    if (incrementalLocationChanges) {
+      operations.push({ type: "configure", id: skill.id, locationChange: { mode, directories } });
+      continue;
+    }
     const retained = bindings.filter(
       (binding) =>
         mode === "add" || !locations.some((group) => group.directory === binding.directory),

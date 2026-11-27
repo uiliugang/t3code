@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
+import { useGT } from "gt-react";
 import {
   skillFailureMessage,
   type DiscoveredSkill,
@@ -479,11 +480,18 @@ function BatchBindingDialog({
   onClose: () => void;
 }) {
   const t = useUiTranslation();
+  const gt = useGT();
   const [selected, setSelected] = useState<string[]>([]);
   const [mode, setMode] = useState<"add" | "remove">("add");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const operations = skillBatchBindingOperations(skills, data.targets, selected, mode);
+  const operations = skillBatchBindingOperations(
+    skills,
+    data.targets,
+    selected,
+    mode,
+    data.incrementalLocationChanges,
+  );
   const unavailable =
     disabled ||
     saving ||
@@ -519,7 +527,7 @@ function BatchBindingDialog({
             />
             {operations === null && (
               <p role="alert" className="text-sm text-destructive">
-                {t("Some usage locations are unavailable. Refresh skills and try again.")}
+                {gt("Update this environment to change skills with unavailable usage locations.")}
               </p>
             )}
             {skills.length > 200 && (
@@ -1870,7 +1878,6 @@ function EnvironmentSkills({
   const [previews, setPreviews] = useState<AdoptionPreview[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState(false);
-  const [batchPolicy, setBatchPolicy] = useState<SkillUpdatePolicy>("automatic");
   const mutate: Mutate = async (input) =>
     (await command({ environmentId, input }))._tag === "Success";
   const inspect: Inspect = async (input) => {
@@ -2201,29 +2208,32 @@ function EnvironmentSkills({
                     >
                       {t("Check updates")}
                     </Button>
-                    <div className="w-36">
-                      <PolicySelect
-                        value={batchPolicy}
-                        onChange={setBatchPolicy}
-                        disabled={!canManage}
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!canManage}
-                      onClick={() =>
-                        void batch(
-                          selectedManaged.map((skill) => ({
-                            type: "policy",
-                            id: skill.id,
-                            policy: batchPolicy,
-                          })),
-                        )
-                      }
-                    >
-                      {t("Set policy")}
-                    </Button>
+                    <Menu>
+                      <MenuTrigger
+                        render={<Button size="sm" variant="outline" disabled={!canManage} />}
+                      >
+                        {t("Update policy")}
+                        <ChevronDownIcon />
+                      </MenuTrigger>
+                      <MenuPopup align="start">
+                        {(["automatic", "notify", "pinned"] as const).map((policy) => (
+                          <MenuItem
+                            key={policy}
+                            onClick={() =>
+                              void batch(
+                                selectedManaged.map((skill) => ({
+                                  type: "policy",
+                                  id: skill.id,
+                                  policy,
+                                })),
+                              )
+                            }
+                          >
+                            {t(skillPolicies[policy])}
+                          </MenuItem>
+                        ))}
+                      </MenuPopup>
+                    </Menu>
                     <Button
                       size="sm"
                       variant="outline"

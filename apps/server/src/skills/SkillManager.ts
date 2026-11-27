@@ -220,12 +220,13 @@ const make = Effect.gen(function* () {
     );
   });
   const selectedTargets = Effect.fn("SkillManager.selectedTargets")(function* (
-    ids: ReadonlyArray<string>,
+    selection: ReadonlyArray<string>,
+    key: "id" | "directory" = "id",
   ) {
     const targets = yield* allTargets;
     const selected: SkillTarget[] = [];
-    for (const id of new Set(ids)) {
-      const target = targets.find((entry) => entry.id === id);
+    for (const value of new Set(selection)) {
+      const target = targets.find((entry) => entry[key] === value);
       if (!target)
         return yield* new SkillManagerError({ operation: "target", reason: "not-found" });
       if (!target.enabled)
@@ -286,9 +287,16 @@ const make = Effect.gen(function* () {
     )
       return yield* new SkillManagerError({ operation: "detach", reason: "conflict" });
   });
-  const syncBindings = Effect.fn("SkillManager.syncBindings")(function* (skill: ManagedSkill) {
+  const syncBindings = Effect.fn("SkillManager.syncBindings")(function* (
+    skill: ManagedSkill,
+    directories?: ReadonlySet<string>,
+  ) {
     const bindings: Array<ManagedSkill["bindings"][number]> = [];
     for (const target of skill.bindings) {
+      if (directories && !directories.has(target.directory)) {
+        bindings.push(target);
+        continue;
+      }
       const file = linkPath(skill, target);
       const result = yield* Effect.gen(function* () {
         yield* fs.makeDirectory(target.directory, { recursive: true });
@@ -1350,18 +1358,30 @@ const make = Effect.gen(function* () {
             yield* remove(skill);
             break;
           case "configure": {
-            const targets = yield* selectedTargets(input.targetIds);
+            const change = input.locationChange;
+            const targets = yield* change
+              ? selectedTargets(change.directories, "directory")
+              : selectedTargets(input.targetIds);
+            const selectedDirectories = new Set(targets.map((target) => target.directory));
             const previousBindings = yield* Effect.forEach(skill.bindings, (binding) =>
               canonicalDirectory(binding.directory).pipe(
-                Effect.map((directory) => ({ ...binding, directory })),
+                Effect.map((directory) => ({ binding, directory })),
               ),
             );
-            for (const previous of previousBindings)
+            const retainedBindings = change
+              ? previousBindings
+                  .filter(({ directory }) => !selectedDirectories.has(directory))
+                  .map(({ binding }) => binding)
+              : [];
+            for (const { binding, directory } of previousBindings)
               if (
-                !targets.some((target) => target.directory === previous.directory) &&
-                (yield* readLink(linkPath(skill, previous))) === activePath(skill.id)
-              )
-                yield* fs.remove(linkPath(skill, previous));
+                change
+                  ? change.mode === "remove" && selectedDirectories.has(directory)
+                  : !selectedDirectories.has(directory)
+              ) {
+                const file = linkPath(skill, { ...binding, directory });
+                if ((yield* readLink(file)) === activePath(skill.id)) yield* fs.remove(file);
+              }
             const previousResult = current.jobs?.findLast(
               (job) =>
                 job.skillId === skill.id && (job.status === "completed" || job.status === "failed"),
@@ -1369,27 +1389,38 @@ const make = Effect.gen(function* () {
             const recovered =
               skill.activeDigest &&
               (skill.failureReason === "target-disabled" ||
-                skill.failureReason === "conflict" ||
+                (skill.failureReason === "conflict" &&
+                  retainedBindings.every((binding) => binding.status === "linked")) ||
                 (previousResult?.status === "failed" &&
                   previousResult.input.type === "configure" &&
                   previousResult.reason === skill.failureReason &&
                   ["not-found", "busy", "io", "interrupted"].includes(skill.failureReason ?? "")));
             const next = {
               ...skill,
-              policy: input.policy,
-              policyOrigin: "explicit" as const,
+              ...(change ? {} : { policy: input.policy, policyOrigin: "explicit" as const }),
               status: recovered && skill.status !== "pending" ? ("ready" as const) : skill.status,
-              bindings: targets.map((target) => ({
-                ...previousBindings.find((binding) => binding.directory === target.directory),
-                ...target,
-                status: "missing" as const,
-              })),
+              bindings: [
+                ...retainedBindings,
+                ...(change?.mode === "remove"
+                  ? []
+                  : targets.map((target) => ({
+                      ...previousBindings.find((entry) => entry.directory === target.directory)
+                        ?.binding,
+                      ...target,
+                      status: "missing" as const,
+                    }))),
+              ],
             };
             yield* replace(next);
-            const linked = skill.activeDigest ? yield* syncBindings(next) : next;
+            const linked =
+              skill.activeDigest && change?.mode !== "remove"
+                ? yield* syncBindings(next, change ? selectedDirectories : undefined)
+                : next;
             const failed =
               Boolean(skill.activeDigest) &&
-              linked.bindings.some((binding) => binding.status !== "linked");
+              linked.bindings
+                .slice(retainedBindings.length)
+                .some((binding) => binding.status !== "linked");
             yield* replace({
               ...linked,
               status: next.status === "pending" ? "pending" : failed ? "failed" : next.status,
@@ -1401,7 +1432,7 @@ const make = Effect.gen(function* () {
               failureReason: failed ? "conflict" : recovered ? null : (skill.failureReason ?? null),
               failureDiagnostics: recovered ? null : (skill.failureDiagnostics ?? null),
             });
-            yield* host.refresh([...skill.bindings, ...linked.bindings]);
+            yield* host.refresh(change ? targets : [...skill.bindings, ...linked.bindings]);
             break;
           }
         }
@@ -1509,9 +1540,17 @@ const make = Effect.gen(function* () {
           const resultingSkill = resultingId
             ? completed.skills.find((skill) => skill.id === resultingId)
             : undefined;
+          const change = input.type === "configure" ? input.locationChange : undefined;
           const failed =
             input.type === "configure"
-              ? resultingSkill?.failureReason === "conflict"
+              ? change
+                ? change.mode === "add" &&
+                  Boolean(resultingSkill?.activeDigest) &&
+                  resultingSkill?.bindings.some(
+                    (binding) =>
+                      change.directories.includes(binding.directory) && binding.status !== "linked",
+                  )
+                : resultingSkill?.failureReason === "conflict"
               : resultingSkill?.status === "failed";
           const waiting = input.type !== "configure" && resultingSkill?.status === "pending";
           const after =
@@ -1821,6 +1860,7 @@ const make = Effect.gen(function* () {
   const snapshot = Effect.gen(function* () {
     const current = yield* Ref.get(state);
     const populated = yield* Ref.get(populatedTargets);
+    const targets = yield* allTargets;
     const directories = new Map(
       yield* Effect.forEach(
         new Set(
@@ -1834,6 +1874,25 @@ const make = Effect.gen(function* () {
     );
     return {
       ...current,
+      incrementalLocationChanges: true,
+      ...(current.jobs && {
+        jobs: current.jobs.map((job) => {
+          const input = job.input;
+          if (input.type !== "configure" || !input.locationChange) return job;
+          const { directories } = input.locationChange;
+          // Older clients decode location jobs as full configure requests in the history.
+          return {
+            ...job,
+            input: {
+              ...input,
+              policy: current.skills.find((skill) => skill.id === input.id)?.policy ?? "automatic",
+              targetIds: targets
+                .filter((target) => directories.includes(target.directory))
+                .map((target) => target.id),
+            },
+          };
+        }),
+      }),
       skills: current.skills.map((skill) => {
         skill = {
           ...skill,
@@ -1858,7 +1917,7 @@ const make = Effect.gen(function* () {
         return skill;
       }),
       operation: yield* Ref.get(operation),
-      targets: (yield* allTargets).map((target) => ({
+      targets: targets.map((target) => ({
         ...target,
         hasSkills: populated.has(target.directory),
       })),

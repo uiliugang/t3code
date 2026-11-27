@@ -12,7 +12,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
-import { SkillCatalog } from "@t3tools/contracts";
+import { SkillCatalog, SkillSnapshot, type SkillTarget } from "@t3tools/contracts";
 import { skillSelection } from "@t3tools/shared/skillsUi";
 import * as ServerConfig from "../config.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
@@ -33,6 +33,9 @@ const harness = Effect.gen(function* () {
   );
   yield* fs.writeFileString(`${source}/script.sh`, "first");
   const busy = yield* Ref.make(false);
+  const targets = yield* Ref.make<ReadonlyArray<SkillTarget>>([
+    { id: "fixture", label: "Fixture", directory: target },
+  ]);
   const reported = yield* Ref.make<ReadonlyArray<{ name: string; path: string; provider: string }>>(
     [],
   );
@@ -41,7 +44,7 @@ const harness = Effect.gen(function* () {
       Settings.ServerSettingsService.layerTest({ meituanIntegrationEnabled: true }),
       SkillPackages.layer,
       Layer.succeed(SkillHost.SkillHost, {
-        targets: Effect.succeed([{ id: "fixture", label: "Fixture", directory: target }]),
+        targets: Ref.get(targets),
         discovered: Ref.get(reported),
         busy: Ref.get(busy),
         refresh: () => Effect.void,
@@ -74,6 +77,7 @@ const harness = Effect.gen(function* () {
     directory,
     source,
     target,
+    targets,
     manager,
     install,
     busy,
@@ -86,8 +90,66 @@ const harness = Effect.gen(function* () {
   };
 });
 const encodeCatalog = Schema.encodeEffect(Schema.fromJsonString(SkillCatalog));
+const encodeSnapshot = Schema.encodeEffect(Schema.fromJsonString(SkillSnapshot));
+const decodeSnapshot = Schema.decodeEffect(Schema.fromJsonString(SkillSnapshot));
 
 describe("SkillManager", () => {
+  it.effect("changes selected usage locations without rewriting retired bindings", () =>
+    Effect.gen(function* () {
+      const { fs, directory, target, targets, manager, install } = yield* harness;
+      yield* install;
+      const before = (yield* manager.snapshot).skills[0]!;
+      const current = `${directory}/current`;
+      yield* fs.makeDirectory(current);
+      const canonical = yield* fs.realPath(current);
+      yield* Ref.set(targets, [{ id: "fixture", label: "Current", directory: canonical }]);
+      const add = {
+        type: "configure" as const,
+        id: before.id,
+        locationChange: { mode: "add" as const, directories: [canonical] },
+      };
+      yield* manager.mutate({ type: "batch", operations: [add] });
+      yield* manager.drain;
+      const added = yield* manager.snapshot;
+      expect(added.skills[0]).toMatchObject({
+        policy: before.policy,
+        policyOrigin: before.policyOrigin,
+        bindings: [...before.bindings, { directory: canonical, status: "linked" }],
+      });
+      const encoded = yield* encodeSnapshot(added);
+      const wireSnapshot = yield* decodeSnapshot(encoded);
+      expect(wireSnapshot.jobs?.at(-1)).toMatchObject({
+        status: "completed",
+        input: {
+          targetIds: ["fixture"],
+          policy: before.policy,
+          locationChange: add.locationChange,
+        },
+      });
+      expect(yield* fs.readFileString(`${current}/review/script.sh`)).toBe("first");
+      expect(yield* fs.readFileString(`${target}/review/script.sh`)).toBe("first");
+      yield* fs.remove(`${target}/review`);
+      yield* manager.mutate({
+        ...add,
+        locationChange: { mode: "remove", directories: [canonical] },
+      });
+      yield* manager.drain;
+      const removed = yield* manager.snapshot;
+      expect(removed.skills[0]?.bindings).toEqual(before.bindings);
+      expect(removed.jobs?.at(-1)?.status).toBe("completed");
+      expect(yield* fs.exists(`${current}/review`)).toBe(false);
+      expect(yield* fs.exists(`${target}/review`)).toBe(false);
+
+      yield* Ref.set(targets, [{ id: "fixture", label: "Moved", directory: `${directory}/moved` }]);
+      yield* manager.mutate(add);
+      yield* manager.drain;
+      const rejected = yield* manager.snapshot;
+      expect(rejected.jobs?.at(-1)).toMatchObject({ status: "failed", reason: "not-found" });
+      expect(rejected.skills[0]?.bindings).toEqual(before.bindings);
+      expect(yield* fs.exists(`${directory}/moved/review`)).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect("resolves stored binding directories after the first install creates them", () =>
     Effect.gen(function* () {
       const { fs, directory, target, manager, install, restart } = yield* harness;
