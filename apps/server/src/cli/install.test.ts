@@ -55,18 +55,13 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       const path = yield* Path.Path;
       const { root, runtimeDir, executable, link, provide } = yield* setup;
 
-      for (const platform of ["linux", "win32"] as const) {
-        const error = yield* provide(
-          installCli().pipe(
-            Effect.provideService(HostProcess.IsExecutable, false),
-            Effect.provideService(HostProcess.Platform, platform),
-          ),
-        ).pipe(Effect.flip);
-        assert.include(
-          error.message,
-          `https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install.${platform === "win32" ? "ps1" : "sh"}`,
-        );
-      }
+      const scriptInstallError = yield* provide(
+        installCli().pipe(Effect.provideService(HostProcess.IsExecutable, false)),
+      ).pipe(Effect.flip);
+      assert.include(
+        scriptInstallError.message,
+        "https://raw.githubusercontent.com/uiliugang/t3code/main/scripts/install.sh",
+      );
 
       const older = path.join(runtimeDir, "versions/0.0.1/t3");
       yield* fs.makeDirectory(path.dirname(link), { recursive: true });
@@ -160,46 +155,6 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       assert.include((yield* provide(racing).pipe(Effect.flip)).message, "Could not write");
       assert.equal(yield* fs.readFileString(link), "#!/bin/sh\necho raced\n");
       yield* fs.remove(link);
-
-      // Windows writes a t3.cmd: only over its own, and only for paths cmd can run.
-      const shim = path.join(root, "bin", "t3.cmd");
-      const windows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-        provide(effect.pipe(Effect.provideService(HostProcess.Platform, "win32")));
-      const desktopShim =
-        '@echo off\r\nrem Written by T3 Code\r\n"C:\\T3 Code\\T3 Code.exe" "x" %*\r\n';
-      yield* fs.writeFileString(shim, desktopShim);
-      const foreignShim = yield* windows(installCli()).pipe(Effect.flip);
-      assert.include(foreignShim.message, "Another t3 is already at");
-      assert.equal(yield* fs.readFileString(shim), desktopShim);
-      // A user's wrapper that also runs a managed t3.exe is still theirs.
-      const wrapper = `@echo off\r\nset FOO=1\r\n"${path.join(runtimeDir, "versions/0.0.1/t3.exe")}" %*`;
-      yield* fs.writeFileString(shim, wrapper);
-      yield* windows(installCli()).pipe(Effect.flip);
-      assert.equal(yield* fs.readFileString(shim), wrapper);
-      // A dangling symlink is not free; writing through it would land outside the bin folder.
-      const elsewhere = path.join(root, "elsewhere.cmd");
-      yield* fs.remove(shim);
-      yield* fs.symlink(elsewhere, shim);
-      yield* windows(installCli()).pipe(Effect.flip);
-      assert.isFalse(yield* fs.exists(elsewhere));
-      yield* fs.remove(shim);
-      yield* fs.writeFileString(
-        shim,
-        `@echo off\r\n"${path.join(runtimeDir, "versions/0.0.1/t3.exe")}" %*`,
-      );
-      const windowsInstalled = yield* windows(installCli());
-      assert.equal(yield* fs.readFileString(shim), `@echo off\r\n"${executable}" %*`);
-      // A PowerShell command for this window; the saved PATH is left to the user.
-      assert.equal(windowsInstalled.pathCommand, `$env:Path += ';${path.join(root, "bin")}'`);
-      const unrunnable = yield* windows(
-        installCli().pipe(
-          Effect.provideService(
-            HostProcess.ExecutablePath,
-            path.join(runtimeDir, "versions/100%/t3"),
-          ),
-        ),
-      ).pipe(Effect.flip);
-      assert.include(unrunnable.message, "has % or non-ASCII characters");
     }),
   );
 

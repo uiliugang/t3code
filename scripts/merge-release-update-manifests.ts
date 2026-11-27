@@ -7,10 +7,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { Argument, Command } from "effect/cli";
 
-import { mergeUpdateManifestFiles, type UpdateManifestPlatform } from "./merge-update-manifests.ts";
+import { mergeUpdateManifestFiles } from "./merge-update-manifests.ts";
 
 interface ReleaseUpdateManifestMerge {
-  readonly platform: UpdateManifestPlatform;
   readonly primary: string;
   readonly secondary: string;
   readonly output: string;
@@ -45,8 +44,6 @@ function planReleaseUpdateManifestMerges(
 ): ReadonlyArray<ReleaseUpdateManifestMerge> {
   const macArm64 = new Map<string, string>();
   const macX64 = new Map<string, string>();
-  const winArm64 = new Map<string, string>();
-  const winX64 = new Map<string, string>();
 
   for (const fileName of fileNames) {
     if (fileName.startsWith("builder-debug")) continue;
@@ -59,34 +56,15 @@ function planReleaseUpdateManifestMerges(
     const macX64Match = /^(.+)-mac-x64\.yml$/u.exec(fileName);
     if (macX64Match?.[1] !== undefined) {
       macX64.set(macX64Match[1], fileName);
-      continue;
-    }
-    const winMatch = /^(.+)-win-(arm64|x64)\.yml$/u.exec(fileName);
-    if (winMatch?.[1] !== undefined) {
-      (winMatch[2] === "arm64" ? winArm64 : winX64).set(winMatch[1], fileName);
     }
   }
 
-  // electron-builder names the macOS arm64 manifest without an arch suffix,
-  // so the merged macOS feed keeps that name; Windows gets `<channel>.yml`.
-  return [
-    ...pairArchitectures("macOS", macArm64, macX64).map(
-      ({ arm64, x64 }): ReleaseUpdateManifestMerge => ({
-        platform: "mac",
-        primary: arm64,
-        secondary: x64,
-        output: arm64,
-      }),
-    ),
-    ...pairArchitectures("Windows", winArm64, winX64).map(
-      ({ channel, arm64, x64 }): ReleaseUpdateManifestMerge => ({
-        platform: "win",
-        primary: x64,
-        secondary: arm64,
-        output: `${channel}.yml`,
-      }),
-    ),
-  ];
+  // electron-builder names the macOS arm64 manifest without an arch suffix.
+  return pairArchitectures("macOS", macArm64, macX64).map(({ arm64, x64 }) => ({
+    primary: arm64,
+    secondary: x64,
+    output: arm64,
+  }));
 }
 
 export const mergeReleaseUpdateManifestFiles = Effect.fn("mergeReleaseUpdateManifestFiles")(
@@ -102,7 +80,7 @@ export const mergeReleaseUpdateManifestFiles = Effect.fn("mergeReleaseUpdateMani
         const primary = path.join(releaseAssetsDir, plan.primary);
         const secondary = path.join(releaseAssetsDir, plan.secondary);
         const output = path.join(releaseAssetsDir, plan.output);
-        return mergeUpdateManifestFiles(plan.platform, primary, secondary, output).pipe(
+        return mergeUpdateManifestFiles("mac", primary, secondary, output).pipe(
           Effect.andThen(
             Effect.forEach(
               [primary, secondary].filter((source) => source !== output),
@@ -126,7 +104,7 @@ export const mergeReleaseUpdateManifestsCommand = Command.make(
   },
   ({ releaseAssetsDir }) => mergeReleaseUpdateManifestFiles(releaseAssetsDir),
 ).pipe(
-  Command.withDescription("Require and merge complete arm64/x64 desktop updater manifest pairs."),
+  Command.withDescription("Require and merge complete macOS arm64/x64 updater manifest pairs."),
 );
 
 if (import.meta.main) {

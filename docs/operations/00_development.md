@@ -15,9 +15,7 @@ and, on macOS/Linux, `curl` and `bash`.
 ./vp run check:changed
 ```
 
-On Windows, use `./vp.ps1` in PowerShell or `vp.cmd` in Command Prompt. If script execution
-is disabled, `vp.cmd` also works for ordinary task commands from PowerShell. T3's project
-scripts use the same launcher for worktree setup and development. The `vp` commands in
+T3's project scripts use the same launcher for worktree setup and development. The `vp` commands in
 this guide assume a working managed runtime; use the repository launcher to enforce the
 project version regardless of your machine configuration. When working in a package,
 invoke it by relative path, such as `../../vp run dev:client` from `apps/mobile`.
@@ -26,16 +24,7 @@ A download failure stops the command. Re-run after restoring connectivity, or co
 Vite+'s `VP_NODE_DIST_MIRROR` for an approved Node distribution mirror. Runtime caches
 are shared between worktrees; an existing global Vite+ keeps its configured cache,
 while the private fallback uses `$XDG_DATA_HOME/t3code/vite-plus` (defaulting to
-`~/.local/share/t3code/vite-plus`) or `%LOCALAPPDATA%\t3code\vite-plus` on Windows.
-
-On Windows, clone with Git's long-path support enabled. The bundled reference repositories
-under `.repos/` can otherwise make checkout fail with `Filename too long`:
-
-```powershell
-git clone -c core.longpaths=true https://github.com/uiliugang/t3code.git
-```
-
-This saves the setting in the new clone before checkout, without changing your global Git settings.
+`~/.local/share/t3code/vite-plus`).
 
 Open the pairing URL printed by the dev runner. The bare origin does not authenticate
 a new browser.
@@ -93,7 +82,7 @@ Restart `vp run dev --share` and open its printed pairing URL once per browser p
 - Locally, run all Chromium tests for a change in one `vp run test:browser:local <files>` command so concurrent worktrees share the browser lock.
 - Focused iteration: `vp test run <files>`, `vp lint <files>`, `vp run --filter <pkg> typecheck`, `vp run knip:check`, `vp run lint:mobile`.
 - `apps/web` uses real Chromium (`*.browser.test.{ts,tsx}`) for DOM/React tests (no jsdom) and Node for `*.test.ts`.
-- Typechecking uses `effect-tsgo tsrs --noEmit` (`@effect/tsgo`), not `typescript` (except `apps/marketing` for Astro). On Windows, open the workspace through WSL for VS Code's `.vscode/tsdk/tsgo`.
+- Typechecking uses `effect-tsgo tsrs --noEmit` (`@effect/tsgo`), not `typescript` (except `apps/marketing` for Astro).
 
 ## Desktop artifacts
 
@@ -102,7 +91,6 @@ Unsigned local builds write to `release/`:
 ```sh
 vp run dist:desktop:dmg
 vp run dist:desktop:linux
-vp run dist:desktop:win
 # Linux ARM64: vp run dist:desktop:artifact --platform linux --target AppImage --arch arm64
 ```
 
@@ -131,12 +119,4 @@ Install Xcode Command Line Tools (`xcode-select --install`) and Rust. For cross-
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 ```
 
-### Windows installer prerequisites
-
-Install Rust, Python 3, and Visual Studio Build Tools (**Desktop development with C++**, Windows SDK, MSVC build tools, Spectre-mitigated libraries), then add the Rust target:
-
-```powershell
-rustup target add x86_64-pc-windows-msvc   # or aarch64-pc-windows-msvc
-```
-
-WSL support also requires passing the Linux CLI archive via `--wsl-runtime`; see [release runbook](./03_release.md#windows-payload-topology-and-update-validation). For signing and macOS passkeys, see [release](./03_release.md) and [Connect setup](./02_connect-setup.md#desktop-passkeys).
+For signing and macOS passkeys, see [release](./03_release.md) and [Connect setup](./02_connect-setup.md#desktop-passkeys).

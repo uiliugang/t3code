@@ -1532,10 +1532,8 @@ describe("Grok exit_plan_mode capture (#8358)", () => {
   });
   it("identifies Grok plan.md paths and extracts markdown from tool call data", () => {
     const home = "/home/ada";
-    const linuxHost = { platform: "linux" as const, environment: {}, homeDirectory: home };
-    const windowsHost = { platform: "win32" as const, environment: {}, homeDirectory: home };
+    const linuxHost = { environment: {}, homeDirectory: home };
     const grokHomeHost = {
-      platform: "linux" as const,
       environment: { GROK_HOME: "/opt/grok-data" },
       homeDirectory: home,
     };
@@ -1551,23 +1549,7 @@ describe("Grok exit_plan_mode capture (#8358)", () => {
     expect(isGrokPlanMarkdownPath("/HOME/other/.grok/sessions/sess/plan.md", linuxHost)).toBe(
       false,
     );
-    expect(isGrokPlanMarkdownPath("C:/Users/other/.grok/sessions/id/plan.md", windowsHost)).toBe(
-      true,
-    );
-    expect(isGrokPlanMarkdownPath("c:/users/OTHER/.GROK/SESSIONS/id/PLAN.MD", windowsHost)).toBe(
-      true,
-    );
-    expect(
-      isGrokPlanMarkdownPath("C:\\Users\\other\\.grok\\sessions\\id\\plan.md", windowsHost),
-    ).toBe(true);
     expect(isGrokPlanMarkdownPath("/opt/grok-data/sessions/sess/plan.md", grokHomeHost)).toBe(true);
-    expect(
-      isGrokPlanMarkdownPath("/OPT/GROK-DATA/sessions/sess/plan.md", {
-        platform: "win32",
-        environment: { GROK_HOME: "/opt/grok-data" },
-        homeDirectory: home,
-      }),
-    ).toBe(true);
     expect(isGrokPlanMarkdownPath("/OPT/GROK-DATA/sessions/sess/plan.md", grokHomeHost)).toBe(
       false,
     );

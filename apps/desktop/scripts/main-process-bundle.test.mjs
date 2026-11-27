@@ -14,9 +14,6 @@ it("keeps lazy Linux imports and worker bundles from executing desktop startup t
   try {
     const workerEntries = [
       "src/backend/DesktopBackendRecoveryWorker.ts",
-      "src/electron/WindowsForegroundFocusWorker.ts",
-      "src/snapShot/GlobalShiftShortcutWorker.ts",
-      "src/snapShot/RegionSnapShotWorker.ts",
       "src/snapShot/SnapShotAccessibilityWorker.ts",
     ];
     await Promise.all([

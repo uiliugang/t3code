@@ -154,13 +154,12 @@ export const androidSdk = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const environment = yield* HostProcess.Environment;
-  const home = environment.HOME ?? environment.USERPROFILE ?? "";
+  const home = environment.HOME ?? (yield* HostProcess.HomeDirectory);
   const candidates = [
     environment.ANDROID_HOME?.trim(),
     environment.ANDROID_SDK_ROOT?.trim(),
     path.join(home, "Library", "Android", "sdk"),
     path.join(home, "Android", "Sdk"),
-    path.join(environment.LOCALAPPDATA ?? path.join(home, "AppData", "Local"), "Android", "Sdk"),
   ];
   for (const sdk of candidates) {
     if (!sdk) continue;
@@ -173,10 +172,9 @@ export const androidSdk = Effect.gen(function* () {
 export const resolveAdb = Effect.gen(function* () {
   if (yield* isCommandAvailable("adb")) return "adb";
   const path = yield* Path.Path;
-  const executable = (yield* HostProcess.Platform) === "win32" ? "adb.exe" : "adb";
   const sdk = yield* androidSdk;
   if (sdk) {
-    const candidate = path.join(sdk, "platform-tools", executable);
+    const candidate = path.join(sdk, "platform-tools", "adb");
     if (yield* isCommandAvailable(candidate)) return candidate;
   }
   return yield* new NativeClientError({
@@ -765,7 +763,7 @@ const build = Effect.fn("nativeClient.build")(function* (
     } else {
       const android = path.join(mobile, "android");
       yield* command(
-        path.join(android, (yield* HostProcess.Platform) === "win32" ? "gradlew.bat" : "gradlew"),
+        path.join(android, "gradlew"),
         ["app:assembleDebug", `-PreactNativeArchitectures=${abi}`],
         true,
         android,
@@ -1279,9 +1277,8 @@ const main = Command.make(
           message: "--prepare needs no device; use it with ensure and no device id or --session.",
         });
       const environment = yield* HostProcess.Environment;
-      const home = environment.HOME ?? environment.USERPROFILE;
-      if (!home)
-        return yield* new NativeClientError({ message: "HOME or USERPROFILE must be set." });
+      const home = environment.HOME;
+      if (!home) return yield* new NativeClientError({ message: "HOME must be set." });
       const current = yield* fingerprint(platform);
       if (Option.isSome(expectFingerprint) && expectFingerprint.value !== current)
         return yield* new NativeClientError({
@@ -1307,9 +1304,8 @@ const main = Command.make(
             "--session installs into an agent-device session; use it with ensure and no device id.",
         });
       const environment = yield* HostProcess.Environment;
-      const home = environment.HOME ?? environment.USERPROFILE;
-      if (!home)
-        return yield* new NativeClientError({ message: "HOME or USERPROFILE must be set." });
+      const home = environment.HOME;
+      if (!home) return yield* new NativeClientError({ message: "HOME must be set." });
       return yield* installIntoSession(
         home,
         platform,
@@ -1325,10 +1321,10 @@ const main = Command.make(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const environment = yield* HostProcess.Environment;
-    const home = environment.HOME ?? environment.USERPROFILE;
+    const home = environment.HOME;
     if (!home)
       return yield* new NativeClientError({
-        message: "HOME or USERPROFILE must be set to store native client records.",
+        message: "HOME must be set to store native client records.",
       });
     const cache = path.join(home, ".cache/t3code/native-clients");
     const recordPath = path.join(cache, platform, `${yield* digest(device)}.json`);

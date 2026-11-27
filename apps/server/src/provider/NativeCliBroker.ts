@@ -19,7 +19,6 @@ const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(Protocol.Request
 const encode = Schema.encodeSync(Schema.fromJsonString(Protocol.Response));
 
 const start = Effect.gen(function* () {
-  if ((yield* HostProcess.Platform) === "win32") return;
   const { stateDir } = yield* ServerConfig.ServerConfig;
   const cli = yield* NativeCli.NativeCli;
   const temporaryDirectory = (yield* HostProcess.Environment).TMPDIR ?? NodeOS.tmpdir();

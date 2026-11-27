@@ -16,20 +16,11 @@ export const mergeProviderInstanceEnvironment = Effect.fn(function* (
   }
 
   const home = yield* HostProcess.HomeDirectory;
-  const windows = (yield* HostProcess.Platform) === "win32";
   const next: NodeJS.ProcessEnv = { ...hostEnv };
   for (const variable of environment) {
     // An unresolved secret reference carries no value; the registry resolves it for the provider.
     if (typeof variable.value !== "string") continue;
-    // Windows reads names without regard to case, and a child gets the first spelling in sort
-    // order. Upper case sorts first, so the configured value wins even where a spawn merges the
-    // parent environment back in.
-    const name = windows ? variable.name.toUpperCase() : variable.name;
-    if (windows) {
-      for (const inherited of Object.keys(next)) {
-        if (inherited.toUpperCase() === name) delete next[inherited];
-      }
-    }
+    const name = variable.name;
     next[name] = expandHomeVariable(name, variable.value, home);
   }
   return next;

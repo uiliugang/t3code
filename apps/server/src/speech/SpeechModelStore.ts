@@ -96,9 +96,7 @@ const make = Effect.gen(function* () {
   const appDataDirectories =
     platform === "darwin"
       ? [path.join(home, "Library", "Application Support")]
-      : platform === "win32"
-        ? [path.join(home, "AppData", "Roaming")]
-        : [path.join(home, ".local", "share"), path.join(home, ".config")];
+      : [path.join(home, ".local", "share"), path.join(home, ".config")];
   // Where the Hugging Face cache and Handy keep these same pinned files.
   const knownCopies = (model: ModelFile) => [
     path.join(
@@ -258,7 +256,7 @@ const make = Effect.gen(function* () {
           if (!hashed || !(yield* digestMatches(model, file))) continue;
           // Staged then renamed, so a failed link never removes the file already installed.
           const staged = `${finalPath}.${yield* random.uuidV4()}.part`;
-          // Windows grants symlinks only to privileged accounts; a hard link also shares the bytes.
+          // A hard link can also share the model bytes if the filesystem refuses symlinks.
           const hardLinked = yield* fs.symlink(file, staged).pipe(
             Effect.as(false),
             Effect.catch(() => fs.link(file, staged).pipe(Effect.as(true))),

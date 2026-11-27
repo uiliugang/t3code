@@ -6,24 +6,11 @@ T3 Code includes integrated terminals running on the environment's host machine,
 
 Set `T3CODE_TERMINAL_SHELL` in the T3 server's environment to an executable name or full path (no quotes or arguments) to override the platform default shell for new terminals. This does not affect agent commands or project setup/settle scripts.
 
-Example for Git Bash on Windows (PowerShell, then fully quit and reopen T3 Code):
-
-```powershell
-[Environment]::SetEnvironmentVariable('T3CODE_TERMINAL_SHELL', 'C:\Program Files\Git\bin\bash.exe', 'User')
-```
-
-Fully quit T3 Code and reopen it to refresh the environment before starting a
-new terminal. Use `bin\bash.exe`, not `git-bash.exe`. Pass `$null` instead of
-the path to restore the default, then restart T3 Code.
-
-Configure this on the machine hosting the server. It does not change provider-run
-commands or the shell used by automatic project setup and settle scripts.
-
 ## Scrollback and navigation
 
 Each terminal retains up to **5,000 lines** and **8 MiB** of scrollback on the server.
 
-| Action                     | macOS                              | Windows / Linux                            |
+| Action                     | macOS                              | Linux / Windows browser                    |
 | -------------------------- | ---------------------------------- | ------------------------------------------ |
 | Scroll page up/down        | `Shift+PageUp` / `Shift+PageDown`  | `Shift+PageUp` / `Shift+PageDown`          |
 | Jump to start / latest     | `Cmd+Shift+Home` / `Cmd+Shift+End` | `Ctrl+Shift+Home` / `Ctrl+Shift+End`       |
@@ -55,7 +42,7 @@ Changing the thread or default model affects the next invocation.
 The integration defines shell functions without replacing installed binaries.
 `command codex` or `command claude` bypasses it. To remove the system-terminal
 integration, run `t3 terminal uninstall` with the same `--rc-file`, if used,
-then open a new terminal. Other shells and Windows retain their existing behavior.
+then open a new terminal. Other shells retain their existing behavior.
 Remote clients use the terminal's server and its provider accounts.
 
 ## fish shell

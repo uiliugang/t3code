@@ -46,7 +46,6 @@ import {
   OrchestrationV2ProviderTurnTokenUsage,
   ProjectId,
   ProviderInstanceId,
-  type ResolvedProviderInstanceEnvironment,
   ProviderDriverKind,
   type ProviderReplayTranscript,
   type ProviderApprovalDecision,
@@ -84,12 +83,10 @@ import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeComp
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import * as PortScanner from "../../preview/PortScanner.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
-import * as ServerConfig from "../../config.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH } from "@t3tools/provider-core/server/orchestrationInstructions";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -102,7 +99,6 @@ import { ProjectToolkit } from "../../mcp/toolkits/project/tools.ts";
 import { WorktreeToolkit } from "../../mcp/toolkits/worktree/tools.ts";
 import { ThreadToolkit } from "../../mcp/toolkits/thread/tools.ts";
 import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
-import { ClaudeExecutableFileCheck } from "../../provider/Drivers/ClaudeExecutable.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
@@ -2033,154 +2029,6 @@ describe("ClaudeAdapterV2 MCP elicitation acceptance", () => {
       assert.isUndefined(ClaudeAdapterV2.claudeMcpElicitationAcceptance(request));
     }
   });
-});
-
-const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(function* (
-  binaryPath: string,
-  environment: ResolvedProviderInstanceEnvironment = [],
-  options: { managed?: boolean; afterCreate?: Effect.Effect<void> } = {},
-) {
-  const executablePaths: Array<string | undefined> = [];
-  const taskToolEnvironment: Array<string | undefined> = [];
-  const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
-    {
-      instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
-      displayName: undefined,
-      environment,
-      enabled: true,
-      config: {
-        ...DEFAULT_CLAUDE_SETTINGS,
-        binaryPath,
-        ...(options.managed ? { setupMode: "managed" } : {}),
-      },
-    },
-    {},
-  ).pipe(
-    Effect.provide(
-      ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3-claude-binary-path-",
-      }),
-    ),
-    Effect.provideService(ClaudeAdapterV2.ClaudeAgentSdkQueryRunner, {
-      allocateSessionId: Effect.succeed("native-thread-claude-binary-path"),
-      open: (input) =>
-        Effect.sync(() => {
-          executablePaths.push(input.options.pathToClaudeCodeExecutable);
-          taskToolEnvironment.push(input.options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS);
-          return {
-            messages: Stream.never,
-            offer: () => Effect.void,
-            setModel: () => Effect.void,
-            applyFlagSettings: () => Effect.void,
-            setPermissionMode: () => Effect.void,
-            renameSession: () => Effect.void,
-            backgroundTasks: () => Effect.succeed(false),
-            mcpServerStatus: Effect.succeed([]),
-            readMcpResource: () => Effect.die("unexpected MCP resource read"),
-            callMcpTool: () => Effect.die("unexpected MCP tool call"),
-            mcpAuthenticate: () => Effect.die("unexpected MCP sign-in"),
-            mcpSubmitOAuthCallbackUrl: () => Effect.die("unexpected MCP sign-in"),
-            reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
-            listPermissionRules: Effect.die("unexpected permission rules read"),
-            stopTask: () => Effect.void,
-            interrupt: Effect.void,
-            close: Effect.void,
-          };
-        }),
-      forkSession: () => Effect.die("unused"),
-      subagentLaunchToolUseId: () => Effect.succeed(null),
-      subagentModel: () => Effect.succeed(null),
-      assertComplete: Effect.void,
-    }),
-  );
-  const threadId = ThreadId.make("thread-claude-binary-path");
-  yield* options.afterCreate ?? Effect.void;
-  const runtime = yield* adapter.openSession({
-    threadId,
-    providerSessionId: ProviderSessionId.make("provider-session-claude-binary-path"),
-    modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
-  });
-  const providerThread = yield* runtime.ensureThread({
-    threadId,
-    modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
-  });
-  yield* runtime.startTurn(
-    makeClaudeTestTurnInput({
-      threadId,
-      providerThread,
-      now: yield* DateTime.now,
-      attemptId: RunAttemptId.make("attempt-claude-binary-path"),
-      text: "hello",
-      attachments: [],
-    }),
-  );
-  return { executablePaths, taskToolEnvironment };
-}, Effect.provide(ProviderInstallationGate.layer));
-
-describe("ClaudeAdapterV2 executable path", () => {
-  it.effect("resolves a managed Windows executable installed after adapter creation", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        let installed = false;
-        const { executablePaths } = yield* captureSdkExecutablePaths("claude", [], {
-          managed: true,
-          afterCreate: Effect.sync(() => {
-            installed = true;
-          }),
-        }).pipe(
-          Effect.provideService(HostProcess.Platform, "win32"),
-          Effect.provideService(SpawnExecutableResolution, (command) => command),
-          Effect.provideService(
-            ClaudeExecutableFileCheck,
-            (file) =>
-              installed &&
-              file.endsWith("\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"),
-          ),
-        );
-        assert.lengthOf(executablePaths, 1);
-        assert.match(
-          executablePaths[0]!,
-          /\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude\.exe$/,
-        );
-      }),
-    ).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
-        ),
-      ),
-    ),
-  );
-  it.effect("follows a bare claude on Windows to the npm package executable", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const npmDir = "C:\\Users\\dev\\AppData\\Roaming\\npm";
-        const packageExe = `${npmDir}\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe`;
-        const { executablePaths } = yield* captureSdkExecutablePaths("claude").pipe(
-          Effect.provideService(HostProcess.Platform, "win32"),
-          Effect.provideService(SpawnExecutableResolution, () => `${npmDir}\\claude.cmd`),
-          Effect.provideService(ClaudeExecutableFileCheck, (filePath) => filePath === packageExe),
-        );
-
-        assert.deepEqual(executablePaths, [packageExe]);
-      }),
-    ).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          ProviderInstallationGate.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
-        ),
-      ),
-    ),
-  );
 });
 
 describe("ClaudeAdapterV2 resumeThread", () => {

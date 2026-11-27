@@ -8,7 +8,6 @@ describe("desktop local topology reads", () => {
     const secondary: DesktopEnvironmentBootstrap = {
       id: "wsl:default",
       label: "WSL",
-      runningDistro: "Ubuntu",
       httpBaseUrl: "http://127.0.0.1:4000",
       wsBaseUrl: "ws://127.0.0.1:4000",
       bootstrapToken: "bootstrap-1",
@@ -32,7 +31,6 @@ describe("desktop local topology reads", () => {
   it.each<Partial<DesktopEnvironmentBootstrap>>([
     { id: "wsl:Debian" },
     { label: "Renamed backend" },
-    { runningDistro: "Debian" },
     { httpBaseUrl: "http://127.0.0.1:4001" },
     { wsBaseUrl: "ws://127.0.0.1:4001" },
     { bootstrapToken: "bootstrap-2" },
@@ -40,7 +38,6 @@ describe("desktop local topology reads", () => {
     let secondary: DesktopEnvironmentBootstrap = {
       id: "wsl:default",
       label: "WSL",
-      runningDistro: "Ubuntu",
       httpBaseUrl: "http://127.0.0.1:4000",
       wsBaseUrl: "ws://127.0.0.1:4000",
       bootstrapToken: "bootstrap-1",

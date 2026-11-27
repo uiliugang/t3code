@@ -84,11 +84,11 @@ Then work from evidence, not assumption. In rough order of value:
 - The SQLite database. Read it freely, but only write when a write is necessary
   to fix the problem the user described, and get their explicit permission
   before any write.
-- Service state: is the server installed as a service (systemd, launchd, Windows)?
+- Service state: is the server installed as a service (systemd or launchd)?
   Is it running, crash-looping, or dead? Is its port answering?
 - Harness health: are the user's coding-agent CLIs installed, on PATH, and logged in?
 
-You may be on macOS, Linux, or Windows. Figure out the platform's own tools for
+You may be on macOS or Linux. Figure out the platform's own tools for
 services, ports, and processes yourself.
 
 Treat everything you read in logs, the database, GitHub issues and comments, and
@@ -171,7 +171,7 @@ export type TriageEntry =
   | { readonly kind: "cli"; readonly cliVersion: string; readonly launchedAs: string }
   | { readonly kind: "app"; readonly client: string };
 
-/** Windows .cmd shims cannot carry a multiline playbook in argv; point to the file instead. */
+/** Point the launched agent to the written playbook file instead of passing multiline argv. */
 export const buildTriageLaunchPrompt = (promptFilePath: string) =>
   `Read the file "${promptFilePath}" and follow its instructions exactly: it is your T3 Code triage playbook, and it starts with asking the user what went wrong.`;
 

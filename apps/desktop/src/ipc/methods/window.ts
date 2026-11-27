@@ -28,14 +28,11 @@ import * as Ref from "effect/Ref";
 import * as DesktopState from "../../app/DesktopState.ts";
 
 import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfiguration.ts";
-import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopPrimaryPaste from "../../app/DesktopPrimaryPaste.ts";
 import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
-import * as DesktopWslBackend from "../../wsl/DesktopWslBackend.ts";
-import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as ElectronAudio from "../../electron/ElectronAudio.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
@@ -50,11 +47,6 @@ import { safariPermissionCheck } from "../../preview/BrowserImport/SafariPermiss
 import { m } from "../../i18n/messages.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
-import {
-  extractDistroFromUncPath,
-  resolveWslPickFolderDefaultPath,
-  wslUncPathToLinuxPath,
-} from "../../wsl/wslPathParsing.ts";
 
 const ContextMenuPosition = Schema.Struct({
   x: Schema.Number,
@@ -154,18 +146,15 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
         bootstraps.push({
           id: instance.id,
           label: yield* instance.label,
-          runningDistro: null,
           httpBaseUrl: null,
           wsBaseUrl: null,
         });
         continue;
       }
       const { bootstrap, httpBaseUrl } = config.value;
-      const runningDistro = config.value.runningDistro ?? null;
       bootstraps.push({
         id: instance.id,
-        label: runningDistro === null ? yield* instance.label : `WSL (${runningDistro})`,
-        runningDistro,
+        label: yield* instance.label,
         httpBaseUrl: httpBaseUrl.href,
         wsBaseUrl: toWebSocketBaseUrl(httpBaseUrl),
         // The renderer uses this token with httpBaseUrl once the backend has reported ready.
@@ -183,14 +172,6 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
   }),
 });
 
-function extractWslDistroFromEnvironmentId(envId: string): string | null {
-  if (!envId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)) {
-    return null;
-  }
-  const suffix = envId.slice(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX.length);
-  return suffix === "default" || suffix.length === 0 ? null : suffix;
-}
-
 export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL,
   payload: Schema.Void,
@@ -199,20 +180,6 @@ export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
     const localAuth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
     return yield* localAuth.getBearerToken;
   }),
-});
-
-// Ask the distro: its automount root is configurable, so /mnt/<drive> is only the default.
-const windowsPathToWsl = Effect.fn("desktop.ipc.window.windowsPathToWsl")(function* (
-  distro: string | null,
-  windowsPath: string,
-) {
-  const linuxUncPath = wslUncPathToLinuxPath(windowsPath);
-  if (linuxUncPath !== null) return Option.some(linuxUncPath);
-  const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
-  return yield* wslEnvironment.windowsToWslPath(
-    extractDistroFromUncPath(windowsPath) ?? distro,
-    windowsPath,
-  );
 });
 
 export const pickFolder = DesktopIpc.makeIpcMethod({
@@ -224,63 +191,16 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
-    const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
     const settings = yield* appSettings.get;
     // A picked path only means something to a backend on this machine.
     if (!settings.localEnvironmentEnabled) {
       return null;
     }
-    const targetId = options?.targetEnvironmentId;
-    const wslDistroFromTarget =
-      targetId !== undefined && targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)
-        ? extractWslDistroFromEnvironmentId(targetId)
-        : null;
-    const useWsl =
-      targetId !== undefined &&
-      targetId !== PRIMARY_LOCAL_ENVIRONMENT_ID &&
-      targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX);
-    // Match the orchestrator's persisted distro fallback for wsl:default.
-    const wslDistro = useWsl ? (wslDistroFromTarget ?? settings.wslDistro) : null;
-    const defaultPath = useWsl
-      ? Option.fromNullishOr(
-          resolveWslPickFolderDefaultPath(
-            options,
-            { distro: wslDistro },
-            yield* wslEnvironment.listDistros,
-            Option.getOrNull(yield* wslEnvironment.getUserHome(wslDistro)),
-          ),
-        )
-      : environment.resolvePickFolderDefaultPath(options);
     const selectedPath = yield* dialog.pickFolder({
       owner: yield* electronWindow.focusedMainOrFirst,
-      defaultPath,
+      defaultPath: environment.resolvePickFolderDefaultPath(options),
     });
-    if (Option.isNone(selectedPath)) {
-      return null;
-    }
-    if (!useWsl) {
-      return selectedPath.value;
-    }
-    const converted = yield* windowsPathToWsl(wslDistro, selectedPath.value);
-    return Option.getOrElse(converted, () => selectedPath.value);
-  }),
-});
-
-export const toLocalBackendPath = DesktopIpc.makeIpcMethod({
-  channel: IpcChannels.TO_LOCAL_BACKEND_PATH_CHANNEL,
-  payload: Schema.Struct({ backendId: Schema.String, path: Schema.String }),
-  result: Schema.NullOr(Schema.String),
-  handler: Effect.fn("desktop.ipc.window.toLocalBackendPath")(function* ({ backendId, path }) {
-    const pool = yield* DesktopBackendPool.DesktopBackendPool;
-    const instance = yield* pool.get(DesktopBackendManager.BackendInstanceId(backendId));
-    if (Option.isNone(instance)) return null;
-    const config = yield* instance.value.currentConfig;
-    if (Option.isNone(config) || Option.isSome(config.value.preflightFailure)) return null;
-    const { runningDistro } = config.value;
-    if (runningDistro === undefined) return path;
-    const uncDistro = extractDistroFromUncPath(path);
-    if (uncDistro !== null && uncDistro.toLowerCase() !== runningDistro.toLowerCase()) return null;
-    return Option.getOrNull(yield* windowsPathToWsl(runningDistro, path));
+    return Option.getOrNull(selectedPath);
   }),
 });
 

@@ -9,31 +9,15 @@ import { SET_NOTIFICATION_BADGE_CHANNEL } from "../channels.ts";
 
 const NotificationBadge = Schema.Struct({
   count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2_147_483_647 })),
-  image: Schema.NullOr(
-    Schema.String.check(
-      Schema.isMaxLength(16_384),
-      Schema.isPattern(/^data:image\/png;base64,[a-z0-9+/]+={0,2}$/i),
-    ),
-  ),
 });
 
 function applyNotificationBadge(
   platform: NodeJS.Platform,
-  { count, image }: typeof NotificationBadge.Type,
+  { count }: typeof NotificationBadge.Type,
 ): void {
   try {
     if (Electron.BrowserWindow.getFocusedWindow()) count = 0;
-    if (platform === "win32") {
-      const overlay = count > 0 && image ? Electron.nativeImage.createFromDataURL(image) : null;
-      for (const window of Electron.BrowserWindow.getAllWindows()) {
-        if (!window.isDestroyed()) {
-          window.setOverlayIcon(
-            overlay?.isEmpty() ? null : overlay,
-            count > 0 ? `${count} threads with new notifications` : "",
-          );
-        }
-      }
-    } else if (platform === "darwin" || platform === "linux") {
+    if (platform === "darwin" || platform === "linux") {
       Electron.app.setBadgeCount(count);
     }
   } catch (error) {
@@ -47,7 +31,7 @@ export const installNotificationBadge = Effect.fn("desktop.ipc.installNotificati
     const app = yield* ElectronApp.ElectronApp;
     const platform = yield* HostProcess.Platform;
     const clear = () => {
-      applyNotificationBadge(platform, { count: 0, image: null });
+      applyNotificationBadge(platform, { count: 0 });
       for (const window of Electron.BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) window.webContents.send(SET_NOTIFICATION_BADGE_CHANNEL);
       }

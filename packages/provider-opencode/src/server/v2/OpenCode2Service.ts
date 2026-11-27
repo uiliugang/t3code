@@ -76,7 +76,6 @@ export const replaceOutdatedService = Effect.fn("OpenCode2Service.replaceOutdate
     const command = yield* resolveSpawnCommand(launch.command, launch.args, {
       env: input.environment,
       extendEnv: true,
-      bypassNpmShim: true,
     });
     // The service spawns without a shell; stopping it first would leave nothing running.
     if (command.shell) {

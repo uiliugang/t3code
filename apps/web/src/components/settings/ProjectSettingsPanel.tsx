@@ -53,10 +53,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
-import {
-  canPickExternalProjectFavicon,
-  ProjectFaviconPickerDialog,
-} from "./ProjectFaviconPickerDialog";
+import { ProjectFaviconPickerDialog } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ProjectRepositoriesSettings } from "./ProjectRepositoriesSettings";
@@ -316,11 +313,7 @@ function ProjectDetail({
   const projectIcon = group.projectIcon ?? null;
   const pickProjectFavicon =
     typeof window !== "undefined" &&
-    group.memberProjects.every(
-      (member) =>
-        member.environmentId === primaryEnvironmentId &&
-        canPickExternalProjectFavicon(member.workspaceRoot, navigator.platform),
-    )
+    group.memberProjects.every((member) => member.environmentId === primaryEnvironmentId)
       ? window.desktopBridge?.pickProjectFavicon
       : undefined;
 

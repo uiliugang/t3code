@@ -58,7 +58,7 @@ const resolveEnvironmentPortTarget = (
   };
 };
 
-// Loopback servers on the desktop's own primary and WSL backends answer on this machine's localhost.
+// Loopback servers on the desktop's local backend answer on this machine's localhost.
 const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
   isElectron &&
   (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target));

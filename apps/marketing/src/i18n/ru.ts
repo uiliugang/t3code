@@ -24,7 +24,7 @@ export const ru: Messages = {
     heroSub:
       "Управляйте Claude Code, Codex, Antigravity, OpenCode, Cursor и Grok из одного окна. Пользуйтесь своей подпиской. Форкайте всё целиком.",
     downloadForMac: "Скачать для macOS",
-    downloadForWindows: "Скачать для Windows",
+    openWebApp: "Открыть веб-приложение",
     downloadForLinux: "Скачать для Linux",
     downloadForIos: "Скачать для iOS",
     downloadForAndroid: "Скачать для Android",
@@ -75,9 +75,9 @@ export const ru: Messages = {
     otherPlatforms: "Другие платформы",
   },
   download: {
-    title: "Скачать T3 Code для macOS, Windows и Linux | T3 Code",
+    title: "Скачать T3 Code для macOS и Linux | T3 Code",
     description:
-      "Скачайте официальное десктопное приложение T3 Code для macOS, Windows или Linux либо приложения для iOS и Android. Единственный официальный сайт для загрузки: t3.codes.",
+      "Скачайте официальное десктопное приложение T3 Code для macOS или Linux либо приложения для iOS и Android. Единственный официальный сайт для загрузки: t3.codes.",
     breadcrumb: "Скачать",
     heading: "Скачать T3 Code",
     channelLabel: "Канал релизов",

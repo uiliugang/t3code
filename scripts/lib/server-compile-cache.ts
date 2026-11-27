@@ -55,8 +55,7 @@ export function seedPreparedCache(prepared: string, active: string, runtime: str
       );
       try {
         // Node replaces cache files atomically. A directory link would instead allow writes into signed resources.
-        if (process.platform === "win32") NodeFS.linkSync(source, destination);
-        else NodeFS.symlinkSync(source, destination);
+        NodeFS.symlinkSync(source, destination);
       } catch {}
       if (!NodeFS.existsSync(destination)) return false;
     }
@@ -144,9 +143,7 @@ export function enablePreparedServerCache(entry: string, cacheRoot: string): boo
 export async function generatePreparedServerCache(resourcesInput: string): Promise<void> {
   const resources = NodeFS.realpathSync(resourcesInput);
   const prepared = NodePath.join(resources, "server-compile-cache");
-  const archive = NodeFS.existsSync(NodePath.join(resources, "server.asar"))
-    ? "server.asar"
-    : "app.asar";
+  const archive = "app.asar";
   const dist = NodePath.join(resources, archive, "apps/server/dist");
   NodeFS.mkdirSync(prepared, { recursive: true });
   const result = NodeModule.enableCompileCache({ directory: prepared, portable: true });

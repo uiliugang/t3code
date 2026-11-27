@@ -333,14 +333,12 @@ export const make = DesktopLifecycle.of({
       { prepend: true },
     );
 
-    if (environment.platform !== "win32") {
-      yield* addScopedListener(process, "SIGINT", () => {
-        quitFromSignal("SIGINT", runEffect, quit);
-      });
-      yield* addScopedListener(process, "SIGTERM", () => {
-        quitFromSignal("SIGTERM", runEffect, quit);
-      });
-    }
+    yield* addScopedListener(process, "SIGINT", () => {
+      quitFromSignal("SIGINT", runEffect, quit);
+    });
+    yield* addScopedListener(process, "SIGTERM", () => {
+      quitFromSignal("SIGTERM", runEffect, quit);
+    });
 
     // Unscoped: the app scope closes before Electron exits, and every exit path must run this.
     if (environment.platform === "linux" && Option.isSome(environment.appImagePath)) {

@@ -755,7 +755,6 @@ const make = Effect.gen(function* () {
                     cwd: resource.identity.commonDir,
                     worktreePath: resource.identity.checkoutRoot,
                     force: false,
-                    execute: git.execute,
                     run: (args) =>
                       git.execute({
                         operation: "ManagedWorktrees.remove",
@@ -1257,7 +1256,6 @@ const make = Effect.gen(function* () {
                   cwd: identity.commonDir,
                   worktreePath: checked.path,
                   force: true,
-                  execute: git.execute,
                   run: (args) =>
                     git.execute({
                       operation: "ManagedWorktrees.removeResiduals",

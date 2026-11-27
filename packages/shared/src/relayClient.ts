@@ -20,12 +20,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import type * as PlatformError from "effect/PlatformError";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
-import { isWindowsRenameLock } from "./atomicWrite.ts";
 import * as HostProcess from "./HostProcess.ts";
 
 export const CLOUDFLARED_VERSION = "2026.10.4";
@@ -123,17 +121,6 @@ const CLOUDFLARED_RELEASE_ASSETS: Readonly<
     sha256: "ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42",
     archive: "binary",
   },
-  "win32-x64": {
-    url: "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-windows-amd64.exe",
-    sha256: "411b16d40c8d872243efeb52c550053d00af0a8a97fbb32e730fb8aba429eaa8",
-    archive: "binary",
-  },
-  // Cloudflare publishes no Windows ARM64 build; Windows 11 on ARM runs x64 under emulation.
-  "win32-arm64": {
-    url: "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-windows-amd64.exe",
-    sha256: "411b16d40c8d872243efeb52c550053d00af0a8a97fbb32e730fb8aba429eaa8",
-    archive: "binary",
-  },
 };
 
 const INSTALL_LOCK_RETRY_COUNT = 100;
@@ -141,11 +128,8 @@ const INSTALL_LOCK_RETRY_DELAY = "100 millis";
 // Legacy locks have no owner; allow both ten-minute download stages and the install tail.
 const INSTALL_LOCK_LEGACY_STALE_MS = 30 * 60 * 1_000;
 const VERSION_PROBE_TIMEOUT = "10 seconds";
-// Antivirus scans can hold the first launch of a freshly downloaded binary for 20-30 s.
+// Allow the first launch of a freshly downloaded binary more time than subsequent probes.
 const INSTALL_VALIDATION_TIMEOUT = "2 minutes";
-
-const ACTIVATE_RETRY_COUNT = 40;
-const ACTIVATE_RETRY_DELAY = "250 millis";
 
 const trimmedString = (name: string) =>
   Config.String(name).pipe(
@@ -185,10 +169,6 @@ export class RelayClient extends Context.Service<RelayClient, RelayClientShape>(
   "@t3tools/shared/relayClient",
 ) {}
 
-function executableFileName(platform: NodeJS.Platform): string {
-  return platform === "win32" ? "cloudflared.exe" : "cloudflared";
-}
-
 function resolveReleaseAsset(
   platform: NodeJS.Platform,
   arch: string,
@@ -225,8 +205,7 @@ function isLockContention(error: PlatformError.PlatformError): boolean {
   return (
     error.reason._tag === "AlreadyExists" ||
     error.reason._tag === "BadResource" ||
-    code === "ENOTEMPTY" ||
-    isWindowsRenameLock(error)
+    code === "ENOTEMPTY"
   );
 }
 
@@ -290,7 +269,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
   const loadCloudflaredConfig = Effect.suspend(() => CloudflaredConfig).pipe(Effect.orDie);
   const managedRoot = path.join(options.baseDir, "tools", "cloudflared");
   const managedPathFor = (version: string) =>
-    path.join(managedRoot, version, `${platform}-${arch}`, executableFileName(platform));
+    path.join(managedRoot, version, `${platform}-${arch}`, "cloudflared");
   const managedPath = managedPathFor(CLOUDFLARED_VERSION);
 
   const isExecutableFile = Effect.fn("cloudflared.isExecutableFile")(function* (
@@ -298,7 +277,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
   ) {
     const info = yield* fileSystem.stat(executablePath).pipe(Effect.option);
     if (Option.isNone(info) || info.value.type !== "File") return false;
-    return platform === "win32" || (info.value.mode & 0o111) !== 0;
+    return (info.value.mode & 0o111) !== 0;
   });
 
   const runVersionProbe = Effect.fn("cloudflared.runVersionProbe")(function* (
@@ -327,7 +306,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
   const probeVersion = Effect.fn("cloudflared.probeVersion")(function* (executablePath: string) {
     const info = yield* fileSystem.stat(executablePath).pipe(Effect.option);
     if (Option.isNone(info) || info.value.type !== "File") return null;
-    if (platform !== "win32" && (info.value.mode & 0o111) === 0) return null;
+    if ((info.value.mode & 0o111) === 0) return null;
     return yield* Cache.get(
       versionCache,
       new VersionProbeKey({
@@ -374,21 +353,19 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
 
   const resolvePathExecutable = Effect.gen(function* () {
     // Read hydrated PATH directly; ConfigProvider may have cached it before fixPath.
-    const rawPathValue = (yield* HostProcess.Environment).PATH;
-    // POSIX keeps the raw value, so trimming never turns " :/bin" into an empty entry.
-    const pathValue = platform === "win32" ? rawPathValue?.trim() : rawPathValue;
+    // Keep the raw value so trimming never turns " :/bin" into an empty entry.
+    const pathValue = (yield* HostProcess.Environment).PATH;
     if (!pathValue) return null;
-    const delimiter = platform === "win32" ? ";" : ":";
     const cwd = yield* HostProcess.WorkingDirectory;
-    for (const directory of pathValue.split(delimiter)) {
+    for (const directory of pathValue.split(":")) {
       // POSIX shells search the working directory for an empty entry. Resolve it now: the
       // connector may be launched from elsewhere.
-      const workingDirectoryEntry = directory === "" && platform !== "win32";
+      const workingDirectoryEntry = directory === "";
       const trimmed = directory.trim().replace(/^"|"$/gu, "");
       if (trimmed.length === 0 && !workingDirectoryEntry) continue;
       const candidate = workingDirectoryEntry
-        ? path.resolve(cwd, executableFileName(platform))
-        : path.join(trimmed, executableFileName(platform));
+        ? path.resolve(cwd, "cloudflared")
+        : path.join(trimmed, "cloudflared");
       if (!(yield* isExecutableFile(candidate))) continue;
       const available = yield* compatibleCandidate(candidate, "path");
       if (available) return available;
@@ -432,7 +409,6 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
   const pruneManagedVersions: RelayClientShape["pruneManagedVersions"] = Effect.gen(function* () {
     // Retain the newest older release for rollback or older servers that cannot redownload it.
     for (const version of (yield* olderManagedVersions).slice(1)) {
-      // Windows cannot delete another server's running connector; retry next prune.
       yield* fileSystem.remove(path.join(managedRoot, version), { recursive: true }).pipe(
         Effect.tap(() => Effect.logInfo("Removed an older managed relay client", { version })),
         Effect.catch((cause) =>
@@ -442,17 +418,9 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
     }
   }).pipe(Effect.withSpan("cloudflared.pruneManagedVersions"));
 
-  // Node can finish an in-flight rename after interruption. Wait for each attempt before
-  // releasing the install scope, while keeping Windows retry delays interruptible.
-  const renameWhenUnlocked = (from: string, to: string) =>
-    fileSystem.rename(from, to).pipe(
-      Effect.uninterruptible,
-      Effect.retry({
-        times: ACTIVATE_RETRY_COUNT,
-        schedule: Schedule.spaced(ACTIVATE_RETRY_DELAY),
-        while: (error) => platform === "win32" && isWindowsRenameLock(error),
-      }),
-    );
+  // Node can finish an in-flight rename after interruption. Wait for it before releasing the scope.
+  const renameInstalledFile = (from: string, to: string) =>
+    fileSystem.rename(from, to).pipe(Effect.uninterruptible);
 
   const runCommand = Effect.fn("cloudflared.runCommand")(function* (
     command: string,
@@ -644,7 +612,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
       });
       const archivePath = path.join(
         tempDirectory,
-        releaseAsset.archive === "tgz" ? "cloudflared.tgz" : executableFileName(platform),
+        releaseAsset.archive === "tgz" ? "cloudflared.tgz" : "cloudflared",
       );
       const download = yield* downloadAsset(releaseAsset, report);
       yield* report("installing");
@@ -652,17 +620,15 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
         .writeFile(archivePath, download)
         .pipe(wrapInstallFailure("write_failed", "Could not write the relay client download."));
 
-      const executablePath = path.join(tempDirectory, executableFileName(platform));
+      const executablePath = path.join(tempDirectory, "cloudflared");
       if (releaseAsset.archive === "tgz") {
         yield* runCommand("tar", ["-xzf", archivePath, "-C", tempDirectory]).pipe(
           wrapInstallFailure("write_failed", "Could not extract the relay client."),
         );
       }
-      if (platform !== "win32") {
-        yield* fileSystem
-          .chmod(executablePath, 0o755)
-          .pipe(wrapInstallFailure("write_failed", "Could not make the relay client executable."));
-      }
+      yield* fileSystem
+        .chmod(executablePath, 0o755)
+        .pipe(wrapInstallFailure("write_failed", "Could not make the relay client executable."));
       yield* report("validating");
       // Verify the pin so mislabeled assets cannot cause repeated redownloads.
       const installedVersion = yield* runVersionProbe(executablePath, INSTALL_VALIDATION_TIMEOUT);
@@ -681,10 +647,10 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
       yield* Effect.addFinalizer(() =>
         fileSystem.remove(stagedPath, { force: true }).pipe(Effect.ignore),
       );
-      yield* renameWhenUnlocked(executablePath, stagedPath).pipe(
+      yield* renameInstalledFile(executablePath, stagedPath).pipe(
         wrapInstallFailure("write_failed", "Could not stage the relay client."),
       );
-      yield* renameWhenUnlocked(stagedPath, managedPath).pipe(
+      yield* renameInstalledFile(stagedPath, managedPath).pipe(
         wrapInstallFailure("write_failed", "Could not activate the relay client."),
       );
       return {

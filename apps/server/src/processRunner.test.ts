@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off - A test kills the helper mid-handoff and watches its child through a FIFO.
-import { isWindowsCommandNotFound } from "@t3tools/provider-core/server/snapshotProbe";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeModule from "node:module";
@@ -20,7 +19,6 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import * as ProcessLauncher from "./process/ProcessLauncher.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -120,41 +118,18 @@ describe("runProcess", () => {
     }),
   );
 
-  it.effect("resolves and escapes Windows command shims before spawning", () => {
+  it.effect("passes argument metacharacters through without a shell", () => {
+    const args = ["repos", "pr", "list", "--source-branch", "feature & release"];
     const spawner = makeSpawner((command) =>
       Effect.sync(() => {
-        expect(command.command).toBe(
-          [
-            '^"C:\\Users\\tester\\AppData\\Roaming\\npm\\az.cmd^"',
-            '^"repos^"',
-            '^"pr^"',
-            '^"list^"',
-            '^"--source-branch^"',
-            '^"feature^ ^&^ release^"',
-          ].join(" "),
-        );
-        expect(command.args).toEqual([]);
-        expect(command.options.shell).toBe(true);
+        expect(command.command).toBe("az");
+        expect(command.args).toEqual(args);
+        expect(command.options.shell).toBe(false);
         return makeHandle({ stdout: "[]" });
       }),
     );
 
-    return runWith(spawner)({
-      command: "az",
-      args: ["repos", "pr", "list", "--source-branch", "feature & release"],
-      env: { AZURE_CONFIG_DIR: "C:\\Users\\tester\\.azure" },
-    }).pipe(
-      Effect.provideService(HostProcess.Platform, "win32"),
-      Effect.provideService(HostProcess.Environment, {
-        PATH: "C:\\Users\\tester\\AppData\\Roaming\\npm",
-        PATHEXT: ".COM;.EXE;.BAT;.CMD",
-      }),
-      Effect.provideService(SpawnExecutableResolution, (_command, _platform, env) =>
-        env.PATH === "C:\\Users\\tester\\AppData\\Roaming\\npm" &&
-        env.AZURE_CONFIG_DIR === "C:\\Users\\tester\\.azure"
-          ? "C:\\Users\\tester\\AppData\\Roaming\\npm\\az.cmd"
-          : undefined,
-      ),
+    return runWith(spawner)({ command: "az", args }).pipe(
       Effect.map((result) => {
         expect(result.stdout).toBe("[]");
       }),
@@ -694,17 +669,5 @@ describe("ProcessRunner.layer", () => {
         expect(blocked).toBe(true);
         expect(second).toBe(first);
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-});
-
-describe("isWindowsCommandNotFound", () => {
-  it.effect("matches the localized German cmd.exe error text", () =>
-    Effect.gen(function* () {
-      const isCommandNotFound = yield* isWindowsCommandNotFound(
-        1,
-        "wird nicht als interner oder externer Befehl, betriebsfahiges Programm oder Batch-Datei erkannt",
-      ).pipe(Effect.provideService(HostProcess.Platform, "win32"));
-      expect(isCommandNotFound).toBe(true);
-    }),
   );
 });

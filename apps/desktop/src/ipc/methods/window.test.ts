@@ -3,7 +3,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EDITORS, REMOTE_CAPABLE_EDITOR_IDS } from "@t3tools/contracts";
 import { resolveEditorCommand } from "@t3tools/shared/editor";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { makePathDirectoryListings, PathDirectoryListings } from "@t3tools/shared/shell";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
@@ -26,7 +25,6 @@ import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfig
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
-import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import {
@@ -35,12 +33,11 @@ import {
   probeRemoteEditors,
   readMedia,
   syncHtmlFullscreen,
-  toLocalBackendPath,
 } from "./window.ts";
 
-const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
-  executablePath: "wsl.exe",
-  args: ["-d", "Ubuntu", "--", "node", "/app/bin.mjs"],
+const readyConfig: DesktopBackendManager.DesktopBackendStartConfig = {
+  executablePath: "/bin/node",
+  args: ["/app/bin.mjs", "--bootstrap-fd", "3"],
   entryPath: "/app/bin.mjs",
   cwd: "/app",
   env: {},
@@ -54,19 +51,18 @@ const readyWslConfig: DesktopBackendManager.DesktopBackendStartConfig = {
     tailscaleServeEnabled: false,
     tailscaleServePort: 443,
   },
-  bootstrapDelivery: "stdin",
+  bootstrapDelivery: "fd3",
   httpBaseUrl: new URL("http://127.0.0.1:3774"),
   captureOutput: true,
   preflightFailure: Option.none(),
-  runningDistro: "Ubuntu",
 };
 
-const defaultWslInstance: DesktopBackendManager.DesktopBackendInstance = {
-  id: DesktopBackendManager.BackendInstanceId("wsl:default"),
-  label: Effect.succeed("WSL (default distro)"),
+const secondaryInstance: DesktopBackendManager.DesktopBackendInstance = {
+  id: DesktopBackendManager.BackendInstanceId("secondary"),
+  label: Effect.succeed("Secondary"),
   start: Effect.void,
   stop: () => Effect.void,
-  currentConfig: Effect.succeedSome(readyWslConfig),
+  currentConfig: Effect.succeedSome(readyConfig),
   snapshot: Effect.succeed({
     desiredRunning: true,
     ready: true,
@@ -82,7 +78,6 @@ const backendConfigurationLayer = Layer.succeed(
   {
     resolvePrimary: Effect.die("unexpected resolvePrimary"),
     resolvePrimaryLabel: Effect.succeed("Windows"),
-    resolveWsl: () => Effect.die("unexpected resolveWsl"),
     currentBootstrapToken: Effect.succeed("current-window-token"),
   } satisfies DesktopBackendConfiguration.DesktopBackendConfiguration["Service"],
 );
@@ -97,9 +92,8 @@ describe("getLocalEnvironmentBootstraps", () => {
 
       assert.deepEqual(result, [
         {
-          id: "wsl:default",
-          label: "WSL (Ubuntu)",
-          runningDistro: "Ubuntu",
+          id: "secondary",
+          label: "Secondary",
           httpBaseUrl: "http://127.0.0.1:3774/",
           wsBaseUrl: "ws://127.0.0.1:3774/",
           bootstrapToken: "current-window-token",
@@ -109,11 +103,11 @@ describe("getLocalEnvironmentBootstraps", () => {
       Effect.provide(
         bootstrapsLayer([
           {
-            ...defaultWslInstance,
+            ...secondaryInstance,
             currentConfig: Effect.succeedSome({
-              ...readyWslConfig,
+              ...readyConfig,
               bootstrap: {
-                ...readyWslConfig.bootstrap,
+                ...readyConfig.bootstrap,
                 desktopBootstrapSecret: "desktop-secret",
               },
             }),
@@ -129,9 +123,8 @@ describe("getLocalEnvironmentBootstraps", () => {
 
       assert.deepEqual(result, [
         {
-          id: "wsl:default",
-          label: "WSL (Ubuntu)",
-          runningDistro: "Ubuntu",
+          id: "secondary",
+          label: "Secondary",
           httpBaseUrl: "http://127.0.0.1:3774/",
           wsBaseUrl: "ws://127.0.0.1:3774/",
         },
@@ -140,7 +133,7 @@ describe("getLocalEnvironmentBootstraps", () => {
       Effect.provide(
         bootstrapsLayer([
           {
-            ...defaultWslInstance,
+            ...secondaryInstance,
             snapshot: Effect.succeed({
               desiredRunning: true,
               ready: false,
@@ -156,15 +149,15 @@ describe("getLocalEnvironmentBootstraps", () => {
 
   it.effect("publishes a pending bootstrap only while a transient retry is scheduled", () => {
     const retryingConfig: DesktopBackendManager.DesktopBackendStartConfig = {
-      ...readyWslConfig,
+      ...readyConfig,
       preflightFailure: Option.some({
-        reason: "WSL probe timed out",
+        reason: "Secondary backend timed out",
         fatal: false,
         retryLimit: 12,
       }),
     };
     const retryingInstance: DesktopBackendManager.DesktopBackendInstance = {
-      ...defaultWslInstance,
+      ...secondaryInstance,
       currentConfig: Effect.succeedSome(retryingConfig),
       snapshot: Effect.succeed({
         desiredRunning: true,
@@ -179,9 +172,8 @@ describe("getLocalEnvironmentBootstraps", () => {
       const result = yield* getLocalEnvironmentBootstraps.handler();
       assert.deepEqual(result, [
         {
-          id: "wsl:default",
-          label: "WSL (default distro)",
-          runningDistro: null,
+          id: "secondary",
+          label: "Secondary",
           httpBaseUrl: null,
           wsBaseUrl: null,
         },
@@ -191,11 +183,11 @@ describe("getLocalEnvironmentBootstraps", () => {
 
   it.effect("omits a bounded transient bootstrap after retries stop", () => {
     const stoppedInstance: DesktopBackendManager.DesktopBackendInstance = {
-      ...defaultWslInstance,
+      ...secondaryInstance,
       currentConfig: Effect.succeedSome({
-        ...readyWslConfig,
+        ...readyConfig,
         preflightFailure: Option.some({
-          reason: "WSL probe timed out",
+          reason: "Secondary backend timed out",
           fatal: false,
           retryLimit: 12,
         }),
@@ -214,47 +206,6 @@ describe("getLocalEnvironmentBootstraps", () => {
       assert.deepEqual(result, []);
     }).pipe(Effect.provide(bootstrapsLayer([stoppedInstance])));
   });
-});
-
-describe("toLocalBackendPath", () => {
-  const { runningDistro: _, ...windowsConfig } = readyWslConfig;
-  it.effect("converts paths through wslpath only for backends running in WSL", () =>
-    Effect.gen(function* () {
-      const convert = (backendId: string, path = "C:\\Users\\me\\project") =>
-        toLocalBackendPath.handler({ backendId, path });
-      assert.strictEqual(yield* convert("primary"), "C:\\Users\\me\\project");
-      assert.strictEqual(yield* convert("wsl:default"), "/drives/c/Users/me/project");
-      assert.strictEqual(yield* convert("wsl:missing"), null);
-      assert.strictEqual(
-        yield* convert("wsl:default", "\\\\wsl.localhost\\ubuntu\\home\\me\\repo"),
-        "/home/me/repo",
-      );
-      assert.strictEqual(yield* convert("wsl:default", "\\\\wsl$\\Debian\\home\\me\\repo"), null);
-      assert.strictEqual(
-        yield* convert("primary", "\\\\wsl$\\Debian\\home\\me\\repo"),
-        "\\\\wsl$\\Debian\\home\\me\\repo",
-      );
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          DesktopBackendPool.layerTest([
-            {
-              ...defaultWslInstance,
-              id: DesktopBackendManager.BackendInstanceId("primary"),
-              currentConfig: Effect.succeedSome(windowsConfig),
-            },
-            defaultWslInstance,
-          ]),
-          DesktopWslEnvironment.layerTest({
-            windowsToWslPath: (distro, windowsPath) =>
-              distro === "Ubuntu" && windowsPath === "C:\\Users\\me\\project"
-                ? Option.some("/drives/c/Users/me/project")
-                : Option.none(),
-          }),
-        ),
-      ),
-    ),
-  );
 });
 
 describe("readMedia", () => {
@@ -464,41 +415,38 @@ describe("syncHtmlFullscreen", () => {
   });
 });
 
-it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
-  "finds remote editors installed without PATH launchers",
-  () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-remote-editors-" });
-      for (const app of ["Cursor", "Visual Studio Code", "WebStorm"]) {
-        const executable = path.join(
-          home,
-          "Applications",
-          `${app}.app`,
-          app === "WebStorm" ? "Contents/MacOS/webstorm" : "Contents/Resources/app/bin/code",
-        );
-        yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
-        yield* fs.writeFileString(executable, "#!/bin/sh\n");
-        yield* fs.chmod(executable, 0o755);
-      }
-      const editors = yield* probeRemoteEditors.handler(undefined).pipe(
-        Effect.provideService(HostProcess.Environment, {
-          HOME: home,
-          PATH: path.join(home, "empty"),
-        }),
-        Effect.provideService(HostProcess.Platform, "darwin"),
+it.effect("finds remote editors installed without PATH launchers", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-remote-editors-" });
+    for (const app of ["Cursor", "Visual Studio Code", "WebStorm"]) {
+      const executable = path.join(
+        home,
+        "Applications",
+        `${app}.app`,
+        app === "WebStorm" ? "Contents/MacOS/webstorm" : "Contents/Resources/app/bin/code",
       );
-      assert.include(editors, "cursor");
-      assert.include(editors, "vscode");
-      assert.include(editors, "webstorm");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
+      yield* fs.writeFileString(executable, "#!/bin/sh\n");
+      yield* fs.chmod(executable, 0o755);
+    }
+    const editors = yield* probeRemoteEditors.handler(undefined).pipe(
+      Effect.provideService(HostProcess.Environment, {
+        HOME: home,
+        PATH: path.join(home, "empty"),
+      }),
+      Effect.provideService(HostProcess.Platform, "darwin"),
+    );
+    assert.include(editors, "cursor");
+    assert.include(editors, "vscode");
+    assert.include(editors, "webstorm");
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 describe("probeRemoteEditors PATH scan", () => {
   const FIXTURE_MTIME = 1_767_225_600;
   const platform = HostProcess.Platform.defaultValue();
-  const launcherName = (command: string) => (platform === "win32" ? `${command}.cmd` : command);
 
   const makeFakePath = Effect.fnUntraced(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -513,9 +461,9 @@ describe("probeRemoteEditors PATH scan", () => {
       [dirs[3]!, "code"],
       [dirs[1]!, "zeditor"],
     ] as const) {
-      const file = path.join(dir, launcherName(command));
+      const file = path.join(dir, command);
       yield* fs.writeFileString(file, "#!/bin/sh\n");
-      if (platform !== "win32") yield* fs.chmod(file, 0o755);
+      yield* fs.chmod(file, 0o755);
     }
     // A listing of a directory changed moments ago is not kept, so age them past that window.
     for (const dir of dirs) yield* fs.utimes(dir, FIXTURE_MTIME, FIXTURE_MTIME);
@@ -524,9 +472,7 @@ describe("probeRemoteEditors PATH scan", () => {
       root,
       env: {
         HOME: root,
-        USERPROFILE: root,
-        PATH: dirs.join(platform === "win32" ? ";" : ":"),
-        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+        PATH: dirs.join(":"),
       },
     };
   });
@@ -558,24 +504,21 @@ describe("probeRemoteEditors PATH scan", () => {
       return available;
     });
 
-  it.effect("finds the editors a serial scan finds, listing each PATH directory at most once", () =>
+  it.effect("finds the editors a serial scan finds without listing their PATH directories", () =>
     Effect.gen(function* () {
       const { env: baseEnv } = yield* makeFakePath();
-      const delimiter = platform === "win32" ? ";" : ":";
+      const delimiter = ":";
       const reads = new Map<string, number>();
       // Distinct PATH values keep one scan from answering the other out of the resolution cache.
       const serialEnv = { ...baseEnv, PATH: `${baseEnv.PATH}${delimiter}${baseEnv.HOME}x1` };
       const probeEnv = { ...baseEnv, PATH: `${baseEnv.PATH}${delimiter}${baseEnv.HOME}x2` };
-      const serial = yield* serialReference(serialEnv).pipe(
-        Effect.provideServiceEffect(PathDirectoryListings, makePathDirectoryListings),
-      );
+      const serial = yield* serialReference(serialEnv);
       const probed = yield* probeRemoteEditors
         .handler(undefined)
         .pipe(
           Effect.provideService(HostProcess.Environment, probeEnv),
           Effect.provideService(HostProcess.Platform, platform),
           Effect.provide(countingFileSystem(reads)),
-          Effect.provideServiceEffect(PathDirectoryListings, makePathDirectoryListings),
         );
       // The host can add editors from app folders the fixture can't redirect (e.g. /Applications).
       const fixtureEditors = ["cursor", "vscode", "zed", "webstorm"];
@@ -585,11 +528,11 @@ describe("probeRemoteEditors PATH scan", () => {
       );
       assert.deepStrictEqual(probed, serial);
       // Only PATH entries count: resolveEditorCommand also reads app folders such as /Applications
-      // on macOS. PATH directories are listed on Windows only, once even for concurrent probes.
+      // on macOS. POSIX executable probing only checks the candidates, not directory contents.
       const pathReads = probeEnv.PATH.split(delimiter)
         .filter((entry) => entry.length > 0)
         .map((entry) => reads.get(entry) ?? 0);
-      assert.strictEqual(Math.max(...pathReads), platform === "win32" ? 1 : 0);
+      assert.strictEqual(Math.max(...pathReads), 0);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

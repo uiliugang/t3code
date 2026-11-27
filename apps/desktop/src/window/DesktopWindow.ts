@@ -140,7 +140,6 @@ export class DesktopWindow extends Context.Service<
     readonly handleBackendReady: (httpBaseUrl: URL) => Effect.Effect<void, DesktopWindowError>;
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
-    readonly prepareCaptureReveal: Effect.Effect<void>;
     readonly dispatchMenuAction: (
       action: string,
       options?: { readonly reveal?: boolean },
@@ -163,8 +162,7 @@ function getIconOption(
   platform: NodeJS.Platform,
 ): { icon: string } | Record<string, never> {
   if (platform === "darwin") return {};
-  const ext = platform === "win32" ? "ico" : "png";
-  return Option.match(iconPaths[ext], {
+  return Option.match(iconPaths.png, {
     onNone: () => ({}),
     onSome: (icon) => ({ icon }),
   });
@@ -279,7 +277,7 @@ function buildConnectingSplashDataUrl(
   const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
   const message = progress
     ? `Upgrading database (${progress.current} of ${progress.total})`
-    : "Connecting to WSL…";
+    : "Connecting to local backend…";
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div class="label">${message}</div></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
@@ -535,7 +533,7 @@ export const make = Effect.gen(function* () {
         return null;
       }
       // Minimized windows report stale state on some platforms (macOS: not maximized, the
-      // pre-move normal frame; Windows: -32000), so they keep the state seen before minimizing.
+      // pre-move normal frame), so they keep the state seen before minimizing.
       if (window.isMinimized()) {
         return lastPersistableState;
       }
@@ -1232,12 +1230,6 @@ export const make = Effect.gen(function* () {
     createMain: createMain.pipe(Effect.flatMap(requireWindow)),
     ensureMain: ensureMain.pipe(Effect.flatMap(requireWindow)),
     revealOrCreateMain,
-    prepareCaptureReveal: Effect.gen(function* () {
-      const existingWindow = yield* currentMainWindow;
-      if (Option.isSome(existingWindow) && !pendingMainReveals.has(existingWindow.value)) {
-        yield* electronWindow.prepareReveal(existingWindow.value);
-      }
-    }),
     activate: Effect.gen(function* () {
       if (yield* Ref.get(desktopState.quitting)) return;
       const existingWindow = yield* currentMainWindow;

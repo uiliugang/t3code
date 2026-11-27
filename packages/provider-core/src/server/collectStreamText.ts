@@ -38,7 +38,7 @@ export const collectUint8StreamChunks = <E>(input: CollectUint8StreamInput<E>) =
         truncated: false,
       }),
       (state, chunk): CollectState => {
-        // Keep draining after truncation; killing a child on Windows can invoke expensive taskkill.
+        // Keep draining after truncation so the child can finish.
         if (state.truncated) {
           return state;
         }

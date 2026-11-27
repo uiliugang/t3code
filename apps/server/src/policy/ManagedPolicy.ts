@@ -4,7 +4,6 @@
  *
  * @module ManagedPolicy
  */
-import * as NodeModule from "node:module";
 
 import { ManagedPolicyDocument, type ManagedPolicySummary } from "@t3tools/contracts";
 import * as Config from "effect/Config";
@@ -20,7 +19,6 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   ManagedPolicyFileError,
   managedPolicyPath,
-  layerWindowsRegistry,
   readManagedPolicy,
   readManagedPolicyFile,
 } from "@t3tools/shared/managedPolicyFile";
@@ -99,11 +97,7 @@ export const fromDocument = Effect.fn("ManagedPolicy.fromDocument")(function* (
   const providers =
     providerLimits === undefined && maxRuntimeMode === undefined
       ? undefined
-      : ManagedProviders.makeManagedProviders(
-          providerLimits ?? {},
-          maxRuntimeMode,
-          yield* HostProcess.Platform,
-        );
+      : ManagedProviders.makeManagedProviders(providerLimits ?? {}, maxRuntimeMode);
   if (providers?._tag === "Invalid") {
     return yield* new ManagedPolicyFileError({ path, reason: providers.reason });
   }
@@ -189,10 +183,7 @@ const make = Effect.gen(function* () {
   const policy = yield* Option.match(devPath, {
     onSome: load,
     onNone: () =>
-      readManagedPolicy(
-        platform,
-        ManagedProviders.knownDriverLabels().map(({ driver }) => driver),
-      ).pipe(
+      readManagedPolicy(platform).pipe(
         Effect.flatMap((found) =>
           fromDocument(found?.source ?? managedPolicyPath(platform), found?.document),
         ),
@@ -209,14 +200,7 @@ const make = Effect.gen(function* () {
   return policy;
 });
 
-// A single-executable server resolves packages on disk only through `require`.
-const requireForFfi = NodeModule.createRequire(import.meta.url);
-
-export const layer = Layer.effect(ManagedPolicy, make).pipe(
-  Layer.provide(
-    layerWindowsRegistry(async () => requireForFfi("ffi-rs") as typeof import("ffi-rs")),
-  ),
-);
+export const layer = Layer.effect(ManagedPolicy, make);
 
 /** A policy for tests; `undefined` means unmanaged. */
 export const layerTest = (document?: ManagedPolicyDocument) =>

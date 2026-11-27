@@ -36,13 +36,13 @@ const PROVIDER_GROUPS: ReadonlyArray<readonly [RegExp, string]> = [
 ];
 const OTHER_GROUPS: ReadonlyArray<readonly [RegExp, string]> = [
   [/chrom/, "browser"],
-  [/^(?:ba|z|fi|da|c)?sh(?:\.exe)?$|^pwsh|^powershell|^cmd\.exe$/, "terminal"],
+  [/^(?:ba|z|fi|da|c)?sh$|^pwsh/, "terminal"],
 ];
 // A CLI shipped as a script runs under a JavaScript runtime, so its process name is the
 // runtime's (older Claude packages run `node .../@anthropic-ai/claude-code/cli.js`). Only those
 // are matched by command line; any other name is matched by name alone, so a shell or `git`
 // whose arguments mention a provider stays in its own group.
-const SCRIPT_RUNTIME = /^(?:node|bun|deno)(?:\.exe)?$/;
+const SCRIPT_RUNTIME = /^(?:node|bun|deno)$/;
 
 const match = (groups: ReadonlyArray<readonly [RegExp, string]>, text: string) =>
   groups.find(([pattern]) => pattern.test(text))?.[1];

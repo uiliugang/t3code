@@ -37,8 +37,8 @@ const offeredRelease = async (
       if (pointerTag === undefined) throw new Error("404");
       return JSON.stringify({ tag_name: pointerTag, name: pointerTag, body: "pointer notes" });
     }
-    const manifest = /\/releases\/download\/v([^/]+)\/nightly\.yml$/.exec(path ?? "");
-    if (manifest) return `version: ${manifest[1]}\npath: T3-Code.exe\nsha512: abc\n`;
+    const manifest = /\/releases\/download\/v([^/]+)\/nightly-mac\.yml$/.exec(path ?? "");
+    if (manifest) return `version: ${manifest[1]}\npath: T3-Code.zip\nsha512: abc\n`;
     apiScans += 1;
     if (listedTag instanceof Error) throw listedTag;
     return JSON.stringify(listedTag ? [{ tag_name: listedTag, body: "API notes" }] : []);
@@ -54,7 +54,7 @@ const offeredRelease = async (
     } as ProviderArgs[1],
     {
       isUseMultipleRangeRequest: false,
-      platform: "win32",
+      platform: "darwin",
       executor: { request },
     } as ProviderArgs[2],
   );

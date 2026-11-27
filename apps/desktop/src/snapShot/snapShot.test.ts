@@ -313,7 +313,6 @@ describe("findAccessibleWindow", () => {
   it("keeps strict titles outside macOS Chrome and Chromium", () => {
     for (const identity of [
       { platform: "linux" as const, bundleId: "com.google.Chrome" },
-      { platform: "win32" as const, bundleId: "com.google.Chrome" },
       { platform: "darwin" as const, bundleId: "com.example.Editor" },
       { platform: "darwin" as const, bundleId: undefined },
     ]) {

@@ -415,9 +415,9 @@ const make = Effect.gen(function* () {
 
   // Neither Chromium's SOCKS client nor a plain forwarded port can authenticate, so on Linux and
   // macOS a listener serves only clients of this OS user, and a connection whose owner cannot be
-  // read is refused. Windows and other platforms have no owner check.
+  // read is refused.
   const isOwnConnection = Effect.fn("LoopbackTunnel.isOwnConnection")(function* () {
-    if (platform !== "linux" && platform !== "darwin") return true;
+    if (platform !== "linux" && platform !== "darwin") return false;
     const connection = yield* Effect.serviceOption(NodeSocket.NetSocket);
     if (Option.isNone(connection)) return false;
     const { remoteAddress, remotePort, localAddress, localPort } = connection.value;

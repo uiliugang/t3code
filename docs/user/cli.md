@@ -2,7 +2,7 @@
 
 The `t3` command runs and manages T3 Code servers, background services, remote access, threads, workflows, and diagnostics. Run `t3 --help` or `t3 <command> --help` for full flags.
 
-See [Install T3 Code](./install.md#command-line) for installation (`curl -fsSL https://t3.codes/install.sh | sh`, `irm https://t3.codes/install.ps1 | iex`, or `npx t3@latest`).
+See [Install T3 Code](./install.md#command-line) for the fork's macOS and Linux CLI. `npx t3@latest` runs the upstream version.
 
 ## Running and connecting
 

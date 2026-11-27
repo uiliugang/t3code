@@ -16,9 +16,7 @@ import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as PlatformError from "effect/PlatformError";
 import * as Exit from "effect/Exit";
-import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
@@ -47,7 +45,6 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
     local?: { version: string; appServerFails?: boolean; versionFails?: boolean };
     platform?: NodeJS.Platform;
     spawner?: ChildProcessSpawner.ChildProcessSpawner["Service"];
-    runtimeRenameFailures?: number;
     /** Served by URL instead of the pinned package. */
     responses?: Readonly<Record<string, () => Response>>;
   } = {},
@@ -56,7 +53,7 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
   const baseDir =
     input.baseDir ?? (yield* fs.makeTempDirectoryScoped({ prefix: "t3-codex-install-test-" }));
   const localDirectory = `${baseDir}/local`;
-  const localBinaryPath = `${localDirectory}/codex${input.platform === "win32" ? ".exe" : ""}`;
+  const localBinaryPath = `${localDirectory}/codex`;
   const probeLog = `${baseDir}/local-probes.txt`;
   // A restarted harness on the same baseDir keeps the existing binary, and with it its fingerprint.
   if (input.local && !(yield* fs.exists(localBinaryPath))) {
@@ -70,29 +67,6 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
   let downloads = 0;
   const digest = yield* Digest.Digest;
   const sha256 = Hex.encode(yield* digest.digest(Digest.sha256, archive).pipe(Effect.orDie));
-  let runtimeRenameFailures = input.runtimeRenameFailures ?? 0;
-  const failedRenames = yield* Queue.unbounded<void>();
-  const lockingFs: FileSystem.FileSystem = {
-    ...fs,
-    // Suspended so each retry of the same effect is a fresh attempt, like the real rename.
-    rename: (from, to) =>
-      Effect.suspend(() =>
-        /[/\\]runtime$/u.test(from) && runtimeRenameFailures-- > 0
-          ? Queue.offer(failedRenames, undefined).pipe(
-              Effect.andThen(
-                Effect.fail(
-                  PlatformError.systemError({
-                    _tag: "PermissionDenied",
-                    module: "FileSystem",
-                    method: "rename",
-                    pathOrDescriptor: from,
-                  }),
-                ),
-              ),
-            )
-          : fs.rename(from, to),
-      ),
-  };
   const spawner = input.spawner ?? (yield* ChildProcessSpawner.ChildProcessSpawner);
   const installation = yield* CodexInstallation.makeCodexInstallation({
     baseDir,
@@ -111,9 +85,7 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
     Effect.provideService(HostProcess.Architecture, "arm64"),
     Effect.provideService(HostProcess.Environment, {
       PATH: input.local ? localDirectory : "",
-      SystemRoot: "C:\\Windows",
     }),
-    Effect.provideService(FileSystem.FileSystem, lockingFs),
     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     Effect.provideService(
       HttpClient.HttpClient,
@@ -142,7 +114,6 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
     baseDir,
     localBinaryPath,
     probeLog,
-    failedRenames,
     downloads: () => downloads,
   };
 });
@@ -557,18 +528,18 @@ it.effect.each(["cached update", "reverify"] as const)(
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-codex-verify-test-" });
       const managed = `${baseDir}/tools/codex`;
       const installedVersion = operation === "cached update" ? "0.156.0" : asset.version;
-      const target = "aarch64-pc-windows-msvc";
+      const target = "aarch64-apple-darwin";
       const checksum = "a".repeat(64);
       for (const version of new Set([installedVersion, asset.version])) {
         const directory = `${managed}/${version}`;
         yield* fs.makeDirectory(`${directory}/bin`, { recursive: true });
         yield* fs.makeDirectory(`${directory}/codex-path`, { recursive: true });
-        for (const name of ["bin/codex.exe", "bin/codex-code-mode-host.exe", "codex-path/rg.exe"]) {
-          yield* fs.writeFileString(`${directory}/${name}`, "fixture executable");
+        for (const name of ["bin/codex", "bin/codex-code-mode-host", "codex-path/rg"]) {
+          yield* fs.writeFileString(`${directory}/${name}`, "fixture executable", { mode: 0o755 });
         }
         yield* fs.writeFileString(
           `${directory}/codex-package.json`,
-          JSON.stringify({ layoutVersion: 1, version, target, entrypoint: "bin/codex.exe" }),
+          JSON.stringify({ layoutVersion: 1, version, target, entrypoint: "bin/codex" }),
         );
         yield* fs.writeFileString(
           `${directory}/.install-complete.json`,
@@ -580,7 +551,7 @@ it.effect.each(["cached update", "reverify"] as const)(
       const entered = yield* Deferred.make<void>();
       const h = yield* makeHarness({
         baseDir,
-        platform: "win32",
+        platform: "darwin",
         manifestCurrent: Effect.succeed({
           ...ModelManifest.BUNDLED_MODEL_MANIFEST,
           compatibility: [

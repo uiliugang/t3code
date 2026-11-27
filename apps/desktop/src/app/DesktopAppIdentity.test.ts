@@ -57,7 +57,6 @@ const layerElectronApp = (calls: ElectronAppCalls) =>
       Effect.sync(() => {
         calls.setAboutPanelOptions.push(options);
       }),
-    setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),
     setAsDefaultProtocolClient: () => Effect.succeed(true),
     setDesktopName: () => Effect.void,
@@ -74,7 +73,6 @@ const layerElectronApp = (calls: ElectronAppCalls) =>
 const layerAssets = (png: Option.Option<string>) =>
   Layer.succeed(DesktopAssets.DesktopAssets, {
     iconPaths: Effect.succeed({
-      ico: Option.none(),
       icns: Option.none(),
       png,
     }),

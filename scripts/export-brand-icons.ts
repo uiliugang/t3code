@@ -14,7 +14,7 @@ import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { BRAND_ASSET_PATHS, DEVELOPMENT_PUBLIC_ICON_OVERRIDES } from "./lib/brand-assets.ts";
-import { encodePngIco, readPngDimensions, WINDOWS_ICON_SIZES } from "./lib/icon-export.ts";
+import { encodePngIco, readPngDimensions, FAVICON_ICO_SIZES } from "./lib/icon-export.ts";
 
 const DESIGN_GENERATION = 26;
 const ICON_COMPOSER_EXECUTABLE_PARTS = [
@@ -53,7 +53,6 @@ interface VariantOutputs {
   readonly favicon16: string;
   readonly favicon32: string;
   readonly faviconIco: string;
-  readonly windowsIco: string;
 }
 
 interface IconVariant {
@@ -218,7 +217,6 @@ const ICON_VARIANTS = [
       favicon16: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
       favicon32: BRAND_ASSET_PATHS.developmentWebFavicon32Png,
       faviconIco: BRAND_ASSET_PATHS.developmentWebFaviconIco,
-      windowsIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
     },
   },
   {
@@ -234,7 +232,6 @@ const ICON_VARIANTS = [
       favicon16: BRAND_ASSET_PATHS.nightlyWebFavicon16Png,
       favicon32: BRAND_ASSET_PATHS.nightlyWebFavicon32Png,
       faviconIco: BRAND_ASSET_PATHS.nightlyWebFaviconIco,
-      windowsIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
     },
   },
   {
@@ -250,7 +247,6 @@ const ICON_VARIANTS = [
       favicon16: BRAND_ASSET_PATHS.productionWebFavicon16Png,
       favicon32: BRAND_ASSET_PATHS.productionWebFavicon32Png,
       faviconIco: BRAND_ASSET_PATHS.productionWebFaviconIco,
-      windowsIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
     },
   },
 ] as const satisfies ReadonlyArray<IconVariant>;
@@ -587,7 +583,7 @@ const renderVariant = Effect.fn("iconExport.renderVariant")(function* (
 
   const ios = yield* render("iOS", 1024);
   const icoRenditions = yield* Effect.forEach(
-    WINDOWS_ICON_SIZES,
+    FAVICON_ICO_SIZES,
     (size) => render("iOS", size).pipe(Effect.map((contents) => ({ size, contents }))),
     { concurrency: 1 },
   );
@@ -605,7 +601,6 @@ const renderVariant = Effect.fn("iconExport.renderVariant")(function* (
     [variant.outputs.favicon16, yield* render("iOS", 16)],
     [variant.outputs.favicon32, yield* render("iOS", 32)],
     [variant.outputs.faviconIco, ico],
-    [variant.outputs.windowsIco, ico],
   ]);
 });
 

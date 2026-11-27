@@ -2,7 +2,7 @@ import { sha256 } from "@noble/hashes/sha2";
 
 export interface DesktopAppControlAddress {
   readonly address: string;
-  readonly directory: string | null;
+  readonly directory: string;
 }
 
 function shortHash(value: string): string {
@@ -20,13 +20,6 @@ export function resolveDesktopAppControlAddress(input: {
   readonly joinPath: (...segments: readonly string[]) => string;
 }): DesktopAppControlAddress {
   const stateHash = shortHash(input.stateDir);
-  if (input.platform === "win32") {
-    return {
-      address: `\\\\.\\pipe\\t3code-app-${stateHash}`,
-      directory: null,
-    };
-  }
-
   const userKey =
     input.userId === undefined ? shortHash(input.stateDir).slice(0, 12) : input.userId;
   const socketName = `${stateHash}.sock`;

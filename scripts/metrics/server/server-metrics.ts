@@ -61,7 +61,6 @@ import {
   MetricsError,
   nowMs,
   output,
-  powershell,
   runAbRounds,
   watchMachine,
 } from "../core/run.ts";
@@ -537,17 +536,6 @@ const sample = Effect.fn("serverMetrics.sample")(function* (pid: number) {
       "/proc",
     );
   }
-  if (platform === "win32") {
-    const line = yield* powershell(
-      `$p = Get-Process -Id ${pid}; "$($p.TotalProcessorTime.TotalSeconds) $($p.WorkingSet64)"`,
-    );
-    const [cpu = "", rss = ""] = Option.getOrElse(line, () => "").split(/\s+/);
-    return yield* checked(
-      cpu ? Number(cpu) : Number.NaN,
-      rss ? Number(rss) : Number.NaN,
-      "Get-Process",
-    );
-  }
   const line = yield* output("ps", ["-o", "rss=,time=", "-p", `${pid}`]);
   const [rss = "", time = ""] = Option.getOrElse(line, () => "")
     .split(/\s+/)
@@ -773,7 +761,6 @@ const startServer = Effect.fn("serverMetrics.startServer")(function* (
   const path = yield* Path.Path;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const http = yield* HttpClient.HttpClient;
-  const platform = yield* HostProcess.Platform;
   const node = yield* HostProcess.ExecutablePath;
   const hostEnvironment = yield* HostProcess.Environment;
   const directory = yield* fs.makeTempDirectory({
@@ -867,14 +854,12 @@ const startServer = Effect.fn("serverMetrics.startServer")(function* (
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       const spawned = yield* descendantsOf(pid).pipe(Effect.orElseSucceed(() => []));
-      if (platform === "win32") yield* output("taskkill", ["/PID", `${pid}`, "/T", "/F"]);
-      else
-        yield* child
-          .kill({ killSignal: "SIGTERM", forceKillAfter: Duration.seconds(10) })
-          .pipe(Effect.timeout(Duration.seconds(15)), Effect.ignore);
+      yield* child
+        .kill({ killSignal: "SIGTERM", forceKillAfter: Duration.seconds(10) })
+        .pipe(Effect.timeout(Duration.seconds(15)), Effect.ignore);
       yield* child.exitCode.pipe(Effect.timeout(Duration.seconds(10)), Effect.ignore);
       if (spawned.length > 0) yield* output("kill", ["-9", ...spawned.map(String)]);
-      // Windows keeps a file locked for a moment after its process exits.
+      // A child finishing teardown can still race directory removal.
       yield* fs
         .remove(directory, { recursive: true })
         .pipe(Effect.retry({ schedule: Schedule.spaced(Duration.millis(500)), times: 20 }));
@@ -924,13 +909,10 @@ const startServer = Effect.fn("serverMetrics.startServer")(function* (
     });
   }
 
-  // Spawning PowerShell for each sample costs a few hundred ms of the machine's CPU.
-  const sampleEvery = Duration.millis(platform === "win32" ? 5_000 : 1_000);
+  const sampleEvery = Duration.seconds(1);
   const measure = Effect.fn("serverMetrics.measure")(function* (seconds: number) {
-    // Each counter is divided by the time between its own two reads; a CIM probe can take seconds.
-    // Windows reports no context switches through getrusage, so wakeups are unknown there.
-    const countSwitches = platform === "win32" ? Effect.succeed(null) : devtools.contextSwitches;
-    // A probe can take seconds (CIM on Windows), so each read is timed at its midpoint.
+    // Each counter is divided by the time between its own two reads, measured at their midpoints.
+    const countSwitches = devtools.contextSwitches;
     const timed = Effect.fn("serverMetrics.timedRead")(function* <A, E, R>(
       read: Effect.Effect<A, E, R>,
     ) {
@@ -1609,7 +1591,6 @@ interface RunOptions {
 /** One pass: startup, rest and firstWord share a server; quiet, streaming and soak get their own. */
 const runOnce = Effect.fn("serverMetrics.runOnce")(function* (options: RunOptions) {
   const fs = yield* FileSystem.FileSystem;
-  const platform = yield* HostProcess.Platform;
   const path = yield* Path.Path;
   const machine = yield* watchMachine;
   const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-server-metrics-" });
@@ -1959,15 +1940,11 @@ const runOnce = Effect.fn("serverMetrics.runOnce")(function* (options: RunOption
           const takeSample = Effect.gen(function* () {
             const hours = (yield* elapsed) / 3_600_000;
             const window = yield* server.measure(5);
-            // Windows lists no descendants, which is not the same as having none.
-            const processes =
-              platform === "win32"
-                ? null
-                : yield* descendantsOf(server.pid).pipe(
-                    Effect.map((found) => found.length),
-                    // Unknown, not zero: a failed probe leaves the process slope out.
-                    Effect.orElseSucceed(() => null),
-                  );
+            const processes = yield* descendantsOf(server.pid).pipe(
+              Effect.map((found) => found.length),
+              // Unknown, not zero: a failed probe leaves the process slope out.
+              Effect.orElseSucceed(() => null),
+            );
             samples.push({ hours, window, rssMB: window.rssMB - snapshotRssMB, processes });
             yield* Console.error(
               `soak ${round(hours * 60)} min: heap ${window.heapAfterGcMB} MB, RSS ${window.rssMB} MB${processes === null ? "" : `, ${processes} child processes`}`,
@@ -2050,6 +2027,9 @@ const runOnce = Effect.fn("serverMetrics.runOnce")(function* (options: RunOption
 
 const metaFor = Effect.fn("serverMetrics.metaFor")(function* (options: RunOptions) {
   const platform = yield* HostProcess.Platform;
+  if (platform !== "linux" && platform !== "darwin") {
+    return yield* new MetricsError({ message: "Server measurements require Linux or macOS." });
+  }
   const architecture = yield* HostProcess.Architecture;
   const environment = yield* HostProcess.Environment;
   const node = yield* HostProcess.ExecutablePath;
@@ -2062,10 +2042,7 @@ const metaFor = Effect.fn("serverMetrics.metaFor")(function* (options: RunOption
       message: "--no-agent-scope is Linux only; other platforms never have an agent scope.",
     });
   }
-  const cpus =
-    platform === "win32"
-      ? Option.fromNullishOr(environment.NUMBER_OF_PROCESSORS)
-      : yield* output("getconf", ["_NPROCESSORS_ONLN"]);
+  const cpus = yield* output("getconf", ["_NPROCESSORS_ONLN"]);
   return {
     platform: `${platform}-${architecture}`,
     cpus: Option.getOrNull(Option.map(cpus, Number)),
@@ -2139,7 +2116,7 @@ const runFlags = {
     Flag.withAlias("mac-path"),
     Flag.withDefault(false),
     Flag.withDescription(
-      "Linux only: start the server without XDG_RUNTIME_DIR, so it takes the no-agent-scope path macOS and Windows always take.",
+      "Linux only: start the server without XDG_RUNTIME_DIR, so it takes the no-agent-scope path macOS always takes.",
     ),
   ),
   runs: Flag.Int("runs").pipe(
@@ -2304,7 +2281,7 @@ const runCommand = Command.make(
   }, Effect.scoped),
 ).pipe(
   Command.withDescription(
-    "Measure a checkout's server: startup, rest and first word on one server, then quiet threads (with their cost per thread), clients, many threads working, the turn pipeline, streaming and an optional soak on servers of their own. Needs the real claude CLI on PATH; on Windows the native claude.exe from claude.ai/install.ps1, since an npm claude.cmd shim cannot be started without a shell.",
+    "Measure a checkout's server: startup, rest and first word on one server, then quiet threads (with their cost per thread), clients, many threads working, the turn pipeline, streaming and an optional soak on servers of their own. Needs the real claude CLI on PATH.",
   ),
 );
 
@@ -2431,7 +2408,7 @@ const noiseCommand = Command.make(
 
 const serverMetricsCommand = Command.make("server-metrics").pipe(
   Command.withDescription(
-    `Measure the server process against a fake Anthropic API and the real claude CLI, on Linux, macOS and Windows.
+    `Measure the server process against a fake Anthropic API and the real claude CLI, on Linux and macOS.
 
 Which scenario answers what:
   working     Many threads editing files at once, one client watching all: steer performance work by its loop delay, turn end and turns per minute.

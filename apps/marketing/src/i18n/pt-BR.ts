@@ -24,7 +24,7 @@ export const ptBR: Messages = {
     heroSub:
       "Orquestre Claude Code, Codex, Antigravity, OpenCode, Cursor e Grok em um só lugar. Use a sua própria assinatura. Faça um fork do projeto inteiro.",
     downloadForMac: "Baixar para macOS",
-    downloadForWindows: "Baixar para Windows",
+    openWebApp: "Abrir app web",
     downloadForLinux: "Baixar para Linux",
     downloadForIos: "Baixar para iOS",
     downloadForAndroid: "Baixar para Android",
@@ -79,9 +79,9 @@ export const ptBR: Messages = {
     otherPlatforms: "Outras plataformas",
   },
   download: {
-    title: "Baixe o T3 Code para macOS, Windows e Linux | T3 Code",
+    title: "Baixe o T3 Code para macOS e Linux | T3 Code",
     description:
-      "Baixe o app oficial de desktop do T3 Code para macOS, Windows ou Linux, ou os apps para iOS e Android. t3.codes é o único site oficial de download.",
+      "Baixe o app oficial de desktop do T3 Code para macOS ou Linux, ou os apps para iOS e Android. t3.codes é o único site oficial de download.",
     breadcrumb: "Baixar",
     heading: "Baixar o T3 Code",
     channelLabel: "Canal de versões",

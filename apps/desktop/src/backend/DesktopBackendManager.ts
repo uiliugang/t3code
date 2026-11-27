@@ -36,7 +36,6 @@ import { waitForHttpReady as waitForHttpReadyShared } from "@t3tools/shared/http
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
-import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 
 const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
@@ -76,27 +75,16 @@ export interface BackendProcessContext {
 
 export type DesktopBackendBootstrapDelivery = "fd3" | "stdin";
 
-/** One readiness request and the test its answer must pass to count as this launch's backend. */
-export interface BackendReadinessProbe {
-  readonly path: string;
-  readonly accept: (body: string) => Effect.Effect<boolean>;
-}
-
 export interface DesktopBackendStartConfig extends BackendProcessContext {
   readonly args: ReadonlyArray<string>;
   readonly env: Record<string, string | undefined>;
-  /** False passes env verbatim, preventing the Windows T3CODE_HOME from leaking into WSL. */
+  /** False passes the configured environment verbatim. */
   readonly extendEnv: boolean;
   readonly bootstrap: DesktopBackendBootstrapValue;
   readonly bootstrapDelivery: DesktopBackendBootstrapDelivery;
   readonly httpBaseUrl: URL;
   readonly captureOutput: boolean;
   readonly preflightFailure: Option.Option<PreflightFailure>;
-  /** Set for a backend without a control channel; each evaluation yields a fresh probe. */
-  readonly readinessProbe?: Effect.Effect<BackendReadinessProbe>;
-  readonly runningDistro?: string;
-  readonly wslRuntimeId?: string;
-  readonly wslT3Home?: string | null;
 }
 
 export interface PreflightFailure {
@@ -365,14 +353,12 @@ const closeRun = (
 };
 
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "[::1]"]);
-// Windows takes about a second to fail a refused connection to a non-loopback address such as a
-// WSL distro IP, so one sequential poller notices readiness up to a second late.
+// Stagger polls for non-loopback backends so a slow rejected connection does not delay readiness.
 const STAGGERED_READINESS_POLLERS = 4;
 const READINESS_POLLER_STAGGER = Duration.millis(250);
 
 interface HttpReadinessOptions extends BackendProcessContext {
   readonly timeout: Duration.Duration;
-  readonly readinessProbe?: Effect.Effect<BackendReadinessProbe>;
 }
 
 const waitForHttpReady = (
@@ -390,13 +376,11 @@ const waitForHttpReady = (
 const pollHttpReady = Effect.fnUntraced(function* (
   options: HttpReadinessOptions,
 ): Effect.fn.Return<void, BackendReadinessTimeoutError, HttpClient.HttpClient> {
-  const probe = options.readinessProbe === undefined ? undefined : yield* options.readinessProbe;
-  const path = probe?.path ?? BACKEND_READINESS_PATH;
+  const path = BACKEND_READINESS_PATH;
   const readinessUrl = new URL(path, options.httpBaseUrl);
   return yield* waitForHttpReadyShared({
     baseUrl: options.httpBaseUrl.href,
     path,
-    ...(probe === undefined ? {} : { accept: probe.accept }),
     timeoutMs: Duration.toMillis(options.timeout),
     intervalMs: Duration.toMillis(DEFAULT_BACKEND_READINESS_INTERVAL),
     probeTimeoutMs: Duration.toMillis(DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT),
@@ -514,7 +498,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
     forceKillAfter: DEFAULT_BACKEND_TERMINATE_GRACE,
-    // wsl.exe drops extra file descriptors; deliver its bootstrap via stdin.
+    // A backend configured for stdin has no additional control descriptors.
     ...(options.bootstrapDelivery === "fd3" ? { additionalFds } : {}),
   });
 
@@ -630,15 +614,12 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
   };
   const readinessTimeout = options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT;
   // A backend with a control fd reports readiness there itself, after its HTTP server is up.
-  // Backends without the fd, such as WSL, are polled over HTTP and must pass their readiness probe.
+  // Backends without the fd are polled over HTTP.
   const awaitReady =
     options.bootstrap.desktopTelemetryControlFd === undefined
       ? waitForHttpReady({
           ...readinessContext,
           timeout: readinessTimeout,
-          ...(options.readinessProbe === undefined
-            ? {}
-            : { readinessProbe: options.readinessProbe }),
         })
       : Deferred.await(serverReady).pipe(
           Effect.timeoutOrElse({
@@ -654,7 +635,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
               ),
           }),
         );
-  // Cold WSL boots across /mnt/c can exceed one probe budget; retry while the backend is alive.
+  // Cold starts can exceed one probe budget; retry while the backend is alive.
   const probeReadiness = Effect.fn("desktop.backendProcess.probeReadiness")(() =>
     awaitReady.pipe(
       Effect.flatMap(() => options.onReady?.(handle.pid) ?? Effect.void),
@@ -729,7 +710,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   | DesktopObservability.DesktopBackendOutputLogFactory
   | DesktopTelemetryPublisher.DesktopTelemetryPublisher
   | DesktopBrowserHost.DesktopBrowserHost
-  | DesktopWslEnvironment.DesktopWslEnvironment
   | Scope.Scope
 > {
   const parentScope = yield* Scope.Scope;
@@ -738,7 +718,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const backendOutputLog = yield* backendOutputLogFactory.forInstance(spec.id);
   const desktopTelemetryPublisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
   const desktopBrowserHost = yield* DesktopBrowserHost.DesktopBrowserHost;
-  const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
   const state = yield* SubscriptionRef.make(initialState);
@@ -1052,16 +1031,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             yield* Ref.set(migrationProgress, null);
             yield* spec.onMigrationProgress?.(null) ?? Effect.void;
             yield* spec.onReady?.(config.value.httpBaseUrl, pid) ?? Effect.void;
-            if (
-              config.value.runningDistro !== undefined &&
-              config.value.wslRuntimeId !== undefined
-            ) {
-              yield* wslEnvironment.pruneRuntimes(
-                config.value.runningDistro,
-                config.value.wslRuntimeId,
-                config.value.wslT3Home ?? null,
-              );
-            }
           }),
           onReadinessFailure: Effect.fn("desktop.backendInstance.onReadinessFailure")(
             function* (error) {

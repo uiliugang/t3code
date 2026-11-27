@@ -4,7 +4,7 @@ import {
   type ProviderInstallState,
   type ServerProviderCompatibilityAdvisory,
 } from "@t3tools/contracts";
-import { cliArchiveTarCommand, parseChecksums } from "@t3tools/shared/cliRelease";
+import { parseChecksums } from "@t3tools/shared/cliRelease";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
@@ -19,7 +19,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
@@ -107,20 +106,6 @@ const RELEASES: Readonly<Record<string, CodexReleaseAsset>> = {
     url: "https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-package-x86_64-unknown-linux-musl.tar.gz",
     sha256: "1d44b28bc4ac9937d7d3532264baa68a507ce364956a0d4ebb856f331cdee254",
     archiveBytes: 199694962,
-  },
-  "win32-arm64": {
-    version: "0.166.0",
-    target: "aarch64-pc-windows-msvc",
-    url: "https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-package-aarch64-pc-windows-msvc.tar.gz",
-    sha256: "9383152a72f97bb5dd148493c8214e4fed38d805aa2c3297cb3739f7f130becf",
-    archiveBytes: 187024318,
-  },
-  "win32-x64": {
-    version: "0.166.0",
-    target: "x86_64-pc-windows-msvc",
-    url: "https://github.com/openai/codex/releases/download/rust-v0.166.0/codex-package-x86_64-pc-windows-msvc.tar.gz",
-    sha256: "d559bb88e74d471265857b93b7f19bc250dae527673b9191b33534478093f6bc",
-    archiveBytes: 202589789,
   },
 };
 const resolveCodexReleaseAsset = (platform: NodeJS.Platform, arch: string) =>
@@ -225,7 +210,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
   const managedDirectory = path.join(options.baseDir, "tools", "codex");
   const activePath = path.join(managedDirectory, "active.json");
   const localProbePath = path.join(options.baseDir, "caches", "codex-local-probe.json");
-  const executableName = platform === "win32" ? "codex.exe" : "codex";
+  const executableName = "codex";
   const gate = yield* Semaphore.make(1);
   const updateCheckGate = yield* Semaphore.make(1);
   const leases = new Map<string, number>();
@@ -286,17 +271,9 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         "verify",
         "The downloaded Codex package does not match the expected release.",
       );
-    for (const name of [
-      `bin/${executableName}`,
-      `bin/codex-code-mode-host${platform === "win32" ? ".exe" : ""}`,
-      `codex-path/rg${platform === "win32" ? ".exe" : ""}`,
-    ]) {
+    for (const name of [`bin/${executableName}`, "bin/codex-code-mode-host", "codex-path/rg"]) {
       const info = yield* fs.stat(path.join(directory, name));
-      if (
-        info.type !== "File" ||
-        Number(info.size) === 0 ||
-        (platform !== "win32" && (info.mode & 0o111) === 0)
-      )
+      if (info.type !== "File" || Number(info.size) === 0 || (info.mode & 0o111) === 0)
         return yield* installationError(
           "verify",
           "The managed Codex package is incomplete. Reinstall Codex.",
@@ -461,45 +438,25 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
   // Native Codex needs its adjacent host; launchers resolve their own payloads.
   const localKind = Effect.fn("CodexInstallation.localKind")(
     function* (realExecutablePath: string) {
-      if (/^(?:volta-shim|mise|aqua-proxy)(?:\.exe)?$/iu.test(path.basename(realExecutablePath)))
+      if (/^(?:volta-shim|mise|aqua-proxy)$/iu.test(path.basename(realExecutablePath)))
         return "launcher";
-      if (platform === "win32") {
-        if (path.extname(realExecutablePath).toLowerCase() !== ".exe") return "launcher";
-        for (const extension of [".bunx", ".shim"]) {
-          const marker = yield* fs
-            .stat(realExecutablePath.slice(0, -4) + extension)
-            .pipe(Effect.option);
-          if (
-            Option.isSome(marker) &&
-            marker.value.type === "File" &&
-            Number(marker.value.size) > 0
-          )
-            return "launcher";
-        }
-      } else {
-        const header = yield* fs.open(realExecutablePath, { flag: "r" }).pipe(
-          Effect.flatMap((file) => file.readAlloc(2)),
-          Effect.orElseSucceed(() => Option.none()),
-        );
-        if (Option.isSome(header) && header.value[0] === 0x23 && header.value[1] === 0x21)
-          return "launcher";
-      }
-      const info = yield* fs.stat(
-        path.join(
-          path.dirname(realExecutablePath),
-          `codex-code-mode-host${platform === "win32" ? ".exe" : ""}`,
-        ),
+      const header = yield* fs.open(realExecutablePath, { flag: "r" }).pipe(
+        Effect.flatMap((file) => file.readAlloc(2)),
+        Effect.orElseSucceed(() => Option.none()),
       );
-      return info.type === "File" &&
-        Number(info.size) > 0 &&
-        (platform === "win32" || (info.mode & 0o111) !== 0)
+      if (Option.isSome(header) && header.value[0] === 0x23 && header.value[1] === 0x21)
+        return "launcher";
+      const info = yield* fs.stat(
+        path.join(path.dirname(realExecutablePath), "codex-code-mode-host"),
+      );
+      return info.type === "File" && Number(info.size) > 0 && (info.mode & 0o111) !== 0
         ? "native"
         : null;
     },
     Effect.scoped,
     Effect.orElseSucceed(() => null),
   );
-  // npm's shim (Windows) or bin symlink (POSIX) stays the same across upgrades; its package does not.
+  // npm's bin symlink stays the same across upgrades; its package does not.
   const npmCodexVersion = Effect.fn("CodexInstallation.npmCodexVersion")(function* (
     executablePath: string,
     realExecutablePath: string,
@@ -799,10 +756,8 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
             message: "Extracting Codex.",
           }) satisfies ProviderInstallState,
       );
-      // Bare `tar` on Windows can resolve to Git's MSYS tar, which reads `C:\...` as a remote host.
-      const tarCommand = cliArchiveTarCommand(platform, environment);
-      const entries = (yield* runCommand(tarCommand, ["-tzf", archivePath])).trim().split(/\r?\n/u);
-      const types = (yield* runCommand(tarCommand, ["-tvzf", archivePath])).trim().split(/\r?\n/u);
+      const entries = (yield* runCommand("tar", ["-tzf", archivePath])).trim().split(/\r?\n/u);
+      const types = (yield* runCommand("tar", ["-tvzf", archivePath])).trim().split(/\r?\n/u);
       if (
         entries.length > 10000 ||
         entries.length !== types.length ||
@@ -818,7 +773,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         })
       )
         return yield* installationError("extract", "The Codex archive contains unsafe entries.");
-      yield* runCommand(tarCommand, ["-xzf", archivePath, "-C", runtime]);
+      yield* runCommand("tar", ["-xzf", archivePath, "-C", runtime]);
       yield* SubscriptionRef.update(
         state,
         (current) =>
@@ -840,11 +795,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         }),
         { flag: "wx", mode: 0o600 },
       );
-      // Windows Defender or process rundown may retain codex.exe handles briefly after --version exits.
-      const renameRuntime = fs.rename(runtime, destination);
-      yield* platform === "win32"
-        ? renameRuntime.pipe(Effect.retry({ times: 10, schedule: Schedule.spaced("100 millis") }))
-        : renameRuntime;
+      yield* fs.rename(runtime, destination);
       yield* activate();
     },
     Effect.scoped,

@@ -1447,28 +1447,18 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         assert.equal(refusedDanglingBaseDot._tag, "MigrateDevDbSharedHomeError");
         assert.equal((yield* fs.lstat(danglingBaseLink)).type, "SymbolicLink");
 
-        // Platform path-splitting rules: Windows drive-relative paths (`C:seed`), roots, `.` termination, and POSIX backslashes.
-        assert.equal(splitPathParentAndLeaf(".", "darwin"), undefined);
-        assert.equal(splitPathParentAndLeaf(".", "win32"), undefined);
-        assert.deepStrictEqual(splitPathParentAndLeaf("./.", "darwin"), {
+        // The POSIX splitter preserves backslashes and handles root and dot components.
+        assert.equal(splitPathParentAndLeaf("."), undefined);
+        assert.equal(splitPathParentAndLeaf("/"), undefined);
+        assert.deepStrictEqual(splitPathParentAndLeaf("./."), {
           parent: ".",
           leaf: ".",
         });
-        assert.deepStrictEqual(splitPathParentAndLeaf("C:seed", "win32"), {
-          parent: "C:",
-          leaf: "seed",
-        });
-        assert.deepStrictEqual(splitPathParentAndLeaf("C:dir\\seed\\.", "win32"), {
-          parent: "C:dir\\seed",
-          leaf: ".",
-        });
-        assert.equal(splitPathParentAndLeaf("C:\\", "win32"), undefined);
-        assert.equal(splitPathParentAndLeaf("C:", "win32"), undefined);
-        assert.deepStrictEqual(splitPathParentAndLeaf("/tmp/2.72\\bin/.", "darwin"), {
+        assert.deepStrictEqual(splitPathParentAndLeaf("/tmp/2.72\\bin/."), {
           parent: "/tmp/2.72\\bin",
           leaf: ".",
         });
-        assert.deepStrictEqual(splitPathParentAndLeaf("/tmp/2.72\\bin", "darwin"), {
+        assert.deepStrictEqual(splitPathParentAndLeaf("/tmp/2.72\\bin"), {
           parent: "/tmp",
           leaf: "2.72\\bin",
         });

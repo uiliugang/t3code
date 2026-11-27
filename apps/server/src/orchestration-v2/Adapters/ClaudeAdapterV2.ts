@@ -93,7 +93,6 @@ import {
 } from "@t3tools/shared/mcpApp";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as ProviderProcesses from "../../process/providerProcesses.ts";
-import * as SpawnWorker from "../../process/SpawnWorker.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -182,7 +181,6 @@ import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import {
   claudeProgramReader,
   claudeProgramWasReplaced,
-  resolveClaudeSdkExecutablePath,
 } from "../../provider/Drivers/ClaudeExecutable.ts";
 import { claudeManagedPaths } from "../../provider/ClaudeInstallation.ts";
 import { claudeByokModelError } from "@t3tools/shared/claudeByok";
@@ -1864,31 +1862,21 @@ export const layerQueryRunner: Layer.Layer<
       const spawnProcess =
         options.spawnClaudeCodeProcess ??
         ((spawnOptions: ClaudeSpawnOptions) => {
-          if (platform !== "win32") {
-            // Node can report "exit" before it has read the stderr the CLI wrote.
-            let stderrDone = () => {};
-            stderrClosed = new Promise((resolve) => (stderrDone = resolve));
-            const child = spawnClaudeProcessGroup(
-              spawnOptions,
-              stopScope,
-              appendStderr,
-              stderrDone,
-              providerProcesses.register,
-            );
-            if (unit === undefined && child.pid !== undefined) {
-              const tracker = trackDescendants(child.pid);
-              child.once("exit", () => runFork(tracker.stop));
-              descendants = tracker;
-            }
-            return child;
+          // Node can report "exit" before it has read the stderr the CLI wrote.
+          let stderrDone = () => {};
+          stderrClosed = new Promise((resolve) => (stderrDone = resolve));
+          const child = spawnClaudeProcessGroup(
+            spawnOptions,
+            stopScope,
+            appendStderr,
+            stderrDone,
+            providerProcesses.register,
+          );
+          if (unit === undefined && child.pid !== undefined) {
+            const tracker = trackDescendants(child.pid);
+            child.once("exit", () => runFork(tracker.stop));
+            descendants = tracker;
           }
-          const child = SpawnWorker.spawnPiped(spawnOptions.command, spawnOptions.args, {
-            cwd: spawnOptions.cwd,
-            env: spawnOptions.env,
-            signal: spawnOptions.signal,
-            windowsHide: true,
-          });
-          child.stderr.setEncoding("utf8").on("data", (chunk: string) => options.stderr?.(chunk));
           return child;
         });
       let spawnedProcess: ClaudeSpawnedProcess | undefined;
@@ -14523,10 +14511,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.nativeThreadHasTurns ?? turnInput.providerTurnOrdinal > 1;
           const shouldResume =
             resumeSessionAt !== undefined || openedWithResume || hasPersistedProviderTurn;
-          const binaryPath = yield* resolveClaudeSdkExecutablePath(
-            adapterOptions.settings.binaryPath,
-            adapterOptions.environment,
-          ).pipe(Effect.provideService(HostProcess.Platform, hostPlatform));
           const queryOptions = makeClaudeQueryOptions({
             ...(turnInput.runtimePolicy.workspace === undefined
               ? {}
@@ -14542,7 +14526,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { workspaceFolders: turnInput.runtimePolicy.workspaceFolders }),
             attachmentsDir,
-            settings: { ...adapterOptions.settings, binaryPath },
+            settings: adapterOptions.settings,
             // Delegated threads have no one typing, so they never ask for suggestions.
             promptSuggestions:
               !isDelegatedAppThread(turnInput.appThread) && (yield* promptSuggestionsEnabled),

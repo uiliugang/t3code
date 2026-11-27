@@ -142,7 +142,7 @@ export function withOutputWindow(
 
 const MAX_QUEUED_OUTPUT = 8 * 1024 * 1024;
 // Output that follows an emission this closely waits and rides along in one batch,
-// so a PTY that delivers one line per callback (ConPTY) is not sent one frame per line.
+// so a PTY that delivers one line per callback is not sent one frame per line.
 const OUTPUT_WINDOW_NANOS = 2_000_000n;
 
 type Listener<A> = (event: A) => Effect.Effect<void>;

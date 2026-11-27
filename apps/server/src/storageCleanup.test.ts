@@ -2699,30 +2699,6 @@ describe("subagent worktree ownership", () => {
     }).pipe(Effect.provide(cleanupTestLayer)),
   );
 
-  it.effect("keeps a checkout two top-level threads store in different case on Windows", () =>
-    Effect.gen(function* () {
-      yield* TestClock.setTime(NOW_MS);
-      const fixture = yield* cleanupFixture({
-        ...disabledCleanup,
-        worktreeSettledAfterDays: 8,
-      }).pipe(Effect.provideService(HostProcess.Platform, "win32"));
-      const settled = { branch: "feature", settledAt: at(-20 * DAY_MS) };
-      fixture.setThreads([
-        shell({ ...settled, worktreePath: fixture.worktree }),
-        shell({
-          ...settled,
-          id: ThreadId.make("other"),
-          worktreePath: fixture.worktree.toUpperCase(),
-        }),
-      ]);
-      const report = yield* fixture.service.runNow;
-      expect(report.entries).toEqual([
-        expect.objectContaining({ outcome: "kept", reason: "Shared by 2 threads" }),
-      ]);
-      expect(yield* fixture.fs.exists(fixture.worktree)).toBe(true);
-    }).pipe(Effect.provide(cleanupTestLayer)),
-  );
-
   it.effect.each([
     "running",
     "pending",
@@ -3339,13 +3315,13 @@ describe("orphan worktree reports", () => {
     ),
   );
 
-  it.live.each(["canonical", "win32", "linux"] as const)(
+  it.live.each(["canonical", "linux"] as const)(
     "skips an ancestor of a referenced thread worktree (%s)",
     (platform) =>
       runCleanupTest(
         Effect.gen(function* () {
           const fixture = yield* cleanupFixture().pipe(
-            Effect.provideService(HostProcess.Platform, platform === "win32" ? "win32" : "linux"),
+            Effect.provideService(HostProcess.Platform, "linux"),
           );
           fixture.setThreads([]);
           const ancestor = `${fixture.config.worktreesDir}/repository/stack`;
@@ -3353,13 +3329,7 @@ describe("orphan worktree reports", () => {
           yield* fixture.command(fixture.repo, ["worktree", "add", "-b", "nested", worktree]);
           const alias = `${fixture.repo}/alias`;
           if (platform === "canonical") yield* fixture.fs.symlink(worktree, alias);
-          fixture.setStoredWorktreePaths([
-            platform === "canonical"
-              ? alias
-              : platform === "win32"
-                ? worktree.toUpperCase()
-                : worktree,
-          ]);
+          fixture.setStoredWorktreePaths([platform === "canonical" ? alias : worktree]);
           yield* fixture.fs.utimes(ancestor, 1, 1);
           expect((yield* fixture.service.runNow).entries).toEqual([]);
           expect(yield* fixture.fs.exists(worktree)).toBe(true);
@@ -3795,7 +3765,7 @@ describe("orphan worktree reports", () => {
     ),
   );
 
-  it.live.each(["win32", "linux"] as const)(
+  it.live.each(["linux"] as const)(
     "compares thread paths with host casing rules and excludes existing projects (%s)",
     (platform) =>
       runCleanupTest(
@@ -3815,16 +3785,12 @@ describe("orphan worktree reports", () => {
           fixture.setStoredWorktreePaths([fixture.worktree, referenced.toUpperCase()]);
           fixture.setProjectRoots([fixture.repo, project, `${nested}/child`]);
           const report = yield* fixture.service.runNow;
-          expect(report.entries.map((entry) => entry.path).sort()).toEqual(
-            platform === "win32" ? [] : [referenced],
-          );
+          expect(report.entries.map((entry) => entry.path).sort()).toEqual([referenced]);
         }),
       ),
   );
 
   it.live.each([
-    ["win32", "cwd"],
-    ["win32", "worktreePath"],
     ["linux", "cwd"],
     ["linux", "worktreePath"],
   ] as const)(
@@ -3842,16 +3808,12 @@ describe("orphan worktree reports", () => {
               : { cwd: fixture.repo, worktreePath: upper },
           );
           const report = yield* fixture.service.runNow;
-          expect(report.entries[0]).toMatchObject(
-            platform === "win32"
-              ? { outcome: "kept", reason: "Open terminal" }
-              : { outcome: "removed" },
-          );
+          expect(report.entries[0]).toMatchObject({ outcome: "removed" });
         }),
       ),
   );
 
-  it.live.each(["win32", "linux"] as const)(
+  it.live.each(["linux"] as const)(
     "matches a provider session at the worktree root with host casing rules (%s)",
     (platform) =>
       runCleanupTest(
@@ -3861,11 +3823,7 @@ describe("orphan worktree reports", () => {
           );
           fixture.setOpenSessionCwd(fixture.worktree.toUpperCase());
           const report = yield* fixture.service.runNow;
-          expect(report.entries[0]).toMatchObject(
-            platform === "win32"
-              ? { outcome: "kept", reason: "Provider session is still open" }
-              : { outcome: "removed" },
-          );
+          expect(report.entries[0]).toMatchObject({ outcome: "removed" });
         }),
       ),
   );

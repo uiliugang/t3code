@@ -24,7 +24,7 @@ export const en = {
     heroSub:
       "Orchestrate Claude Code, Codex, Antigravity, OpenCode, Cursor, and Grok from one surface. Bring your own subscription. Fork the whole thing.",
     downloadForMac: "Download for macOS",
-    downloadForWindows: "Download for Windows",
+    openWebApp: "Open Web App",
     downloadForLinux: "Download for Linux",
     downloadForIos: "Download for iOS",
     downloadForAndroid: "Download for Android",
@@ -75,9 +75,9 @@ export const en = {
     otherPlatforms: "Other platforms",
   },
   download: {
-    title: "Download T3 Code for macOS, Windows, and Linux | T3 Code",
+    title: "Download T3 Code for macOS and Linux | T3 Code",
     description:
-      "Download the official T3 Code desktop app for macOS, Windows, or Linux, or get the iOS and Android apps. t3.codes is the only official download site.",
+      "Download the official T3 Code desktop app for macOS or Linux, or get the iOS and Android apps. t3.codes is the only official download site.",
     breadcrumb: "Download",
     heading: "Download T3 Code",
     channelLabel: "Release channel",

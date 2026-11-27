@@ -18,12 +18,6 @@ const parsePosixFirefoxProfiles = (ini: string, root = "/home/user/.mozilla/fire
     return parseFirefoxProfiles(ini, path, root);
   }).pipe(Effect.provide(NodePath.layerPosix));
 
-const parseWindowsFirefoxProfiles = (ini: string, root = "C:\\Users\\user\\Firefox") =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path;
-    return parseFirefoxProfiles(ini, path, root);
-  }).pipe(Effect.provide(NodePath.layerWin32));
-
 const writeFirefoxCookieDatabase = Effect.fnUntraced(function* (
   rows: ReadonlyArray<{
     host: string;
@@ -385,37 +379,6 @@ describe("parseFirefoxProfiles", () => {
       expect(parsed).toEqual([
         { directory: "Profiles/relative.default", name: "Relative" },
         { directory: "/mnt/custom/firefox-profile", name: "Custom" },
-      ]);
-    }),
-  );
-
-  it.effect("uses Windows path rules for relative and absolute profiles", () =>
-    Effect.gen(function* () {
-      const parsed = yield* parseWindowsFirefoxProfiles(
-        [
-          "[Profile0]",
-          "Name=Relative",
-          "IsRelative=1",
-          "Path=Profiles\\relative.default",
-          "[Profile1]",
-          "Name=Custom",
-          "IsRelative=0",
-          "Path=D:\\Firefox Profiles\\Work",
-          "[Profile2]",
-          "IsRelative=1",
-          "Path=..\\..\\escape",
-          "[Profile3]",
-          "IsRelative=1",
-          "Path=D:\\absolute-marked-relative",
-          "[Profile4]",
-          "IsRelative=0",
-          "Path=relative-marked-absolute",
-        ].join("\n"),
-      );
-
-      expect(parsed).toEqual([
-        { directory: "Profiles\\relative.default", name: "Relative" },
-        { directory: "D:\\Firefox Profiles\\Work", name: "Custom" },
       ]);
     }),
   );

@@ -74,7 +74,6 @@ import {
   museApprovalMode,
   museCanonicalPath,
   musePermissionProfile,
-  museWorkspaceRoot,
   type createMuseSdkHost,
   type MuseSdkHost,
 } from "./sdk.ts";
@@ -323,7 +322,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       // Native realpath also corrects filesystem case, which Muse validates.
       const requestedCwd = input.runtimePolicy.cwd ?? providerHost.paths.cwd;
       const cwd = yield* museCanonicalPath(requestedCwd);
-      const workspaceRoot = yield* museWorkspaceRoot(cwd);
+      const workspaceRoot = cwd;
       const now = yield* DateTime.now;
       let session: OrchestrationV2ProviderSession = {
         id: input.providerSessionId,
@@ -2200,7 +2199,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           } else {
             const extraWorkspaceRoots = yield* Effect.forEach(
               turnInput.runtimePolicy.workspaceFolders?.extraRoots ?? [],
-              (root) => museCanonicalPath(root).pipe(Effect.flatMap(museWorkspaceRoot)),
+              museCanonicalPath,
             );
             const result = yield* request(
               "turn/start",

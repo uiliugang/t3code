@@ -33,12 +33,10 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
-import { isWindowsCommandNotFound } from "@t3tools/provider-core/server/snapshotProbe";
 import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
 import { collectStreamAsString } from "@t3tools/provider-core/server/snapshotProbe";
 import * as NetService from "@t3tools/shared/Net";
 import { AgentScope } from "@t3tools/shared/AgentScope";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   DEFAULT_VARIANT_CHOICE_ID,
   getModelSelectionStringOptionValue,
@@ -515,13 +513,11 @@ function ensureRuntimeError(
 const makeOpenCodeRuntime = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const netService = yield* NetService.NetService;
-  const hostPlatform = yield* HostProcess.Platform;
   const serverLedger = yield* OpenCodeServerLedger.OpenCodeServerLedger;
   const agentScope = yield* AgentScope;
   const random = yield* SecureRandom.SecureRandom;
-  // npm's Windows shim lets the child escape libuv kill-on-close; run its executable directly.
   const resolveCommand = (command: string, args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv) =>
-    resolveSpawnCommand(command, args, { ...(env ? { env } : {}), bypassNpmShim: true });
+    resolveSpawnCommand(command, args, env ? { env } : {});
 
   const runOpenCodeCommand: OpenCodeRuntime["Service"]["runOpenCodeCommand"] = Effect.fn(
     "OpenCodeRuntime.runOpenCodeCommand",
@@ -530,32 +526,23 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       const spawnCommand = yield* resolveCommand(input.binaryPath, input.args, input.environment);
       const child = yield* spawner.spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-          detached: hostPlatform !== "win32",
+          detached: true,
           shell: spawnCommand.shell,
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.environment ? { env: input.environment } : { extendEnv: true }),
         }),
       );
-      const terminateCommandGroup =
-        hostPlatform === "win32"
-          ? child.kill({ killSignal: "SIGKILL" }).pipe(Effect.asVoid)
-          : Effect.sync(() => {
-              try {
-                signalProcessGroup(Number(child.pid), "SIGKILL");
-              } catch {}
-            });
+      const terminateCommandGroup = Effect.sync(() => {
+        try {
+          signalProcessGroup(Number(child.pid), "SIGKILL");
+        } catch {}
+      });
       yield* Effect.addFinalizer(() => terminateCommandGroup.pipe(Effect.ignore));
       const [stdout, stderr, code] = yield* Effect.all(
         [collectStreamAsString(child.stdout), collectStreamAsString(child.stderr), child.exitCode],
         { concurrency: "unbounded" },
       );
       const exitCode = Number(code);
-      if (yield* isWindowsCommandNotFound(exitCode, stderr)) {
-        return yield* new OpenCodeRuntimeError({
-          operation: "runOpenCodeCommand",
-          detail: `spawn ${input.binaryPath} ENOENT`,
-        });
-      }
       return {
         stdout,
         stderr,
@@ -638,7 +625,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
     const child = yield* spawner
       .spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-          detached: hostPlatform !== "win32",
+          detached: true,
           shell: spawnCommand.shell,
           env: {
             ...input.environment,

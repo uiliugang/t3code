@@ -11,9 +11,6 @@ import * as Option from "effect/Option";
 import * as Random from "effect/Random";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as Stream from "effect/Stream";
-import * as ChildProcess from "effect/process/ChildProcess";
-import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { pathSetup, readUserLoginShell } from "@t3tools/shared/shell";
 
@@ -40,30 +37,6 @@ const knownLocations = (home: string, platform: NodeJS.Platform) =>
 const pathEntries = (value: string | undefined, separator: string) =>
   (value ?? "").split(separator).filter((entry) => entry.length > 0);
 
-const sameWindowsPath = (left: string, right: string) =>
-  left.replace(/[\\/]+$/, "").toLowerCase() === right.replace(/[\\/]+$/, "").toLowerCase();
-
-// Preserve REG_EXPAND_SZ and %VAR% expansion; notify Explorer with WM_SETTINGCHANGE.
-// Failed reads must exit nonzero to prevent replacing PATH wholesale.
-const WINDOWS_USER_PATH_SCRIPT = `
-$ErrorActionPreference = 'Stop'
-if ($env:T3_SET -eq '1') {
-  $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
-  $kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
-  if ($key.GetValueNames() -contains 'Path' -and $key.GetValueKind('Path') -eq 'String') {
-    $kind = [Microsoft.Win32.RegistryValueKind]::String
-  }
-  $key.SetValue('Path', $env:T3_PATH, $kind)
-  Add-Type -Namespace T3 -Name Env -MemberDefinition '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint Msg, System.UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out System.UIntPtr lpdwResult);'
-  $result = [System.UIntPtr]::Zero
-  [void][T3.Env]::SendMessageTimeout([System.IntPtr]0xffff, 0x1A, [System.UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
-} else {
-  $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
-  $value = if ($key) { $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames') } else { '' }
-  [Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$value)))
-}
-`;
-
 export class DesktopCliCommand extends Context.Service<
   DesktopCliCommand,
   {
@@ -80,15 +53,10 @@ export class DesktopCliCommand extends Context.Service<
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fs = yield* FileSystem.FileSystem;
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  // Read the live env: shell discovery patches PATH after startup, and Windows variable
-  // names are case-insensitive only on process.env, not on Config's copy of it.
+  // Read the live env: shell discovery patches PATH after startup.
   const env = yield* HostProcess.Environment;
   const path = environment.path;
-  const windows = environment.platform === "win32";
   const launcher = DesktopCliShim.launcherPath(environment);
-  const binDirectory = path.dirname(launcher);
-  const ownedPathMarker = path.join(environment.stateDir, "cli-command-path-entry");
   const firstLaunchMarker = path.join(environment.stateDir, "cli-command-first-launch");
 
   const fail = (message: string) => new DesktopCliCommandError({ message });
@@ -128,36 +96,6 @@ export const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => false),
   );
 
-  const powershell = (overrides: Record<string, string>) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const root = env.SystemRoot ?? env.WINDIR;
-        const handle = yield* spawner.spawn(
-          ChildProcess.make(
-            root ? `${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` : "powershell.exe",
-            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_USER_PATH_SCRIPT],
-            { stdin: "ignore", stderr: "ignore", env: overrides, extendEnv: true },
-          ),
-        );
-        const [stdout, exitCode] = yield* Effect.all(
-          [handle.stdout.pipe(Stream.decodeText(), Stream.mkString), handle.exitCode],
-          { concurrency: "unbounded" },
-        );
-        if (exitCode !== 0) return yield* Effect.fail(`powershell exited with ${exitCode}`);
-        return stdout;
-      }),
-    );
-  // Explicit, so an inherited T3_SET=1 can never turn a read into a PATH write.
-  const readUserPath = powershell({ T3_SET: "0" }).pipe(
-    Effect.map((encoded) => Buffer.from(encoded.trim(), "base64").toString("utf8")),
-    Effect.mapError(() => fail("Could not read your PATH, so it was left unchanged.")),
-  );
-  const writeUserPath = (value: string) =>
-    powershell({ T3_SET: "1", T3_PATH: value }).pipe(
-      Effect.asVoid,
-      Effect.mapError(() => fail("Could not update your PATH.")),
-    );
-
   const isExecutableFile = Effect.fn("DesktopCliCommand.isExecutableFile")(
     function* (target: string) {
       if ((yield* fs.stat(target)).type !== "File") return false;
@@ -179,7 +117,6 @@ export const make = Effect.gen(function* () {
   });
 
   const foreignFirstOnPath = Effect.gen(function* () {
-    if (windows) return Option.none<string>();
     const first = yield* firstOnPath;
     if (Option.isNone(first) || (yield* runsOurLauncher(first.value))) return Option.none<string>();
     return first;
@@ -193,13 +130,6 @@ export const make = Effect.gen(function* () {
     );
 
   const installedAt = Effect.gen(function* () {
-    if (windows) {
-      if (!(yield* exists(ownedPathMarker))) return Option.none<string>();
-      const entries = pathEntries(yield* readUserPath, ";");
-      return entries.some((entry) => sameWindowsPath(entry, binDirectory))
-        ? Option.some(launcher)
-        : Option.none<string>();
-    }
     for (const directory of knownLocations(environment.homeDirectory, environment.platform)) {
       const link = path.join(directory, "t3");
       if (yield* isOurLink(link)) return Option.some(link);
@@ -242,17 +172,13 @@ export const make = Effect.gen(function* () {
     const found = yield* installedAt;
     // Our link into another T3 home is not this app's command; Install updates it in place.
     const installed =
-      windows || (Option.isSome(found) && (yield* leadsHere(found.value)))
-        ? found
-        : Option.none<string>();
+      Option.isSome(found) && (yield* leadsHere(found.value)) ? found : Option.none<string>();
     const shadowedBy = (yield* foreignFirstOnPath).pipe(
       Option.filter((first) => first !== Option.getOrUndefined(found)),
     );
     const shadow = Option.isSome(shadowedBy) ? { shadowedBy: shadowedBy.value } : {};
     const first = yield* firstOnPath;
-    const onPath = windows
-      ? Option.isSome(installed)
-      : Option.isSome(first) && (yield* runsOurLauncher(first.value));
+    const onPath = Option.isSome(first) && (yield* runsOurLauncher(first.value));
     // Only a folder missing from PATH, with no other t3 first: with one, the added folder (last
     // on PATH) would still not run this t3.
     const setup =
@@ -295,22 +221,6 @@ export const make = Effect.gen(function* () {
   const install: DesktopCliCommand["Service"]["install"] = Effect.gen(function* () {
     if (!environment.isPackaged) return yield* fail("The t3 command needs an installed app.");
     yield* ensureLauncher;
-    if (windows) {
-      // PATH would split the folder at the `;`, leaving two wrong entries behind.
-      if (binDirectory.includes(";")) {
-        return yield* fail(
-          `T3 Code cannot put ${binDirectory} on PATH because it has a ";". Run ${launcher} directly.`,
-        );
-      }
-      const entries = pathEntries(yield* readUserPath, ";");
-      if (!entries.some((entry) => sameWindowsPath(entry, binDirectory))) {
-        yield* writeUserPath([...entries, binDirectory].join(";"));
-        yield* fs
-          .writeFileString(ownedPathMarker, `${binDirectory}\n`)
-          .pipe(Effect.mapError(() => fail("Added t3 to your PATH but could not record it.")));
-      }
-      return yield* state;
-    }
     const candidates = userCandidates(environment.homeDirectory);
     const replaced = Option.getOrUndefined(yield* installedAt);
     if (replaced !== undefined) {
@@ -372,15 +282,6 @@ export const make = Effect.gen(function* () {
   const uninstall: DesktopCliCommand["Service"]["uninstall"] = Effect.gen(function* () {
     // A first launch put off for the shell PATH must not bring back what the user removed.
     yield* fs.writeFileString(firstLaunchMarker, "").pipe(Effect.ignore);
-    if (windows) {
-      if (yield* exists(ownedPathMarker)) {
-        const entries = pathEntries(yield* readUserPath, ";");
-        const kept = entries.filter((entry) => !sameWindowsPath(entry, binDirectory));
-        if (kept.length !== entries.length) yield* writeUserPath(kept.join(";"));
-        yield* fs.remove(ownedPathMarker).pipe(Effect.ignore);
-      }
-      return yield* state;
-    }
     for (const directory of knownLocations(environment.homeDirectory, environment.platform)) {
       const link = path.join(directory, "t3");
       if (yield* isOurLink(link)) {
@@ -434,16 +335,13 @@ export const make = Effect.gen(function* () {
           });
         }
       }
-      // A t3 that is not ours in these folders, even off PATH, means the user has one already. On
-      // Windows the app never writes there, so any t3 there is someone else's.
+      // A foreign t3 found even off PATH is left alone.
       for (const directory of userCandidates(environment.homeDirectory)) {
-        for (const name of windows ? ["t3.cmd", "t3.exe"] : ["t3"]) {
-          const other = path.join(directory, name);
-          const present =
-            (yield* exists(other)) || Option.isSome(yield* fs.readLink(other).pipe(Effect.option));
-          if (present && (windows || !(yield* isOurLink(other)))) {
-            return yield* logInfo("left the t3 command to Settings beside another t3", { other });
-          }
+        const other = path.join(directory, "t3");
+        const present =
+          (yield* exists(other)) || Option.isSome(yield* fs.readLink(other).pipe(Effect.option));
+        if (present && !(yield* isOurLink(other))) {
+          return yield* logInfo("left the t3 command to Settings beside another t3", { other });
         }
       }
       const installed = yield* install;

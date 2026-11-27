@@ -984,7 +984,6 @@ export const make = Effect.gen(function* () {
     baseDir: yield* realPathOf(configuredT3Dirs.baseDir),
     worktreesDir: yield* realPathOf(configuredT3Dirs.worktreesDir),
   };
-  const platform = yield* HostProcess.Platform;
   const hostEnvironment = yield* HostProcess.Environment;
   const homeDir = yield* HostProcess.HomeDirectory;
   // `/private/tmp` is what macOS reports for sessions started in `/tmp`.
@@ -1963,11 +1962,7 @@ export const make = Effect.gen(function* () {
             instance.environment,
             hostEnvironment,
           ).pipe(Effect.provideService(HostProcess.HomeDirectory, homeDir));
-          homePath = resolvePiSessionsDir(
-            environment,
-            piHome(environment, homeDir, platform),
-            path,
-          );
+          homePath = resolvePiSessionsDir(environment, piHome(environment, homeDir), path);
         } else if (source === "claudeAgent") {
           const config = decodeClaudeSettings(instance.config ?? {});
           if (Option.isNone(config)) continue;

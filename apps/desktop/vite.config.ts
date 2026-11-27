@@ -1,5 +1,4 @@
 import "vite-plus/test/config";
-import * as NodeOS from "node:os";
 
 import { defaultInclude, defineConfig } from "vite-plus";
 import { Rolldown } from "vite-plus/pack";
@@ -16,11 +15,7 @@ const isMainProcessExternal = (id: string) =>
 const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
 // tsdown runs onSuccess through a shell. dash forks instead of exec'ing the last command, which
 // would leave an `sh` between `vp pack` and the supervisor and hide `vp pack` dying from it.
-const devElectronCommand =
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Build config has no Effect runtime.
-  NodeOS.platform() === "win32"
-    ? "node scripts/dev-electron.mjs"
-    : "exec node scripts/dev-electron.mjs";
+const devElectronCommand = "exec node scripts/dev-electron.mjs";
 const publicConfigDefine = {
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
@@ -114,9 +109,6 @@ export default defineConfig({
       define: publicConfigDefine,
       entry: [
         "src/backend/DesktopBackendRecoveryWorker.ts",
-        "src/electron/WindowsForegroundFocusWorker.ts",
-        "src/snapShot/GlobalShiftShortcutWorker.ts",
-        "src/snapShot/RegionSnapShotWorker.ts",
         "src/snapShot/SnapShotAccessibilityWorker.ts",
       ],
       clean: false,
@@ -183,8 +175,6 @@ export default defineConfig({
     },
   ],
   test: {
-    // The Windows lane runs workspace suites concurrently; filesystem-heavy
-    // desktop integration tests can exceed Vitest's 5 second default there.
     testTimeout: 15_000,
     // `require("electron")` downloads a missing binary, so concurrent workers race to
     // extract it into the same dist/. Install it once before any worker starts.
@@ -197,7 +187,6 @@ export default defineConfig({
           include: [...defaultInclude, "../../native/kde-snap-shot/src/*.test.ts"],
           exclude: ["**/node_modules/**", ...domTests],
           setupFiles: [
-            "../../packages/shared/src/testing/longTempDir.ts",
             "../../packages/shared/src/testing/providerEnv.ts",
             "../../packages/shared/src/testing/gitEnv.ts",
           ],

@@ -122,13 +122,7 @@ async function readCapturedWindowAccessibility(
   onStarted: () => void,
 ): Promise<CapturedWindowAccessibilityContext | undefined> {
   const { active, platform, sourceTitle, imageSize } = request;
-  const foreground = platform === "win32" ? await App.foreground({ timeout: 0 }) : undefined;
-  const pidWindows =
-    foreground !== undefined
-      ? foreground.pid === active.owner.processId
-        ? await foreground.children().catch(() => [])
-        : []
-      : await windowsForPid(App, active.owner.processId);
+  const pidWindows = await windowsForPid(App, active.owner.processId);
   const matchMode = isWaylandSession(platform, process.env) ? "wayland" : "screen-bounds";
   const captured = {
     title: active.title,
@@ -139,10 +133,10 @@ async function readCapturedWindowAccessibility(
     bundleId: pidWindows.length > 0 ? active.owner.bundleId : undefined,
   };
   const window = findAccessibleWindow(
-    pidWindows.length > 0 || foreground !== undefined ? pidWindows : await windowsFromAppList(App),
+    pidWindows.length > 0 ? pidWindows : await windowsFromAppList(App),
     captured,
     matchMode,
-    { allowUntitledUniqueBounds: foreground === undefined && pidWindows.length > 0 },
+    { allowUntitledUniqueBounds: pidWindows.length > 0 },
   );
   if (!window) {
     onStarted();

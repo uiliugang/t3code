@@ -398,7 +398,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
             message: prompt.message,
             ...(prompt.detail === undefined ? {} : { detail: prompt.detail }),
           },
-          platform === "win32" ? undefined : previewHostWindow(requester),
+          previewHostWindow(requester),
         )
         .pipe(
           Effect.map(({ response }): boolean | undefined => response === 0),
@@ -585,9 +585,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
               ),
             ].join("\n"),
           },
-          // In the reporter's Windows test, a box owned by the host window
-          // blocked all mouse input, its own buttons included, until it closed.
-          platform === "win32" ? undefined : previewHostWindow(contents),
+          previewHostWindow(contents),
         )
         .pipe(
           Effect.flatMap(({ response }) =>

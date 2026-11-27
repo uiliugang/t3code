@@ -1,6 +1,6 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { splitFilePathPosition } from "@t3tools/shared/fileLinks";
-import { isMacPlatform, isWindowsPlatform } from "./lib/utils";
+import { isMacPlatform } from "./lib/utils";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthOrchestrationOperateScope, type EnvironmentId } from "@t3tools/contracts";
 import { msg } from "gt-react";
@@ -19,7 +19,7 @@ export function useNativeFileDrag(
   const canOperate = useEnvironmentScope(environmentId ?? null, AuthOrchestrationOperateScope);
   const enabled =
     typeof window.desktopBridge?.startFileDrag === "function" &&
-    (isMacPlatform(navigator.platform) || isWindowsPlatform(navigator.platform)) &&
+    isMacPlatform(navigator.platform) &&
     environmentId != null &&
     environmentId === hostEnvironmentId &&
     canOperate;

@@ -49,7 +49,6 @@ const layerElectronApp = Layer.succeed(ElectronApp.ElectronApp, {
   setPath: () => Effect.void,
   setName: () => Effect.void,
   setAboutPanelOptions: () => Effect.void,
-  setAppUserModelId: () => Effect.void,
   getAppMetrics: Effect.succeed([]),
   setAsDefaultProtocolClient: () => Effect.succeed(true),
   setDesktopName: () => Effect.void,
@@ -103,7 +102,6 @@ const layerDesktopWindow = (selectedAction: Deferred.Deferred<string>) =>
     handleBackendReady: () => Effect.void,
     handleBackendNotReady: Effect.void,
     flushMainWindowBounds: Effect.void,
-    prepareCaptureReveal: Effect.void,
     dispatchMenuAction: (action) => Deferred.succeed(selectedAction, action).pipe(Effect.asVoid),
     dispatchSnapShotEvent: () => Effect.void,
     zoomMain: (direction) =>
@@ -231,7 +229,7 @@ const pressPasteAsText = (
 };
 
 describe("DesktopApplicationMenu", () => {
-  it.effect.each(["linux", "win32"] as const)(
+  it.effect.each(["linux"] as const)(
     "leaves the %s accelerator to Chromium instead of injecting a paste",
     (platform) =>
       Effect.gen(function* () {
@@ -317,7 +315,7 @@ describe("DesktopApplicationMenu", () => {
 
   it.effect("never binds Cmd/Ctrl+W to closing the window", () =>
     Effect.gen(function* () {
-      for (const platform of ["darwin", "linux", "win32"] as const) {
+      for (const platform of ["darwin", "linux"] as const) {
         const applicationMenuTemplate =
           yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
         yield* configureMenu(yield* Deferred.make<string>(), applicationMenuTemplate, {
@@ -420,7 +418,7 @@ describe("DesktopApplicationMenu", () => {
   it.effect("labels every role item so the menu follows the UI language", () =>
     Effect.gen(function* () {
       // Electron's role defaults are English on every platform, so each role item needs a label.
-      for (const platform of ["darwin", "linux", "win32"] as const) {
+      for (const platform of ["darwin", "linux"] as const) {
         const applicationMenuTemplate =
           yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
         yield* configureMenu(yield* Deferred.make<string>(), applicationMenuTemplate, {

@@ -8,15 +8,12 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import * as ResourceMonitorBinary from "./ResourceMonitorBinary.ts";
 
-// NTFS lacks POSIX exec bits required by this Linux-mocked override check.
-const windowsHost = HostProcess.Platform.defaultValue() === "win32";
-
 describe("ResourceMonitorBinary", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it.effect.skipIf(windowsHost)("resolves an executable override on an unsupported platform", () =>
+  it.effect("resolves an executable override on an unsupported platform", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -75,7 +72,7 @@ describe("ResourceMonitorBinary", () => {
 
       const service = yield* ResourceMonitorBinary.make().pipe(
         Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(HostProcess.Platform, "darwin"),
         Effect.provideService(HostProcess.Architecture, "arm64"),
         Effect.provideService(HostProcess.Environment, {
           T3CODE_RESOURCE_MONITOR_PATH: baseDir,
@@ -106,7 +103,7 @@ describe("ResourceMonitorBinary", () => {
           "target",
           profile,
         );
-        const binaryPath = path.join(binaryDirectory, "t3-resource-monitor.exe");
+        const binaryPath = path.join(binaryDirectory, "t3-resource-monitor");
         yield* fileSystem.makeDirectory(distDirectory, { recursive: true });
         yield* fileSystem.makeDirectory(binaryDirectory, { recursive: true });
         yield* fileSystem.writeFileString(binaryPath, "binary");
@@ -124,7 +121,7 @@ describe("ResourceMonitorBinary", () => {
               ),
           }),
           Effect.provide(ServerConfig.layerTest(projectDirectory, baseDir)),
-          Effect.provideService(HostProcess.Platform, "win32"),
+          Effect.provideService(HostProcess.Platform, "darwin"),
           Effect.provideService(HostProcess.Architecture, "arm64"),
           Effect.provideService(HostProcess.Environment, {}),
         );

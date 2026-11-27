@@ -11,15 +11,12 @@ export const DesktopBackendBootstrap = Schema.Struct({
   mode: Schema.Literal("desktop"),
   noBrowser: Schema.Boolean,
   port: PortSchema,
-  // Omit in WSL to use the Linux home instead of the mapped Windows directory.
   t3Home: Schema.optional(Schema.String),
   host: Schema.String,
   desktopBootstrapToken: Schema.String,
   // Derives rotating tokens instead of trusting desktopBootstrapToken indefinitely; see @t3tools/shared/desktopBootstrapToken.
   desktopBootstrapSecret: Schema.optionalKey(Schema.String),
-  // Fresh per launch. A backend without a control channel proves it holds this before it counts as ready; see @t3tools/shared/desktopReadinessProof.
-  desktopReadinessSecret: Schema.optionalKey(Schema.String),
-  // Absent means the backend must hydrate PATH, as WSL and older desktops require.
+  // Absent means the backend must hydrate PATH, as older desktops require.
   shellEnvironmentPrepared: Schema.optionalKey(Schema.Boolean),
   tailscaleServeEnabled: Schema.Boolean,
   tailscaleServePort: PortSchema,

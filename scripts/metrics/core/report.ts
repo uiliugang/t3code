@@ -70,7 +70,7 @@ export function topCounts(lists: ReadonlyArray<ReadonlyArray<typeof Count.Type>>
 }
 
 export const MachineState = Schema.Struct({
-  /** The highest 1-minute load average read through the run; none on Windows. */
+  /** The highest 1-minute load average read through the run; may be absent in historical reports. */
   load1: Schema.NullOr(Schema.Number),
   /** Cores other node, T3 and agent processes kept busy over the run; Linux only. */
   otherCpuCores: Schema.NullOr(Schema.Number),

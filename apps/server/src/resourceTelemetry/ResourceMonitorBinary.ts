@@ -58,16 +58,14 @@ export class ResourceMonitorBinary extends Context.Service<
   }
 >()("t3/resourceTelemetry/ResourceMonitorBinary") {}
 
-function binaryName(platform: NodeJS.Platform): string {
-  return platform === "win32" ? "t3-resource-monitor.exe" : "t3-resource-monitor";
-}
+const executableName = "t3-resource-monitor";
 
 function resourceMonitorPlatformKey(
   platform: NodeJS.Platform,
   architecture: NodeJS.Architecture,
 ): string | undefined {
   if (
-    (platform !== "darwin" && platform !== "linux" && platform !== "win32") ||
+    (platform !== "darwin" && platform !== "linux") ||
     (architecture !== "arm64" && architecture !== "x64")
   ) {
     return undefined;
@@ -97,13 +95,6 @@ function resourceMonitorRustTarget(
         ? "x86_64-unknown-linux-gnu"
         : undefined;
   }
-  if (platform === "win32") {
-    return architecture === "arm64"
-      ? "aarch64-pc-windows-msvc"
-      : architecture === "x64"
-        ? "x86_64-pc-windows-msvc"
-        : undefined;
-  }
   return undefined;
 }
 
@@ -115,7 +106,6 @@ export const make = Effect.fn("resourceTelemetry.resourceMonitorBinary.make")(fu
   const architecture = yield* HostProcess.Architecture;
   const environment = yield* HostProcess.Environment;
   const linuxLibc = platform === "linux" ? yield* HostProcess.LinuxLibc : undefined;
-  const executableName = binaryName(platform);
   const platformKey = resourceMonitorPlatformKey(platform, architecture);
   const rustTarget = resourceMonitorRustTarget(platform, architecture, linuxLibc);
   const overrideCandidates = [
@@ -165,10 +155,7 @@ export const make = Effect.fn("resourceTelemetry.resourceMonitorBinary.make")(fu
 
       const stat = yield* fileSystem.stat(candidate).pipe(Effect.option);
       if (Option.isSome(stat)) {
-        // Windows skips exec-bit checks, so directories would otherwise pass until spawn.
-        const unusable =
-          stat.value.type === "Directory" ||
-          (platform !== "win32" && (stat.value.mode & 0o111) === 0);
+        const unusable = stat.value.type === "Directory" || (stat.value.mode & 0o111) === 0;
         if (unusable) {
           return yield* new ResourceMonitorBinaryNotExecutable({
             path: candidate,

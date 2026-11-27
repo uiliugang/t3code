@@ -50,7 +50,7 @@ import { privatePullRequestPushConfigKey } from "@t3tools/source-control-core/se
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { resolveSpawnCommand, runsGitWithoutConsole } from "@t3tools/shared/shell";
+import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { resolveProjectFileBackedSetting } from "@t3tools/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
@@ -1152,13 +1152,6 @@ const collectOutput = Effect.fnUntraced(function* (
   };
 });
 
-/** Windows Git needs core.longpaths beyond MAX_PATH (260); OS LongPathsEnabled alone is insufficient. */
-export const windowsLongPathConfigEnv = (
-  platform: NodeJS.Platform,
-  env: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv =>
-  platform === "win32" ? gitConfigEnv(env, "core.longpaths", "true", platform) : {};
-
 export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -1291,12 +1284,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ),
         Effect.mapError(unreadable(file)),
       );
-      // Git skips a hook it may not execute; Windows has no such bit, so any file counts.
-      if (
-        info === null ||
-        info.type !== "File" ||
-        (runnable && hostPlatform !== "win32" && (info.mode & 0o111) === 0)
-      ) {
+      // Git skips a hook it may not execute.
+      if (info === null || info.type !== "File" || (runnable && (info.mode & 0o111) === 0)) {
         return null;
       }
       return yield* fileSystem.readFile(file).pipe(Effect.mapError(unreadable(file)));
@@ -1498,26 +1487,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           limits === undefined
             ? commandInput.args
             : ["-c", `core.hooksPath=${limits.hooksPath}`, ...commandInput.args];
-        const spawnEnv = { ...env, ...windowsLongPathConfigEnv(hostPlatform, env) };
-        const resolved = yield* resolveSpawnCommand("git", [], { env: spawnEnv });
+        const resolved = yield* resolveSpawnCommand("git", [], { env });
         const spawnError = (cause: unknown) =>
           new GitCommandError({
             ...gitCommandContext(commandInput),
             detail: "Failed to spawn Git process.",
             cause,
           });
-        // cmd wrappers truncate multiline commits; leave git.cmd handling to Node lookup.
-        const executable = resolved.shell ? "git" : resolved.command;
         const child = yield* commandSpawner
           .spawn(
-            ChildProcess.make(executable, spawnArgs, {
+            ChildProcess.make(resolved.command, spawnArgs, {
               cwd: commandInput.cwd,
-              env: spawnEnv,
+              env,
               // SIGTERM first lets git remove its lock files; SIGKILL ends one that ignores it.
               forceKillAfter: "1 second",
-              ...(runsGitWithoutConsole(hostPlatform, executable, commandInput.args)
-                ? { detached: true, windowsHide: true }
-                : {}),
             }),
           )
           .pipe(
@@ -1930,9 +1913,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     ];
     return {
       GIT_OBJECT_DIRECTORY: privateObjects,
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: alternates
-        .map(quoted)
-        .join(hostPlatform === "win32" ? ";" : ":"),
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: alternates.map(quoted).join(":"),
     } satisfies NodeJS.ProcessEnv;
   };
 
@@ -5220,7 +5201,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       "hash-object",
       "-t",
       "tree",
-      (yield* HostProcess.Platform) === "win32" ? "NUL" : "/dev/null",
+      "/dev/null",
     ]);
     return stdout.trim();
   });
@@ -7807,15 +7788,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     "removeWorktree",
   )(function* (input) {
     // Git also matches a worktree by its short name, which can name a different
-    // folder than this path. Resolving it once keeps Git, the Windows deletion
-    // in removeLinkedWorktree, and the leftover cleanup below on one directory.
+    // folder than this path. Use one absolute path for Git and leftover cleanup.
     const target = path.resolve(input.cwd, input.path);
     const result = yield* removeLinkedWorktree({
       operation: "GitVcsDriver.removeWorktree",
       cwd: input.cwd,
       worktreePath: target,
       force: input.force === true,
-      execute,
       run: (args) =>
         executeGitWithStableDiagnostics("GitVcsDriver.removeWorktree", input.cwd, args, {
           timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
@@ -7826,7 +7805,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       Effect.provideService(Path.Path, path),
     );
     if (result.exitCode === 0) {
-      // Git for Windows reports success without removing NTFS junctions or their parent directories.
+      // Cleanup cannot assume that Git removed every link.
       // Log leftover cleanup failures: Git already unregistered the worktree, so removal cannot be retried.
       if (yield* fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false))) {
         const removed = yield* removeLeftoverLinks(target).pipe(

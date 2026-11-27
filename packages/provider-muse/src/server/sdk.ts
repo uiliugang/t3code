@@ -12,7 +12,6 @@ import {
 import type { RuntimeMode } from "@t3tools/contracts";
 import { envTrampoline, supportsEnvChdir } from "@t3tools/shared/envTrampoline";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -79,11 +78,6 @@ export function makeMuseEnvironment(
   };
 }
 
-export function museVerbatimPath(path: string): string {
-  if (path.startsWith("\\\\?\\")) return path;
-  return path.startsWith("\\\\") ? `\\\\?\\UNC\\${path.slice(2)}` : `\\\\?\\${path}`;
-}
-
 // Native realpath corrects filesystem case as well as resolving symlinks.
 export const museCanonicalPath = Effect.fn("museCanonicalPath")(function* (path: string) {
   return yield* Effect.tryPromise({
@@ -92,50 +86,8 @@ export const museCanonicalPath = Effect.fn("museCanonicalPath")(function* (path:
   }).pipe(Effect.orElseSucceed(() => path));
 });
 
-// Windows turn roots need verbatim form; launch cmd.exe with the plain canonical path.
-export const museWorkspaceRoot = Effect.fn("museWorkspaceRoot")(function* (path: string) {
-  if ((yield* HostProcess.Platform) !== "win32") return yield* museCanonicalPath(path);
-  const canonical = yield* Effect.tryPromise({
-    try: () => NodeFSP.realpath(path),
-    catch: (cause) => new MuseSdkError({ operation: "realpath", cause }),
-  }).pipe(
-    // A verbatim path takes `/` literally, so an unresolved root needs Windows separators.
-    Effect.orElseSucceed(() => path.replaceAll("/", "\\")),
-  );
-  return museVerbatimPath(canonical);
-});
-
-function windowsEnvironmentValue(environment: NodeJS.ProcessEnv, name: string) {
-  const key = Object.keys(environment).find(
-    (candidate) => candidate.toUpperCase() === name.toUpperCase(),
-  );
-  return key === undefined ? undefined : environment[key];
-}
-
-/** Resolve Windows launchers with PATHEXT and run .cmd/.bat under cmd.exe; SDK spawn has no shell. */
-export const museLaunch = Effect.fn("museLaunch")(function* (
-  binaryPath: string,
-  environment?: NodeJS.ProcessEnv,
-): Effect.fn.Return<MuseLaunch> {
-  if ((yield* HostProcess.Platform) !== "win32") return { command: binaryPath, args: [] };
-  const env = environment ?? (yield* HostProcess.Environment);
-  const resolveExecutable = yield* SpawnExecutableResolution;
-  const resolved =
-    (yield* Effect.promise(async () => resolveExecutable(binaryPath, "win32", env))) ?? binaryPath;
-  if (!/\.(?:cmd|bat)$/i.test(resolved)) return { command: resolved, args: [] };
-  const systemRoot = windowsEnvironmentValue(env, "SystemRoot");
-  return {
-    command:
-      windowsEnvironmentValue(env, "ComSpec") ??
-      (systemRoot ? `${systemRoot}\\System32\\cmd.exe` : "cmd.exe"),
-    // /d prevents AutoRun stdout; bare @ preserves quoted paths that cmd /c would unquote.
-    args: [
-      "/d",
-      "/c",
-      ...(/\s/.test(resolved) ? ["@", resolved] : [resolved.replace(/[()&<>@^|]/g, "^$&")]),
-    ],
-  };
-});
+export const museLaunch = (binaryPath: string): Effect.Effect<MuseLaunch> =>
+  Effect.succeed({ command: binaryPath, args: [] });
 
 export function museApprovalMode(runtimeMode: RuntimeMode) {
   return runtimeMode === "full-access" ? "allowAll" : "promptUnmatched";
@@ -231,7 +183,7 @@ export const createMuseSdkHostEffect = Effect.fn("createMuseSdkHostEffect")(func
   options: Omit<MuseSdkHostOptions, "signal">,
   createHost: typeof createMuseSdkHost = createMuseSdkHost,
 ) {
-  const native = options.launch ?? (yield* museLaunch(options.binaryPath, options.environment));
+  const native = options.launch ?? (yield* museLaunch(options.binaryPath));
   // The Muse SDK hands libuv the cwd and the PATH search, which freeze the server while a
   // mount under either hangs; `env` does both in the child.
   const throughEnv =

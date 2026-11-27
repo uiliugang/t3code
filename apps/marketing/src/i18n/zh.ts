@@ -24,7 +24,7 @@ export const zh: Messages = {
     heroSub:
       "在同一个界面里调度 Claude Code、Codex、Antigravity、OpenCode、Cursor 和 Grok。用你自己的订阅。整个项目都可以 fork。",
     downloadForMac: "下载 macOS 版",
-    downloadForWindows: "下载 Windows 版",
+    openWebApp: "打开网页版",
     downloadForLinux: "下载 Linux 版",
     downloadForIos: "下载 iOS 版",
     downloadForAndroid: "下载 Android 版",
@@ -73,9 +73,9 @@ export const zh: Messages = {
     otherPlatforms: "其他平台",
   },
   download: {
-    title: "下载 T3 Code：macOS、Windows 和 Linux 版 | T3 Code",
+    title: "下载 T3 Code：macOS 和 Linux 版 | T3 Code",
     description:
-      "下载 T3 Code 官方桌面应用（macOS、Windows 或 Linux），或获取 iOS 和 Android 应用。t3.codes 是唯一的官方下载网站。",
+      "下载 T3 Code 官方桌面应用（macOS 或 Linux），或获取 iOS 和 Android 应用。t3.codes 是唯一的官方下载网站。",
     breadcrumb: "下载",
     heading: "下载 T3 Code",
     channelLabel: "发布通道",

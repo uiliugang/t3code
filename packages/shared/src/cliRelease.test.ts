@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  cliArchiveTarCommand,
-  cliReleaseAssetUrl,
-  newestCliReleaseVersion,
-  parseChecksums,
-} from "./cliRelease.ts";
+import { cliReleaseAssetUrl, newestCliReleaseVersion, parseChecksums } from "./cliRelease.ts";
 
 describe("cliRelease", () => {
   it("downloads fork runtimes from the matching fork release", () => {
@@ -28,14 +23,6 @@ describe("cliRelease", () => {
     expect(checksums.get("t3-1.2.3-linux-x64.tar.gz")).toBe("a".repeat(64));
     expect(checksums.get("t3-1.2.3-win32-x64.zip")).toBe("b".repeat(64));
     expect(checksums.size).toBe(2);
-  });
-
-  it("extracts with the System32 bsdtar on Windows and plain tar elsewhere", () => {
-    expect(cliArchiveTarCommand("linux", {})).toBe("tar");
-    expect(cliArchiveTarCommand("win32", { SystemRoot: "D:\\Win" })).toBe(
-      "D:\\Win\\System32\\tar.exe",
-    );
-    expect(cliArchiveTarCommand("win32", {})).toBe("C:\\Windows\\System32\\tar.exe");
   });
 
   it("picks the newest non-draft release on the requested channel", () => {

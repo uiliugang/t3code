@@ -23,7 +23,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { envTrampoline, supportsEnvChdir } from "@t3tools/shared/envTrampoline";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as SpawnWorker from "../process/SpawnWorker.ts";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
   query as claudeQuery,
@@ -47,7 +46,6 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "@t3tools/provider-core/server/snapshotProbe";
-import { resolveClaudeSdkExecutablePath } from "./Drivers/ClaudeExecutable.ts";
 import {
   claudeSignedOutMessage,
   hasClaudeManagedMcpConfig,
@@ -228,7 +226,6 @@ function claudeAuthStatus(
 
 // Bedrock initialization includes backend startup and awsAuthRefresh, taking longer than first-party auth.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
-// Native CLI startup on Windows can exceed the shared probe deadline.
 const CLAUDE_VERSION_CHECK_TIMEOUT_MS = 20_000;
 
 const CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES = [
@@ -259,14 +256,6 @@ export function spawnClaudeProbeThroughEnv({
   });
 }
 
-/** Windows runs CreateProcess on the calling thread, so the probe launches from a launcher thread. */
-function spawnClaudeProbeOffThread({ command, args, cwd, env, signal }: ClaudeSpawnOptions) {
-  const child = SpawnWorker.spawnPiped(command, args, { cwd, env, signal, windowsHide: true });
-  // The probe ignores stderr; drain it so a full pipe cannot stall the CLI.
-  child.stderr.resume();
-  return child;
-}
-
 export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly executablePath: string;
   readonly abortController: AbortController;
@@ -274,13 +263,10 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly cwd: string | undefined;
   readonly managedMcpConfig: boolean;
   readonly customModelsOnly?: boolean;
-  readonly spawnVia: "env" | "launcher-thread" | undefined;
+  readonly spawnVia: "env" | undefined;
 }): ClaudeQueryOptions {
   return {
     ...(input.spawnVia === "env" ? { spawnClaudeCodeProcess: spawnClaudeProbeThroughEnv } : {}),
-    ...(input.spawnVia === "launcher-thread"
-      ? { spawnClaudeCodeProcess: spawnClaudeProbeOffThread }
-      : {}),
     persistSession: false,
     pathToClaudeCodeExecutable: input.executablePath,
     abortController: input.abortController,
@@ -295,7 +281,6 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
       ...providerProbeEnvironment(input.environment),
       // Disable claude.ai MCP separately; it is discovered outside filesystem config.
       ENABLE_CLAUDEAI_MCP_SERVERS: "false",
-      // Skipping this avoids a Windows tasklist | findstr process tree on every refresh.
       FORCE_CODE_TERMINAL: undefined,
       CLAUDE_CODE_AUTO_CONNECT_IDE: "0",
       CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
@@ -501,10 +486,6 @@ const probeClaudeCapabilities = (
   });
   return Effect.gen(function* () {
     const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
-    const executablePath = yield* resolveClaudeSdkExecutablePath(
-      claudeSettings.binaryPath,
-      claudeEnvironment,
-    );
     const managedMcpConfig = yield* hasClaudeManagedMcpConfig();
     // Workspace probes (no usage) discard models; the machine probe refreshes the shared cache.
     const graceMs = includeStatus
@@ -515,11 +496,7 @@ const probeClaudeCapabilities = (
       : 0;
     const platform = yield* HostProcess.Platform;
     const spawnVia =
-      platform === "win32"
-        ? "launcher-thread"
-        : platform === "linux" && (yield* Effect.promise(supportsEnvChdir))
-          ? "env"
-          : undefined;
+      platform === "linux" && (yield* Effect.promise(supportsEnvChdir)) ? "env" : undefined;
     return yield* Effect.tryPromise({
       try: async () => {
         const q = claudeQuery({
@@ -528,7 +505,7 @@ const probeClaudeCapabilities = (
             await waitForAbortSignal(abort.signal);
           })(),
           options: buildClaudeCapabilitiesProbeQueryOptions({
-            executablePath,
+            executablePath: claudeSettings.binaryPath,
             abortController: abort,
             environment: claudeEnvironment,
             cwd,

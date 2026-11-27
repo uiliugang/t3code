@@ -120,81 +120,8 @@ releaseDate: '2026-03-08T10:36:07.540Z'
   return { arm64Path, x64Path };
 }
 
-function writeWindowsManifestFixtures(
-  targetRoot: string,
-  channel: string,
-): { arm64Path: string; x64Path: string } {
-  const assetDirectory = NodePath.resolve(targetRoot, "release-assets");
-  NodeFS.mkdirSync(assetDirectory, { recursive: true });
-
-  const arm64Path = NodePath.resolve(assetDirectory, `${channel}-win-arm64.yml`);
-  const x64Path = NodePath.resolve(assetDirectory, `${channel}-win-x64.yml`);
-
-  NodeFS.writeFileSync(
-    arm64Path,
-    `version: 9.9.9-smoke.0
-files:
-  - url: T3-Code-9.9.9-smoke.0-arm64.exe
-    sha512: arm64exe
-    size: 126621344
-  - url: T3-Code-9.9.9-smoke.0-arm64.exe.blockmap
-    sha512: arm64blockmap
-    size: 152344
-path: T3-Code-9.9.9-smoke.0-arm64.exe
-sha512: arm64exe
-releaseDate: '2026-03-08T10:32:14.587Z'
-`,
-  );
-
-  NodeFS.writeFileSync(
-    x64Path,
-    `version: 9.9.9-smoke.0
-files:
-  - url: T3-Code-9.9.9-smoke.0-x64.exe
-    sha512: x64exe
-    size: 132000112
-  - url: T3-Code-9.9.9-smoke.0-x64.exe.blockmap
-    sha512: x64blockmap
-    size: 160112
-path: T3-Code-9.9.9-smoke.0-x64.exe
-sha512: x64exe
-releaseDate: '2026-03-08T10:36:07.540Z'
-`,
-  );
-
-  return { arm64Path, x64Path };
-}
-
-function writeWindowsBuilderDebugFixtures(targetRoot: string): {
-  arm64Path: string;
-  x64Path: string;
-} {
-  const assetDirectory = NodePath.resolve(targetRoot, "release-assets");
-  NodeFS.mkdirSync(assetDirectory, { recursive: true });
-
-  const arm64Path = NodePath.resolve(assetDirectory, "builder-debug-win-arm64.yml");
-  const x64Path = NodePath.resolve(assetDirectory, "builder-debug-win-x64.yml");
-  const debugFixture = `arm64:
-  firstOrDefaultFilePatterns:
-    - '**/*'
-nsis:
-  script: |-
-    !include "example.nsh"
-`;
-
-  NodeFS.writeFileSync(arm64Path, debugFixture);
-  NodeFS.writeFileSync(x64Path, debugFixture);
-
-  return { arm64Path, x64Path };
-}
 function assertContains(haystack: string, needle: string, message: string): void {
   if (!haystack.includes(needle)) {
-    throw new Error(message);
-  }
-}
-
-function assertExists(path: string, message: string): void {
-  if (!NodeFS.existsSync(path)) {
     throw new Error(message);
   }
 }
@@ -286,19 +213,6 @@ try {
   );
 
   const { arm64Path, x64Path } = writeMacManifestFixtures(tempRoot);
-  const { arm64Path: winArm64Path, x64Path: winX64Path } = writeWindowsManifestFixtures(
-    tempRoot,
-    "latest",
-  );
-  const mergedWindowsManifestPath = NodePath.resolve(tempRoot, "release-assets/latest.yml");
-  const { arm64Path: nightlyWinArm64Path, x64Path: nightlyWinX64Path } =
-    writeWindowsManifestFixtures(tempRoot, "nightly");
-  const mergedNightlyWindowsManifestPath = NodePath.resolve(tempRoot, "release-assets/nightly.yml");
-  const { arm64Path: previewWinArm64Path, x64Path: previewWinX64Path } =
-    writeWindowsManifestFixtures(tempRoot, "preview");
-  const mergedPreviewWindowsManifestPath = NodePath.resolve(tempRoot, "release-assets/preview.yml");
-  const { arm64Path: winDebugArm64Path, x64Path: winDebugX64Path } =
-    writeWindowsBuilderDebugFixtures(tempRoot);
   NodeChildProcess.execFileSync(
     process.execPath,
     [
@@ -324,73 +238,9 @@ try {
   );
   assertMissing(x64Path, "Release smoke unexpectedly kept the x64 macOS updater manifest.");
 
-  const mergedWindowsManifest = NodeFS.readFileSync(mergedWindowsManifestPath, "utf8");
-  assertContains(
-    mergedWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-arm64.exe",
-    "Merged Windows manifest is missing the arm64 asset.",
-  );
-  assertContains(
-    mergedWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-x64.exe",
-    "Merged Windows manifest is missing the x64 asset.",
-  );
-  const mergedNightlyWindowsManifest = NodeFS.readFileSync(
-    mergedNightlyWindowsManifestPath,
-    "utf8",
-  );
-  assertContains(
-    mergedNightlyWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-arm64.exe",
-    "Merged nightly Windows manifest is missing the arm64 asset.",
-  );
-  assertContains(
-    mergedNightlyWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-x64.exe",
-    "Merged nightly Windows manifest is missing the x64 asset.",
-  );
-  const mergedPreviewWindowsManifest = NodeFS.readFileSync(
-    mergedPreviewWindowsManifestPath,
-    "utf8",
-  );
-  assertContains(
-    mergedPreviewWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-arm64.exe",
-    "Merged preview Windows manifest is missing the arm64 asset.",
-  );
-  assertContains(
-    mergedPreviewWindowsManifest,
-    "T3-Code-9.9.9-smoke.0-x64.exe",
-    "Merged preview Windows manifest is missing the x64 asset.",
-  );
   assertMissing(
-    winArm64Path,
-    "Windows release smoke unexpectedly kept the arm64 updater manifest.",
-  );
-  assertMissing(winX64Path, "Windows release smoke unexpectedly kept the x64 updater manifest.");
-  assertMissing(
-    nightlyWinArm64Path,
-    "Windows release smoke unexpectedly kept the nightly arm64 updater manifest.",
-  );
-  assertMissing(
-    nightlyWinX64Path,
-    "Windows release smoke unexpectedly kept the nightly x64 updater manifest.",
-  );
-  assertMissing(
-    previewWinArm64Path,
-    "Windows release smoke unexpectedly kept the preview arm64 updater manifest.",
-  );
-  assertMissing(
-    previewWinX64Path,
-    "Windows release smoke unexpectedly kept the preview x64 updater manifest.",
-  );
-  assertExists(
-    winDebugArm64Path,
-    "Windows release smoke unexpectedly removed the arm64 builder debug fixture.",
-  );
-  assertExists(
-    winDebugX64Path,
-    "Windows release smoke unexpectedly removed the x64 builder debug fixture.",
+    NodePath.resolve(tempRoot, "release-assets/latest.yml"),
+    "Release smoke unexpectedly produced a legacy Windows updater manifest.",
   );
 
   Effect.runSync(Console.log("Release smoke checks passed."));

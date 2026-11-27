@@ -65,8 +65,7 @@ through `/api/preview/tunnel` on the environment's own origin:
   renderer supplies a media ticket per connection (also tracking route switches). Because Chromium
   cannot authenticate to SOCKS5 and a forwarded port is a plain local port, on Linux and macOS both
   listeners serve only connections the system attributes to the current OS user (`/proc/net/tcp`
-  on Linux, `lsof` on macOS), and a connection whose owner cannot be read is refused. On Windows
-  the listeners do not check the owner.
+  on Linux, `lsof` on macOS), and a connection whose owner cannot be read is refused.
 
 ## Access and process ownership are separate
 

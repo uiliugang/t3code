@@ -17,7 +17,7 @@ import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
 import {
   museInitializeParams,
   museServeArgs,
-  museWorkspaceRoot,
+  museCanonicalPath,
   type MuseSdkHost,
   type MuseSdkHostOptions,
 } from "@t3tools/provider-muse/testing";
@@ -439,7 +439,7 @@ export function layer(input: {
   );
 }
 
-/** Uses canonical workspace paths, with turn/start in museWorkspaceRoot form (verbatim on Windows). */
+/** Uses canonical workspace paths, including turn/start. */
 export const materializeMuseReplayWorkspace = Effect.fn("materializeMuseReplayWorkspace")(
   function* (transcript: ProviderReplayTranscript, workspace: string) {
     const canonical = yield* FileSystem.FileSystem.pipe(
@@ -449,7 +449,7 @@ export const materializeMuseReplayWorkspace = Effect.fn("materializeMuseReplayWo
     const plain = materializeReplayTranscriptWorkspace(transcript, canonical);
     const turnStarts = materializeReplayTranscriptWorkspace(
       transcript,
-      yield* museWorkspaceRoot(canonical),
+      yield* museCanonicalPath(canonical),
     );
     return {
       ...plain,

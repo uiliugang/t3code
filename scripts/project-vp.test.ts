@@ -3,10 +3,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { expect, it as test } from "vite-plus/test";
-
-const it = test.runIf(HostProcess.Platform.defaultValue() !== "win32");
+import { expect, it } from "vite-plus/test";
 
 const repository = NodePath.resolve(import.meta.dirname, "..");
 
@@ -156,11 +153,7 @@ it("bootstraps Vite+ without Node and reuses it without changing shell configura
 it("ignores another worktree launcher on PATH instead of recursively probing it", async () => {
   await using setup = await fixture();
   const other = NodePath.join(setup.root, "other worktree");
-  await NodeFSP.mkdir(NodePath.join(other, "scripts"), { recursive: true });
-  await NodeFSP.copyFile(
-    NodePath.join(repository, "scripts/project-vp.ps1"),
-    NodePath.join(other, "scripts/project-vp.ps1"),
-  );
+  await NodeFSP.mkdir(other);
   await NodeFSP.copyFile(
     NodePath.join(setup.project, "package.json"),
     NodePath.join(other, "package.json"),
@@ -178,6 +171,7 @@ it("ignores another worktree launcher on PATH instead of recursively probing it"
   expect(result.stdout.trim()).toBe(process.version);
   const calls = await NodeFSP.readFile(setup.env.TEST_LOG, "utf8");
   expect(calls.match(/^env current --json$/gm)).toHaveLength(1);
+  expect(calls.match(/^env install node@26\.13\.1$/gm)).toHaveLength(1);
 });
 
 it("stops before starting a task when the runtime cannot be installed", async () => {
@@ -200,60 +194,3 @@ it("rejects a non-exact project version before invoking the installer", async ()
   expect(result.stderr).toContain("engines.node");
   await expect(NodeFSP.stat(setup.env.TEST_LOG)).rejects.toMatchObject({ code: "ENOENT" });
 });
-
-const powerShell = HostProcess.Platform.defaultValue() === "win32" ? "powershell.exe" : "pwsh";
-const hasPowerShell =
-  NodeChildProcess.spawnSync(powerShell, ["-NoProfile", "-Command", "exit 0"]).status === 0;
-
-test.runIf(hasPowerShell)(
-  "preserves arguments, pipelines, cwd and exit status in Windows PowerShell's legacy argument mode",
-  () => {
-    const script = NodePath.join(repository, "vp.ps1").replaceAll("'", "''");
-    const packageDirectory = NodePath.join(repository, "apps/mobile").replaceAll("'", "''");
-    const result = NodeChildProcess.spawnSync(
-      powerShell,
-      [
-        "-NoProfile",
-        "-Command",
-        String.raw`
-$PSNativeCommandArgumentPassing = 'Legacy'
-$PSNativeCommandUseErrorActionPreference = $true
-$originalPath = $env:PATH
-Set-Location '${packageDirectory}'
-$cwd = & '${script}' exec node -p 'process.cwd()'
-if ($cwd -ne $PWD.Path) { throw 'Native working directory differs from the shell' }
-$captured = & '${script}' exec node -e 'console.log(JSON.stringify(process.argv.slice(1)));process.exitCode=23' 'a"b' '' 'space & $value' 'C:\path with space\'
-$resultCode = $LASTEXITCODE
-if ($null -eq $captured) { throw 'Native output bypassed the pipeline' }
-if ($env:PATH -ne $originalPath) { throw 'Shell PATH changed' }
-if (-not $PSNativeCommandUseErrorActionPreference) { throw 'Native error preference changed' }
-$piped = 'pipeline line' | & '${script}' exec node -e 'console.log("PIPE:"+require("node:fs").readFileSync(0,"utf8").trim())'
-if ($piped -ne 'PIPE:pipeline line') { throw 'Native input bypassed the pipeline' }
-Write-Output $captured
-exit $resultCode
-`,
-      ],
-      { encoding: "utf8" },
-    );
-    expect(result.status, result.stderr).toBe(23);
-    expect(JSON.parse(result.stdout)).toEqual([
-      'a"b',
-      "",
-      "space & $value",
-      "C:\\path with space\\",
-    ]);
-  },
-);
-
-test.runIf(HostProcess.Platform.defaultValue() === "win32")(
-  "runs the T3 project launcher through Command Prompt",
-  () => {
-    const result = NodeChildProcess.spawnSync(
-      "cmd.exe",
-      ["/d", "/s", "/c", "./vp exec node --version"],
-      { cwd: repository, encoding: "utf8" },
-    );
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout.trim()).toBe(process.version);
-  },
-);

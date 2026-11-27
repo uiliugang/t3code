@@ -2,17 +2,14 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
-
 export interface FakeCliOptions {
   readonly directory: string;
   readonly name: string;
   readonly source: string;
   readonly env?: Readonly<Record<string, string>>;
-  readonly platform?: NodeJS.Platform;
 }
 
-/** Returns a POSIX shell launcher or Windows .cmd shim; shebang files are not executable on Windows. */
+/** Writes a shell launcher for the fake CLI. */
 export function writeFakeCli(options: FakeCliOptions): string {
   NodeFS.mkdirSync(options.directory, { recursive: true });
   const stubPath = NodePath.join(options.directory, `${options.name}-stub.mjs`);
@@ -28,18 +25,6 @@ export function writeFakeCli(options: FakeCliOptions): string {
     ].join("\n"),
     "utf8",
   );
-
-  if ((options.platform ?? HostProcess.Platform.defaultValue()) === "win32") {
-    const launcherPath = NodePath.join(options.directory, `${options.name}.cmd`);
-    NodeFS.writeFileSync(
-      launcherPath,
-      ["@echo off", `node "%~dp0${options.name}-stub.mjs" %*`, "exit /b %ERRORLEVEL%", ""].join(
-        "\r\n",
-      ),
-      "utf8",
-    );
-    return launcherPath;
-  }
 
   const launcherPath = NodePath.join(options.directory, options.name);
   NodeFS.writeFileSync(

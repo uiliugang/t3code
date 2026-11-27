@@ -150,45 +150,6 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 });
 
 it.layer(NodeServices.layer)("host CLI commands", (it) => {
-  it.effect("renders a PowerShell command line on Windows", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const home = yield* fs.makeTempDirectoryScoped();
-      const shim = path.join(home, "t3.cmd");
-      yield* fs.writeFileString(shim, "@echo off\r\n");
-      const hostCommand = (platform: NodeJS.Platform, env: Record<string, string>) =>
-        resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.t3"]).pipe(
-          Effect.provideService(HostProcess.ExecutablePath, "C:\\Program Files\\T3 Code\\t3.exe"),
-          Effect.provideService(HostProcess.Arguments, [
-            "C:\\Program Files\\T3 Code\\t3.exe",
-            "C:\\Program Files\\T3 Code\\resources\\app.asar\\apps\\server\\dist\\bin.mjs",
-          ]),
-          Effect.provideService(HostProcess.IsExecutable, false),
-          Effect.provideService(HostProcess.Platform, platform),
-          Effect.provideService(HostProcess.Environment, { PATH: "", ...env }),
-        );
-      expect((yield* hostCommand("win32", { T3CODE_CLI_PATH: shim })).command).toBe(
-        `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
-      );
-      expect((yield* hostCommand("win32", {})).command).toBe(
-        't3 doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
-      );
-      expect(
-        (yield* resolveHostCliCommand("doctor", ["--base-dir", "C:\\T3\\\u201CArchive\u201D"]).pipe(
-          Effect.provideService(HostProcess.Platform, "win32"),
-          Effect.provideService(HostProcess.Environment, { PATH: "" }),
-          Effect.provideService(HostProcess.ExecutablePath, "C:\\t3.exe"),
-          Effect.provideService(HostProcess.Arguments, ["C:\\t3.exe", "C:\\bin.mjs"]),
-          Effect.provideService(HostProcess.IsExecutable, false),
-        )).command,
-      ).toBe('t3 doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
-      expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(
-        / doctor --base-dir 'C:\\Users\\Jane Doe\\\.t3'$/,
-      );
-    }),
-  );
-
   it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     "names the absolute path of a t3 found through a relative PATH entry",
     () =>
@@ -211,12 +172,12 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
 
         // A relative entry was searched from this process's directory, unlike the user's shell.
         expect(yield* hostCommand(path.relative(process.cwd(), bin))).toEqual({
-          command: `${hostShellWord("linux", path.join(bin, "t3"))} doctor`,
+          command: `${hostShellWord(path.join(bin, "t3"))} doctor`,
           launcher: false,
         });
         // An empty entry makes the shell search its own directory first, wherever that is.
         expect(yield* hostCommand(`:${bin}`)).toEqual({
-          command: `${hostShellWord("linux", path.join(bin, "t3"))} doctor`,
+          command: `${hostShellWord(path.join(bin, "t3"))} doctor`,
           launcher: false,
         });
         expect(yield* hostCommand(bin)).toEqual({ command: "t3 doctor", launcher: false });
@@ -288,7 +249,6 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       yield* fs.remove(globalBin);
       yield* fs.writeFileString(globalBin, "an unrelated t3 command");
       expect(yield* resolve).toBeNull();
-      expect(yield* resolve.pipe(Effect.provideService(HostProcess.Platform, "win32"))).toBeNull();
     }),
   );
 

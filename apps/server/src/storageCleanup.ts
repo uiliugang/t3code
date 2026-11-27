@@ -374,11 +374,7 @@ const make = Effect.gen(function* () {
     liveTerminals.set(terminal.threadId, threadTerminals);
   };
 
-  const isWindows = yield* HostProcess.isWindows;
-  const pathKey = (target: string) => {
-    const resolved = path.resolve(target);
-    return isWindows ? resolved.toLowerCase() : resolved;
-  };
+  const pathKey = (target: string) => path.resolve(target);
   const inside = (root: string, target: string) => {
     const relative = path.relative(pathKey(root), pathKey(target));
     return (
@@ -1451,7 +1447,6 @@ const make = Effect.gen(function* () {
     const handledWorkspaces = new Set<string>();
     let workspaceInventory: Effect.Success<ReturnType<typeof managedWorktrees.list>> | undefined;
     // Threads may store one checkout through different symlinked spellings; compare real paths.
-    // Keys are only compared, never opened, so they take pathKey's Windows case folding.
     const canonicalPaths = new Map<string, string>();
     const canonical = Effect.fnUntraced(function* (target: string) {
       const resolved = path.resolve(target);
@@ -2219,7 +2214,6 @@ const make = Effect.gen(function* () {
               worktreePath,
               // Git requires force for submodules; recursive checks above cannot make removal atomic.
               force: submodules.force,
-              execute: git.execute,
               run: (args) => cleanupGit(repository, [...args], "git worktree remove"),
             }).pipe(Effect.tapError(() => noteLeftover(adminDir, entry, worktreePath)));
             entries.push({ ...entry, outcome: "removed", reason: sentence(removalReason), bytes });

@@ -23,7 +23,6 @@ import {
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { flattenTemporaryWorktreeBranchName, isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { windowsSystem32Path } from "@t3tools/shared/windowsSystem";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import * as Cause from "effect/Cause";
@@ -333,7 +332,6 @@ const make = Effect.gen(function* () {
   const processes = yield* VcsProcess.VcsProcess;
   const hostEnvironment = yield* HostProcess.Environment;
   const hostPlatform = yield* HostProcess.Platform;
-  const onWindows = yield* HostProcess.isWindows;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const approvals = yield* LayoutCommandApprovals.LayoutCommandApprovals;
   const managedPolicy = yield* ManagedPolicy.ManagedPolicy;
@@ -497,8 +495,8 @@ const make = Effect.gen(function* () {
             return yield* processes
               .run({
                 operation: "TaskFolders.worktreeLayout",
-                command: onWindows ? windowsSystem32Path(hostEnvironment, "cmd.exe") : "sh",
-                args: onWindows ? ["/d", "/s", "/c", now.command.text] : ["-c", now.command.text],
+                command: "sh",
+                args: ["-c", now.command.text],
                 cwd: taskFolder.projectRoot,
                 env: {
                   ...hostEnvironment,

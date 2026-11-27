@@ -496,7 +496,6 @@ function makeMockRuntime(input: {
   readonly processGroupTerminationGrace?: Duration.Input;
   readonly linuxCgroupController?: AcpSessionRuntime.AcpSessionRuntimeOptions["linuxCgroupController"];
   readonly posixProcessTreeController?: AcpSessionRuntime.AcpSessionRuntimeOptions["posixProcessTreeController"];
-  readonly windowsProcessTreeTerminator?: AcpSessionRuntime.AcpSessionRuntimeOptions["windowsProcessTreeTerminator"];
   readonly wrapCancel?: (
     cancel: AcpSessionRuntime.AcpSessionRuntime["Service"]["cancel"],
   ) => AcpSessionRuntime.AcpSessionRuntime["Service"]["cancel"];
@@ -554,9 +553,6 @@ function makeMockRuntime(input: {
           ...(input.posixProcessTreeController === undefined
             ? {}
             : { posixProcessTreeController: input.posixProcessTreeController }),
-          ...(input.windowsProcessTreeTerminator === undefined
-            ? {}
-            : { windowsProcessTreeTerminator: input.windowsProcessTreeTerminator }),
           protocolLogging,
           spawn: {
             command: process.execPath,
@@ -594,12 +590,9 @@ function makeMockRuntime(input: {
     });
 }
 
-it.effect("detaches owned ACP processes on POSIX hosts but not on Windows", () =>
+it.effect("detaches owned ACP processes on supported hosts", () =>
   Effect.gen(function* () {
-    for (const [platform, expected] of [
-      ["win32", false],
-      ["linux", true],
-    ] as const) {
+    for (const platform of ["linux", "darwin"] as const) {
       let detached: boolean | undefined;
       yield* AcpSessionRuntime.make({
         spawn: { command: "acp-agent", args: [] },
@@ -619,7 +612,7 @@ it.effect("detaches owned ACP processes on POSIX hosts but not on Windows", () =
         Effect.scoped,
         Effect.exit,
       );
-      assert.equal(detached, expected, platform);
+      assert.equal(detached, true, platform);
     }
   }).pipe(Effect.provide(layerTest)),
 );
@@ -8650,7 +8643,6 @@ describe("AcpAdapterV2", () => {
         directory: yield* fileSystem.makeTempDirectoryScoped(),
         name: "grok",
         source: `process.stdout.write(${JSON.stringify(`${JSON.stringify(catalog)}\n`)});\n`,
-        platform: hostPlatform,
       });
       const protocolEvents = yield* Queue.unbounded<EffectAcpProtocol.AcpProtocolLogEvent>();
       const instanceId = ProviderInstanceId.make("grok-skill-mention");
@@ -12967,11 +12959,14 @@ describe("AcpAdapterV2", () => {
             childProcessSpawner,
             mockAgentPath,
             ownDetachedProcessGroup: true,
-            processGroupPlatform: "win32",
-            windowsProcessTreeTerminator: () =>
-              Deferred.succeed(teardownStarted, undefined).pipe(
+            processGroupTerminationGrace: 0,
+            wrapRuntime: (runtime) => ({
+              ...runtime,
+              terminateProcessGroup: Deferred.succeed(teardownStarted, undefined).pipe(
                 Effect.andThen(Deferred.await(releaseTeardown)),
+                Effect.andThen(runtime.terminateProcessGroup!),
               ),
+            }),
             environment: (runtimeOrdinal) => {
               runtimeOrdinalSeen = runtimeOrdinal;
               return runtimeOrdinal === 1 ? { T3_ACP_HANG_PROMPT_FOREVER: "1" } : {};
@@ -13071,11 +13066,14 @@ describe("AcpAdapterV2", () => {
             childProcessSpawner,
             mockAgentPath,
             ownDetachedProcessGroup: true,
-            processGroupPlatform: "win32",
-            windowsProcessTreeTerminator: () =>
-              Deferred.succeed(teardownStarted, undefined).pipe(
+            processGroupTerminationGrace: 0,
+            wrapRuntime: (runtime) => ({
+              ...runtime,
+              terminateProcessGroup: Deferred.succeed(teardownStarted, undefined).pipe(
                 Effect.andThen(Deferred.await(releaseTeardown)),
+                Effect.andThen(runtime.terminateProcessGroup!),
               ),
+            }),
             environment: (runtimeOrdinal) => {
               runtimeOrdinalSeen = runtimeOrdinal;
               return runtimeOrdinal === 1 ? { T3_ACP_HANG_PROMPT_FOREVER: "1" } : {};

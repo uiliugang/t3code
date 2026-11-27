@@ -29,9 +29,8 @@
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and
-      // worktree setup (from t3.json) run directly. release-desktop.yml bundles the
-      // Windows verify script with esbuild through a path knip does not trace,
-      // electron-builder loads the macOS signer and the Linux afterPack hook by path, and mobile-e2e.ts runs
+      // worktree setup (from t3.json) run directly. electron-builder loads the
+      // macOS signer and the Linux afterPack hook by path, and mobile-e2e.ts runs
       // agent-device's CLI by path, and mobile-behavior.ts spawns its runner by path.
       // release-desktop.yml runs the desktop launch check through xvfb-run, which knip
       // does not trace.
@@ -50,9 +49,7 @@
         "sign-macos.ts",
         "prepare-server-compile-cache.cjs",
         "smoke-desktop-app.ts",
-        "verify-windows-desktop-artifact.ts",
       ],
-      "ignoreDependencies": ["esbuild"],
       // The `t3` npm package's files: copied into the package, never imported.
       // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a
       // knip run beside it in check:changed must not report.
@@ -95,9 +92,6 @@
       "entry": [
         "gnome-extension/extension.js!",
         "src/backend/DesktopBackendRecoveryWorker.ts!",
-        "src/electron/WindowsForegroundFocusWorker.ts!",
-        "src/snapShot/GlobalShiftShortcutWorker.ts!",
-        "src/snapShot/RegionSnapShotWorker.ts!",
         "src/snapShot/SnapShotAccessibilityWorker.ts!",
         "src/boot.ts!",
         "src/compileCache.ts!",

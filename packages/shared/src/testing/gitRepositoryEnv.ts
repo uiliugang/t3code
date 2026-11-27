@@ -15,10 +15,10 @@ const REPOSITORY_SELECTORS = new Set([
  */
 export const unsetInheritedGitRepositoryEnv = (
   inherited: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform,
+  _platform: NodeJS.Platform,
 ): Record<string, undefined> =>
   Object.fromEntries(
     Object.keys(inherited)
-      .filter((name) => REPOSITORY_SELECTORS.has(platform === "win32" ? name.toUpperCase() : name))
+      .filter((name) => REPOSITORY_SELECTORS.has(name))
       .map((name) => [name, undefined]),
   );

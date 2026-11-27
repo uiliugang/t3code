@@ -44,7 +44,6 @@ import {
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { WindowsShellEnvironment } from "@t3tools/shared/shell";
 import { deepMerge } from "@t3tools/shared/Struct";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
@@ -2814,12 +2813,6 @@ it.layer(
 
     it.effect.each([
       {
-        name: "Windows PATH",
-        platform: "win32" as const,
-        path: "C:\\Windows",
-        expectedPath: "C:\\Windows;C:\\Tools",
-      },
-      {
         name: "login-shell PATH",
         platform: "linux" as const,
         path: "/usr/bin",
@@ -2905,9 +2898,6 @@ it.layer(
         }).pipe(
           Effect.provideService(HostProcess.Platform, host.platform),
           Effect.provideService(HostProcess.Environment, env),
-          Effect.provideService(WindowsShellEnvironment, () =>
-            Effect.succeed({ PATH: "C:\\Windows;C:\\Tools" }),
-          ),
         );
       }),
     );

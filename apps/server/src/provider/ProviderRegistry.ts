@@ -34,7 +34,7 @@ import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderL
 import * as ModelManifest from "./ModelManifest.ts";
 import { applyProviderCompatibility } from "./providerCompatibility.ts";
 import * as ServerConfig from "../config.ts";
-import { refreshPathFromLoginShell, refreshWindowsPath } from "../os-jank.ts";
+import { refreshPathFromLoginShell } from "../os-jank.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
 import {
@@ -783,11 +783,10 @@ export const layer = Layer.effect(
     // on the new PATH. They cannot have live sessions, and installed ones keep theirs.
     // Compared with the last PATH seen here, since other features re-read the login shell too.
     const hostEnvironment = yield* HostProcess.Environment;
-    const readHostPath = () => hostEnvironment.PATH ?? hostEnvironment.Path ?? hostEnvironment.path;
+    const readHostPath = () => hostEnvironment.PATH;
     const lastHostPathRef = yield* Ref.make(readHostPath());
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const refreshHostPath = yield* refreshWindowsPath().pipe(
-      Effect.andThen(refreshPathFromLoginShell()),
+    const refreshHostPath = yield* refreshPathFromLoginShell().pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.andThen(
         Effect.suspend(() => {

@@ -54,10 +54,8 @@ import {
   type RateTable,
 } from "./usagePricing.ts";
 import {
-  DESKTOP_HOST_SCOPE_ENV,
   listTranscriptFiles,
   readDirectoryVolumeId,
-  readPhysicalSourceId,
   readTranscriptRecords,
 } from "./usageTranscriptReader.ts";
 import {
@@ -111,7 +109,6 @@ interface TranscriptSource {
   readonly format: TranscriptUsageFormat<unknown>;
   readonly dir: string;
   readonly volumeId: string;
-  readonly physicalSourceId?: string;
   readonly fileName?: string;
 }
 
@@ -179,24 +176,6 @@ export const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
   const hostEnvironment = yield* HostProcess.Environment;
-  const hostPlatform = yield* HostProcess.Platform;
-  const hostScope = hostEnvironment[DESKTOP_HOST_SCOPE_ENV]?.trim();
-  // A mount or a directory's on-disk name does not change under a running server.
-  // A miss is not cached: the directory may not exist yet.
-  const physicalSourceIds = new Map<string, Promise<string | undefined>>();
-  const physicalSourceId = (dir: string) =>
-    Effect.promise(() => {
-      const cached = physicalSourceIds.get(dir);
-      if (cached !== undefined) return cached;
-      const id = readPhysicalSourceId(dir, hostScope, hostPlatform);
-      physicalSourceIds.set(dir, id);
-      void id.then((resolved) => {
-        if (resolved === undefined && physicalSourceIds.get(dir) === id) {
-          physicalSourceIds.delete(dir);
-        }
-      });
-      return id;
-    });
   const hostname = yield* HostProcess.Hostname;
   const readerContext = yield* Effect.context<BuiltInUsageReadersEnv>();
 
@@ -442,13 +421,11 @@ export const make = Effect.gen(function* () {
         const key = `${provider}\0${dir}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const sourceId = yield* physicalSourceId(dir);
         dirs.push({
           provider,
           format,
           dir,
           volumeId,
-          ...(sourceId === undefined ? {} : { physicalSourceId: sourceId }),
           ...(fileName === undefined ? {} : { fileName }),
         });
       }
@@ -688,7 +665,6 @@ export const make = Effect.gen(function* () {
     readonly provider: UsageProviderKind;
     readonly dir: string;
     readonly volumeId: string;
-    readonly physicalSourceId?: string;
     readonly hostId?: string;
     readonly status?: UsageSource["status"];
     readonly message?: string;
@@ -709,12 +685,11 @@ export const make = Effect.gen(function* () {
     windowStartMs: number,
     fromMemory: boolean,
   ) {
-    const { provider, format, dir, volumeId, physicalSourceId, fileName } = source;
+    const { provider, format, dir, volumeId, fileName } = source;
     const identity = {
       provider,
       dir,
       volumeId,
-      ...(physicalSourceId === undefined ? {} : { physicalSourceId }),
     };
     const exists = yield* fileSystem
       .exists(dir)
@@ -802,17 +777,13 @@ export const make = Effect.gen(function* () {
               Effect.map(
                 // A reader's own volumeId names a remote account, not a local directory.
                 volumeId === undefined
-                  ? Effect.all([
-                      Effect.promise(() => readDirectoryVolumeId(source.dir)),
-                      physicalSourceId(source.dir),
-                    ])
-                  : Effect.succeed<[string, string | undefined]>([volumeId, undefined]),
-                ([resolved, sourceId]): ScannedDir => ({
+                  ? Effect.promise(() => readDirectoryVolumeId(source.dir))
+                  : Effect.succeed(volumeId),
+                (resolved): ScannedDir => ({
                   ...source,
                   files: source.files?.map((file) => ({ ...file, malformedRecords: [] })) ?? null,
                   provider: reader.provider,
                   volumeId: resolved,
-                  ...(sourceId === undefined ? {} : { physicalSourceId: sourceId }),
                 }),
               ),
             ),
@@ -1076,17 +1047,7 @@ export const make = Effect.gen(function* () {
 
     for (const [
       index,
-      {
-        provider,
-        dir,
-        volumeId,
-        physicalSourceId,
-        files,
-        status,
-        message,
-        refreshing,
-        hostId: sourceHostId,
-      },
+      { provider, dir, volumeId, files, status, message, refreshing, hostId: sourceHostId },
     ] of scannedDirs.entries()) {
       let scannedFiles = 0;
       let skippedFiles = 0;
@@ -1138,7 +1099,6 @@ export const make = Effect.gen(function* () {
           provider,
           resolvedHomePath: dir,
           volumeId,
-          ...(physicalSourceId === undefined ? {} : { physicalSourceId }),
         },
         status:
           files === null && scannedFiles === 0

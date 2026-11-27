@@ -46,7 +46,7 @@ export const softwareJsonLd = (description: string): JsonLd => ({
   url: SITE_ORIGIN,
   downloadUrl: absoluteUrl("/download"),
   applicationCategory: "DeveloperApplication",
-  operatingSystem: "macOS, Windows, Linux, iOS, Android",
+  operatingSystem: "macOS, Linux, iOS, iPadOS, Android",
   license: "https://opensource.org/license/mit",
   isAccessibleForFree: true,
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },

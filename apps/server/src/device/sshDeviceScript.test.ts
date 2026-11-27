@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off - verifies generated remote scripts using real shell and Node processes.
 import * as Effect from "effect/Effect";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { expect, it } from "@effect/vitest";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeHttp from "node:http";
@@ -58,7 +57,6 @@ const probeAndroid = (setup: (home: string) => Promise<Record<string, string>>, 
 
 it.effect("does not offer Android when the SDK adb cannot run", () =>
   Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
     const { android } = yield* probeAndroid(async (home) => {
       const sdk = NodePath.join(home, "sdk");
       await completeSdk(sdk, "exit 1");
@@ -70,7 +68,6 @@ it.effect("does not offer Android when the SDK adb cannot run", () =>
 
 it.effect("does not offer Android when SDK tools are directories", () =>
   Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
     const { android } = yield* probeAndroid(async (home) => {
       const sdk = NodePath.join(home, "sdk");
       await executable(NodePath.join(sdk, "platform-tools/adb"), "echo Android Debug Bridge");
@@ -90,7 +87,6 @@ it.effect("does not offer Android when SDK tools are directories", () =>
 
 it.effect("uses the SDK the probe accepted for later SSH commands", () =>
   Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
     let sdk = "";
     const result = yield* probeAndroid(async (home) => {
       // Incomplete default locations must not shadow the configured SDK.
@@ -106,43 +102,34 @@ it.effect("uses the SDK the probe accepted for later SSH commands", () =>
 );
 
 it.effect("finds Android Studio Java for a non-interactive SSH session", () =>
-  Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
-    yield* Effect.promise(async () => {
-      const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-java-"));
-      try {
-        const javaHome = NodePath.join(home, ".local/opt/android-studio/jbr");
-        await NodeFSP.mkdir(NodePath.join(javaHome, "bin"), { recursive: true });
-        await NodeFSP.writeFile(
-          NodePath.join(javaHome, "bin/java"),
-          "#!/bin/sh\necho test-java\n",
-          { mode: 0o755 },
-        );
-        const result = await exec("/bin/sh", ["-c", `${remoteDeviceEnvironment}\njava`], {
-          env: { HOME: home, PATH: "/nonexistent", JAVA_HOME: "" },
-        });
-        expect(result.stdout.trim()).toBe("test-java");
-      } finally {
-        await NodeFSP.rm(home, { recursive: true, force: true });
-      }
-    });
+  Effect.promise(async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-java-"));
+    try {
+      const javaHome = NodePath.join(home, ".local/opt/android-studio/jbr");
+      await NodeFSP.mkdir(NodePath.join(javaHome, "bin"), { recursive: true });
+      await NodeFSP.writeFile(NodePath.join(javaHome, "bin/java"), "#!/bin/sh\necho test-java\n", {
+        mode: 0o755,
+      });
+      const result = await exec("/bin/sh", ["-c", `${remoteDeviceEnvironment}\njava`], {
+        env: { HOME: home, PATH: "/nonexistent", JAVA_HOME: "" },
+      });
+      expect(result.stdout.trim()).toBe("test-java");
+    } finally {
+      await NodeFSP.rm(home, { recursive: true, force: true });
+    }
   }),
 );
 
 it.effect("preserves shell metacharacters and newlines in remote arguments", () =>
-  Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
-    yield* Effect.promise(async () => {
-      const value = "quotes ' \" ; $(echo expanded) $HOME\nnext line";
-      const result = await exec("sh", ["-c", `printf %s ${quoteRemoteArg(value)}`]);
-      expect(result.stdout).toBe(value);
-    });
+  Effect.promise(async () => {
+    const value = "quotes ' \" ; $(echo expanded) $HOME\nnext line";
+    const result = await exec("sh", ["-c", `printf %s ${quoteRemoteArg(value)}`]);
+    expect(result.stdout).toBe(value);
   }),
 );
 
 it.effect("rejects a Node release below the pinned agent-device engine floor", () =>
   Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
     const probe = NodeChildProcess.spawnSync(process.execPath, [], {
       input:
         `Object.defineProperty(process.versions, "node", { value: "22.11.0" });\n` +
@@ -156,128 +143,114 @@ it.effect("rejects a Node release below the pinned agent-device engine floor", (
 );
 
 it.effect("uses official npm for SSH tool installs without changing host configuration", () =>
-  Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
-    yield* Effect.promise(async () => {
-      const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-registry-"));
-      try {
-        const sdk = NodePath.join(home, "sdk");
-        const calls = NodePath.join(home, "npm-args");
-        const config = NodePath.join(home, ".npmrc");
-        const original = "registry=https://mirror.example.test/\n";
-        await NodeFSP.writeFile(config, original);
-        await completeSdk(sdk);
-        await executable(NodePath.join(home, "bin/xcrun"), "exit 1");
-        await executable(
-          NodePath.join(home, "bin/npm"),
-          `printf '%s\\n' "$@" > ${quoteRemoteArg(calls)}\nexit 1`,
-        );
-        const result = NodeChildProcess.spawnSync(process.execPath, [], {
-          input: remoteDeviceScript("owner", "start"),
-          env: {
-            HOME: home,
-            PATH: `${NodePath.join(home, "bin")}:/usr/bin:/bin`,
-            ANDROID_HOME: sdk,
-          },
-          encoding: "utf8",
-        });
-        expect(result.status).toBe(1);
-        expect(result.stderr).toContain("Installing expo-device-hub");
-        expect((await NodeFSP.readFile(calls, "utf8")).split("\n")).toContain(
-          "--registry=https://registry.npmjs.org/",
-        );
-        expect(await NodeFSP.readFile(config, "utf8")).toBe(original);
-      } finally {
-        await NodeFSP.rm(home, { recursive: true, force: true });
-      }
-    });
+  Effect.promise(async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-registry-"));
+    try {
+      const sdk = NodePath.join(home, "sdk");
+      const calls = NodePath.join(home, "npm-args");
+      const config = NodePath.join(home, ".npmrc");
+      const original = "registry=https://mirror.example.test/\n";
+      await NodeFSP.writeFile(config, original);
+      await completeSdk(sdk);
+      await executable(NodePath.join(home, "bin/xcrun"), "exit 1");
+      await executable(
+        NodePath.join(home, "bin/npm"),
+        `printf '%s\\n' "$@" > ${quoteRemoteArg(calls)}\nexit 1`,
+      );
+      const result = NodeChildProcess.spawnSync(process.execPath, [], {
+        input: remoteDeviceScript("owner", "start"),
+        env: {
+          HOME: home,
+          PATH: `${NodePath.join(home, "bin")}:/usr/bin:/bin`,
+          ANDROID_HOME: sdk,
+        },
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Installing expo-device-hub");
+      expect((await NodeFSP.readFile(calls, "utf8")).split("\n")).toContain(
+        "--registry=https://registry.npmjs.org/",
+      );
+      expect(await NodeFSP.readFile(config, "utf8")).toBe(original);
+    } finally {
+      await NodeFSP.rm(home, { recursive: true, force: true });
+    }
   }),
 );
 
 it.effect("stops a daemon left for its owner when starting without agent tools", () =>
-  Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
-    yield* Effect.promise(async () => {
-      const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-start-"));
-      try {
-        const state = NodePath.join(home, ".t3/device/hosts/owner");
-        const daemonFile = NodePath.join(state, "daemon.json");
-        const calls = NodePath.join(home, "calls");
-        const failMarker = NodePath.join(home, "fail-stop");
-        const entry = NodePath.join(home, "agent-device.mjs");
-        await NodeFSP.mkdir(NodePath.join(home, "bin"));
-        await NodeFSP.mkdir(state, { recursive: true });
-        await NodeFSP.writeFile(
-          entry,
-          `import * as fs from "node:fs";
+  Effect.promise(async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-start-"));
+    try {
+      const state = NodePath.join(home, ".t3/device/hosts/owner");
+      const daemonFile = NodePath.join(state, "daemon.json");
+      const calls = NodePath.join(home, "calls");
+      const failMarker = NodePath.join(home, "fail-stop");
+      const entry = NodePath.join(home, "agent-device.mjs");
+      await NodeFSP.mkdir(NodePath.join(home, "bin"));
+      await NodeFSP.mkdir(state, { recursive: true });
+      await NodeFSP.writeFile(
+        entry,
+        `import * as fs from "node:fs";
 fs.appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(" ") + "\\n");
 if (fs.existsSync(${JSON.stringify(failMarker)})) process.exitCode = 1;`,
-        );
-        await NodeFSP.writeFile(
-          NodePath.join(state, "agent.json"),
-          JSON.stringify({ entryPath: entry }),
-        );
-        await NodeFSP.writeFile(daemonFile, JSON.stringify({ httpPort: 1, token: "claims" }));
-        // An empty PATH leaves no platforms, so the script ends right after the daemon check.
-        const start = () =>
-          NodeChildProcess.spawnSync(process.execPath, [], {
-            input: remoteDeviceScript("owner", "start"),
-            env: { HOME: home, PATH: NodePath.join(home, "bin") },
-            encoding: "utf8",
-          });
-        await NodeFSP.writeFile(failMarker, "");
-        expect(start().stderr).toContain("Could not stop the agent-device daemon");
-        expect(await NodeFSP.readFile(daemonFile, "utf8")).toContain("claims");
-        await NodeFSP.rm(failMarker);
-        expect(start().stderr).toContain("Android SDK was not found");
-        await expect(NodeFSP.access(daemonFile)).rejects.toThrow();
-        expect(await NodeFSP.readFile(calls, "utf8")).toBe(
-          `daemon stop --state-dir ${state}\ndaemon stop --state-dir ${state}\n`,
-        );
-      } finally {
-        await NodeFSP.rm(home, { recursive: true, force: true });
-      }
-    });
+      );
+      await NodeFSP.writeFile(
+        NodePath.join(state, "agent.json"),
+        JSON.stringify({ entryPath: entry }),
+      );
+      await NodeFSP.writeFile(daemonFile, JSON.stringify({ httpPort: 1, token: "claims" }));
+      // An empty PATH leaves no platforms, so the script ends right after the daemon check.
+      const start = () =>
+        NodeChildProcess.spawnSync(process.execPath, [], {
+          input: remoteDeviceScript("owner", "start"),
+          env: { HOME: home, PATH: NodePath.join(home, "bin") },
+          encoding: "utf8",
+        });
+      await NodeFSP.writeFile(failMarker, "");
+      expect(start().stderr).toContain("Could not stop the agent-device daemon");
+      expect(await NodeFSP.readFile(daemonFile, "utf8")).toContain("claims");
+      await NodeFSP.rm(failMarker);
+      expect(start().stderr).toContain("Android SDK was not found");
+      await expect(NodeFSP.access(daemonFile)).rejects.toThrow();
+      expect(await NodeFSP.readFile(calls, "utf8")).toBe(
+        `daemon stop --state-dir ${state}\ndaemon stop --state-dir ${state}\n`,
+      );
+    } finally {
+      await NodeFSP.rm(home, { recursive: true, force: true });
+    }
   }),
 );
 
 it.effect("keeps a daemon record its missing agent CLI cannot stop", () =>
-  Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
-    yield* Effect.promise(async () => {
-      const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-start-"));
-      try {
-        const state = NodePath.join(home, ".t3/device/hosts/owner");
-        const daemonFile = NodePath.join(state, "daemon.json");
-        await NodeFSP.mkdir(NodePath.join(home, "bin"));
-        await NodeFSP.mkdir(state, { recursive: true });
-        await NodeFSP.writeFile(
-          NodePath.join(state, "agent.json"),
-          JSON.stringify({ entryPath: NodePath.join(home, "missing/agent-device.mjs") }),
-        );
-        const start = async (pid: number) => {
-          await NodeFSP.writeFile(
-            daemonFile,
-            JSON.stringify({ pid, httpPort: 1, token: "claims" }),
-          );
-          return NodeChildProcess.spawnSync(process.execPath, [], {
-            input: remoteDeviceScript("owner", "start"),
-            env: { HOME: home, PATH: NodePath.join(home, "bin") },
-            encoding: "utf8",
-          });
-        };
-        // This test process stands in for a daemon that is still running.
-        expect((await start(process.pid)).stderr).toContain(
-          "Could not stop the agent-device daemon",
-        );
-        expect(await NodeFSP.readFile(daemonFile, "utf8")).toContain("claims");
-        const exited = NodeChildProcess.spawnSync(process.execPath, ["-e", ""]).pid;
-        expect((await start(exited)).stderr).toContain("Android SDK was not found");
-        await expect(NodeFSP.access(daemonFile)).rejects.toThrow();
-      } finally {
-        await NodeFSP.rm(home, { recursive: true, force: true });
-      }
-    });
+  Effect.promise(async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-start-"));
+    try {
+      const state = NodePath.join(home, ".t3/device/hosts/owner");
+      const daemonFile = NodePath.join(state, "daemon.json");
+      await NodeFSP.mkdir(NodePath.join(home, "bin"));
+      await NodeFSP.mkdir(state, { recursive: true });
+      await NodeFSP.writeFile(
+        NodePath.join(state, "agent.json"),
+        JSON.stringify({ entryPath: NodePath.join(home, "missing/agent-device.mjs") }),
+      );
+      const start = async (pid: number) => {
+        await NodeFSP.writeFile(daemonFile, JSON.stringify({ pid, httpPort: 1, token: "claims" }));
+        return NodeChildProcess.spawnSync(process.execPath, [], {
+          input: remoteDeviceScript("owner", "start"),
+          env: { HOME: home, PATH: NodePath.join(home, "bin") },
+          encoding: "utf8",
+        });
+      };
+      // This test process stands in for a daemon that is still running.
+      expect((await start(process.pid)).stderr).toContain("Could not stop the agent-device daemon");
+      expect(await NodeFSP.readFile(daemonFile, "utf8")).toContain("claims");
+      const exited = NodeChildProcess.spawnSync(process.execPath, ["-e", ""]).pid;
+      expect((await start(exited)).stderr).toContain("Android SDK was not found");
+      await expect(NodeFSP.access(daemonFile)).rejects.toThrow();
+    } finally {
+      await NodeFSP.rm(home, { recursive: true, force: true });
+    }
   }),
 );
 
@@ -307,7 +280,6 @@ it.live("releases a recorded remote session without starting the hub or device t
         env: {
           ...process.env,
           HOME: home,
-          USERPROFILE: home,
           PATH: NodePath.dirname(process.execPath),
         },
       });
@@ -330,69 +302,66 @@ it.live("releases a recorded remote session without starting the hub or device t
 );
 
 it.effect("starts the hub requiring a session token and reports the one it printed", () =>
-  Effect.gen(function* () {
-    if ((yield* HostProcess.Platform) === "win32") return;
-    yield* Effect.promise(async () => {
-      const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-hub-"));
-      const run = (mode: "start" | "stop") =>
-        NodeChildProcess.spawnSync(process.execPath, [], {
-          input: remoteDeviceScript("owner", mode),
-          env: {
-            HOME: home,
-            PATH: `${NodePath.join(home, "bin")}:/usr/bin:/bin`,
-            ANDROID_HOME: NodePath.join(home, "sdk"),
-          },
-          encoding: "utf8",
-        });
-      try {
-        const state = NodePath.join(home, ".t3/device/hosts/owner");
-        const install = NodePath.join(
-          home,
-          ".t3/device/tools",
-          `expo-device-hub@${DEVICE_HUB_VERSION}`,
-        );
-        const entry = NodePath.join(install, "node_modules/expo-device-hub/dist/server/cli.mjs");
-        await completeSdk(NodePath.join(home, "sdk"));
-        await NodeFSP.mkdir(NodePath.dirname(entry), { recursive: true });
-        await NodeFSP.writeFile(NodePath.join(install, ".install-complete"), DEVICE_HUB_VERSION);
-        // Stands in for the hub: it serves /readyz and prints its startup link.
-        // Include Chinese UTF-8 lines and an invalid non-UTF-8 byte right before the token line.
-        await NodeFSP.mkdir(state, { recursive: true });
-        await NodeFSP.writeFile(
-          NodePath.join(state, "hub.log"),
-          "旧版设备管理中心已停止，正在重新启动以生成新的鉴权会话。\n".repeat(10),
-        );
-        await NodeFSP.writeFile(
-          entry,
-          `import * as fs from "node:fs";
+  Effect.promise(async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-ssh-hub-"));
+    const run = (mode: "start" | "stop") =>
+      NodeChildProcess.spawnSync(process.execPath, [], {
+        input: remoteDeviceScript("owner", mode),
+        env: {
+          HOME: home,
+          PATH: `${NodePath.join(home, "bin")}:/usr/bin:/bin`,
+          ANDROID_HOME: NodePath.join(home, "sdk"),
+        },
+        encoding: "utf8",
+      });
+    try {
+      const state = NodePath.join(home, ".t3/device/hosts/owner");
+      const install = NodePath.join(
+        home,
+        ".t3/device/tools",
+        `expo-device-hub@${DEVICE_HUB_VERSION}`,
+      );
+      const entry = NodePath.join(install, "node_modules/expo-device-hub/dist/server/cli.mjs");
+      await completeSdk(NodePath.join(home, "sdk"));
+      await NodeFSP.mkdir(NodePath.dirname(entry), { recursive: true });
+      await NodeFSP.writeFile(NodePath.join(install, ".install-complete"), DEVICE_HUB_VERSION);
+      // Stands in for the hub: it serves /readyz and prints its startup link.
+      // Include Chinese UTF-8 lines and an invalid non-UTF-8 byte right before the token line.
+      await NodeFSP.mkdir(state, { recursive: true });
+      await NodeFSP.writeFile(
+        NodePath.join(state, "hub.log"),
+        "旧版设备管理中心已停止，正在重新启动以生成新的鉴权会话。\n".repeat(10),
+      );
+      await NodeFSP.writeFile(
+        entry,
+        `import * as fs from "node:fs";
 import * as http from "node:http";
 const args = process.argv.slice(2);
 const token = args.includes("--require-token") ? "printed-token" : undefined;
 http.createServer((_request, response) => response.end("ok")).listen(Number(args[args.indexOf("--port") + 1]), "127.0.0.1", () => {
-  fs.writeSync(1, Buffer.from([0xff, 0x20]));
-  console.log("Local: http://localhost/" + (token ? "?token=" + token : "") + "&after=keep");
-  console.log("state-dir=" + process.env.EXPO_DEVICE_HUB_STATE_DIR);
+fs.writeSync(1, Buffer.from([0xff, 0x20]));
+console.log("Local: http://localhost/" + (token ? "?token=" + token : "") + "&after=keep");
+console.log("state-dir=" + process.env.EXPO_DEVICE_HUB_STATE_DIR);
 });`,
-        );
+      );
 
-        const started = run("start");
-        expect(started.stderr).toBe("");
-        expect(JSON.parse(started.stdout).hubToken).toBe("printed-token");
-        expect(
-          JSON.parse(await NodeFSP.readFile(NodePath.join(state, "hub.json"), "utf8")).token,
-        ).toBe("printed-token");
-        expect((await NodeFSP.stat(NodePath.join(state, "hub.log"))).mode & 0o077).toBe(0);
-        const logBytes = await NodeFSP.readFile(NodePath.join(state, "hub.log"));
-        const logLatin1 = logBytes.toString("latin1");
-        expect(logLatin1).toContain(
-          `\xff Local: http://localhost/?token=${"*".repeat("printed-token".length)}&after=keep\n`,
-        );
-        expect(logBytes.toString("utf8")).toContain(`state-dir=${state}\n`);
-        expect(logLatin1).not.toContain("printed-token");
-      } finally {
-        run("stop");
-        await NodeFSP.rm(home, { recursive: true, force: true });
-      }
-    });
+      const started = run("start");
+      expect(started.stderr).toBe("");
+      expect(JSON.parse(started.stdout).hubToken).toBe("printed-token");
+      expect(
+        JSON.parse(await NodeFSP.readFile(NodePath.join(state, "hub.json"), "utf8")).token,
+      ).toBe("printed-token");
+      expect((await NodeFSP.stat(NodePath.join(state, "hub.log"))).mode & 0o077).toBe(0);
+      const logBytes = await NodeFSP.readFile(NodePath.join(state, "hub.log"));
+      const logLatin1 = logBytes.toString("latin1");
+      expect(logLatin1).toContain(
+        `\xff Local: http://localhost/?token=${"*".repeat("printed-token".length)}&after=keep\n`,
+      );
+      expect(logBytes.toString("utf8")).toContain(`state-dir=${state}\n`);
+      expect(logLatin1).not.toContain("printed-token");
+    } finally {
+      run("stop");
+      await NodeFSP.rm(home, { recursive: true, force: true });
+    }
   }),
 );

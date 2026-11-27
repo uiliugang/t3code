@@ -1,5 +1,4 @@
 import { ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { officialNpmRegistryArgs } from "@t3tools/shared/npmRegistry";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
@@ -30,21 +29,11 @@ const LatestVersion = Schema.fromJsonString(
 export const claudeManagedPaths = Effect.fn("ClaudeInstallation.paths")(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
   const directory = path.join(config.baseDir, "tools", "claude");
   return {
     directory,
-    binaryPath: path.join(
-      directory,
-      ...(platform === "win32" ? ["claude.cmd"] : ["bin", "claude"]),
-    ),
-    packagePath: path.join(
-      directory,
-      ...(platform === "win32" ? [] : ["lib"]),
-      "node_modules",
-      PACKAGE,
-      "package.json",
-    ),
+    binaryPath: path.join(directory, "bin", "claude"),
+    packagePath: path.join(directory, "lib", "node_modules", PACKAGE, "package.json"),
   };
 });
 

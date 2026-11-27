@@ -107,7 +107,7 @@ function closeServer(server: NodeNet.Server): Promise<void> {
 
 export async function startDesktopAppControlServer(input: {
   readonly address: string;
-  readonly directory: string | null;
+  readonly directory: string;
   readonly userId: number | undefined;
   readonly handle: (request: DesktopAppActivationRequest) => Promise<DesktopAppActivationResponse>;
   readonly cancel: (requestId: string) => void;
@@ -210,19 +210,13 @@ export async function startDesktopAppControlServer(input: {
     }
   };
 
-  let server: NodeNet.Server;
-  let inode: number | null = null;
-  if (input.directory === null) {
-    server = await listen(input.address);
-  } else {
-    await prepareUnixDirectory({ directory: input.directory, userId: input.userId });
-    ({ server, inode } = await bindUnix(input.directory, "take-over"));
-  }
+  await prepareUnixDirectory({ directory: input.directory, userId: input.userId });
+  let { server, inode } = await bindUnix(input.directory, "take-over");
 
   let closed = false;
   const reclaimOnce = async () => {
     // Replacing an existing socket would let two apps trade the path indefinitely.
-    if (closed || input.directory === null || (await inodeAt(input.address)) !== null) return;
+    if (closed || (await inodeAt(input.address)) !== null) return;
     if (await prepareUnixDirectory({ directory: input.directory, userId: input.userId })) {
       // Directory watches follow inodes, so recreate the watch after directory replacement.
       watchDirectory(input.directory);
@@ -257,11 +251,9 @@ export async function startDesktopAppControlServer(input: {
       input.onReclaimError(error);
     }
   };
-  if (input.directory !== null) {
-    watchDirectory(input.directory);
-    // Catch a removal that happened before the watcher started.
-    reclaim().catch(input.onReclaimError);
-  }
+  watchDirectory(input.directory);
+  // Catch a removal that happened before the watcher started.
+  reclaim().catch(input.onReclaimError);
 
   return {
     reclaim,

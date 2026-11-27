@@ -42,7 +42,7 @@ const processProbeFailure: ProcessRunner.ProcessRunner["Service"]["run"] = (inpu
         _tag: "NotFound",
         module: "ChildProcess",
         method: "spawn",
-        description: "PowerShell is not installed in the test environment",
+        description: "lsof is not installed in the test environment",
       }),
     }),
   );
@@ -678,62 +678,6 @@ effectIt.effect.each([
   }).pipe(Effect.provide(layer));
 });
 
-effectIt.effect("ignores a partial Windows netstat snapshot when one query exits nonzero", () => {
-  let ipv6Fails = true;
-  const requests: string[] = [];
-  const fetchFn = ((input: Parameters<typeof globalThis.fetch>[0]) => {
-    requests.push(String(input));
-    return Promise.resolve(new Response("hello", { headers: { "content-type": "text/html" } }));
-  }) as typeof globalThis.fetch;
-  const layer = layerScanner().pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        layerNoProc,
-        Layer.succeed(ProcessRunner.ProcessRunner, {
-          run: (input) => {
-            if (input.command === String.raw`C:\Windows\System32\tasklist.exe`) {
-              return Effect.succeed(
-                processOutput('"node.exe","1234","Console","1","50,000 K"\r\n'),
-              );
-            }
-            const isIpv6 = input.args.includes("tcpv6");
-            return Effect.succeed({
-              stdout: isIpv6
-                ? ""
-                : "  TCP    127.0.0.1:5173         0.0.0.0:0              LISTENING       1234\r\n",
-              stderr: "",
-              code: isIpv6 && ipv6Fails ? ChildProcessSpawner.ExitCode(1) : null,
-              timedOut: false,
-              stdoutTruncated: false,
-              stderrTruncated: false,
-              stdoutInvalidUtf8: false,
-              stderrInvalidUtf8: false,
-            });
-          },
-        }),
-        Layer.succeed(HostProcess.Platform, "win32"),
-        Layer.succeed(HostProcess.Environment, {}),
-        FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchFn))),
-      ),
-    ),
-  );
-
-  return Effect.gen(function* () {
-    const scanner = yield* PortScanner.PortDiscovery;
-    yield* scanner.registerTerminalProcesses({
-      threadId: "scanner-thread",
-      terminalId: "scanner-terminal",
-      processIds: [1234],
-    });
-    expect(yield* scanner.scan()).toEqual([]);
-    ipv6Fails = false;
-    expect(yield* scanner.scan()).toMatchObject([
-      { port: 5173, pid: 1234, processName: "node", url: "http://localhost:5173" },
-    ]);
-    expect(requests).toEqual([]);
-  }).pipe(Effect.provide(layer));
-});
-
 effectIt.effect("rechecks the socket owner before stopping a Linux server without lsof", () => {
   let holder = "4242";
   const missing = FileSystem.makeNoop({});
@@ -789,7 +733,7 @@ effectIt.effect("rechecks the socket owner before stopping a Linux server withou
   }).pipe(Effect.provide(layer));
 });
 
-effectIt.effect.each(["linux", "darwin", "win32"] as const)(
+effectIt.effect.each(["linux", "darwin"] as const)(
   "reads no listeners on %s while T3CODE_PORT_DISCOVERY=0, and still probes configured URLs",
   (platform) => {
     const configuredUrl = `http://localhost:${LSOF_TEST_PORT}/docs`;
@@ -1287,101 +1231,99 @@ const isRunning = (pid: number): boolean => {
   }
 };
 
-effectIt.live.skipIf(HostProcess.Platform.defaultValue() === "win32")(
-  "stops an agent's server through its job's group, and only a listed server",
-  () =>
-    Effect.gen(function* () {
-      const scanner = yield* PortScanner.PortDiscovery;
-      yield* Effect.acquireRelease(Effect.sync(scanner.trackAgent), (release) =>
-        Effect.sync(release),
-      );
-      const job = yield* agentServer();
-      const foreign = yield* agentServer("other-state");
-      const settlement = yield* agentServer("scanner-state", "settlement:cleanup-action");
-      yield* scanner.registerTerminalProcesses({
-        threadId: "thread-live",
-        terminalId: "cleanup-action",
-        processIds: [],
-        keepOnSettle: true,
-      });
-      const stops: Array<readonly [string, boolean]> = [];
-      yield* scanner.watchAgentCommandStops({
-        variable: AGENT_COMMAND_ENV,
-        onStop: (command) => Effect.sync(() => stops.push([command, isRunning(job.pid)])),
-        onStopAbandoned: () => Effect.die("the signal reached the job"),
-      });
+effectIt.live("stops an agent's server through its job's group, and only a listed server", () =>
+  Effect.gen(function* () {
+    const scanner = yield* PortScanner.PortDiscovery;
+    yield* Effect.acquireRelease(Effect.sync(scanner.trackAgent), (release) =>
+      Effect.sync(release),
+    );
+    const job = yield* agentServer();
+    const foreign = yield* agentServer("other-state");
+    const settlement = yield* agentServer("scanner-state", "settlement:cleanup-action");
+    yield* scanner.registerTerminalProcesses({
+      threadId: "thread-live",
+      terminalId: "cleanup-action",
+      processIds: [],
+      keepOnSettle: true,
+    });
+    const stops: Array<readonly [string, boolean]> = [];
+    yield* scanner.watchAgentCommandStops({
+      variable: AGENT_COMMAND_ENV,
+      onStop: (command) => Effect.sync(() => stops.push([command, isRunning(job.pid)])),
+      onStopAbandoned: () => Effect.die("the signal reached the job"),
+    });
 
-      expect(yield* scanner.scan()).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            pid: job.pid,
-            port: job.port,
-            agent: { threadId: "thread-live" },
-          }),
-        ]),
-      );
-
-      const unlisted = yield* Effect.flip(scanner.stopServer({ pid: process.pid, port: job.port }));
-      expect(unlisted.reason).toBe("not-found");
-      expect(stops).toEqual([]);
-
-      const wrongOwner = yield* Effect.flip(
-        scanner.stopServer({
+    expect(yield* scanner.scan()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
           pid: job.pid,
           port: job.port,
-          threadId: ThreadId.make("other-thread"),
+          agent: { threadId: "thread-live" },
         }),
-      );
-      expect(wrongOwner.reason).toBe("not-found");
-      expect(isRunning(job.pid)).toBe(true);
-      yield* scanner.stopThreadServers({
+      ]),
+    );
+
+    const unlisted = yield* Effect.flip(scanner.stopServer({ pid: process.pid, port: job.port }));
+    expect(unlisted.reason).toBe("not-found");
+    expect(stops).toEqual([]);
+
+    const wrongOwner = yield* Effect.flip(
+      scanner.stopServer({
+        pid: job.pid,
+        port: job.port,
         threadId: ThreadId.make("other-thread"),
-        shouldStop: Effect.succeed(true),
-        mode: "settled",
-      });
-      expect(isRunning(job.pid)).toBe(true);
-      const checked = yield* Deferred.make<void>();
-      const release = yield* Deferred.make<void>();
-      const staleCleanup = yield* scanner
-        .stopThreadServers({
-          threadId: ThreadId.make("thread-live"),
-          mode: "settled",
-          shouldStop: Deferred.succeed(checked, undefined).pipe(
-            Effect.andThen(Deferred.await(release)),
-            Effect.as(false),
-          ),
-        })
-        .pipe(Effect.forkChild({ startImmediately: true }));
-      yield* Deferred.await(checked);
-      yield* Deferred.succeed(release, undefined);
-      yield* Fiber.join(staleCleanup);
-      expect(isRunning(job.pid)).toBe(true);
-      yield* scanner.stopThreadServers({
+      }),
+    );
+    expect(wrongOwner.reason).toBe("not-found");
+    expect(isRunning(job.pid)).toBe(true);
+    yield* scanner.stopThreadServers({
+      threadId: ThreadId.make("other-thread"),
+      shouldStop: Effect.succeed(true),
+      mode: "settled",
+    });
+    expect(isRunning(job.pid)).toBe(true);
+    const checked = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const staleCleanup = yield* scanner
+      .stopThreadServers({
         threadId: ThreadId.make("thread-live"),
-        shouldStop: Effect.succeed(true),
         mode: "settled",
-      });
-      expect(stops).toEqual([["command-live", true]]);
-      // The shell waits on its job, so it exits once the job has.
-      yield* Effect.promise(() => job.exited);
-      expect(isRunning(job.pid)).toBe(false);
-      expect(isRunning(foreign.pid)).toBe(true);
-      expect(isRunning(settlement.pid)).toBe(true);
-      yield* scanner.unregisterTerminal({ threadId: "thread-live", terminalId: "cleanup-action" });
-      yield* scanner.stopThreadServers({
-        threadId: ThreadId.make("thread-live"),
-        shouldStop: Effect.succeed(true),
-        mode: "settled",
-      });
-      yield* Effect.promise(() => settlement.exited);
-      expect(isRunning(settlement.pid)).toBe(false);
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(
-        layerScanner().pipe(
-          Layer.provide(ProcessRunner.layer),
-          Layer.provide(Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)),
+        shouldStop: Deferred.succeed(checked, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.as(false),
         ),
+      })
+      .pipe(Effect.forkChild({ startImmediately: true }));
+    yield* Deferred.await(checked);
+    yield* Deferred.succeed(release, undefined);
+    yield* Fiber.join(staleCleanup);
+    expect(isRunning(job.pid)).toBe(true);
+    yield* scanner.stopThreadServers({
+      threadId: ThreadId.make("thread-live"),
+      shouldStop: Effect.succeed(true),
+      mode: "settled",
+    });
+    expect(stops).toEqual([["command-live", true]]);
+    // The shell waits on its job, so it exits once the job has.
+    yield* Effect.promise(() => job.exited);
+    expect(isRunning(job.pid)).toBe(false);
+    expect(isRunning(foreign.pid)).toBe(true);
+    expect(isRunning(settlement.pid)).toBe(true);
+    yield* scanner.unregisterTerminal({ threadId: "thread-live", terminalId: "cleanup-action" });
+    yield* scanner.stopThreadServers({
+      threadId: ThreadId.make("thread-live"),
+      shouldStop: Effect.succeed(true),
+      mode: "settled",
+    });
+    yield* Effect.promise(() => settlement.exited);
+    expect(isRunning(settlement.pid)).toBe(false);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      layerScanner().pipe(
+        Layer.provide(ProcessRunner.layer),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)),
       ),
     ),
+  ),
 );

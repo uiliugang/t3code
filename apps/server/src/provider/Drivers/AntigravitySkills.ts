@@ -7,19 +7,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { parse as parseYamlDocument } from "yaml";
 
-/** Match Python os.path.expanduser: USERPROFILE, then HOMEDRIVE+HOMEPATH on Windows; HOME elsewhere. */
-export function resolveAntigravityUserHome(
-  platform: NodeJS.Platform,
-  environment: NodeJS.ProcessEnv,
-  home: string,
-): string {
-  if (platform === "win32") {
-    if (environment.USERPROFILE) return environment.USERPROFILE;
-    if (environment.HOMEDRIVE && environment.HOMEPATH) {
-      return `${environment.HOMEDRIVE}${environment.HOMEPATH}`;
-    }
-    return home;
-  }
+/** Match the CLI’s resolution of the home directory. */
+export function resolveAntigravityUserHome(environment: NodeJS.ProcessEnv, home: string): string {
   return environment.HOME || home;
 }
 

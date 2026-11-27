@@ -362,11 +362,7 @@ it.effect(
       yield* TestClock.adjust("10 seconds");
       assert.include((yield* Fiber.join(hung)).message, "Tailscale did not answer");
       // Tailscale down, logged out, or not installed forwards nothing now.
-      for (const stderr of [
-        dialFailure("connection refused"),
-        "NeedsLogin: not logged in",
-        String.raw`Get "http://local-tailscaled.sock/localapi/v0/serve-config": open \\.\pipe\ProtectedPrefix\Administrators\Tailscale\tailscaled: The system cannot find the file specified.`,
-      ]) {
+      for (const stderr of [dialFailure("connection refused"), "NeedsLogin: not logged in"]) {
         yield* close({ status: { stdout: "", exitCode: 1, stderr } });
       }
       const spawnFailing = (tag: "NotFound" | "PermissionDenied") =>

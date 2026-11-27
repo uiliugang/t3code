@@ -276,7 +276,6 @@ const make = Effect.gen(function* () {
           const references: string[] = [];
           const pathVariables = new Set([
             "HOME",
-            "USERPROFILE",
             "PATH",
             "CODEX_HOME",
             "CLAUDE_CONFIG_DIR",

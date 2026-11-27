@@ -11,13 +11,7 @@ const COPY_BLOCKED = "Copy was blocked. The text is selected so you can copy it 
 const UPDATE_DOWNLOAD_FAILED = "The update download failed. Try Download update again.";
 const UPDATE_INSTALL_FAILED = "The update install failed. Try Restart to update again.";
 
-/** The Windows launcher is a `.cmd` run from PowerShell, which needs `&` to run a quoted path. */
 function launcherCommand(launcherPath: string) {
-  if (launcherPath.endsWith(".cmd")) {
-    return /^[\w:\\.-]+$/.test(launcherPath)
-      ? launcherPath
-      : `& '${launcherPath.replace(/['\u2018\u2019\u201A\u201B]/g, "$&$&")}'`;
-  }
   return /^[\w@%+=:,./-]+$/.test(launcherPath)
     ? launcherPath
     : `'${launcherPath.replaceAll("'", `'"'"'`)}'`;
@@ -27,7 +21,6 @@ function launcherCommand(launcherPath: string) {
 export async function resolveTriageCommand(bridge: DesktopBridge | undefined) {
   try {
     const state = await bridge?.cliCommand.getState();
-    // Windows reports onPath from its PATH entry alone; only an existing launcher proves it runs.
     if (state?.launcherPath) {
       return state.onPath ? "t3 triage" : `${launcherCommand(state.launcherPath)} triage`;
     }

@@ -32,7 +32,6 @@ describe("SpawnWorker", () => {
   it.live("runs children on a launcher thread where the server thread would wait on them", () =>
     Effect.gen(function* () {
       for (const [platform, hasEnvChdir, onServerThread] of [
-        ["win32", true, false],
         ["linux", true, true],
         ["linux", false, false],
       ] as const) {
@@ -64,9 +63,9 @@ describe("SpawnWorker", () => {
       const script = `
         const fs = require('node:fs');
         const input = fs.readFileSync(0, 'utf8');
-        fs.writeSync(1, JSON.stringify([input, process.cwd(), process.env.SPAWN_WORKER_TEST, process.argv[1]]) + '\\n');
-        fs.writeSync(1, 'a'.repeat(1024 * 1024));
-        fs.writeSync(2, 'b'.repeat(1024 * 1024));
+        process.stdout.write(JSON.stringify([input, process.cwd(), process.env.SPAWN_WORKER_TEST, process.argv[1]]) + '\\n');
+        process.stdout.write('a'.repeat(1024 * 1024));
+        process.stderr.write('b'.repeat(1024 * 1024));
       `;
       for (let i = 0; i < 3; i++) {
         const child = yield* spawner.spawn(
@@ -193,42 +192,6 @@ describe("SpawnWorker", () => {
       const scoped = yield* Deferred.await(started);
       yield* Fiber.interrupt(running);
       expect(yield* scoped.isRunning).toBe(false);
-      // Direct callers such as the Claude adapter pass an AbortSignal, which cannot cross to a worker.
-      const direct = SpawnWorker.spawnPiped(process.execPath, ["-e", "process.stdin.resume()"], {
-        signal: AbortSignal.abort(),
-      });
-      const exited = new Promise((resolve) => direct.once("exit", () => resolve(direct.killed)));
-      expect(yield* Effect.promise(() => exited)).toBe(true);
-      // Windows has no process groups. Node ends a non-detached grandchild with its parent, but a
-      // detached one, like a CLI's background shell, outlives it unless the kill ends the tree.
-      if (HostProcess.Platform.defaultValue() === "win32") {
-        const cli = SpawnWorker.spawnPiped(
-          process.execPath,
-          [
-            "-e",
-            "const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1e3)'],{detached:true,stdio:'ignore'});process.stdout.write(String(c.pid));process.stdin.resume()",
-          ],
-          {},
-        );
-        const grandchild = yield* Effect.promise(
-          () =>
-            new Promise<number>((resolve) =>
-              cli.stdout.once("data", (pid) => resolve(Number(String(pid)))),
-            ),
-        );
-        const cliExited = new Promise((resolve) => cli.once("exit", resolve));
-        cli.kill();
-        yield* Effect.promise(() => cliExited);
-        const survived = (() => {
-          try {
-            return process.kill(grandchild, 0);
-          } catch {
-            return false;
-          }
-        })();
-        if (survived) process.kill(grandchild);
-        expect(survived).toBe(false);
-      }
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 });

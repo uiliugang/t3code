@@ -37,9 +37,6 @@ concurrency:
   queue: max
 
 permissions:
-  # The Windows desktop jobs read this run's artifact list to wait for the
-  # Linux CLI archive they embed (see release-desktop.yml).
-  actions: read
   contents: read
   id-token: none
 
@@ -588,14 +585,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # One job per platform and architecture (see release-desktop.yml), each
-  # gated only on the JS bundle. Windows targets build on Linux and run their
-  # native checks on a Windows runner of their own architecture.
-  # The Windows jobs also embed the same-arch Linux CLI archive as the WSL
-  # runtime; they wait for that artifact partway through instead of for the
-  # whole Linux job. Every job builds the desktop app; all but macOS x64 also
-  # build the CLI archive for their platform, so a target either ships fully or
-  # not at all.
+  # Each build packages its native desktop target from the shared JS bundle.
   desktop_mac_arm64:
     name: Desktop macOS arm64
     needs: [preflight, relay_public_config, build_bundle]
@@ -697,59 +687,6 @@ jobs:
       resource_key: linux-arm64
       cli_archive: true
 
-  # The Windows jobs start with the other platforms and wait for the same-arch
-  # Linux CLI archive after their other setup. Packaging is mostly CPU and
-  # small-file work, which Linux runners do faster than Windows ones, so both
-  # Windows targets build and sign on Linux and only the native checks run on
-  # Windows.
-  desktop_win_x64:
-    name: Desktop Windows x64
-    needs: [preflight, relay_public_config, build_bundle]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
-    uses: ./.github/workflows/release-desktop.yml
-    secrets: inherit
-    with:
-      version: ${{ needs.preflight.outputs.version }}
-      ref: ${{ needs.preflight.outputs.ref }}
-      release_channel: ${{ needs.preflight.outputs.release_channel }}
-      clerk_publishable_key: ${{ needs.relay_public_config.outputs.clerk_publishable_key }}
-      clerk_jwt_template: ${{ needs.relay_public_config.outputs.clerk_jwt_template }}
-      clerk_cli_oauth_client_id: ${{ needs.relay_public_config.outputs.clerk_cli_oauth_client_id }}
-      relay_url: ${{ needs.relay_public_config.outputs.relay_url }}
-      label: Windows x64
-      runner: ubuntu-24.04
-      verify_runner: windows-2025
-      platform: win
-      target: nsis
-      arch: x64
-      rust_target: x86_64-pc-windows-msvc
-      resource_key: win32-x64
-      cli_archive: true
-
-  desktop_win_arm64:
-    name: Desktop Windows arm64
-    needs: [preflight, relay_public_config, build_bundle]
-    if: ${{ !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.build_bundle.result == 'success' }}
-    uses: ./.github/workflows/release-desktop.yml
-    secrets: inherit
-    with:
-      version: ${{ needs.preflight.outputs.version }}
-      ref: ${{ needs.preflight.outputs.ref }}
-      release_channel: ${{ needs.preflight.outputs.release_channel }}
-      clerk_publishable_key: ${{ needs.relay_public_config.outputs.clerk_publishable_key }}
-      clerk_jwt_template: ${{ needs.relay_public_config.outputs.clerk_jwt_template }}
-      clerk_cli_oauth_client_id: ${{ needs.relay_public_config.outputs.clerk_cli_oauth_client_id }}
-      relay_url: ${{ needs.relay_public_config.outputs.relay_url }}
-      label: Windows arm64
-      runner: ubuntu-24.04
-      verify_runner: windows-11-arm
-      platform: win
-      target: nsis
-      arch: arm64
-      rust_target: aarch64-pc-windows-msvc
-      resource_key: win32-arm64
-      cli_archive: true
-
   release:
     name: Publish GitHub Release
     needs:
@@ -764,10 +701,8 @@ jobs:
         desktop_mac_x64,
         desktop_linux_x64,
         desktop_linux_arm64,
-        desktop_win_x64,
-        desktop_win_arm64,
       ]
-    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.quality.result == 'success' && needs.test.result == 'success' && needs.test_web.result == 'success' && needs.test_server.result == 'success' && needs.desktop_mac_arm64.result == 'success' && needs.desktop_mac_x64.result == 'success' && needs.desktop_linux_x64.result == 'success' && needs.desktop_linux_arm64.result == 'success' && needs.desktop_win_x64.result == 'success' && needs.desktop_win_arm64.result == 'success' }}
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.relay_public_config.result == 'success' && needs.quality.result == 'success' && needs.test.result == 'success' && needs.test_web.result == 'success' && needs.test_server.result == 'success' && needs.desktop_mac_arm64.result == 'success' && needs.desktop_mac_x64.result == 'success' && needs.desktop_linux_x64.result == 'success' && needs.desktop_linux_arm64.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -832,7 +767,7 @@ jobs:
           set -euo pipefail
           cd release-assets
           shopt -s nullglob
-          archives=(t3-*.tar.gz t3-*.zip)
+          archives=(t3-*.tar.gz)
           if [[ ${#archives[@]} -eq 0 ]]; then
             echo "No CLI archives were produced." >&2
             exit 1
@@ -862,9 +797,8 @@ jobs:
           fi
 
       # electron-updater reads one manifest per platform and channel and picks
-      # the file entry whose name carries the running arch. Require every
-      # platform's two build jobs to have produced matching metadata before
-      # merging it, so a successful release can never strand one architecture.
+      # the file entry whose name carries the running arch. Require both macOS
+      # builds to have produced matching metadata before merging their feeds.
       - name: Merge desktop updater manifests
         if: needs.preflight.outputs.release_channel != 'preview'
         run: node scripts/merge-release-update-manifests.ts release-assets
@@ -881,7 +815,6 @@ jobs:
             echo 'release-assets/*.zip'
             echo 'release-assets/*.AppImage'
             echo 'release-assets/*.deb'
-            echo 'release-assets/*.exe'
             if [[ "${{ needs.preflight.outputs.release_channel }}" != "preview" ]]; then
               echo 'release-assets/*.blockmap'
               echo 'release-assets/*.yml'

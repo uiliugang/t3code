@@ -64,8 +64,6 @@ function platformOs(platform: NodeJS.Platform): ExecutionEnvironmentDescriptor["
       return "darwin";
     case "linux":
       return "linux";
-    case "win32":
-      return "windows";
     default:
       return "unknown";
   }
@@ -296,7 +294,7 @@ export const make = Effect.gen(function* () {
       sourceControlToolMaintenance: true,
       meituanTools: true,
       toolStatusFollowsSettings: true,
-      ...(hostPlatform === "win32" ? {} : { localServerStop: true }),
+      localServerStop: true,
       previewTunnelSetting: true,
       environmentIcon: true,
       environmentName: true,

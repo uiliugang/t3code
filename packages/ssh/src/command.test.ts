@@ -342,32 +342,22 @@ describe("ssh command", () => {
     {
       name: "quotes the terminal command for a POSIX shell",
       target: { alias: "my host", username: "o'brien" },
-      platform: "linux",
       stderr: "Host key verification failed.\r\n",
       expected: ["`ssh 'o'\\''brien@my host'`"],
     },
     {
-      name: "quotes the terminal command for a Windows shell",
-      target: { alias: "my host", username: "me" },
-      platform: "win32",
-      stderr: "Host key verification failed.\r\n",
-      expected: ['`ssh "me@my host"`'],
-    },
-    {
       name: "keeps an option-shaped alias out of the option list",
       target: { alias: "-oProxyCommand=false", username: null },
-      platform: "linux",
       stderr: "Host key verification failed.\r\n",
       expected: ["`ssh -- -oProxyCommand=false`"],
     },
     {
       name: "tells the user to remove a changed host key first",
       target: { alias: "devbox", username: null },
-      platform: "linux",
       stderr: changedKeyStderr,
       expected: ["has changed", "`ssh-keygen -R`", "`ssh devbox`", "-R 'devbox'"],
     },
-  ] as const)("$name", ({ target, platform, stderr, expected }) => {
+  ] as const)("$name", ({ target, stderr, expected }) => {
     const spawner = ChildProcessSpawner.make(() =>
       Effect.succeed(makeFailedProcess({ stdout: "", stderr })),
     );
@@ -378,7 +368,6 @@ describe("ssh command", () => {
         for (const text of expected) assert.include(error.message, text);
         if (isSshCommandError(error)) assert.equal(error.stderr, stderr);
       }),
-      Effect.provideService(HostProcess.Platform, platform),
       Effect.provide(
         Layer.mergeAll(
           NodeServices.layer,

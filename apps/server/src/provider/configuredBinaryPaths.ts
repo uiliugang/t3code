@@ -40,7 +40,6 @@ export const configuredBinaryPaths = Effect.fn("ProviderInstallation.configuredB
     const paths = new Set<string>();
     const home = yield* HostProcess.HomeDirectory;
     const hostEnvironment = yield* HostProcess.Environment;
-    const windows = (yield* HostProcess.Platform) === "win32";
     for (const { driver, config, environment } of Object.values(entries).flatMap(
       providerConnectionConfigurations,
     )) {
@@ -57,14 +56,10 @@ export const configuredBinaryPaths = Effect.fn("ProviderInstallation.configuredB
       for (const rawBinary of candidates) {
         const binary = expandHomePath(rawBinary, home);
         if (!binary) continue;
-        const searchPath = !binary.includes("/") && !binary.includes("\\");
-        const unresolved = environment?.find(({ name, value }) => {
-          const key = windows ? name.toUpperCase() : name;
-          return (
-            typeof value !== "string" &&
-            ((searchPath && key === "PATH") || (windows && key === "PATHEXT"))
-          );
-        });
+        const searchPath = !binary.includes("/");
+        const unresolved = environment?.find(
+          ({ name, value }) => typeof value !== "string" && searchPath && name === "PATH",
+        );
         if (unresolved) {
           return yield* new UnresolvedBinaryPathEnvironment({ variable: unresolved.name });
         }

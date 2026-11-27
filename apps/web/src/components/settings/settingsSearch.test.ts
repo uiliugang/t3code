@@ -77,7 +77,6 @@ describe("searchSettings", () => {
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
-      isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
     };
     for (const enabled of [false, true]) {
@@ -146,7 +145,6 @@ describe("searchSettings", () => {
       hasEnvironment: false,
       hasProviderSettingsEnvironment: false,
       canManageLocalBackend: false,
-      isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
     });
 
@@ -163,7 +161,6 @@ describe("searchSettings", () => {
       "t3-connect",
       "hold-webhooks-while-offline",
       "tailscale-https",
-      "wsl-backend",
       "auto-settle-inactive-threads",
       "auto-settle-merged-threads",
       "days-before-auto-settle",
@@ -179,7 +176,6 @@ describe("searchSettings", () => {
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
       localEnvironmentDisabled: true,
-      isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
     };
     const results = (hasPeerLinkHost: boolean) =>
@@ -203,7 +199,6 @@ describe("searchSettings", () => {
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
-      isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: false,
     };
     const ids = (hasPrimaryEnvironment: boolean) =>
@@ -311,7 +306,6 @@ describe("auto-settlement search availability", () => {
       hasEnvironment: true,
       hasProviderSettingsEnvironment: true,
       canManageLocalBackend: false,
-      isWslSettingsRowVisible: false,
       hasThreadAutoSettlement: availability.eligibleEnvironmentIds.length > 0,
     });
     expect(searchSettings("auto-settle", items).map((item) => item.id)).toEqual([

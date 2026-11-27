@@ -52,7 +52,6 @@ import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts"
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
-import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 
 import * as BrowserImport from "../preview/BrowserImport/BrowserImport.ts";
 import * as DesktopBackendConfiguration from "../backend/DesktopBackendConfiguration.ts";
@@ -70,7 +69,6 @@ import * as DesktopCloudSandbox from "../ssh/DesktopCloudSandbox.ts";
 import * as DesktopSshPasswordPrompts from "../ssh/DesktopSshPasswordPrompts.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
-import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
@@ -193,9 +191,6 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           configureFromSettings: () => Effect.succeed({ mode: "local-only" }),
           backendConfig: Effect.succeed({ httpBaseUrl: new URL("http://127.0.0.1:3773") }),
         } as unknown as DesktopServerExposure.DesktopServerExposure["Service"]),
-        Effect.provideService(DesktopWslBackend.DesktopWslBackend, {
-          reconcile: Effect.void,
-        } as DesktopWslBackend.DesktopWslBackend["Service"]),
         Effect.provideService(DesktopAppActivation.DesktopAppActivation, {
           start: stub.activationStarted
             ? Deferred.succeed(stub.activationStarted, undefined)
@@ -236,7 +231,6 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           Layer.mock(DesktopSshPasswordPrompts.DesktopSshPasswordPrompts, {}),
           Layer.mock(DesktopTelemetryPublisher.DesktopTelemetryPublisher, {}),
           Layer.mock(DesktopWebLinks.DesktopWebLinks, {}),
-          Layer.mock(DesktopWslEnvironment.DesktopWslEnvironment, {}),
           Layer.mock(ElectronMenu.ElectronMenu, {}),
           Layer.mock(ElectronShell.ElectronShell, {}),
           Layer.mock(ElectronTheme.ElectronTheme, {}),

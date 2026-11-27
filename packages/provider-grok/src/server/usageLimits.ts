@@ -120,10 +120,7 @@ const readGrokCredential = Effect.fn("readGrokCredential")(function* (
   const path = yield* Path.Path;
   const home =
     environment.GROK_HOME?.trim() ||
-    path.join(
-      environment.HOME || environment.USERPROFILE || (yield* HostProcess.HomeDirectory),
-      ".grok",
-    );
+    path.join(environment.HOME || (yield* HostProcess.HomeDirectory), ".grok");
   for (const configPath of [
     path.join(home, "config.toml"),
     path.join(home, "managed_config.toml"),

@@ -108,15 +108,12 @@ export function isLocalOpenCodeServerUrl(serverUrl: string): boolean {
 
 function isOpenCodeNativeCommandPath(commandPath: string): boolean {
   const normalized = normalizeCommandPath(commandPath);
-  return (
-    normalized.endsWith("/.opencode/bin/opencode") ||
-    normalized.endsWith("/.opencode/bin/opencode.exe")
-  );
+  return normalized.endsWith("/.opencode/bin/opencode");
 }
 
 function openCodeNativeHome(commandPath: string): string | null {
   const slashed = commandPath.replaceAll("\\", "/");
-  const match = /\/\.opencode\/bin\/opencode(?:\.exe)?$/i.exec(slashed);
+  const match = /\/\.opencode\/bin\/opencode$/i.exec(slashed);
   if (!match) return null;
   return match.index === 0 ? "/" : slashed.slice(0, match.index);
 }

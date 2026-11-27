@@ -130,7 +130,6 @@ describe("AcpClientTerminals", () => {
             : {
                 env: [
                   { name: "T3_TEST_OVERRIDE", value: "first" },
-                  { name: "t3_Test_Override", value: "second" },
                   { name: "T3_TEST_OVERRIDE", value: "request" },
                 ],
               }),
@@ -148,8 +147,6 @@ describe("AcpClientTerminals", () => {
         T3_TEST_INHERITED: "kept",
         T3_TEST_OVERRIDE: "inherited",
       }),
-      // Exercise Windows' case-insensitive variable names on every OS.
-      Effect.provideService(HostProcess.Platform, "win32"),
       Effect.provide(NodeServices.layer),
     ),
   );

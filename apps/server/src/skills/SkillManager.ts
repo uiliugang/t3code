@@ -1,7 +1,4 @@
 import * as SecureRandom from "effect/crypto/SecureRandom";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's symlink API cannot request Windows directory junctions.
-import * as NodeFSP from "node:fs/promises";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as DateTime from "effect/DateTime";
 import {
   SkillCatalog,
@@ -125,18 +122,6 @@ const make = Effect.gen(function* () {
   const discovery = yield* makeSkillDiscovery;
   const copies = yield* makeSkillCopy;
   const random = yield* SecureRandom.SecureRandom;
-  const platform = yield* HostProcess.Platform;
-  const directoryLink = Effect.fn("SkillManager.directoryLink")(function* (
-    target: string,
-    link: string,
-  ) {
-    if (platform === "win32") {
-      yield* Effect.tryPromise({
-        try: () => NodeFSP.symlink(target, link, "junction"),
-        catch: (cause) => new SkillManagerError({ operation: "link", reason: "io", cause }),
-      });
-    } else yield* fs.symlink(target, link);
-  });
   const root = path.join(config.stateDir, "skills");
   const stored = yield* sql<{ payload: string }>`SELECT payload FROM skill_catalog WHERE id = 1`;
   const catalog = stored[0] ? yield* decode(stored[0].payload) : initial;
@@ -375,14 +360,14 @@ const make = Effect.gen(function* () {
           }
           yield* fs.makeDirectory(path.dirname(backup), { recursive: true });
           yield* fs.rename(file, backup);
-          yield* directoryLink(activePath(skill.id), file).pipe(
+          yield* fs.symlink(activePath(skill.id), file).pipe(
             Effect.tapError(() =>
               Effect.gen(function* () {
                 if (!(yield* filePresent(file))) yield* fs.rename(backup, file);
               }),
             ),
           );
-        } else yield* directoryLink(activePath(skill.id), file);
+        } else yield* fs.symlink(activePath(skill.id), file);
         return "linked" as const;
       }).pipe(Effect.result);
       bindings.push({ ...target, status: result._tag === "Success" ? result.success : "missing" });
@@ -404,8 +389,7 @@ const make = Effect.gen(function* () {
         return yield* new SkillManagerError({ operation: "activate", reason: "conflict" });
       const temporary = `${link}.next`;
       if (yield* filePresent(temporary)) yield* fs.remove(temporary);
-      yield* directoryLink(expected, temporary);
-      if (platform === "win32" && existing !== null) yield* fs.remove(link);
+      yield* fs.symlink(expected, temporary);
       yield* fs.rename(temporary, link);
     }
     return yield* syncBindings(skill);

@@ -16,7 +16,6 @@ import {
   CLI_RELEASE_CHECKSUMS_FILE,
   cliArchiveFileName,
   cliArchivePlatformKey,
-  cliArchiveTarCommand,
   cliReleaseAssetUrl,
   type CliArchivePlatformKey,
   parseChecksums,
@@ -25,7 +24,6 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as ProcessRunner from "../processRunner.ts";
-import { windowsPowerShellPath } from "@t3tools/shared/windowsSystem";
 import { isExactServiceVersion, parseServiceState, SERVICE_STATE_FILE } from "./serviceProtocol.ts";
 
 const PINNED_RUNTIME_DIR = "runtime";
@@ -56,12 +54,11 @@ export function pinnedRuntimePaths(
   path: Path.Path,
   baseDir: string,
   version: string,
-  platform: NodeJS.Platform,
 ): PinnedRuntimePaths {
   const versionDir = path.join(pinnedRuntimeVersionsDir(path, baseDir), version);
   return {
     versionDir,
-    entryPath: path.join(versionDir, platform === "win32" ? "t3.exe" : "t3"),
+    entryPath: path.join(versionDir, "t3"),
     sentinelPath: path.join(versionDir, ".install-complete"),
   };
 }
@@ -313,7 +310,7 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
   // Strip the archive's stem directory so the executable lands at <versionDir>/t3.
   yield* input.runner
     .run({
-      command: cliArchiveTarCommand(input.platform, process.env),
+      command: "tar",
       args: ["-xf", archivePath, "-C", stagingDir, "--strip-components=1"],
       timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
     })
@@ -372,7 +369,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   input: PinnedRuntimeInstallInput,
 ) {
   const { fs } = input;
-  const paths = pinnedRuntimePaths(input.path, input.baseDir, input.version, input.platform);
+  const paths = pinnedRuntimePaths(input.path, input.baseDir, input.version);
   const [versionDirExists, entryExists, sentinel] = yield* Effect.all([
     fs.exists(paths.versionDir),
     fs.exists(paths.entryPath),
@@ -533,23 +530,17 @@ export const resolveLauncherPath = Effect.gen(function* () {
   const invokedAs = yield* HostProcess.InvokedAs;
   const cwd = yield* HostProcess.WorkingDirectory;
   const environment = yield* HostProcess.Environment;
-  const platform = yield* HostProcess.Platform;
   if (invokedAs.includes("/") || invokedAs.includes("\\")) {
     return path.resolve(cwd, invokedAs);
   }
-  const delimiter = platform === "win32" ? ";" : ":";
   const searchPath = environment["PATH"] ?? "";
-  for (const directory of searchPath.split(delimiter)) {
+  for (const directory of searchPath.split(":")) {
     // POSIX shells search the working directory for an empty entry of a nonempty PATH.
-    if (directory.length === 0 && (platform === "win32" || searchPath.length === 0)) continue;
+    if (directory.length === 0 && searchPath.length === 0) continue;
     const candidate = path.resolve(cwd, directory || ".", invokedAs);
     const info = yield* fs.stat(candidate).pipe(Effect.option);
     // Like the shell, pass over directories and non-executable files named the same.
-    if (
-      Option.isSome(info) &&
-      info.value.type === "File" &&
-      (platform === "win32" || (info.value.mode & 0o111) !== 0)
-    ) {
+    if (Option.isSome(info) && info.value.type === "File" && (info.value.mode & 0o111) !== 0) {
       return candidate;
     }
   }
@@ -577,23 +568,15 @@ export const recordPinnedRuntimeLauncher = Effect.fn("cloud.pinned_runtime.recor
   },
 );
 
-/** Whether `candidate` is a version's own executable, `<versionsDir>/<version>/t3[.exe]`. */
+/** Whether `candidate` is a POSIX runtime executable, `<versionsDir>/<version>/t3`. */
 export function isVersionExecutable(
   path: Path.Path,
   versionsDir: string,
   candidate: string,
 ): boolean {
   const relative = path.relative(versionsDir, path.resolve(candidate));
-  // On another Windows drive, relative() returns the absolute path, like `D:\t3.exe`.
-  return !path.isAbsolute(relative) && /^(?!\.\.)[^\\/]+[\\/]t3(?:\.exe)?$/i.test(relative);
+  return !path.isAbsolute(relative) && /^(?!\.\.)[^/]+\/t3$/.test(relative);
 }
-
-/** The executable a `t3.cmd` shim written by the install script or `t3 update` runs. */
-export const windowsShimTarget = (contents: string) => /^"([^"]+)"/m.exec(contents)?.[1];
-
-/** Like {@link windowsShimTarget}, but only for a shim exactly as written; never a user's wrapper. */
-export const generatedWindowsShimTarget = (contents: string) =>
-  /^@echo off\r?\n"([^"]+)" %\*\s*$/.exec(contents)?.[1];
 
 /**
  * The `t3` script the install scripts and `t3 update` write on macOS and Linux. Exec by absolute
@@ -703,17 +686,16 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
   const environment = yield* HostProcess.Environment;
   const home = yield* HostProcess.HomeDirectory;
-  const launcherName = platform === "win32" ? "t3.cmd" : "t3";
+  const launcherName = "t3";
   const launchersFile = path.join(baseDir, PINNED_RUNTIME_DIR, PINNED_RUNTIME_LAUNCHERS_FILE);
   const recorded = (yield* fs.readFileString(launchersFile).pipe(Effect.orElseSucceed(() => "")))
     .split(/\r?\n/)
     .filter((launcher) => launcher.trim().length > 0);
   const found = [
     environment["T3CODE_INSTALL_BIN_DIR"] || path.join(home, ".local", "bin"),
-    ...(environment["PATH"] ?? environment["Path"] ?? "").split(platform === "win32" ? ";" : ":"),
+    ...(environment["PATH"] ?? "").split(":"),
   ]
     .filter((directory) => path.isAbsolute(directory))
     .map((directory) => path.join(directory, launcherName));
@@ -727,17 +709,10 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
   const unrecorded: Array<string> = [];
   const targets: Array<string> = [];
   for (const launcher of [...recorded, ...found]) {
-    const resolved =
-      platform === "win32"
-        ? yield* fs.readFileString(launcher).pipe(
-            Effect.map(windowsShimTarget),
-            Effect.orElseSucceed(() => undefined),
-          )
-        : // Fully resolved, through chained links and a symlinked T3 home alike.
-          yield* fs.realPath(launcher).pipe(Effect.orElseSucceed(() => undefined));
+    // Fully resolved, through chained links and a symlinked T3 home alike.
+    const resolved = yield* fs.realPath(launcher).pipe(Effect.orElseSucceed(() => undefined));
     if (resolved === undefined) continue;
-    const scriptTarget =
-      platform === "win32" ? undefined : yield* readPosixLauncherTarget(resolved);
+    const scriptTarget = yield* readPosixLauncherTarget(resolved);
     const target =
       scriptTarget === undefined
         ? resolved
@@ -749,7 +724,6 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
       .realPath(path.dirname(entryDir))
       .pipe(Effect.orElseSucceed(() => path.dirname(entryDir)));
     if (
-      platform !== "win32" &&
       scriptTarget === undefined &&
       (parent === versionsDir || parent === realVersionsDir) &&
       target === path.join(realVersionsDir, path.basename(entryDir), path.basename(launcher))
@@ -771,8 +745,7 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
 
 /**
  * Resolved executables rather than command lines: a server started through the `t3` symlink
- * shows up as `t3 serve`, possibly from another T3 home that runs this home's runtimes. Windows
- * has no symlink launcher, and its `t3.cmd` shim runs the absolute path, so command lines do there.
+ * shows up as `t3 serve`, possibly from another T3 home that runs this home's runtimes.
  */
 const runningExecutables = Effect.fn("cloud.pinned_runtime.running_executables")(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -793,17 +766,8 @@ const runningExecutables = Effect.fn("cloud.pinned_runtime.running_executables")
   }
   const result = yield* runner
     .run({
-      ...(platform === "win32"
-        ? {
-            command: windowsPowerShellPath(yield* HostProcess.Environment),
-            args: [
-              "-NoProfile",
-              "-NonInteractive",
-              "-Command",
-              "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine",
-            ],
-          }
-        : { command: "lsof", args: ["-nP", "-w", "-d", "txt", "-F", "n"] }),
+      command: "lsof",
+      args: ["-nP", "-w", "-d", "txt", "-F", "n"],
       timeout: Duration.seconds(10),
       maxOutputBytes: 16 * 1024 * 1024,
     })
@@ -888,14 +852,11 @@ const selectUnusedRuntimes = Effect.fn("cloud.pinned_runtime.select_unused")(fun
   const executables = yield* runningExecutables();
   // Without a process list, a runtime in use would look unused.
   if (Option.isNone(executables)) return pruned;
-  const platform = yield* HostProcess.Platform;
-  // Windows paths are case-insensitive, and shims and process lists need not agree on case.
-  const foldCase = (value: string) => (platform === "win32" ? value.toLowerCase() : value);
   const references = [
     executables.value,
     ...(yield* shellLauncherTargets(input.baseDir)),
     ...input.references,
-  ].map(foldCase);
+  ];
   // Process executables are resolved, so they name the real path of a symlinked T3 home.
   const realVersionsDir = yield* fs
     .realPath(versionsDir)
@@ -903,9 +864,7 @@ const selectUnusedRuntimes = Effect.fn("cloud.pinned_runtime.select_unused")(fun
 
   for (const version of completed) {
     const versionDir = path.join(versionsDir, version);
-    const prefixes = [versionDir, path.join(realVersionsDir, version)].map((dir) =>
-      foldCase(dir + path.sep),
-    );
+    const prefixes = [versionDir, path.join(realVersionsDir, version)].map((dir) => dir + path.sep);
     if (
       keep.has(version) ||
       references.some((reference) => prefixes.some((prefix) => reference.includes(prefix)))

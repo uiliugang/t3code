@@ -5,7 +5,7 @@ T3 Code runs Google's official Antigravity ACP agent on your selected environmen
 ## Set up Antigravity
 
 1. Open **Settings → Providers** (web or desktop), choose your environment, and enable **Antigravity**.
-2. Install the managed runtime (requires 1.25+ GiB free disk space; supports macOS Apple Silicon/Intel, Linux x64/ARM64 glibc/musl, and Windows x64/ARM64).
+2. Install the managed runtime (requires 1.25+ GiB free disk space; supports macOS Apple Silicon/Intel and Linux x64/ARM64 glibc/musl).
 3. Click **Sign in** and complete browser sign-in. Wait for T3 Code to confirm access and load models. (Once installed, you can also sign in from mobile.)
 
 - **Remote sign-in**: Paste the temporary code (or full URL) from Google's completion page into T3 Code's code field.

@@ -73,9 +73,13 @@ Enable automatic cleanup or run **Delete now** in **Settings → Worktrees → C
 
 Yes—on-device speech on iOS, Android, and macOS 26+ desktop, or via a paired environment on web/desktop/mobile. See [Voice input](./voice-input.md).
 
-## Does it work on Windows, Mac, and Linux?
+## Which platforms can I use?
 
-Yes, all three (desktop app and CLI). Note: there is no standalone `t3` binary for Intel Macs (use the desktop app there), and Windows users can also run agents inside WSL. See [Install](./install.md).
+Run the desktop app or server on macOS or Linux. There is no standalone `t3`
+binary for Intel Macs; see [Install](./install.md#intel-macs) for the options.
+Mobile clients can connect from iOS, iPadOS, or Android. The fork does not
+support the native Windows app or desktop-managed WSL. On Windows, use a
+browser or [run the Linux CLI inside WSL](./install.md#access-from-windows).
 
 ## Why is my provider not showing up?
 

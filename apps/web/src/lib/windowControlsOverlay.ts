@@ -2,11 +2,10 @@ import { useSyncExternalStore } from "react";
 
 import { isElectron } from "~/env";
 
-import { isMacPlatform, isWindowsPlatform } from "./utils";
+import { isMacPlatform } from "./utils";
 
 const WCO_CLASS_NAME = "wco";
 const ELECTRON_CLASS_NAME = "electron";
-const ELECTRON_WINDOWS_CLASS_NAME = "electron-windows";
 // macOS has no overlay API; traffic lights stay inside this topbar at every zoom level.
 const MACOS_TITLEBAR_HEIGHT = 52;
 
@@ -77,24 +76,13 @@ export function useNativeTitlebarHeight(): number {
   return useSyncExternalStore(subscribeTitlebarArea, getNativeTitlebarHeight, () => 0);
 }
 
-function getElectronPlatformClassNames(
-  platform: string,
-):
-  | readonly [typeof ELECTRON_CLASS_NAME]
-  | readonly [typeof ELECTRON_CLASS_NAME, typeof ELECTRON_WINDOWS_CLASS_NAME] {
-  return isWindowsPlatform(platform)
-    ? [ELECTRON_CLASS_NAME, ELECTRON_WINDOWS_CLASS_NAME]
-    : [ELECTRON_CLASS_NAME];
-}
-
-export function syncDocumentElectronPlatformClasses(platform: string): () => void {
+export function syncDocumentElectronPlatformClasses(): () => void {
   if (typeof document === "undefined") {
     return () => {};
   }
 
-  const classNames = getElectronPlatformClassNames(platform);
-  document.documentElement.classList.add(...classNames);
+  document.documentElement.classList.add(ELECTRON_CLASS_NAME);
   return () => {
-    document.documentElement.classList.remove(...classNames);
+    document.documentElement.classList.remove(ELECTRON_CLASS_NAME);
   };
 }

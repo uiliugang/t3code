@@ -365,7 +365,7 @@ export const make = Effect.gen(function* () {
             endNudging(tab);
             return Effect.void;
           }
-          // On Windows a hidden window's throttled guest draws nothing, and capturePage cannot wake it.
+          // A hidden window's throttled guest may draw nothing, and capturePage cannot reliably wake it.
           if (!tab.frameStalled) {
             tab.frameStalled = true;
             syncPainting(tab);

@@ -72,7 +72,7 @@ export interface SkippedMachine {
   readonly reason: string;
 }
 
-// Desktop servers without the desktop control fd (older apps, WSL backends: wsl.exe cannot pass
+// Desktop servers without the desktop control fd (older versions; old secondary backends cannot pass
 // fds) cannot be updated from here, and their desktop app is not necessarily the stale part.
 const UPDATE_ON_THAT_MACHINE = msg("update T3 Code on that machine");
 

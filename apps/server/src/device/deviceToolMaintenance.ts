@@ -22,7 +22,7 @@ async function withToolMaintenance(root, operation) {
   const deadline = Date.now() + 30000;
   const removeEmptyLock = () => {
     try { maintenanceFs.rmdirSync(lock); }
-    catch (error) { if (!['ENOENT', 'ENOTEMPTY', 'EEXIST', 'EPERM'].includes(error.code)) throw error; }
+    catch (error) { if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error; }
   };
   maintenanceFs.mkdirSync(candidate);
   try {
@@ -34,7 +34,7 @@ async function withToolMaintenance(root, operation) {
         break;
       }
       catch (error) {
-        if (!['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(error.code)) throw error;
+        if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error;
         let files = [];
         try { files = maintenanceFs.readdirSync(lock); } catch (error) { if (error.code !== 'ENOENT') throw error; }
         if (files.length === 1) {
@@ -64,9 +64,7 @@ async function withToolMaintenance(root, operation) {
 function pruneTools(root, specs, flat) {
   return withToolMaintenance(root, () => {
     // Keep installs used by any running helper, including older T3 releases.
-    const scan = process.platform === 'win32'
-      ? require('node:child_process').spawnSync((process.env.SystemRoot || process.env.windir || 'C:\\Windows') + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine'], { encoding: 'utf8', timeout: 10000 })
-      : require('node:child_process').spawnSync('ps', ['-ax', '-o', 'command='], { encoding: 'utf8', timeout: 10000 });
+    const scan = require('node:child_process').spawnSync('ps', ['-ax', '-o', 'command='], { encoding: 'utf8', timeout: 10000 });
     if (scan.status !== 0 || !scan.stdout) return;
     for (const [name, required] of specs) {
       const parent = flat ? root : maintenancePath.join(root, name);

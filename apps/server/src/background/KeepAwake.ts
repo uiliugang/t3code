@@ -14,7 +14,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
-import { windowsPowerShellPath } from "@t3tools/shared/windowsSystem";
 import { forkParked } from "../serverActivation.ts";
 import * as Settings from "../serverSettings.ts";
 
@@ -32,7 +31,7 @@ export function inhibitorCommand(
   platform: NodeJS.Platform,
   serverPid: number,
   isWsl: boolean,
-  env: NodeJS.ProcessEnv,
+  _env: NodeJS.ProcessEnv,
 ):
   | {
       readonly command: string;
@@ -74,17 +73,6 @@ export function inhibitorCommand(
           "-c",
           'echo && exec tail --pid="$0" -f /dev/null',
           String(serverPid),
-        ],
-        stdin: "ignore",
-      };
-    case "win32":
-      return {
-        command: windowsPowerShellPath(env),
-        args: [
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          `${WINDOWS_HOLD_SCRIPT}; Wait-Process -Id ${serverPid}`,
         ],
         stdin: "ignore",
       };

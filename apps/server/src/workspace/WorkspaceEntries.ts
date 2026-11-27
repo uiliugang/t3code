@@ -132,7 +132,7 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
   path: Path.Path,
 ): Effect.fn.Return<string, WorkspaceEntriesBrowseError> {
   const platform = yield* HostProcess.Platform;
-  if (platform !== "win32" && isWindowsAbsolutePath(input.partialPath)) {
+  if (isWindowsAbsolutePath(input.partialPath)) {
     return yield* new WorkspaceEntriesWindowsPathUnsupportedError({
       cwd: input.cwd,
       partialPath: input.partialPath,

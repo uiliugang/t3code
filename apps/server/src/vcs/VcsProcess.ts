@@ -108,21 +108,15 @@ const gitMetricOperations = new Set([
 
 /**
  * Append after inherited entries without changing argv or the user's config.
- * Windows env keys ignore case: read the last spelling of the count so command overrides win,
- * then update every spelling because Node may keep any one.
  * Leave invalid counts untouched so Git reports them.
  */
 export const gitConfigEnv = (
   env: NodeJS.ProcessEnv,
   key: string,
   value: string,
-  platform: NodeJS.Platform,
+  _platform: NodeJS.Platform,
 ): NodeJS.ProcessEnv => {
-  const countKeys = Object.keys(env).filter((name) =>
-    platform === "win32" ? name.toUpperCase() === "GIT_CONFIG_COUNT" : name === "GIT_CONFIG_COUNT",
-  );
-  const countKey = countKeys.at(-1) ?? "GIT_CONFIG_COUNT";
-  const inherited = env[countKey];
+  const inherited = env.GIT_CONFIG_COUNT;
   if (
     inherited !== undefined &&
     inherited !== "" &&
@@ -133,7 +127,7 @@ export const gitConfigEnv = (
   }
   const count = inherited === undefined || inherited === "" ? 0 : Number.parseInt(inherited, 10);
   return {
-    ...Object.fromEntries([...countKeys, countKey].map((name) => [name, String(count + 1)])),
+    GIT_CONFIG_COUNT: String(count + 1),
     [`GIT_CONFIG_KEY_${count}`]: key,
     [`GIT_CONFIG_VALUE_${count}`]: value,
   };
@@ -177,11 +171,11 @@ const REPOSITORY_SELECTORS = new Set([
  */
 export const unsetInheritedRepositoryEnv = (
   inherited: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform,
+  _platform: NodeJS.Platform,
 ): NodeJS.ProcessEnv =>
   Object.fromEntries(
     Object.keys(inherited)
-      .filter((name) => REPOSITORY_SELECTORS.has(platform === "win32" ? name.toUpperCase() : name))
+      .filter((name) => REPOSITORY_SELECTORS.has(name))
       .map((name) => [name, undefined]),
   );
 
@@ -432,10 +426,7 @@ export const make = Effect.gen(function* () {
       const attempt = Effect.suspend(() => {
         const start = now();
         let acquired: number | undefined;
-        const trace =
-          hostPlatform === "win32"
-            ? undefined
-            : makeCheckpointGitTrace(() => clock.currentTimeMillisUnsafe());
+        const trace = makeCheckpointGitTrace(() => clock.currentTimeMillisUnsafe());
         const bounded = vcsProcesses.withPermits(1)(
           Effect.suspend(() => {
             acquired = now();

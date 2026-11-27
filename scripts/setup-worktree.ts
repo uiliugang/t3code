@@ -29,7 +29,7 @@ process.on("exit", (code) => {
 });
 // A cancelled setup must still leave a marker, or agents would wait forever.
 // During install, the signal goes on to the installer and setup exits when the
-// install output closes. Any child the shell leaves behind holds that output
+// install output closes. Any child the installer leaves behind holds that output
 // open, so no marker appears while `vp i` can still write node_modules.
 let cancelSignal: NodeJS.Signals | undefined;
 let activeInstall: NodeChildProcess.ChildProcess | undefined;
@@ -46,18 +46,20 @@ if (!projectRoot) {
   throw new Error("T3CODE_PROJECT_ROOT is not set. Run this through the t3.json setup action.");
 }
 
-// Use the shell for Windows vp shims. Unattended installs need pnpm's confirmation
-// flag and closed stdin so other prompts fail. A stale lockfile must fail, not be rewritten.
-// Pipe output so the failure marker can keep its tail.
-const install = NodeChildProcess.spawn("vp i --frozen-lockfile --prefer-offline -- --yes", {
-  cwd: worktree,
-  shell: true,
-  stdio: ["ignore", "pipe", "pipe"],
-  env: {
-    ...process.env,
-    PNPM_CONFIG_VIRTUAL_STORE_TYPE: process.env.PNPM_CONFIG_VIRTUAL_STORE_TYPE ?? "global",
+// Unattended installs need pnpm's confirmation flag and closed stdin so other prompts fail.
+// A stale lockfile must fail, not be rewritten. Pipe output so the failure marker can keep its tail.
+const install = NodeChildProcess.spawn(
+  "vp",
+  ["i", "--frozen-lockfile", "--prefer-offline", "--", "--yes"],
+  {
+    cwd: worktree,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      PNPM_CONFIG_VIRTUAL_STORE_TYPE: process.env.PNPM_CONFIG_VIRTUAL_STORE_TYPE ?? "global",
+    },
   },
-});
+);
 activeInstall = install;
 let installOutput = "";
 for (const [source, target] of [

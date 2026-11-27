@@ -11,7 +11,7 @@ async function loadCliMain(): Promise<typeof import("./binMain.ts")> {
 
   // Keep the executable's module URL so the CLI finds the web client and native packages beside it.
   const require = NodeModule.createRequire(import.meta.url);
-  // require() resolves links in the executable path, such as a Windows junction.
+  // require() resolves links in the executable path.
   const cliUrl = NodeURL.pathToFileURL(require.resolve(process.execPath)).href;
   const hook = NodeModule.registerHooks({
     load(url, context, next) {
@@ -45,14 +45,15 @@ if (
   process.stdout.on("error", ignoreOutputError);
   process.stderr.on("error", ignoreOutputError);
 
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- CLI boundary runs before Effect.
+  const platform = process.platform;
   // The launcher owns shutdown until its child exits, so it bypasses the Effect CLI runtime.
-  // A service unit passes nothing, or on Windows the launcher's own flags; help and anything
-  // else go through the full CLI.
-  const launcher =
-    process.argv[2] === "__service-launcher" ? await import("./cli/serviceLauncher.ts") : undefined;
-  const launcherOptions = launcher?.parseServiceLauncherArgs(process.argv.slice(3));
-  if (launcher !== undefined && launcherOptions !== undefined) {
-    await launcher.runServiceLauncherCli(launcherOptions);
+  if (platform !== "linux" && platform !== "darwin") {
+    process.stderr.write("T3 Code CLI and Server run on Linux and macOS only.\n");
+    process.exitCode = 1;
+  } else if (process.argv[2] === "__service-launcher" && process.argv.length === 3) {
+    const { runServiceLauncherCli } = await import("./cli/serviceLauncher.ts");
+    await runServiceLauncherCli();
   } else if (process.argv[2] === "__process-launcher") {
     // Single executables host the launcher here; other builds start process-launcher.mjs directly.
     const { runProcessLauncher } = await import("./process/processLauncherWorker.ts");

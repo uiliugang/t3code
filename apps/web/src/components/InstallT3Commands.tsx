@@ -1,12 +1,11 @@
 import { cn } from "~/lib/utils";
-import { CLI_INSTALL_SCRIPT_URL, CLI_INSTALL_POWERSHELL_URL } from "@t3tools/shared/cliRelease";
+import { CLI_INSTALL_SCRIPT_URL } from "@t3tools/shared/cliRelease";
 import { useUiTranslation } from "../hooks/useUiTranslation";
 
 import { CommandBlock } from "./CommandBlock";
 
 /**
- * Setup steps for another computer: install `t3`, then run `command`. Both installers are shown
- * because the browser showing this is often not the computer being set up.
+ * Setup steps for a macOS or Linux host: install `t3`, then run `command`.
  */
 export function InstallT3Commands({
   command,
@@ -20,8 +19,6 @@ export function InstallT3Commands({
     <div className={cn("space-y-2", className)}>
       <p className="text-xs text-muted-foreground">macOS, Linux</p>
       <CommandBlock command={`curl -fsSL ${CLI_INSTALL_SCRIPT_URL} | sh`} />
-      <p className="text-xs text-muted-foreground">Windows (PowerShell)</p>
-      <CommandBlock command={`irm ${CLI_INSTALL_POWERSHELL_URL} | iex`} />
       <p className="text-xs text-muted-foreground">{t("Then")}</p>
       <CommandBlock command={command} />
       <p className="text-xs text-muted-foreground">

@@ -12,7 +12,6 @@ import type { ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { usePreparedConnection } from "~/state/session";
-import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { m, type MessageResolver } from "../../i18n/messages";
 
@@ -43,7 +42,6 @@ export function environmentTransportLabel(
       : resolve(msg("via {route}", { route: connectionRouteLabelText(active, resolve) }));
   }
   if (environment.relayManaged) return T3_CONNECT_NAME;
-  if (isDesktopLocalConnectionTarget(entry.target)) return "WSL";
   if (
     entry.target._tag === "SshConnectionTarget" &&
     Option.isSome(entry.profile) &&

@@ -36,9 +36,7 @@ const update = makePackageManagedProviderMaintenanceResolver({
     isCommandPath: (commandPath) => {
       const normalized = normalizeCommandPath(commandPath);
       return (
-        normalized.endsWith("/.local/bin/claude.exe") ||
-        normalized.includes("/.local/share/claude/") ||
-        normalized.includes("/claude/versions/")
+        normalized.includes("/.local/share/claude/") || normalized.includes("/claude/versions/")
       );
     },
     requiresCommandPath: true,
@@ -53,11 +51,7 @@ const readUpdateChannel = Effect.fn("ClaudeMaintenance.readUpdateChannel")(funct
   const environment = updateEnvironment ?? (yield* HostProcess.Environment);
   const platform = yield* HostProcess.Platform;
   const managedDirectory =
-    platform === "darwin"
-      ? "/Library/Application Support/ClaudeCode"
-      : platform === "win32"
-        ? path.join(environment.PROGRAMFILES || "C:\\Program Files", "ClaudeCode")
-        : "/etc/claude-code";
+    platform === "darwin" ? "/Library/Application Support/ClaudeCode" : "/etc/claude-code";
   const dropInDirectory = path.join(managedDirectory, "managed-settings.d");
   const dropIns = yield* fs.readDirectory(dropInDirectory).pipe(Effect.orElseSucceed(() => []));
   // Match the environment passed to the updater, including its config directory.

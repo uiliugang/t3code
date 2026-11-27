@@ -72,7 +72,6 @@ export const resolveEntryPath = Effect.gen(function* () {
 export const resolveServerInstallation = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(yield* resolveEntryPath);
   const runtime = PINNED_RUNTIME_ENTRY.exec(entry);
   if (runtime) {
@@ -107,7 +106,6 @@ export const resolveServerInstallation = Effect.gen(function* () {
       ? null
       : ({ kind: runner === "pnpm dlx" ? "pnpm-dlx" : runner } satisfies ServerInstallation);
   }
-  if (platform === "win32") return null;
   const prefix = match[1] || "/";
   if (
     prefix.includes("/node_modules/") ||
@@ -150,18 +148,8 @@ export const resolveCliCommand = (subcommand: string) =>
     formatCliCommand({ subcommand, entryPath, version: packageJson.version }),
   );
 
-const shellWord = (value: string) =>
+export const hostShellWord = (value: string) =>
   /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
-
-/** PowerShell also treats typographic quotes as delimiters; escape them and suppress expansion. */
-const powershellWord = (value: string) =>
-  `"${value
-    .replaceAll("`", "``")
-    .replaceAll("$", "`$")
-    .replace(/["\u201C\u201D\u201E]/g, "$&$&")}"`;
-
-export const hostShellWord = (platform: NodeJS.Platform, value: string) =>
-  platform === "win32" ? powershellWord(value) : shellWord(value);
 
 /** Script installs have no single launcher; desktop shims and standalone binaries do. */
 const resolveInstallLauncher = Effect.gen(function* () {
@@ -177,16 +165,15 @@ const resolveInstallLauncher = Effect.gen(function* () {
 
 /**
  * Uses this install's `t3` on PATH, the originating runner, or its absolute launcher path.
- * Arguments are quoted for POSIX shells or PowerShell on Windows.
+ * Arguments are quoted for POSIX shells.
  */
 export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand")(function* (
   subcommand: string,
   args: ReadonlyArray<string> = [],
 ) {
-  const platform = yield* HostProcess.Platform;
   const withArgs = (prefix: string) =>
     // An empty subcommand names the root `t3` command.
-    [prefix.trimEnd(), ...args.map((arg) => hostShellWord(platform, arg))].join(" ");
+    [prefix.trimEnd(), ...args.map((arg) => hostShellWord(arg))].join(" ");
   const command = yield* resolveCliCommand(subcommand);
   if (command !== `t3 ${subcommand}`) return { command: withArgs(command), launcher: false };
   const onPath = yield* resolveCommandPath("t3");
@@ -194,10 +181,9 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
     const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
     const fs = yield* FileSystem.FileSystem;
     const real = (file: string) => fs.realPath(file).pipe(Effect.orElseSucceed(() => null));
-    // Windows `t3.cmd` shims are text files that never realpath to the executable they run.
     const own = shim
       ? yield* real(shim)
-      : platform !== "win32" && (yield* HostProcess.IsExecutable)
+      : (yield* HostProcess.IsExecutable)
         ? yield* resolveEntryPath.pipe(
             Effect.flatMap((entry) =>
               real(entry).pipe(Effect.map((resolved) => resolved ?? entry)),
@@ -209,20 +195,16 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
       const searchPath = (yield* HostProcess.Environment).PATH ?? "";
       // With an empty or relative PATH entry, plain `t3` depends on the directory it runs from.
       const cwdDependent =
-        platform !== "win32" &&
-        searchPath.length > 0 &&
-        searchPath.split(":").some((entry) => !path.isAbsolute(entry));
+        searchPath.length > 0 && searchPath.split(":").some((entry) => !path.isAbsolute(entry));
       if (!cwdDependent) return { command: withArgs(command), launcher: false };
-      const quoted = hostShellWord(platform, path.resolve(onPath));
+      const quoted = hostShellWord(path.resolve(onPath));
       return { command: withArgs(`${quoted} ${subcommand}`), launcher: false };
     }
   }
   const launcher = yield* resolveInstallLauncher;
   if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
-  // PowerShell runs a quoted path only through the call operator.
-  const quoted = hostShellWord(platform, launcher.value);
-  const call = platform === "win32" ? `& ${quoted}` : quoted;
-  return { command: withArgs(`${call} ${subcommand}`), launcher: true };
+  const quoted = hostShellWord(launcher.value);
+  return { command: withArgs(`${quoted} ${subcommand}`), launcher: true };
 });
 
 /** A hint's command, run against the caller's `--base-dir` when one was given. */

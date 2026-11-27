@@ -15,15 +15,14 @@ export interface AntigravityCliReleaseAsset {
   readonly url: string;
   readonly sha512: string;
   readonly executable: { readonly name: string };
-  readonly format: "tar.gz" | "executable";
+  readonly format: "tar.gz";
 }
 
 export function antigravityCliTarget(platform: NodeJS.Platform, arch: string, musl = false) {
-  if (!["darwin", "linux", "win32"].includes(platform) || !["x64", "arm64"].includes(arch)) {
+  if (!["darwin", "linux"].includes(platform) || !["x64", "arm64"].includes(arch)) {
     return null;
   }
-  const os = platform === "win32" ? "windows" : platform;
-  return `${os}_${arch === "x64" ? "amd64" : arch}${platform === "linux" && musl ? "_musl" : ""}`;
+  return `${platform}_${arch === "x64" ? "amd64" : arch}${platform === "linux" && musl ? "_musl" : ""}`;
 }
 
 export function parseAntigravityCliRelease(
@@ -35,16 +34,15 @@ export function parseAntigravityCliRelease(
   const decoded = decodeManifest(value);
   if (decoded._tag === "None" || antigravityCliTarget(platform, arch, musl) === null) return null;
   const manifest = decoded.value;
-  const os = platform === "darwin" ? "mac" : platform === "win32" ? "windows" : "linux";
+  const os = platform === "darwin" ? "mac" : "linux";
   const cpu = arch === "x64" ? "x64" : "arm64";
   const suffix = platform === "linux" && musl ? "_musl" : "";
-  const extension = platform === "win32" ? "exe" : "tar.gz";
-  const folder = `${platform === "win32" ? "windows" : platform}-${arch === "arm64" ? "arm" : "x64"}${suffix ? "-musl" : ""}`;
+  const folder = `${platform}-${arch === "arm64" ? "arm" : "x64"}${suffix ? "-musl" : ""}`;
   const prefix = `https://storage.googleapis.com/antigravity-public/antigravity-cli/${manifest.version}-`;
   const rest = manifest.url.startsWith(prefix) ? manifest.url.slice(prefix.length) : "";
   if (
     !/^\d+\//u.test(rest) ||
-    rest.replace(/^\d+\//u, "") !== `${folder}/cli_${os}_${cpu}${suffix}.${extension}`
+    rest.replace(/^\d+\//u, "") !== `${folder}/cli_${os}_${cpu}${suffix}.tar.gz`
   ) {
     return null;
   }
@@ -52,7 +50,7 @@ export function parseAntigravityCliRelease(
     version: manifest.version,
     url: manifest.url,
     sha512: manifest.sha512.toLowerCase(),
-    executable: { name: platform === "win32" ? "agy.exe" : "antigravity" },
-    format: platform === "win32" ? "executable" : "tar.gz",
+    executable: { name: "antigravity" },
+    format: "tar.gz",
   };
 }

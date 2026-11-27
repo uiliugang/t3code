@@ -212,35 +212,6 @@ it.live.each([[], ["mtskills"]])(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect(
-  "provides the server Node to a Windows npm launcher without bypassing the batch file",
-  () =>
-    Effect.gen(function* () {
-      const { installer, root, calls } = yield* fixture({ binaries: [], platform: "win32" });
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const executable = path.join(root, "mtskills.cmd");
-      const runtime = path.join(root, "test-host.exe");
-      yield* fs.writeFileString(runtime, "fixture executable");
-      yield* fs.writeFileString(path.join(root, "icudtl.dat"), "fixture ICU");
-      yield* fs.writeFileString(
-        executable,
-        '@ECHO off\r\nSET "_prog=node"\r\n"%_prog%" "%~dp0cli.cjs" %*\r\n',
-      );
-      yield* installer
-        .inspectMeituan("mtskills", executable)
-        .pipe(Effect.provideService(HostProcess.ExecutablePath, runtime));
-      assert.strictEqual(calls[0]?.command, executable);
-      const bin = calls[0]?.env?.PATH?.split(";")[0];
-      assert.isOk(bin);
-      assert.strictEqual(
-        yield* fs.readFileString(path.join(bin!, "node.exe")),
-        "fixture executable",
-      );
-      assert.strictEqual(yield* fs.readFileString(path.join(bin!, "icudtl.dat")), "fixture ICU");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-);
-
 it.effect.each(["ones2", "mcm"] as const)(
   "keeps %s hidden while requirements are disabled but verifies an installation already started",
   (id) =>

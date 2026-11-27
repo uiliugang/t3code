@@ -449,7 +449,6 @@ export function makeGrokAcpAdapterFlavor(
     normalizeToolCall: normalizeXAiAcpToolCallState,
     extractProposedPlanMarkdown: (toolCall) =>
       extractGrokPlanMarkdownFromToolCallData(toolCall.data, {
-        platform: options.hostPlatform,
         environment: options.environment,
         homeDirectory,
       }),

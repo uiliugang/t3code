@@ -540,45 +540,6 @@ describe("MuseAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 
-  it.effect("pins Windows turns to Muse's verbatim root and starts Muse in the plain path", () =>
-    Effect.gen(function* () {
-      const fake = yield* makeFakeMuse();
-      let hostCwd: string | undefined;
-      const policy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-        ...runtimePolicy,
-        cwd: "C:\\work\\repo",
-        workspaceFolders: { folders: [], extraRoots: ["C:\\work\\api"] },
-      });
-      const harness = yield* makeHarness(
-        fake,
-        INSTANCE_ID,
-        undefined,
-        undefined,
-        undefined,
-        policy,
-        {
-          createHost: async (options) => {
-            hostCwd = options.cwd;
-            return fake.host;
-          },
-        },
-      );
-      yield* startConversation(harness, fake);
-      const turnStart = fake.calls.find((call) => call.method === "turn/start");
-      // Muse 1.4.3 accepts only verbatim canonical roots.
-      assert.deepStrictEqual(turnStart?.params.workspaceRoots, [
-        "\\\\?\\C:\\work\\repo",
-        "\\\\?\\C:\\work\\api",
-      ]);
-      // The muse.cmd launcher runs under cmd.exe, which cannot start in a verbatim directory.
-      assert.strictEqual(hostCwd, "C:\\work\\repo");
-    }).pipe(
-      Effect.provideService(HostProcess.Platform, "win32"),
-      Effect.scoped,
-      Effect.provide(testLayer),
-    ),
-  );
-
   it.effect("pins sessions and turns to native canonical case", () =>
     Effect.gen(function* () {
       using _realpath = vi.spyOn(NodeFSP, "realpath").mockResolvedValue("/workspace/eevee");

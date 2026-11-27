@@ -209,23 +209,15 @@ describe("t3 server command safety", () => {
         yield* Effect.promise(() => NodeFSP.mkdir(stateDir, { recursive: true }));
         yield* Effect.promise(() => NodeFSP.writeFile(statePath, record));
         const newDirectory = NodePath.join(root, "new-project");
-        const platform = yield* HostProcess.Platform;
         for (const args of [
           [],
           ["start"],
           ["."],
           ["node_modules"],
-          ["C:new-project"],
           [newDirectory],
           ["start", newDirectory],
         ]) {
-          const error = yield* runCli(args, { T3CODE_HOME: baseDir }).pipe(
-            Effect.provideService(
-              HostProcess.Platform,
-              args[0] === "C:new-project" ? "win32" : platform,
-            ),
-            Effect.flip,
-          );
+          const error = yield* runCli(args, { T3CODE_HOME: baseDir }).pipe(Effect.flip);
           expect(String(error)).toContain("A T3 Code server is already running");
           expect(yield* Effect.promise(() => NodeFSP.readFile(statePath, "utf8"))).toBe(record);
           expect(yield* pathExists(newDirectory)).toBe(false);

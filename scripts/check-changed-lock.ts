@@ -4,7 +4,6 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
@@ -82,10 +81,7 @@ const psEnv = () => ({ ...process.env, LC_ALL: "C", TZ: "UTC" });
 
 // Run `ps` once to capture the process table with UTC start timestamps so
 // stale-group cleanup only signals processes whose (pid, lstart) still match.
-export const readPosixProcessSnapshot = (
-  platform: NodeJS.Platform,
-): ReadonlyArray<ProcessSnapshotEntry> => {
-  if (platform === "win32") return [];
+const readPosixProcessSnapshot = (): ReadonlyArray<ProcessSnapshotEntry> => {
   try {
     const output = NodeChildProcess.execFileSync("ps", PS_ARGS, {
       encoding: "utf8",
@@ -98,10 +94,7 @@ export const readPosixProcessSnapshot = (
   }
 };
 
-const readPosixProcessSnapshotAsync = (
-  platform: NodeJS.Platform,
-): Effect.Effect<ReadonlyArray<ProcessSnapshotEntry>> => {
-  if (platform === "win32") return Effect.succeed([]);
+const readPosixProcessSnapshotAsync = (): Effect.Effect<ReadonlyArray<ProcessSnapshotEntry>> => {
   return Effect.callback<ReadonlyArray<ProcessSnapshotEntry>>((resume) => {
     const child = NodeChildProcess.execFile(
       "ps",
@@ -202,16 +195,14 @@ const verifyLiveGroups = (
 export const terminateTrackedProcessGroups = (
   groups: ReadonlyArray<TrackedProcessGroup>,
   options: {
-    readonly platform?: NodeJS.Platform;
     readonly graceMs?: number;
     readonly snapshot?: () => ReadonlyArray<ProcessSnapshotEntry>;
     readonly signalGroup?: (pgid: number, signal: NodeJS.Signals | 0) => void;
     readonly wait?: (millis: number) => void;
   } = {},
 ): void => {
-  const platform = options.platform ?? "linux";
-  if (platform === "win32" || groups.length === 0) return;
-  const readSnapshot = options.snapshot ?? (() => readPosixProcessSnapshot(platform));
+  if (groups.length === 0) return;
+  const readSnapshot = options.snapshot ?? readPosixProcessSnapshot;
   const signalGroup =
     options.signalGroup ??
     ((pgid: number, signal: NodeJS.Signals | 0) => {
@@ -350,8 +341,6 @@ const forgetGroupsFromSlots = (
 /** Forward SIGHUP to SIGTERM so `NodeRuntime.runMain` runs interruption finalizers. */
 export const installSighupForwarding = Effect.fn("checkChanged.installSighupForwarding")(
   function* () {
-    const platform = yield* HostProcess.Platform;
-    if (platform === "win32") return;
     let forwarding = false;
     const onSighup = () => {
       if (forwarding) return;
@@ -375,8 +364,7 @@ export const installSighupForwarding = Effect.fn("checkChanged.installSighupForw
 // enclosing lock sidecars for SIGKILL recovery, and terminate survivors on scope close.
 export const trackDescendantProcessGroups = Effect.fn("checkChanged.trackDescendantProcessGroups")(
   function* (rootPid: number) {
-    const platform = yield* HostProcess.Platform;
-    if (platform === "win32" || rootPid <= 0) return;
+    if (rootPid <= 0) return;
     const enclosingTrackers = yield* ActiveSlotTrackerStack;
     const tracked = new Map<number, TrackedProcessGroup>();
 
@@ -387,9 +375,9 @@ export const trackDescendantProcessGroups = Effect.fn("checkChanged.trackDescend
       recordGroupsInSlots(enclosingTrackers, discovered);
     };
 
-    recordSnapshot(readPosixProcessSnapshot(platform));
+    recordSnapshot(readPosixProcessSnapshot());
     yield* Effect.sleep("1 second").pipe(
-      Effect.andThen(readPosixProcessSnapshotAsync(platform)),
+      Effect.andThen(readPosixProcessSnapshotAsync()),
       Effect.tap((snapshot) => Effect.sync(() => recordSnapshot(snapshot))),
       Effect.forever,
       Effect.forkScoped,
@@ -397,10 +385,10 @@ export const trackDescendantProcessGroups = Effect.fn("checkChanged.trackDescend
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        recordSnapshot(readPosixProcessSnapshot(platform));
+        recordSnapshot(readPosixProcessSnapshot());
         const groups = [...tracked.values()];
         if (groups.length > 0) {
-          terminateTrackedProcessGroups(groups, { platform });
+          terminateTrackedProcessGroups(groups);
           forgetGroupsFromSlots(
             enclosingTrackers,
             groups.map((group) => group.pgid),
@@ -463,7 +451,6 @@ export const withSlotLock = Effect.fn("checkChanged.withSlotLock")(function* <A,
   }
   const waitingMessage = options.waitingMessage ?? DEFAULT_WAITING_MESSAGE;
   const filenames = slotFilenames(filename, slots);
-  const platform = yield* HostProcess.Platform;
   const outerTrackers = yield* ActiveSlotTrackerStack;
 
   return yield* Effect.scopedWith((scope) =>
@@ -483,7 +470,7 @@ export const withSlotLock = Effect.fn("checkChanged.withSlotLock")(function* <A,
               // previous lock holder died abruptly (e.g. SIGKILL / parent shell kill).
               const staleGroups = readPersistedGroups(groupsPath);
               if (staleGroups.length > 0) {
-                terminateTrackedProcessGroups(staleGroups, { platform });
+                terminateTrackedProcessGroups(staleGroups);
               }
               const tracker: ActiveSlotTracker = { groupsPath, groups: new Map() };
               writePersistedGroups(groupsPath, tracker.groups);
@@ -493,7 +480,7 @@ export const withSlotLock = Effect.fn("checkChanged.withSlotLock")(function* <A,
                 Effect.sync(() => {
                   try {
                     if (tracker.groups.size > 0) {
-                      terminateTrackedProcessGroups([...tracker.groups.values()], { platform });
+                      terminateTrackedProcessGroups([...tracker.groups.values()]);
                       tracker.groups.clear();
                     }
                     writePersistedGroups(groupsPath, tracker.groups);

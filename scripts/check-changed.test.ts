@@ -274,7 +274,6 @@ describe("check:changed", () => {
   });
 
   it.each([
-    "packages/shared/src/testing/longTempDir.ts",
     "packages/shared/src/testing/providerEnv.ts",
     "packages/shared/src/testing/gitEnv.ts",
     "packages/shared/src/testing/gitRepositoryEnv.ts",
@@ -285,7 +284,6 @@ describe("check:changed", () => {
 
 // Hooks export GIT_DIR and GIT_INDEX_FILE, and user config or the default
 // ~/.config/git/ignore can ignore or sign fixture files.
-// Git for Windows rejects the null device as a config path, so use an empty file.
 const emptyConfigDir = NodeFS.mkdtempSync(
   NodePath.join(NodeOS.tmpdir(), "t3-check-changed-config-"),
 );
@@ -426,7 +424,6 @@ function launcherFixture() {
   };
   for (const file of [
     "scripts/check-changed.ts",
-    "scripts/check-changed-command.ts",
     "scripts/check-changed-lock.ts",
     ".github/scripts/ci-changes.cjs",
   ]) {
@@ -448,12 +445,10 @@ function launcherFixture() {
   write("packages/example/package.json", JSON.stringify({ name: "example" }));
   const source = "packages/example/space & (draft) %PATH% ! 研究.ts";
   write(source, "export const value = 1;\n");
+  write("bin/vp", '#!/bin/sh\nexec "$TEST_NODE_EXEC" "$TEST_VP_CLI" "$@"\n');
+  NodeFS.chmodSync(NodePath.join(root, "bin/vp"), 0o755);
   write(
-    "node_modules/vite-plus/package.json",
-    JSON.stringify({ type: "module", exports: { "./bin": "./cli.js" } }),
-  );
-  write(
-    "node_modules/vite-plus/cli.js",
+    "fixture-cli.mjs",
     `
     import fs from 'node:fs';
     import path from 'node:path';
@@ -464,21 +459,12 @@ function launcherFixture() {
     process.exit(args[0] === process.env.FAIL_STEP ? 23 : 0);
   `,
   );
-  // Select the Windows launcher without changing the Effect runtime's host platform.
-  write(
-    "scripts/check-changed.ts",
-    NodeFS.readFileSync(NodePath.join(import.meta.dirname, "check-changed.ts"), "utf8").replace(
-      "vitePlusCommand(args, platform)",
-      'vitePlusCommand(args, "win32")',
-    ),
-  );
   for (const name of ["effect", "@effect/platform-node", "@t3tools/shared"]) {
     const dest = NodePath.join(root, "node_modules", name);
     NodeFS.mkdirSync(NodePath.dirname(dest), { recursive: true });
     NodeFS.symlinkSync(
       NodeFS.realpathSync(NodePath.join(import.meta.dirname, "node_modules", name)),
       dest,
-      "junction",
     );
   }
   const git = (...args: Array<string>) =>
@@ -508,7 +494,16 @@ function launcherFixture() {
       return NodeChildProcess.spawnSync(process.execPath, ["scripts/check-changed.ts", "HEAD"], {
         cwd: root,
         encoding: "utf8",
-        env: { ...env, TEMP: NodeOS.tmpdir(), RECORDS: records, FAIL_STEP: failStep },
+        env: {
+          ...env,
+          PATH: [NodePath.join(root, "bin"), process.env.PATH]
+            .filter(Boolean)
+            .join(NodePath.delimiter),
+          TEST_NODE_EXEC: process.execPath,
+          TEST_VP_CLI: NodePath.join(root, "fixture-cli.mjs"),
+          RECORDS: records,
+          FAIL_STEP: failStep,
+        },
       });
     },
     calls: (): Array<{ args: Array<string>; cwd: string }> =>
@@ -521,7 +516,7 @@ function launcherFixture() {
   };
 }
 
-it("checks changed source paths through the Windows launcher", () => {
+it("passes changed source paths literally to the POSIX launcher", () => {
   using project = launcherFixture();
   project.write(project.source, "export const value = 2;\n");
   project.write("packages/example/example.test.ts", "export {};\n");

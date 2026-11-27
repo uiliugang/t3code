@@ -52,7 +52,6 @@ import * as AntigravityUsage from "../provider/Drivers/AntigravityUsage.ts";
 import * as ProviderHostLive from "../provider/ProviderHostLive.ts";
 import { totalTokens, type UsageRecord } from "@t3tools/provider-core/server/usage";
 import * as UsageService from "./UsageService.ts";
-import { DESKTOP_HOST_SCOPE_ENV, physicalSourceIdOf } from "./usageTranscriptReader.ts";
 import * as MuseSdk from "../../../../packages/provider-muse/src/server/sdk.ts";
 import { MuseUsageHome } from "@t3tools/provider-muse/server";
 import { makeScanCacheWriter, SCAN_CACHE_FILE_NAME } from "./usageScanCache.ts";
@@ -1586,39 +1585,6 @@ describe("UsageService", () => {
     }),
   );
 
-  it.effect("identifies a transcript directory created after the server first read usage", () =>
-    Effect.gen(function* () {
-      const { home, settings } = yield* setup;
-      const scope = "0123456789abcdef0123456789abcdef";
-      const dir = NodePath.join(home, "pi", "sessions");
-      yield* Effect.gen(function* () {
-        const service = yield* UsageService.make;
-        const piFingerprint = (summary: UsageSummary) =>
-          summary.sources.find((source) => source.fingerprint.provider === "pi")?.fingerprint;
-        const missing = piFingerprint(yield* service.readSummary(WINDOW));
-        assert.strictEqual(missing?.resolvedHomePath, dir);
-        assert.isUndefined(missing?.physicalSourceId);
-        yield* Effect.promise(() => NodeFSP.mkdir(dir, { recursive: true }));
-        assert.strictEqual(
-          piFingerprint(yield* service.readSummary(WINDOW))?.physicalSourceId,
-          physicalSourceIdOf(scope, yield* Effect.promise(() => NodeFSP.realpath(dir))),
-        );
-      }).pipe(
-        Effect.scoped,
-        Effect.provide(
-          layerService({
-            prefix: "usage-physical-source-created",
-            home,
-            settings,
-            // The native Windows server reads identity from realpath alone.
-            platform: "win32",
-            environment: { [DESKTOP_HOST_SCOPE_ENV]: scope },
-          }),
-        ),
-      );
-    }),
-  );
-
   it.effect(
     "reports missing Pi history and skips malformed records without losing valid usage",
     () =>
@@ -1687,7 +1653,7 @@ describe("UsageService", () => {
   it.effect("discovers Pi history in its default home and directory overrides", () =>
     Effect.gen(function* () {
       const { home, settings } = yield* setup;
-      for (const [agentDir, sessionDir, relativeDir, launchArgs, instanceHome, platform] of [
+      for (const [agentDir, sessionDir, relativeDir, launchArgs, instanceHome] of [
         [undefined, undefined, ".pi/agent/sessions", undefined],
         ["~/custom-pi", undefined, "custom-pi/sessions", undefined],
         ["~/ignored-pi", "~/custom-sessions", "custom-sessions", undefined],
@@ -1699,14 +1665,6 @@ describe("UsageService", () => {
           "instance-home /launch-sessions",
           "--session-dir ~/launch-sessions",
           "instance-home ",
-        ],
-        [
-          "~/ignored-pi",
-          undefined,
-          "windows-profile/launch-sessions",
-          "--session-dir ~/launch-sessions",
-          "windows-profile",
-          "win32",
         ],
         [undefined, undefined, "pi-home/.pi/agent/sessions", undefined, "pi-home"],
         ["~/custom-pi", undefined, "pi-agent-home/custom-pi/sessions", undefined, "pi-agent-home"],
@@ -1770,7 +1728,7 @@ describe("UsageService", () => {
                               ? []
                               : [
                                   {
-                                    name: platform === "win32" ? "USERPROFILE" : "HOME",
+                                    name: "HOME",
                                     value: NodePath.join(home, instanceHome),
                                     sensitive: false,
                                   },
@@ -1782,7 +1740,7 @@ describe("UsageService", () => {
                 PI_CODING_AGENT_DIR: agentDir,
                 PI_CODING_AGENT_SESSION_DIR: sessionDir,
               },
-              platform: platform ?? "linux",
+              platform: "linux",
             }),
           ),
           Effect.provideService(HostProcess.HomeDirectory, home),

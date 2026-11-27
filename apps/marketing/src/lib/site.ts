@@ -2,6 +2,8 @@ import { GITHUB_REPOSITORY } from "./repository";
 
 export { GITHUB_REPOSITORY_URL } from "./repository";
 
+export const WEB_APP_URL = "https://app.t3.codes";
+
 export const IOS_APP_STORE_URL =
   "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824";
 

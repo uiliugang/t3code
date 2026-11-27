@@ -191,47 +191,6 @@ describe("AcpRegistrySupport", () => {
         platformTarget: "darwin-aarch64",
       }),
     ).toBeUndefined();
-    expect(
-      AcpRegistrySupport.resolveAcpRegistryDistribution({
-        agent: makeAgent({
-          binary: {
-            "windows-x86_64": {
-              archive: archiveUrl,
-              cmd: "./bin/example-agent-x64.exe",
-              args: ["acp"],
-            },
-          },
-        }),
-        preference: "auto",
-        platformTarget: "windows-aarch64",
-      }),
-    ).toMatchObject({
-      kind: "binary",
-      binaryTarget: { cmd: "./bin/example-agent-x64.exe" },
-    });
-    expect(
-      AcpRegistrySupport.resolveAcpRegistryDistribution({
-        agent: makeAgent({
-          binary: {
-            "windows-aarch64": {
-              archive: archiveUrl,
-              cmd: "./bin/example-agent-arm64.exe",
-              args: ["acp"],
-            },
-            "windows-x86_64": {
-              archive: archiveUrl,
-              cmd: "./bin/example-agent-x64.exe",
-              args: ["acp"],
-            },
-          },
-        }),
-        preference: "auto",
-        platformTarget: "windows-aarch64",
-      }),
-    ).toMatchObject({
-      kind: "binary",
-      binaryTarget: { cmd: "./bin/example-agent-arm64.exe" },
-    });
   });
 
   it.effect("resolves a local command on the selected environment without the registry", () => {
@@ -340,27 +299,6 @@ describe("AcpRegistrySupport", () => {
           "#!/bin/sh\necho target\n",
         );
       }
-
-      for (const extension of [".cmd", ".BAT"]) {
-        const windowsResolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
-          cacheDir,
-          toolsDir: `${cacheDir}/tools`,
-          registryUrl,
-        }).pipe(
-          Effect.provideService(HostProcess.Platform, "win32"),
-          Effect.provideService(SpawnExecutableResolution, async () => `C:\\bin\\dsh${extension}`),
-        );
-        const localSettings = decodeAcpRegistrySettings({ source: "local", commandPath: "dsh" });
-        for (const failure of [
-          yield* windowsResolver.inspect(localSettings).pipe(Effect.flip),
-          yield* windowsResolver.resolve(localSettings, "/workspace").pipe(Effect.flip),
-        ]) {
-          expect(failure).toMatchObject({
-            reason: "runner_unavailable",
-            detail: expect.stringContaining("node.exe"),
-          });
-        }
-      }
     }).pipe(
       Effect.scoped,
       Effect.provide(layerResolver(() => Effect.die("unexpected registry request"))),
@@ -379,47 +317,26 @@ describe("AcpRegistrySupport", () => {
           toolsDir: `${cacheDir}/tools`,
           registryUrl,
         }).pipe(
-          Effect.provideService(HostProcess.Platform, "win32"),
+          Effect.provideService(HostProcess.Platform, "linux"),
           Effect.provideService(SpawnExecutableResolution, () => executable),
-          Effect.provide(NodePath.layerWin32),
+          Effect.provide(NodePath.layerPosix),
         );
 
       const bare = decodeAcpRegistrySettings({ source: "local", commandPath: "cmdc" });
       expect(prefersHttpMcpTransport(bare)).toBe(true);
       expect(
-        yield* (yield* catalog("C:\\bin\\cmdc.exe")).resolve(bare, "/workspace"),
-      ).toMatchObject({ spawn: { command: "C:\\bin\\cmdc.exe", shell: false } });
-      const windowsPath = yield* Path.Path.pipe(Effect.provide(NodePath.layerWin32));
-      for (const drive of ["C:", "D:"]) {
-        const command = `${drive}tools\\link\\..\\cmdc.exe`;
-        expect(yield* (yield* catalog(command)).resolve(bare, "/workspace")).toMatchObject({
-          spawn: {
-            command: `${windowsPath.resolve(drive)}\\tools\\link\\..\\cmdc.exe`,
-            shell: false,
-          },
-        });
-      }
-      // A bare name that PATHEXT resolves to a batch shim never launches, so the transport it
-      // selects cannot matter: there is no session to attach MCP servers to.
-      expect(
-        yield* (yield* catalog("C:\\bin\\cmdc.cmd")).resolve(bare, "/workspace").pipe(Effect.flip),
-      ).toMatchObject({ reason: "runner_unavailable" });
+        yield* (yield* catalog("/usr/local/bin/cmdc")).resolve(bare, "/workspace"),
+      ).toMatchObject({ spawn: { command: "/usr/local/bin/cmdc", shell: false } });
 
       const vendored = decodeAcpRegistrySettings({
         source: "local",
-        commandPath: "node.exe",
-        commandArgs: [
-          "C:\\Users\\me\\.t3\\bin\\cmdcode\\node_modules\\command-code\\dist\\index.mjs",
-          "acp",
-        ],
+        commandPath: "node",
+        commandArgs: ["/home/me/.t3/bin/cmdcode/node_modules/command-code/dist/index.mjs", "acp"],
       });
       expect(prefersHttpMcpTransport(vendored)).toBe(true);
       expect(
-        yield* (yield* catalog("C:\\Program Files\\nodejs\\node.exe")).resolve(
-          vendored,
-          "/workspace",
-        ),
-      ).toMatchObject({ spawn: { command: "C:\\Program Files\\nodejs\\node.exe" } });
+        yield* (yield* catalog("/opt/Node Runtime/bin/node")).resolve(vendored, "/workspace"),
+      ).toMatchObject({ spawn: { command: "/opt/Node Runtime/bin/node" } });
     }).pipe(
       Effect.scoped,
       Effect.provide(layerResolver(() => Effect.die("unexpected registry request"))),
@@ -685,56 +602,6 @@ describe("AcpRegistrySupport", () => {
     );
   });
 
-  it.effect("gives Windows npm commands only the managed prefix spelling", () => {
-    const agent = makeAgent({ npx: { package: "@example/acp@1.2.3" } });
-    return Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-acp-registry-windows-npm-prefix-",
-      });
-      const toolchain = yield* makeFakeNpmToolchain(cacheDir);
-      const environment = { ...toolchain.environment, NPM_CONFIG_PREFIX: "C:\\inherited-npm" };
-      const realSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const npmEnvironments: Array<Record<string, unknown>> = [];
-      const resolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
-        cacheDir,
-        toolsDir: `${cacheDir}/tools`,
-        registryUrl,
-      }).pipe(
-        Effect.provideService(HostProcess.Environment, environment),
-        Effect.provideService(HostProcess.Platform, "win32"),
-        Effect.provideService(SpawnExecutableResolution, (command) =>
-          command === "npm" ? toolchain.npmPath : undefined,
-        ),
-        Effect.provideService(
-          ChildProcessSpawner.ChildProcessSpawner,
-          ChildProcessSpawner.make((command) => {
-            if (command._tag === "StandardCommand" && command.command === toolchain.npmPath) {
-              npmEnvironments.push({ ...command.options.env });
-            }
-            return realSpawner.spawn(command);
-          }),
-        ),
-      );
-
-      yield* resolver.resolve(settings(), "C:\\workspace", environment).pipe(Effect.ignore);
-
-      expect(npmEnvironments.length).toBeGreaterThan(0);
-      for (const env of npmEnvironments) {
-        expect(Object.keys(env).filter((key) => key.toLowerCase() === "npm_config_prefix")).toEqual(
-          ["npm_config_prefix"],
-        );
-      }
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(
-        layerResolver((request) =>
-          Effect.succeed(HttpClientResponse.fromWeb(request, new Response(makeRegistry(agent)))),
-        ),
-      ),
-    );
-  });
-
   it.effect("keeps only the end of a failed install's output in its error", () => {
     const agent = makeAgent({ npx: { package: "@example/acp@1.2.3" } });
     return Effect.gen(function* () {
@@ -796,59 +663,6 @@ describe("AcpRegistrySupport", () => {
       });
 
       expect(resolved.spawn.command).toBe(toolchain.executablePath);
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(
-        layerResolver((request) =>
-          Effect.succeed(HttpClientResponse.fromWeb(request, new Response(makeRegistry(agent)))),
-        ),
-      ),
-    );
-  });
-
-  it.effect("honors an exact Windows PATH override when launching a global package", () => {
-    const agent = makeAgent({
-      uvx: { package: "fast-agent-acp==0.10.1", args: ["--acp"] },
-    });
-    return Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const cacheDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-acp-registry-windows-package-path-",
-      });
-      const toolchain = yield* makeFakeUvToolchain(cacheDir);
-      const linuxResolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
-        cacheDir,
-        toolsDir: `${cacheDir}/tools`,
-        registryUrl,
-      });
-      yield* linuxResolver.resolve(settings(), "/workspace", toolchain.environment);
-
-      const windowsEnvironment = {
-        ...toolchain.environment,
-        Path: "C:\\host\\bin",
-        PATH: "C:\\provider\\bin",
-      };
-      const windowsResolver = yield* AcpRegistrySupport.makeAcpRegistryCatalog({
-        cacheDir,
-        toolsDir: `${cacheDir}/tools`,
-        registryUrl,
-      }).pipe(
-        Effect.provideService(HostProcess.Platform, "win32"),
-        Effect.provideService(SpawnExecutableResolution, (command) => {
-          if (command === "uv") return toolchain.uvPath;
-          if (command === "fast-agent") return toolchain.executablePath;
-          return undefined;
-        }),
-      );
-      const resolved = yield* windowsResolver.resolve(
-        settings(),
-        "C:\\workspace",
-        windowsEnvironment,
-      );
-
-      expect(resolved.spawn).toMatchObject({
-        env: { PATH: `${toolchain.globalBin};C:\\provider\\bin` },
-      });
     }).pipe(
       Effect.scoped,
       Effect.provide(
@@ -1216,7 +1030,7 @@ describe("AcpRegistrySupport", () => {
     );
   });
 
-  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+  it.effect(
     "leaves the mode of a file outside the install root when the command links to it",
     () => {
       const downloadUrl = "https://registry.test/agent.tar.gz";

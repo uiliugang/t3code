@@ -167,7 +167,6 @@ export const AntigravityDriver: ProviderDriver<
     const authConfigIssue = antigravityAuthConfigIssue(auth);
     const processEnvironment = yield* mergeProviderInstanceEnvironment(environment);
     const userHome = resolveAntigravityUserHome(
-      yield* HostProcess.Platform,
       processEnvironment,
       yield* HostProcess.HomeDirectory,
     );

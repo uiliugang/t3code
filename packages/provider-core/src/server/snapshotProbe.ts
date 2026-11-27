@@ -19,28 +19,8 @@ import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { readCustomModelEntries } from "@t3tools/shared/model";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import { createProviderVersionAdvisory } from "./maintenanceResolver.ts";
 import { collectUint8StreamText } from "./collectStreamText.ts";
-
-const WINDOWS_COMMAND_NOT_FOUND_PATTERNS = [
-  /is not recognized as an internal or external command/i,
-  /n.o . reconhecido como um comando interno/i,
-  /non . riconosciuto come comando interno o esterno/i,
-  /n.est pas reconnu en tant que commande interne/i,
-  /no se reconoce como un comando interno o externo/i,
-  /wird nicht als interner oder externer befehl/i,
-] as const;
-
-export const isWindowsCommandNotFound = Effect.fn("isWindowsCommandNotFound")(function* (
-  code: number | null,
-  stderr: string,
-) {
-  const platform = yield* HostProcess.Platform;
-  if (platform !== "win32") return false;
-  if (code === 9009) return true;
-  return WINDOWS_COMMAND_NOT_FOUND_PATTERNS.some((pattern) => pattern.test(stderr));
-});
 
 export const DEFAULT_TIMEOUT_MS = 4_000;
 export const AUTH_PROBE_TIMEOUT_MS = 10_000;
@@ -68,22 +48,6 @@ export interface CommandResult {
   readonly stderr: string;
   readonly code: number;
 }
-
-export class ProviderCommandNotFoundError extends Schema.TaggedError<
-  ProviderCommandNotFoundError,
-  { readonly brand: unique symbol }
->()("ProviderCommandNotFoundError", {
-  binaryPath: Schema.String,
-  exitCode: Schema.Number,
-  stdoutLength: Schema.Number,
-  stderrLength: Schema.Number,
-}) {
-  override get message(): string {
-    return `Provider command ${this.binaryPath} was not found (exit code ${this.exitCode}).`;
-  }
-}
-
-const isProviderCommandNotFoundError = Schema.is(ProviderCommandNotFoundError);
 
 export class ProviderProbeOutputLimitError extends Schema.TaggedError<
   ProviderProbeOutputLimitError,
@@ -124,7 +88,6 @@ export function nonEmptyTrimmed(value: string | undefined): string | undefined {
 }
 
 export function isCommandMissingCause(error: unknown): boolean {
-  if (isProviderCommandNotFoundError(error)) return true;
   return error instanceof PlatformError.PlatformError && error.reason._tag === "NotFound";
 }
 
@@ -153,7 +116,7 @@ function withProbeForceKill(command: ChildProcess.Command): ChildProcess.Command
 }
 
 export const spawnAndCollect = Effect.fn("snapshotProbe.spawnAndCollect")(function* (
-  binaryPath: string,
+  _binaryPath: string,
   command: ChildProcess.Command,
   options?: { readonly maxStdoutBytes: number },
 ) {
@@ -177,14 +140,6 @@ export const spawnAndCollect = Effect.fn("snapshotProbe.spawnAndCollect")(functi
     });
   }
   const result: CommandResult = { stdout: stdout.text, stderr: stderr.text, code: exitCode };
-  if (yield* isWindowsCommandNotFound(exitCode, stderr.text)) {
-    return yield* new ProviderCommandNotFoundError({
-      binaryPath,
-      exitCode,
-      stdoutLength: stdout.text.length,
-      stderrLength: stderr.text.length,
-    });
-  }
   return result;
 }, Effect.scoped);
 
