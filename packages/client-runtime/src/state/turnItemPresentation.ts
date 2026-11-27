@@ -8,6 +8,19 @@ import type { ThreadStructureTurnItem } from "./models.ts";
 
 const WORKSPACE_PREPARATION_INPUT = "Preparing workspace";
 
+export function turnItemIsBlankAssistantCommentary(
+  item: Extract<OrchestrationV2TurnItem, { type: "assistant_message" }>,
+): boolean {
+  return (
+    item.status === "completed" &&
+    !item.streaming &&
+    (item.phase === undefined || item.phase === "commentary") &&
+    !item.attachments?.length &&
+    item.text.length > 0 &&
+    item.text.trim().length === 0
+  );
+}
+
 export function turnItemIsWorkspacePreparation(item: OrchestrationV2TurnItem): boolean {
   return (
     (item.type === "command_execution" && item.input === WORKSPACE_PREPARATION_INPUT) ||

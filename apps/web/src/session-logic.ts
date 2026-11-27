@@ -40,7 +40,10 @@ import type {
 } from "@t3tools/client-runtime/state/thread-requests";
 import type { ThreadRunSummary, ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
 import { threadRuntimeHasInterruptibleRun } from "@t3tools/client-runtime/state/thread-execution";
-import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
+import {
+  turnItemIsBlankAssistantCommentary,
+  turnItemIsWorkspacePreparation,
+} from "@t3tools/client-runtime/state/turn-item-presentation";
 
 import {
   isImageAttachment,
@@ -628,6 +631,8 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
       continue;
     }
     if (item.type === "user_message" || item.type === "assistant_message") {
+      committedMessageIds.add(item.messageId);
+      if (item.type === "assistant_message" && turnItemIsBlankAssistantCommentary(item)) continue;
       const message: ChatMessage = {
         id: item.messageId,
         role: item.type === "user_message" ? "user" : "assistant",
@@ -659,7 +664,6 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         updatedAt: DateTime.formatIso(item.updatedAt),
         ...(item.type === "user_message" ? { inputIntent: item.inputIntent } : {}),
       };
-      committedMessageIds.add(message.id);
       entries.push({
         id: message.id,
         kind: "message",

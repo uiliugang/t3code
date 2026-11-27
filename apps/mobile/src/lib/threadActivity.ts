@@ -3,7 +3,10 @@ import type {
   ThreadPendingUserInput,
 } from "@t3tools/client-runtime/state/thread-requests";
 import { linkRequestTargetName } from "@t3tools/client-runtime/link-request";
-import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
+import {
+  turnItemIsBlankAssistantCommentary,
+  turnItemIsWorkspacePreparation,
+} from "@t3tools/client-runtime/state/turn-item-presentation";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
 import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
@@ -2611,6 +2614,7 @@ export function buildThreadFeed(
       compactedRunIds.add(item.runId);
     }
   }
+  const retainedMessageIds = new Set(foldedAnswerRunIdByMessageId.keys());
   for (let index = restart?.row ?? 0; index < visibleTurnItems.length; index += 1) {
     const row = visibleTurnItems[index]!;
     const item = row.item;
@@ -2634,6 +2638,10 @@ export function buildThreadFeed(
         compactPromptRunIds.has(item.runId) &&
         compactedRunIds.has(item.runId))
     ) {
+      continue;
+    }
+    if (item.type === "assistant_message" && turnItemIsBlankAssistantCommentary(item)) {
+      retainedMessageIds.add(item.messageId);
       continue;
     }
     const attemptId = resolveAttemptId(item);
@@ -2741,10 +2749,9 @@ export function buildThreadFeed(
       entryRows.push(index);
     }
   }
-  const retainedMessageIds = new Set([
-    ...foldedAnswerRunIdByMessageId.keys(),
-    ...entries.flatMap((entry) => (entry.type === "message" ? [entry.id] : [])),
-  ]);
+  for (const entry of entries) {
+    if (entry.type === "message") retainedMessageIds.add(entry.id);
+  }
   const appendLocalMessage = (message: LocalThreadMessage): RawThreadFeedEntry => {
     const cached = localMessageEntriesCache.get(message);
     if (cached) return cached;
