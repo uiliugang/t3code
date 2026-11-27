@@ -26,6 +26,15 @@ export const skillFilters = {
   attention: "Needs attention",
 } as const;
 export type SkillFilter = keyof typeof skillFilters;
+export function skillLocationName(targets: ReadonlyArray<SkillTarget>, t: UiTranslator) {
+  return [
+    ...new Set(
+      targets.map((target) =>
+        target.id === "directory:shared" ? t("Shared skills") : target.label,
+      ),
+    ),
+  ].join(", ");
+}
 export function skillSourceName(source: Pick<SkillSource, "id" | "label">, t: UiTranslator) {
   return (source.id === "local" && source.label === "Local import") ||
     (source.id === "meituan" && source.label === "Meituan Skills")
@@ -69,6 +78,19 @@ export function skillConfigurationJob(skill: ManagedSkill, jobs: ReadonlyArray<S
     ? undefined
     : job;
 }
+function skillConfigurationMatches(skill: ManagedSkill, job: SkillJob) {
+  const change = job.input.type === "configure" ? job.input.locationChange : undefined;
+  if (!change) return skill.bindings.every((binding) => binding.status === "linked");
+  return change.directories.every((directory) =>
+    change.mode === "remove"
+      ? !skill.bindings.some((binding) => binding.directory === directory)
+      : skill.bindings.some(
+          (binding) =>
+            binding.directory === directory &&
+            (skill.activeDigest === null || binding.status === "linked"),
+        ),
+  );
+}
 export function skillConfigurationFeedback(data: Pick<SkillSnapshot, "skills" | "jobs">) {
   const configurations = data.skills.map((skill) => ({
     skill,
@@ -88,9 +110,7 @@ export function skillConfigurationFeedback(data: Pick<SkillSnapshot, "skills" | 
     return { status: "pending" as const, message: "Updating usage locations..." };
   if (
     configurations.some(
-      ({ skill, job }) =>
-        job?.status === "completed" &&
-        skill.bindings.every((binding) => binding.status === "linked"),
+      ({ skill, job }) => job?.status === "completed" && skillConfigurationMatches(skill, job),
     )
   )
     return {
@@ -106,7 +126,29 @@ export function skillRows(
   filter: SkillFilter = "all",
   showExternal = false,
   sourceId: string | null = null,
+  locationDirectory: string | null = null,
 ) {
+  const locations = new Map(
+    skillTargetGroups(data.targets).map(({ directory, targets, enabled }) => [
+      directory,
+      { directory, targets, available: enabled, count: 0 },
+    ]),
+  );
+  const targetDirectories = new Map(data.targets.map((target) => [target.id, target.directory]));
+  for (const skill of data.skills) {
+    for (const binding of skill.bindings) {
+      if (!locations.has(binding.directory)) {
+        locations.set(binding.directory, {
+          directory: binding.directory,
+          targets: [binding],
+          available: false,
+          count: 0,
+        });
+      }
+    }
+  }
+  const locationFilter =
+    locationDirectory !== null && locations.has(locationDirectory) ? locationDirectory : null;
   const managed = data.skills.map((skill) => ({
     kind: "managed" as const,
     key: skill.id,
@@ -124,10 +166,18 @@ export function skillRows(
   const rows = [...managed, ...discovered];
   const rowSource = (row: (typeof rows)[number]) =>
     row.kind === "managed" ? row.skill.sourceId : (row.skill.origin?.sourceId ?? "");
+  const rowDirectories = (row: (typeof rows)[number]) =>
+    row.kind === "managed"
+      ? row.skill.bindings.map((binding) => binding.directory)
+      : (row.skill.targetIds?.map((id) => targetDirectories.get(id)) ?? []);
   const sourceCounts: Record<string, number> = Object.create(null);
   for (const row of rows) {
-    const id = rowSource(row);
-    sourceCounts[id] = (sourceCounts[id] ?? 0) + 1;
+    const source = rowSource(row);
+    sourceCounts[source] = (sourceCounts[source] ?? 0) + 1;
+    for (const directory of new Set(rowDirectories(row))) {
+      const location = directory === undefined ? undefined : locations.get(directory);
+      if (location) location.count += 1;
+    }
   }
   const counts = {
     all: rows.length,
@@ -140,9 +190,12 @@ export function skillRows(
   return {
     counts,
     sourceCounts,
+    locationFilter,
+    locations: [...locations.values()],
     hiddenExternal: showExternal ? 0 : data.discovered.filter((skill) => skill.external).length,
     rows: rows
       .filter((row) => {
+        if (locationFilter !== null && !rowDirectories(row).includes(locationFilter)) return false;
         const words =
           row.kind === "managed"
             ? [
@@ -224,10 +277,12 @@ export function skillBatchBindingOperations(
   targets: ReadonlyArray<SkillTarget>,
   selected: ReadonlyArray<string>,
   mode: "add" | "remove",
+  incrementalLocationChanges = false,
 ): SkillAction[] | null {
   const locations = skillTargetGroups(targets).filter(
     (group) => group.enabled && group.targets.some((target) => selected.includes(target.id)),
   );
+  const directories = locations.map((group) => group.directory);
   const operations: SkillAction[] = [];
   for (const skill of skills) {
     const bindings = skill.bindings;
@@ -237,6 +292,10 @@ export function skillBatchBindingOperations(
         : bindings.some((binding) => binding.directory === group.directory),
     );
     if (!changes) continue;
+    if (incrementalLocationChanges) {
+      operations.push({ type: "configure", id: skill.id, locationChange: { mode, directories } });
+      continue;
+    }
     const retained = bindings.filter(
       (binding) =>
         mode === "add" || !locations.some((group) => group.directory === binding.directory),

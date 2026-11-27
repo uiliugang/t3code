@@ -110,19 +110,44 @@ describe("skill management views", () => {
     expect(
       skillConfigurationFeedback({ ...data, jobs: [{ ...completed, status: "cancelled" }] }),
     ).toBeNull();
+    const withMissingBinding = {
+      ...first,
+      bindings: [
+        { id: "fixture", label: "Fixture", directory: "/fixture", status: "missing" as const },
+      ],
+    };
     expect(
-      skillConfigurationFeedback({
-        skills: [
-          {
-            ...first,
-            bindings: [
-              { id: "fixture", label: "Fixture", directory: "/fixture", status: "missing" },
-            ],
-          },
-        ],
-        jobs: [completed],
-      }),
+      skillConfigurationFeedback({ skills: [withMissingBinding], jobs: [completed] }),
     ).toBeNull();
+    const addition = {
+      ...completed,
+      input: { ...completed.input, locationChange: { mode: "add", directories: ["/new"] } },
+    } satisfies SkillJob;
+    const removal = {
+      ...completed,
+      input: { ...completed.input, locationChange: { mode: "remove", directories: ["/new"] } },
+    } satisfies SkillJob;
+    const newBinding = { id: "new", label: "New", directory: "/new", status: "linked" as const };
+    const linked = {
+      ...withMissingBinding,
+      bindings: [...withMissingBinding.bindings, newBinding],
+    };
+    expect(skillConfigurationFeedback({ skills: [linked], jobs: [addition] })?.status).toBe(
+      "completed",
+    );
+    expect(
+      skillConfigurationFeedback({ skills: [withMissingBinding], jobs: [addition] }),
+    ).toBeNull();
+    const missing = { ...first, bindings: [{ ...newBinding, status: "missing" as const }] };
+    expect(skillConfigurationFeedback({ skills: [missing], jobs: [addition] })).toBeNull();
+    expect(
+      skillConfigurationFeedback({ skills: [{ ...missing, activeDigest: null }], jobs: [addition] })
+        ?.status,
+    ).toBe("completed");
+    expect(
+      skillConfigurationFeedback({ skills: [withMissingBinding], jobs: [removal] })?.status,
+    ).toBe("completed");
+    expect(skillConfigurationFeedback({ skills: [linked], jobs: [removal] })).toBeNull();
   });
 
   it("keeps configuration failures only while they match the current skill error", () => {
@@ -153,6 +178,51 @@ describe("skill management views", () => {
       expect(skillStatus(current)).toBe("Saved to library");
       expect(skillRows({ ...snapshot, skills: [current] }).counts.attention).toBe(0);
     }
+  });
+
+  it("filters by physical usage location across target aliases and saved bindings", () => {
+    const current = { id: "codex", label: "Codex", directory: "/current" };
+    const alias = { ...current, id: "alias" };
+    const legacy = { ...current, directory: "/legacy", status: "missing" as const };
+    const data: SkillSnapshot = {
+      ...snapshot,
+      targets: [current, alias, { ...current, id: "different", directory: "/empty" }],
+      skills: [
+        { ...skill, bindings: [legacy, { ...alias, status: "linked" }] },
+        { ...skill, id: "unbound", name: "unbound" },
+      ],
+      discovered: [
+        { ...snapshot.discovered[0]!, targetIds: [current.id] },
+        { ...snapshot.discovered[1]!, targetIds: [current.id, alias.id, "removed"] },
+      ],
+    };
+    const atCurrent = skillRows(data, "", "all", false, null, current.directory);
+    expect(atCurrent.rows.map((row) => row.name)).toEqual(["local", "review"]);
+    expect(
+      atCurrent.locations.map(({ directory, count, available }) => [directory, count, available]),
+    ).toEqual([
+      [current.directory, 2, true],
+      ["/empty", 0, true],
+      [legacy.directory, 1, false],
+    ]);
+    expect(
+      skillRows(data, "", "all", false, null, legacy.directory).rows.map((row) => row.key),
+    ).toEqual([skill.id]);
+    expect(
+      skillRows(data, "review", "managed", true, "local", current.directory).rows.map(
+        (row) => row.key,
+      ),
+    ).toEqual([skill.id]);
+    expect(skillRows(data, "review", "unmanaged", true, "local", current.directory).rows).toEqual(
+      [],
+    );
+    expect(
+      skillRows(data, "", "all", true, null, current.directory).rows.map((row) => row.name),
+    ).toEqual(["external", "local", "review"]);
+    expect(skillRows(data, "", "all", false, null, "/empty").rows).toEqual([]);
+    const missingLocation = skillRows(data, "", "all", false, null, "/removed");
+    expect(missingLocation.locationFilter).toBeNull();
+    expect(missingLocation.rows.map((row) => row.name)).toEqual(["local", "review", "unbound"]);
   });
 
   it("keeps matching source failures local without hiding unrelated errors", () => {
@@ -364,11 +434,36 @@ describe("skill management views", () => {
     ).toEqual([]);
     const orphan = {
       ...skill,
+      id: "retired-review",
       bindings: [
         { id: "removed", label: "Removed", directory: "/removed", status: "missing" as const },
       ],
     };
     expect(skillBatchBindingOperations([orphan], targets, ["shared"], "add")).toBeNull();
+    expect(
+      skillBatchBindingOperations([orphan, ...skills], targets, ["shared"], "add", true),
+    ).toEqual([
+      {
+        type: "configure",
+        id: "retired-review",
+        locationChange: { mode: "add", directories: ["/shared"] },
+      },
+      {
+        type: "configure",
+        id: "review",
+        locationChange: { mode: "add", directories: ["/shared"] },
+      },
+      { type: "configure", id: "debug", locationChange: { mode: "add", directories: ["/shared"] } },
+    ]);
+    expect(
+      skillBatchBindingOperations([orphan, ...skills], targets, ["alias"], "remove", true),
+    ).toEqual([
+      {
+        type: "configure",
+        id: "review",
+        locationChange: { mode: "remove", directories: ["/codex"] },
+      },
+    ]);
   });
 
   it("selects multiple skills without discarding policy or usage locations", () => {
