@@ -38,6 +38,7 @@ import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import * as DesktopSshEnvironment from "../../ssh/DesktopSshEnvironment.ts";
 import * as DesktopCloudSandbox from "../../ssh/DesktopCloudSandbox.ts";
+import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 import * as DesktopSshPasswordPrompts from "../../ssh/DesktopSshPasswordPrompts.ts";
 
 const DesktopSshEnvironmentRequestOperation = Schema.Literals([
@@ -190,6 +191,20 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
           }
         }),
     );
+  }),
+});
+
+export const cloudSandboxEnabled = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CLOUD_SANDBOX_ENABLED_CHANNEL,
+  payload: Schema.UndefinedOr(Schema.Boolean),
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.cloudSandbox.enabled")(function* (enabled) {
+    const settings = yield* DesktopAppSettings.DesktopAppSettings;
+    const current =
+      enabled === undefined
+        ? yield* settings.get
+        : (yield* settings.setCloudSandboxEnabled(enabled)).settings;
+    return current.cloudSandboxEnabled;
   }),
 });
 

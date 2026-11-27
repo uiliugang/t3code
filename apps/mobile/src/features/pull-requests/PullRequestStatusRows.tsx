@@ -4,7 +4,11 @@ import { usePullRequestConnected } from "./usePullRequestConnected";
 import { PullRequestSendReviewLink } from "./PullRequestSendReviewLink";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import type { PullRequestAction, PullRequestDetail } from "@t3tools/contracts";
+import {
+  isMeituanServiceEnabled,
+  type PullRequestAction,
+  type PullRequestDetail,
+} from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import Animated from "react-native-reanimated";
@@ -22,6 +26,7 @@ import { PullRequestAgentRow } from "./PullRequestAgentRow";
 import { PullRequestGlyph } from "./pullRequestGlyphs";
 import { composerPullRequests } from "../../state/pull-requests";
 import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import {
   allowedUpdateMethods,
   PR_ACTION_ICONS,
@@ -292,6 +297,11 @@ export function PullRequestReviewersRow(props: RowProps) {
     composerPullRequests.activity(pullRequestTarget(props.params)),
   );
   const summary = pullRequestReviewSummary(props.pr, activity.data, m);
+  const settings = useAtomValue(
+    serverEnvironment.settingsValueAtom(pullRequestTarget(props.params).environmentId),
+  );
+  const showDaxiang =
+    props.pr.provider === "meituan" && isMeituanServiceEnabled(settings, "daxiang");
   const canWrite = useAtomValue(
     composerPullRequests.requestReviewers.permissionAtom(
       pullRequestTarget(props.params).environmentId,
@@ -322,7 +332,7 @@ export function PullRequestReviewersRow(props: RowProps) {
           exiting={PR_ROW_EXIT}
           className="pl-8"
         >
-          {props.pr.provider === "meituan" ? (
+          {showDaxiang ? (
             <PullRequestSendReviewLink
               key={props.pr.url}
               pr={props.pr}
@@ -333,7 +343,7 @@ export function PullRequestReviewersRow(props: RowProps) {
           {summary.reviews
             .filter(
               (review) =>
-                props.pr.provider !== "meituan" ||
+                !showDaxiang ||
                 !props.pr.reviewers.some((actor) => actor.login === review.author?.login),
             )
             .map((review) => (
@@ -379,7 +389,7 @@ export function PullRequestReviewersRow(props: RowProps) {
           {props.pr.reviewers
             .filter(
               (reviewer) =>
-                props.pr.provider !== "meituan" &&
+                !showDaxiang &&
                 !summary.reviews.some((review) => review.author?.login === reviewer.login),
             )
             .map((reviewer) => (

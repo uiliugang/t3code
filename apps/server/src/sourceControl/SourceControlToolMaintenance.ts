@@ -75,18 +75,21 @@ const make = Effect.gen(function* () {
     meituanIntegrationEnabled: false,
     meituanRequirementsEnabled: false,
     meituanSourceControlEnabled: false,
+    meituanDaxiangEnabled: false,
     daxiang: { approvalMonitor: { enabled: false } },
   };
   const rememberSettings = ({
     meituanIntegrationEnabled,
     meituanRequirementsEnabled,
     meituanSourceControlEnabled,
+    meituanDaxiangEnabled,
     daxiang,
   }: ServerSettings) =>
     (lastSettings = {
       meituanIntegrationEnabled,
       meituanRequirementsEnabled,
       meituanSourceControlEnabled,
+      meituanDaxiangEnabled,
       daxiang: { approvalMonitor: { enabled: daxiang.approvalMonitor.enabled } },
     });
   const enabledSettings = settings.getSettings.pipe(

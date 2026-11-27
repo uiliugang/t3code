@@ -1,5 +1,6 @@
 import {
   DaxiangApprovalError,
+  isMeituanServiceEnabled,
   type DaxiangApprovalMutation,
   type DaxiangApprovalMutationResult,
   type DaxiangApprovalRecord,
@@ -436,7 +437,8 @@ const make = Effect.gen(function* () {
       const saved = yield* settings.getSettings.pipe(
         Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
       );
-      if (!saved.meituanIntegrationEnabled || !saved.daxiang.approvalMonitor.enabled) return;
+      if (!isMeituanServiceEnabled(saved, "daxiang") || !saved.daxiang.approvalMonitor.enabled)
+        return;
       if (event.sessionType === "groupchat" && !saved.daxiang.approvalMonitor.includeGroupChats) {
         return;
       }
@@ -560,8 +562,27 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.scoped, Effect.forkScoped);
   };
 
+  const closeBrowserLogin = Effect.fn("DaxiangApprovalService.closeBrowserLogin")(function* () {
+    const session = loginSession;
+    if (!session) return;
+    loginSession = undefined;
+    yield* Scope.close(session.scope, Exit.void);
+    yield* Deferred.succeed(session.done, undefined);
+  }, Effect.uninterruptible);
+
+  const scheduleDisabledBrowserLoginClose = Effect.gen(function* () {
+    if (!loginSession) return;
+    const saved = yield* settings.getSettings;
+    if (!isMeituanServiceEnabled(saved, "daxiang")) yield* closeBrowserLogin();
+  }).pipe(
+    loginLock.withPermits(1),
+    Effect.ignoreCause({ log: true }),
+    Effect.forkIn(scope),
+    Effect.asVoid,
+  );
+
   const reconcile = Effect.fn("DaxiangApprovalService.reconcile")(
-    function* () {
+    function* (closeLoginOnDisable: Effect.Effect<void>) {
       if (watchFiber) {
         yield* Fiber.interrupt(watchFiber);
         watchFiber = undefined;
@@ -570,9 +591,12 @@ const make = Effect.gen(function* () {
       const saved = yield* settings.getSettings.pipe(
         Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
       );
-      if (!saved.meituanIntegrationEnabled || !saved.daxiang.approvalMonitor.enabled) {
+      const enabled = isMeituanServiceEnabled(saved, "daxiang");
+      if (!enabled || !saved.daxiang.approvalMonitor.enabled) {
         yield* publishCredentials({ loggedIn: false });
-        return yield* publishStatus("disabled");
+        yield* publishStatus("disabled");
+        if (!enabled) yield* closeLoginOnDisable;
+        return;
       }
       const invocation = yield* resolveInvocation();
       const statusOutput = yield* runDumbo(["status"]);
@@ -610,18 +634,25 @@ const make = Effect.gen(function* () {
       ),
   );
 
-  const closeBrowserLogin = Effect.fn("DaxiangApprovalService.closeBrowserLogin")(function* () {
-    const session = loginSession;
-    if (!session) return;
-    loginSession = undefined;
-    yield* Scope.close(session.scope, Exit.void);
-    yield* Deferred.succeed(session.done, undefined);
-  }, Effect.uninterruptible);
-
   const mutate = Effect.fn("DaxiangApprovalService.mutate")(
     function* (input: DaxiangApprovalMutation, sessionId: string) {
       if (input.type === "clear_records") {
         return yield* SubscriptionRef.update(state, (current) => ({ ...current, records: [] }));
+      }
+      if (input.type === "cancel_browser_login") {
+        if (input.threadId === loginSession?.threadId && sessionId === loginSession.sessionId) {
+          yield* closeBrowserLogin();
+        }
+        return;
+      }
+      if (input.type === "refresh" || input.type === "restart")
+        return yield* reconcile(closeBrowserLogin());
+
+      const saved = yield* settings.getSettings.pipe(
+        Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
+      );
+      if (!isMeituanServiceEnabled(saved, "daxiang")) {
+        return yield* cliError("disabled", "DaXiang is disabled on this environment.");
       }
       if (input.type === "open_browser_login") {
         if (loginSession && loginSession.sessionId !== sessionId) {
@@ -661,12 +692,6 @@ const make = Effect.gen(function* () {
         }
         return { threadId: loginSession.threadId, tabId: loginSession.tabId };
       }
-      if (input.type === "cancel_browser_login") {
-        if (input.threadId === loginSession?.threadId && sessionId === loginSession.sessionId) {
-          yield* closeBrowserLogin();
-        }
-        return;
-      }
       if (input.type === "finish_browser_login") {
         if (input.threadId !== loginSession?.threadId || sessionId !== loginSession.sessionId) {
           return yield* cliError("login_failed", "The DaXiang login session has expired.");
@@ -679,9 +704,6 @@ const make = Effect.gen(function* () {
         yield* closeBrowserLogin();
       }
       if (input.type === "login") {
-        const saved = yield* settings.getSettings.pipe(
-          Effect.mapError(() => cliError("storage", "Could not read the Meituan settings.")),
-        );
         const port = input.port ?? saved.daxiang.approvalMonitor.chromeCdpPort;
         yield* runDumbo(["login", "--port", String(port)], "45 seconds").pipe(
           Effect.mapError((error) =>
@@ -689,7 +711,7 @@ const make = Effect.gen(function* () {
           ),
         );
       }
-      yield* reconcile();
+      yield* reconcile(closeBrowserLogin());
     },
     Effect.map((result) => result ?? undefined),
     loginLock.withPermits(1),
@@ -713,7 +735,9 @@ const make = Effect.gen(function* () {
       );
       yield* Stream.unwrap(changes).pipe(
         Stream.changes,
-        Stream.runForEach(() => reconcile().pipe(Effect.ignoreCause({ log: true }))),
+        Stream.runForEach(() =>
+          reconcile(scheduleDisabledBrowserLoginClose).pipe(Effect.ignoreCause({ log: true })),
+        ),
         Effect.forkScoped,
       );
     },

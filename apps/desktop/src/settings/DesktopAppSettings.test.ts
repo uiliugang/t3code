@@ -97,6 +97,19 @@ function writeSettingsPatch(patch: typeof DesktopSettingsPatch.Type) {
 }
 
 describe("DesktopSettings", () => {
+  it.effect("persists the Cloud Sandbox opt-out and defaults legacy installs to enabled", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        assert.isTrue((yield* settings.load).cloudSandboxEnabled);
+        yield* settings.setCloudSandboxEnabled(false);
+        assert.isFalse((yield* settings.load).cloudSandboxEnabled);
+        yield* settings.setCloudSandboxEnabled(true);
+        assert.isTrue((yield* settings.load).cloudSandboxEnabled);
+      }),
+    ),
+  );
+
   it.effect("records one bounds operation span with its input attributes", () =>
     Effect.gen(function* () {
       const spans: Array<Tracer.Span> = [];
@@ -225,6 +238,7 @@ describe("DesktopSettings", () => {
         assert.deepEqual(yield* settings.load, {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
+          cloudSandboxEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
           mainWindowMaximized: false,
           serverExposureMode: "network-accessible",
@@ -378,6 +392,7 @@ describe("DesktopSettings", () => {
         assert.deepEqual(yield* settings.load, {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
+          cloudSandboxEnabled: true,
           mainWindowBounds: null,
           mainWindowMaximized: false,
           serverExposureMode: "local-only",
@@ -407,6 +422,7 @@ describe("DesktopSettings", () => {
         assert.deepEqual(yield* settings.load, {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
+          cloudSandboxEnabled: true,
           mainWindowBounds: null,
           mainWindowMaximized: false,
           serverExposureMode: "local-only",

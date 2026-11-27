@@ -160,6 +160,7 @@ const applicationServerSettingsTransferPolicy = {
   meituanIntegrationEnabled: "local",
   meituanSourceControlEnabled: "local",
   meituanRequirementsEnabled: "local",
+  meituanDaxiangEnabled: "local",
   offeredSourceControlProviders: "portable",
   providerInstances: "local",
   usageLimitSources: "local",

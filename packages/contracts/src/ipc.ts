@@ -1217,6 +1217,7 @@ export interface DesktopBridge {
     target: DesktopSshEnvironmentTarget,
     options?: { issuePairingToken?: boolean; targetVersion?: string; password?: string },
   ) => Promise<DesktopSshEnvironmentBootstrap>;
+  cloudSandboxEnabled?: (enabled?: boolean) => Promise<boolean>;
   getCloudSandboxConfig: () => Promise<readonly DesktopCloudSandboxConfig[]>;
   saveCloudSandboxConfig: (input: {
     host: string;

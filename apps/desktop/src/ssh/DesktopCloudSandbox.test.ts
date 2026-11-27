@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
@@ -24,7 +25,8 @@ it.effect("stores only encrypted credentials and matches the resolved endpoint e
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const dir = yield* fs.makeTempDirectoryScoped();
-    const sandbox = yield* make(dir);
+    const enabled = yield* Ref.make(true);
+    const sandbox = yield* make(dir, Ref.get(enabled));
     const target = {
       alias: "sandbox",
       hostname: "sandbox.example.test",
@@ -39,7 +41,11 @@ it.effect("stores only encrypted credentials and matches the resolved endpoint e
       yield* fs.readFileString(path.join(dir, "cloud-sandbox-ssh")),
       "fixture-password",
     );
-    const restarted = yield* make(dir);
+    yield* Ref.set(enabled, false);
+    assert.isUndefined(yield* sandbox.passwordFor(target));
+    assert.deepEqual(yield* sandbox.get, [{ hostname: target.hostname, port: 2222 }]);
+    yield* Ref.set(enabled, true);
+    const restarted = yield* make(dir, Ref.get(enabled));
     assert.deepEqual(yield* restarted.get, [{ hostname: target.hostname, port: 2222 }]);
     assert.equal(Redacted.value((yield* restarted.passwordFor(target))!), "fixture-password");
     assert.isUndefined(
@@ -83,7 +89,7 @@ it.effect("reads legacy credentials and updates or removes only the selected end
       password: Redacted.make("legacy-password"),
     });
     yield* fs.writeFile(file, yield* safeStorage.encryptString(contents));
-    const sandbox = yield* make(dir);
+    const sandbox = yield* make(dir, Effect.succeed(true));
     assert.deepEqual(yield* sandbox.get, [legacy]);
     yield* sandbox.save({
       host: legacy.hostname,
@@ -106,7 +112,7 @@ it.effect("reads legacy credentials and updates or removes only the selected end
     );
     const arrayContents = yield* Schema.encodeEffect(Schema.fromJsonString(multiple))(edited);
     yield* fs.writeFile(file, yield* safeStorage.encryptString(arrayContents));
-    const restarted = yield* make(dir);
+    const restarted = yield* make(dir, Effect.succeed(true));
     assert.deepEqual(yield* restarted.get, [legacy, second]);
     assert.equal(Redacted.value((yield* restarted.passwordFor(target))!), "rollback-edit");
     assert.equal(
@@ -148,10 +154,10 @@ it.effect("reads the array format and promotes the remaining endpoint after remo
       ]),
     );
     yield* fs.writeFile(path.join(dir, "cloud-sandbox-ssh"), encrypted);
-    const sandbox = yield* make(dir);
+    const sandbox = yield* make(dir, Effect.succeed(true));
     assert.deepEqual(yield* sandbox.get, [first, second]);
     yield* sandbox.clear(first);
-    const restarted = yield* make(dir);
+    const restarted = yield* make(dir, Effect.succeed(true));
     assert.deepEqual(yield* restarted.get, [second]);
     const target = { ...second, alias: "two", username: "root" };
     assert.equal(Redacted.value((yield* restarted.passwordFor(target))!), "second");
@@ -163,7 +169,7 @@ it.effect("refuses to write credentials using Electron's plaintext backend", () 
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const dir = yield* fs.makeTempDirectoryScoped();
-    const sandbox = yield* make(dir);
+    const sandbox = yield* make(dir, Effect.succeed(true));
     const failure = yield* sandbox
       .save({ host: "sandbox.example.test", password: Redacted.make("fixture-password") })
       .pipe(Effect.flip);
@@ -179,7 +185,7 @@ it.effect("resets an unreadable credential file so new servers can be saved", ()
     const dir = yield* fs.makeTempDirectoryScoped();
     const file = path.join(dir, "cloud-sandbox-ssh");
     yield* fs.writeFileString(file, "unreadable credential file");
-    const sandbox = yield* make(dir);
+    const sandbox = yield* make(dir, Effect.succeed(true));
     yield* sandbox.get.pipe(Effect.flip);
     yield* sandbox.reset;
     assert.isFalse(yield* fs.exists(file));

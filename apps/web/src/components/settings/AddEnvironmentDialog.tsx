@@ -167,14 +167,16 @@ export function AddEnvironmentDialog({
   useEffect(() => {
     if (!isSshDiscoveryActive || !desktopBridge?.getCloudSandboxConfig) return;
     let current = true;
-    void desktopBridge.getCloudSandboxConfig().then(
-      (configs) => {
-        if (current) setSandboxConfigs(configs);
-      },
-      () => {
-        if (current) setSandboxConfigs([]);
-      },
-    );
+    void (desktopBridge.cloudSandboxEnabled?.() ?? Promise.resolve(true))
+      .then((enabled) => (enabled ? desktopBridge.getCloudSandboxConfig() : []))
+      .then(
+        (configs) => {
+          if (current) setSandboxConfigs(configs);
+        },
+        () => {
+          if (current) setSandboxConfigs([]);
+        },
+      );
     return () => {
       current = false;
     };
@@ -240,6 +242,7 @@ export function AddEnvironmentDialog({
     if (!nextOpen) {
       savedBackendSessionRef.current += 1;
       setSavedBackendMode("remote");
+      setSandboxConfigs([]);
       setSavedBackendHost(initialHost);
       setPendingHostKey(null);
       setSavedBackendPairingCode("");

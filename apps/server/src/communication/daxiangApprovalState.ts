@@ -1,4 +1,8 @@
-import type { DaxiangApprovalOutcome, ServerSettings } from "@t3tools/contracts";
+import {
+  isMeituanServiceEnabled,
+  type DaxiangApprovalOutcome,
+  type ServerSettings,
+} from "@t3tools/contracts";
 import type { ParsedApprovalTarget } from "./daxiangApprovalLinks.ts";
 
 export { boundedAdd } from "@t3tools/shared/boundedSet";
@@ -80,10 +84,10 @@ export function isSelfAuthoredApprovalEvent(
 }
 
 export function approvalWatchSettingsKey(
-  settings: Pick<ServerSettings, "meituanIntegrationEnabled" | "daxiang" | "sourceControlHosts">,
+  settings: Pick<ServerSettings, "meituanIntegrationEnabled" | "meituanDaxiangEnabled" | "daxiang">,
 ): string {
   return JSON.stringify({
-    meituanIntegrationEnabled: settings.meituanIntegrationEnabled,
+    daxiangEnabled: isMeituanServiceEnabled(settings, "daxiang"),
     enabled: settings.daxiang.approvalMonitor.enabled,
     enhanceDumboWeb: settings.daxiang.approvalMonitor.enhanceDumboWeb,
     chromeCdpPort: settings.daxiang.approvalMonitor.chromeCdpPort,
