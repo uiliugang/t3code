@@ -33,7 +33,7 @@ export function ProjectLabel({
       </span>
       {(showKind || kindOverride !== undefined) && !project?.isScratch && kind ? (
         <Badge variant="secondary" size="sm">
-          {kind}
+          {kind === "group" ? t("group") : kind}
         </Badge>
       ) : null}
     </span>
