@@ -934,7 +934,9 @@ describe("IssueService with a standalone tracker", () => {
         credentials: {
           get: () =>
             Effect.map(IssueTrackerAccount, (account) =>
-              account === accountId ? Option.some(credential) : Option.none(),
+              account === accountId
+                ? Option.some({ token: credential, fields: {} })
+                : Option.none(),
             ),
         },
       });

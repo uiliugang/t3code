@@ -42,7 +42,7 @@ import * as WorkspaceFolders from "../workspace/WorkspaceFolders.ts";
 const CHECKPOINT_REFS_PREFIX = "refs/t3/orchestration-v2/checkpoints";
 const ROOT_CHECKPOINT_SCOPE_NAME = "root";
 // The provider turn waits on the baseline, so a workspace too slow for this starts without one.
-// It bounds only the snapshot: waiting on the lock lets an in-flight capture finish the same ref.
+// It bounds a copy and the snapshot each; waiting on the lock lets a capture finish the same ref.
 const BASELINE_CAPTURE_BUDGET = "5 seconds";
 // Workspace baselines are required, so allow the normal Git command budget before failing.
 const WORKSPACE_BASELINE_CAPTURE_BUDGET = "30 seconds";
@@ -205,6 +205,8 @@ export interface CheckpointServiceV2Shape {
   readonly captureBaseline: (input: {
     readonly scope: OrchestrationV2CheckpointScope;
     readonly ordinalWithinScope: number;
+    /** An earlier checkpoint that still holds this baseline: no run since it has run. */
+    readonly sourceOrdinalWithinScope?: number | undefined;
     /**
      * Also baselines the tracked repositories this thread reaches, a few at a time and all within
      * one budget, so many repositories delay a turn no longer than one. A repository that misses
@@ -535,9 +537,10 @@ export const layer: Layer.Layer<
       input: {
         readonly scope: OrchestrationV2CheckpointScope;
         readonly ordinalWithinScope: number;
+        readonly sourceOrdinalWithinScope?: number | undefined;
         readonly excludePaths: ReadonlyArray<string> | undefined;
       },
-      captureBudget: Duration.Input = BASELINE_CAPTURE_BUDGET,
+      workspaceBudget?: Duration.Input,
     ) =>
       withWorkspaceLock(
         input.scope.cwd,
@@ -557,30 +560,53 @@ export const layer: Layer.Layer<
           if (exists) {
             return true;
           }
+          const captureBudget = workspaceBudget ?? BASELINE_CAPTURE_BUDGET;
+          const copyOrCapture = Effect.gen(function* () {
+            if (input.sourceOrdinalWithinScope !== undefined) {
+              const copy = checkpointStore.copyCheckpointRef({
+                cwd: input.scope.cwd,
+                fromCheckpointRef: yield* checkpointRefFor({
+                  scopeId: input.scope.id,
+                  ordinalWithinScope: input.sourceOrdinalWithinScope,
+                }),
+                toCheckpointRef: checkpointRef,
+              });
+              // A multi-repo baseline is already bounded by the timeout around copyOrCapture.
+              const copied = yield* (
+                workspaceBudget === undefined ? copy.pipe(Effect.timeout(captureBudget)) : copy
+              ).pipe(Effect.orElseSucceed(() => false));
+              if (copied) return true;
+            }
 
-          const timeouts = yield* Cache.getOption(captureTimeouts, input.scope.cwd);
-          if (Option.isSome(timeouts) && timeouts.value >= 2) {
-            yield* Effect.logWarning(
-              "orchestration V2 checkpoint baseline skipped after repeated capture timeouts",
-              { scopeId: input.scope.id, ordinalWithinScope: input.ordinalWithinScope },
+            const timeouts = yield* Cache.getOption(captureTimeouts, input.scope.cwd);
+            if (Option.isSome(timeouts) && timeouts.value >= 2) {
+              yield* Effect.logWarning(
+                "orchestration V2 checkpoint baseline skipped after repeated capture timeouts",
+                { scopeId: input.scope.id, ordinalWithinScope: input.ordinalWithinScope },
+              );
+              return false;
+            }
+
+            return yield* captureWorkspaceCheckpoint(
+              {
+                cwd: input.scope.cwd,
+                checkpointRef,
+                ...(input.excludePaths === undefined ? {} : { excludePaths: input.excludePaths }),
+              },
+              true,
+              captureBudget,
+            ).pipe(
+              Effect.as(true),
+              Effect.catchTags({
+                VcsUnsupportedOperationError: () => Effect.succeed(false),
+              }),
             );
-            return false;
-          }
-
-          return yield* captureWorkspaceCheckpoint(
-            {
-              cwd: input.scope.cwd,
-              checkpointRef,
-              ...(input.excludePaths === undefined ? {} : { excludePaths: input.excludePaths }),
-            },
-            true,
-            captureBudget,
-          ).pipe(
-            Effect.as(true),
-            Effect.catchTags({
-              VcsUnsupportedOperationError: () => Effect.succeed(false),
-            }),
-          );
+          });
+          // A slow ref copy must not get another full workspace budget for a fresh snapshot.
+          return yield* workspaceBudget !== undefined &&
+          input.sourceOrdinalWithinScope !== undefined
+            ? copyOrCapture.pipe(Effect.timeout(workspaceBudget))
+            : copyOrCapture;
         }),
       ).pipe(
         Effect.mapError(

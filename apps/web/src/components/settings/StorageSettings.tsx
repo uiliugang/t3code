@@ -246,7 +246,7 @@ function RetentionControl({
               }}
             />
             <span aria-hidden="true" className="self-center pr-2 text-xs">
-              {t("days")}
+              {gt("{count, plural, one {day} other {days}}", { count: draft ?? 0 })}
             </span>
             <NumberFieldIncrement aria-label={gt("Increase {label}", { label })} />
           </NumberFieldGroup>

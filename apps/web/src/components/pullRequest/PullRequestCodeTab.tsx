@@ -544,10 +544,8 @@ function PullRequestCodeTab({
   const referenceKey = pullRequestReviewKey(reference);
   // A commit opened from the timeline or left selected across a force-push may no longer be
   // part of the pull request; read it as "All commits" instead of requesting its diff.
-  const commit =
-    selectedCommitOid !== null && detail.commits.some((entry) => entry.oid === selectedCommitOid)
-      ? selectedCommitOid
-      : null;
+  const selectedCommit = detail.commits.find((entry) => entry.oid === selectedCommitOid);
+  const commit = selectedCommit?.oid ?? null;
   const scopeKey = JSON.stringify([environmentId, referenceKey, commit]);
   // The panel keeps this mounted across pull requests, so an open composer would otherwise
   // survive the switch and attach its comment to whichever one is on screen when it is sent.
@@ -1476,8 +1474,27 @@ function PullRequestCodeTab({
     </div>
   );
 
-  const selectedCommit = orderedCommits.find((entry) => entry.oid === commit);
+  const filtersActive = fileFilters.hideTestFiles || fileFilters.hideMarkdownFiles;
   const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : t("All commits");
+  const reportedFileCount = selectedCommit ? selectedCommit.changedFiles : detail.changedFiles;
+  const scopeFileCount = filtersActive ? 0 : (reportedFileCount ?? 0);
+  const fileCount = Math.max(scopeFileCount, files.length);
+  const fileCountSuffix =
+    nextCursor !== null && (scopeFileCount === 0 || scopeFileCount < fileCount) ? "+" : "";
+  const usePullRequestViewedCount =
+    viewedFilesStore === "host" &&
+    commit === null &&
+    !filtersActive &&
+    filesViewed.viewedCount <= fileCount;
+  const viewedCount = usePullRequestViewedCount
+    ? filesViewed.viewedCount
+    : filePaths.filter(isFileViewed).length;
+  const viewedCountSuffix =
+    !usePullRequestViewedCount &&
+    (nextCursor !== null || files.length < fileCount) &&
+    viewedCount < filesViewed.viewedCount
+      ? "+"
+      : "";
   const changeIgnoreWhitespace = (next: boolean) => {
     setIgnoreWhitespace(next);
     setDraft(null);
@@ -1542,8 +1559,8 @@ function PullRequestCodeTab({
         ) : null}
         <PullRequestMetaLine>
           <span className="shrink-0 tabular-nums">
-            {t(files.length === 1 ? "{count} file" : "{count} files", { count: files.length })}
-            {nextCursor === null ? "" : "+"}
+            {t(fileCount === 1 ? "{count} file" : "{count} files", { count: fileCount })}
+            {fileCountSuffix}
           </span>
           {hiddenFileCount > 0 && (files.length > 0 || nextCursor !== null) ? (
             <Button type="button" size="xs" variant="link" onClick={fileFilters.clear}>
@@ -1555,7 +1572,9 @@ function PullRequestCodeTab({
           {filesViewed.enabled && files.length > 0 ? (
             <span className="flex min-w-0 items-center gap-1 tabular-nums">
               <span className="shrink-0">
-                {filePaths.filter(isFileViewed).length} / {files.length}
+                {viewedCount}
+                {viewedCountSuffix} / {fileCount}
+                {fileCountSuffix}
               </span>
               <span className="truncate">
                 {viewedFilesStore === "environment"

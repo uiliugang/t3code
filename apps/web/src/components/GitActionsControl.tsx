@@ -1310,6 +1310,7 @@ function CheckoutGitActionsControl({
         ? { scope: selectionScope, fromRefName: actionBranch }
         : null;
     setPreserveBranchSwitchExclusions(pendingBranchSwitch);
+    let createdBranch: string | undefined;
 
     const result = await runImmediateGitAction.run({
       actionId,
@@ -1319,6 +1320,9 @@ function CheckoutGitActionsControl({
       ...(filePaths ? { filePaths } : {}),
       ...(owner?.threadId ? { threadId: owner.threadId } : {}),
       ...(owner?.projectId ? { projectId: owner.projectId } : {}),
+      onProgress: (event) => {
+        if (event.kind === "action_failed") createdBranch = event.createdBranch;
+      },
     });
 
     if (result._tag === "Failure") {

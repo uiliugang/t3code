@@ -117,4 +117,34 @@ describe("ConnectionDriver", () => {
       ]);
     }),
   );
+
+  it.effect("a silent route's network failure does not hide an answered route's refusal", () =>
+    Effect.gen(function* () {
+      const refused = new ConnectionBlockedError({
+        reason: "authentication",
+        hop: "server",
+        detail: "Session token revoked.",
+      });
+      const attempted: Array<string> = [];
+      const error = yield* ConnectionDriver.connectOverRoutes(
+        ENTRY,
+        (route) =>
+          Effect.succeed<ConnectionDriver.RouteCheck>(
+            route.target === ENTRY.target ? "answered" : "silent",
+          ),
+        (route) => {
+          attempted.push(route.target.label);
+          return route.target === ENTRY.target
+            ? Effect.fail(refused)
+            : Effect.fail(
+                new ConnectionTransientError({ reason: "transport", detail: "Timed out." }),
+              );
+        },
+      ).pipe(Effect.scoped, Effect.flip);
+
+      // A refusal does not retry, so the silent route still gets its chance to connect.
+      expect(attempted).toHaveLength(2);
+      expect(error).toBe(refused);
+    }),
+  );
 });

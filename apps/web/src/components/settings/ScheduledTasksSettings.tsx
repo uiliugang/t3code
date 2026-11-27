@@ -2341,7 +2341,11 @@ function ScheduledTaskEditorForm({
                     setDraft((current) => ({ ...current, intervalMinutes: event.target.value }))
                   }
                 />
-                <span className="text-xs text-muted-foreground">{t("minutes")}</span>
+                <span className="text-xs text-muted-foreground">
+                  {gt("{count, plural, one {minute} other {minutes}}", {
+                    count: Number(draft.intervalMinutes),
+                  })}
+                </span>
               </div>
             )}
           </div>

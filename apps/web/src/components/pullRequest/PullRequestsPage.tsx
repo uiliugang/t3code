@@ -3,7 +3,10 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { heldPullRequestListEntriesAtom } from "@t3tools/client-runtime/state/pull-requests";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { applyPullRequestDraftFilterChange } from "@t3tools/client-runtime/pull-request-query";
+import {
+  applyPullRequestFilterChange,
+  pullRequestMenuFilters,
+} from "@t3tools/client-runtime/pull-request-query";
 import { Spinner } from "~/components/ui/spinner";
 import type { PullRequestSpeedActionResult } from "~/components/pullRequest/PullRequestSpeedActions";
 import { usePullRequestCloseBatch } from "~/components/pullRequest/usePullRequestActions";
@@ -93,7 +96,7 @@ import { PullRequestListEmptyState } from "./PullRequestListEmptyState";
 import { PullRequestListGhost } from "./PullRequestGhosts";
 import { type PullRequestRowTarget } from "./PullRequestRow";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
-import { RightPanelTabs } from "../RightPanelTabs";
+import { RightPanelTabs, type RightPanelTabsHandle } from "../RightPanelTabs";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { isElectron } from "~/env";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
@@ -115,6 +118,7 @@ import {
   selectThreadRightPanelState,
   useRightPanelStore,
   type PullRequestSurface,
+  type RightPanelSurface,
 } from "~/rightPanelStore";
 import { useSidebarProjectGroups } from "~/hooks/useSidebarProjectGroups";
 import {
@@ -1402,13 +1406,9 @@ export function PullRequestsPage() {
       involvement={search.involvement}
       involvementOptions={resolveFilterOptions(INVOLVEMENT_TABS, resolve)}
       onInvolvement={(involvement) => updateListScope({ involvement })}
-      filters={
-        typedParsed.filters.draft
-          ? { ...menuFilters, draft: typedParsed.filters.draft }
-          : menuFilters
-      }
+      filters={pullRequestMenuFilters(typedParsed.filters, menuFilters)}
       onFilters={(value) => {
-        const { query, filters: next } = applyPullRequestDraftFilterChange(
+        const { query, filters: next } = applyPullRequestFilterChange(
           typedQuery,
           menuFilters,
           value,
@@ -1501,9 +1501,12 @@ export function PullRequestsPage() {
     useRightPanelStore.getState().activateSurface(rightPanelRef, surface.id);
     selectSurfaceInUrl(surface);
   };
-  const closeSurface = (surface: PullRequestSurface) => {
+  const closeSurfaces = (surfaces: readonly RightPanelSurface[]) => {
     if (rightPanelRef === null) return;
-    useRightPanelStore.getState().closeSurface(rightPanelRef, surface.id);
+    useRightPanelStore.getState().closeSurfaces(
+      rightPanelRef,
+      surfaces.map((surface) => surface.id),
+    );
     const next = selectActiveRightPanelSurface(
       useRightPanelStore.getState().byThreadKey,
       rightPanelRef,
@@ -1561,11 +1564,13 @@ export function PullRequestsPage() {
       });
     });
   });
+  const rightPanelTabsRef = useRef<RightPanelTabsHandle>(null);
   const closeActiveSurfaceFromShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (activePullRequestSurface === null) return;
     event.preventDefault();
     event.stopPropagation();
-    if (!event.repeat) closeSurface(activePullRequestSurface);
+    if (!event.repeat && !rightPanelTabsRef.current?.closeSelectedTabs())
+      closeSurfaces([activePullRequestSurface]);
   });
   const toggleRightPanelFromShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (!rightPanelAvailable) return;
@@ -1603,6 +1608,7 @@ export function PullRequestsPage() {
 
         {rightPanelPresent && renderedPullRequestSurface && panelEnvironmentId !== null ? (
           <RightPanelTabs
+            ref={rightPanelTabsRef}
             mode="inline"
             open={rightPanelState.isOpen}
             maximized={rightPanelMaximized}
@@ -1620,9 +1626,8 @@ export function PullRequestsPage() {
             onActivate={(surface) => {
               if (surface.kind === "pull-request") activateSurface(surface);
             }}
-            onCloseSurface={(surface) => {
-              if (surface.kind === "pull-request") closeSurface(surface);
-            }}
+            onCloseSurface={(surface) => closeSurfaces([surface])}
+            onCloseSelectedSurfaces={closeSurfaces}
             onCloseOtherSurfaces={(surface) => {
               if (surface.kind === "pull-request") closeOtherSurfaces(surface);
             }}
@@ -1630,9 +1635,9 @@ export function PullRequestsPage() {
               if (surface.kind === "pull-request") closeSurfacesToRight(surface);
             }}
             onCloseAllSurfaces={closeAllSurfaces}
-            onMoveSurface={(surfaceId, toIndex) => {
+            onMoveSurfaces={(surfaceIds, targetId) => {
               if (rightPanelRef !== null)
-                useRightPanelStore.getState().moveSurface(rightPanelRef, surfaceId, toIndex);
+                useRightPanelStore.getState().moveSurfaces(rightPanelRef, surfaceIds, targetId);
             }}
             onCopyFilePath={() => undefined}
             onAddBrowser={() => undefined}

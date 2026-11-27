@@ -1,4 +1,5 @@
 import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
+import { speechModelDownloadPercent } from "@t3tools/shared/speech";
 import type { UiTranslator } from "@t3tools/shared/uiLocale";
 
 export function resolveSpeechPresentation(
@@ -15,7 +16,7 @@ export function resolveSpeechPresentation(
       return {
         status: progress
           ? t("Downloading model {progress}%", {
-              progress: Math.round((progress.downloaded / Math.max(1, progress.total)) * 100),
+              progress: speechModelDownloadPercent(progress.downloaded, Math.max(1, progress.total)),
             })
           : t("Starting…"),
         active: true,

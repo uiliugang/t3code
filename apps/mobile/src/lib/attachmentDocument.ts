@@ -111,7 +111,11 @@ export function useAttachmentDocument(input: {
   readonly attachment: FileBackedComposerAttachment | null;
 }) {
   const resolve = useMessages();
-  const fileKind = filePreviewKind(input, { richDocuments: false });
+  const richKind = filePreviewKind(input);
+  const fileKind =
+    richKind === "epub" && !input.attachment && input.environmentId
+      ? "epub"
+      : filePreviewKind(input, { richDocuments: false });
   const delimiter = filePreviewDelimiter(input);
   const shareController = useRef<AbortController | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight attachment share download when the component unmounts
@@ -135,15 +139,18 @@ export function useAttachmentDocument(input: {
   const remote = useFreshAssetUrl(environmentId, attachment ? null : resource, revision);
   const remoteUrl = AsyncResult.isSuccess(remote) && !remote.waiting ? remote.value : null;
   const uri = attachment ? localPreview.uri : (remoteUrl?.url ?? null);
-  // The signed HTML response supplies the sandbox CSP; decrypted bytes open as source.
+  // The sandboxed online HTML and EPUB viewers need a signed server URL.
+  // Decrypted HTML/SVG bytes open as source; decrypted EPUB remains a file attachment.
   const kind =
-    remoteUrl &&
-    isLocalUri(remoteUrl.url) &&
-    (fileKind === "html" ||
-      input.mimeType.split(";")[0]?.trim().toLowerCase() === "image/svg+xml" ||
-      /\.svg$/i.test(input.name))
-      ? "text"
-      : fileKind;
+    fileKind === "epub" && remoteUrl && isLocalUri(remoteUrl.url)
+      ? filePreviewKind(input, { richDocuments: false })
+      : remoteUrl &&
+          isLocalUri(remoteUrl.url) &&
+          (fileKind === "html" ||
+            input.mimeType.split(";")[0]?.trim().toLowerCase() === "image/svg+xml" ||
+            /\.svg$/i.test(input.name))
+        ? "text"
+        : fileKind;
   const needsText = kind === "text" || kind === "markdown" || (kind === "html" && !rendered);
   const text = useAtomValue(
     uri && needsText

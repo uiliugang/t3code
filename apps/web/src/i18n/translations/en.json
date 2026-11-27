@@ -40,11 +40,16 @@
   "2aa1c01bf8014725": "{organization} limits threads to Auto-accept edits.",
   "89563a8fff8bb751": "{organization} limits threads to Auto.",
   "5b7ff1208620c2c2": "{organization} limits threads to Full access.",
+  "069e0382ff2496f5": "Your organization's Claude settings turn auto mode off.",
+  "8ccf7e0def66d339": "Your Claude settings turn auto mode off.",
+  "04ac2410d2cc0666": "This project's Claude settings turn auto mode off.",
+  "7e27789f5d58960e": "Claude's settings turn auto mode off.",
   "9bf017edd3847eb1": "{organization}'s policy does not allow connecting from other devices.",
   "ef9533bcc048f17b": "{organization}'s policy does not allow T3 Connect.",
   "986b0873f913a840": "{organization}'s policy does not allow webhook tasks.",
   "eebc538e25b09fe2": "{organization}'s policy does not allow importing browser cookies.",
   "7642a133db05f164": "{organization}'s policy does not allow opening this machine's local servers on other devices.",
+  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
   "39f6771b49f9b3b6": "Use default",
   "45bb0e90e1c42046": "When you return",
   "d8fa0a55446bbb0d": "Before the cache expires (beta)",
@@ -69,6 +74,7 @@
   "929a11e234f6e5d9": "Install the Azure command-line tools ({cli}), then enable Azure DevOps support with {command}.",
   "ad599e9de33538dd": "Add a Bitbucket token in Settings → Source control & issues.",
   "d810ecd91e8cf9d0": "Install the Origin CLI with {install}, then run {login}.",
+  "1a04c8d36a7b29d3": "Install {fj} 0.6 or later from {fjUrl} and run {fjLogin}, or install {gt} 2.0 or later from {gtUrl} and run {gtLogin} for each Forgejo or Gitea server.",
   "d026a85e2e50e675": "Install the GitCafe CLI with {install}, then run {login}, save a token in Settings, or set {variable} on the server.",
   "22d3c0c48a34b5b3": "Install the TanStack Source CLI with {install}, then run {login}, save a token in Settings, or set {variable} on the server.",
   "79d776428f4d0650": "The file could not be loaded. Reconnect and try again.",
@@ -378,6 +384,7 @@
   "834ca879c14c167b": "Working",
   "582d6df7dfab86fb": "Paused",
   "ea6583ce92507ee3": "Sleeping",
+  "7150557773b3818b": "Queued",
   "7ea8cb8af281ce93": "Waiting",
   "1347868f2523140e": "Done",
   "57d76c4614054271": "Stopped",
@@ -389,12 +396,14 @@
   "d3890f4eb1508781": "Running its own steps",
   "3e7ced10c9482af0": "{step} is working",
   "237e1bcb1cf1bdec": "Sleeping at {step}",
+  "efbeb3993ee2c3f5": "Queued for {pool}",
   "3f7b17ac5a20c8d2": "Runs {run}",
   "0306f5f324b8aaa5": "{count} runs under way",
   "e8fd779b84a202a2": "Waiting",
   "b6d55657e1a027b8": "Waiting for {step}",
   "e942562a42aede34": "Finished",
   "26b2b9727fe11289": "Ended early",
+  "ba392a6319fd43e0": "{seconds}s",
   "1bb995dcec481554": "Approve this device on {host}. It shows code {verificationCode}.",
   "8696a33219944832": "Could not create the websocket authorization proof.",
   "5678f133a8631f7d": "Your cloud sign-in changed. Sign in again to authorize the environment.",
@@ -595,6 +604,7 @@
   "56b4ff3993c93eca": "{host} sent an incompatible server configuration.",
   "368c4d4f99c66bfb": "Update the client and server to compatible versions.",
   "e5fd422e445391fc": "Upload failed. Tap to retry.",
+  "13b14784f8707ddd": "0 bytes",
   "b2bc6bd92ea24e5c": "{size} MB",
   "88f84178edbb7f57": "{size} KB",
   "5a78fd0a1d8e9945": "{count} MB",
@@ -649,9 +659,11 @@
   "af578358b6ed66ca": "{kind, select, pr {Branch is behind upstream. Pull/rebase before creating a PR.} mr {Branch is behind upstream. Pull/rebase before creating an MR.} generic {Branch is behind upstream. Pull/rebase before creating a change request.} other {Branch is behind upstream. Pull/rebase before creating {changeRequest}.}}",
   "14d8a5c9eedba345": "Create {shortLabel} is currently unavailable.",
   "8471c4c5a50ffde3": "Issues cannot be browsed for this host yet.",
-  "2f4a47129f89fe22": "Not connected. Add a personal api key to list its issues.",
+  "4a727b074bbbc5b2": "Not connected. Add your personal API key to list its issues.",
+  "b40c70c4488dcebe": "Not connected. Add your API token to list its issues.",
   "024baab60525a419": "The saved credential was rejected.",
-  "2613c232516f3c72": "Connected as {account} · no projects linked yet. Pick a team for a project to list its issues.",
+  "1e89798e3a9050c6": "Connected as {account} · no projects linked yet. Link one to a Linear team to list its issues.",
+  "c3ab6f9e8b29fbf1": "Connected as {account} · no projects linked yet. Link one to a Jira project to list its issues.",
   "77d07bfe2f8ee19d": "{count, plural, one {Connected as {account} · {count} project linked} other {Connected as {account} · {count} projects linked}}",
   "3eb9a01099aaf799": "{count}s",
   "3618302947c280f0": "{count}m",
@@ -729,6 +741,10 @@
   "05b16c85cb1e18bd": "No repositories",
   "04ea9e0e663983fd": "All repositories",
   "c07bd24ff49e85d9": "{count, plural, one {{count} repository} other {{count} repositories}}",
+  "1b799ebfa94c2408": "Push hooks approval",
+  "81d703184fe5112e": "Run this repository's push hooks?",
+  "027b0d65c7a67af6": "Hook file",
+  "ade585910165bb52": "Configured hook",
   "e94aa66471dae6aa": "Why am I being asked this?",
   "228a325b5708e675": "Full access skips approvals, but an ask rule in the agent's own settings matches this action, so it still asks. Remove or narrow that rule to stop these prompts.",
   "3f9101f696c738a8": "Full access skips approvals, but the agent still stops for a few safety checks of its own that no setting can skip, such as a delete whose path it can't verify. T3 Code can't turn these off, so check the request and approve it if it's what you expect.",
@@ -740,6 +756,7 @@
   "3f0b962160edbe6d": "Could not synchronize the thread.",
   "752b4d69669b0019": "Could not load earlier activity.",
   "44de9731d5b8eb38": "Work history changed. Retry loading it.",
+  "6ea901338c803e3e": "Could not use the reset credit.",
   "c0ea8898cd494336": "Could not check this connection's access to diagnostics and usage.",
   "953b6473de4b9ad6": "This connection does not have access to diagnostics and usage.",
   "8c68febc86a3f651": "Updating {provider}…",
@@ -917,6 +934,9 @@
   "ba7ecd149f928753": "This archive contains more than 2,048 entries.",
   "cafff24d04793cb2": "An archive path is too long to preview.",
   "bd059a3d5a8adb64": "The expanded archive exceeds the preview size or compression ratio limit.",
+  "3771480d7421e412": "This file requires a password.",
+  "00fa8cef0040eed9": "Incorrect password. Try again.",
+  "ad70bb0e647d4f2a": "This file uses encryption that the preview cannot open.",
   "38528c344a654546": "This is not a readable ZIP archive.",
   "fa4dba951ad2aa73": "Unsupported ZIP64 directory.",
   "4353267e54b426a8": "This ZIP64 directory is too large or damaged.",
@@ -970,7 +990,6 @@
   "1def3827b7403ac6": "Email template",
   "9ed38458996c973a": "Slack template",
   "0eb8cb19daf61b59": "{ms}ms",
-  "ba392a6319fd43e0": "{seconds}s",
   "40bc7efea699741f": "{minutes}m {seconds}s",
   "93918bb7fbf62e92": "{hours}h {minutes}m {seconds}s",
   "d3a9046187e04d81": "{hours}h {seconds}s",
@@ -1128,6 +1147,7 @@
   "c13753167634f7aa": "Read file",
   "5ce648cd03020fd9": "Read {path} +{count} more",
   "5d6c2898401c94e6": "Read {path}",
+  "69150fe436b3a0c2": "{count, plural, one {{count} malformed or inconsistent usage record was skipped; usage may be incomplete.} other {{count} malformed or inconsistent usage records were skipped; usage may be incomplete.}}",
   "ee448ceb6820ce2f": "{environment} runs an older server version and is excluded from totals.",
   "732708950237004e": "This client is older than the server on {environment}; its usage is excluded from totals.",
   "9758c2ede06aa19b": "{hour} today",
@@ -1142,6 +1162,7 @@
   "bb34eaf6ddc55a72": "This account has no subscription limits.",
   "42a2622893a6bced": "Could not read limits.",
   "4897e228d3185c96": "No limits reported.",
+  "161135f0aea4d1ca": "{source}: No Codex, Claude, or Grok accounts. Skipped {providers}.",
   "e27d2cb964df5dd5": "{source}: No accounts reported.",
   "1b503134018285f4": "{days}d {hours}h",
   "164c674cf062933a": "{label} · {count} left · expires in {expires}",
@@ -1170,6 +1191,7 @@
   "67fd3c00f56c013d": "Cannot open {targetPath} because no environment is selected.",
   "f683a9f4ff08d092": "No available editor can open {targetPath} in environment {environmentId}.",
   "a9b663922945a4fa": "This connection cannot open an editor on this environment.",
+  "0e573160f73e19bc": "The file is unavailable.",
   "868596d482a1a2bd": "Open",
   "f58caaa68c09fbeb": "Open with",
   "cd70aabc7dad56a8": "Copy mention",
@@ -1354,6 +1376,8 @@
   "4eb599c7f36c99ba": "That theme file is not valid JSON.",
   "29a5ff50ce55c4f9": "VS Code theme",
   "10348092dfed8b11": "That VS Code theme has no \"editor.background\" color, so there is nothing to build a palette from.",
+  "206811f6f441bfc7": "This project sets up worktrees with its own command, which nobody has approved as it is written now. This connection cannot approve it: approve it from a client that can use the terminal.",
+  "b8087c9a70c26da9": "Could not approve the worktree layout command.",
   "6dff8d487001c6cf": "Responsive",
   "f5f61c338cc5aeb5": "Browser device toolbar",
   "3b4eb5b5ec5e60cb": "Browser device preset",
@@ -1382,9 +1406,12 @@
   "6848f5bbb2bd9eec": "PDF document",
   "7873a79df0cf6d0e": "Browser page",
   "0b55696e27387e4e": "Press Shift+Escape to leave the browser page.",
+  "90dfebe26eb86b2d": "Page select options",
   "737d3c6bec93f9e6": "Choose files for the page",
   "e6a3fa7cfc14f86a": "Browser dialog",
   "61a552a67e9e3eac": "Dialog response",
+  "cb5c27218e96e407": "Username",
+  "182a659d70f8ea72": "Password",
   "3d000b56e95f3150": "Release control",
   "0633c3bcdcb95b2f": "Take control",
   "b8ba763621bcdd70": "The server's browser loaded this page but is not drawing it. Try reloading, or open the page in a browser on this computer.",
@@ -1632,7 +1659,6 @@
   "0a1011328ba42eef": "Focus Previous Workspace Area",
   "1d17dc60c59e0524": "Unpin project",
   "5cfaaa20c460c328": "Pin project",
-  "60e47b3da5901619": "Settings · {section}",
   "87f84b811a6aa0d1": "Failed to unarchive project",
   "e823121dffeff02d": "Failed to open project",
   "0c659f9a193255dd": "Failed to add project",
@@ -1700,6 +1726,7 @@
   "f844c41fac2d339c": "Current",
   "69154433587763c0": "No matching actions.",
   "90c3a382ecefa0ce": "No matching commands, projects, or threads.",
+  "60e47b3da5901619": "Settings · {section}",
   "a03e4c1348ad9ba8": "System",
   "8bf65a425f50d140": "Light",
   "d604bc5cf3386f00": "Dark",
@@ -1715,6 +1742,10 @@
   "7af7f00b85cc2930": "Confirm action",
   "8b418a02b73f49b8": "This action requires your confirmation.",
   "e74139c17fab1fa1": "Confirm",
+  "4a18481bea4b4ad5": "New device signed in to {environmentLabel}",
+  "4144ab6aa487528a": "{device} connected through {product}. Not you? Review it.",
+  "a10cfdb27152c757": "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. Not you? Review them.",
+  "4672f332c89dbcd9": "Review",
   "913fc23f62321556": "Choose a valid date and time in the future.",
   "9485a52216cfc0d5": "Enter a positive duration.",
   "9bc551235d78e133": "Schedule type",
@@ -2006,6 +2037,7 @@
   "e7ba2fded155ecdd": "{title}, {state}",
   "2906d1220b6a2872": "Open in main view",
   "feaf5290a4413745": "Duplicate",
+  "7a5864ba348e1f8e": "Close selected tabs",
   "a0dfbb86b2227ce4": "Workspace panel",
   "2e0c62a68c809676": "Device host",
   "f7a0e9b9a22a0e34": "{list, select, pullRequest {Saved pull request views} other {Saved issue views}}",
@@ -2079,6 +2111,9 @@
   "1c8fc3c4a42949ab": "Projects: {projects}",
   "fdc0e086438a3045": "Project settings for {project}",
   "43acfc82011a8fc2": "{count, plural, one {Show {count} more} other {Show {count} more}}",
+  "da7d2d5def438189": "Show less",
+  "dfcce8b35ce4fb90": "Loading",
+  "fcaffe60c85338e2": "Could not load older threads. Retry",
   "e8347ce8761562be": "{count, plural, one {{count} request} other {{count} requests}} waiting longer than {thresholdSeconds}s.",
   "16def5c06e932801": "Hide requests",
   "4d46e9446c062922": "Show requests",
@@ -2156,6 +2191,24 @@
   "3260b22f72f7effb": "{tooltipLead}: {title}",
   "feac8e54b30c5a03": "Terminal process running",
   "fc2c9a91f498ad6b": "{count, plural, one {{count} terminal process running. Open terminal} other {{count} terminal processes running. Open terminal}}",
+  "06d3fe3e6b255d15": [
+    "+",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " more"
+  ],
+  "f1b18820c0ab93ac": [
+    "+",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " more in Linked items"
+  ],
   "56f37ff8ca568059": "stack",
   "6831e9a46cbd8939": "chain",
   "4d9a7f5bf6e64c38": "Copy",
@@ -2198,6 +2251,24 @@
   "a707abf0a4a73ffa": "Close Terminal ({shortcut})",
   "9206ecf328948f90": "Close Terminal",
   "9b1326a11cfe3308": "No terminal sessions for this thread yet.",
+  "49eda70cfd56e621": "Runs when a worktree thread starts, and when its folder is restored",
+  "188ccaa1199f5611": "Runs when a thread's worktree is removed",
+  "7e8476e7306acabe": "Let this project run its worktree commands?",
+  "8e11914556fd8b13": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " sets up worktree threads with its own commands from ",
+    {
+      "t": "code",
+      "i": 2,
+      "c": "t3.json"
+    },
+    ". They run on this environment's machine with your permissions, outside any agent sandbox. You are asked again whenever their text changes."
+  ],
+  "46807acd02a4ff72": "Approve and continue",
   "2ac142f34e5dabc2": "Repositories in the new worktree: {selection}",
   "c514773a8031f00b": "Filter repositories",
   "e32b730f6d27753f": "Choose the repositories this thread works on",
@@ -2417,12 +2488,12 @@
   "d51dbcd93da79694": "T3 Code could not open a new thread.",
   "eb9ecb0cb72121a0": "This machine cannot start threads without a project.",
   "32e2dbf6abe8c748": "Starting triage…",
-  "ce5c66ae967fd7c8": "Thread actions unavailable",
-  "d4f0043ab9348e2c": "This thread has not loaded yet.",
   "9cf56ac40f1133c0": "Path unavailable",
   "755f85812d568822": "This thread does not have a workspace path to copy.",
   "83e50f9b118a7a0a": "Thread archived, but navigation failed",
   "da43691fb8ad8006": "Failed to archive thread",
+  "ce5c66ae967fd7c8": "Thread actions unavailable",
+  "d4f0043ab9348e2c": "This thread has not loaded yet.",
   "de2cfd4a757c656a": "Cannot archive while the provider is active.",
   "8523f86d3c21edf3": "This environment's server does not support settling yet. Update the server to use Settle.",
   "876b987471f908d4": "This environment's server does not support snoozing yet. Update the server to use Snooze.",
@@ -2503,6 +2574,8 @@
   "4f14e3fc3a216f44": "This stops the running process and clears its history.",
   "16ce8443044b45fd": "Close {count, plural, one {{count} terminal} other {{count} terminals}}?",
   "a9697e470d40706a": "This stops their running processes and clears their histories: {labels}.",
+  "f3c70064a22a0c76": "{terminalLabel} line {lineStart}",
+  "8ba6febaabeb6f14": "{terminalLabel} lines {lineStart}-{lineEnd}",
   "ef4bae5c5f3684f4": "Recorded content before",
   "5e4a0e56a0788d86": "Recorded content after",
   "6d5a8b471a561b9d": "File Explorer",
@@ -2615,7 +2688,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "on the computer that opened this page"]
+      "c": [
+        " ",
+        "on the computer that opened this page"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -2627,7 +2703,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· whoever runs it gets this access"]
+      "c": [
+        " ",
+        "· whoever runs it gets this access"
+      ]
     }
   ],
   "49e3cf16b3ac3e5f": "Access",
@@ -2677,6 +2756,9 @@
   "f2a955905704b91d": "{hours}h {minutes}m",
   "3609f564a63c8eca": "{minutes}m",
   "9251bb742f60720d": "{hours}h",
+  "035aab5e99159bd8": "{count, plural, one {… {hidden} character in the middle is not shown.} other {… {hidden} characters in the middle are not shown.}} The text ends with:",
+  "011b1ef726fa9928": "Scroll each part to read all of it.",
+  "6c6e16b9488f8b91": "Scroll to read all of it.",
   "b1d8a5a24bd684e3": "subagent",
   "5a805b37d8940816": "command",
   "da2da87e78bd6b11": "monitor",
@@ -2799,6 +2881,7 @@
   "62d0c453f5803180": "Close image preview",
   "2950b1424a3cddf5": "Reconnect to this environment and open the media again.",
   "ef638bf1479a5461": "The environment returned an invalid media URL.",
+  "76cf478e5674fd12": "{count, plural, one {{count} match} other {{count} matches}}",
   "262955d6eb632f9b": "Clipboard API is unavailable while copying guest link.",
   "f1a4f2b04cdbb4ef": "Failed to copy guest link to the clipboard.",
   "89a68ae66d9266dc": "This app has no address for a machine that another machine can reach. Enter its https or Tailscale address.",
@@ -2833,11 +2916,28 @@
   "43fd98c90903aa3d": "Failed to copy relative path",
   "a1ca50dcda1f7421": "Failed to copy full path",
   "690690bf818d6f66": "Clipboard API unavailable.",
+  "5807c08e225c6b3d": "Download",
   "3a04583c8500e23d": "Show diagram",
   "16d64f650840fe06": "Show code",
   "66c4ee40252d9dec": "Copy as HTML",
+  "7b8a7cd89a22d822": "Copy as PNG",
   "2912e4ac3697686b": "Read the thread on {label}",
   "ced684880c2e1961": "Allow {server} to run {tool}?",
+  "796b81c4875c4feb": [
+    "The ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " app needs a newer ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " server on this environment. Update the server to use it."
+  ],
   "0fd6b38d7839f885": "Signed in to {server}",
   "54789628a737f557": "Sign in to {server}",
   "83be7aade7ff6360": "Signed in",
@@ -2913,7 +3013,6 @@
   "e42d6bd2de470521": "Delete side chat",
   "6a116665c8d9ad75": "Close side chat",
   "9bd31b8911a11607": "Bring back",
-  "a5e57fdfde50aade": "Add to chat",
   "492a438bf9dbd45d": "This side chat was deleted.",
   "255a537ab23ddd2d": "This thread is no longer available.",
   "bddd5bc556080b3d": "idle",
@@ -3159,6 +3258,7 @@
       "c": "”"
     }
   ],
+  "91aadfc843c600de": "Verify Google account",
   "a2aaca7ff8310186": "Open chat",
   "2188eee8f81b0f51": "Open subagent",
   "4a3cbccb2beedeb0": "image",
@@ -3287,6 +3387,7 @@
   "1a4bc01f0ca772c2": "{names} exceeded the stash size limit when this prompt was saved.",
   "bb3b4ad32b596e11": "{names} could not be read when this prompt was saved.",
   "512d8afab852df1a": "Could not switch machine",
+  "ee3ea4351c88e7d7": "This project is no longer available.",
   "25ae6917f8121f5d": "Auto balance",
   "32e421d1e2dfdaff": "Checking machines…",
   "0db14066bd4ce117": "Auto balance unavailable",
@@ -3677,7 +3778,23 @@
   "43bb969fde6c51c4": "Play {name}",
   "1dfcf82916a57623": "Retry {name}",
   "58338c75c462f236": "Could not read this file.",
+  "80cb0fddbed7fcaf": "Video preview",
+  "95435f0b59cb2193": "Audio preview",
+  "717c1c47a852a1a5": "Pause narration",
+  "0eceb5780908eb6c": "Read aloud",
+  "3ee98da81538c6de": "Could not play narration.",
+  "0918cd65a6ee9c45": "Chapter {number}",
+  "e779d95eeee46376": "Previous chapter",
+  "6e6100cdc0401334": "Chapter",
+  "107d86cd5cd32b9b": "Next chapter",
+  "675a01303b5ac3d2": "Chapter {page} of {count}",
+  "8366e42937c9e3e1": "Decrease reading size",
+  "d847122435025b26": "Increase reading size",
+  "a2a71f4799fba9a9": "Reset reading size",
+  "b6b07d6a9d9ac3d8": "No preview for this file",
   "e1e1094e43a5f3d7": "{error} Click to retry.",
+  "541090660afda71b": "File password",
+  "51cbb1c3dc221ce0": "Unlock",
   "8cf49e940355b140": "Preparing file…",
   "031a43a745f3478a": "Save file",
   "122b9cea7561b102": "The file could not be loaded. Try again.",
@@ -3703,23 +3820,16 @@
   "f37dcbd1ff309548": "This document took too long to preview. Open it in another app.",
   "28dd6601c49436f2": "Could not load the Office viewer. Close the file and try again.",
   "9fe9a85ebe4e35f2": "Sheet {number}",
-  "0918cd65a6ee9c45": "Chapter {number}",
   "b24ff54bb0dc7317": "Page {number}",
-  "675a01303b5ac3d2": "Chapter {page} of {count}",
   "3d4e4bb6e76e65bc": "{count, plural, one {{count} slide} other {{count} slides}}",
-  "44b4b4cb64df8f48": "{count, plural, one {{count} sheet} other {{count} sheets}}",
   "b3792badad363097": "{count, plural, one {{count} page} other {{count} pages}}",
   "1650c93d3367ad95": "Previous sheet",
   "96ad66f94fb246b7": "Previous page",
   "ee80ca8b00e8f1a9": "Previous slide",
-  "e779d95eeee46376": "Previous chapter",
   "7a617ee3ca94a82a": "Next sheet",
   "269ee22d7bdcdddb": "Next page",
   "7dd7c70f341cb23f": "Next slide",
-  "107d86cd5cd32b9b": "Next chapter",
-  "13b14784f8707ddd": "0 bytes",
   "c8c2b35a526e677a": "Sheet",
-  "6e6100cdc0401334": "Chapter",
   "e663c781fdb25a87": "Sheet {page} of {count}",
   "4b3549c105c8a822": "{count, plural, one {{formatted} row} other {{formatted} rows}}",
   "1075d98b9f496359": "{count, plural, one {{formatted} column} other {{formatted} columns}}",
@@ -3785,7 +3895,7 @@
   "49fcdf7d785a7898": "This document has no pages or too many pages to preview.",
   "ee14f5cbb1b6c147": "This EPUB has no readable package.",
   "2c479479cc06e82a": "This EPUB has no chapters or too many chapters to preview.",
-  "e1ac859f1e48d3ba": "This EPUB has no readable XHTML chapters.",
+  "0db9c445225f7238": "This EPUB has no readable chapters or image pages.",
   "5ce28a21b6d79300": "A notebook cell is too large to preview.",
   "fe23def0d6158eb5": "Notebook preview limited to files under 8 MB.",
   "6ffd50a91efb2fee": "Preview supports version 4 notebooks with up to 500 cells.",
@@ -3823,13 +3933,14 @@
   "0ea90ecfb29b642c": "This workbook contains invalid cell metadata.",
   "6ffc73f0194ef1e7": "This workbook has no worksheet data.",
   "4d34510886acf15f": "This workbook contains duplicate stylesheet blocks.",
-  "1c23e08fcf99f59d": "This workbook has too many custom number formats.",
   "87b291f622900431": "This workbook has invalid or too many sheets.",
   "e355efff77791140": "This workbook has a missing worksheet.",
   "13e79167614022e3": "The expanded document is too large to preview safely.",
-  "bf65cedd89849991": "This file is damaged, encrypted, or not a valid Office document.",
+  "bbe126c259d4d596": "This document requires too much work to decrypt in the preview.",
+  "53c28271192e5707": "This file is damaged or is not a valid Office document.",
+  "0f959b69c5eb2499": "This ebook requires a reader that supports its DRM.",
   "a6e5ef4b138e6a43": "This file contains too many archive entries to preview.",
-  "73b9f84158ee314d": "This is not a valid Office Open XML file. Encrypted files are not supported.",
+  "533f7af3d2552cd0": "This is not a valid Office Open XML file.",
   "75315613ba8fdf22": "The Office engine stopped",
   "c5e464f821c84612": "The Office engine sent an unreadable reply",
   "307a2cb3be7a765b": "This browser has no fonts in workers",
@@ -3858,6 +3969,7 @@
   "b5188f172f59ca79": "This connection cannot read host files.",
   "422c1671dfcfe474": "''{path}'' does not exist.",
   "20194b81e50497ad": "Unable to load folder.",
+  "0d50b5bfe7151ece": "Could not download file",
   "0061fff77e36bd4f": "Could not reach the server.",
   "04dfdd46e3dd4a2e": "Something went wrong. Try again.",
   "2a08dc733f2fbfac": "Waiting for approval",
@@ -4048,7 +4160,6 @@
   "b0ad71b8019bf199": "The media action failed.",
   "c8d660336f72b272": "Retrying…",
   "b021d034b7ed139d": "Retry video",
-  "80cb0fddbed7fcaf": "Video preview",
   "f9c21970dd6ed5e5": "Video preview unavailable",
   "0ce667a1ea44b092": "Loading video",
   "a74538a7917c1c96": "Play video",
@@ -4359,6 +4470,21 @@
   "e74cd4e960cbb5e5": "Unchanged lines are unavailable in a file with cut lines.",
   "a65107f54ff65902": "Loading more files...",
   "362ec9a3df7ab055": "Resize PR Code files",
+  "c12888742e7bd0ce": "This file has been pushed to since you marked it viewed.",
+  "d4ccbc96f4d05950": "Changed",
+  "d27b1db7f856ec3a": "This host keeps no shared record of which files you have read, so these ticks are kept by this environment. They follow you between the apps connected to it, but the host's own web UI will not show them.",
+  "b990fa781293a64e": [
+    "The boxes below are whatever was last read, and empty if nothing has been read yet. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "1c70364624c9ff9d": "This change has more files than the host will report ticks for in one read, so the count is short and some boxes below start empty.",
+  "d01be46a5dda7091": "The host withheld part of this diff: a binary file, or a change too large to inline.",
+  "0af8911d9ea884e3": "A comment is anchored to the whole change, so switch to All commits to write one.",
+  "41997756eb5309f0": "Diff options",
   "6386caa97ff18cbc": "Reopening...",
   "98455a5ec0567bcb": [
     "Check out this",
@@ -4376,6 +4502,9 @@
       "c": "pull request"
     }
   ],
+  "9118979e7d982335": "Ready for review",
+  "68be0490e24fc785": "Approve workflows to run",
+  "981704551d2ae102": "Confirm approve?",
   "382476ce0ba0b61e": "Auto-merge (merge)",
   "007209b0011e32b5": "Auto-merge (squash and merge)",
   "b915beded0281250": "Auto-merge (rebase and merge)",
@@ -4410,6 +4539,19 @@
   "d4557debeb8ef0de": "Could not rewrite this guide. Check the review guide model in Settings → Source control.",
   "3f96f0de0f2fd2d0": "Rewrite",
   "ed94b223bff0eb75": "Technical details",
+  "4affc3da49f673c2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": "commented"
+    }
+  ],
   "404ee0e0134b60ae": "Searching every host for “{query}”",
   "d4d9c45940115f92": "All",
   "75126f06bdfcb493": "Drafts only",
@@ -4439,6 +4581,7 @@
   "ccab0165663bc6dc": "Resolve",
   "c0257180840458bc": "{count, plural, =1 {Resolved conversation} other {{count} resolved conversations}}",
   "68fdae4308598c56": "Fix in a thread",
+  "a5e57fdfde50aade": "Add to chat",
   "904e8e33ad31d233": "Comment",
   "7e0db7bc417222c3": "Review submitted",
   "b9386055cb456370": "Approve",
@@ -4481,6 +4624,7 @@
   "bd536a0a1754f6cb": "Could not cancel stack auto-merge",
   "bb90ac3b2f3a72d5": "The host refused to cancel auto-merge. Refresh and try again.",
   "2d3b55018a54287e": "Checking the stack with the host…",
+  "b6f729119107a145": "{count, plural, one {Merge stack through '#'{number} into {base} ({count} {term, select, mr {merge request} cr {change request} other {pull request}})} other {Merge stack through '#'{number} into {base} ({count} {term, select, mr {merge requests} cr {change requests} other {pull requests}})}}",
   "d4bfcdc6bb7676a3": "{count, plural, one {Merge {count} {term, select, mr {merge request} cr {change request} other {pull request}}?} other {Merge {count} {term, select, mr {merge requests} cr {change requests} other {pull requests}}?}}",
   "9c28753c777c37b7": "{count, plural, one {Auto-merge {count} {term, select, mr {merge request} cr {change request} other {pull request}}?} other {Auto-merge {count} {term, select, mr {merge requests} cr {change requests} other {pull requests}}?}}",
   "b9f2a24a3757f6c9": "{count, plural, one {Rebase {count} {term, select, mr {merge request} cr {change request} other {pull request}}?} other {Rebase {count} {term, select, mr {merge requests} cr {change requests} other {pull requests}}?}}",
@@ -4489,6 +4633,27 @@
   "a0adf78733c368ae": "Merge stack",
   "a2bcc54351439991": "Enable auto-merge",
   "140dc384c58b74f3": "Rebase stack",
+  "2ae374dd9a808904": [
+    "View stack #",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ", layer ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " of",
+    " ",
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    }
+  ],
   "b1afda5c964deee4": [
     "Auto-merge stack (",
     {
@@ -4504,7 +4669,6 @@
   "9f3f817e9111e162": "Commented",
   "9736f3763a6476c2": "Pending",
   "e3e1ec05d1224d36": "Could not save the description",
-  "69a6f3659c32ab5f": "Fix",
   "beb920ffd1cac72b": [
     "Link",
     " ",
@@ -4551,6 +4715,7 @@
   "c39dd238b84966bd": "Dismissed",
   "b872b70a1387351a": "Linked items unavailable",
   "ff700a2d719110d8": "The thread's environment is not available.",
+  "106c1bf3308a8c33": "Watching: the agent wakes when checks finish, someone comments, or the branch conflicts",
   "24303a7d08e18647": "Issues",
   "3e68dc9ebf575f54": "Pull requests",
   "2b82c15cd4dc73c6": "Could not update viewed files",
@@ -4560,6 +4725,7 @@
   "088bf6e16e4b2021": "Squash and merge",
   "5bc6dff0b3c8881e": "Rebase and merge",
   "965d1caaafb2d40b": "Fast-forward merge",
+  "69a6f3659c32ab5f": "Fix",
   "f4cfb7364b140ea7": "Fix in this thread",
   "0a852506a368f97b": "Fix findings in this thread",
   "0bea8e77dd872a03": "Fix findings in a thread",
@@ -4985,7 +5151,6 @@
   "3ba4cf953dd20f22": "failed",
   "7cbc2b7e149feb13": "Could not apply the dumbo-web card enhancement. Listening with the original CLI.",
   "7e404b0b69255767": "Enhanced dumbo-web card support",
-  "dfcce8b35ce4fb90": "Loading",
   "223e8a81c5d812b3": "Device list may be incomplete",
   "389c360fb7821f4b": "iOS list may be incomplete",
   "ab5b1fd4b765e1e3": "Android list may be incomplete",
@@ -5179,6 +5344,7 @@
   "da2990354cbe0fab": "Known only through a link",
   "53c162d8868a1d0e": "Add environment",
   "dfaeed73f86107ea": "Not connected, so its links are not shown.",
+  "543161d0d46b7787": "To link from {label}, enable linking for it below.",
   "eb3226bab4946cfa": "This app may not read the links {label} holds.",
   "59bb2a50641eb2a9": "Could not load the links {label} holds: {error}",
   "58cb9c075da185fb": "Loading linked environments…",
@@ -5197,7 +5363,6 @@
   "7ee376c7db73ab57": "Linked",
   "e9f7a62ecd609a46": "Last reached",
   "d0f1961fef6825d2": "Failed to connect. Reconnecting...",
-  "da7d2d5def438189": "Show less",
   "70bae47e93a2f207": "Show full error",
   "e4099af6d85770ff": "\"{font}\" isn't monospace",
   "a8448493d83279e2": "Code and terminal need a fixed-width font, so the current font was kept.",
@@ -5252,6 +5417,7 @@
     }
   ],
   "58e0e226493150e7": "Could not load issue trackers",
+  "4a12506938295127": "Enter the {field} first.",
   "77cfcbde543df32d": "Toggle {tracker} details",
   "0083f65885c60156": "Disconnect {tracker}",
   "ed83b25c71c98a20": "Pick one or more {tracker} {scope}s for each project. Their issues list beside the repository's own, and agents file new issues in the first one unless asked for another.",
@@ -5290,6 +5456,8 @@
   "056721d1036d33fb": "Terminal: Split Vertical",
   "8b92648854e6ddaa": "Terminal: New",
   "16dfd6305f3951a3": "Terminal: Close",
+  "6394fa415ab91b34": "Terminal: Previous",
+  "2f766180f9d12615": "Terminal: Next",
   "0e54f664e6fdc156": "Right Panel: Toggle",
   "81e0e9f4304d2f01": "Right Panel: New",
   "afdfe975da764288": "Thread Panel: Toggle",
@@ -5305,6 +5473,7 @@
   "a9cdd8c7073be920": "Command Palette: Toggle",
   "4e0943e8c7a465d1": "File Picker: Toggle",
   "df5fdcdf26a6b52a": "Project Search: Toggle",
+  "0ca6fd2b8fcab2c3": "Usage: Toggle",
   "a513d51b71b95674": "Theme: Select",
   "1ffd8427452372e1": "Appearance: Cycle",
   "3a3bb4a7551a87cc": "Theme Editor: Toggle",
@@ -5374,6 +5543,10 @@
   "45fa271ea0e1ac8e": "Beta",
   "ef10c2dff987f3ea": "Run multi-step workflows from files in the workflows folder of this server's T3 home. Open them from the command palette. While off, nothing in that folder runs; runs wait until it is on again.",
   "2dadb2359422121c": "Workflows",
+  "933dabf0700708af": "How many skipped runs each workflow keeps in its history. Older skipped runs are deleted; runs that did something are always kept.",
+  "f172d7e5deb24f75": "Reset skipped runs kept to default",
+  "ba94015389f327bc": "Skipped runs kept",
+  "d52b3d6bf9f2a013": "Mixed",
   "b20c269e7ad96f42": "An agent never gets more access there than its own mode here. Below full access, it can change only threads this link started, not that machine's own threads, projects or settings.",
   "4474db19bf5700c9": "Another address…",
   "791d30fae1b05310": "Choose a machine",
@@ -5405,6 +5578,10 @@
   "c2553b323479499a": "This app knows no other machines. Add them under Environments first.",
   "18b1d4d42b945b34": "Machines",
   "03860d65c4052ab5": "Checking which machines are already linked…",
+  "8e722dd7f9f83ab3": "Linking between environments",
+  "4b11acabe10a539e": "Allow agents on the selected machines to work across linked environments. When disabled, running tasks finish and new tasks cannot start over a link.",
+  "cb59ced9d3e0a7c2": "Connect an environment that supports linking.",
+  "a2bb18b65336adaf": "Enable linked environments",
   "82a0120f80907e97": "{via} could not get a pairing code from {target}",
   "883abe5832a6732e": "Enter its address and a pairing code from it instead.",
   "e1789f863205ad5a": "Could not link the environment",
@@ -5453,6 +5630,14 @@
   "037d111c1f1ec1f2": "The license manifest could not load.",
   "a317709af3d4e2bb": "The license manifest took too long to load.",
   "1c16849175c9fdd3": "Send {signal}",
+  "3e2c2cacab23110c": [
+    "Send ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "5afea423d829496e": "This provider is not available on this environment.",
   "a2b8aa200983f586": "{provider} is turned off.",
   "3cbe218647595efb": "{provider} is unavailable.",
@@ -5525,7 +5710,6 @@
   "b76e857a764ea02a": "Grouping rule for {path} on {environment}",
   "e6e55f343639ae71": "Default ({mode})",
   "87158e7b8e714bc6": "Add a project from the sidebar to configure it here.",
-  "ee3ea4351c88e7d7": "This project is no longer available.",
   "062d19d24615e108": "Project title cannot be empty",
   "303af9de2741db90": "Failed to rename project",
   "f578154800d7af01": "Failed to update project icon",
@@ -5546,6 +5730,45 @@
   "e3332e8a849ddce3": "{count, plural, other {Deletes all {count} checkout entries and their threads on every machine. Files on disk are not touched.}}",
   "5ddf3891266c3c9e": "Deletes the project entry and its threads. Files on disk are not touched.",
   "135eb8781c730d20": "Remove all entries",
+  "a9cb97fca6a6576b": "Create command",
+  "90f45a354884ccdd": "Remove command",
+  "0cdc8cdbed3e5eae": "Worktree layout",
+  "c17b25519e2b194e": "Could not load the worktree layout commands",
+  "78e308ada516928b": "Could not approve the command",
+  "a0c772d32a233da6": "Could not revoke the approval",
+  "5ccd5614c65f8d1f": "Revoke approval of the {kind} command",
+  "80c3794a5fa12f3a": "Approve the {kind} command",
+  "f206891e124c77b0": [
+    "This project's ",
+    {
+      "t": "code",
+      "i": 1,
+      "c": "t3.json"
+    },
+    " sets up worktree threads with its own commands. They run on this environment's machine with your permissions, and only as approved here: a command whose text changes needs approval again."
+  ],
+  "8e73b883d41d4102": "Off",
+  "f6a91589456cca50": "Approved",
+  "c92657bb7f2293ff": "Needs approval",
+  "224e9839195b63b2": "Revoke",
+  "f1e5c1be1ac92361": "Approve",
+  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal.",
+  "d4b2a2ec812aafb0": "Suggest next prompt",
+  "d25c8724b685967f": "Suggestion source",
+  "5f34b1b9185b2955": "Show a suggestion in the empty composer after a turn. Choose its source for the selected environment.",
+  "d004720e19a3c5e2": "Update the selected environment to choose a single suggestion source.",
+  "84aa8954980680fb": "Connect an environment to choose a suggestion source.",
+  "7c257b6f09369ade": "Native suggestions are managed by {organization}.",
+  "2fd768af378e10d9": "Native suggestions",
+  "19cca7227459820e": "Text generation model",
+  "e9f838da94860f78": "This environment is using its previous suggestion preferences. Choose a source to use it exclusively.",
+  "fdf96ad66fd712f3": "The selected environments use different suggestion sources.",
+  "01243f4af0f76005": "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
+  "1ef5650bf847ff9d": "Model suggestions use your text generation model and count toward its usage.",
+  "5283e376f8d05fc9": "Restart running Claude sessions after changing suggestion settings. Until restarted, those sessions may still request native suggestions.",
+  "80823a1a3e514d09": "Show predicted messages",
+  "e4d6766dda2a79a9": "Uses your text generation model and counts toward its usage when an environment follows this device's preferences.",
+  "5004e5edd60a3e42": "predicted messages",
   "e69555836cf65e6d": "Change accent color for {provider}",
   "32d8e889a4a4a597": "Add accent color for {provider}",
   "10b231df80936899": "Could not open the provider link.",
@@ -5696,6 +5919,7 @@
   "33fbce50a4ea67e6": "Additional CLI arguments passed on session start.",
   "abdee70d90cb26a3": "Compact after 100,000 to 1,000,000 tokens. Leave empty to use Claude's default.",
   "f907b2466603538e": "When to compact an idle thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Overrides the default in Providers > Advanced.",
+  "9610fb9f4d9849ec": "Google account and Gemini Enterprise use your existing plan. Gemini API key and Agent Platform charge per use to your key or Google Cloud project.",
   "931df01584748bf9": "Gemini or Vertex AI express key. Stored separately on the host.",
   "8bf0f6ed8dd4b77e": "Required for Gemini Enterprise. Agent Platform uses it when no API key is set.",
   "7c735c8fbd3fb6e3": "Region for Gemini Enterprise or Agent Platform.",
@@ -5811,6 +6035,7 @@
   "b34d800eb1b43bf9": "Sampling every ...",
   "7023577291b75f1e": "Current CPU",
   "11e9831eeca7d82a": "{time} observed CPU time",
+  "57320c95780c065c": "{processStarts, plural, one {{processStarts} start} other {{processStarts} starts}} · {processExits, plural, one {{processExits} exit} other {{processExits} exits}}",
   "8b00beb5526ef0c7": "Power source",
   "e07fa9933c316dab": "Battery",
   "cd03f1a6d9d79875": "External power",
@@ -5973,6 +6198,7 @@
   "d2eb8c8788659b41": "Header",
   "1971a6feb62352ca": "Prefix",
   "e9a3c5489591db26": "Encoding",
+  "988358208ad49792": "{count, plural, one {minute} other {minutes}}",
   "8273d53bd6a6f665": [
     "Next run ",
     {
@@ -6002,6 +6228,7 @@
   "43e5c059e5308eee": "Not granted",
   "059f7301895a5c0d": "Repository conventions",
   "b2c5419d306bbc16": "Conventional Commits",
+  "652e3aad21933d17": "{summary} · {count, plural, one {{count} project override} other {{count} project overrides}}",
   "6aa1c88c4fa5be28": "Diagnostics",
   "fb29e435b1219373": "Open source licenses",
   "40f58619ace8deec": "Settings breadcrumb",
@@ -6049,7 +6276,6 @@
   "2407d5d61e7f7206": "Rich text composer",
   "64b8fd2c284c3137": "Send shortcut",
   "6dc57547546cbe96": "Subagents and side chats",
-  "80823a1a3e514d09": "Show predicted messages",
   "6163f91bddf474ae": "Follow-up behavior",
   "856812e7e1fc445e": "Tool calls in chat",
   "216ed20b6f40fa6f": "Screen reader announcements",
@@ -6067,7 +6293,6 @@
   "5503ef439beb8d42": "Terminal close confirmation",
   "d5dd27a4eb853248": "Delete confirmation",
   "86b43caa9ff41ea2": "Quit shortcut",
-  "19cca7227459820e": "Text generation model",
   "cf4973ea5bda78ac": "Thread title instructions",
   "19e1f74805f4a1fb": "Agent browser access",
   "b676742d5c9783f1": "Wait for the full response",
@@ -6159,7 +6384,6 @@
   "16bdc70b858c223f": "Reset proactive panels to default",
   "c5424f09d77138ff": "When to compact an idle Claude thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Each Claude provider can override this.",
   "3e99c5c14f4939c8": "Reset compact idle threads to default",
-  "d52b3d6bf9f2a013": "Mixed",
   "cd72fe451ba0d6aa": "New projects",
   "394c3bd0a1782c8e": "Leave empty to use \"~/\" when the Add Project browser opens.",
   "f9b912a818bd869d": "Reset add project base directory to default",
@@ -6196,6 +6420,7 @@
   "cbf6a6bbc17e75e1": "Show a toast when another thread finishes, fails, or needs input or approval while this app has focus.",
   "83ca942c7163904f": "Combine matching repositories across environments.",
   "609da998ca13521e": "Order of projects in the sidebar project picker and command palette.",
+  "28fe960726d90f6d": "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The grouped sidebar in Appearance has no Working section.",
   "e815f49e5abedcfd": "Ask before unpinning a thread from the pinned section.",
   "41210f99adeeba78": "Require a second click on the inline archive action before a thread is archived.",
   "84f3d2cefc8d2a74": "Ask before deleting a thread and its chat history.",
@@ -6313,7 +6538,6 @@
   "f0d425b07fcbc3ea": "Use both Shift keys, or record a different shortcut.",
   "d540b70f53f1d607": "Set up snapshots for {desktop}",
   "64581b55ed1d7bd0": "Set up snapshots",
-  "988358208ad49792": "{count, plural, one {minute} other {minutes}}",
   "07b142ed9cc5e3f6": "{count, plural, one {hour} other {hours}}",
   "26184a346ce1c1dc": "{count, plural, one {day} other {days}}",
   "f84c89790e008f96": "In",
@@ -6402,7 +6626,6 @@
   "e14c9bc6f8397282": "Deletes untracked and ignored files, including .env.",
   "512b81ec53587030": "Keeps edits and untracked files. Deletes ignored files, including .env.",
   "10bfcbb24db0e2c3": "Mixed across selected machines",
-  "8e73b883d41d4102": "Off",
   "83729e5228731819": "Traces endpoint",
   "8739ffcda2007458": "Metrics endpoint",
   "5c90c5ba936fb908": "Logs endpoint",
@@ -6545,6 +6768,7 @@
   "eb5f74ede1ef8f14": "That theme could not be added.",
   "a3d6cb2d2df7ba2c": "Sort themes",
   "08f54865b364957d": "Update",
+  "90d1efbdea5f026b": "{count, plural, one {{formatted} download} other {{formatted} downloads}}",
   "5b9eab168f1435c0": "Updating {name}",
   "103f1d20c342a8e2": "Update {name}",
   "fc3150aaf93858c3": "Installing {name}",
@@ -6658,6 +6882,7 @@
   "51fd61b9c85dec5d": "Could not delete the model",
   "3d4be5cb172d6f91": "Could not use a model from that path",
   "25607ff5f39ac0ac": "Apple Speech (unavailable)",
+  "800966eb58181745": "Checking which languages the model supports…",
   "2b3e8ee4f31d1433": "Automatic uses your Mac’s language. The first use of a language downloads it.",
   "18aa8cceba8c50c6": "This model uses one fixed language.",
   "431f261556bd1db8": "Auto",
@@ -6850,10 +7075,9 @@
   "d443390c4d2dcfd4": "accessibility a11y screen reader nvda jaws voiceover orca narrator window title tab title alt tab taskbar thread status order working approval",
   "0aa5406ac4d7f7c7": "Guest links",
   "6826fa9579c22035": "beta share guest invite link teammate watch t3 connect tunnel",
-  "f0e853acd2006d53": "Linked environments",
   "f10c06cba0cdf7fe": "beta link another machine vps peer agents work there delegate",
   "bc0b409d89ce086e": "beta workflow durable runs automation steps schedule webhook folder",
-  "d4b2a2ec812aafb0": "Suggest next prompt",
+  "4b2669dcdb7d3776": "workflow history retention delete old skipped runs webhook",
   "4a21cf825a2045b0": "beta tab autocomplete predict next message claude codex ghost text",
   "fea2dc36585c4a20": "Simlock device hosts (alpha)",
   "9d834d178130180e": "beta alpha simlock callstack simulator emulator ios android pool lease gateway",
@@ -6867,6 +7091,7 @@
   "2a1b110f3ff0e966": "Transcription language",
   "e27bccf50397d9fe": "speech voice translate english auto detect",
   "e1e054a313ece9d0": "Dictionary",
+  "79c4100c78265c98": "Your dictionary",
   "e8aaaa8cdfae9f57": "speech voice transcription vocabulary names glossary alias",
   "7aa983707887c8aa": "Project dictionary",
   "8b5e3daa380995f3": "speech voice transcription vocabulary shared dictionary team environment glossary",
@@ -7030,6 +7255,7 @@
   "a4e6dee662edc3cf": "Preview tunnel",
   "8ed7c2a2226f4663": "localhost loopback port forwarding open on this device browser tabs stream security",
   "1c3e0ac06c8a1f1e": "connections server backend local remote access administrative permissions scope pairing links qr code authorized clients sessions revoke endpoint",
+  "f0e853acd2006d53": "Linked environments",
   "744fd34e8049efeb": "link peer another machine vps agents work there handoff pairing code",
   "3d00c452287f50bd": "add pair backend host code ssh config agent tunnel saved t3 connect",
   "cbf49f84e7f456e5": "Load balancing",
@@ -7096,10 +7322,15 @@
   "e7c18f33bc1326f7": "Setting up",
   "26375cafb52d0503": "Goal",
   "ad78fae7d373cf21": "Working",
+  "353b08f4363dbb2c": "Pending",
   "f31a95961de19433": "Issue {key}: {title}, {state}",
   "2dd9d295c882ef65": "{count, plural, one {{count} linked issue} other {{count} linked issues}}",
   "be451f475c514b37": "Dismiss Woke notification",
   "e9ced65134f2f36c": "Wake thread now",
+  "0b75d1fefd7710fe": "Un-settle thread",
+  "56198134d0174861": "Settle thread",
+  "a8f30f631e2b010e": "Waiting to sync with its environment",
+  "374dac09151d4578": "Pending",
   "9f20632581a1de90": "Pin",
   "fcd14f3717170dae": "Unpin",
   "8e800a9dfe7f9487": "Settle",
@@ -7108,6 +7339,8 @@
   "4fca00950ff1db87": "Regenerating title",
   "6bf3499c98fc67f2": "Woke",
   "4851fe12e61ec84b": "Dismiss Woke notification",
+  "467c8192b9726ba6": "Un-settle thread",
+  "9e8470dfcf1004d6": "Settle thread",
   "a75fb28f41e65d1d": "{count, plural, =1 {Settled,} other {Settled {count},}}",
   "0186f474fc350897": "{count, plural, =1 {Snoozed,} other {Snoozed {count},}}",
   "1bc189242bfa159d": "{count, plural, =1 {Unpinned,} other {Unpinned {count},}}",
@@ -7215,6 +7448,7 @@
   "9c015d3d034316cb": "Use arrow keys to adjust the focused value. Hold Shift for larger steps. Use Home and End for the minimum and maximum. Press Tab to move between saturation and brightness.",
   "8639d5532561f87f": "Close",
   "e1186ad82ee08b33": "Close",
+  "a4579e548b768663": "Show sidebar",
   "a1b11a1cf39c9dc9": "Resize Sidebar",
   "c557090df5722838": "Toggle Sidebar",
   "bbde430e56272901": "Drag to resize sidebar",
@@ -7234,7 +7468,6 @@
   "1a92fa2f744401bc": "Nothing to reset right now.",
   "fff9b7f838279ee3": "No reset credit left.",
   "cea3cf346788481d": "That credit was already redeemed.",
-  "6ea901338c803e3e": "Could not use the reset credit.",
   "ad0e59acc4b087f5": "{label}: {remaining}% left, {resetsIn}",
   "3d55c97a8189568e": "{label}: {remaining}% left",
   "d6961d3b4c9657da": "{label}: {remaining}% left, {timeLeft}% of the window left, {resetsIn}",
@@ -7261,6 +7494,28 @@
   "7aaaff1c6484f25c": "Segment",
   "8bcab2ef61de6518": "$0 cap",
   "a00e74aaa421c524": "left",
+  "0e34c3076c08feb2": [
+    {
+      "t": "span",
+      "i": 1,
+      "c": [
+        "↻ +",
+        {
+          "i": 2,
+          "k": "_gt_value_2",
+          "v": "v"
+        },
+        "%"
+      ]
+    },
+    " ",
+    "in ",
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    }
+  ],
   "5b4c71b36b979e80": "Cost",
   "fce17caaa0d1a45b": "Unpriced",
   "8f01f72ab87d0628": "Tokens",
@@ -7277,8 +7532,8 @@
   "d2d071e45a2d6b89": "Select an environment to see limits.",
   "c9180daea905a0a6": "Select an environment to see usage.",
   "f0297ec79e896a13": "{environment}: {error}",
-  "b01bf98dd90ee819": "API estimate",
   "61571f4542da9903": "{count, plural, one {{formatted} session} other {{formatted} sessions}}",
+  "b01bf98dd90ee819": "API estimate",
   "2a57181a9d128463": "{share} of cost · {tokens} tokens",
   "d8a6a99fbdda0d3e": "{share} of tokens · {cost}",
   "ae86762909d453d2": "Hourly processed tokens",
@@ -7432,6 +7687,9 @@
   "7755500a4cde5066": "Close the pane",
   "b8dcbc93a2ca1861": "This run no longer lists it.",
   "115c69de3202f664": "Open",
+  "a2bbf464a3be4882": "{count, selectordinal, one {{count}st try} two {{count}nd try} few {{count}rd try} other {{count}th try}}",
+  "0398ca6c1d24b92d": "queued, next in line",
+  "0af6d5ffd5166214": "{count, plural, one {queued, {count} ahead} other {queued, {count} ahead}}",
   "e39f89c909df4db0": "Could not resume the run",
   "865f034346b82f47": "Cancel {title}? Its agents stop and the run cannot be resumed.",
   "6bc75632fd9c9136": "Could not cancel the run",
@@ -7457,11 +7715,17 @@
   "dd7a1e58c2553933": "wakes in {duration}",
   "95cc952724dd7310": "about to wake",
   "3cc34921c0128593": "running",
-  "e777db2880f53a46": "nobody answered",
   "dc90739d391a5e67": "You said {choice}",
+  "4e96712d839ccbff": "{who} said {choice}",
+  "e777db2880f53a46": "nobody answered",
+  "201490988858b511": "withdrawn by {by}",
   "389f2563b5b763fd": "Quick steps",
+  "99451a5d2d40440f": "Withdrawn by {by}.",
+  "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
+  "92e129bf413a1220": "withdrawn",
   "a41c8d758121ad81": "slept",
   "9db248b770096984": "waited",
+  "49be26a27dcb30e5": "queued",
   "c76124517af28686": "running for {duration}",
   "c026ded437a942ee": "on {environment}",
   "89102905bf09b0e8": "Watch live",
@@ -7497,292 +7761,6 @@
   "8bffb377e2a6a7de": "its version is no longer registered",
   "f92d9132f7b85d1a": "Loading steps…",
   "6ebc59f64c761a49": "Nothing yet.",
-  "a759dccd157d7dae": [
-    "You said",
-    " ",
-    {
-      "t": "span",
-      "i": 1,
-      "c": {
-        "i": 2,
-        "k": "_gt_value_2",
-        "v": "v"
-      }
-    },
-    "."
-  ],
-  "593b425188346781": [
-    "You said",
-    " ",
-    {
-      "t": "span",
-      "i": 1,
-      "c": {
-        "i": 2,
-        "k": "_gt_value_2",
-        "v": "v"
-      }
-    },
-    ": ",
-    {
-      "i": 3,
-      "k": "_gt_value_3",
-      "v": "v"
-    }
-  ],
-  "c98009be9a273b31": "Open run",
-  "c8eb9be36d4d51ad": [
-    "Thread on ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "3d9761e81798fcd8": "Resume",
-  "8cebd63fc4c967d5": "Only the failed step runs again; what finished before it is kept.",
-  "bc1e0a2a0f1e9552": "Needs you",
-  "a812f51e970740f1": [
-    "asked",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    "· the run waits for you"
-  ],
-  "02dfe6c63fd0b8a1": "Add a reason",
-  "19abd94828a3bdbc": "Ask the agent first",
-  "a18721fa8f328361": "Needs you",
-  "bbf24e7920c1e86b": "Running",
-  "8d6e18d2ad832db6": "All",
-  "f25af5332ffc3734": "Nothing waits on you.",
-  "c3f0119b8d6231f8": "Nothing is running.",
-  "33028dfc1229eaa6": "No runs yet.",
-  "5459bf696a187c26": "Could not load workflow runs",
-  "d57c35d43b0f163a": "This run is not here",
-  "b9aae2f7cdb1a379": "No workflow runs yet",
-  "8f15f66e545af7c0": "Which runs",
-  "b6409289e0c9a4dd": "Workflow",
-  "035cb02ca1ae4952": "All {count} workflows",
-  "46d614fa7b4bf1e5": "Workflow runs",
-  "1c635faa2fb45b8b": "Has not run yet.",
-  "156ff7b625287a1e": "Hide skipped",
-  "69b985b97ab45e6b": "Show {count} skipped",
-  "2400254d362de84d": "Loading workflow runs…",
-  "cae5c3205c01d062": [
-    {
-      "t": "span",
-      "i": 1,
-      "c": "A workflow file has a problem."
-    },
-    " ",
-    "The last version that did keeps running."
-  ],
-  "ed8ce6ebc73dc12d": "Open the file",
-  "145e1f7503ba3b2c": [
-    "This environment has no run with that link.",
-    " ",
-    {
-      "t": "button",
-      "i": 1,
-      "c": "Back to the runs"
-    }
-  ],
-  "783e616cb0476c17": [
-    "A workflow ties agents, code, schedules and questions to you into one run that survives restarts. Write one under",
-    " ",
-    {
-      "t": "button",
-      "i": 1,
-      "c": "Definitions"
-    },
-    ", or ask an agent to.",
-    " ",
-    {
-      "t": "a",
-      "i": 2,
-      "c": "Read the guide"
-    }
-  ],
-  "5d8d278ff828102d": "All workflows",
-  "39459da07479f482": "Agent",
-  "7741243632056b81": "{step} · transcript",
-  "c512071143a5ba32": "This thread is no longer there.",
-  "ed169d23683fb6ac": "Loading the thread…",
-  "290e0ab40b87dc17": "Workflows breadcrumb",
-  "683dd9831e54edc0": "Environment",
-  "34ad53646f06ed80": "Workflows are off",
-  "8f6589c9e0ac5d4e": "No environment connected",
-  "744127f8dfad7d22": "Connect an environment to see its workflow runs.",
-  "036182ec7e2ee4d4": "Beside the run",
-  "2d6107cb78382d08": "Workflows",
-  "16f7df687349b399": "Definitions",
-  "f0a212aadfe1257b": "Loading the editor…",
-  "20f194e003885e95": [
-    "Turn them on for this server in",
-    " ",
-    {
-      "t": "Link",
-      "i": 1,
-      "c": "Settings → Labs"
-    },
-    "."
-  ],
-  "8367779e149f723b": "Primary environment request failed during {operation} (HTTP {status}).",
-  "c5cd027743a2b5a6": "Invalid pairing token. Check the token and try again.",
-  "0e4b49c8203aae81": "Timed out waiting for authenticated session after bootstrap.",
-  "d7ffde2874d60d4f": "Enter a pairing token to continue.",
-  "5d18537f82794deb": "The local environment is disabled.",
-  "d5ef094f40aedece": "Terminal input",
-  "f7046b10d49caab6": "Terminal scrollback",
-  "24de858bbcf05f40": "Slide {number}",
-  "368d650afefe9f19": "This browser cannot draw slides.",
-  "0a6565f87240008e": "Preview limited to presentations with 1 to 500 slides.",
-  "5d31e8d75e7349b4": "Slide {page} of {count}",
-  "1f52f8b06c39fad9": "This workbook has no visible sheets.",
-  "36aecaca9eb53957": "These cells could not be drawn. Try scrolling to another area.",
-  "9e98f160532df615": "These cells could not be drawn.",
-  "04751aaf24771828": "This row or column could not be resized.",
-  "86ab844572d44936": "Select fewer than 200,000 cells to copy.",
-  "6f7a040ff9765c38": "The selected cells could not be copied.",
-  "60aa1b1bd2558b88": "{count}+ pages",
-  "59dff62c096fda75": "Preview limited to 1,000 pages.",
-  "c55ca84447d16b92": "Ask the agent about these lines…",
-  "e545fcdb83e2c36a": "Add to review",
-  "dd4d954561a97a95": "Ask agent",
-  "b9dba35bf970552b": "A tradeoff to weigh",
-  "9173eff07b57c792": "A contract to check",
-  "5ac20fc98e4c786d": "A product call",
-  "bde8657632282d3c": "A risk to judge",
-  "63a512eaa88bae11": "An accessibility call",
-  "27d76249d09eb69f": "Review guide ready",
-  "faa3bb26abb39c93": "Review guide failed",
-  "b7df38b7d8792d78": "Open guide",
-  "9e91e9a77b664e4e": "Could not start a review guide",
-  "6c6e16b9488f8b91": "Scroll to read all of it.",
-  "035aab5e99159bd8": "{count, plural, one {… {hidden} character in the middle is not shown.} other {… {hidden} characters in the middle are not shown.}} The text ends with:",
-  "011b1ef726fa9928": "Scroll each part to read all of it.",
-  "069e0382ff2496f5": "Your organization's Claude settings turn auto mode off.",
-  "8ccf7e0def66d339": "Your Claude settings turn auto mode off.",
-  "04ac2410d2cc0666": "This project's Claude settings turn auto mode off.",
-  "7e27789f5d58960e": "Claude's settings turn auto mode off.",
-  "1a04c8d36a7b29d3": "Install {fj} 0.6 or later from {fjUrl} and run {fjLogin}, or install {gt} 2.0 or later from {gtUrl} and run {gtLogin} for each Forgejo or Gitea server.",
-  "1b799ebfa94c2408": "Push hooks approval",
-  "81d703184fe5112e": "Run this repository's push hooks?",
-  "027b0d65c7a67af6": "Hook file",
-  "ade585910165bb52": "Configured hook",
-  "69150fe436b3a0c2": "{count, plural, one {{count} malformed or inconsistent usage record was skipped; usage may be incomplete.} other {{count} malformed or inconsistent usage records were skipped; usage may be incomplete.}}",
-  "90dfebe26eb86b2d": "Page select options",
-  "796b81c4875c4feb": [
-    "The ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " app needs a newer ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    " server on this environment. Update the server to use it."
-  ],
-  "f3c70064a22a0c76": "{terminalLabel} line {lineStart}",
-  "8ba6febaabeb6f14": "{terminalLabel} lines {lineStart}-{lineEnd}",
-  "76cf478e5674fd12": "{count, plural, one {{count} match} other {{count} matches}}",
-  "0ca6fd2b8fcab2c3": "Usage: Toggle",
-  "9610fb9f4d9849ec": "Google account and Gemini Enterprise use your existing plan. Gemini API key and Agent Platform charge per use to your key or Google Cloud project.",
-  "933dabf0700708af": "How many skipped runs each workflow keeps in its history. Older skipped runs are deleted; runs that did something are always kept.",
-  "f172d7e5deb24f75": "Reset skipped runs kept to default",
-  "ba94015389f327bc": "Skipped runs kept",
-  "4b2669dcdb7d3776": "workflow history retention delete old skipped runs webhook",
-  "353b08f4363dbb2c": "Pending",
-  "374dac09151d4578": "Pending",
-  "a8f30f631e2b010e": "Waiting to sync with its environment",
-  "a4579e548b768663": "Show sidebar",
-  "0e34c3076c08feb2": [
-    {
-      "t": "span",
-      "i": 1,
-      "c": [
-        "↻ +",
-        {
-          "i": 2,
-          "k": "_gt_value_2",
-          "v": "v"
-        },
-        "%"
-      ]
-    },
-    " ",
-    "in ",
-    {
-      "i": 3,
-      "k": "_gt_value_3",
-      "v": "v"
-    }
-  ],
-  "a2bbf464a3be4882": "{count, selectordinal, one {{count}st try} two {{count}nd try} few {{count}rd try} other {{count}th try}}",
-  "45a94c724845ec1d": "Other",
-  "8eeb9cb07d7c59e1": "Kind of question",
-  "e4d1316c85ed7066": "No questions of this kind wait on you.",
-  "e2131cbec8accfe3": "All kinds",
-  "3b0f1659172107e4": "All kinds",
-  "4a18481bea4b4ad5": "New device signed in to {environmentLabel}",
-  "4144ab6aa487528a": "{device} connected through {product}. Not you? Review it.",
-  "a10cfdb27152c757": "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. Not you? Review them.",
-  "e0856d6a402ad821": "{organization}'s policy does not allow project worktree layout commands.",
-  "206811f6f441bfc7": "This project sets up worktrees with its own command, which nobody has approved as it is written now. This connection cannot approve it: approve it from a client that can use the terminal.",
-  "b8087c9a70c26da9": "Could not approve the worktree layout command.",
-  "49eda70cfd56e621": "Runs when a worktree thread starts, and when its folder is restored",
-  "188ccaa1199f5611": "Runs when a thread's worktree is removed",
-  "7e8476e7306acabe": "Let this project run its worktree commands?",
-  "8e11914556fd8b13": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " sets up worktree threads with its own commands from ",
-    {
-      "t": "code",
-      "i": 2,
-      "c": "t3.json"
-    },
-    ". They run on this environment's machine with your permissions, outside any agent sandbox. You are asked again whenever their text changes."
-  ],
-  "46807acd02a4ff72": "Approve and continue",
-  "a9cb97fca6a6576b": "Create command",
-  "90f45a354884ccdd": "Remove command",
-  "78e308ada516928b": "Could not approve the command",
-  "a0c772d32a233da6": "Could not revoke the approval",
-  "0cdc8cdbed3e5eae": "Worktree layout",
-  "c17b25519e2b194e": "Could not load the worktree layout commands",
-  "5ccd5614c65f8d1f": "Revoke approval of the {kind} command",
-  "80c3794a5fa12f3a": "Approve the {kind} command",
-  "f206891e124c77b0": [
-    "This project's ",
-    {
-      "t": "code",
-      "i": 1,
-      "c": "t3.json"
-    },
-    " sets up worktree threads with its own commands. They run on this environment's machine with your permissions, and only as approved here: a command whose text changes needs approval again."
-  ],
-  "f6a91589456cca50": "Approved",
-  "c92657bb7f2293ff": "Needs approval",
-  "f1e5c1be1ac92361": "Approve",
-  "fcb5f3c4d4753326": "This connection cannot approve commands. Use a client that can use the terminal.",
-  "7150557773b3818b": "Queued",
-  "efbeb3993ee2c3f5": "Queued for {pool}",
-  "0398ca6c1d24b92d": "queued, next in line",
-  "0af6d5ffd5166214": "{count, plural, one {queued, {count} ahead} other {queued, {count} ahead}}",
-  "49be26a27dcb30e5": "queued",
-  "4e96712d839ccbff": "{who} said {choice}",
   "19097cfb8f5a79cf": [
     {
       "i": 1,
@@ -7826,6 +7804,39 @@
       "v": "v"
     }
   ],
+  "a759dccd157d7dae": [
+    "You said",
+    " ",
+    {
+      "t": "span",
+      "i": 1,
+      "c": {
+        "i": 2,
+        "k": "_gt_value_2",
+        "v": "v"
+      }
+    },
+    "."
+  ],
+  "593b425188346781": [
+    "You said",
+    " ",
+    {
+      "t": "span",
+      "i": 1,
+      "c": {
+        "i": 2,
+        "k": "_gt_value_2",
+        "v": "v"
+      }
+    },
+    ": ",
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    }
+  ],
   "3759768c5d342c22": [
     "answered",
     " ",
@@ -7835,6 +7846,31 @@
       "v": "v"
     }
   ],
+  "c98009be9a273b31": "Open run",
+  "c8eb9be36d4d51ad": [
+    "Thread on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "3d9761e81798fcd8": "Resume",
+  "8cebd63fc4c967d5": "Only the failed step runs again; what finished before it is kept.",
+  "bc1e0a2a0f1e9552": "Needs you",
+  "a812f51e970740f1": [
+    "asked",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "· the run waits for you"
+  ],
+  "02dfe6c63fd0b8a1": "Add a reason",
+  "19abd94828a3bdbc": "Ask the agent first",
   "e114d37b32ab0dc7": [
     {
       "i": 1,
@@ -7843,116 +7879,117 @@
     },
     " needs a reason."
   ],
-  "91aadfc843c600de": "Verify Google account",
-  "201490988858b511": "withdrawn by {by}",
-  "99451a5d2d40440f": "Withdrawn by {by}.",
-  "3ee30a50b70fffab": "Withdrawn by {by}: {reason}",
-  "92e129bf413a1220": "withdrawn",
-  "800966eb58181745": "Checking which languages the model supports…",
-  "06d3fe3e6b255d15": [
-    "+",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " more"
-  ],
-  "f1b18820c0ab93ac": [
-    "+",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " more in Linked items"
-  ],
-  "4672f332c89dbcd9": "Review",
-  "fcaffe60c85338e2": "Could not load older threads. Retry",
-  "c12888742e7bd0ce": "This file has been pushed to since you marked it viewed.",
-  "d4ccbc96f4d05950": "Changed",
-  "d27b1db7f856ec3a": "This host keeps no shared record of which files you have read, so these ticks are kept by this environment. They follow you between the apps connected to it, but the host's own web UI will not show them.",
-  "b990fa781293a64e": [
-    "The boxes below are whatever was last read, and empty if nothing has been read yet. ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "1c70364624c9ff9d": "This change has more files than the host will report ticks for in one read, so the count is short and some boxes below start empty.",
-  "d01be46a5dda7091": "The host withheld part of this diff: a binary file, or a change too large to inline.",
-  "0af8911d9ea884e3": "A comment is anchored to the whole change, so switch to All commits to write one.",
-  "41997756eb5309f0": "Diff options",
-  "9118979e7d982335": "Ready for review",
-  "68be0490e24fc785": "Approve workflows to run",
-  "981704551d2ae102": "Confirm approve?",
-  "4affc3da49f673c2": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
+  "46d614fa7b4bf1e5": "Workflow runs",
+  "a18721fa8f328361": "Needs you",
+  "bbf24e7920c1e86b": "Running",
+  "8d6e18d2ad832db6": "All",
+  "f25af5332ffc3734": "Nothing waits on you.",
+  "c3f0119b8d6231f8": "Nothing is running.",
+  "33028dfc1229eaa6": "No runs yet.",
+  "5459bf696a187c26": "Could not load workflow runs",
+  "d57c35d43b0f163a": "This run is not here",
+  "b9aae2f7cdb1a379": "No workflow runs yet",
+  "45a94c724845ec1d": "Other",
+  "8f15f66e545af7c0": "Which runs",
+  "b6409289e0c9a4dd": "Workflow",
+  "035cb02ca1ae4952": "All {count} workflows",
+  "8eeb9cb07d7c59e1": "Kind of question",
+  "e2131cbec8accfe3": "All kinds",
+  "1c635faa2fb45b8b": "Has not run yet.",
+  "e4d1316c85ed7066": "No questions of this kind wait on you.",
+  "156ff7b625287a1e": "Hide skipped",
+  "69b985b97ab45e6b": "Show {count} skipped",
+  "2400254d362de84d": "Loading workflow runs…",
+  "cae5c3205c01d062": [
     {
       "t": "span",
-      "i": 2,
-      "c": "commented"
-    }
-  ],
-  "b6f729119107a145": "{count, plural, one {Merge stack through '#'{number} into {base} ({count} {term, select, mr {merge request} cr {change request} other {pull request}})} other {Merge stack through '#'{number} into {base} ({count} {term, select, mr {merge requests} cr {change requests} other {pull requests}})}}",
-  "2ae374dd9a808904": [
-    "View stack #",
-    {
       "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
+      "c": "A workflow file has a problem."
     },
-    ", layer ",
-    {
-      "i": 2,
-      "k": "_gt_value_2",
-      "v": "v"
-    },
-    " of",
+    " ",
+    "The last version that did keeps running."
+  ],
+  "ed8ce6ebc73dc12d": "Open the file",
+  "145e1f7503ba3b2c": [
+    "This environment has no run with that link.",
     " ",
     {
-      "i": 3,
-      "k": "_gt_value_3",
-      "v": "v"
-    }
-  ],
-  "106c1bf3308a8c33": "Watching: the agent wakes when checks finish, someone comments, or the branch conflicts",
-  "3e2c2cacab23110c": [
-    "Send ",
-    {
+      "t": "button",
       "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
+      "c": "Back to the runs"
     }
   ],
-  "224e9839195b63b2": "Revoke",
-  "0b75d1fefd7710fe": "Un-settle thread",
-  "56198134d0174861": "Settle thread",
-  "467c8192b9726ba6": "Un-settle thread",
-  "9e8470dfcf1004d6": "Settle thread",
-  "543161d0d46b7787": "To link from {label}, enable linking for it below.",
-  "8e722dd7f9f83ab3": "Linking between environments",
-  "4b11acabe10a539e": "Allow agents on the selected machines to work across linked environments. When disabled, running tasks finish and new tasks cannot start over a link.",
-  "cb59ced9d3e0a7c2": "Connect an environment that supports linking.",
-  "a2bb18b65336adaf": "Enable linked environments",
-  "d25c8724b685967f": "Suggestion source",
-  "5f34b1b9185b2955": "Show a suggestion in the empty composer after a turn. Choose its source for the selected environment.",
-  "d004720e19a3c5e2": "Update the selected environment to choose a single suggestion source.",
-  "84aa8954980680fb": "Connect an environment to choose a suggestion source.",
-  "2fd768af378e10d9": "Native suggestions",
-  "e9f838da94860f78": "This environment is using its previous suggestion preferences. Choose a source to use it exclusively.",
-  "fdf96ad66fd712f3": "The selected environments use different suggestion sources.",
-  "1ef5650bf847ff9d": "Model suggestions use your text generation model and count toward its usage.",
-  "5004e5edd60a3e42": "predicted messages",
-  "28fe960726d90f6d": "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The grouped sidebar in Appearance has no Working section.",
-  "7c257b6f09369ade": "Native suggestions are managed by {organization}.",
-  "01243f4af0f76005": "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
-  "5283e376f8d05fc9": "Restart running Claude sessions after changing suggestion settings. Until restarted, those sessions may still request native suggestions.",
-  "e4d6766dda2a79a9": "Uses your text generation model and counts toward its usage when an environment follows this device's preferences."
+  "783e616cb0476c17": [
+    "A workflow ties agents, code, schedules and questions to you into one run that survives restarts. Write one under",
+    " ",
+    {
+      "t": "button",
+      "i": 1,
+      "c": "Definitions"
+    },
+    ", or ask an agent to.",
+    " ",
+    {
+      "t": "a",
+      "i": 2,
+      "c": "Read the guide"
+    }
+  ],
+  "5d8d278ff828102d": "All workflows",
+  "3b0f1659172107e4": "All kinds",
+  "39459da07479f482": "Agent",
+  "7741243632056b81": "{step} · transcript",
+  "c512071143a5ba32": "This thread is no longer there.",
+  "ed169d23683fb6ac": "Loading the thread…",
+  "290e0ab40b87dc17": "Workflows breadcrumb",
+  "683dd9831e54edc0": "Environment",
+  "34ad53646f06ed80": "Workflows are off",
+  "8f6589c9e0ac5d4e": "No environment connected",
+  "744127f8dfad7d22": "Connect an environment to see its workflow runs.",
+  "036182ec7e2ee4d4": "Beside the run",
+  "2d6107cb78382d08": "Workflows",
+  "16f7df687349b399": "Definitions",
+  "f0a212aadfe1257b": "Loading the editor…",
+  "20f194e003885e95": [
+    "Turn them on for this server in",
+    " ",
+    {
+      "t": "Link",
+      "i": 1,
+      "c": "Settings → Labs"
+    },
+    "."
+  ],
+  "8367779e149f723b": "Primary environment request failed during {operation} (HTTP {status}).",
+  "c5cd027743a2b5a6": "Invalid pairing token. Check the token and try again.",
+  "0e4b49c8203aae81": "Timed out waiting for authenticated session after bootstrap.",
+  "d7ffde2874d60d4f": "Enter a pairing token to continue.",
+  "5d18537f82794deb": "The local environment is disabled.",
+  "d5ef094f40aedece": "Terminal input",
+  "f7046b10d49caab6": "Terminal scrollback",
+  "24de858bbcf05f40": "Slide {number}",
+  "368d650afefe9f19": "This browser cannot draw slides.",
+  "0a6565f87240008e": "Preview limited to presentations with 1 to 500 slides.",
+  "5d31e8d75e7349b4": "Slide {page} of {count}",
+  "1f52f8b06c39fad9": "This workbook has no visible sheets.",
+  "44b4b4cb64df8f48": "{count, plural, one {{count} sheet} other {{count} sheets}}",
+  "36aecaca9eb53957": "These cells could not be drawn. Try scrolling to another area.",
+  "9e98f160532df615": "These cells could not be drawn.",
+  "04751aaf24771828": "This row or column could not be resized.",
+  "86ab844572d44936": "Select fewer than 200,000 cells to copy.",
+  "6f7a040ff9765c38": "The selected cells could not be copied.",
+  "60aa1b1bd2558b88": "{count}+ pages",
+  "59dff62c096fda75": "Preview limited to 1,000 pages.",
+  "c55ca84447d16b92": "Ask the agent about these lines…",
+  "e545fcdb83e2c36a": "Add to review",
+  "dd4d954561a97a95": "Ask agent",
+  "b9dba35bf970552b": "A tradeoff to weigh",
+  "9173eff07b57c792": "A contract to check",
+  "5ac20fc98e4c786d": "A product call",
+  "bde8657632282d3c": "A risk to judge",
+  "63a512eaa88bae11": "An accessibility call",
+  "27d76249d09eb69f": "Review guide ready",
+  "faa3bb26abb39c93": "Review guide failed",
+  "b7df38b7d8792d78": "Open guide",
+  "9e91e9a77b664e4e": "Could not start a review guide"
 }

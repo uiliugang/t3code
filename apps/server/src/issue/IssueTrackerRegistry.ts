@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { IssueTrackerKind } from "@t3tools/contracts";
+import * as JiraDriver from "@t3tools/issue-tracker-jira/server/driver";
 import * as LinearDriver from "@t3tools/issue-tracker-linear/server/driver";
 import { makeMepIssueTracker } from "@t3tools/source-control-meituan/server/driver";
 import {
@@ -37,7 +38,7 @@ export function fromTrackers(
   };
 }
 
-const PROJECT_TRACKERS = [LinearDriver.make, makeMepIssueTracker] as const;
+const PROJECT_TRACKERS = [LinearDriver.make, JiraDriver.make, makeMepIssueTracker] as const;
 
 const make = Effect.gen(function* () {
   const drivers = yield* BuiltInDrivers.SourceControlDrivers;

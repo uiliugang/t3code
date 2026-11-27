@@ -250,7 +250,10 @@ export function VoiceModelRow(props: {
         onPress={() => voice.select(model)}
       />
     );
-  const progress = model.downloaded === undefined ? undefined : model.downloaded / model.size;
+  const percent =
+    model.downloaded === undefined
+      ? undefined
+      : speechModelDownloadPercent(model.downloaded, model.size);
   if (isDownloading(model) || voice.requested === model.id)
     return (
       <View className={separated ? "border-t border-border-subtle" : ""}>
@@ -261,7 +264,7 @@ export function VoiceModelRow(props: {
             model.state === "verifying"
               ? t("Verifying download…")
               : t("{percent}% downloaded · Tap to cancel", {
-                  percent: speechModelDownloadPercent(model.downloaded ?? 0, model.size),
+                  percent: percent ?? 0,
                 })
           }
           disabled={!voice.canManage || voice.busy}
@@ -269,7 +272,7 @@ export function VoiceModelRow(props: {
         />
         <Progress
           className="bg-grouped-card px-4 pb-3"
-          value={model.state === "verifying" ? undefined : progress}
+          percent={model.state === "verifying" ? undefined : percent}
           label={t("{model} download progress", { model: model.name })}
         />
       </View>

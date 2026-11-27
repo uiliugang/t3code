@@ -1,7 +1,7 @@
 # Source control
 
 This build includes GitHub, GitLab, and Meituan Code. TanStack Source remains behind its private-beta
-feature flag. Linear and MEP ONES are issue trackers, not Git hosts. Other upstream hosting
+feature flag. Linear, Jira Cloud, and MEP ONES are issue trackers, not Git hosts. Other upstream hosting
 integrations are not enabled by this build.
 
 ## Manage local branches and worktrees
@@ -442,7 +442,7 @@ Cross-repository links use a project on the same host.
 
 ## Issues
 
-Open **Requirements board** for GitHub and GitLab issues, bound Linear teams, MEP ONES spaces,
+Open **Requirements board** for GitHub and GitLab issues, bound Linear teams, Jira Cloud projects, MEP ONES spaces,
 and local work items. Save a view to reuse its filters. Opening an issue does not make it a
 delivery target.
 
@@ -461,6 +461,11 @@ issues appear in the Linear group of the issue list, sorted with the rest by las
 each can be loaded further on its own. Agents file new issues in the first team picked unless you name another bound team. To
 connect another Linear workspace or user, add another account in the same place; each project
 reads its teams through the account you picked them under.
+
+Connect Jira Cloud with your site, account email, and an
+[API token](https://id.atlassian.com/manage-profile/security/api-tokens) under **Settings → Issue
+management → Issue trackers**, then bind Jira projects. Jira issues move through their workflow
+transitions. New issues use the Task type; reactions and linked pull requests are unavailable.
 
 With Meituan requirements enabled, expand MEP ONES in Issue management to see the environment’s ONES account and maintain its `ones2` and optional `mcm` tools. Under Project issue sources, edit a project’s MEP space IDs or restore automatic discovery. Use the ONES form to create a work item with its space's required fields. When two spaces share an issue number, use its full URL to identify the work item.
 
