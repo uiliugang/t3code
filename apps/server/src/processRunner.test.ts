@@ -17,6 +17,7 @@ import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
@@ -42,6 +43,7 @@ function makeHandle(input: {
   readonly code?: number;
   readonly stdin?: ChildProcessSpawner.ChildProcessHandle["stdin"];
   readonly exitCode?: Effect.Effect<ChildProcessSpawner.ExitCode>;
+  readonly fd3?: Stream.Stream<Uint8Array>;
 }) {
   return ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(1),
@@ -60,7 +62,7 @@ function makeHandle(input: {
         : (input.stderr ?? Stream.empty),
     all: Stream.empty,
     getInputFd: () => Sink.drain,
-    getOutputFd: () => Stream.empty,
+    getOutputFd: (fd) => (fd === 3 && input.fd3 ? input.fd3 : Stream.empty),
   });
 }
 
@@ -89,6 +91,35 @@ const runWith =
     );
 
 describe("runProcess", () => {
+  it.effect("drains late fd3 bytes after exit without waiting indefinitely for EOF", () =>
+    Effect.gen(function* () {
+      const exited = yield* Deferred.make<void>();
+      const chunks: string[] = [];
+      const handle = makeHandle({
+        fd3: Stream.fromEffect(
+          Deferred.await(exited).pipe(
+            Effect.andThen(Effect.sleep("10 millis")),
+            Effect.as(Buffer.from("last event")),
+          ),
+        ).pipe(Stream.concat(Stream.never)),
+        exitCode: Deferred.succeed(exited, undefined).pipe(
+          Effect.as(ChildProcessSpawner.ExitCode(0)),
+        ),
+      });
+      const fiber = yield* runWith(makeSpawner(() => Effect.succeed(handle)))({
+        command: "git",
+        args: [],
+        onFd3Chunk: (chunk) => chunks.push(Buffer.from(chunk).toString()),
+        timeout: "20 millis",
+      }).pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(exited);
+      yield* TestClock.adjust("1 second");
+      expect(fiber.pollUnsafe()).toBeDefined();
+      expect((yield* Fiber.join(fiber)).code).toBe(0);
+      expect(chunks).toEqual(["last event"]);
+    }),
+  );
+
   it.effect("resolves and escapes Windows command shims before spawning", () => {
     const spawner = makeSpawner((command) =>
       Effect.sync(() => {

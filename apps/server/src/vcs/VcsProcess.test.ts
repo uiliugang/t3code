@@ -54,73 +54,95 @@ const captureProcessResult = (
   );
 
 describe("VcsProcess.run", () => {
-  it.effect("retains only safe stage timings when a slow checkpoint is interrupted", () =>
-    Effect.gen(function* () {
-      const logs: unknown[] = [];
-      const started = yield* Deferred.make<void>();
-      const service = yield* VcsProcess.make.pipe(
-        Effect.provideService(HostProcess.Platform, "darwin"),
-        Effect.provideService(
-          ProcessRunner.ProcessRunner,
-          ProcessRunner.ProcessRunner.of({
-            run: (input) =>
-              Effect.gen(function* () {
-                expect(input.env?.GIT_TRACE2_EVENT).toBe("3");
-                const enter = {
-                  sid: "root",
-                  thread: "main",
-                  event: "region_enter",
-                  category: "index",
-                  label: "preload",
-                  msg: "private-path",
-                };
-                const lines = [
-                  enter,
-                  { ...enter, event: "region_leave", t_rel: 0.031 },
-                  { ...enter, category: "dir", label: "read_directory" },
-                ]
-                  .map((entry) => JSON.stringify(entry))
-                  .join("\n");
-                input.onFd3Chunk?.(Buffer.from(lines.slice(0, 13)));
-                input.onFd3Chunk?.(Buffer.from(lines.slice(13) + "\n"));
-                yield* Deferred.succeed(started, undefined);
-                return yield* Effect.never;
-              }),
-          }),
-        ),
-      );
-      const fiber = yield* service
-        .run({
-          ...baseInput,
-          operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
-          args: ["-C", "/private-repo", "-c", "private-setting", "add", "--", "private-path"],
-        })
-        .pipe(
-          Effect.provide(
-            Logger.layer([Logger.make(({ message }) => logs.push(message))], {
-              mergeWithExisting: false,
+  it.effect.each([
+    {
+      subcommand: "cat-file",
+      args: ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
+      capture: true,
+    },
+    { subcommand: "status", args: ["status", "--porcelain=v2"], capture: false },
+    { subcommand: "ls-files", args: ["ls-files", "-v", "-z"], capture: false },
+  ])(
+    "retains safe $subcommand timings even when trace events arrive late",
+    ({ subcommand, args, capture }) =>
+      Effect.gen(function* () {
+        const logs: unknown[] = [];
+        const started = yield* Deferred.make<void>();
+        const deliver = yield* Deferred.make<void>();
+        const service = yield* VcsProcess.make.pipe(
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provideService(
+            ProcessRunner.ProcessRunner,
+            ProcessRunner.ProcessRunner.of({
+              run: (input) =>
+                Effect.gen(function* () {
+                  yield* Deferred.succeed(started, undefined);
+                  yield* Deferred.await(deliver);
+                  const enter = {
+                    sid: "root",
+                    thread: "main",
+                    event: "region_enter",
+                    category: "index",
+                    label: "preload",
+                    msg: "private-path",
+                  };
+                  const lines = [
+                    enter,
+                    { ...enter, event: "region_leave", t_rel: 0.031 },
+                    {
+                      ...enter,
+                      category: "dir",
+                      label: "read_directory",
+                      time: "1970-01-01T00:00:00.250123Z",
+                    },
+                    { ...enter, category: "index", label: "refresh", time: "invalid" },
+                  ]
+                    .map((entry) => JSON.stringify(entry))
+                    .join("\n");
+                  input.onFd3Chunk?.(Buffer.from(lines.slice(0, 13)));
+                  input.onFd3Chunk?.(Buffer.from(lines.slice(13) + "\n"));
+                  return yield* Effect.never;
+                }),
             }),
           ),
-          Effect.forkChild,
         );
-      yield* Deferred.await(started);
-      yield* TestClock.adjust("2 seconds");
-      yield* Fiber.interrupt(fiber);
-      expect(logs).toEqual([
-        [
-          "slow checkpoint Git command",
-          {
-            subcommand: "add",
-            outcome: "interrupt",
-            totalMs: 2000,
-            queueMs: 0,
-            executionMs: 2000,
-            regionMs: { "index/preload": 31 },
-            unfinishedRegionMs: { "dir/read_directory": 2000 },
-          },
-        ],
-      ]);
-    }),
+        const fiber = yield* service
+          .run({
+            ...baseInput,
+            operation: capture
+              ? VcsProcess.CHECKPOINT_CAPTURE_OPERATION
+              : "GitVcsDriver.checkpoints.resolveCleanHead",
+            args: ["-C", "/private-repo", "-c", "private-setting", ...args],
+            ...(subcommand === "ls-files" ? { onStdoutChunk: () => {} } : {}),
+          })
+          .pipe(
+            Effect.provide(
+              Logger.layer([Logger.make(({ message }) => logs.push(message))], {
+                mergeWithExisting: false,
+              }),
+            ),
+            Effect.forkChild,
+          );
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("1 second");
+        yield* Deferred.succeed(deliver, undefined);
+        yield* TestClock.adjust("1 second");
+        yield* Fiber.interrupt(fiber);
+        expect(logs).toEqual([
+          [
+            "slow checkpoint Git command",
+            {
+              subcommand,
+              outcome: "interrupt",
+              totalMs: 2000,
+              queueMs: 0,
+              executionMs: 2000,
+              regionMs: { "index/preload": 31 },
+              unfinishedRegionMs: { "dir/read_directory": 1750, "index/refresh": 1000 },
+            },
+          ],
+        ]);
+      }),
   );
 
   it.effect("explains a locked Git index and allows restore after the lock is released", () =>
@@ -262,9 +284,81 @@ describe("VcsProcess.run", () => {
       expect(attempts).toBe(2);
 
       attempts = 0;
-      const error = yield* Effect.flip(service.run(baseInput));
+      const baseline = yield* service
+        .run({ ...baseInput, operation: "GitVcsDriver.checkpoints.resolveCleanHead" })
+        .pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
+      yield* TestClock.adjust("1 second");
+      const error = yield* Fiber.join(baseline);
+      expect(attempts).toBe(1);
       assert.instanceOf(error, VcsProcessExitError);
       expect(error.detail).toBe(VcsProcess.GIT_INDEX_LOCKED_DETAIL);
+    }),
+  );
+
+  it.effect("keeps separate root traces across macOS fsync fallback", () =>
+    Effect.gen(function* () {
+      const logs: unknown[] = [];
+      const service = yield* VcsProcess.make.pipe(
+        Effect.provideService(HostProcess.Platform, "darwin"),
+        Effect.provideService(ProcessRunner.ProcessRunner, {
+          run: (input) =>
+            Effect.gen(function* () {
+              const fallback = input.args.includes("core.fsyncMethod=writeout-only");
+              const sid = fallback ? "second" : "first";
+              const event = {
+                sid,
+                thread: "main",
+                category: "index",
+                label: "preload",
+                event: "region_leave",
+                t_rel: fallback ? 0.2 : 0.1,
+              };
+              for (const entry of [
+                event,
+                { ...event, sid: `${sid}/child`, t_rel: 9 },
+                { ...event, label: fallback ? "refresh" : "do_read_index", event: "region_enter" },
+              ]) {
+                input.onFd3Chunk?.(Buffer.from(JSON.stringify(entry) + "\n"));
+              }
+              yield* Effect.sleep(fallback ? "1 second" : "500 millis");
+              return {
+                stdout: "",
+                stderr: fallback ? "" : "fatal: fsync error on 'object': Operation not supported",
+                code: ChildProcessSpawner.ExitCode(fallback ? 0 : 128),
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                stdoutInvalidUtf8: false,
+                stderrInvalidUtf8: false,
+              };
+            }),
+        }),
+      );
+      const fiber = yield* service
+        .run({
+          ...baseInput,
+          operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+          args: ["-c", "core.fsyncMethod=fsync", "add"],
+        })
+        .pipe(
+          Effect.provide(
+            Logger.layer([Logger.make(({ message }) => logs.push(message))], {
+              mergeWithExisting: false,
+            }),
+          ),
+          Effect.forkChild({ startImmediately: true }),
+        );
+      yield* TestClock.adjust("1500 millis");
+      yield* Fiber.join(fiber);
+      expect(logs).toEqual([
+        [
+          "slow checkpoint Git command",
+          expect.objectContaining({
+            regionMs: { "index/preload": 300 },
+            unfinishedRegionMs: { "index/do_read_index": 500, "index/refresh": 1000 },
+          }),
+        ],
+      ]);
     }),
   );
 

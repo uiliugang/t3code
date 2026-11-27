@@ -82,11 +82,13 @@ export const GIT_INDEX_LOCKED_DETAIL =
   "Git's index is locked. Wait for other Git operations to finish, then try again.";
 
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
+const CHECKPOINT_CLEAN_HEAD_OPERATION = "GitVcsDriver.checkpoints.resolveCleanHead";
 const SLOW_CHECKPOINT_GIT_MS = 1_000;
 
 // Caller operations are diagnostic strings; only known labels may become metric attributes.
 const gitMetricOperations = new Set([
   CHECKPOINT_CAPTURE_OPERATION,
+  CHECKPOINT_CLEAN_HEAD_OPERATION,
   "GitVcsDriver.checkpoints.deleteCheckpointRefs",
   "GitVcsDriver.checkpoints.diffCheckpoints",
   "GitVcsDriver.checkpoints.hasHeadCommit",
@@ -252,6 +254,7 @@ export const make = Effect.gen(function* () {
     trace?: ReturnType<typeof makeCheckpointGitTrace>,
   ) {
     let failedExit = false;
+    const processTrace = trace?.startProcess();
     const execution = processRunner
       .run({
         command: input.command,
@@ -261,7 +264,7 @@ export const make = Effect.gen(function* () {
         ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
         ...(input.onStdoutChunk !== undefined ? { onStdoutChunk: input.onStdoutChunk } : {}),
         ...(input.onSpawn !== undefined ? { onSpawn: input.onSpawn } : {}),
-        ...(trace ? { onFd3Chunk: trace.onChunk } : {}),
+        ...(processTrace ? { onFd3Chunk: processTrace.onChunk } : {}),
         env: {
           ...(input.command === "git"
             ? unsetInheritedRepositoryEnv(process.env, hostPlatform)
@@ -313,20 +316,24 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-    return yield* input.command === "git"
-      ? execution.pipe(
-          withMetrics({
-            counter: gitCommandsTotal,
-            timer: gitCommandDuration,
-            attributes: {
-              operation: gitMetricOperations.has(input.operation) ? input.operation : "other",
-            },
-            outcomeAttributes: (outcome) => ({
-              outcome: outcome === "success" && failedExit ? "failure" : outcome,
+    const measured =
+      input.command === "git"
+        ? execution.pipe(
+            withMetrics({
+              counter: gitCommandsTotal,
+              timer: gitCommandDuration,
+              attributes: {
+                operation: gitMetricOperations.has(input.operation) ? input.operation : "other",
+              },
+              outcomeAttributes: (outcome) => ({
+                outcome: outcome === "success" && failedExit ? "failure" : outcome,
+              }),
             }),
-          }),
-        )
-      : execution;
+          )
+        : execution;
+    return yield* processTrace
+      ? measured.pipe(Effect.ensuring(Effect.sync(processTrace.finish)))
+      : measured;
   });
 
   const runUnbounded = Effect.fn("VcsProcess.runUnbounded")(function* (
@@ -412,7 +419,12 @@ export const make = Effect.gen(function* () {
   });
 
   const run = Effect.fn("VcsProcess.run")(function* (input: VcsProcessInput) {
-    if (input.command === "git" && input.operation === CHECKPOINT_CAPTURE_OPERATION) {
+    const capture = input.operation === CHECKPOINT_CAPTURE_OPERATION;
+    if (
+      input.command === "git" &&
+      (capture || input.operation === CHECKPOINT_CLEAN_HEAD_OPERATION)
+    ) {
+      const retryCapture = capture && input.onStdoutChunk === undefined;
       const subcommand = checkpointSubcommand(input.args);
       yield* Effect.annotateCurrentSpan("git.subcommand", subcommand);
       const clock = yield* Clock.Clock;
@@ -420,7 +432,10 @@ export const make = Effect.gen(function* () {
       const attempt = Effect.suspend(() => {
         const start = now();
         let acquired: number | undefined;
-        const trace = hostPlatform === "win32" ? undefined : makeCheckpointGitTrace(now);
+        const trace =
+          hostPlatform === "win32"
+            ? undefined
+            : makeCheckpointGitTrace(() => clock.currentTimeMillisUnsafe());
         const bounded = vcsProcesses.withPermits(1)(
           Effect.suspend(() => {
             acquired = now();
@@ -428,9 +443,7 @@ export const make = Effect.gen(function* () {
           }),
         );
         const runAttempt =
-          input.onStdoutChunk && input.concurrency
-            ? keyedPermit(input.concurrency)(bounded)
-            : bounded;
+          !retryCapture && input.concurrency ? keyedPermit(input.concurrency)(bounded) : bounded;
         return runAttempt.pipe(
           Effect.onExit((exit) => {
             const end = now();
@@ -450,7 +463,7 @@ export const make = Effect.gen(function* () {
           }),
         );
       });
-      if (input.onStdoutChunk !== undefined) return yield* attempt;
+      if (!retryCapture) return yield* attempt;
       return yield* attempt.pipe(
         Effect.tapError((error) =>
           Effect.logDebug("checkpoint Git command failed", {

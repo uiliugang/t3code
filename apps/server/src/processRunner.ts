@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
@@ -151,6 +152,7 @@ export class ProcessRunner extends Context.Service<
 const DEFAULT_TIMEOUT = "60 seconds";
 // Keep SIGTERM-ignoring helpers from blocking timeouts or graceful shutdown.
 const FORCE_KILL_AFTER = "1 second";
+const FD3_DRAIN_TIMEOUT = "100 millis";
 const DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 const collectText = Effect.fnUntraced(function* (input: {
@@ -228,19 +230,23 @@ const collectText = Effect.fnUntraced(function* (input: {
   );
 });
 
+type ExitedProcess = { output: ProcessRunOutput; fd3: Fiber.Fiber<void> | undefined };
+
 function finalizeRunProcess<R>(
-  effect: Effect.Effect<ProcessRunOutput, ProcessRunError, R | Scope.Scope>,
+  effect: Effect.Effect<ExitedProcess, ProcessRunError, R | Scope.Scope>,
   input: ProcessRunInput,
 ): Effect.Effect<ProcessRunOutput, ProcessRunError, Exclude<R, Scope.Scope>> {
   const timeout = Duration.fromInputUnsafe(input.timeout ?? DEFAULT_TIMEOUT);
   const timeoutBehavior = input.timeoutBehavior ?? "error";
 
   return effect.pipe(
-    Effect.scoped,
     Effect.timeoutOption(timeout),
     Effect.flatMap((result) => {
       if (Option.isSome(result)) {
-        return Effect.succeed(result.value);
+        const { output, fd3 } = result.value;
+        return fd3
+          ? Fiber.join(fd3).pipe(Effect.timeoutOption(FD3_DRAIN_TIMEOUT), Effect.as(output))
+          : Effect.succeed(output);
       }
       if (timeoutBehavior === "timedOutResult") {
         return Effect.succeed({
@@ -264,6 +270,7 @@ function finalizeRunProcess<R>(
         }),
       );
     }),
+    Effect.scoped,
   );
 }
 
@@ -272,7 +279,7 @@ const commandName = (command: string) => command.replace(/^.*[\\/]/, "");
 const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   input: ProcessRunInput,
-): Effect.fn.Return<ProcessRunOutput, ProcessRunError, Scope.Scope> {
+): Effect.fn.Return<ExitedProcess, ProcessRunError, Scope.Scope> {
   yield* Effect.annotateCurrentSpan("process.command", commandName(input.command));
   const maxOutputBytes = input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   const outputMode = input.outputMode ?? "error";
@@ -325,13 +332,13 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
 
   const stdin = input.stdin;
   const onFd3Chunk = input.onFd3Chunk;
-  if (onFd3Chunk) {
-    yield* child.getOutputFd(3).pipe(
-      Stream.runForEach((chunk) => Effect.sync(() => onFd3Chunk(chunk))),
-      Effect.ignoreCause,
-      Effect.forkScoped,
-    );
-  }
+  const fd3 = onFd3Chunk
+    ? yield* child.getOutputFd(3).pipe(
+        Stream.runForEach((chunk) => Effect.sync(() => onFd3Chunk(chunk))),
+        Effect.ignoreCause,
+        Effect.forkScoped,
+      )
+    : undefined;
   const onStdoutChunk = input.onStdoutChunk;
   const writeStdin =
     stdin === undefined
@@ -396,15 +403,18 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
   );
 
   return {
-    stdout: stdout.text,
-    stderr: stderr.text,
-    code: exitCode,
-    timedOut: false,
-    stdoutTruncated: stdout.truncated,
-    stderrTruncated: stderr.truncated,
-    stdoutInvalidUtf8: stdout.invalidUtf8,
-    stderrInvalidUtf8: stderr.invalidUtf8,
-  } satisfies ProcessRunOutput;
+    fd3,
+    output: {
+      stdout: stdout.text,
+      stderr: stderr.text,
+      code: exitCode,
+      timedOut: false,
+      stdoutTruncated: stdout.truncated,
+      stderrTruncated: stderr.truncated,
+      stdoutInvalidUtf8: stdout.invalidUtf8,
+      stderrInvalidUtf8: stderr.invalidUtf8,
+    },
+  };
 });
 
 /** @public */

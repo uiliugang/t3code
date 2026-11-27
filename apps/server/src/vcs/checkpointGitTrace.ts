@@ -1,5 +1,6 @@
 const commands = new Set([
   "add",
+  "cat-file",
   "check-ignore",
   "commit-tree",
   "config",
@@ -10,6 +11,7 @@ const commands = new Set([
   "read-tree",
   "rev-parse",
   "sparse-checkout",
+  "status",
   "update-index",
   "update-ref",
   "write-tree",
@@ -36,6 +38,22 @@ const regions = new Set([
 
 export function makeCheckpointGitTrace(now: () => number) {
   const elapsed = new Map<string, number>();
+  const unfinished = new Map<string, number>();
+  return {
+    startProcess: () => makeProcessTrace(now, elapsed, unfinished),
+    summary: () => ({
+      regionMs: Object.fromEntries(Array.from(elapsed, ([name, ms]) => [name, Math.round(ms)])),
+      unfinishedRegionMs: Object.fromEntries(unfinished),
+    }),
+  };
+}
+
+function makeProcessTrace(
+  now: () => number,
+  elapsed: Map<string, number>,
+  unfinished: Map<string, number>,
+) {
+  const started = now();
   const active = new Map<string, number>();
   let root: string | undefined;
   let pending = "";
@@ -64,7 +82,15 @@ export function makeCheckpointGitTrace(now: () => number) {
       return;
     const region = `${entry.category}/${entry.label}`;
     if (!regions.has(region)) return;
-    if (entry.event === "region_enter") active.set(region, now());
+    if (entry.event === "region_enter") {
+      const received = now();
+      const eventTime =
+        "time" in entry && typeof entry.time === "string" ? Date.parse(entry.time) : NaN;
+      active.set(
+        region,
+        Number.isFinite(eventTime) ? Math.min(received, Math.max(started, eventTime)) : received,
+      );
+    }
     if (entry.event === "region_leave") {
       active.delete(region);
       if (
@@ -91,13 +117,11 @@ export function makeCheckpointGitTrace(now: () => number) {
         discard = false;
       }
     },
-    summary() {
-      return {
-        regionMs: Object.fromEntries(Array.from(elapsed, ([name, ms]) => [name, Math.round(ms)])),
-        unfinishedRegionMs: Object.fromEntries(
-          Array.from(active, ([name, start]) => [name, Math.max(0, now() - start)]),
-        ),
-      };
+    finish() {
+      const end = now();
+      for (const [name, start] of active) {
+        unfinished.set(name, (unfinished.get(name) ?? 0) + Math.max(0, end - start));
+      }
     },
   };
 }
