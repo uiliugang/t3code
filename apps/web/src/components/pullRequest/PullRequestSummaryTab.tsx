@@ -3,6 +3,7 @@ import { parsePullRequestAnchor } from "@t3tools/shared/pullRequestAnchor";
 import { holdLinkedNodeInView, holdScrollTop } from "./holdLinkedNodeInView";
 import { useAtomValue } from "@effect/atom-react";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
 import {
   capitalizeTerm,
   sourceControlClients,
@@ -16,6 +17,7 @@ import {
   type PullRequestConversationThread,
   type ScopedThreadRef,
   pullRequestConversationThreads,
+  isMeituanServiceEnabled,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
@@ -640,7 +642,10 @@ export const PullRequestSummaryTab = memo(function PullRequestSummaryTab({
         stale: entry.stale,
       })),
   ];
-  const showReviewerLogins = detail.provider === "meituan";
+  const daxiangEnabled = useEnvironmentSettings(environmentId, (settings) =>
+    isMeituanServiceEnabled(settings, "daxiang"),
+  );
+  const showReviewerLogins = detail.provider === "meituan" && daxiangEnabled;
   const [reviewSelection, setReviewSelection] = useState<{
     url: string;
     logins: ReadonlyArray<string>;

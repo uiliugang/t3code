@@ -152,6 +152,9 @@ function EnvironmentIntegration({
   const enabled = settings.meituanIntegrationEnabled;
   const codeEnabled = isMeituanServiceEnabled(settings, "sourceControl");
   const issuesEnabled = isMeituanServiceEnabled(settings, "requirements");
+  const daxiangEnabled = isMeituanServiceEnabled(settings, "daxiang");
+  const canToggleDaxiang =
+    environment.serverConfig.environment.capabilities.meituanDaxiangToggle === true;
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
@@ -188,7 +191,7 @@ function EnvironmentIntegration({
     code: codeEnabled,
     issues: issuesEnabled,
     skills: skillsEnabled,
-    daxiang: enabled && settings.daxiang.approvalMonitor.enabled,
+    daxiang: daxiangEnabled && settings.daxiang.approvalMonitor.enabled,
   });
   const refreshTools = useAtomCommand(sourceControlEnvironment.refreshTools);
   const discovery = useEnvironmentQuery(
@@ -203,7 +206,9 @@ function EnvironmentIntegration({
         ? issuesEnabled
         : section === "skills"
           ? skillsEnabled
-          : enabled;
+          : section === "daxiang"
+            ? daxiangEnabled
+            : enabled;
   const disabled = !activeEnabled || (section === "skills" ? !skillsAllowed : !allowed) || busy;
   const saveEnabled = async (value: boolean) => {
     setBusy(true);
@@ -212,7 +217,7 @@ function EnvironmentIntegration({
     discovery.refresh();
     if (value && needsLegacyRescan) void refreshTools({ environmentId, input: {} });
   };
-  const saveService = async (service: "code" | "issues" | "skills", value: boolean) => {
+  const saveService = async (service: "code" | "issues" | "daxiang" | "skills", value: boolean) => {
     if (
       !canToggle ||
       !enabled ||
@@ -221,6 +226,11 @@ function EnvironmentIntegration({
     )
       return;
     setBusy(true);
+    if (service === "daxiang") {
+      await update({ environmentId, input: { patch: { meituanDaxiangEnabled: value } } });
+      setBusy(false);
+      return;
+    }
     if (service === "skills") {
       const targets: ReadonlyArray<SkillSource> = sources.length
         ? sources
@@ -272,6 +282,11 @@ function EnvironmentIntegration({
       disabled: !canToggle || !enabled || !allowed || busy,
       onChange: (value: boolean) => void saveService("issues", value),
     },
+    daxiang: {
+      checked: settings.meituanDaxiangEnabled,
+      disabled: !canToggleDaxiang || !enabled || !allowed || busy,
+      onChange: (value: boolean) => void saveService("daxiang", value),
+    },
     skills: {
       checked: sources.some((source) => source.enabled),
       disabled: !canToggle || !enabled || !skillsAllowed || busy || !skillQuery.data,
@@ -310,7 +325,7 @@ function EnvironmentIntegration({
           )}
         </SettingsSection>
       ) : null}
-      {section && section !== "daxiang" && canToggle ? (
+      {section && (section === "daxiang" ? canToggleDaxiang : canToggle) ? (
         <SettingsSection>
           <SettingsSwitchRow
             label={t("Enable {name}", {
@@ -319,7 +334,9 @@ function EnvironmentIntegration({
                   ? "Source control"
                   : section === "issues"
                     ? "Requirements and delivery"
-                    : "Meituan Skills",
+                    : section === "daxiang"
+                      ? "DaXiang"
+                      : "Meituan Skills",
               ),
             })}
             value={toggles[section].checked}
@@ -378,15 +395,18 @@ function EnvironmentIntegration({
           />
           <ServiceRow
             icon="bubble.left.and.bubble.right"
-            label="DaXiang"
+            label={t("DaXiang")}
             value={t(
               !enabled
                 ? "Paused"
-                : settings.daxiang.clientId && settings.daxiang.clientSecret
-                  ? "Configured"
-                  : "Not configured",
+                : !daxiangEnabled
+                  ? "Disabled"
+                  : settings.daxiang.clientId && settings.daxiang.clientSecret
+                    ? "Configured"
+                    : "Not configured",
             )}
             onPress={() => navigation.navigate("SettingsMeituanDaxiang", { environmentId })}
+            {...(canToggleDaxiang ? { toggle: toggles.daxiang } : {})}
           />
           <ServiceRow
             icon="doc.text"

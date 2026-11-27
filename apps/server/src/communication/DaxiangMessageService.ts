@@ -1,5 +1,6 @@
 import {
   DaxiangSendError,
+  isMeituanServiceEnabled,
   type DaxiangLinkInput,
   type DaxiangSendResult,
 } from "@t3tools/contracts";
@@ -68,9 +69,9 @@ const make = Effect.gen(function* () {
   const getToken = Effect.fn("DaxiangMessageService.getToken")(
     function* () {
       const saved = yield* settings.getSettings;
-      if (!saved.meituanIntegrationEnabled)
+      if (!isMeituanServiceEnabled(saved, "daxiang"))
         return yield* new DaxiangSendError({
-          message: "Meituan integration is disabled on this environment.",
+          message: "DaXiang is disabled on this environment.",
         });
       const { clientId, clientSecret } = saved.daxiang;
       if (!clientId.trim() || !clientSecret) {

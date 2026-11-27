@@ -160,6 +160,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Settling closes every terminal; older servers require per-action stopOnSettle. */
   threadTerminalCleanup: Schema.optionalKey(Schema.Boolean),
   meituanIntegration: Schema.optionalKey(Schema.Boolean),
+  meituanDaxiangToggle: Schema.optionalKey(Schema.Boolean),
   daxiangApprovalMonitor: Schema.optionalKey(Schema.Boolean),
   daxiangDumboWebEnhancement: Schema.optionalKey(Schema.Boolean),
   daxiangApprovalBrowserLogin: Schema.optionalKey(Schema.Boolean),

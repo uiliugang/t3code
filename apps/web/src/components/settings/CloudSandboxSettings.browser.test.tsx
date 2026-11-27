@@ -62,3 +62,28 @@ it("requires a password for a different endpoint but accepts an equivalent addre
   await userEvent.click(save);
   await expect.element(screen.getByText("Configuration saved")).toBeVisible();
 });
+
+it("toggles automatic credential matching without removing saved servers", async () => {
+  let enabled = true;
+  const bridge = {
+    cloudSandboxEnabled: vi.fn(async (value?: boolean) => (enabled = value ?? enabled)),
+    getCloudSandboxConfig: vi
+      .fn()
+      .mockResolvedValue([{ hostname: "sandbox.example.test", port: 22 }]),
+    saveCloudSandboxConfig: vi.fn(),
+    clearCloudSandboxConfig: vi.fn(),
+    resetCloudSandboxConfig: vi.fn(),
+  };
+  await using screen = await render(<CloudSandboxSettings bridge={bridge} initiallyOpen />);
+  const toggle = screen.getByRole("switch", { name: "Enable Cloud Sandbox" });
+  await expect.element(toggle).toBeChecked();
+  await userEvent.click(toggle);
+  await expect.element(toggle).not.toBeChecked();
+  await expect.element(screen.getByText("Disabled", { exact: true })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Edit server" })).toBeEnabled();
+  await userEvent.click(toggle);
+  await expect.element(toggle).toBeChecked();
+  expect(bridge.cloudSandboxEnabled.mock.calls).toEqual([[], [false], [true]]);
+  expect(bridge.clearCloudSandboxConfig).not.toHaveBeenCalled();
+  expect(bridge.resetCloudSandboxConfig).not.toHaveBeenCalled();
+});

@@ -164,6 +164,7 @@ const layerDesktopFoundation = Layer.mergeAll(
 const layerDesktopSsh = layerDesktopSshEnvironment.pipe(
   Layer.provideMerge(DesktopSshPasswordPrompts.layer()),
   Layer.provideMerge(DesktopCloudSandbox.layer),
+  Layer.provide(DesktopAppSettings.layer),
 );
 
 const layerDesktopServerExposure = DesktopServerExposure.layer.pipe(

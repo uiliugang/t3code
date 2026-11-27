@@ -286,7 +286,16 @@ it.effect.each([
       let closes = 0;
       let signedIn = false;
       const ports: string[] = [];
-      const context = yield* Layer.build(Approval.layer).pipe(
+      const context = yield* Layer.build(
+        Approval.layer.pipe(
+          Layer.provideMerge(
+            ServerSettings.ServerSettingsService.layerTest({
+              meituanIntegrationEnabled: true,
+              daxiang: { approvalMonitor: { enabled: true } },
+            }),
+          ),
+        ),
+      ).pipe(
         Effect.provide(
           Layer.mergeAll(
             Layer.mock(ServerBrowser.ServerBrowser)({
@@ -305,10 +314,6 @@ it.effect.each([
             Layer.mock(Executor.DaxiangApprovalExecutor)({}),
             Layer.mock(Messages.DaxiangMessageService)({}),
             Layer.mock(ExternalLauncher.ExternalLauncher)({}),
-            ServerSettings.ServerSettingsService.layerTest({
-              meituanIntegrationEnabled: true,
-              daxiang: { approvalMonitor: { enabled: true } },
-            }),
             ServerConfig.ServerConfig.layerTest(baseDir, baseDir),
           ),
         ),
@@ -371,6 +376,16 @@ it.effect.each([
 
       yield* open();
       yield* service.mutate({ type: "cancel_browser_login", threadId: tab.threadId }, "owner");
-      assert.strictEqual(closes, canImport === false ? 1 : 2);
+      const previousCloses = canImport === false ? 1 : 2;
+      assert.strictEqual(closes, previousCloses);
+
+      yield* open();
+      const settings = Context.get(context, ServerSettings.ServerSettingsService);
+      yield* settings.updateSettings({ meituanDaxiangEnabled: false });
+      yield* service.mutate({ type: "refresh" }, "owner");
+      const disabled = yield* service.subscribe().pipe(Stream.runHead);
+      assert.strictEqual(Option.getOrThrow(disabled).status, "disabled");
+      assert.strictEqual(closes, previousCloses + 1);
+      assert.strictEqual((yield* Effect.flip(open())).reason, "disabled");
     }).pipe(Effect.provide(NodeServices.layer)),
 );

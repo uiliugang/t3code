@@ -10,6 +10,7 @@ import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
 import { SshPasswordField } from "./SshPasswordField";
 
 function formatEndpoint(config: DesktopCloudSandboxConfig) {
@@ -23,6 +24,7 @@ export function CloudSandboxSettings({
 }: {
   bridge: Pick<
     DesktopBridge,
+    | "cloudSandboxEnabled"
     | "getCloudSandboxConfig"
     | "saveCloudSandboxConfig"
     | "clearCloudSandboxConfig"
@@ -33,6 +35,8 @@ export function CloudSandboxSettings({
   const t = useUiTranslation();
   const formId = useId();
   const [open, setOpen] = useState(initiallyOpen);
+  const [enabled, setEnabled] = useState<boolean>();
+  const [switchError, setSwitchError] = useState(false);
   const [configs, setConfigs] = useState<readonly DesktopCloudSandboxConfig[]>([]);
   const [editor, setEditor] = useState<{ previous?: DesktopCloudSandboxConfig } | null>(null);
   const [host, setHost] = useState("");
@@ -50,6 +54,14 @@ export function CloudSandboxSettings({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads this desktop's credential metadata through IPC
   useEffect(() => {
     let current = true;
+    void bridge.cloudSandboxEnabled?.().then(
+      (value) => {
+        if (current) setEnabled(value);
+      },
+      () => {
+        if (current) setSwitchError(true);
+      },
+    );
     void bridge
       .getCloudSandboxConfig()
       .then(
@@ -68,6 +80,18 @@ export function CloudSandboxSettings({
       current = false;
     };
   }, [bridge]);
+
+  const toggleEnabled = async (value: boolean) => {
+    if (!bridge.cloudSandboxEnabled) return;
+    setPending(true);
+    setSwitchError(false);
+    try {
+      setEnabled(await bridge.cloudSandboxEnabled(value));
+    } catch {
+      setSwitchError(true);
+    }
+    setPending(false);
+  };
 
   const edit = (previous?: DesktopCloudSandboxConfig) => {
     setEditor(previous ? { previous } : {});
@@ -131,43 +155,75 @@ export function CloudSandboxSettings({
 
   return (
     <div id="cloud-sandbox" className="border-b">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={formId}
-        className="flex min-h-20 w-full items-center gap-3 py-4 text-start hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
-        onClick={() => {
-          setOpen(!open);
-          if (open) {
-            setEditor(null);
-            setPassword("");
-            if (!cannotRead) setError(null);
-          }
-        }}
-      >
-        <CloudIcon className="size-5 shrink-0 text-muted-foreground" />
-        <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">{t("Cloud Sandbox")}</span>
-            <span className="mt-1 block text-xs text-muted-foreground wrap-anywhere">
-              {configs.length === 1 && configs[0] ? formatEndpoint(configs[0]) : t("SSH servers")}
+      <div className="flex min-h-20 items-center gap-3">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={formId}
+          className="flex min-h-20 min-w-0 flex-1 items-center gap-3 py-4 text-start hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
+          onClick={() => {
+            setOpen(!open);
+            if (open) {
+              setEditor(null);
+              setPassword("");
+              if (!cannotRead) setError(null);
+            }
+          }}
+        >
+          <CloudIcon className="size-5 shrink-0 text-muted-foreground" />
+          <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{t("Cloud Sandbox")}</span>
+              <span className="mt-1 block text-xs text-muted-foreground wrap-anywhere">
+                {configs.length === 1 && configs[0]
+                  ? formatEndpoint(configs[0])
+                  : t("SSH servers saved on this desktop")}
+              </span>
+            </span>
+            <span className="text-xs text-muted-foreground sm:text-end">
+              {t(
+                enabled === false
+                  ? "Disabled"
+                  : pending
+                    ? "Loading…"
+                    : configs.length > 0
+                      ? "Configured"
+                      : "Not configured",
+              )}
             </span>
           </span>
-          <span className="text-xs text-muted-foreground sm:text-end">
-            {pending ? t("Loading…") : t(configs.length > 0 ? "Configured" : "Not configured")}
-          </span>
-        </span>
-        <ChevronRightIcon
-          aria-hidden
-          className={
-            open
-              ? "size-4 shrink-0 rotate-90 text-muted-foreground"
-              : "size-4 shrink-0 text-muted-foreground"
-          }
-        />
-      </button>
+          <ChevronRightIcon
+            aria-hidden
+            className={
+              open
+                ? "size-4 shrink-0 rotate-90 text-muted-foreground"
+                : "size-4 shrink-0 text-muted-foreground"
+            }
+          />
+        </button>
+        {bridge.cloudSandboxEnabled ? (
+          <Switch
+            aria-label={t("Enable {name}", { name: t("Cloud Sandbox") })}
+            checked={enabled ?? false}
+            disabled={enabled === undefined || pending}
+            onCheckedChange={(value) => void toggleEnabled(value)}
+          />
+        ) : null}
+      </div>
+      {switchError ? (
+        <p role="alert" className="pb-3 text-sm text-destructive">
+          {t("Could not update the Cloud Sandbox setting.")}
+        </p>
+      ) : null}
       {open ? (
         <div id={formId} className="grid gap-3 border-t pb-4 pt-3">
+          {enabled === false ? (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "This desktop uses standard SSH authentication. Saved Cloud Sandbox credentials are retained.",
+              )}
+            </p>
+          ) : null}
           {configs.length > 0 ? (
             <ul className="divide-y">
               {configs.map((config) => {

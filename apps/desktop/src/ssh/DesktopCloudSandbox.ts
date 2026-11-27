@@ -15,6 +15,7 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
+import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 
 const StoredCredential = Schema.Struct({
   hostname: Schema.NonEmptyString,
@@ -60,7 +61,10 @@ export class DesktopCloudSandbox extends Context.Service<
   }
 >()("@t3tools/desktop/ssh/DesktopCloudSandbox") {}
 
-export const make = Effect.fn("desktop.cloudSandbox.make")(function* (stateDir: string) {
+export const make = Effect.fn("desktop.cloudSandbox.make")(function* (
+  stateDir: string,
+  enabled: Effect.Effect<boolean>,
+) {
   const storage = yield* ElectronSafeStorage.ElectronSafeStorage;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -173,6 +177,7 @@ export const make = Effect.fn("desktop.cloudSandbox.make")(function* (stateDir: 
         ),
       ),
     passwordFor: Effect.fn("desktop.cloudSandbox.passwordFor")(function* (target) {
+      if (!(yield* enabled)) return undefined;
       const stored = yield* read();
       const host = target.hostname.includes(":") ? `[${target.hostname}]` : target.hostname;
       const resolved = parseDesktopCloudSandboxEndpoint(host, target.port ?? 22);
@@ -185,6 +190,10 @@ export const layer = Layer.effect(
   DesktopCloudSandbox,
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    return yield* make(environment.stateDir);
+    const settings = yield* DesktopAppSettings.DesktopAppSettings;
+    return yield* make(
+      environment.stateDir,
+      settings.get.pipe(Effect.map((value) => value.cloudSandboxEnabled)),
+    );
   }),
 );

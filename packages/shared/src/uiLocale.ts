@@ -1965,6 +1965,11 @@ const zhCN: Readonly<Record<string, string>> = {
   "Meituan Skills": "美团 Skills",
   "Service configuration": "服务配置",
   "Cloud Sandbox": "Cloud Sandbox",
+  "Could not update the Cloud Sandbox setting.": "无法更新 Cloud Sandbox 开关。",
+  "This desktop uses standard SSH authentication. Saved Cloud Sandbox credentials are retained.":
+    "此桌面客户端将使用普通 SSH 认证。已保存的 Cloud Sandbox 凭据会保留。",
+  "DaXiang is disabled on this environment.": "当前环境已关闭大象。",
+  "SSH servers saved on this desktop": "本机保存的 SSH 服务器",
   "SSH servers": "SSH 服务器",
   "Add server": "添加服务器",
   "Edit server": "编辑服务器",
