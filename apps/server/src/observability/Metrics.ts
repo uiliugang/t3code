@@ -109,6 +109,10 @@ export const gitCommandDuration = Metric.timer("t3_git_command_duration", {
   description: "Git command execution duration.",
 });
 
+export const gitCheckpointCommandDuration = Metric.timer("t3_git_checkpoint_command_duration", {
+  description: "Checkpoint Git command execution duration by stage.",
+});
+
 export const terminalSessionsTotal = Metric.counter("t3_terminal_sessions_total", {
   description: "Total terminal sessions started.",
   incremental: true,

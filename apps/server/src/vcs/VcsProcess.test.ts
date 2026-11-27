@@ -15,6 +15,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 import { ChildProcessSpawner } from "effect/process";
 
 import { VcsProcessExitError, VcsProcessSpawnError } from "@t3tools/contracts";
@@ -582,6 +583,78 @@ describe("VcsProcess.run", () => {
         Option.isSome(gitResult),
         "git waited behind forge CLI runs that held every VCS process slot",
       ).toBe(true);
+    }),
+  );
+
+  it.effect("distinguishes checkpoint permit wait from an interrupted staging process", () =>
+    Effect.gen(function* () {
+      const release = yield* Deferred.make<void>();
+      const started = yield* Queue.unbounded<void>();
+      const staging = yield* Deferred.make<void>();
+      const spans: Tracer.NativeSpan[] = [];
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options);
+          spans.push(span);
+          return span;
+        },
+      });
+      const service = yield* VcsProcess.make.pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, {
+          run: (input) =>
+            Effect.gen(function* () {
+              if (input.args.includes("add")) {
+                yield* Deferred.succeed(staging, undefined);
+                return yield* Effect.never;
+              }
+              yield* Queue.offer(started, undefined);
+              yield* Deferred.await(release);
+              return {
+                stdout: "",
+                stderr: "",
+                code: ChildProcessSpawner.ExitCode(0),
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                stdoutInvalidUtf8: false,
+                stderrInvalidUtf8: false,
+              };
+            }),
+        }),
+      );
+      const holders = yield* Effect.forEach(Array.from({ length: 8 }), () =>
+        service.run(baseInput).pipe(Effect.forkChild({ startImmediately: true })),
+      );
+      yield* Effect.forEach(holders, () => Queue.take(started));
+      const checkpoint = yield* service
+        .run({
+          ...baseInput,
+          operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+          args: ["-C", "/private", "-c", "core.fsmonitor=false", "add", "--", "sensitive"],
+        })
+        .pipe(Effect.withTracer(tracer), Effect.forkChild({ startImmediately: true }));
+
+      yield* TestClock.adjust("250 millis");
+      expect(yield* Deferred.isDone(staging)).toBe(false);
+      yield* Deferred.succeed(release, undefined);
+      yield* Deferred.await(staging);
+      yield* TestClock.adjust("500 millis");
+      yield* Fiber.interrupt(checkpoint);
+      yield* Fiber.joinAll(holders);
+
+      const wait = spans.find((span) => span.name === "VcsProcess.run");
+      expect(Object.fromEntries(wait?.attributes ?? [])).toMatchObject({
+        "checkpoint.git_stage": "stage",
+        "checkpoint.git_permit_acquired": true,
+        "checkpoint.git_permit_wait_ms": 250,
+      });
+      const command = spans.find((span) => span.name === "VcsProcess.spawn");
+      expect(Object.fromEntries(command?.attributes ?? [])).toEqual({
+        "checkpoint.git_stage": "stage",
+      });
+      if (command?.status._tag !== "Ended") return yield* Effect.die("Missing Git execution span");
+      expect(command.status.endTime - command.status.startTime).toBe(500_000_000n);
+      expect(Exit.hasInterrupts(command.status.exit)).toBe(true);
     }),
   );
 

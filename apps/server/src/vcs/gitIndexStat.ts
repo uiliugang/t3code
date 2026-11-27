@@ -38,12 +38,12 @@ const decoder = new TextDecoder();
 
 /**
  * Reads a SHA-1 index that T3 wrote itself (versions 2 and 3; 4 when explicitly allowed). Other
- * layouts, including
- * conflicts, sparse entries, split indexes and fsmonitor data, returns null so callers use Git.
+ * layouts, including conflicts, sparse entries, split indexes and fsmonitor data, return null so
+ * callers use Git.
  */
 export function parseIndex(
   bytes: Uint8Array,
-  options?: { readonly allowVersion4: boolean },
+  options?: { readonly allowVersion4?: boolean },
 ): ParsedIndex | null {
   if (bytes.length < 12 + SHA1_BYTES) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -65,7 +65,13 @@ export function parseIndex(
     if (flags & (FLAG_ASSUME_VALID | FLAG_STAGE)) return null;
     let nameStart = offset + ENTRY_FIXED_BYTES;
     if (flags & FLAG_EXTENDED) {
-      if (version < 3 || view.getUint16(nameStart) & EXTENDED_SKIP_WORKTREE) return null;
+      if (
+        version < 3 ||
+        nameStart + 2 > bytes.length - SHA1_BYTES ||
+        view.getUint16(nameStart) & EXTENDED_SKIP_WORKTREE
+      ) {
+        return null;
+      }
       nameStart += 2;
     }
     if (version === 4) {

@@ -21,7 +21,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
-import type * as Duration from "effect/Duration";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -406,8 +406,34 @@ export const layer: Layer.Layer<
       WorkspaceRepositoryResolver.WorkspaceRepositoryResolver,
     );
     const workspaceLocks = yield* KeyedLock.make<string>();
-    const withWorkspaceLock = <A, E, R>(cwd: string, effect: Effect.Effect<A, E, R>) =>
-      workspaceLocks.withLock(cwd, effect);
+    const withWorkspaceLock = Effect.fn("CheckpointService.withWorkspaceLock")(function* <A, E, R>(
+      cwd: string,
+      effect: Effect.Effect<A, E, R>,
+    ) {
+      const queuedAt = yield* Clock.monotonicTimeNanos;
+      const recordWait = (acquired: boolean) =>
+        Clock.monotonicTimeNanos.pipe(
+          Effect.flatMap((now) =>
+            Effect.annotateCurrentSpan({
+              "checkpoint.workspace_lock_acquired": acquired,
+              "checkpoint.workspace_lock_wait_ms": Duration.toMillis(
+                Duration.nanos(now - queuedAt),
+              ),
+            }),
+          ),
+        );
+      let acquired = false;
+      return yield* workspaceLocks
+        .withLock(
+          cwd,
+          Effect.gen(function* () {
+            acquired = true;
+            yield* recordWait(true);
+            return yield* effect;
+          }),
+        )
+        .pipe(Effect.onInterrupt(() => (acquired ? Effect.void : recordWait(false))));
+    });
 
     const captureTimeouts = yield* Cache.make<string, number>({
       capacity: 128,
@@ -435,12 +461,20 @@ export const layer: Layer.Layer<
         baseline = false,
         captureBudget: Duration.Input = BASELINE_CAPTURE_BUDGET,
       ) {
+        yield* Effect.annotateCurrentSpan("checkpoint.baseline", baseline);
+        if (baseline) {
+          yield* Effect.annotateCurrentSpan(
+            "checkpoint.budget_ms",
+            Duration.toMillis(captureBudget),
+          );
+        }
         const capture = checkpointStore.captureCheckpoint(input);
         const bounded: Effect.Effect<
           CheckpointStore.CheckpointRange | null,
           CheckpointStoreError | Cause.TimeoutError
         > = baseline ? capture.pipe(Effect.timeout(captureBudget)) : capture;
         return yield* bounded.pipe(
+          Effect.tapError((error) => Effect.annotateCurrentSpan("checkpoint.failure", error._tag)),
           Effect.tap(() =>
             Effect.andThen(
               Cache.invalidate(captureTimeouts, input.cwd),
@@ -509,7 +543,7 @@ export const layer: Layer.Layer<
         input.scope.cwd,
         Effect.gen(function* () {
           if (!(yield* checkpointStore.isGitRepository(input.scope.cwd))) {
-            return;
+            return false;
           }
 
           const checkpointRef = yield* checkpointRefFor({
@@ -521,18 +555,19 @@ export const layer: Layer.Layer<
             checkpointRef,
           });
           if (exists) {
-            return;
+            return true;
           }
 
           const timeouts = yield* Cache.getOption(captureTimeouts, input.scope.cwd);
           if (Option.isSome(timeouts) && timeouts.value >= 2) {
-            return yield* Effect.logWarning(
+            yield* Effect.logWarning(
               "orchestration V2 checkpoint baseline skipped after repeated capture timeouts",
               { scopeId: input.scope.id, ordinalWithinScope: input.ordinalWithinScope },
             );
+            return false;
           }
 
-          yield* captureWorkspaceCheckpoint(
+          return yield* captureWorkspaceCheckpoint(
             {
               cwd: input.scope.cwd,
               checkpointRef,
@@ -541,8 +576,9 @@ export const layer: Layer.Layer<
             true,
             captureBudget,
           ).pipe(
+            Effect.as(true),
             Effect.catchTags({
-              VcsUnsupportedOperationError: () => Effect.void,
+              VcsUnsupportedOperationError: () => Effect.succeed(false),
             }),
           );
         }),
@@ -1179,7 +1215,7 @@ export const layer: Layer.Layer<
           ? []
           : yield* repositoryScopes({ rootScope: input.scope, ...input.thread });
       if (repositories.length === 0) {
-        return yield* captureScopeBaseline({ ...input, excludePaths: undefined });
+        return yield* Effect.asVoid(captureScopeBaseline({ ...input, excludePaths: undefined }));
       }
       const nested = yield* resolveNestedScopePaths([input.scope, ...repositories]);
       // Side by side, so the repositories add no wait of their own; the thread folder's failure
@@ -1281,19 +1317,15 @@ export const layer: Layer.Layer<
             input.scope.workspace.resources,
             (resource) =>
               captureScopeBaseline(
-                { ...input, scope: resourceScope(input.scope, resource), excludePaths: undefined },
+                {
+                  ...input,
+                  scope: resourceScope(input.scope, resource),
+                  excludePaths: undefined,
+                },
                 WORKSPACE_BASELINE_CAPTURE_BUDGET,
               ).pipe(
-                Effect.andThen(
-                  materializeBaselineCheckpointSingle({
-                    ...input,
-                    scope: resourceScope(input.scope, resource),
-                    nodeId: input.scope.nodeId,
-                    capturedAt: input.scope.createdAt,
-                  }),
-                ),
-                Effect.flatMap((checkpoint) =>
-                  checkpoint.status === "ready"
+                Effect.flatMap((ready) =>
+                  ready
                     ? Effect.void
                     : Effect.fail(
                         new CheckpointBaselineCaptureError({
@@ -1304,7 +1336,7 @@ export const layer: Layer.Layer<
                       ),
                 ),
               ),
-            { discard: true },
+            { concurrency: REPOSITORY_SCOPE_CONCURRENCY, discard: true },
           );
     const materializeBaselineCheckpoint: CheckpointServiceV2Shape["materializeBaselineCheckpoint"] =
       (input) =>

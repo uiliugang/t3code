@@ -173,6 +173,58 @@ it.effect.each([
   }),
 );
 
+it.effect("captures workspace baselines concurrently without looking up a new ref twice", () =>
+  Effect.gen(function* () {
+    const workspace = workspaceFixture();
+    const refLookups = new Map<string, number>();
+    const started = yield* Queue.unbounded<string>();
+    const release = yield* Deferred.make<void>();
+    const layerTest = CheckpointService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          Layer.mock(CheckpointStore.CheckpointStore)({
+            isGitRepository: () => Effect.succeed(true),
+            hasCheckpointRef: ({ cwd }) =>
+              Effect.sync(() => {
+                refLookups.set(cwd, (refLookups.get(cwd) ?? 0) + 1);
+                return false;
+              }),
+            captureCheckpoint: ({ cwd }) =>
+              Queue.offer(started, cwd).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.as(null),
+              ),
+          }),
+        ),
+      ),
+      Layer.provide(layerNoTrackedFolders),
+      Layer.provideMerge(NodeCrypto.layer),
+    );
+
+    yield* Effect.gen(function* () {
+      const checkpoints = yield* CheckpointService.CheckpointServiceV2;
+      const workspaceScope = yield* checkpoints.prepareRootRunScope({
+        threadId: ThreadId.make("multi-concurrent"),
+        runId: RunId.make("run:multi-concurrent"),
+        rootNodeId: NodeId.make("node:multi-concurrent"),
+        providerThreadId: ProviderThreadId.make("provider:multi-concurrent"),
+        cwd: workspace.resources[0]!.checkoutRoot,
+        workspace,
+        createdAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+      });
+      const fiber = yield* checkpoints
+        .captureBaseline({ scope: workspaceScope, ordinalWithinScope: 0 })
+        .pipe(Effect.forkChild);
+      const roots = workspace.resources.map((resource) => resource.checkoutRoot);
+      assert.sameMembers(Array.from(yield* Queue.takeN(started, roots.length)), roots);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(fiber);
+      for (const root of roots) assert.equal(refLookups.get(root), 1);
+    }).pipe(Effect.provide(layerTest));
+  }),
+);
+
 it.effect(
   "skips unsupported baseline and turn checkpoints without swallowing capture failures",
   () =>

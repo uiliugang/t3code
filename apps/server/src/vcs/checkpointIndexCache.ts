@@ -13,9 +13,14 @@ class CheckpointIndexCacheError extends Schema.TaggedError<
   CheckpointIndexCacheError,
   { readonly brand: unique symbol }
 >()("CheckpointIndexCacheError", {
-  operation: Schema.Literals(["load", "prepare", "remember"]),
+  operation: Schema.Literals(["load", "prepare", "remember", "stat"]),
   cause: Schema.Defect(),
 }) {}
+
+interface IndexFingerprint {
+  readonly fingerprint: string;
+  readonly timestamp: number;
+}
 
 interface CachedIndex {
   readonly source: string;
@@ -102,6 +107,25 @@ export function makeCheckpointIndexCache() {
         Effect.orElseSucceed(() => false),
       ),
   );
+  /** Nanosecond index identity and racy-git boundary; returns null while index.lock exists. */
+  const statIndexFingerprint = Effect.fn("CheckpointIndexCache.statIndexFingerprint")(
+    (indexPath: string) =>
+      Effect.tryPromise({
+        try: async (): Promise<IndexFingerprint | null> => {
+          try {
+            await NodeFSP.access(`${indexPath}.lock`);
+            return null;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") return null;
+          }
+          const stat = await NodeFSP.stat(indexPath, { bigint: true });
+          const timestamp = Number((stat.mtimeNs - 1_000_000n) / 1_000_000_000n);
+          if (timestamp <= 0) return null;
+          return { fingerprint: fingerprint(stat), timestamp };
+        },
+        catch: (cause) => new CheckpointIndexCacheError({ operation: "stat", cause }),
+      }).pipe(Effect.orElseSucceed(() => null)),
+  );
   const remember = Effect.fn("CheckpointIndexCache.remember")((seed: IndexSeed, target: string) =>
     Effect.tryPromise({
       try: async (signal) => {
@@ -129,5 +153,5 @@ export function makeCheckpointIndexCache() {
       catch: (cause) => new CheckpointIndexCacheError({ operation: "remember", cause }),
     }).pipe(Effect.ignore),
   );
-  return { load, prepare, remember };
+  return { load, prepare, remember, statIndexFingerprint };
 }
