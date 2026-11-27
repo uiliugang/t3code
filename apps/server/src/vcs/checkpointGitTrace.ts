@@ -5,8 +5,6 @@ const commands = new Set([
   "commit-tree",
   "config",
   "diff",
-  "diff-files",
-  "diff-index",
   "diff-tree",
   "log",
   "ls-files",

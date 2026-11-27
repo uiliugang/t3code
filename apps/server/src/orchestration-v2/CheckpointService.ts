@@ -536,7 +536,6 @@ export const layer: Layer.Layer<
         readonly scope: OrchestrationV2CheckpointScope;
         readonly ordinalWithinScope: number;
         readonly excludePaths: ReadonlyArray<string> | undefined;
-        readonly reuseCheckoutIndex?: true;
       },
       captureBudget: Duration.Input = BASELINE_CAPTURE_BUDGET,
     ) =>
@@ -544,7 +543,7 @@ export const layer: Layer.Layer<
         input.scope.cwd,
         Effect.gen(function* () {
           if (!(yield* checkpointStore.isGitRepository(input.scope.cwd))) {
-            return;
+            return false;
           }
 
           const checkpointRef = yield* checkpointRefFor({
@@ -556,29 +555,30 @@ export const layer: Layer.Layer<
             checkpointRef,
           });
           if (exists) {
-            return;
+            return true;
           }
 
           const timeouts = yield* Cache.getOption(captureTimeouts, input.scope.cwd);
           if (Option.isSome(timeouts) && timeouts.value >= 2) {
-            return yield* Effect.logWarning(
+            yield* Effect.logWarning(
               "orchestration V2 checkpoint baseline skipped after repeated capture timeouts",
               { scopeId: input.scope.id, ordinalWithinScope: input.ordinalWithinScope },
             );
+            return false;
           }
 
-          yield* captureWorkspaceCheckpoint(
+          return yield* captureWorkspaceCheckpoint(
             {
               cwd: input.scope.cwd,
               checkpointRef,
-              ...(input.reuseCheckoutIndex ? { reuseCheckoutIndex: true } : {}),
               ...(input.excludePaths === undefined ? {} : { excludePaths: input.excludePaths }),
             },
             true,
             captureBudget,
           ).pipe(
+            Effect.as(true),
             Effect.catchTags({
-              VcsUnsupportedOperationError: () => Effect.void,
+              VcsUnsupportedOperationError: () => Effect.succeed(false),
             }),
           );
         }),
@@ -1215,7 +1215,7 @@ export const layer: Layer.Layer<
           ? []
           : yield* repositoryScopes({ rootScope: input.scope, ...input.thread });
       if (repositories.length === 0) {
-        return yield* captureScopeBaseline({ ...input, excludePaths: undefined });
+        return yield* Effect.asVoid(captureScopeBaseline({ ...input, excludePaths: undefined }));
       }
       const nested = yield* resolveNestedScopePaths([input.scope, ...repositories]);
       // Side by side, so the repositories add no wait of their own; the thread folder's failure
@@ -1321,20 +1321,11 @@ export const layer: Layer.Layer<
                   ...input,
                   scope: resourceScope(input.scope, resource),
                   excludePaths: undefined,
-                  reuseCheckoutIndex: true,
                 },
                 WORKSPACE_BASELINE_CAPTURE_BUDGET,
               ).pipe(
-                Effect.andThen(
-                  materializeBaselineCheckpointSingle({
-                    ...input,
-                    scope: resourceScope(input.scope, resource),
-                    nodeId: input.scope.nodeId,
-                    capturedAt: input.scope.createdAt,
-                  }),
-                ),
-                Effect.flatMap((checkpoint) =>
-                  checkpoint.status === "ready"
+                Effect.flatMap((ready) =>
+                  ready
                     ? Effect.void
                     : Effect.fail(
                         new CheckpointBaselineCaptureError({
@@ -1345,7 +1336,7 @@ export const layer: Layer.Layer<
                       ),
                 ),
               ),
-            { discard: true },
+            { concurrency: REPOSITORY_SCOPE_CONCURRENCY, discard: true },
           );
     const materializeBaselineCheckpoint: CheckpointServiceV2Shape["materializeBaselineCheckpoint"] =
       (input) =>

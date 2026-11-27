@@ -759,6 +759,7 @@ it.layer(layerTest)("CheckpointStore.layer", (it) => {
         yield* git(tmp, ["commit", "-m", "pinned"]);
         const head = yield* git(tmp, ["rev-parse", "HEAD"]);
 
+        yield* git(tmp, ["config", "filter.unused.clean", "cat"]);
         expect(yield* checkpointStore.resolveCleanHead(tmp)).toBe(head);
         const checkpointRef = CheckpointRef.make("refs/t3/test/clean/head");
         yield* checkpointStore.captureHeadCheckpoint({ cwd: tmp, checkpointRef, head, seenAt: 1 });

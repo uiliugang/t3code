@@ -13,9 +13,14 @@ class CheckpointIndexCacheError extends Schema.TaggedError<
   CheckpointIndexCacheError,
   { readonly brand: unique symbol }
 >()("CheckpointIndexCacheError", {
-  operation: Schema.Literals(["load", "prepare", "remember", "checkStat"]),
+  operation: Schema.Literals(["load", "prepare", "remember", "stat"]),
   cause: Schema.Defect(),
 }) {}
+
+interface IndexFingerprint {
+  readonly fingerprint: string;
+  readonly timestamp: number;
+}
 
 interface CachedIndex {
   readonly source: string;
@@ -102,53 +107,24 @@ export function makeCheckpointIndexCache() {
         Effect.orElseSucceed(() => false),
       ),
   );
-  // A difference can skip the clean probe. Matching stats still need Git's content and path checks.
-  const worktreeStatsMatch = Effect.fn("CheckpointIndexCache.worktreeStatsMatch")(
-    (indexPath: string, root: string) =>
+  /** Nanosecond index identity and racy-git boundary; returns null while index.lock exists. */
+  const statIndexFingerprint = Effect.fn("CheckpointIndexCache.statIndexFingerprint")(
+    (indexPath: string) =>
       Effect.tryPromise({
-        try: async (signal) => {
-          if ((await NodeFSP.stat(indexPath)).size > 16 * MAX_INDEX_BYTES) return false;
-          const parsed = parseIndex(await NodeFSP.readFile(indexPath, { signal }), {
-            allowVersion4: true,
-            allowSparse: true,
-          });
-          if (!parsed) return false;
-          const view = new DataView(
-            parsed.bytes.buffer,
-            parsed.bytes.byteOffset,
-            parsed.bytes.byteLength,
-          );
-          const tracked = parsed.entries.filter(
-            (entry) => !entry.skipWorktree && view.getUint32(entry.offset + 24) !== 0o160000,
-          );
-          for (let start = 0; start < tracked.length; start += 64) {
-            if (signal.aborted) return false;
-            const matches = await Promise.all(
-              tracked.slice(start, start + 64).map(async (entry) => {
-                if (
-                  entry.path.includes("�") ||
-                  entry.path.includes("\\") ||
-                  entry.path.split("/").some((part) => part === "" || part === "." || part === "..")
-                )
-                  return false;
-                const stat = indexEntryStat(
-                  await NodeFSP.lstat(`${root}/${entry.path}`, { bigint: true }),
-                );
-                return (
-                  view.getUint32(entry.offset) === stat.ctimeSeconds &&
-                  view.getUint32(entry.offset + 4) === stat.ctimeNanoseconds &&
-                  view.getUint32(entry.offset + 8) === stat.mtimeSeconds &&
-                  view.getUint32(entry.offset + 12) === stat.mtimeNanoseconds &&
-                  view.getUint32(entry.offset + 36) === stat.size
-                );
-              }),
-            );
-            if (matches.includes(false)) return false;
+        try: async (): Promise<IndexFingerprint | null> => {
+          try {
+            await NodeFSP.access(`${indexPath}.lock`);
+            return null;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") return null;
           }
-          return true;
+          const stat = await NodeFSP.stat(indexPath, { bigint: true });
+          const timestamp = Number((stat.mtimeNs - 1_000_000n) / 1_000_000_000n);
+          if (timestamp <= 0) return null;
+          return { fingerprint: fingerprint(stat), timestamp };
         },
-        catch: (cause) => new CheckpointIndexCacheError({ operation: "checkStat", cause }),
-      }).pipe(Effect.orElseSucceed(() => false)),
+        catch: (cause) => new CheckpointIndexCacheError({ operation: "stat", cause }),
+      }).pipe(Effect.orElseSucceed(() => null)),
   );
   const remember = Effect.fn("CheckpointIndexCache.remember")((seed: IndexSeed, target: string) =>
     Effect.tryPromise({
@@ -177,5 +153,5 @@ export function makeCheckpointIndexCache() {
       catch: (cause) => new CheckpointIndexCacheError({ operation: "remember", cause }),
     }).pipe(Effect.ignore),
   );
-  return { load, prepare, remember, worktreeStatsMatch };
+  return { load, prepare, remember, statIndexFingerprint };
 }

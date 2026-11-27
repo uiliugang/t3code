@@ -97,6 +97,7 @@ const checkpointGitStage = (subcommand: string, args: ReadonlyArray<string>) => 
     case "commit-tree":
     case "update-ref":
       return subcommand;
+    case "status":
     case "ls-files":
     case "sparse-checkout":
     case "update-index":

@@ -17,11 +17,7 @@ export interface IndexEntryStat {
 
 export interface ParsedIndex {
   readonly bytes: Uint8Array;
-  readonly entries: ReadonlyArray<{
-    readonly offset: number;
-    readonly path: string;
-    readonly skipWorktree?: true;
-  }>;
+  readonly entries: ReadonlyArray<{ readonly offset: number; readonly path: string }>;
 }
 
 const ENTRY_FIXED_BYTES = 62;
@@ -41,12 +37,13 @@ const UNSAFE_EXTENSIONS = new Set(["link", "FSMN", "sdir", "UNTR"]);
 const decoder = new TextDecoder();
 
 /**
- * Reads a SHA-1 index. Version 4 and sparse entries require explicit opt-ins. Conflicts, split
- * indexes and fsmonitor data still require Git.
+ * Reads a SHA-1 index that T3 wrote itself (versions 2 and 3; 4 when explicitly allowed). Other
+ * layouts, including conflicts, sparse entries, split indexes and fsmonitor data, return null so
+ * callers use Git.
  */
 export function parseIndex(
   bytes: Uint8Array,
-  options?: { readonly allowVersion4?: boolean; readonly allowSparse?: boolean },
+  options?: { readonly allowVersion4?: boolean },
 ): ParsedIndex | null {
   if (bytes.length < 12 + SHA1_BYTES) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -59,7 +56,7 @@ export function parseIndex(
   if (!expected.equals(bytes.subarray(bytes.length - SHA1_BYTES))) return null;
 
   const count = view.getUint32(8);
-  const entries: Array<ParsedIndex["entries"][number]> = [];
+  const entries: Array<{ offset: number; path: string }> = [];
   let offset = 12;
   let previousName: Uint8Array = new Uint8Array();
   for (let index = 0; index < count; index++) {
@@ -67,11 +64,14 @@ export function parseIndex(
     const flags = view.getUint16(offset + 60);
     if (flags & (FLAG_ASSUME_VALID | FLAG_STAGE)) return null;
     let nameStart = offset + ENTRY_FIXED_BYTES;
-    let skipWorktree = false;
     if (flags & FLAG_EXTENDED) {
-      if (version < 3 || nameStart + 2 > bytes.length - SHA1_BYTES) return null;
-      skipWorktree = (view.getUint16(nameStart) & EXTENDED_SKIP_WORKTREE) !== 0;
-      if (skipWorktree && !options?.allowSparse) return null;
+      if (
+        version < 3 ||
+        nameStart + 2 > bytes.length - SHA1_BYTES ||
+        view.getUint16(nameStart) & EXTENDED_SKIP_WORKTREE
+      ) {
+        return null;
+      }
       nameStart += 2;
     }
     if (version === 4) {
@@ -93,11 +93,7 @@ export function parseIndex(
       name.set(previousName.subarray(0, kept));
       name.set(bytes.subarray(nameStart, end), kept);
       if (name.length === 0) return null;
-      entries.push({
-        offset,
-        path: decoder.decode(name),
-        ...(skipWorktree ? { skipWorktree } : {}),
-      });
+      entries.push({ offset, path: decoder.decode(name) });
       previousName = name;
       offset = end + 1;
       continue;
@@ -106,11 +102,7 @@ export function parseIndex(
     const nameEnd =
       nameLength < FLAG_NAME_LENGTH ? nameStart + nameLength : bytes.indexOf(0, nameStart);
     if (nameEnd < 0 || bytes[nameEnd] !== 0) return null;
-    entries.push({
-      offset,
-      path: decoder.decode(bytes.subarray(nameStart, nameEnd)),
-      ...(skipWorktree ? { skipWorktree } : {}),
-    });
+    entries.push({ offset, path: decoder.decode(bytes.subarray(nameStart, nameEnd)) });
     // Entries are NUL-padded to a multiple of eight bytes, with at least one NUL.
     offset += (nameEnd - offset + 8) & ~7;
   }
@@ -118,9 +110,7 @@ export function parseIndex(
   // Extensions follow the entries as a 4-byte signature and a 4-byte length.
   while (offset < bytes.length - SHA1_BYTES) {
     if (offset + 8 > bytes.length - SHA1_BYTES) return null;
-    const signature = decoder.decode(bytes.subarray(offset, offset + 4));
-    if (UNSAFE_EXTENSIONS.has(signature) && !(options?.allowSparse && signature === "sdir"))
-      return null;
+    if (UNSAFE_EXTENSIONS.has(decoder.decode(bytes.subarray(offset, offset + 4)))) return null;
     offset += 8 + view.getUint32(offset + 4);
   }
   return offset === bytes.length - SHA1_BYTES ? { bytes, entries } : null;

@@ -1794,34 +1794,24 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
               ordinal,
               edits.pipe(Effect.andThen(thread.takeGitCommands)),
             );
+            const commands = yield* thread.takeGitCommands;
+            const refReads = commands.filter(
+              (args) =>
+                gitSubcommand(args) !== "update-ref" &&
+                args.some((arg) => arg.startsWith("refs/t3/orchestration-v2/checkpoints/")),
+            );
+            assert.lengthOf(refReads, 1);
             return {
               files: recorded.flatMap((entry) => entry.files ?? []),
-              commands: (yield* thread.takeGitCommands).map(gitSubcommand),
+              diffs: commands.filter((args) => gitSubcommand(args) === "diff").length,
             };
           });
-        // Turn 1 kept the scope's index, so no read-tree or ls-files rebuilds it. diff-tree
-        // lists where it differs from HEAD, cat-file checks its blobs survived gc, and the
-        // second diff-tree checks no .gitattributes changed under it.
-        const snapshot = [
-          "rev-parse",
-          "log",
-          "config",
-          "diff-tree",
-          "cat-file",
-          "add",
-          "write-tree",
-          "diff-tree",
-          "log",
-          "commit-tree",
-          "update-ref",
-        ];
-
         assert.deepEqual(yield* capture(2, thread.write(`${root}/README.md`, "# two\n")), {
           files: ["README.md"],
-          commands: [...snapshot, "diff"],
+          diffs: 1,
         });
         // Nothing changed, so there is nothing to diff.
-        assert.deepEqual(yield* capture(3, Effect.void), { files: [], commands: snapshot });
+        assert.deepEqual(yield* capture(3, Effect.void), { files: [], diffs: 0 });
         // A commit moves HEAD; its paths are read without resolving the range again.
         const committed = yield* capture(
           4,
@@ -1829,22 +1819,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
             .write(`${root}/README.md`, "# four\n")
             .pipe(Effect.andThen(thread.git(root, "commit", "-am", "four")), Effect.asVoid),
         );
-        assert.deepEqual(committed.files, ["README.md"]);
-        // The summary's reads run side by side, so only which commands ran is fixed.
-        assert.deepEqual(
-          committed.commands.toSorted(),
-          [
-            ...snapshot,
-            "diff",
-            "version",
-            "rev-list",
-            "diff",
-            "diff",
-            "log",
-            "log",
-            "log",
-          ].toSorted(),
-        );
+        assert.deepEqual(committed, { files: ["README.md"], diffs: 3 });
       }),
     ),
   );
