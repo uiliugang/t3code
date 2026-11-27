@@ -164,7 +164,6 @@ import { WorkflowStepSheet } from "./features/workflows/WorkflowStepSheet";
 import { SettingsAboutRouteScreen } from "./features/settings/SettingsAboutRouteScreen";
 import { SettingsNotificationsRouteScreen } from "./features/settings/SettingsNotificationsRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
-import { SettingsLabsRouteScreen } from "./features/settings/ThreadSettingsSections";
 import { SettingsEnvironmentFilterProvider } from "./features/settings/settings-environment-filter";
 import { openSettings, settingsOpenIn } from "./features/settings/settings-navigation";
 import { DEFAULT_SETTINGS_PAGE } from "./features/layout/workspace/workspace-tab-navigation";
@@ -209,7 +208,6 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
   SettingsIssueTracker: msg("Issue tracker"),
   SettingsEnvironmentAgentBehavior: msg("Threads"),
   SettingsWorktrees: msg("Worktrees"),
-  SettingsLabs: msg("Labs"),
   SettingsProviderAccounts: msg("Providers"),
   SettingsEnvironmentMaintenance: msg("Maintenance"),
   SettingsNotifications: msg("Notifications"),
@@ -363,11 +361,6 @@ const SETTINGS_SCREENS = {
   SettingsWorktrees: createNativeStackScreen({
     screen: SettingsWorktreesRouteScreen,
     linking: "settings/worktrees",
-    options: settingsPage(),
-  }),
-  SettingsLabs: createNativeStackScreen({
-    screen: SettingsLabsRouteScreen,
-    linking: "settings/labs",
     options: settingsPage(),
   }),
   SettingsProviderAccounts: createNativeStackScreen({

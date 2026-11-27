@@ -1,12 +1,38 @@
-import type { EnvironmentId, ProviderDriverKind, ThreadPredictionInput } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PromptSuggestionPreference,
+  ProviderDriverKind,
+  ThreadPredictionInput,
+} from "@t3tools/contracts";
+
+export function resolvePromptSuggestionPreference(
+  settings: {
+    readonly promptSuggestionsEnabled: boolean;
+    readonly promptSuggestionPreference?: PromptSuggestionPreference;
+  },
+  showPredictedMessages: boolean,
+): PromptSuggestionPreference {
+  return (
+    settings.promptSuggestionPreference ?? {
+      enabled: settings.promptSuggestionsEnabled || showPredictedMessages,
+      source: settings.promptSuggestionsEnabled ? "native" : "text-generation",
+    }
+  );
+}
 
 export function resolveComposerPredictionSource(input: {
   readonly driver: ProviderDriverKind | undefined;
   readonly nativeEnabled: boolean;
   readonly textGenerationEnabled: boolean;
+  readonly preference?: PromptSuggestionPreference | undefined;
 }): "native" | "text-generation" | null {
-  if (input.nativeEnabled && (input.driver === "codex" || input.driver === "claudeAgent"))
-    return "native";
+  const nativeSupported = input.driver === "codex" || input.driver === "claudeAgent";
+  if (input.preference) {
+    if (!input.preference.enabled) return null;
+    if (input.preference.source === "native" && !nativeSupported) return null;
+    return input.preference.source;
+  }
+  if (input.nativeEnabled && nativeSupported) return "native";
   return input.textGenerationEnabled ? "text-generation" : null;
 }
 

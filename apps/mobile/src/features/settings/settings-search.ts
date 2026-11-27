@@ -15,6 +15,8 @@ const SETTINGS_SEARCH_TERMS = {
     msg("connect", { $context: "settings search keyword" }),
   ],
   SettingsEnvironments: [
+    msg("linked environments", { $context: "settings search keyword" }),
+    msg("link machine", { $context: "settings search keyword" }),
     msg("servers", { $context: "settings search keyword" }),
     msg("connections", { $context: "settings search keyword" }),
     msg("pair", { $context: "settings search keyword" }),
@@ -139,6 +141,9 @@ const SETTINGS_SEARCH_TERMS = {
     msg("thread behavior", { $context: "settings search keyword" }),
   ],
   SettingsFollowUp: [
+    msg("Suggest next prompt"),
+    msg("Show predicted messages"),
+    msg("Suggestion source"),
     msg("follow-ups", { $context: "settings search keyword" }),
     msg("queue", { $context: "settings search keyword" }),
     msg("steer", { $context: "settings search keyword" }),
@@ -180,6 +185,8 @@ const SETTINGS_SEARCH_TERMS = {
     "ghq",
   ],
   SettingsWorktrees: [
+    msg("fast worktree checkout", { $context: "settings search keyword" }),
+    msg("clone cache", { $context: "settings search keyword" }),
     "remote branch display days",
     "hide merged remote branches",
     "隐藏已合并的远程分支",
@@ -190,13 +197,6 @@ const SETTINGS_SEARCH_TERMS = {
     "branch prefix",
     "submodules",
     "start from remote",
-  ],
-  SettingsLabs: [
-    msg("beta", { $context: "settings search keyword" }),
-    msg("linked environments", { $context: "settings search keyword" }),
-    msg("link machine", { $context: "settings search keyword" }),
-    msg("fast worktree checkout", { $context: "settings search keyword" }),
-    msg("clone cache", { $context: "settings search keyword" }),
   ],
   SettingsEnvironmentMaintenance: [
     msg("updates", { $context: "settings search keyword" }),

@@ -121,6 +121,7 @@ const applicationServerSettingsTransferPolicy = {
   workflowsEnabled: "local",
   workflowSkippedRunsKept: "local",
   promptSuggestionsEnabled: "portable",
+  promptSuggestionPreference: "portable",
   backgroundActivity: "portable",
   automaticGitFetchInterval: "portable",
   providerHealthRefreshInterval: "portable",

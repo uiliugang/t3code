@@ -1,4 +1,9 @@
-import type { EnvironmentId, OrchestrationV2Run, RunId } from "@t3tools/contracts";
+import {
+  nativePromptSuggestionsEnabled,
+  type EnvironmentId,
+  type OrchestrationV2Run,
+  type RunId,
+} from "@t3tools/contracts";
 import { useSyncExternalStore } from "react";
 
 import type { Thread } from "../../types";
@@ -65,9 +70,9 @@ export function usePromptSuggestion(
   allowed: boolean,
   runs: ReadonlyArray<OrchestrationV2Run>,
 ): { readonly suggestion: string | null; readonly dismiss: () => void } {
-  // Older servers decode the missing setting as false, so true also proves the method exists.
   const config = useServerConfigs().get(environmentId);
-  const enabled = allowed && config?.settings.promptSuggestionsEnabled === true;
+  const enabled =
+    allowed && config !== undefined && nativePromptSuggestionsEnabled(config.settings);
   const { data } = useEnvironmentQuery(
     // A local draft has no run, and so no suggestion, until its first send.
     enabled && thread?.latestRun

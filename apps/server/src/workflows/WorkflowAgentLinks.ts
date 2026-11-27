@@ -186,7 +186,7 @@ export const make = Effect.gen(function* () {
     if (!(yield* links.enabled)) {
       return yield* new WorkflowAgentError({
         reason:
-          "Linked environments is off on this machine, so an agent step cannot run in another one. Turn it on in Settings → Labs.",
+          "Linked environments is off on this machine, so an agent step cannot run in another one. Turn it on in Settings → Environments.",
       });
     }
     const outputSchema =

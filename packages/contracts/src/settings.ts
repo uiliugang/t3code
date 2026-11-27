@@ -1500,6 +1500,12 @@ export const WorkItemDiscoveryLimit = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: MAX_WORK_ITEM_DISCOVERY_LIMIT }),
 );
 
+export const PromptSuggestionPreference = Schema.Struct({
+  enabled: Schema.Boolean,
+  source: Schema.Literals(["native", "text-generation"]),
+});
+export type PromptSuggestionPreference = typeof PromptSuggestionPreference.Type;
+
 export const ServerSettings = Schema.Struct({
   virtualModels: Schema.NullOr(VirtualModels).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
@@ -1650,6 +1656,7 @@ export const ServerSettings = Schema.Struct({
   ),
   /** Beta: Claude and Codex predict the next prompt after completed turns. Codex follows a change at once; open Claude threads after they restart. */
   promptSuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  promptSuggestionPreference: Schema.optionalKey(PromptSuggestionPreference),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
@@ -1824,6 +1831,15 @@ export const ServerSettings = Schema.Struct({
   usageModelFilter: ForwardCompatibleOptional(UsageModelFilter),
 });
 export type ServerSettings = typeof ServerSettings.Type;
+
+export function nativePromptSuggestionsEnabled(
+  settings: Pick<ServerSettings, "promptSuggestionsEnabled" | "promptSuggestionPreference">,
+): boolean {
+  const preference = settings.promptSuggestionPreference;
+  return preference === undefined
+    ? settings.promptSuggestionsEnabled
+    : preference.enabled && preference.source === "native";
+}
 
 export function isMeituanServiceEnabled(
   settings:
@@ -2189,6 +2205,7 @@ export const ServerSettingsPatch = Schema.Struct({
   workflowsEnabled: Schema.optionalKey(Schema.Boolean),
   workflowSkippedRunsKept: Schema.optionalKey(WorkflowSkippedRunsKept),
   promptSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
+  promptSuggestionPreference: Schema.optionalKey(PromptSuggestionPreference),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),

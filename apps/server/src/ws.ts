@@ -2000,6 +2000,7 @@ export const layerWsRpc = (
           workItemDraftGeneration: true,
           workItemAnalysis: false,
           threadPredictions: true,
+          promptSuggestionSettings: true,
           threadFindProgressive: true,
           secretProviderSettings: true,
           secretReferences: true,

@@ -112,7 +112,7 @@ const fromStatus = (status: number, code: string | undefined, label: string) => 
       label,
       message:
         code === "linked_environments_off"
-          ? `${label} has Linked environments turned off. Turn it on in its Settings → Labs.`
+          ? `${label} has Linked environments turned off. Turn it on in its Settings → Environments.`
           : `${label} refused the read. Its link may have been revoked there; link it again.`,
     });
   }

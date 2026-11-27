@@ -420,6 +420,7 @@ export function makeManagedSettings(
   }));
   const lockedPaths = locks.map((entry) => entry.path);
   const idleCompactionLocked = lockedPaths.includes("idleCompaction");
+  const nativeSuggestionsLocked = lockedPaths.includes("promptSuggestionsEnabled");
   const lockCache = new WeakMap<ServerSettings, ServerSettings>();
 
   const applyLocks = (current: ServerSettings): ServerSettings => {
@@ -440,7 +441,12 @@ export function makeManagedSettings(
               encodeSettings(current),
             ),
           );
-    const derived = idleCompactionLocked ? syncIdleCompaction(locked) : locked;
+    let effective = locked;
+    if (nativeSuggestionsLocked) {
+      const { promptSuggestionPreference: _preference, ...legacy } = locked;
+      effective = legacy;
+    }
+    const derived = idleCompactionLocked ? syncIdleCompaction(effective) : effective;
     const result =
       maxRuntimeMode === undefined ? derived : clampDefaultRuntimeModes(derived, maxRuntimeMode);
     lockCache.set(current, result);
@@ -451,6 +457,12 @@ export function makeManagedSettings(
     if (locks.length === 0) return { _tag: "Allowed", settings: next };
     const before = encodeSettings(current);
     const after = encodeSettings(next);
+    if (
+      nativeSuggestionsLocked &&
+      !jsonEqual(before.promptSuggestionPreference, after.promptSuggestionPreference)
+    ) {
+      return { _tag: "Locked", path: "promptSuggestionsEnabled" };
+    }
     const changed = lockEntries.find(
       (entry) =>
         // Re-sending a stored value the lock overrides changes nothing on disk, but it is still

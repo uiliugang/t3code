@@ -121,6 +121,7 @@ export function WorktreesSettingsPanel() {
         <MainBranchOnlyRow />
         <MainBranchOnlyRow childWorktree />
         <SharedDependenciesRow />
+        <FastWorktreeCheckoutRow />
         <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
           <WorktreeSubmodulesRow />
         </AdvancedSettings>
@@ -133,5 +134,41 @@ export function WorktreesSettingsPanel() {
       <WorktreeCleanupSection />
       <ManagedWorktreesSettings />
     </SettingsPageContainer>
+  );
+}
+
+function FastWorktreeCheckoutRow() {
+  const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
+  const { scope, connectedEnvironments } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  if (
+    scope.kind === "project" ||
+    scope.kind === "checkout" ||
+    connectedEnvironments.length === 0 ||
+    connectedEnvironments.some(
+      (environment) =>
+        environment.serverConfig?.environment.capabilities.fastWorktreeCheckout !== true,
+    )
+  )
+    return null;
+  return (
+    <SettingsRow
+      serverScoped
+      {...searchableSetting("worktree-fast-checkout")}
+      settingKeys={["fastWorktreeCheckout"]}
+      description={t(
+        "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+      )}
+      control={
+        <ScopedSwitch
+          settingKeys={["fastWorktreeCheckout"]}
+          checked={settings.fastWorktreeCheckout}
+          onCheckedChange={(checked) => updateSettings({ fastWorktreeCheckout: Boolean(checked) })}
+          aria-label={t("Fast worktree checkout")}
+        />
+      }
+    />
   );
 }

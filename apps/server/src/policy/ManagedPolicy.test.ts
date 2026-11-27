@@ -6,6 +6,7 @@ import * as Path from "effect/Path";
 
 import {
   DEFAULT_SERVER_SETTINGS,
+  nativePromptSuggestionsEnabled,
   ProviderDriverKind,
   ProviderInstanceId,
 } from "@t3tools/contracts";
@@ -78,6 +79,26 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
       const managed = ManagedSettings.makeManagedSettings({ [path]: { value, locked: false } });
       assert.equal(managed._tag, "Valid", path);
     }
+  });
+
+  it("keeps a legacy native suggestion lock authoritative over the combined preference", () => {
+    const policy = ManagedSettings.makeManagedSettings({
+      promptSuggestionsEnabled: { value: false, locked: true },
+    });
+    if (policy._tag !== "Valid") throw new Error(policy.reason);
+    const configured = {
+      ...DEFAULT_SERVER_SETTINGS,
+      promptSuggestionPreference: { enabled: true, source: "native" as const },
+    };
+
+    assert.isTrue(nativePromptSuggestionsEnabled(configured));
+    assert.isFalse(nativePromptSuggestionsEnabled(policy.settings.applyLocks(configured)));
+    assert.deepEqual(
+      policy.settings.vetWrite(DEFAULT_SERVER_SETTINGS, configured, {
+        promptSuggestionPreference: configured.promptSuggestionPreference,
+      }),
+      { _tag: "Locked", path: "promptSuggestionsEnabled" },
+    );
   });
 
   it.effect("tells clients which capabilities the policy switches off", () =>

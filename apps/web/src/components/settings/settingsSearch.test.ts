@@ -411,6 +411,15 @@ describe("movedSettingsPath", () => {
     expect(movedSettingsPath("/settings/storage", "")).toBe("/settings/maintenance");
     expect(movedSettingsPath("/settings/integrations", "devices")).toBe("/settings/devices");
     expect(movedSettingsPath("/settings/beta", "")).toBe("/settings/labs");
+    expect(movedSettingsPath("/settings/labs", "boring-sidebar")).toBe("/settings/appearance");
+    expect(movedSettingsPath("/settings/labs", "linked-environments-beta")).toBe(
+      "/settings/connections",
+    );
+    expect(movedSettingsPath("/settings/labs", "prompt-suggestions-beta")).toBe("/settings/chat");
+    expect(movedSettingsPath("/settings/labs", "worktree-fast-checkout")).toBe(
+      "/settings/worktrees",
+    );
+    expect(movedSettingsPath("/settings/labs", "guest-links")).toBeNull();
   });
 
   it("leaves current pages alone", () => {

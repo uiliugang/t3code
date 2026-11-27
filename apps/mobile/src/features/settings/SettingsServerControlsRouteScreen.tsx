@@ -584,6 +584,26 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     disabled={disabledFor("worktreeSharedDependencies")}
                     onValueChange={(value) => write({ worktreeSharedDependencies: value })}
                   />
+                  {!projectSelected &&
+                    targets.every(
+                      ({ environment }) =>
+                        environment.serverConfig.environment.capabilities.fastWorktreeCheckout ===
+                        true,
+                    ) && (
+                      <SettingsSwitchRow
+                        icon="bolt.circle"
+                        label={gt("Fast worktree checkout")}
+                        subtitle={
+                          managed("fastWorktreeCheckout") ??
+                          gt(
+                            "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+                          )
+                        }
+                        value={uniform("fastWorktreeCheckout")}
+                        disabled={disabledFor("fastWorktreeCheckout")}
+                        onValueChange={(value) => write({ fastWorktreeCheckout: value })}
+                      />
+                    )}
                   <SettingsSwitchRow
                     icon="arrow.triangle.branch"
                     label={t("Start from remote")}
