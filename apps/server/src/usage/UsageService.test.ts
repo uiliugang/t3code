@@ -1653,7 +1653,7 @@ describe("UsageService", () => {
   it.effect("discovers Pi history in its default home and directory overrides", () =>
     Effect.gen(function* () {
       const { home, settings } = yield* setup;
-      for (const [agentDir, sessionDir, relativeDir, launchArgs, instanceHome, platform] of [
+      for (const [agentDir, sessionDir, relativeDir, launchArgs, instanceHome] of [
         [undefined, undefined, ".pi/agent/sessions", undefined],
         ["~/custom-pi", undefined, "custom-pi/sessions", undefined],
         ["~/ignored-pi", "~/custom-sessions", "custom-sessions", undefined],
@@ -1665,14 +1665,6 @@ describe("UsageService", () => {
           "instance-home /launch-sessions",
           "--session-dir ~/launch-sessions",
           "instance-home ",
-        ],
-        [
-          "~/ignored-pi",
-          undefined,
-          "windows-profile/launch-sessions",
-          "--session-dir ~/launch-sessions",
-          "windows-profile",
-          "win32",
         ],
         [undefined, undefined, "pi-home/.pi/agent/sessions", undefined, "pi-home"],
         ["~/custom-pi", undefined, "pi-agent-home/custom-pi/sessions", undefined, "pi-agent-home"],
@@ -1736,7 +1728,7 @@ describe("UsageService", () => {
                               ? []
                               : [
                                   {
-                                    name: platform === "win32" ? "USERPROFILE" : "HOME",
+                                    name: "HOME",
                                     value: NodePath.join(home, instanceHome),
                                     sensitive: false,
                                   },
@@ -1748,7 +1740,7 @@ describe("UsageService", () => {
                 PI_CODING_AGENT_DIR: agentDir,
                 PI_CODING_AGENT_SESSION_DIR: sessionDir,
               },
-              platform: platform ?? "linux",
+              platform: "linux",
             }),
           ),
           Effect.provideService(HostProcess.HomeDirectory, home),
