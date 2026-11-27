@@ -1832,6 +1832,18 @@ export const ServerSettings = Schema.Struct({
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
+export function resolvePromptSuggestionPreference(
+  settings: Pick<ServerSettings, "promptSuggestionsEnabled" | "promptSuggestionPreference">,
+  legacyModelEnabled: boolean,
+): PromptSuggestionPreference {
+  return (
+    settings.promptSuggestionPreference ?? {
+      enabled: settings.promptSuggestionsEnabled || legacyModelEnabled,
+      source: settings.promptSuggestionsEnabled ? "native" : "text-generation",
+    }
+  );
+}
+
 export function nativePromptSuggestionsEnabled(
   settings: Pick<ServerSettings, "promptSuggestionsEnabled" | "promptSuggestionPreference">,
 ): boolean {
@@ -2205,7 +2217,16 @@ export const ServerSettingsPatch = Schema.Struct({
   workflowsEnabled: Schema.optionalKey(Schema.Boolean),
   workflowSkippedRunsKept: Schema.optionalKey(WorkflowSkippedRunsKept),
   promptSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
-  promptSuggestionPreference: Schema.optionalKey(PromptSuggestionPreference),
+  promptSuggestionPreference: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        enabled: Schema.optionalKey(Schema.Boolean),
+        source: Schema.optionalKey(PromptSuggestionPreference.fields.source),
+        // Only the legacy model switch is device-local. The server reads its own native switch.
+        legacyModelEnabled: Schema.optionalKey(Schema.Boolean),
+      }),
+    ),
+  ),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
       schemaVersion: Schema.optionalKey(Schema.Literal(1)),

@@ -2,6 +2,7 @@ import { detectedProjectIssueKind } from "./issueSources.ts";
 import {
   ClientSettingsPatch,
   ClientServerSettingsPatch,
+  PromptSuggestionPreference,
   CustomModelSetting,
   KeybindingsConfig,
   IssueSource,
@@ -189,6 +190,7 @@ const APPLICATION_SERVER_SETTINGS_KEYS = Struct.keys(
 
 const ApplicationServerSettings = Schema.Struct({
   ...Struct.pick(ClientServerSettingsPatch.fields, APPLICATION_SERVER_SETTINGS_KEYS),
+  promptSuggestionPreference: Schema.optionalKey(Schema.NullOr(PromptSuggestionPreference)),
   virtualModels: Schema.optionalKey(Schema.toType(VirtualModels)),
 });
 const encodeApplicationServerSettings = Schema.encodeSync(
@@ -551,7 +553,11 @@ export function applicationSettingsImportPatch(
   t: UiTranslator = translateUi.bind(null, "en"),
   providers?: readonly ServerProvider[],
   generators?: ReadonlyMap<ProviderInstanceId, readonly string[]>,
+  supportsPromptSuggestionSettings = true,
 ): ServerSettingsPatch {
+  if (!supportsPromptSuggestionSettings && file.server.promptSuggestionPreference) {
+    throw new Error(t("Update the destination environment to import the suggestion preference."));
+  }
   const skipped = checkProviders(file, target, t);
   const providerInstances = Object.fromEntries(
     Object.entries(file.providerModels ?? {})
@@ -590,6 +596,13 @@ export function applicationSettingsImportPatch(
       : file.server;
   return {
     ...Struct.omit(server, ["virtualModels"]),
+    ...(supportsPromptSuggestionSettings &&
+    server.promptSuggestionPreference === undefined &&
+    (server.promptSuggestionsEnabled !== undefined ||
+      file.clientSettings.showPredictedMessages !== undefined ||
+      typeof file.mobile?.showPredictedMessages === "boolean")
+      ? { promptSuggestionPreference: null }
+      : {}),
     ...(skipped.size && server.favorites
       ? {
           favorites: [

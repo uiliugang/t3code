@@ -40,6 +40,46 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
 describe("fallbackTextGenerationModelSelection", () => {
+  it("merges source and enabled edits against the current suggestion preference", () => {
+    const legacy = { ...DEFAULT_SERVER_SETTINGS, promptSuggestionsEnabled: true };
+    const turnOff = { promptSuggestionPreference: { enabled: false, legacyModelEnabled: false } };
+    const chooseModel = {
+      promptSuggestionPreference: { source: "text-generation" as const, legacyModelEnabled: false },
+    };
+    for (const [first, second] of [
+      [turnOff, chooseModel],
+      [chooseModel, turnOff],
+    ] as const) {
+      const saved = applyServerSettingsPatch(applyServerSettingsPatch(legacy, first), second);
+      expect(saved.promptSuggestionPreference).toEqual({
+        enabled: false,
+        source: "text-generation",
+      });
+      const legacyEnabled = applyServerSettingsPatch(saved, { promptSuggestionsEnabled: true });
+      expect(legacyEnabled.promptSuggestionPreference).toEqual({ enabled: true, source: "native" });
+      expect(
+        applyServerSettingsPatch(legacyEnabled, { promptSuggestionsEnabled: false })
+          .promptSuggestionPreference,
+      ).toEqual({ enabled: false, source: "native" });
+    }
+  });
+
+  it("uses the current legacy native switch on the first source change", () => {
+    const legacy = { ...DEFAULT_SERVER_SETTINGS, promptSuggestionsEnabled: true };
+    const nativeDisabled = applyServerSettingsPatch(legacy, { promptSuggestionsEnabled: false });
+    expect(nativeDisabled.promptSuggestionPreference).toBeUndefined();
+    expect(
+      applyServerSettingsPatch(nativeDisabled, {
+        promptSuggestionPreference: { source: "text-generation", legacyModelEnabled: false },
+      }).promptSuggestionPreference,
+    ).toEqual({ enabled: false, source: "text-generation" });
+    expect(
+      applyServerSettingsPatch(nativeDisabled, {
+        promptSuggestionPreference: { source: "text-generation", legacyModelEnabled: true },
+      }).promptSuggestionPreference,
+    ).toEqual({ enabled: true, source: "text-generation" });
+  });
+
   it("uses Big Pickle when only OpenCode is enabled", () => {
     expect(
       fallbackTextGenerationModelSelection({}, (instanceId) => instanceId === "opencode"),

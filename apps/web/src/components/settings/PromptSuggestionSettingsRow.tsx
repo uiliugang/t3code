@@ -1,5 +1,8 @@
-import { resolvePromptSuggestionPreference } from "@t3tools/client-runtime/composer-prediction";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  isManagedSettingPath,
+  resolvePromptSuggestionPreference,
+} from "@t3tools/contracts";
 import { useGT } from "gt-react";
 
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -15,7 +18,6 @@ export function PromptSuggestionSettingsRow() {
   const { showPredictedMessages } = useScopedSettings();
   const updateDevice = useUpdateScopedSettings();
   const { picker, targets, canWrite, permitted, managedBy, save } = useEnvironmentSettingTargets([
-    "promptSuggestionsEnabled",
     "promptSuggestionPreference",
   ]);
   const supported =
@@ -42,6 +44,11 @@ export function PromptSuggestionSettingsRow() {
   const nativeMixed = targets.some(
     ({ serverConfig }) => serverConfig.settings.promptSuggestionsEnabled !== nativeEnabled,
   );
+  const legacyNativeManaged = targets.find(
+    ({ serverConfig }, index) =>
+      (!supported || preferences[index]?.source === "native") &&
+      isManagedSettingPath(serverConfig.managedPolicy, "promptSuggestionsEnabled"),
+  )?.serverConfig.managedPolicy?.organization;
   const label = gt("Suggest next prompt");
   const sourceLabel = gt("Suggestion source");
   const managed =
@@ -66,7 +73,11 @@ export function PromptSuggestionSettingsRow() {
         status={
           targets.length > 0 && !permitted
             ? gt("This connection lacks permission to change settings on the selected environment.")
-            : undefined
+            : legacyNativeManaged === undefined
+              ? undefined
+              : gt("Native suggestions are managed by {organization}.", {
+                  organization: legacyNativeManaged,
+                })
         }
         control={
           <Switch
@@ -77,13 +88,13 @@ export function PromptSuggestionSettingsRow() {
                 : legacy && !nativeMixed && nativeEnabled
             }
             mixed={supported ? mixedEnabled : legacy && nativeMixed}
-            disabled={!canWrite || (!supported && !legacy)}
+            disabled={!canWrite || legacyNativeManaged !== undefined || (!supported && !legacy)}
             onCheckedChange={(enabled) =>
-              save((settings) =>
+              save(() =>
                 supported
                   ? {
                       promptSuggestionPreference: {
-                        ...resolvePromptSuggestionPreference(settings, showPredictedMessages),
+                        legacyModelEnabled: showPredictedMessages,
                         enabled,
                       },
                     }
@@ -102,9 +113,9 @@ export function PromptSuggestionSettingsRow() {
               disabled={!canWrite}
               onValueChange={([source]) => {
                 if (source !== "native" && source !== "text-generation") return;
-                save((settings) => ({
+                save(() => ({
                   promptSuggestionPreference: {
-                    ...resolvePromptSuggestionPreference(settings, showPredictedMessages),
+                    legacyModelEnabled: showPredictedMessages,
                     source,
                   },
                 }));
@@ -125,20 +136,31 @@ export function PromptSuggestionSettingsRow() {
                 ? gt("The selected environments use different suggestion sources.")
                 : first?.source === "native"
                   ? gt(
-                      "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later. Restart Claude sessions to apply changes.",
+                      "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
                     )
                   : gt(
                       "Model suggestions use your text generation model and count toward its usage.",
                     )}
           </p>
         )}
+        {supported && (
+          <p className="pb-2 text-xs text-muted-foreground">
+            {gt(
+              "Restart running Claude sessions after changing suggestion settings. Until restarted, those sessions may still request native suggestions.",
+            )}
+          </p>
+        )}
       </SettingsRow>
-      {legacy && (
+      {(!supported ||
+        (!permitted &&
+          targets.some(
+            ({ serverConfig }) => serverConfig.settings.promptSuggestionPreference === undefined,
+          ))) && (
         <SettingsRow
           id="composer-predictions"
           title={gt("Show predicted messages")}
           description={gt(
-            "Uses the text generation model and counts toward its usage on older environments.",
+            "Uses your text generation model and counts toward its usage when an environment follows this device's preferences.",
           )}
           resetAction={
             showPredictedMessages !== DEFAULT_CLIENT_SETTINGS.showPredictedMessages ? (

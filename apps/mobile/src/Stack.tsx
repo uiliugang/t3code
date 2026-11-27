@@ -326,7 +326,7 @@ const SETTINGS_SCREENS = {
   }),
   SettingsEnvironments: createNativeStackScreen({
     screen: SettingsEnvironmentsRouteScreen,
-    linking: "settings/environments",
+    linking: { path: "settings/environments", alias: ["settings/labs"] },
     options: settingsPage(),
   }),
   SettingsEnvironmentDetail: createNativeStackScreen({

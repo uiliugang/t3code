@@ -103,10 +103,12 @@ for the environment. An empty composer shows the suggestion. Press `Tab` to acce
 `Escape` to dismiss.
 
 - **Native suggestions** use Claude or Codex and make one cached request against your plan's
-  usage. Claude skips the first turn and turns near usage limits. Codex requires CLI 0.165+
-  and existing Claude threads pick up the setting after a restart.
+  usage. Claude skips the first turn and turns near usage limits. Codex requires CLI 0.165+.
 - **Text generation model** uses the environment's configured text generation model and counts
   toward that model's usage.
+
+Restart running Claude sessions after changing suggestion settings. Until restarted, those
+sessions may still request native suggestions.
 
 ## Edit an earlier prompt
 

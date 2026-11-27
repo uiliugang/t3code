@@ -7948,9 +7948,11 @@
   "2fd768af378e10d9": "Native suggestions",
   "e9f838da94860f78": "This environment is using its previous suggestion preferences. Choose a source to use it exclusively.",
   "fdf96ad66fd712f3": "The selected environments use different suggestion sources.",
-  "dbfa537ef9926890": "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later. Restart Claude sessions to apply changes.",
   "1ef5650bf847ff9d": "Model suggestions use your text generation model and count toward its usage.",
-  "ee4eecfed7f00d80": "Uses the text generation model and counts toward its usage on older environments.",
   "5004e5edd60a3e42": "predicted messages",
-  "28fe960726d90f6d": "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The grouped sidebar in Appearance has no Working section."
+  "28fe960726d90f6d": "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The grouped sidebar in Appearance has no Working section.",
+  "7c257b6f09369ade": "Native suggestions are managed by {organization}.",
+  "01243f4af0f76005": "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
+  "5283e376f8d05fc9": "Restart running Claude sessions after changing suggestion settings. Until restarted, those sessions may still request native suggestions.",
+  "e4d6766dda2a79a9": "Uses your text generation model and counts toward its usage when an environment follows this device's preferences."
 }

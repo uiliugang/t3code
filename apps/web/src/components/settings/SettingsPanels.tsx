@@ -1175,7 +1175,9 @@ export function ChatSettingsPanel() {
   const updateSettings = useUpdateScopedSettings();
 
   return (
-    <SettingsPageContainer>
+    <SettingsPageContainer
+      searchTargetFallbacks={{ "composer-predictions": "prompt-suggestions-beta" }}
+    >
       <SettingsSection id="composer" title={gt("Composer")}>
         <SettingsRow
           {...setting("composer-rich-text")}

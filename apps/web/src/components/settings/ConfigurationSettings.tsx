@@ -164,6 +164,8 @@ export function ApplicationConfigurationSettings() {
                 appAtomRegistry,
                 serverEnvironment.listTextGeneratorModels,
               ),
+              appAtomRegistry.get(serverEnvironment.configValueAtom(environment.environmentId))
+                ?.promptSuggestionSettings === true,
             );
             const bindings = settingsKeybindingsToImport(
               file.keybindings,

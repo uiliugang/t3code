@@ -3,6 +3,7 @@ import {
   isRuntimeModeAbove,
   type ManagedPolicySetting,
   ProjectSettingsOverrides,
+  resolvePromptSuggestionPreference,
   type RuntimeMode,
   ServerSettings,
   withIdleCompaction,
@@ -441,11 +442,16 @@ export function makeManagedSettings(
               encodeSettings(current),
             ),
           );
-    let effective = locked;
-    if (nativeSuggestionsLocked) {
-      const { promptSuggestionPreference: _preference, ...legacy } = locked;
-      effective = legacy;
-    }
+    const effective =
+      nativeSuggestionsLocked && locked.promptSuggestionPreference?.source === "native"
+        ? {
+            ...locked,
+            promptSuggestionPreference: {
+              ...locked.promptSuggestionPreference,
+              enabled: locked.promptSuggestionsEnabled,
+            },
+          }
+        : locked;
     const derived = idleCompactionLocked ? syncIdleCompaction(effective) : effective;
     const result =
       maxRuntimeMode === undefined ? derived : clampDefaultRuntimeModes(derived, maxRuntimeMode);
@@ -456,13 +462,32 @@ export function makeManagedSettings(
   const vetWrite: ManagedSettings["vetWrite"] = (current, next, patch) => {
     if (locks.length === 0) return { _tag: "Allowed", settings: next };
     const before = encodeSettings(current);
-    const after = encodeSettings(next);
+    const suggestionPatch = getPath(patch, ["promptSuggestionPreference"]);
+    const suggestion = next.promptSuggestionPreference;
+    let updated = next;
     if (
       nativeSuggestionsLocked &&
-      !jsonEqual(before.promptSuggestionPreference, after.promptSuggestionPreference)
+      isRecord(suggestionPatch) &&
+      suggestion !== undefined &&
+      (current.promptSuggestionPreference === undefined ||
+        (current.promptSuggestionPreference.source === "native" &&
+          suggestion.source === "text-generation"))
     ) {
-      return { _tag: "Locked", path: "promptSuggestionsEnabled" };
+      const preference = resolvePromptSuggestionPreference(
+        applyLocks(current),
+        suggestionPatch.legacyModelEnabled === true,
+      );
+      updated = {
+        ...next,
+        promptSuggestionPreference: {
+          source:
+            typeof suggestionPatch.source === "string" ? suggestion.source : preference.source,
+          enabled:
+            typeof suggestionPatch.enabled === "boolean" ? suggestion.enabled : preference.enabled,
+        },
+      };
     }
+    const after = encodeSettings(updated);
     const changed = lockEntries.find(
       (entry) =>
         // Re-sending a stored value the lock overrides changes nothing on disk, but it is still

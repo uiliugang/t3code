@@ -41,6 +41,7 @@ const makeShell = () =>
 function layer(
   readShell: () => OrchestrationV2ThreadShell,
   generate: TextGeneration.TextGeneration["Service"]["generatePredictedMessage"],
+  promptSuggestionPreference?: (typeof DEFAULT_SERVER_SETTINGS)["promptSuggestionPreference"],
 ) {
   const messages = Array.from({ length: 20 }, (_, index) => ({
     id: MessageId.make(`message-${index}`),
@@ -69,7 +70,11 @@ function layer(
         get: () => Effect.succeedSome({ workspaceRoot: "/home/user/app" }),
       } as unknown as ProjectStore.ProjectStoreV2["Service"]),
     ),
-    Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+    Layer.provide(
+      ServerSettings.ServerSettingsService.layerTest(
+        promptSuggestionPreference === undefined ? {} : { promptSuggestionPreference },
+      ),
+    ),
     Layer.provide(
       Layer.succeed(TextGeneration.TextGeneration, {
         generatePredictedMessage: generate,
@@ -173,5 +178,29 @@ it.effect("drops generated text when a newer run starts while the model is worki
         ),
       ),
     );
+  }),
+);
+
+it.effect.each([
+  { enabled: false, source: "text-generation", expected: null },
+  { enabled: true, source: "native", expected: null },
+  { enabled: true, source: "text-generation", expected: "next" },
+] as const)("honors enabled $enabled and source $source", ({ enabled, source, expected }) =>
+  Effect.gen(function* () {
+    let calls = 0;
+    const testLayer = layer(
+      makeShell,
+      () =>
+        Effect.sync(() => {
+          calls++;
+          return { text: "next" };
+        }),
+      { enabled, source },
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ThreadPrediction.ThreadPrediction;
+      assert.deepEqual(yield* service.predict(input), { sourceRunId, text: expected });
+      assert.equal(calls, expected === null ? 0 : 1);
+    }).pipe(Effect.provide(testLayer));
   }),
 );

@@ -19,6 +19,7 @@ export const ORCHESTRATION_PROTOCOL_HEADER = "x-t3-orchestration-protocol";
 export const CLIENT_CAPABILITIES_QUERY_PARAM = "clientCapabilities";
 /** Secret fields may hold a secret provider reference instead of a string. */
 export const SETTINGS_SECRET_REFERENCES_CAPABILITY = "settingsSecretReferences";
+export const PROMPT_SUGGESTION_SETTINGS_CAPABILITY = "promptSuggestionSettings";
 /** Usage limit sources may be of kind "http", not only "cliproxy". */
 export const HTTP_USAGE_LIMIT_SOURCES_CAPABILITY = "httpUsageLimitSources";
 

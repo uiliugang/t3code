@@ -234,5 +234,3 @@ function SimlockHostsRow() {
     />
   );
 }
-
-/** Shows only when every machine in scope is a Mac, since only macOS servers honor it. */

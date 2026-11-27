@@ -5,21 +5,6 @@ import type {
   ThreadPredictionInput,
 } from "@t3tools/contracts";
 
-export function resolvePromptSuggestionPreference(
-  settings: {
-    readonly promptSuggestionsEnabled: boolean;
-    readonly promptSuggestionPreference?: PromptSuggestionPreference;
-  },
-  showPredictedMessages: boolean,
-): PromptSuggestionPreference {
-  return (
-    settings.promptSuggestionPreference ?? {
-      enabled: settings.promptSuggestionsEnabled || showPredictedMessages,
-      source: settings.promptSuggestionsEnabled ? "native" : "text-generation",
-    }
-  );
-}
-
 export function resolveComposerPredictionSource(input: {
   readonly driver: ProviderDriverKind | undefined;
   readonly nativeEnabled: boolean;

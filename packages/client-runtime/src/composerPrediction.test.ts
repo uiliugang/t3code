@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProviderDriverKind, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProviderDriverKind,
+  resolvePromptSuggestionPreference,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   composerPredictionKey,
   createComposerPredictionController,
   resolveComposerPredictionSource,
-  resolvePromptSuggestionPreference,
 } from "./composerPrediction.ts";
 
 const target = {

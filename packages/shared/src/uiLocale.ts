@@ -1778,6 +1778,8 @@ const zhCN: Readonly<Record<string, string>> = {
   Bars: "条形标记",
   "Reconnect this environment before exporting.": "请重新连接此环境后再导出。",
   "Reconnect this environment before importing.": "请重新连接此环境后再导入。",
+  "Update the destination environment to import the suggestion preference.":
+    "请更新目标环境后再导入提示词建议设置。",
   "Choose an application settings file.": "请选择应用设置文件。",
   "Choose a project settings file.": "请选择项目设置文件。",
   'Theme "{id}" is not included in this backup.': "此备份中不包含主题“{id}”。",

@@ -4090,13 +4090,15 @@
   "874819f895bf252a": "Allow agents on this machine to work across linked environments. When disabled, running tasks finish and new tasks cannot start over a link.",
   "a7384e7d2952afad": "Composer",
   "80823a1a3e514d09": "Show predicted messages",
-  "ee4eecfed7f00d80": "Uses the text generation model and counts toward its usage on older environments.",
   "8ddfa83c5a2c5b9a": "Composer · {label}",
   "d4b2a2ec812aafb0": "Suggest next prompt",
   "8f81085be983d2ac": "Show a suggestion in the empty composer after a turn.",
   "2fd768af378e10d9": "Native suggestions",
-  "dbfa537ef9926890": "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later. Restart Claude sessions to apply changes.",
   "19cca7227459820e": "Text generation model",
   "1ef5650bf847ff9d": "Model suggestions use your text generation model and count toward its usage.",
-  "d25c8724b685967f": "Suggestion source"
+  "d25c8724b685967f": "Suggestion source",
+  "e4d6766dda2a79a9": "Uses your text generation model and counts toward its usage when an environment follows this device's preferences.",
+  "7c257b6f09369ade": "Native suggestions are managed by {organization}.",
+  "01243f4af0f76005": "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
+  "5283e376f8d05fc9": "Restart running Claude sessions after changing suggestion settings. Until restarted, those sessions may still request native suggestions."
 }

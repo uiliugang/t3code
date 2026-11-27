@@ -68,6 +68,35 @@ const settings = (): ServerSettings => ({
   },
 });
 
+it("restores the legacy suggestion state over a saved combined preference", () => {
+  const backup = createApplicationSettingsFile({
+    clientSettings: { showPredictedMessages: false },
+    server: { ...DEFAULT_SERVER_SETTINGS, promptSuggestionsEnabled: false },
+    keybindings: [],
+  });
+  const target = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    promptSuggestionPreference: { enabled: true, source: "text-generation" },
+  });
+  const patch = applicationSettingsImportPatch(backup, target);
+  const restored = applyServerSettingsPatch(target, patch);
+  expect(patch.promptSuggestionPreference).toBeNull();
+  expect(restored.promptSuggestionPreference).toBeUndefined();
+  expect(restored.promptSuggestionsEnabled).toBe(false);
+  expect(backup.clientSettings.showPredictedMessages).toBe(false);
+  expect(
+    applicationSettingsImportPatch(backup, target, undefined, undefined, undefined, false)
+      .promptSuggestionPreference,
+  ).toBeUndefined();
+  const newer = createApplicationSettingsFile({
+    clientSettings: {},
+    server: target,
+    keybindings: [],
+  });
+  expect(() =>
+    applicationSettingsImportPatch(newer, target, undefined, undefined, undefined, false),
+  ).toThrow("Update the destination environment");
+});
+
 describe("projectTransferIdentity", () => {
   it.each([
     "https://github.com/team/repo.git",
@@ -367,9 +396,10 @@ describe("settings transfer", () => {
     ).toMatchObject({ customModels: [], binaryPath: "/destination/codex" });
     const legacy = { ...restored };
     delete legacy.providerModels;
-    expect(applicationSettingsImportPatch(legacy, target)).toEqual(
-      Struct.omit(restored.server, ["requireConnectDeviceApproval"]),
-    );
+    expect(applicationSettingsImportPatch(legacy, target)).toEqual({
+      ...Struct.omit(restored.server, ["requireConnectDeviceApproval"]),
+      promptSuggestionPreference: null,
+    });
     const custom = ProviderInstanceId.make("custom-codex");
     const customFile = createApplicationSettingsFile({
       clientSettings: {},
@@ -535,12 +565,16 @@ describe("settings transfer", () => {
     expect(file.clientSettings.diffColorScheme).toBe("custom");
     expect(file.clientSettings.diffCustomColors?.conflict).toBe("#a16207");
     expect(file.keybindings).toEqual([{ key: "mod+j", command: "terminal.toggle" }]);
-    expect(applicationSettingsImportPatch(file, source)).toEqual(file.server);
+    expect(applicationSettingsImportPatch(file, source)).toEqual({
+      ...file.server,
+      promptSuggestionPreference: null,
+    });
     expect(applicationSettingsImportPatch(file, source).requireConnectDeviceApproval).toBe(true);
     const sameApprovalTarget = { ...source, requireConnectDeviceApproval: true };
-    expect(applicationSettingsImportPatch(file, sameApprovalTarget)).toEqual(
-      Struct.omit(file.server, ["requireConnectDeviceApproval"]),
-    );
+    expect(applicationSettingsImportPatch(file, sameApprovalTarget)).toEqual({
+      ...Struct.omit(file.server, ["requireConnectDeviceApproval"]),
+      promptSuggestionPreference: null,
+    });
     expect(applicationSettingsImportPatch(file, sameApprovalTarget)).not.toHaveProperty(
       "requireConnectDeviceApproval",
     );
@@ -623,7 +657,7 @@ describe("settings transfer", () => {
     const legacy = parseSettingsFile(serializeSettingsFile(legacyFile));
     expect(
       legacy.scope === "application" && applicationSettingsImportPatch(legacy, source),
-    ).toEqual(legacyFile.server);
+    ).toEqual({ ...legacyFile.server, promptSuggestionPreference: null });
     const implicitProviderSettings = {
       ...DEFAULT_SERVER_SETTINGS,
       defaultModelSelection: {
@@ -636,9 +670,10 @@ describe("settings transfer", () => {
       server: implicitProviderSettings,
       keybindings: [],
     });
-    expect(applicationSettingsImportPatch(implicitProviderFile, implicitProviderSettings)).toEqual(
-      Struct.omit(implicitProviderFile.server, ["requireConnectDeviceApproval"]),
-    );
+    expect(applicationSettingsImportPatch(implicitProviderFile, implicitProviderSettings)).toEqual({
+      ...Struct.omit(implicitProviderFile.server, ["requireConnectDeviceApproval"]),
+      promptSuggestionPreference: null,
+    });
     for (const id of ["acpRegistry", "uninstalledDriver"]) {
       const driver = ProviderDriverKind.make(id);
       const instanceId = ProviderInstanceId.make(id);

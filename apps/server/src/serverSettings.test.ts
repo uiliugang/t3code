@@ -429,6 +429,24 @@ function strictSecretReferencePaths(
   return [];
 }
 
+it("projects the effective native suggestion flag to clients without the setting", () => {
+  const settings = {
+    ...DEFAULT_SERVER_SETTINGS,
+    promptSuggestionsEnabled: true,
+    promptSuggestionPreference: { enabled: true, source: "text-generation" as const },
+  };
+  const legacy = ServerSettingsModule.redactServerSettingsForClient(settings, {
+    secretReferences: true,
+  });
+  const modern = ServerSettingsModule.redactServerSettingsForClient(settings, {
+    secretReferences: true,
+    promptSuggestionSettings: true,
+  });
+  assert.isFalse(legacy.promptSuggestionsEnabled);
+  assert.isTrue(modern.promptSuggestionsEnabled);
+  assert.deepEqual(modern.promptSuggestionPreference, settings.promptSuggestionPreference);
+});
+
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings", (it) => {
   it.effect(
     "rejects stale virtual model edits without restoring a changed or deleted binding",

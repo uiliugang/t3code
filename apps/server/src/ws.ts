@@ -74,6 +74,7 @@ import {
   ORCHESTRATION_PROTOCOL_QUERY_PARAM,
   CLIENT_CAPABILITIES_QUERY_PARAM,
   HTTP_USAGE_LIMIT_SOURCES_CAPABILITY,
+  PROMPT_SUGGESTION_SETTINGS_CAPABILITY,
   SETTINGS_SECRET_REFERENCES_CAPABILITY,
   ORCHESTRATION_PROTOCOL_VERSION,
   OrchestrationV2DispatchCommandError,
@@ -865,6 +866,7 @@ function readSettingsClient(url: URL) {
   return {
     secretReferences: capabilities.includes(SETTINGS_SECRET_REFERENCES_CAPABILITY),
     httpUsageLimitSources: capabilities.includes(HTTP_USAGE_LIMIT_SOURCES_CAPABILITY),
+    promptSuggestionSettings: capabilities.includes(PROMPT_SUGGESTION_SETTINGS_CAPABILITY),
   };
 }
 

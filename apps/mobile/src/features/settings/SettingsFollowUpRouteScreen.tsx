@@ -1,8 +1,8 @@
 import { msg, useGT, useMessages } from "gt-react-native";
-import { resolvePromptSuggestionPreference } from "@t3tools/client-runtime/composer-prediction";
 import {
   AuthSettingsWriteScope,
   isManagedSettingPath,
+  resolvePromptSuggestionPreference,
   type PromptSuggestionPreference,
 } from "@t3tools/contracts";
 import { useState } from "react";
@@ -22,7 +22,7 @@ import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
-import { useEnvironmentScope } from "../../state/session";
+import { useEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { SettingsScreen } from "./components/SettingsScreen";
 
 const FOLLOW_UP_OPTIONS: ReadonlyArray<{
@@ -105,6 +105,16 @@ function PromptSuggestionSettingsSections() {
     ({ serverConfig }) => serverConfig?.promptSuggestionSettings === true,
   );
 
+  const writable = useEnvironmentsWithScope(supported, AuthSettingsWriteScope);
+  const needsDevicePreference =
+    supported.length === 0 ||
+    supported.length !== connected.length ||
+    supported.some(
+      ({ environmentId, serverConfig }) =>
+        !writable.has(environmentId) &&
+        serverConfig?.settings.promptSuggestionPreference === undefined,
+    );
+
   return (
     <>
       {supported.map((environment) => (
@@ -116,12 +126,12 @@ function PromptSuggestionSettingsSections() {
           preferencesReady={ready}
         />
       ))}
-      {(supported.length === 0 || supported.length !== connected.length) && (
+      {needsDevicePreference && (
         <SettingsSection title={gt("Composer")}>
           <ListToggleRow
             label={gt("Show predicted messages")}
             description={gt(
-              "Uses the text generation model and counts toward its usage on older environments.",
+              "Uses your text generation model and counts toward its usage when an environment follows this device's preferences.",
             )}
             disabled={!ready}
             value={showPredictedMessages}
@@ -151,19 +161,24 @@ function PromptSuggestionEnvironmentSection({
   const [saving, setSaving] = useState(false);
   if (!serverConfig) return null;
   const { settings, managedPolicy } = serverConfig;
-  const managed =
-    isManagedSettingPath(managedPolicy, "promptSuggestionsEnabled") ||
-    isManagedSettingPath(managedPolicy, "promptSuggestionPreference");
+  const managed = isManagedSettingPath(managedPolicy, "promptSuggestionPreference");
   const disabled =
     managed || !canWrite || saving || (!settings.promptSuggestionPreference && !preferencesReady);
   const preference = resolvePromptSuggestionPreference(settings, showPredictedMessages);
+  const nativeManaged =
+    preference.source === "native" &&
+    isManagedSettingPath(managedPolicy, "promptSuggestionsEnabled");
 
   const save = (change: Partial<PromptSuggestionPreference>) => {
     if (disabled) return;
     setSaving(true);
     void update({
       environmentId,
-      input: { patch: { promptSuggestionPreference: { ...preference, ...change } } },
+      input: {
+        patch: {
+          promptSuggestionPreference: { ...change, legacyModelEnabled: showPredictedMessages },
+        },
+      },
     }).finally(() => setSaving(false));
   };
 
@@ -174,16 +189,20 @@ function PromptSuggestionEnvironmentSection({
         description={
           managed
             ? gt("Managed by {organization}.", { organization: managedPolicy?.organization ?? "" })
-            : gt("Show a suggestion in the empty composer after a turn.")
+            : nativeManaged
+              ? gt("Native suggestions are managed by {organization}.", {
+                  organization: managedPolicy?.organization ?? "",
+                })
+              : gt("Show a suggestion in the empty composer after a turn.")
         }
-        disabled={disabled}
+        disabled={disabled || nativeManaged}
         value={preference.enabled}
         onValueChange={(enabled) => save({ enabled })}
       />
       <SettingsChoiceRow
         label={gt("Native suggestions")}
         description={gt(
-          "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later. Restart Claude sessions to apply changes.",
+          "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
         )}
         selected={preference.source === "native"}
         disabled={disabled}
@@ -200,6 +219,11 @@ function PromptSuggestionEnvironmentSection({
         separated
         onPress={() => save({ source: "text-generation" })}
       />
+      <Text className="px-4 pb-3 text-sm text-foreground-muted">
+        {gt(
+          "Restart running Claude sessions after changing suggestion settings. Until restarted, those sessions may still request native suggestions.",
+        )}
+      </Text>
     </SettingsSection>
   );
 }
