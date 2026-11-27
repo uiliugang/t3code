@@ -848,6 +848,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
               HostProcess.Environment,
               input.ambientHome === undefined ? {} : { T3CODE_HOME: input.ambientHome },
             ),
+            // Each invocation models a separate runner exiting and releasing its state lock.
+            Effect.scoped,
           );
 
           return captured?.T3CODE_HOME;
@@ -937,13 +939,18 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           NodeFS.mkdirSync(NodePath.join(stopped, "userdata"), { recursive: true });
           NodeFS.symlinkSync(other, alias, "junction");
           const t3Home = NodePath.join(alias, ".t3");
+          const otherHome = NodePath.join(other, ".t3");
+          const isolatedHome = NodePath.join(other, "isolated-home");
           for (const cwd of [main, root]) {
             const input = { t3Home, cwd, ambientHome: undefined, seed: false };
-            assert.equal(yield* spawnedHome(input), NodePath.join(other, ".t3"));
-            NodeFS.symlinkSync(stopped, NodePath.join(other, ".t3"), "junction");
+            assert.equal(yield* spawnedHome(input), otherHome);
+            // The successful run materializes its state lock under this path.
+            NodeFS.renameSync(otherHome, isolatedHome);
+            NodeFS.symlinkSync(stopped, otherHome, "junction");
             const error = yield* spawnedHome(input).pipe(Effect.flip);
             assert.match(error.message, /Refusing to modify a live T3 Code database/);
-            NodeFS.unlinkSync(NodePath.join(other, ".t3"));
+            NodeFS.unlinkSync(otherHome);
+            NodeFS.renameSync(isolatedHome, otherHome);
           }
         }).pipe(Effect.scoped),
       );
@@ -964,6 +971,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           assert.isUndefined(yield* spawnedHome(input));
 
           const dev = NodePath.join(defaultHome, "dev");
+          NodeFS.renameSync(dev, NodePath.join(defaultHome, "isolated-dev"));
           NodeFS.symlinkSync(userdata, dev, "junction");
           const linkedDir = yield* spawnedHome(input).pipe(Effect.flip);
           assert.match(linkedDir.message, /Refusing to modify a live T3 Code database/);
@@ -1041,7 +1049,10 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
                   readonly args: readonly string[];
                 };
                 if (args.some((arg) => arg.endsWith("migrate-dev-db.ts"))) {
-                  NodeFS.symlinkSync(liveState, path.join(worktreeHome, "userdata"), "junction");
+                  const userdata = path.join(worktreeHome, "userdata");
+                  // Move the fixture's locked directory aside rather than discarding its lock.
+                  NodeFS.renameSync(userdata, path.join(worktreeHome, "isolated-userdata"));
+                  NodeFS.symlinkSync(liveState, userdata, "junction");
                   return mockProcess(1);
                 }
                 if (executable === "vp") attemptedBackend = true;
@@ -1059,6 +1070,11 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           );
           assert.match(error.message, /Refusing to modify a live T3 Code database/);
           assert.isFalse(attemptedBackend);
+          assert.deepEqual(NodeFS.readdirSync(liveState), ["statev2.sqlite"]);
+          assert.equal(
+            NodeFS.readFileSync(path.join(liveState, "statev2.sqlite"), "utf8"),
+            "live data",
+          );
         }).pipe(Effect.scoped),
       );
 
