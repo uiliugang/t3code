@@ -1152,6 +1152,96 @@ describe("native provider presentation in the v2 timeline", () => {
     item,
   });
 
+  it("groups commands across assistant text that settles as whitespace", () => {
+    const first = visible({
+      ...base,
+      id: TurnItemId.make("first-command"),
+      type: "command_execution",
+      input: "printf first",
+    });
+    const last = visible({
+      ...base,
+      id: TurnItemId.make("second-command"),
+      type: "command_execution",
+      input: "printf second",
+      status: "running",
+      completedAt: null,
+    });
+    const message = {
+      ...base,
+      type: "assistant_message" as const,
+      messageId: MessageId.make("assistant-separator"),
+      text: "\n\n",
+      streaming: false,
+    };
+    const previous = deriveTimelineEntriesFromVisibleTurnItemsWithState({
+      visibleTurnItems: [
+        first,
+        visible({ ...message, streaming: true, status: "running", completedAt: null }),
+        last,
+      ],
+      optimisticMessages: [],
+    });
+    expect(previous.entries.map((entry) => entry.kind)).toEqual(["work", "message", "work"]);
+
+    const { entries } = deriveTimelineEntriesFromVisibleTurnItemsWithState(
+      { visibleTurnItems: [first, visible(message), last], optimisticMessages: [] },
+      previous,
+    );
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: entries,
+      latestRun: {
+        runId: base.runId,
+        status: "running",
+        startedAt: DateTime.formatIso(timestamp),
+        completedAt: null,
+      },
+      isWorking: true,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(rows.find((row) => row.kind === "work-live")).toMatchObject({
+      groupedEntries: [{ id: first.item.id }, { id: last.item.id }],
+    });
+    expect(rows.some((row) => row.kind === "message")).toBe(false);
+  });
+
+  it.each(["showAll", "zen"] as const)(
+    "keeps the final reply boundary when an unmarked response is whitespace in %s",
+    (toolCallVisibility) => {
+      const reply = (id: string, text: string) =>
+        visible({
+          ...base,
+          id: TurnItemId.make(id),
+          type: "assistant_message",
+          messageId: MessageId.make(id),
+          text,
+          streaming: false,
+        });
+      const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [
+          reply("progress", "I’ll inspect the README."),
+          visible({
+            ...base,
+            id: TurnItemId.make("readme-command"),
+            type: "command_execution",
+            input: "cat README.md",
+          }),
+          reply("answer", "\n\n"),
+        ],
+        optimisticMessages: [],
+      });
+      const rows = deriveMessagesTimelineRows({
+        timelineEntries,
+        toolCallVisibility,
+        isWorking: false,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+      expect(rows.flatMap((row) => (row.kind === "message" ? [row.id] : []))).toEqual(["answer"]);
+    },
+  );
+
   it("keeps async answers in the question row, including incrementally appended replies", () => {
     const requestId = RuntimeRequestId.make("question");
     const question: OrchestrationV2TurnItem = {

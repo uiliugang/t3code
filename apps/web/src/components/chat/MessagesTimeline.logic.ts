@@ -1550,6 +1550,47 @@ function runningSubagentsAtRunTail(entries: ReadonlyArray<TimelineEntry>, runId:
   return running;
 }
 
+function withoutBlankInterimAssistantMessages(entries: ReadonlyArray<TimelineEntry>) {
+  const skipped = new Set<TimelineEntry>();
+  let followingOutput: TimelineEntry | undefined;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (
+      (entry.kind === "message" && entry.message.role === "user") ||
+      timelineEntryStartsResponse(entry)
+    ) {
+      followingOutput = undefined;
+    } else if (entry.kind === "message") {
+      const { message } = entry;
+      const item = entry.projectedItem?.item;
+      // A provider may omit the phase on its final reply.
+      if (
+        followingOutput !== undefined &&
+        timelineEntryRunId(entry) === timelineEntryRunId(followingOutput) &&
+        entry.attempt?.id === followingOutput.attempt?.id &&
+        item?.type === "assistant_message" &&
+        item.status === "completed" &&
+        (item.phase === undefined || item.phase === "commentary") &&
+        !message.streaming &&
+        !message.attachments?.length &&
+        message.text.length > 0 &&
+        message.text.trim().length === 0
+      ) {
+        skipped.add(entry);
+      } else {
+        followingOutput = entry;
+      }
+    } else if (
+      entry.kind === "work" &&
+      entry.entry.tone !== "error" &&
+      workLogEntryIsToolLike(entry.entry)
+    ) {
+      followingOutput = entry;
+    }
+  }
+  return skipped.size === 0 ? entries : entries.filter((entry) => !skipped.has(entry));
+}
+
 function timelineRowEntries(
   input: Pick<
     MessagesTimelineRowsInput,
@@ -1563,7 +1604,10 @@ function timelineRowEntries(
   >,
 ) {
   const visibility = input.toolCallVisibility ?? "showAll";
-  const entries = input.timelineEntries;
+  const entries =
+    visibility === "zen"
+      ? input.timelineEntries
+      : withoutBlankInterimAssistantMessages(input.timelineEntries);
   let shown = entries;
   if (visibility === "zen") {
     const answering = input.isWorking && input.latestRun?.turnEnded !== true;
