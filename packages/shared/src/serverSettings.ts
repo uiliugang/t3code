@@ -9,6 +9,7 @@ import {
   isProviderAvailable,
   isUnconfiguredDefaultInstanceEnabled,
   resolveProjectProviderInstanceEnabled,
+  resolvePromptSuggestionPreference,
   resolveProviderInstanceEnabled,
   resolveTextGenerationSelectionEnabled,
   textGeneratorForSelection,
@@ -524,6 +525,7 @@ export function applyServerSettingsPatch(
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
+    promptSuggestionPreference,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -613,9 +615,30 @@ export function applyServerSettingsPatch(
       },
     };
   }
-  const next = deepMerge(current, patchForMerge);
+  const { promptSuggestionPreference: previousPreference, ...currentWithoutPreference } = current;
+  const next = deepMerge(currentWithoutPreference, patchForMerge);
+  let nextPreference = previousPreference;
+  if (promptSuggestionPreference === null) {
+    nextPreference = undefined;
+  } else if (promptSuggestionPreference !== undefined) {
+    const preference = resolvePromptSuggestionPreference(
+      current,
+      promptSuggestionPreference.legacyModelEnabled === true,
+    );
+    nextPreference = {
+      enabled: promptSuggestionPreference.enabled ?? preference.enabled,
+      source: promptSuggestionPreference.source ?? preference.source,
+    };
+  } else if (previousPreference && patch.promptSuggestionsEnabled !== undefined) {
+    if (patch.promptSuggestionsEnabled) {
+      nextPreference = { enabled: true, source: "native" };
+    } else if (previousPreference.source === "native") {
+      nextPreference = { enabled: false, source: "native" };
+    }
+  }
   const nextWithReplacementsBase = {
     ...next,
+    ...(nextPreference === undefined ? {} : { promptSuggestionPreference: nextPreference }),
     favorites,
     providerModelPreferences: nextModelPreferences,
     ...(worktreeCleanupPatch === undefined

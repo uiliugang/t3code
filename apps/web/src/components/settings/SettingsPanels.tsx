@@ -1,3 +1,4 @@
+import { PromptSuggestionSettingsRow } from "./PromptSuggestionSettingsRow";
 import type { ProviderInstanceId } from "@t3tools/contracts";
 import type {
   DiffLayout,
@@ -892,7 +893,8 @@ export function GeneralSettingsPanel() {
           description={
             <T>
               Fold working and monitoring threads into a Working section. They return to the top of
-              the inbox when they need you. The boring sidebar in Labs has no Working section.
+              the inbox when they need you. The grouped sidebar in Appearance has no Working
+              section.
             </T>
           }
           resetAction={
@@ -1173,7 +1175,9 @@ export function ChatSettingsPanel() {
   const updateSettings = useUpdateScopedSettings();
 
   return (
-    <SettingsPageContainer>
+    <SettingsPageContainer
+      searchTargetFallbacks={{ "composer-predictions": "prompt-suggestions-beta" }}
+    >
       <SettingsSection id="composer" title={gt("Composer")}>
         <SettingsRow
           {...setting("composer-rich-text")}
@@ -1201,33 +1205,7 @@ export function ChatSettingsPanel() {
             />
           }
         />
-        <SettingsRow
-          {...setting("composer-predictions")}
-          description={t(
-            "Tab or click to accept; Esc to dismiss. Uses your text generation model and counts toward its usage.",
-          )}
-          resetAction={
-            settings.showPredictedMessages !== DEFAULT_UNIFIED_SETTINGS.showPredictedMessages ? (
-              <SettingResetButton
-                label={t("predicted messages")}
-                onClick={() =>
-                  updateSettings({
-                    showPredictedMessages: DEFAULT_UNIFIED_SETTINGS.showPredictedMessages,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.showPredictedMessages}
-              onCheckedChange={(checked) =>
-                updateSettings({ showPredictedMessages: Boolean(checked) })
-              }
-              aria-label={t("Show predicted messages")}
-            />
-          }
-        />
+        <PromptSuggestionSettingsRow />
         <SettingsRow
           {...setting("send-shortcut")}
           description={t("Choose when Enter sends a prompt or inserts a new line")}

@@ -2,6 +2,7 @@ import { migrateVirtualModels, resolveVirtualModel } from "@t3tools/shared/virtu
 import {
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
+  nativePromptSuggestionsEnabled,
   ProjectId,
   ProjectScript,
   keepUnknownOverrideKeys,
@@ -256,6 +257,7 @@ const normalizeServerSettings = (
 export interface SettingsClient {
   readonly secretReferences: boolean;
   readonly httpUsageLimitSources?: boolean;
+  readonly promptSuggestionSettings?: boolean;
 }
 
 export function redactServerSettingsForClient(
@@ -275,6 +277,9 @@ export function redactServerSettingsForClient(
       );
   return {
     ...shaped,
+    ...(!client.promptSuggestionSettings
+      ? { promptSuggestionsEnabled: nativePromptSuggestionsEnabled(shaped) }
+      : {}),
     secretProviders: withoutUnknownSecretProviderConfigs(shaped),
     // Older clients decode only "cliproxy" sources and reject the whole settings payload otherwise.
     usageLimitSources: client.httpUsageLimitSources

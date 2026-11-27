@@ -90,7 +90,12 @@ const make = Effect.gen(function* () {
       const empty = { sourceRunId: input.sourceRunId, text: null };
       const shell = yield* projections.getThreadShell(input.threadId);
       if (threadPredictionSourceRun(shell) !== input.sourceRunId || !shell) return empty;
-      const scoped = resolveProjectSettings(yield* settings.getSettings, shell.projectId).settings;
+      const server = yield* settings.getSettings;
+      const preference = server.promptSuggestionPreference;
+      if (preference && (!preference.enabled || preference.source !== "text-generation")) {
+        return empty;
+      }
+      const scoped = resolveProjectSettings(server, shell.projectId).settings;
       const modelSelection = resolveVirtualModel(scoped, scoped.textGenerationModelSelection);
       if (modelSelection.virtualModelId) return empty;
       const text = yield* Cache.get(

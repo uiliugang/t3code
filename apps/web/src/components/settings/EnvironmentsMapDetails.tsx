@@ -587,7 +587,7 @@ function linksNote(node: FleetEnvironmentNode, gt: GT): string | null {
   }
   switch (node.outgoing) {
     case "off":
-      return gt("To link from {label}, turn on Linked environments in its Labs settings.", {
+      return gt("To link from {label}, enable linking for it below.", {
         label: node.label,
       });
     case "unknown":

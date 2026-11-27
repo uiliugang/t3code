@@ -29,13 +29,17 @@ export function useComposerPrediction(
       (provider) => provider.instanceId === thread.modelSelection.instanceId,
     )?.driver,
     nativeEnabled: config?.settings.promptSuggestionsEnabled === true,
+    preference: config?.settings.promptSuggestionPreference,
     textGenerationEnabled:
       config?.threadPredictions === true &&
       canPredict &&
       AsyncResult.isSuccess(preferences) &&
       preferences.value.showPredictedMessages === true,
   });
-  const enabled = available && source !== null;
+  const enabled =
+    available &&
+    (source === "native" ||
+      (source === "text-generation" && canPredict && config?.threadPredictions === true));
   const [controller] = useState(() =>
     createComposerPredictionController(async ({ environmentId, ...request }) => {
       const result = await runAtomCommand(

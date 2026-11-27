@@ -5,6 +5,7 @@ import {
   CommandId,
   isOrchestrationV2WorkActive,
   ModelSelection,
+  nativePromptSuggestionsEnabled,
   type OrchestrationV2AppThread,
   OrchestrationV2DomainEvent,
   OrchestrationV2ProviderSession,
@@ -503,7 +504,7 @@ export const layerWithOptions = (
       const promptSuggestionsEnabled = Option.isNone(serverSettings)
         ? Effect.succeed(false)
         : serverSettings.value.getSettings.pipe(
-            Effect.map((settings) => settings.promptSuggestionsEnabled),
+            Effect.map(nativePromptSuggestionsEnabled),
             Effect.orElseSucceed(() => false),
           );
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(

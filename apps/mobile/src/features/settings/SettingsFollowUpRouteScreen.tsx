@@ -1,4 +1,11 @@
 import { msg, useGT, useMessages } from "gt-react-native";
+import {
+  AuthSettingsWriteScope,
+  isManagedSettingPath,
+  resolvePromptSuggestionPreference,
+  type PromptSuggestionPreference,
+} from "@t3tools/contracts";
+import { useState } from "react";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -13,6 +20,9 @@ import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoi
 import { SettingsSection } from "./components/SettingsSection";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
+import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
+import { serverEnvironment } from "../../state/server";
+import { useEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { SettingsScreen } from "./components/SettingsScreen";
 
 const FOLLOW_UP_OPTIONS: ReadonlyArray<{
@@ -52,21 +62,7 @@ export function SettingsFollowUpRouteScreen() {
       contentContainerClassName="gap-3 px-5 pt-4"
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
     >
-      <SettingsSection title={t("Composer")}>
-        <ListToggleRow
-          label={t("Show predicted messages")}
-          description={t(
-            "Predict your next message from the conversation. Uses your text generation model and counts toward its usage.",
-          )}
-          disabled={!preferencesReady}
-          value={
-            AsyncResult.isSuccess(preferencesResult)
-              ? (preferencesResult.value.showPredictedMessages ?? false)
-              : false
-          }
-          onValueChange={(showPredictedMessages) => savePreferences({ showPredictedMessages })}
-        />
-      </SettingsSection>
+      <PromptSuggestionSettingsSections />
       <SettingsSection title={gt("While the agent is running")}>
         {FOLLOW_UP_OPTIONS.map((option, index) => (
           <SettingsChoiceRow
@@ -92,4 +88,142 @@ export function SettingsFollowUpRouteScreen() {
   );
 
   return <SettingsScreen title={t("Chat")}>{content}</SettingsScreen>;
+}
+
+function PromptSuggestionSettingsSections() {
+  const gt = useGT();
+  const { environments } = useEnvironments();
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const save = useAtomCommand(saveMobilePreferences);
+  const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
+  const showPredictedMessages = ready && preferences.value.showPredictedMessages === true;
+  const connected = environments.filter(
+    (environment) =>
+      environment.connection.phase === "connected" && environment.serverConfig !== null,
+  );
+  const supported = connected.filter(
+    ({ serverConfig }) => serverConfig?.promptSuggestionSettings === true,
+  );
+
+  const writable = useEnvironmentsWithScope(supported, AuthSettingsWriteScope);
+  const needsDevicePreference =
+    supported.length === 0 ||
+    supported.length !== connected.length ||
+    supported.some(
+      ({ environmentId, serverConfig }) =>
+        !writable.has(environmentId) &&
+        serverConfig?.settings.promptSuggestionPreference === undefined,
+    );
+
+  return (
+    <>
+      {supported.map((environment) => (
+        <PromptSuggestionEnvironmentSection
+          key={environment.environmentId}
+          environment={environment}
+          showEnvironment={connected.length > 1}
+          showPredictedMessages={showPredictedMessages}
+          preferencesReady={ready}
+        />
+      ))}
+      {needsDevicePreference && (
+        <SettingsSection title={gt("Composer")}>
+          <ListToggleRow
+            label={gt("Show predicted messages")}
+            description={gt(
+              "Uses your text generation model and counts toward its usage when an environment follows this device's preferences.",
+            )}
+            disabled={!ready}
+            value={showPredictedMessages}
+            onValueChange={(value) => save({ showPredictedMessages: value })}
+          />
+        </SettingsSection>
+      )}
+    </>
+  );
+}
+
+function PromptSuggestionEnvironmentSection({
+  environment,
+  showEnvironment,
+  showPredictedMessages,
+  preferencesReady,
+}: {
+  readonly environment: EnvironmentPresentation;
+  readonly showEnvironment: boolean;
+  readonly showPredictedMessages: boolean;
+  readonly preferencesReady: boolean;
+}) {
+  const gt = useGT();
+  const { environmentId, label, serverConfig } = environment;
+  const canWrite = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const update = useAtomCommand(serverEnvironment.updateSettings);
+  const [saving, setSaving] = useState(false);
+  if (!serverConfig) return null;
+  const { settings, managedPolicy } = serverConfig;
+  const managed = isManagedSettingPath(managedPolicy, "promptSuggestionPreference");
+  const disabled =
+    managed || !canWrite || saving || (!settings.promptSuggestionPreference && !preferencesReady);
+  const preference = resolvePromptSuggestionPreference(settings, showPredictedMessages);
+  const nativeManaged =
+    preference.source === "native" &&
+    isManagedSettingPath(managedPolicy, "promptSuggestionsEnabled");
+
+  const save = (change: Partial<PromptSuggestionPreference>) => {
+    if (disabled) return;
+    setSaving(true);
+    void update({
+      environmentId,
+      input: {
+        patch: {
+          promptSuggestionPreference: { ...change, legacyModelEnabled: showPredictedMessages },
+        },
+      },
+    }).finally(() => setSaving(false));
+  };
+
+  return (
+    <SettingsSection title={showEnvironment ? gt("Composer · {label}", { label }) : gt("Composer")}>
+      <ListToggleRow
+        label={gt("Suggest next prompt")}
+        description={
+          managed
+            ? gt("Managed by {organization}.", { organization: managedPolicy?.organization ?? "" })
+            : nativeManaged
+              ? gt("Native suggestions are managed by {organization}.", {
+                  organization: managedPolicy?.organization ?? "",
+                })
+              : gt("Show a suggestion in the empty composer after a turn.")
+        }
+        disabled={disabled || nativeManaged}
+        value={preference.enabled}
+        onValueChange={(enabled) => save({ enabled })}
+      />
+      <SettingsChoiceRow
+        label={gt("Native suggestions")}
+        description={gt(
+          "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
+        )}
+        selected={preference.source === "native"}
+        disabled={disabled}
+        separated
+        onPress={() => save({ source: "native" })}
+      />
+      <SettingsChoiceRow
+        label={gt("Text generation model")}
+        description={gt(
+          "Model suggestions use your text generation model and count toward its usage.",
+        )}
+        selected={preference.source === "text-generation"}
+        disabled={disabled}
+        separated
+        onPress={() => save({ source: "text-generation" })}
+      />
+      <Text className="px-4 pb-3 text-sm text-foreground-muted">
+        {gt(
+          "Restart running Claude sessions after changing suggestion settings. Until restarted, those sessions may still request native suggestions.",
+        )}
+      </Text>
+    </SettingsSection>
+  );
 }

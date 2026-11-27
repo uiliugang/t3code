@@ -7,7 +7,7 @@ Connect external agents (Claude Code or Codex in your terminal, ChatGPT, or any 
 Open the command palette (`Cmd/Ctrl+K`) and run **Use T3 Code in another app (MCP)** (or open **Settings → Sharing & access**), pick your app, and follow the prompts.
 
 - Cloud assistants (like ChatGPT or Claude) require **T3 Connect** enabled on the environment.
-- To also reach other machines through the same connection, enable **Settings → Labs → Linked environments** and [link them](./remote-access.md#link-another-environment).
+- To also reach other machines through the same connection, enable **Settings → Environments → Enable linked environments** and [link them](./remote-access.md#link-another-environment).
 - To copy the raw MCP endpoint (`https://<environment-address>/mcp`), open an environment's menu in **Settings → Environments → Copy MCP URL**. OAuth requires `https://` or `localhost` (plain `http://` LAN/Tailscale addresses cannot complete OAuth).
 
 ### CLI clients and ChatGPT

@@ -89,7 +89,7 @@ open the environment in **Settings → Environments**, choose the matching code 
 
 ### Link two hosts over Noise
 
-Enable **Settings → Labs → Linked environments** on both hosts. Run
+Enable **Settings → Environments → Enable linked environments** on both hosts. Run
 `t3 auth connect-device noise-pin` on each and exchange the environment IDs
 and public keys through a channel you trust. Generate one shared token for
 this pair with `node -p "require('node:crypto').randomBytes(32).toString('base64url')"`.
@@ -371,10 +371,9 @@ This installs an AppArmor profile for Chrome's sandbox plus missing libraries an
 
 Link two T3 Code machines (beta) so agents on one can launch, message, delegate to, and manage threads on the other.
 
-Linked environments is a beta enabled by default. Manage it for both machines in **Settings →
-Labs**; on mobile, **Settings → Labs** lists each connected machine. On a
-headless server, open its address in a browser and pair to reach its **Settings
-→ Labs**, or add `"linkedEnvironmentsEnabled": true` to `settings.json` in its
+Linked environments is enabled by default. Manage it for both machines in **Settings →
+Environments**. On mobile, open each machine's details from that page. On a headless
+server, open its address in a browser and pair to reach the same settings page, or add `"linkedEnvironmentsEnabled": true` to `settings.json` in its
 `userdata` directory, such as `~/.t3/userdata/settings.json`; a running server
 picks it up. While it is
 off on either machine, agents start nothing over a link between them. A task

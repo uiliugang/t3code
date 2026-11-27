@@ -100,7 +100,7 @@ vi.mock(import("../../state/entities"), async (original) => ({
   useServerConfigs: () => new Map([[environmentId, config]]),
 }));
 
-import { LabsSettingsPanel } from "./LabsSettingsPanel";
+import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
 import { SettingsScopeProvider } from "./SettingsScopeContext";
 
 const [group] = buildSidebarProjectSnapshots({
@@ -110,20 +110,20 @@ const [group] = buildSidebarProjectSnapshots({
   resolveEnvironmentLabel: () => "Desk",
 });
 
-it("shows Boring sidebar device preferences read-only while a project is selected", async () => {
+it("shows Boring sidebar device preferences as device settings even with an inherited project filter", async () => {
   await ensureClientSettingsHydrated();
   await persistClientSettingsPatch(
     { boringSidebarEnabled: true, boringSidebarMultilineRows: false },
     async () => {},
   );
   await using screen = await render(
-    <SettingsScopeProvider search={{ project: group!.projectKey }} onChange={() => {}}>
-      <LabsSettingsPanel />
+    <SettingsScopeProvider deviceOnly search={{ project: group!.projectKey }} onChange={() => {}}>
+      <AppearanceSettingsPanel />
     </SettingsScopeProvider>,
-    { router: "/settings/labs" },
+    { router: "/settings/appearance" },
   );
 
   for (const name of ["Boring sidebar (group by project)", "Two-line folder rows"]) {
-    expect(screen.getByRole("switch", { name }).element().closest("[inert]")).not.toBeNull();
+    await expect.element(screen.getByRole("switch", { name })).toBeEnabled();
   }
 });

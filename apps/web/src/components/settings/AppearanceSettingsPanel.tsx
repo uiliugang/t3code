@@ -586,6 +586,7 @@ export function AppearanceSettingsPanel() {
             />
           }
         />
+        <BoringSidebarRow />
         <SettingsRow
           {...searchableSetting("repository-terminal-button")}
           description={t("Show Terminal in each repository's Open in menu.")}
@@ -603,5 +604,58 @@ export function AppearanceSettingsPanel() {
 
       <TypographySection />
     </SettingsPageContainer>
+  );
+}
+
+function BoringSidebarRow() {
+  const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("boring-sidebar")}
+      description={t(
+        "Group sidebar threads into project folders. Pinned threads stay on top, and Snoozed and Settled stay below the folders.",
+      )}
+      control={
+        <Switch
+          checked={settings.boringSidebarEnabled}
+          onCheckedChange={(checked) => updateSettings({ boringSidebarEnabled: Boolean(checked) })}
+          aria-label={t("Boring sidebar (group by project)")}
+        />
+      }
+    >
+      {settings.boringSidebarEnabled ? (
+        <div className="mt-2 mb-2 ps-3">
+          <BoringSidebarMultilineRow />
+        </div>
+      ) : null}
+    </SettingsRow>
+  );
+}
+
+function BoringSidebarMultilineRow() {
+  const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("boring-sidebar-multiline")}
+      className="px-0 py-2 sm:px-0"
+      description={t(
+        "Show folder threads on two lines: the title, then the branch, pull request, and agent.",
+      )}
+      control={
+        <Switch
+          checked={settings.boringSidebarMultilineRows}
+          onCheckedChange={(checked) =>
+            updateSettings({ boringSidebarMultilineRows: Boolean(checked) })
+          }
+          aria-label={t("Two-line folder rows")}
+        />
+      }
+    />
   );
 }

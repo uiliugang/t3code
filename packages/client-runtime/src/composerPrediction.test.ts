@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProviderDriverKind, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProviderDriverKind,
+  resolvePromptSuggestionPreference,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   composerPredictionKey,
   createComposerPredictionController,
@@ -33,6 +39,42 @@ describe("composer predictions", () => {
       ).toBe(expected);
     },
   );
+
+  it.each([
+    ["codex", true, "text-generation", "text-generation"],
+    ["claudeAgent", false, "native", null],
+    ["codex", false, "text-generation", null],
+    ["opencode", true, "native", null],
+    ["claudeAgent", true, "native", "native"],
+  ] as const)(
+    "honors the selected source for %s when enabled is %s and source is %s",
+    (driver, enabled, source, expected) => {
+      expect(
+        resolveComposerPredictionSource({
+          driver: ProviderDriverKind.make(driver),
+          nativeEnabled: true,
+          textGenerationEnabled: true,
+          preference: { enabled, source },
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it("keeps the source of a saved disabled preference and reads legacy preferences", () => {
+    expect(
+      resolvePromptSuggestionPreference(
+        {
+          promptSuggestionsEnabled: true,
+          promptSuggestionPreference: { enabled: false, source: "text-generation" },
+        },
+        true,
+      ),
+    ).toEqual({ enabled: false, source: "text-generation" });
+    expect(resolvePromptSuggestionPreference({ promptSuggestionsEnabled: false }, true)).toEqual({
+      enabled: true,
+      source: "text-generation",
+    });
+  });
 
   it("hides late results while disabled and reuses them when enabled again", async () => {
     const pending = Promise.withResolvers<string | null>();

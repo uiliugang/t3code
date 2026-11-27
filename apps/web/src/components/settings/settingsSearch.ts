@@ -570,13 +570,13 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "boring-sidebar",
     title: msg("Boring sidebar (group by project)"),
-    to: "/settings/labs",
+    to: "/settings/appearance",
     searchTerms: [msg("beta folders project tree classic sidebar")],
   },
   {
     id: "boring-sidebar-multiline",
     title: msg("Two-line folder rows"),
-    to: "/settings/labs",
+    to: "/settings/appearance",
     // Shown inside the boring sidebar row only while it is on, so search lands on the parent.
     targetId: "boring-sidebar",
     searchTerms: [msg("beta boring sidebar folder rows multiline branch pull request details")],
@@ -629,9 +629,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "linked-environments-beta",
-    title: msg("Linked environments"),
-    to: "/settings/labs",
-    scope: "environment",
+    title: msg("Enable linked environments"),
+    to: "/settings/connections",
     searchTerms: [msg("beta link another machine vps peer agents work there delegate")],
   },
   {
@@ -653,11 +652,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "prompt-suggestions-beta",
     title: msg("Suggest next prompt"),
-    to: "/settings/labs",
-    scope: "environment",
+    to: "/settings/chat",
     searchTerms: [
       msg("beta tab autocomplete predict next message claude codex ghost text"),
-      "原生 预测 建议 消息",
+      "原生 预测 建议 消息 模型",
     ],
   },
   {
@@ -672,7 +670,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "worktree-fast-checkout",
     title: msg("Fast worktree checkout"),
-    to: "/settings/labs",
+    to: "/settings/worktrees",
     scope: "environment",
     fastWorktreeCheckoutOnly: true,
     searchTerms: [
@@ -906,6 +904,8 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "composer-predictions",
     title: msg("Show predicted messages"),
     to: "/settings/chat",
+    targetId: "prompt-suggestions-beta",
+    secondary: true,
     searchTerms: ["prediction predict next message suggestion autocomplete tab 预测 消息"],
   },
   {
@@ -1687,6 +1687,7 @@ const SPLIT_SETTINGS_PATHS: ReadonlySet<string> = new Set([
   "/settings/appearance",
   "/settings/source-control",
   "/settings/connections",
+  "/settings/labs",
   ...Object.keys(RENAMED_SETTINGS_PATHS),
 ]);
 // Section anchors that moved but are not search results themselves.

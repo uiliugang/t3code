@@ -6,10 +6,12 @@ import * as Path from "effect/Path";
 
 import {
   DEFAULT_SERVER_SETTINGS,
+  nativePromptSuggestionsEnabled,
   ProviderDriverKind,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 import { BUILT_IN_DRIVERS } from "../provider/builtInDrivers.ts";
 import * as ManagedPolicy from "./ManagedPolicy.ts";
@@ -77,6 +79,70 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
       if (value === undefined) continue;
       const managed = ManagedSettings.makeManagedSettings({ [path]: { value, locked: false } });
       assert.equal(managed._tag, "Valid", path);
+    }
+  });
+
+  it("applies a legacy suggestion lock only to the native source", () => {
+    const policy = ManagedSettings.makeManagedSettings({
+      promptSuggestionsEnabled: { value: false, locked: true },
+    });
+    if (policy._tag !== "Valid") throw new Error(policy.reason);
+    const configured = {
+      ...DEFAULT_SERVER_SETTINGS,
+      promptSuggestionPreference: { enabled: true, source: "native" as const },
+    };
+
+    assert.isTrue(nativePromptSuggestionsEnabled(configured));
+    assert.isFalse(nativePromptSuggestionsEnabled(policy.settings.applyLocks(configured)));
+    const sourceOnly = policy.settings.vetWrite(
+      configured,
+      { ...configured, promptSuggestionPreference: { enabled: true, source: "text-generation" } },
+      { promptSuggestionPreference: { source: "text-generation" } },
+    );
+    if (sourceOnly._tag !== "Allowed") throw new Error(sourceOnly.path);
+    assert.deepEqual(sourceOnly.settings.promptSuggestionPreference, {
+      enabled: false,
+      source: "text-generation",
+    });
+    for (const enabled of [false, true]) {
+      const model = {
+        ...configured,
+        promptSuggestionPreference: { enabled, source: "text-generation" as const },
+      };
+      assert.deepEqual(
+        policy.settings.applyLocks(model).promptSuggestionPreference,
+        model.promptSuggestionPreference,
+      );
+      assert.equal(
+        policy.settings.vetWrite(configured, model, {
+          promptSuggestionPreference: { source: "text-generation", enabled },
+        })._tag,
+        "Allowed",
+      );
+    }
+  });
+
+  it("migrates suggestions using the managed native switch and the device model switch", () => {
+    const policy = ManagedSettings.makeManagedSettings({
+      promptSuggestionsEnabled: { value: false, locked: true },
+    });
+    if (policy._tag !== "Valid") throw new Error(policy.reason);
+    const legacy = { ...DEFAULT_SERVER_SETTINGS, promptSuggestionsEnabled: true };
+
+    for (const legacyModelEnabled of [false, true]) {
+      const patch = {
+        promptSuggestionPreference: { legacyModelEnabled, source: "text-generation" as const },
+      };
+      const result = policy.settings.vetWrite(
+        legacy,
+        applyServerSettingsPatch(legacy, patch),
+        patch,
+      );
+      if (result._tag !== "Allowed") throw new Error(result.path);
+      assert.deepEqual(result.settings.promptSuggestionPreference, {
+        enabled: legacyModelEnabled,
+        source: "text-generation",
+      });
     }
   });
 

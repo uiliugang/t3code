@@ -1037,6 +1037,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     driver: selectedProvider,
     nativeEnabled: settings.promptSuggestionsEnabled,
     textGenerationEnabled: settings.showPredictedMessages,
+    preference: settings.promptSuggestionPreference,
   });
   const predictionAllowed =
     routeKind === "server" &&

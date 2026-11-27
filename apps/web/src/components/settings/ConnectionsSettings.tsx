@@ -50,6 +50,7 @@ import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { EnvironmentNameMenu } from "./EnvironmentNameMenu";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { EnvironmentsMap } from "./EnvironmentsMap";
+import { LinkedEnvironmentEnableSettings } from "./LinkedEnvironmentEnableSettings";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
 import { addEnvironmentPrefillAtom } from "~/state/linkedThreadView";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -1509,6 +1510,7 @@ function ConnectionsSettingsContent({
           }}
         />
       ) : null}
+      <LinkedEnvironmentEnableSettings />
       {environmentsView === "list"
         ? peerLinkHosts.map((environment, index) => (
             <LinkedEnvironmentsSettings

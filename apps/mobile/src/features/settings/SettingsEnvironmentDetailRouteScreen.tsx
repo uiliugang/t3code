@@ -8,6 +8,7 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import {
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
+  isManagedSettingPath,
   AuthOrchestrationReadScope,
   type EnvironmentId,
   type ServerProvider,
@@ -41,6 +42,7 @@ import { OutdatedServerUpdateSection } from "./OutdatedServerUpdateSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import {
   canMaintainEnvironment,
   canUpdateEnvironmentProvider,
@@ -80,13 +82,13 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
       .serverUpdateRequired === true;
   const updateServer = useAtomCommand(serverEnvironment.updateServer);
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
-  const renameEnvironment = useAtomCommand(serverEnvironment.updateSettings, {
-    label: "rename environment",
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     reportFailure: true,
   });
-  const canRename =
-    useEnvironmentScope(environmentId, AuthSettingsWriteScope) &&
-    config?.environment.capabilities.environmentName === true;
+  const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const canRename = canWriteSettings && config?.environment.capabilities.environmentName === true;
+  const [savingLinking, setSavingLinking] = useState(false);
+  const linkingManaged = isManagedSettingPath(config?.managedPolicy, "linkedEnvironmentsEnabled");
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const savedName = config?.settings.environmentName ?? "";
@@ -94,7 +96,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const saveName = async (environmentName: string | null) => {
     if (!canRename || renaming) return;
     setRenaming(true);
-    const result = await renameEnvironment({
+    const result = await updateSettings({
       environmentId,
       input: { patch: { environmentName } },
     });
@@ -274,6 +276,32 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                 navigation.navigate("SettingsEnvironmentNew", { routeFor: environmentId })
               }
             />
+            {config?.environment.capabilities.peerLinks === true && (
+              <SettingsSection title={gt("Linking between environments")}>
+                <SettingsSwitchRow
+                  icon="link"
+                  label={gt("Enable linked environments")}
+                  subtitle={
+                    linkingManaged
+                      ? gt("Managed by {organization}.", {
+                          organization: config.managedPolicy?.organization ?? "",
+                        })
+                      : gt(
+                          "Allow agents on this machine to work across linked environments. When disabled, running tasks finish and new tasks cannot start over a link.",
+                        )
+                  }
+                  value={config.settings.linkedEnvironmentsEnabled}
+                  disabled={!connected || !canWriteSettings || linkingManaged || savingLinking}
+                  onValueChange={(linkedEnvironmentsEnabled) => {
+                    setSavingLinking(true);
+                    void updateSettings({
+                      environmentId,
+                      input: { patch: { linkedEnvironmentsEnabled } },
+                    }).finally(() => setSavingLinking(false));
+                  }}
+                />
+              </SettingsSection>
+            )}
             {outdated ? (
               <OutdatedServerUpdateSection
                 environmentId={environmentId}

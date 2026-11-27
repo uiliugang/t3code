@@ -98,11 +98,17 @@ Press `ArrowUp` in an empty composer to cycle backward through earlier prompts i
 
 ## Suggested next prompt
 
-Enable **Settings → Labs → Suggest next prompt** (web and desktop) to show a predicted next message in the empty composer after a Claude or Codex turn completes.
+Open **Settings → Chat → Composer** to enable suggestions after a turn and choose one source
+for the environment. An empty composer shows the suggestion. Press `Tab` to accept or
+`Escape` to dismiss.
 
-- Press `Tab` to accept or `Escape` to dismiss.
-- Each suggestion uses one cached request against your plan's usage. Claude skips suggestions on the first turn and near usage limits.
-- Codex requires CLI version 0.165+ (update in **Settings → Providers**). Open Claude threads pick up the setting after restarting.
+- **Native suggestions** use Claude or Codex and make one cached request against your plan's
+  usage. Claude skips the first turn and turns near usage limits. Codex requires CLI 0.165+.
+- **Text generation model** uses the environment's configured text generation model and counts
+  toward that model's usage.
+
+Restart running Claude sessions after changing suggestion settings. Until restarted, those
+sessions may still request native suggestions.
 
 ## Edit an earlier prompt
 
