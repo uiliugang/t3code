@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -23,7 +24,9 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import type { SourceControlProcessInput } from "@t3tools/source-control-core/server/SourceControlHost";
 
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
+import { outcomeFromExit } from "../observability/Attributes.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import { checkpointSubcommand, makeCheckpointGitTrace } from "./checkpointGitTrace.ts";
 
 export interface VcsProcessInput {
   readonly operation: string;
@@ -79,10 +82,13 @@ export const GIT_INDEX_LOCKED_DETAIL =
   "Git's index is locked. Wait for other Git operations to finish, then try again.";
 
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
+const CHECKPOINT_CLEAN_HEAD_OPERATION = "GitVcsDriver.checkpoints.resolveCleanHead";
+const SLOW_CHECKPOINT_GIT_MS = 1_000;
 
 // Caller operations are diagnostic strings; only known labels may become metric attributes.
 const gitMetricOperations = new Set([
   CHECKPOINT_CAPTURE_OPERATION,
+  CHECKPOINT_CLEAN_HEAD_OPERATION,
   "GitVcsDriver.checkpoints.deleteCheckpointRefs",
   "GitVcsDriver.checkpoints.diffCheckpoints",
   "GitVcsDriver.checkpoints.hasHeadCommit",
@@ -245,8 +251,10 @@ export const make = Effect.gen(function* () {
   const spawn = Effect.fn("VcsProcess.spawn")(function* (
     input: VcsProcessInput,
     baseError: VcsProcessErrorContext,
+    trace?: ReturnType<typeof makeCheckpointGitTrace>,
   ) {
     let failedExit = false;
+    const processTrace = trace?.startProcess();
     const execution = processRunner
       .run({
         command: input.command,
@@ -256,6 +264,7 @@ export const make = Effect.gen(function* () {
         ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
         ...(input.onStdoutChunk !== undefined ? { onStdoutChunk: input.onStdoutChunk } : {}),
         ...(input.onSpawn !== undefined ? { onSpawn: input.onSpawn } : {}),
+        ...(processTrace ? { onFd3Chunk: processTrace.onChunk } : {}),
         env: {
           ...(input.command === "git"
             ? unsetInheritedRepositoryEnv(process.env, hostPlatform)
@@ -264,6 +273,7 @@ export const make = Effect.gen(function* () {
           // LANGUAGE leaves LC_CTYPE, which hooks inherit, alone.
           ...(input.command === "git" ? { LANGUAGE: "C" } : {}),
           ...input.env,
+          ...(trace ? { GIT_TRACE2_EVENT: "3" } : {}),
           ...serverGitConfigEnv({ ...process.env, ...input.env }, hostPlatform),
         },
         timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -306,23 +316,30 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-    return yield* input.command === "git"
-      ? execution.pipe(
-          withMetrics({
-            counter: gitCommandsTotal,
-            timer: gitCommandDuration,
-            attributes: {
-              operation: gitMetricOperations.has(input.operation) ? input.operation : "other",
-            },
-            outcomeAttributes: (outcome) => ({
-              outcome: outcome === "success" && failedExit ? "failure" : outcome,
+    const measured =
+      input.command === "git"
+        ? execution.pipe(
+            withMetrics({
+              counter: gitCommandsTotal,
+              timer: gitCommandDuration,
+              attributes: {
+                operation: gitMetricOperations.has(input.operation) ? input.operation : "other",
+              },
+              outcomeAttributes: (outcome) => ({
+                outcome: outcome === "success" && failedExit ? "failure" : outcome,
+              }),
             }),
-          }),
-        )
-      : execution;
+          )
+        : execution;
+    return yield* processTrace
+      ? measured.pipe(Effect.ensuring(Effect.sync(processTrace.finish)))
+      : measured;
   });
 
-  const runUnbounded = Effect.fn("VcsProcess.runUnbounded")(function* (input: VcsProcessInput) {
+  const runUnbounded = Effect.fn("VcsProcess.runUnbounded")(function* (
+    input: VcsProcessInput,
+    trace?: ReturnType<typeof makeCheckpointGitTrace>,
+  ) {
     const baseError = {
       operation: input.operation,
       command: input.command,
@@ -330,7 +347,7 @@ export const make = Effect.gen(function* () {
       argumentCount: input.args.length,
     };
 
-    let result = yield* spawn(input, baseError);
+    let result = yield* spawn(input, baseError, trace);
 
     if (
       hostPlatform === "darwin" &&
@@ -350,6 +367,7 @@ export const make = Effect.gen(function* () {
           ),
         },
         baseError,
+        trace,
       );
     }
 
@@ -401,13 +419,52 @@ export const make = Effect.gen(function* () {
   });
 
   const run = Effect.fn("VcsProcess.run")(function* (input: VcsProcessInput) {
-    const bounded = vcsProcesses.withPermits(1)(runUnbounded(input));
+    const capture = input.operation === CHECKPOINT_CAPTURE_OPERATION;
     if (
       input.command === "git" &&
-      input.operation === CHECKPOINT_CAPTURE_OPERATION &&
-      input.onStdoutChunk === undefined
+      (capture || input.operation === CHECKPOINT_CLEAN_HEAD_OPERATION)
     ) {
-      return yield* bounded.pipe(
+      const retryCapture = capture && input.onStdoutChunk === undefined;
+      const subcommand = checkpointSubcommand(input.args);
+      yield* Effect.annotateCurrentSpan("git.subcommand", subcommand);
+      const clock = yield* Clock.Clock;
+      const now = () => Number(clock.currentTimeNanosUnsafe() / 1_000_000n);
+      const attempt = Effect.suspend(() => {
+        const start = now();
+        let acquired: number | undefined;
+        const trace =
+          hostPlatform === "win32"
+            ? undefined
+            : makeCheckpointGitTrace(() => clock.currentTimeMillisUnsafe());
+        const bounded = vcsProcesses.withPermits(1)(
+          Effect.suspend(() => {
+            acquired = now();
+            return runUnbounded(input, trace);
+          }),
+        );
+        const runAttempt =
+          !retryCapture && input.concurrency ? keyedPermit(input.concurrency)(bounded) : bounded;
+        return runAttempt.pipe(
+          Effect.onExit((exit) => {
+            const end = now();
+            const totalMs = end - start;
+            if (totalMs < SLOW_CHECKPOINT_GIT_MS) return Effect.void;
+            const timing = {
+              subcommand,
+              totalMs,
+              queueMs: (acquired ?? end) - start,
+              executionMs: acquired === undefined ? 0 : end - acquired,
+              outcome: outcomeFromExit(exit),
+              ...trace?.summary(),
+            };
+            return Effect.annotateCurrentSpan("git.slow_call", timing).pipe(
+              Effect.andThen(Effect.logWarning("slow checkpoint Git command", timing)),
+            );
+          }),
+        );
+      });
+      if (!retryCapture) return yield* attempt;
+      return yield* attempt.pipe(
         Effect.tapError((error) =>
           Effect.logDebug("checkpoint Git command failed", {
             operation: input.operation,
@@ -421,6 +478,7 @@ export const make = Effect.gen(function* () {
         }),
       );
     }
+    const bounded = vcsProcesses.withPermits(1)(runUnbounded(input));
     const shared = input.command === "git" ? bounded : nonGitProcesses.withPermits(1)(bounded);
     const keyed = input.concurrency === undefined ? shared : keyedPermit(input.concurrency)(shared);
     // Taken first, so a background call still waiting holds no permit another call needs.
