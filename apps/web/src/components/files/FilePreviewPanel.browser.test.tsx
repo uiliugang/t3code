@@ -1,4 +1,3 @@
-import { DEFAULT_THEMES, preloadHighlighter } from "@pierre/diffs";
 import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { StrictMode, type ReactNode } from "react";
@@ -6,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { cdp, userEvent } from "vite-plus/test/browser";
 import { act, fakeTimers, render } from "../../../test/render";
 import appCss from "~/index.css?inline";
+import { getSyntaxHighlighterPromise } from "~/lib/syntaxHighlighting";
 import { isMacPlatform } from "~/lib/utils";
 import {
   createWorkspaceFocusController,
@@ -286,7 +286,7 @@ describe("source file focus", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await getSyntaxHighlighterPromise("typescript");
     const panel = () => (
       <div {...workspaceAreaProps("panel", 1, "Workspace panel")}>
         <div data-right-panel-surface-content>{filePreview("server.ts")}</div>
@@ -336,7 +336,7 @@ describe("source file focus", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await getSyntaxHighlighterPromise("typescript");
     state.file = {
       relativePath: "server.ts",
       contents: "const server = 1;\n",
@@ -379,7 +379,7 @@ describe("source file scroll", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await getSyntaxHighlighterPromise("typescript");
     const sourceFile = (relativePath: string, lines: number) => {
       const contents = Array.from({ length: lines }, (_, i) => `const line${i} = ${i};`).join("\n");
       state.file = { relativePath, contents, byteLength: contents.length, truncated: false };
@@ -412,7 +412,7 @@ describe("source file scroll", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["text"] });
+    await getSyntaxHighlighterPromise("text");
     // Wrapped lines of differing lengths, so the viewer estimates heights until it measures them.
     const contents = Array.from(
       { length: 140 },
@@ -499,7 +499,7 @@ describe("source file scroll", () => {
       style.textContent = appCss;
       document.head.append(style);
       using _style = { [Symbol.dispose]: () => style.remove() };
-      await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["markdown"] });
+      await getSyntaxHighlighterPromise("markdown");
 
       const lines = Array.from({ length: 400 }, (_, index) => `line ${index + 1} markdown content`);
       const contents = `${lines.join("\n")}\n`;
@@ -614,7 +614,7 @@ describe("source file scroll", () => {
     style.textContent = appCss;
     document.head.append(style);
     using _style = { [Symbol.dispose]: () => style.remove() };
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await getSyntaxHighlighterPromise("typescript");
     const wrapped = "wrap ".repeat(60);
     const lines = Array.from({ length: 800 }, (_, i) => `const line${i} = "${wrapped}";`);
     lines.push(

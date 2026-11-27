@@ -130,7 +130,7 @@ describe("acpPermissionDisposition", () => {
     // A multi-folder thread's other folders count as its own.
     assert.equal(
       acpPermissionDisposition(
-        { ...autoAcceptEdits, workspace: { extraRoots: [writableRoot] } },
+        { ...autoAcceptEdits, workspaceFolders: { extraRoots: [writableRoot] } },
         permissionRequest("edit", [{ path: NodePath.join(writableRoot, "generated.ts") }]),
       ),
       "allow",

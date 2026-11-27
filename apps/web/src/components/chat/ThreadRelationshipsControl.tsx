@@ -997,14 +997,11 @@ export function ThreadRelationshipsPanel(props: {
                 </ThreadDetailsControl>
               }
               label={
-                <>
-                  {" "}
-                  {latestMergeBackRun === null
-                    ? t("Complete a run in this fork before merging it back")
-                    : parentTitle
-                      ? t("Merge this conversation back into {name}", { name: parentTitle })
-                      : t("Merge this conversation back into its source")}{" "}
-                </>
+                latestMergeBackRun === null
+                  ? t("Complete a run in this fork before merging it back")
+                  : parentTitle
+                    ? t("Merge this conversation back into {name}", { name: parentTitle })
+                    : t("Merge this conversation back into its source")
               }
               side="left"
             />

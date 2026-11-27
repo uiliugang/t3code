@@ -4,7 +4,6 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../test/render";
-import { projectFaviconUrlAtom } from "../state/assets";
 import { ProjectFavicon, type ProjectFaviconProject } from "./ProjectFavicon";
 
 const state = vi.hoisted(() => ({
@@ -27,7 +26,7 @@ function setup() {
     get.addFinalizer(() => activeResources.delete("favicon"));
     return null;
   });
-  vi.mocked(projectFaviconUrlAtom).mockReturnValue(favicon);
+  state.favicon = favicon;
   return { activeResources };
 }
 

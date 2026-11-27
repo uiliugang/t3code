@@ -1231,11 +1231,9 @@ it.effect.each([
       ...(workspace ? { workspace: workspaceFixture() } : {}),
     } as OrchestrationV2CheckpointScope;
     const providerStarts = yield* Ref.make(0);
-    const warnings: Array<ReadonlyArray<unknown>> = [];
+    const logs: Array<{ readonly level: string; readonly args: ReadonlyArray<unknown> }> = [];
     const logger = Logger.make(({ logLevel, message }) => {
-      if (logLevel === "Warn") {
-        warnings.push(Array.isArray(message) ? message : [message]);
-      }
+      logs.push({ level: logLevel, args: Array.isArray(message) ? message : [message] });
     });
     const writes = yield* Ref.make<
       ReadonlyArray<{
@@ -1343,17 +1341,25 @@ it.effect.each([
 
     assert.equal(yield* Ref.get(providerStarts), workspace ? 0 : 1);
 
-    const baselineWarning = warnings.find(
-      (entry) =>
-        entry[0] ===
-        "orchestration V2 checkpoint baseline capture failed; starting provider without a baseline",
+    const baselineWarning = logs.find(
+      ({ level, args }) =>
+        level === "Warn" &&
+        args[0] ===
+          "orchestration V2 checkpoint baseline capture failed; starting provider without a baseline",
     );
-    assert.isDefined(baselineWarning);
-    const warningFields = baselineWarning?.[1] as { runId?: unknown; cause?: unknown } | undefined;
-    assert.equal(warningFields?.runId, runId);
-    assert.isTrue(Cause.isCause(warningFields?.cause));
-    if (Cause.isCause(warningFields?.cause)) {
-      const renderedCause = Cause.pretty(warningFields.cause);
+    const preparationError = logs.find(
+      ({ level, args }) =>
+        level === "Error" && args[0] === "orchestration V2 run preparation failed",
+    );
+    assert.equal(baselineWarning !== undefined, !workspace);
+    assert.equal(preparationError !== undefined, workspace);
+    const fields = (workspace ? preparationError : baselineWarning)?.args[1] as
+      | { runId?: unknown; cause?: unknown }
+      | undefined;
+    assert.equal(fields?.runId, runId);
+    assert.isTrue(Cause.isCause(fields?.cause));
+    if (Cause.isCause(fields?.cause)) {
+      const renderedCause = Cause.pretty(fields.cause);
       assert.include(renderedCause, "CheckpointBaselineCaptureError");
       assert.include(renderedCause, "VCS process timed out");
     }

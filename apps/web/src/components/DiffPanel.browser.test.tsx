@@ -352,12 +352,18 @@ it("explains a branch diff whose only changes are hidden test files", async () =
       </div>
     </RegistryContext.Provider>,
   );
-  await expect.element(screen.getByText(path, { exact: true })).toBeVisible();
-  await userEvent.click(screen.getByRole("button", { name: "Hide test files", exact: true }));
+  await expect.element(screen.getByRole("button", { name: path, exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Filter files", exact: true }));
+  await userEvent.click(
+    page.getByRole("menuitemcheckbox", { name: "Hide test files", exact: true }),
+  );
+  await userEvent.keyboard("{Escape}");
   await expect.element(screen.getByText(path, { exact: true })).not.toBeInTheDocument();
-  await expect.element(screen.getByText("1 test file hidden", { exact: true })).toBeVisible();
-  await userEvent.click(screen.getByRole("button", { name: "Show test files", exact: true }));
-  await expect.element(screen.getByText(path, { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByText("All files are hidden by filters.", { exact: true }))
+    .toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Show all files", exact: true }));
+  await expect.element(screen.getByRole("button", { name: path, exact: true })).toBeVisible();
 });
 
 it.each([false, true])(

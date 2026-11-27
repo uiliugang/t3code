@@ -138,9 +138,9 @@ it("shows who commented on a linked comment in the active language", async () =>
       commits: [],
     },
   });
-  const translations = await getTranslationsSnapshot("ja");
+  const translations = await getTranslationsSnapshot("zh");
   await using screen = await render(
-    <GTProvider locale="ja" translations={translations}>
+    <GTProvider locale="zh" translations={translations}>
       <PullRequestLinkPreview
         link={<a href={commentUrl}>#1</a>}
         originalUrl={commentUrl}
@@ -154,5 +154,5 @@ it("shows who commented on a linked comment in the active language", async () =>
 
   await userEvent.hover(screen.getByRole("link"));
 
-  await expect.element(page.getByText(/octocat\s*がコメントしました/)).toBeVisible();
+  await expect.element(page.getByText(/octocat\s*发表了评论/)).toBeVisible();
 });

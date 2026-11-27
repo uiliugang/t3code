@@ -291,7 +291,7 @@ export const make = Effect.gen(function* () {
     if (!sources.length)
       return yield* (
         resolved.failure ??
-          new RequirementIssueError({ operation: "resolve", reason: "invalid-target" })
+        new RequirementIssueError({ operation: "resolve", reason: "invalid-target" })
       );
     const provider = yield* providers
       .get(SourceControlProviderKind.make(input.provider))

@@ -8224,8 +8224,11 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         beforeSpawn:
           scenario === "before writing ownership" || scenario === "public ref fetch race",
         matches: (args: ReadonlyArray<string>) => {
-          if (scenario === "before writing ownership")
-            return args[0] === "config" && args[1] === ownerKey;
+          if (scenario === "before writing ownership") {
+            const configArgs =
+              args[0] === "-c" && args[1] === "core.configLockTimeout=0" ? args.slice(2) : args;
+            return configArgs[0] === "config" && configArgs[1] === ownerKey;
+          }
           if (scenario === "public ref fetch race")
             return (
               args.includes("fetch") &&

@@ -1,4 +1,3 @@
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { PullRequestChatSubject } from "./pullRequestDetail.logic";
 import type { PullRequestFinding } from "./pullRequestDetail.logic";
 import type { PendingReviewComment } from "./pullRequestReviewStore";
@@ -50,7 +49,6 @@ import {
   Columns2Icon,
   FolderTreeIcon,
   FlaskConicalIcon,
-  FlaskConicalOffIcon,
   InfoIcon,
   MessageSquareOffIcon,
   PilcrowIcon,
@@ -129,7 +127,6 @@ import { useCodeViewFileReveal } from "../diffs/useCodeViewFileReveal";
 import { useDiffFileFilters } from "../diffs/useDiffFileFilters";
 import { DiffFileFilterMenu } from "../diffs/DiffFileFilterMenu";
 import { diffFileTreeEntries } from "../diffs/diffFileTree.logic";
-import { useHideTestFiles } from "../diffs/useHideTestFiles";
 import { StyledDiffCodeView } from "../diffs/StyledDiffCodeView";
 import { Button, InlineButton } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -531,7 +528,7 @@ function PullRequestCodeTab({
     Schema.Boolean,
   );
   const fileFilters = useDiffFileFilters();
-  const [hideTestFiles, setHideTestFiles] = useHideTestFiles();
+  const { hideTestFiles, setHideTestFiles } = fileFilters;
   const [selectedLines, setSelectedLines] = useState<{
     id: string;
     range: SelectedLineRange;
@@ -833,7 +830,7 @@ function PullRequestCodeTab({
     const path = resolveFileDiffPath(file);
     if (path === linkPath) return true;
 
-    return fileFilters.isFileVisible(path, revealRequest?.path);
+    return fileFilters.isVisibleIgnoringTestFilter(path, revealRequest?.path);
   });
   const testFileCount = loadedFiles.filter((file) =>
     isTestChangedFile(resolveFileDiffPath(file)),
@@ -1824,25 +1821,14 @@ function PullRequestCodeTab({
             )}
           </SharedTooltipTrigger>
         ) : null}
-        {testFileCount > 0 ? (
+        {(testFileCount > 0 || hideTestFiles) &&
+        !(
+          rawSlicesView === null &&
+          hiddenTestFilesLabel !== null &&
+          files.length === 0 &&
+          nextCursor === null
+        ) ? (
           <SharedTooltipTrigger
-            render={
-              <Toggle
-                aria-label={t("Hide test files")}
-                variant="ghost"
-                size="sm"
-                pressed={hideTestFiles}
-                onPressedChange={(pressed) => setHideTestFiles(Boolean(pressed))}
-              />
-            }
-            label={hideTestFiles ? t("Show test files") : t("Hide test files")}
-          >
-            <FlaskConicalOffIcon className="size-3.5" />
-          </SharedTooltipTrigger>
-        ) : null}
-        <DiffFileFilterMenu filters={fileFilters} />
-        <Tooltip>
-          <TooltipTrigger
             render={
               <Toggle
                 aria-label={hideTestFiles ? t("Show test files") : t("Hide test files")}
@@ -1852,13 +1838,12 @@ function PullRequestCodeTab({
                 onPressedChange={(pressed) => setHideTestFiles(Boolean(pressed))}
               />
             }
+            label={hideTestFiles ? t("Show test files") : t("Hide test files")}
           >
             <FlaskConicalIcon className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">
-            {hideTestFiles ? t("Show test files") : t("Hide test files")}
-          </TooltipPopup>
-        </Tooltip>
+          </SharedTooltipTrigger>
+        ) : null}
+        <DiffFileFilterMenu filters={fileFilters} />
         {fileKeys.length > 0 ? (
           <SharedTooltipTrigger
             render={

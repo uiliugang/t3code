@@ -6,15 +6,15 @@ import { render } from "../../../test/render";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 
 it.each([
-  { lineEnd: 7, label: "ターミナル 2 7 行目" },
-  { lineEnd: 9, label: "ターミナル 2 7–9 行目" },
-])("shows the exact Japanese line label $label", async ({ lineEnd, label }) => {
+  { lineEnd: 7, label: "终端 2 第 7 行" },
+  { lineEnd: 9, label: "终端 2 第 7–9 行" },
+])("shows the exact Simplified Chinese line label $label", async ({ lineEnd, label }) => {
   initializeI18n(() => {});
-  const translations = await getTranslationsSnapshot("ja");
+  const translations = await getTranslationsSnapshot("zh");
   await using screen = await render(
-    <GTProvider locale="ja" translations={translations}>
+    <GTProvider locale="zh" translations={translations}>
       <TerminalContextInlineChip
-        terminalLabel="ターミナル 2"
+        terminalLabel="终端 2"
         lineStart={7}
         lineEnd={lineEnd}
         text="terminal output"

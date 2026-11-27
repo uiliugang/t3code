@@ -21,6 +21,7 @@ import {
 } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
+import { makeServerConfig } from "../../../test/fakeEnvironment";
 import { act, render } from "../../../test/render";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useDraftEnvironmentRouting } from "./useDraftEnvironmentRouting";
@@ -31,6 +32,7 @@ import { readProjects } from "../../state/entities";
 
 const resources = vi.hoisted(() => ({
   projects: [] as EnvironmentProject[],
+  environments: new Map<EnvironmentId, EnvironmentPresentation>(),
   refs: [] as VcsRef[],
   refsEnvironment: "machine-b",
   beforeRefs: vi.fn<() => Promise<void>>(),
@@ -68,6 +70,11 @@ vi.mock("../../state/entities", () => ({
     ) ?? null,
 }));
 vi.mock("../../hooks/useScratchProject", () => ({ useScratchProject: () => ({}) }));
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  readEnvironment: (environmentId: EnvironmentId) =>
+    resources.environments.get(environmentId) ?? null,
+}));
 
 vi.mock(import("../../state/vcs"), async (original) => {
   const { vcsEnvironment } = await original();
@@ -175,6 +182,40 @@ function setup() {
     slashCommands: [],
     skills: [],
   };
+  // These cases exercise t3.json. The fork defaults the server to worktrees unless it inherits.
+  const defaultConfig = makeServerConfig([provider]);
+  const serverConfig = {
+    ...defaultConfig,
+    settings: {
+      ...defaultConfig.settings,
+      defaultThreadEnvMode: null,
+      defaultModelSelection: null,
+    },
+  };
+  resources.environments = new Map(
+    [a, b].map((id): [EnvironmentId, EnvironmentPresentation] => [
+      id,
+      {
+        environmentId: id,
+        label: id,
+        displayUrl: null,
+        relayManaged: false,
+        entry: {
+          target: new PrimaryConnectionTarget({
+            environmentId: id,
+            label: id,
+            httpBaseUrl: "http://localhost:3000",
+            wsBaseUrl: "ws://localhost:3000",
+          }),
+          profile: Option.none(),
+          enabled: true,
+        },
+        connection: { phase: "connected", error: null, traceId: null },
+        refusedRouteIds: [],
+        serverConfig,
+      },
+    ]),
+  );
   const input: Parameters<typeof useDraftEnvironmentRouting>[0] = {
     draftId,
     draftThread: store.getDraftSession(draftId),
@@ -187,30 +228,7 @@ function setup() {
       isPrimary: environmentId === a,
       machine: "desktop",
     })),
-    environmentById: new Map(
-      [a, b].map((id): [EnvironmentId, EnvironmentPresentation] => [
-        id,
-        {
-          environmentId: id,
-          label: id,
-          displayUrl: null,
-          relayManaged: false,
-          entry: {
-            target: new PrimaryConnectionTarget({
-              environmentId: id,
-              label: id,
-              httpBaseUrl: "http://localhost:3000",
-              wsBaseUrl: "ws://localhost:3000",
-            }),
-            profile: Option.none(),
-            enabled: true,
-          },
-          connection: { phase: "connected", error: null, traceId: null },
-          refusedRouteIds: [],
-          serverConfig: null,
-        },
-      ]),
-    ),
+    environmentById: resources.environments,
     providersByEnvironment: new Map([a, b].map((id) => [id, [provider]])),
     loadBalancingSettings: { loadBalancingWeights: {} },
     referencedThreadContexts: [],

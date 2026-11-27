@@ -396,7 +396,7 @@ describe("root reopen shortcut", () => {
       expect(useClosedViewStore.getState().entries).toEqual([]);
     },
   );
-  it("includes the reopened issue selection in the /issues URL", async () => {
+  it("includes the reopened issue selection in the /requirements URL", async () => {
     setup();
     const issueSurface = {
       id: "issue:remote:project-1:github:github.com:pingdotgg/t3code:42" as const,
@@ -421,14 +421,15 @@ describe("root reopen shortcut", () => {
 
     expect(state.navigate).toHaveBeenCalledWith(
       expect.objectContaining({
-        to: "/issues",
+        to: "/requirements",
         search: expect.objectContaining({
-          selectedEnvironmentId: "remote",
-          selectedProjectId: "project-1",
-          selectedHost: "github.com",
-          tracker: "github",
-          scope: "pingdotgg/t3code",
-          key: "42",
+          mode: "issues",
+          detailEnvironmentId: "remote",
+          issueProjectId: "project-1",
+          issueHost: "github.com",
+          issueTracker: "github",
+          issueScope: "pingdotgg/t3code",
+          issueId: "42",
         }),
       }),
     );

@@ -812,6 +812,8 @@ const zhCN: Readonly<Record<string, string>> = {
   "Model ID (optional)": "模型 ID（可选）",
   "Name (optional)": "名称（可选）",
   "e.g. My local model": "例如：我的本地模型",
+  "{name} is connected and lists 1 model. Switch any of these to it, or keep what they use now.":
+    "已连接 {name}，发现 1 个模型。可为以下任务选择此生成器，也可保持现有设置。",
   "{name} is connected and lists {count} models. Switch any of these to it, or keep what they use now.":
     "已连接 {name}，发现 {count} 个模型。可为以下任务选择此生成器，也可保持现有设置。",
   "Save and continue": "保存并继续",

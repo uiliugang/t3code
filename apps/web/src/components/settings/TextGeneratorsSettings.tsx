@@ -493,10 +493,15 @@ function TextGeneratorWizard({
           ) : (
             <div className="grid gap-4">
               <p className="text-sm text-muted-foreground">
-                {t(
-                  "{name} is connected and lists {count} models. Switch any of these to it, or keep what they use now.",
-                  { name, count: modelCount },
-                )}
+                {modelCount === 1
+                  ? t(
+                      "{name} is connected and lists 1 model. Switch any of these to it, or keep what they use now.",
+                      { name },
+                    )
+                  : t(
+                      "{name} is connected and lists {count} models. Switch any of these to it, or keep what they use now.",
+                      { name, count: modelCount },
+                    )}
               </p>
               {/* One grid for all rows, so pickers and Test buttons line up in columns. */}
               <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-4">

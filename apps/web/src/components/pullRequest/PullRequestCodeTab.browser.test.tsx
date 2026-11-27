@@ -479,6 +479,8 @@ it("keeps an unfinished inline comment when a background refresh changes another
   const container = document.createElement("div");
   container.className = "flex h-[700px] w-[900px]";
   await using screen = await render(reviewTab(0), { container });
+  const hideTree = screen.getByRole("button", { name: "Hide file tree", exact: true });
+  if (hideTree.query() !== null) await hideTree.click();
   const header = screen.getByText("early-0.ts", { exact: true }).first();
   await expect.element(header).toBeVisible();
   const root = header.element().getRootNode() as ShadowRoot;
@@ -548,7 +550,7 @@ it("keeps a later test file folded by hand through a refresh and bulk toggles wh
   // A refresh drops the loaded later page, so the bulk toggles below run without it.
   await screen.rerender(tab(1));
   await expect
-    .element(screen.getByRole("button", { name: "1 file hidden", exact: true }))
+    .element(screen.getByRole("button", { name: "1 test file hidden", exact: true }))
     .toBeVisible();
   await screen.getByRole("button", { name: "Collapse all files", exact: true }).click();
   await screen.getByRole("button", { name: "Expand all files", exact: true }).click();
