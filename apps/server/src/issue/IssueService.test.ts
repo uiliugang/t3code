@@ -856,16 +856,14 @@ describe("IssueService with a standalone tracker", () => {
             touched.push("comment");
           }),
       });
+      const boundJira: StandaloneIssueTrackerApi = {
+        ...standalone,
+        kind: jira,
+        standalone: { ...standalone.standalone, tracker: jira, host: "atlassian.net" },
+      };
       const service = yield* makeService({
         projects: [project({ id: "github-jira", repository: "acme/repo" })],
-        trackers: [
-          fakeTracker({}),
-          {
-            ...standalone,
-            kind: jira,
-            standalone: { ...standalone.standalone, tracker: jira, host: "atlassian.net" },
-          },
-        ],
+        trackers: [fakeTracker({}), boundJira],
         bindings: { "github-jira": { tracker: jira, scope: "ENG" } },
       });
       const ref = {
@@ -878,7 +876,7 @@ describe("IssueService with a standalone tracker", () => {
 
       yield* service.list({ state: "open", projectId: ref.projectId });
       yield* Effect.flip(service.detail(ref));
-      yield* Effect.flip(service.comment(ref, "Must not reach Jira"));
+      yield* Effect.flip(service.comment({ ...ref, body: "Must not reach Jira" }));
       expect(touched).toEqual([]);
     }),
   );

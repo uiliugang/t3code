@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
+import * as Schema from "effect/Schema";
 import * as DateTime from "effect/DateTime";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import {
@@ -40,6 +41,8 @@ import {
 import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
 
 const decoder = new TextDecoder();
+
+const isIssueTrackerConnectionError = Schema.is(IssueTrackerConnectionError);
 
 export class IssueTrackerConnections extends Context.Service<
   IssueTrackerConnections,
@@ -388,7 +391,7 @@ const make = Effect.gen(function* () {
       })
       .pipe(
         Effect.mapError((error) =>
-          error instanceof IssueTrackerConnectionError
+          isIssueTrackerConnectionError(error)
             ? error
             : secretFailure(tracker, "The project requirement settings could not be read.")(error),
         ),

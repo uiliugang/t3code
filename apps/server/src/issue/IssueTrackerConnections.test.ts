@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as SqlClient from "effect/sql/SqlClient";
-import { IssueTrackerKind, type ProjectId } from "@t3tools/contracts";
+import { IssueTrackerKind, ProjectId } from "@t3tools/contracts";
 import {
   IssueTrackerError,
   type StandaloneIssueTrackerApi,
@@ -60,22 +60,22 @@ describe("IssueTrackerConnections", () => {
           SqlitePersistence.layerMemory,
           ServerSettings.layerTest({
             issueProjectSources: {
-              saved: [{ provider: "meituan", host: "ones.example.test", scope: "42" }],
+              [ProjectId.make("saved")]: [
+                { provider: "meituan", host: "ones.example.test", scope: "42" },
+              ],
             },
           }),
           Layer.mock(ProjectService.ProjectService)({
             getShell: (id) =>
-              Effect.succeed(
-                Option.some({
-                  id,
-                  repositoryIdentity:
-                    id === "github"
-                      ? { provider: "github", canonicalKey: "canonical" }
-                      : id === "meituan"
-                        ? { provider: "meituan", canonicalKey: "canonical" }
-                        : null,
-                } as never),
-              ),
+              Effect.succeedSome({
+                id,
+                repositoryIdentity:
+                  id === "github"
+                    ? { provider: "github", canonicalKey: "canonical" }
+                    : id === "meituan"
+                      ? { provider: "meituan", canonicalKey: "canonical" }
+                      : null,
+              } as never),
           }),
           Layer.succeed(
             IssueTrackerRegistry.IssueTrackerRegistry,
