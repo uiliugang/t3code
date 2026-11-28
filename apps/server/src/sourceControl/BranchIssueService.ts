@@ -68,6 +68,7 @@ const make = Effect.gen(function* () {
   const isPublished = Effect.fn("BranchIssueService.isPublished")(function* (
     input: BranchIssuesInput,
     remoteName: string,
+    options: Pick<GitVcsDriver.ExecuteGitInput, "timeoutMs"> = {},
   ) {
     if (yield* git.remoteBranchExists({ cwd: input.cwd, remoteName, refName: input.branch }))
       return true;
@@ -76,13 +77,14 @@ const make = Effect.gen(function* () {
       cwd: input.cwd,
       operation: "BranchIssueService.isPublished",
       args: ["ls-remote", "--heads", "--", remoteName, `refs/heads/${input.branch}`],
+      ...options,
     });
     return result.stdout.trim().length > 0;
   });
   const list = Effect.fn("BranchIssueService.list")(
     function* (input: BranchIssuesInput) {
       const handle = yield* resolve(input);
-      const published = yield* isPublished(input, handle.context.remoteName);
+      const published = yield* isPublished(input, handle.context.remoteName, { timeoutMs: 5_000 });
       if (!published) return { provider: handle.provider.kind, published, issues: [] };
       const issues = handle.capability.list
         ? yield* handle.capability.list({ ...input, context: handle.context })
@@ -101,6 +103,7 @@ const make = Effect.gen(function* () {
         issues,
       };
     },
+    Effect.timeout("10 seconds"),
     Effect.mapError((cause) =>
       isBranchIssueError(cause)
         ? cause
