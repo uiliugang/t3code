@@ -655,6 +655,60 @@ it("starts with to-do issues first and completed issues folded, and reveals full
   await expect.element(finished).toBeVisible();
 });
 
+it("stretches board columns to fill the available width instead of leaving a fixed-width gutter", async () => {
+  using fixture = setup();
+  const issuesAtom = sourceControlEnvironment.issues({
+    environmentId: "local",
+    input: { provider: "github", assignee: "me", query: "", page: 1 },
+  } as never) as Atom.Writable<unknown>;
+  fixture.registry.set(
+    issuesAtom,
+    AsyncResult.success({
+      groups: [
+        {
+          source: { provider: "github", host: "github.com", scope: "acme/app" },
+          projectIds: ["project"],
+          issues: [
+            { id: "1", title: "Unstarted issue", stateCategory: "todo" },
+            { id: "2", title: "Active issue", stateCategory: "doing" },
+            { id: "3", title: "Finished issue", stateCategory: "done" },
+          ].map((issue) => ({
+            ...issue,
+            url: `https://github.com/acme/app/issues/${issue.id}`,
+            state: "Open",
+            type: "Issue",
+            assignees: [],
+            priority: "",
+            updatedAt: "2026-11-16T00:00:00Z",
+          })),
+          hasMore: false,
+        },
+      ],
+      failures: [],
+    }),
+  );
+  await using screen = await render(fixture.board({ view: "board" }));
+  await expect.element(screen.getByRole("button", { name: /Active issue/ })).toBeVisible();
+  await page.viewport(1600, 900);
+
+  const column = (name: RegExp) =>
+    screen.getByRole("button", { name }).element().closest("section")!.getBoundingClientRect();
+  const minimumWidth = parseFloat(getComputedStyle(document.documentElement).fontSize) * 18;
+  const todo = column(/^To do/);
+  const active = column(/^In progress/);
+  const done = column(/^Completed/);
+  expect(todo.width).toBeGreaterThan(minimumWidth);
+  expect(active.width).toBe(todo.width);
+  expect(done.left).toBeGreaterThanOrEqual(active.right);
+  // The last column reaches the right edge of the board, and nothing overflows sideways.
+  const board = screen
+    .getByRole("button", { name: /^Completed/ })
+    .element()
+    .closest(".grid")!;
+  expect(done.right).toBe(board.getBoundingClientRect().right);
+  expect(board.scrollWidth).toBe(board.clientWidth);
+});
+
 it("keeps the updating indicator inside the topbar on narrow viewports without vertical wrapping", async () => {
   using fixture = setup();
   const workItemsAtom = serverEnvironment.workItemsLive({

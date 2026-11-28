@@ -1286,7 +1286,7 @@ export function RequirementBoard({
                   <div
                     className={
                       view === "board"
-                        ? "flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2"
+                        ? "grid min-h-0 flex-1 auto-cols-[minmax(18rem,1fr)] grid-flow-col grid-rows-[minmax(0,1fr)] gap-4 overflow-x-auto pb-2"
                         : "space-y-4"
                     }
                   >
@@ -1309,7 +1309,7 @@ export function RequirementBoard({
                           key={group.key}
                           className={
                             view === "board"
-                              ? `flex w-72 shrink-0 flex-col rounded-xl border border-border/60 bg-muted/20 ${folded ? "self-start" : "min-h-0 self-stretch"}`
+                              ? `flex min-w-0 flex-col rounded-xl border border-border/60 bg-muted/20 ${folded ? "self-start" : "min-h-0 self-stretch"}`
                               : "min-w-0"
                           }
                         >
