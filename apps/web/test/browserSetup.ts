@@ -10,6 +10,7 @@ declare module "vite-plus/test/browser" {
     startGuestRelay: (events: string[]) => Promise<string>;
     stopGuestRelay: () => Promise<{ posts: string[]; plaintext: boolean }>;
     resetPointer: () => Promise<void>;
+    mockPrivacyTestFavicon: (enabled: boolean) => Promise<void>;
     /** Defined in vite.config.ts. Presses the primary button where the mouse is, without releasing. */
     pointerDown: () => Promise<void>;
     /** Defined in vite.config.ts. Releases the primary button. */
