@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../hooks/useUiTranslation";
+import { markInboxArrival } from "../lib/inboxArrival";
 import { m } from "../i18n/messages";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useGT, useMessages } from "gt-react";
@@ -665,6 +666,7 @@ export default function ChatView(props: ChatViewProps) {
       focusedInboxActivation.current = liveInboxActivation;
       anchor.scrollIntoView({ block: "nearest" });
       anchor.focus({ preventScroll: true });
+      markInboxArrival(anchor);
       return true;
     };
     if (focus()) return;

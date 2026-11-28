@@ -1,4 +1,11 @@
-import { BookOpenIcon, PlusIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  InfoIcon,
+  LockKeyholeIcon,
+  NotebookPenIcon,
+  PlusIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import type {
   DesktopProjectNotesCall,
@@ -10,7 +17,9 @@ import type {
   ProjectNotePage,
 } from "@t3tools/contracts";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
+import { pressLightProps } from "~/lib/pressLight";
 import { randomUUID } from "~/lib/utils";
+import { RelativeTime } from "../RelativeTime";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -19,13 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "~/components/ui/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "~/components/ui/empty";
 import { noteMutationUnconfirmed } from "./projectNoteMutation";
 import { ProjectNoteEditor } from "./ProjectNoteEditor";
 import {
@@ -252,10 +255,24 @@ export function ProjectNotesDialog({
         if (!next) close();
       }}
     >
-      <DialogContent className="max-h-[85dvh] max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>{t("Project notes")}</DialogTitle>
-          <DialogDescription>{project.title}</DialogDescription>
+      <DialogContent className="flex max-h-[85dvh] max-w-4xl flex-col overflow-hidden sm:h-[min(40rem,85dvh)]">
+        <DialogHeader className="flex-row items-center">
+          <span
+            aria-hidden
+            className="glass-tile mr-3 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground"
+          >
+            <NotebookPenIcon className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <DialogTitle>{t("Project notes")}</DialogTitle>
+            <DialogDescription>
+              <span className="block truncate">{project.title}</span>
+            </DialogDescription>
+          </div>
+          <span className="mr-7 hidden shrink-0 items-center gap-1 rounded-full border border-border/70 px-2 py-0.5 text-2xs text-muted-foreground sm:flex">
+            <LockKeyholeIcon aria-hidden className="size-3" />
+            {t("Private note")}
+          </span>
         </DialogHeader>
         {page === null ? (
           <Empty size="compact">
@@ -267,37 +284,45 @@ export function ProjectNotesDialog({
             </EmptyHeader>
           </Empty>
         ) : (
-          <div className="grid min-h-0 min-w-0 gap-3 overflow-auto px-4 pb-4 sm:grid-cols-[minmax(9rem,13rem)_minmax(0,1fr)] sm:px-6 sm:pb-6">
-            <aside className="flex min-h-0 min-w-0 flex-col gap-2 rounded-xl border border-border/60 bg-background p-2.5">
+          /* The list is a tinted column and the editor a lifted card, so the two read as one page. */
+          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden sm:grid-cols-[minmax(8rem,11rem)_minmax(0,1fr)]">
+            <aside className="flex max-h-40 min-h-0 flex-col gap-2 border-b border-border/60 bg-black/3 p-2 sm:max-h-none sm:border-r sm:border-b-0 dark:bg-white/4">
               <Button
                 type="button"
-                variant="outline"
+                variant="tile"
                 size="sm"
+                {...pressLightProps}
+                className="justify-start"
                 disabled={working || dirty}
                 onClick={() => void create()}
               >
                 <PlusIcon aria-hidden="true" />
                 {t("New note")}
               </Button>
-              <ul
-                aria-label={t("Project notes")}
-                className="max-h-44 min-w-0 overflow-auto sm:max-h-[52dvh]"
-              >
-                {page.notes.map((note) => (
-                  <li key={note.id}>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={draft?.id === note.id ? "secondary" : "ghost"}
-                      className="w-full min-w-0 justify-start"
-                      aria-current={draft?.id === note.id ? "true" : undefined}
-                      disabled={working || dirty}
-                      onClick={() => void choose(note.id)}
-                    >
-                      <span className="truncate">{note.title}</span>
-                    </Button>
-                  </li>
-                ))}
+              <ul aria-label={t("Project notes")} className="min-h-0 flex-1 overflow-auto">
+                {page.notes.map((note) => {
+                  const selected = draft?.id === note.id;
+                  return (
+                    <li key={note.id}>
+                      <Button
+                        type="button"
+                        size="list-item"
+                        variant={selected ? "secondary" : "ghost"}
+                        className="min-w-0"
+                        aria-current={selected ? "true" : undefined}
+                        disabled={working || dirty}
+                        onClick={() => void choose(note.id)}
+                      >
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate">{note.title}</span>
+                          <span className="text-2xs text-muted-foreground">
+                            <RelativeTime timestamp={note.updatedAt} />
+                          </span>
+                        </span>
+                      </Button>
+                    </li>
+                  );
+                })}
               </ul>
               {page.nextCursor !== null ? (
                 <Button
@@ -311,7 +336,7 @@ export function ProjectNotesDialog({
                 </Button>
               ) : null}
             </aside>
-            <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex min-h-0 flex-col gap-2 overflow-y-auto p-2 sm:pl-3">
               {draft ? (
                 <ProjectNoteEditor
                   key={draft.id}
@@ -326,44 +351,66 @@ export function ProjectNotesDialog({
                   onSave={() => void save()}
                 />
               ) : (
-                <Empty size="compact">
-                  <EmptyMedia variant="icon">
-                    <BookOpenIcon />
-                  </EmptyMedia>
-                  <EmptyHeader>
-                    <EmptyTitle>{t("No note selected")}</EmptyTitle>
-                    <EmptyDescription>
-                      {t("Select a note or create a new one. Notes stay outside Git and chat.")}
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center">
+                  <span
+                    aria-hidden
+                    className="glass-tile grid size-10 place-items-center rounded-xl text-muted-foreground"
+                  >
+                    <NotebookPenIcon className="size-4" />
+                  </span>
+                  <p className="text-sm font-medium">{t("No note selected")}</p>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    {t("Select a note or create a new one. Notes stay outside Git and chat.")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={working || dirty}
+                    onClick={() => void create()}
+                  >
+                    <PlusIcon aria-hidden="true" />
+                    {t("New note")}
+                  </Button>
+                </div>
               )}
               {draft?.conflictingRevision != null ? (
-                <div className="flex flex-col gap-2 rounded-lg border border-border/70 bg-muted/30 p-3">
+                <div className="flex flex-col gap-2.5 rounded-xl border border-warning/25 bg-warning-surface p-3">
+                  <p className="flex items-center gap-2 text-sm font-medium text-warning-foreground">
+                    <TriangleAlertIcon aria-hidden className="size-4 shrink-0" />
+                    {t("This note changed on another device. Your draft is still here.")}
+                  </p>
                   {comparison === null ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="self-start"
-                      disabled={working}
-                      onClick={() => void showComparison()}
-                    >
-                      {t("Compare saved version")}
-                    </Button>
+                    <div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={working}
+                        onClick={() => void showComparison()}
+                      >
+                        {t("Compare saved version")}
+                      </Button>
+                    </div>
                   ) : (
                     <>
-                      <p className="text-sm font-medium">
-                        {t("Saved version")}: {comparison.title}
-                      </p>
-                      <pre className="max-h-40 overflow-auto rounded-md bg-background p-2 text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
-                        {comparison.markdown}
-                      </pre>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <VersionPane
+                          label={t("My draft")}
+                          title={draft.title}
+                          markdown={draft.markdown}
+                        />
+                        <VersionPane
+                          label={t("Saved version")}
+                          title={comparison.title}
+                          markdown={comparison.markdown}
+                        />
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-2">
                         <Button
                           type="button"
-                          variant="outline"
                           size="sm"
+                          disabled={working}
                           onClick={() => resolveComparison(false)}
                         >
                           {t("Keep draft for manual merge")}
@@ -372,6 +419,7 @@ export function ProjectNotesDialog({
                           type="button"
                           variant="ghost"
                           size="sm"
+                          disabled={working}
                           onClick={() => resolveComparison(true)}
                         >
                           {t("Use saved version")}
@@ -382,15 +430,20 @@ export function ProjectNotesDialog({
                 </div>
               ) : null}
               {error ? (
-                <p className="text-sm text-destructive" role="alert">
+                <p
+                  role="alert"
+                  className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/8 px-3 py-2 text-sm text-destructive"
+                >
+                  <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
                   {t("Could not complete the note action. Your open draft has not been replaced.")}
                 </p>
               ) : null}
               {discard ? (
                 <div
-                  className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 px-3 py-2"
                   role="alert"
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/50 px-3 py-2"
                 >
+                  <InfoIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                   <span className="grow text-sm">{t("Discard unsaved changes?")}</span>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setDiscard(false)}>
                     {t("Keep editing")}
@@ -398,7 +451,7 @@ export function ProjectNotesDialog({
                   <Button
                     type="button"
                     size="sm"
-                    variant="destructive"
+                    variant="destructive-outline"
                     disabled={working}
                     onClick={() => {
                       changeDraft(() => null);
@@ -414,5 +467,26 @@ export function ProjectNotesDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function VersionPane({
+  label,
+  title,
+  markdown,
+}: {
+  readonly label: string;
+  readonly title: string;
+  readonly markdown: string;
+}) {
+  return (
+    <div className="min-w-0 overflow-hidden rounded-lg border border-border/70">
+      <div className="truncate border-b border-border/60 bg-muted/60 px-2 py-1 text-2xs font-medium text-muted-foreground">
+        {label} · {title}
+      </div>
+      <pre className="m-0 max-h-40 overflow-auto px-2 py-1.5 font-mono text-xs leading-5 whitespace-pre-wrap [overflow-wrap:anywhere]">
+        {markdown}
+      </pre>
+    </div>
   );
 }

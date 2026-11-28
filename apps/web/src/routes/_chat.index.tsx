@@ -1,5 +1,9 @@
+import { SquarePenIcon } from "lucide-react";
+import { SpaceAvatar } from "../components/sidebar/SidebarSpaces";
 import {
   readActiveSidebarSpaceId,
+  sidebarSpaceCommands,
+  useActiveSidebarSpace,
   useActiveSidebarSpaceId,
 } from "../components/sidebar/sidebarSpaceSession";
 import { useUiTranslation } from "../hooks/useUiTranslation";
@@ -42,6 +46,7 @@ function ChatIndexRouteView() {
 
 function SpaceLanding() {
   const t = useUiTranslation();
+  const space = useActiveSidebarSpace();
   return (
     <SidebarInset
       {...workspaceAreaProps("home", 1, t("Space threads"))}
@@ -49,12 +54,32 @@ function SpaceLanding() {
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
     >
       {isElectron ? <WorkspacePageHeader electron /> : null}
-      <Empty className="flex-1">
-        <EmptyHeader>
-          <EmptyTitle>{t("Choose a thread")}</EmptyTitle>
-          <EmptyDescription>{t("Open a thread or start one from the sidebar.")}</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      {space === null ? null : (
+        <div className="flex flex-1 items-center justify-center overflow-auto scrollbar-gutter-both p-6">
+          <div className="glass-tile flex w-full max-w-xs animate-(--animate-space-rise) flex-col items-center gap-4 rounded-2xl px-8 py-9 text-center motion-reduce:animate-none">
+            <SpaceAvatar space={space} className="size-14 rounded-2xl text-2xl" />
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">{space.name}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t("{count} projects", { count: space.projectRefs.length })}
+              </p>
+            </div>
+            <Button
+              className="w-full"
+              disabled={space.projectRefs.length === 0}
+              onClick={() => {
+                sidebarSpaceCommands.newThread();
+              }}
+            >
+              <SquarePenIcon aria-hidden="true" />
+              {t("New thread in this Space")}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {t("Open a thread or start one from the sidebar.")}
+            </p>
+          </div>
+        </div>
+      )}
     </SidebarInset>
   );
 }

@@ -1,4 +1,5 @@
 import { useGT, useMessages } from "gt-react";
+import { markInboxArrival } from "~/lib/inboxArrival";
 import type { SideThreadOpenIntent } from "@t3tools/client-runtime/side-thread";
 import type { ThreadRunSummary } from "@t3tools/client-runtime/state/models";
 import { threadErrorText } from "@t3tools/client-runtime/state/threads";
@@ -1447,6 +1448,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       if (!anchor) return false;
       revealedInboxApproval.current = inboxActivation;
       anchor.focus({ preventScroll: true });
+      markInboxArrival(anchor);
       return true;
     };
     prepareInboxReveal();

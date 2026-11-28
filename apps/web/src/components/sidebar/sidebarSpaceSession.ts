@@ -2,7 +2,11 @@ import type { SidebarSpace } from "@t3tools/client-runtime/sidebar-spaces";
 import { ScopedProjectRef } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
-import { readLocalStorageValue, subscribeLocalStorageKey } from "../../hooks/useLocalStorage";
+import {
+  readLocalStorageValue,
+  subscribeLocalStorageKey,
+  useLocalStorage,
+} from "../../hooks/useLocalStorage";
 
 export const SIDEBAR_SPACE_DEFINITIONS = "t3code:sidebar:spaces";
 const ACTIVE = "t3code:sidebar:active-space";
@@ -82,6 +86,17 @@ export function selectActiveSidebarSpace(id: string | null) {
     /* Keep the value in this window when browser storage is unavailable. */
   }
   for (const callback of subscribers) callback();
+}
+
+/** The active Space, tinting the navigation while one is selected. */
+export function useActiveSidebarSpace(): SidebarSpace | null {
+  const id = useActiveSidebarSpaceId();
+  const [spaces] = useLocalStorage(
+    SIDEBAR_SPACE_DEFINITIONS,
+    EMPTY_SIDEBAR_SPACES,
+    SidebarSpaceDefinitions,
+  );
+  return spaces.find((space) => space.id === id) ?? null;
 }
 
 export function useActiveSidebarSpaceId(): string | null {

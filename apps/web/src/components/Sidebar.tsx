@@ -291,6 +291,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipScrollDismissArea } from "./ui/tooltip";
 import { SidebarHumanActionInbox } from "./sidebar/SidebarHumanActionInbox";
+import { SidebarNotice } from "./sidebar/SidebarNotice";
 import {
   composerDraftHasUserContent,
   DraftId,
@@ -3394,12 +3395,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   return (
     <SidebarFolderDrop>
       <SidebarChromeHeader isElectron={isElectron} isInSpace={isCustomSpace} />
-      <SidebarSpacePicker
-        spaces={spaces.spaces}
-        active={spaces.active}
-        onSelect={switchSpace}
-        onEdit={() => setSpaceEditor({ editing: spaces.active })}
-      />
+      <div className="px-2">
+        <SidebarSpacePicker
+          spaces={spaces.spaces}
+          active={spaces.active}
+          onSelect={switchSpace}
+          onEdit={() => setSpaceEditor({ editing: spaces.active })}
+          onCreate={() => setSpaceEditor({ editing: null })}
+        />
+      </div>
       <SidebarContent
         ref={sidebarContentRef}
         className="min-h-full"
@@ -3772,9 +3776,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             )
           ) : null}
           {routeOutsideSpace ? (
-            <div className="flex flex-wrap items-center gap-1 px-2 py-1 text-xs text-sidebar-muted-foreground">
-              <p role="status">{t("This thread is outside the current Space.")}</p>
-              <Button size="sm" variant="ghost" onClick={() => goToSpace(spaces.active)}>
+            <SidebarNotice tone="warn" message={t("This thread is outside the current Space.")}>
+              <Button size="xs" variant="ghost" onClick={() => goToSpace(spaces.active)}>
                 {t("Return to Space")}
               </Button>
               {spaces.spaces
@@ -3789,7 +3792,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 .map((space) => (
                   <Button
                     key={space.id}
-                    size="sm"
+                    size="xs"
                     variant="ghost"
                     onClick={() => {
                       spaces.select(space.id);
@@ -3801,43 +3804,46 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     {space.name}
                   </Button>
                 ))}
-            </div>
+            </SidebarNotice>
           ) : null}
           {isCustomSpace && isSearchingThreads ? (
-            <div className="px-2 py-1 text-xs text-sidebar-muted-foreground">
-              {remoteSpaceSearch.length < spaceSearchEnvironments.length ? (
-                <p>
-                  {remoteSpaceSearch.length === 0
+            <SidebarNotice
+              message={
+                remoteSpaceSearch.length < spaceSearchEnvironments.length
+                  ? remoteSpaceSearch.length === 0
                     ? t("Showing matches from loaded threads only.")
-                    : t("Some connections only search loaded threads.")}
-                </p>
-              ) : null}
+                    : t("Some connections only search loaded threads.")
+                  : null
+              }
+            >
               <Button
-                size="sm"
+                size="xs"
                 variant="ghost"
                 onClick={() => openCommandPalette({ query: threadSearchQuery })}
               >
                 {t("Search all projects")}
               </Button>
-            </div>
+            </SidebarNotice>
           ) : null}
           {spaceScope.kind === "space" &&
           (spaceScope.status !== "ready" ||
             spaceScope.projectRefs.length < (spaces.active?.projectRefs.length ?? 0)) ? (
-            <div className="px-2 py-3 text-xs text-sidebar-muted-foreground">
-              <p role="status">
-                {spaceScope.status === "empty"
+            <SidebarNotice
+              tone="warn"
+              message={
+                spaceScope.status === "empty"
                   ? t("This Space has no projects.")
-                  : t("Some projects in this Space are unavailable.")}
-              </p>
+                  : t("Some projects in this Space are unavailable.")
+              }
+            >
               <Button
-                size="sm"
+                size="xs"
                 variant="ghost"
                 onClick={() => setSpaceEditor({ editing: spaces.active })}
               >
                 {t("Edit Space")}
               </Button>
-            </div>
+            </SidebarNotice>
           ) : null}
           {/* A scope can hide every active thread; say so even when its project still has settled ones. */}
           {!isSearchingThreads &&

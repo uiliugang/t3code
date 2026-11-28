@@ -235,6 +235,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --animate-step-in: step-in 180ms ease-out;
   --animate-step-ping: step-ping 520ms ease-out;
   --animate-check-draw: check-draw 200ms ease-out;
+  /* Inline, so `bg-space` resolves `--space-rgb` on the element that sets it rather than at the root. */
+  --color-space: rgb(var(--space-rgb));
+  --animate-press-light: press-light-out 320ms ease-out;
+  --animate-space-pop: space-pop 420ms cubic-bezier(0.3, 1.32, 0.5, 1);
+  --animate-space-rise: space-rise 360ms cubic-bezier(0.3, 1.32, 0.5, 1);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -370,6 +375,25 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       stroke-dashoffset: 12;
     }
   }
+  @keyframes press-light-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes space-pop {
+    from {
+      scale: 0.6;
+    }
+  }
+  @keyframes space-rise {
+    from {
+      opacity: 0;
+      translate: 0 6px;
+    }
+  }
   @keyframes status-ping {
     /* Burst first (immediate feedback for click ripples), then hold
        invisible for the rest of the cycle. Mirrors animate-ping's
@@ -489,6 +513,101 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--popover) !important;
+  }
+}
+
+/* An active Space tints the navigation frame. `--space-rgb` is a comma triplet, so alpha must be
+   written `rgba(var(--space-rgb), a)`: the slash form drops the whole declaration without an error.
+   A token derived from it is resolved where it is declared, so these stay on the element that sets
+   `--space-rgb` (the app sidebar) instead of a theme root. */
+[data-app-sidebar][data-space-tint] {
+  --space-frame: color-mix(in srgb, rgb(var(--space-rgb)) 7%, var(--color-zinc-50));
+  --sidebar: var(--space-frame);
+  --sidebar-stage-fade: var(--space-frame);
+  --sidebar-row-selected: color-mix(in srgb, rgb(var(--space-rgb)) 12%, var(--color-white));
+  @variant dark {
+    --space-frame: color-mix(in srgb, rgb(var(--space-rgb)) 9%, var(--card));
+    --sidebar-row-selected: color-mix(in srgb, rgb(var(--space-rgb)) 22%, var(--card));
+  }
+}
+
+/* A quiet raised tile with a liquid-glass edge: a highlight along the top edge, a fainter one
+   along the bottom, and a hairline ring. Paint only, so it costs nothing while idle. */
+@utility glass-tile {
+  background: rgb(255 255 255 / 68%);
+  box-shadow:
+    inset 0 1px 0 -0.5px rgb(255 255 255 / 95%),
+    inset 0 -1px 0 -0.5px rgb(255 255 255 / 70%),
+    inset 0 3px 2px -2px rgb(255 255 255 / 40%),
+    0 0 0 0.5px rgb(0 0 0 / 10%),
+    0 1px 2px rgb(0 0 0 / 6%);
+
+  @variant dark {
+    background: rgb(255 255 255 / 7.5%);
+    box-shadow:
+      inset 0 1px 0 -0.5px rgb(255 255 255 / 26%),
+      inset 0 -1px 0 -0.5px rgb(255 255 255 / 16%),
+      inset 0 3px 2px -2px rgb(255 255 255 / 10%),
+      0 0 0 0.5px rgb(0 0 0 / 35%);
+  }
+}
+
+/* The selected or hovered state of a glass tile: lifted fill and a stronger edge. */
+@utility glass-tile-raised {
+  background: rgb(255 255 255 / 92%);
+  box-shadow:
+    inset 0 1.5px 0 -0.5px rgb(255 255 255 / 100%),
+    inset 0 -1.5px 0 -0.5px rgb(255 255 255 / 80%),
+    inset 0 4px 2.5px -2.5px rgb(255 255 255 / 50%),
+    0 0 0 0.5px rgb(0 0 0 / 12%),
+    0 2px 8px rgb(0 0 0 / 8%);
+
+  @variant dark {
+    background: rgb(255 255 255 / 12%);
+    box-shadow:
+      inset 0 1.5px 0 -0.5px rgb(255 255 255 / 30%),
+      inset 0 -1.5px 0 -0.5px rgb(255 255 255 / 18%),
+      inset 0 4px 2.5px -2.5px rgb(255 255 255 / 10%),
+      0 0 0 0.5px rgb(0 0 0 / 40%);
+  }
+}
+
+/* Coarse pointers reserve ::after for the expanded hit area. */
+@utility press-light {
+  @media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    position: relative;
+    overflow: hidden;
+
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      opacity: 0;
+      background: radial-gradient(
+        circle 56px at var(--press-x, 50%) var(--press-y, 50%),
+        rgb(255 255 255 / 70%),
+        rgb(255 255 255 / 14%) 70%,
+        transparent
+      );
+    }
+
+    @variant dark {
+      &::after {
+        background: radial-gradient(
+          circle 56px at var(--press-x, 50%) var(--press-y, 50%),
+          rgb(255 255 255 / 16%),
+          rgb(255 255 255 / 3%) 70%,
+          transparent
+        );
+      }
+    }
+
+    &:active::after,
+    &[data-pressed]::after {
+      animation: var(--animate-press-light);
+    }
   }
 }
 

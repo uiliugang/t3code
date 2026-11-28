@@ -2,6 +2,8 @@ import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
 import {
   resolveSidebarSpaceScope,
+  sidebarSpaceRgb,
+  sidebarSpaceInitial,
   sidebarSpaceProjectKey,
   sidebarSpaceProjectsByEnvironment,
 } from "./sidebarSpaces.ts";
@@ -37,4 +39,12 @@ it("preserves pair identity when both ids contain delimiters", () => {
   expect(sidebarSpaceProjectKey({ environmentId: "a:b", projectId: "c" })).not.toEqual(
     sidebarSpaceProjectKey({ environmentId: "a", projectId: "b:c" }),
   );
+});
+
+it("keeps Space colour stable across renames and accepts Unicode initials", () => {
+  const renamed = { ...space, name: "研发" };
+  expect(sidebarSpaceRgb(renamed)).toBe(sidebarSpaceRgb(space));
+  expect(sidebarSpaceRgb(space)).toMatch(/^\d+, \d+, \d+$/);
+  expect(sidebarSpaceInitial("  研发")).toBe("研");
+  expect(sidebarSpaceInitial("🔎 Search")).toBe("🔎");
 });
