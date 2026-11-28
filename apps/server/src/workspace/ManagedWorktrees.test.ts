@@ -1089,3 +1089,41 @@ it.live("classifies missing and leftover worktrees without losing historical bra
     }).pipe(Effect.provide(context.layer));
   }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );
+
+it.live(
+  "marks removed snapshots unrecoverable when their retained branch is deleted without failing list",
+  () =>
+    Effect.gen(function* () {
+      const context = yield* fixture();
+      const { resources, git } = context;
+      yield* Effect.gen(function* () {
+        const service = yield* ManagedWorktrees.ManagedWorktrees;
+        const [initial] = yield* service.list({});
+        const [removed] = yield* service.remove({
+          targets: [initial!],
+          deleteIgnoredFiles: true,
+        });
+        assert.equal(removed!.outcome, "removed", removed!.detail);
+        const [restorable] = yield* service.list({});
+        assert.equal(restorable!.status, "removed");
+        assert.isTrue(restorable!.actions!.restore);
+
+        yield* git.execute({
+          operation: "test",
+          cwd: resources[0]!.identity.commonDir,
+          args: [
+            "--git-dir",
+            resources[0]!.identity.commonDir,
+            "branch",
+            "-D",
+            `feature/${resources[0]!.name}`,
+          ],
+        });
+
+        const [unrecoverable] = yield* service.list({});
+        assert.equal(unrecoverable!.status, "removed");
+        assert.isFalse(unrecoverable!.actions!.restore);
+        assert.include(unrecoverable!.reason!, "cannot be rebuilt");
+      }).pipe(Effect.provide(context.layer));
+    }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);

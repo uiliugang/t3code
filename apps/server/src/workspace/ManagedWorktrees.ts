@@ -135,11 +135,10 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const digester = yield* Digest.Digest;
   const random = yield* SecureRandom.SecureRandom;
-  const fingerprint = Effect.fn("ManagedWorktrees.fingerprint")((value: unknown) =>
+  const fingerprint = (value: unknown) =>
     digester
       .digest(Digest.sha256, new TextEncoder().encode(JSON.stringify(value)))
-      .pipe(Effect.map(Hex.encode), Effect.orDie),
-  );
+      .pipe(Effect.map(Hex.encode), Effect.orDie);
   const git = yield* GitVcsDriver.GitVcsDriver;
   const resolver = yield* WorkspaceRepositoryResolver.WorkspaceRepositoryResolver;
   const projects = yield* ProjectStore.ProjectStoreV2;
@@ -158,18 +157,66 @@ const make = Effect.gen(function* () {
       (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
     );
   };
-  const canonical = Effect.fn("ManagedWorktrees.canonical")((target: string) =>
+  const canonical = (target: string) =>
     fs.realPath(target).pipe(
       Effect.catchIf(
         (error) => error.reason._tag === "NotFound",
         () => Effect.succeed(path.resolve(target)),
       ),
-    ),
-  );
-  const roots = Effect.fn("ManagedWorktrees.roots")(function* () {
+    );
+  const makeCanonicalCache = () => {
+    const cache = new Map<string, string>();
+    return (target: string) => {
+      const cached = cache.get(target);
+      if (cached !== undefined) return Effect.succeed(cached);
+      return canonical(target).pipe(
+        Effect.tap((resolved) =>
+          Effect.sync(() => {
+            cache.set(target, resolved);
+          }),
+        ),
+      );
+    };
+  };
+  const pruneEmptyManagedParents = Effect.fnUntraced(function* (
+    checkoutRoot: string,
+    managedRoots: ReadonlyArray<string>,
+  ) {
+    let parent = path.dirname(checkoutRoot);
+    while (managedRoots.some((root) => root !== parent && contains(root, parent))) {
+      const entries = yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => null));
+      if (entries === null || entries.length > 0) break;
+      const removed = yield* fs.remove(parent, { recursive: false }).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      );
+      if (!removed) break;
+      const next = path.dirname(parent);
+      if (next === parent) break;
+      parent = next;
+    }
+  });
+  const hasGitDirectory = Effect.fnUntraced(function* (directory: string) {
+    let current = path.resolve(directory);
+    for (;;) {
+      if (yield* fs.exists(path.join(current, ".git")).pipe(Effect.orElseSucceed(() => false)))
+        return true;
+      if (
+        (yield* fs.exists(path.join(current, "HEAD")).pipe(Effect.orElseSucceed(() => false))) &&
+        (yield* fs.exists(path.join(current, "objects")).pipe(Effect.orElseSucceed(() => false)))
+      )
+        return true;
+      const parent = path.dirname(current);
+      if (parent === current) return false;
+      current = parent;
+    }
+  });
+  const roots = Effect.fn("ManagedWorktrees.roots")(function* (
+    resolveCanonical: typeof canonical = canonical,
+  ) {
     return (yield* Effect.forEach(
       managedWorktreesDirectories(yield* settings.getSettings, config.worktreesDir, path, home),
-      canonical,
+      resolveCanonical,
     )).filter((root) => !isFilesystemRoot(root, path));
   });
   const save = Effect.fn("ManagedWorktrees.save")(function* (snapshot: Snapshot) {
@@ -198,13 +245,14 @@ const make = Effect.gen(function* () {
       : thread.worktreePath
         ? [thread.worktreePath]
         : [];
-  const inventory = Effect.fn("ManagedWorktrees.inventory")(function* () {
+  const inventoryWithThreads = Effect.fn("ManagedWorktrees.inventory")(function* () {
+    const resolveCanonical = makeCanonicalCache();
     const threads = yield* readThreads();
-    const groups: Array<{ id: string; threads: CleanupThread[]; paths: string[] }> = [];
+    const rawGroups: Array<{ threads: CleanupThread[]; paths: string[] }> = [];
     for (const thread of threads) {
-      const paths = yield* Effect.forEach(threadPaths(thread), canonical);
+      const paths = yield* Effect.forEach(threadPaths(thread), resolveCanonical);
       if (paths.length === 0) continue;
-      const overlapping = groups.filter((group) =>
+      const overlapping = rawGroups.filter((group) =>
         group.paths.some((root) =>
           paths.some((target) => contains(root, target) || contains(target, root)),
         ),
@@ -215,11 +263,15 @@ const make = Effect.gen(function* () {
       const combined = [
         ...new Set([...paths, ...overlapping.flatMap((group) => group.paths)]),
       ].sort();
-      for (const group of overlapping) groups.splice(groups.indexOf(group), 1);
-      groups.push({ id: yield* fingerprint(combined), threads: members, paths: combined });
+      for (const group of overlapping) rawGroups.splice(rawGroups.indexOf(group), 1);
+      rawGroups.push({ threads: members, paths: combined });
     }
-    return groups;
+    const groups = yield* Effect.forEach(rawGroups, (group) =>
+      fingerprint(group.paths).pipe(Effect.map((id) => ({ id, ...group }))),
+    );
+    return { groups, threads };
   });
+  const inventory = () => inventoryWithThreads().pipe(Effect.map((result) => result.groups));
   type Group = Effect.Success<ReturnType<typeof inventory>>[number];
   const assertIdle = Effect.fn("ManagedWorktrees.assertIdle")(function* (
     group: Group,
@@ -297,7 +349,44 @@ const make = Effect.gen(function* () {
         });
     }
   });
-  const inspectionContext = Effect.fn("ManagedWorktrees.inspectionContext")(function* () {
+  const loadCommitRefs = Effect.fn("ManagedWorktrees.loadCommitRefs")(function* (
+    commonDir: string,
+  ) {
+    if (!(yield* fs.exists(commonDir).pipe(Effect.orElseSucceed(() => false)))) {
+      return undefined;
+    }
+    const output = yield* git
+      .execute({
+        operation: "ManagedWorktrees.inspectRecoveryRefs",
+        cwd: commonDir,
+        args: [
+          "--git-dir",
+          commonDir,
+          "for-each-ref",
+          "--format=%(refname)%00%(objecttype)%00%(*objecttype)",
+          "refs/heads",
+          "refs/t3/worktree-cleanup",
+        ],
+      })
+      .pipe(Effect.option);
+    if (Option.isNone(output)) {
+      return undefined;
+    }
+    const refs = new Set<string>();
+    for (const line of output.value.stdout.split(/\r?\n/)) {
+      if (!line) continue;
+      const [refName, objectType, peeledObjectType] = line.split("\0");
+      if (refName && (objectType === "commit" || peeledObjectType === "commit")) {
+        refs.add(refName);
+      }
+    }
+    return refs as ReadonlySet<string>;
+  });
+  const inspectionContext = Effect.fn("ManagedWorktrees.inspectionContext")(function* (options?: {
+    readonly threads?: ReadonlyArray<CleanupThread>;
+    readonly targetGroupIds?: ReadonlySet<string>;
+  }) {
+    const resolveCanonical = makeCanonicalCache();
     const projectRows = yield* projects.list({ includeDeleted: true });
     const projectPaths = yield* Effect.forEach(
       projectRows.flatMap((entry) =>
@@ -308,7 +397,7 @@ const make = Effect.gen(function* () {
             ]
           : [],
       ),
-      canonical,
+      resolveCanonical,
     );
     const history = yield* sql<{
       thread_id: string;
@@ -326,34 +415,59 @@ const make = Effect.gen(function* () {
         const paths =
           scope.workspace?.resources.map((resource) => resource.checkoutRoot) ??
           (scope.cwd ? [scope.cwd] : []);
-        return { threadId: row.thread_id, paths: yield* Effect.forEach(paths, canonical) };
+        return { threadId: row.thread_id, paths: yield* Effect.forEach(paths, resolveCanonical) };
       }),
     );
+    const threads = options?.threads ?? (yield* readThreads());
     const sources = [
       ...new Set([
         ...projectRows.flatMap((project) => [
           project.workspaceRoot,
           ...(project.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
         ]),
-        ...(yield* readThreads()).flatMap(
+        ...threads.flatMap(
           (thread) => thread.workspace?.bindings.map((binding) => binding.sourcePathAtBind) ?? [],
         ),
       ]),
     ];
+    const gitSources = yield* Effect.filter(sources, hasGitDirectory, { concurrency: 8 });
     const registeredPaths = new Set(
       (yield* Effect.forEach(
-        sources,
+        gitSources,
         (source) => git.listWorktreePaths(source).pipe(Effect.orElseSucceed(() => [])),
         { concurrency: 4 },
       )).flat(),
     );
+    const saved = yield* snapshots();
+    const relevantSaved =
+      options?.targetGroupIds === undefined
+        ? saved
+        : saved.filter((snapshot) => options.targetGroupIds!.has(snapshot.id));
+    const commonDirs = [
+      ...new Set(
+        relevantSaved.flatMap((snapshot) =>
+          snapshot.resources.map((resource) => resource.identity.commonDir),
+        ),
+      ),
+    ];
+    const commitRefsByCommonDir = new Map<string, ReadonlySet<string>>();
+    const prefetchedRefs = yield* Effect.forEach(
+      commonDirs,
+      (commonDir) =>
+        loadCommitRefs(commonDir).pipe(Effect.map((refs) => [commonDir, refs] as const)),
+      { concurrency: 4 },
+    );
+    for (const [commonDir, refs] of prefetchedRefs) {
+      if (refs !== undefined) commitRefsByCommonDir.set(commonDir, refs);
+    }
     return {
       registeredPaths,
       projectRows,
       projectPaths,
       scopes,
-      saved: yield* snapshots(),
-      managedRoots: yield* roots(),
+      saved,
+      commitRefsByCommonDir,
+      managedRoots: yield* roots(resolveCanonical),
     };
   });
   const { hasSubmoduleFiles } = yield* makeWorktreeFileInspection;
@@ -510,17 +624,31 @@ const make = Effect.gen(function* () {
           yield* resolver.verifyRepository(resource.identity);
           if (yield* fs.exists(resource.identity.checkoutRoot))
             yield* resolver.verify(resource.restoredIdentity ?? resource.identity);
-          yield* git.execute({
-            operation: "ManagedWorktrees.inspectRecovery",
-            cwd: resource.identity.commonDir,
-            args: [
-              "--git-dir",
-              resource.identity.commonDir,
-              "rev-parse",
-              "--verify",
-              `${resource.branch === null ? resource.ref : `refs/heads/${resource.branch}`}^{commit}`,
-            ],
-          });
+          const targetRef =
+            resource.branch === null ? resource.ref : `refs/heads/${resource.branch}`;
+          const prefetchedRefs = context.commitRefsByCommonDir.get(resource.identity.commonDir);
+          const coveredByPrefetch =
+            targetRef.startsWith("refs/heads/") ||
+            targetRef.startsWith("refs/t3/worktree-cleanup/");
+          if (prefetchedRefs !== undefined && coveredByPrefetch) {
+            if (!prefetchedRefs.has(targetRef)) {
+              return yield* new ManagedWorktreeError({
+                detail: `Retained reference '${targetRef}' was not found.`,
+              });
+            }
+          } else {
+            yield* git.execute({
+              operation: "ManagedWorktrees.inspectRecovery",
+              cwd: resource.identity.commonDir,
+              args: [
+                "--git-dir",
+                resource.identity.commonDir,
+                "rev-parse",
+                "--verify",
+                `${targetRef}^{commit}`,
+              ],
+            });
+          }
         }),
       ).pipe(Effect.result);
       restorable = recovery._tag === "Success";
@@ -573,14 +701,18 @@ const make = Effect.gen(function* () {
     return { report, identities, saved, excluded };
   });
   const list = Effect.fn("ManagedWorktrees.list")(function* (input: ManagedWorktreesListInput) {
-    const groups = yield* inventory();
-    const context = yield* inspectionContext();
+    const { groups, threads } = yield* inventoryWithThreads();
+    const filteredGroups = groups.filter(
+      (group) =>
+        input.projectIds === undefined ||
+        group.threads.some((thread) => input.projectIds!.includes(thread.projectId)),
+    );
+    const context = yield* inspectionContext({
+      threads,
+      targetGroupIds: new Set(filteredGroups.map((group) => group.id)),
+    });
     return yield* Effect.forEach(
-      groups.filter(
-        (group) =>
-          input.projectIds === undefined ||
-          group.threads.some((thread) => input.projectIds!.includes(thread.projectId)),
-      ),
+      filteredGroups,
       (group) =>
         inspect(group, context).pipe(
           Effect.map((result) => (result.excluded ? null : result.report)),
@@ -620,8 +752,10 @@ const make = Effect.gen(function* () {
     },
   ) {
     const results: ManagedWorktreeResult[] = [];
+    const initialGroups = input.targets.length > 0 ? yield* inventory() : [];
+    const initialGroupsById = new Map(initialGroups.map((entry) => [entry.id, entry]));
     for (const target of input.targets) {
-      const group = (yield* inventory()).find((entry) => entry.id === target.id);
+      const group = initialGroupsById.get(target.id);
       if (!group) {
         results.push({
           id: target.id,
@@ -643,16 +777,18 @@ const make = Effect.gen(function* () {
             withWorkspaceLeases(
               group.paths,
               Effect.gen(function* () {
-                const current = (yield* inventory()).find((entry) => entry.id === target.id);
+                const { groups: currentGroups, threads: currentThreads } =
+                  yield* inventoryWithThreads();
+                const current = currentGroups.find((entry) => entry.id === target.id);
                 if (!current)
                   return yield* new ManagedWorktreeError({
                     detail: "The worktree group changed. Refresh the list.",
                   });
-                const checked = yield* inspect(
-                  current,
-                  yield* inspectionContext(),
-                  options?.keepWhen,
-                );
+                const checkedContext = yield* inspectionContext({
+                  threads: currentThreads,
+                  targetGroupIds: new Set([current.id]),
+                });
+                const checked = yield* inspect(current, checkedContext, options?.keepWhen);
                 if (checked.report.fingerprint !== target.fingerprint)
                   return yield* new ManagedWorktreeError({
                     detail: "The worktree changed since inspection. Refresh and confirm again.",
@@ -768,6 +904,10 @@ const make = Effect.gen(function* () {
                     Effect.provideService(FileSystem.FileSystem, fs),
                     Effect.provideService(Path.Path, path),
                   );
+                  yield* pruneEmptyManagedParents(
+                    resource.identity.checkoutRoot,
+                    checkedContext.managedRoots,
+                  );
                   snapshot = Object.assign({}, snapshot, {
                     resources: snapshot.resources.map((entry) =>
                       entry.identity.checkoutRoot === resource.identity.checkoutRoot
@@ -828,6 +968,9 @@ const make = Effect.gen(function* () {
             yield* resolver.verifyRepository(resource.identity);
             const branch = resource.branch;
             const revision = branch === null ? resource.ref : `refs/heads/${branch}`;
+            yield* fs.makeDirectory(path.dirname(resource.identity.checkoutRoot), {
+              recursive: true,
+            });
             yield* git.execute({
               operation: "ManagedWorktrees.restore",
               cwd: common,

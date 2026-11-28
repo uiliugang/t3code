@@ -694,14 +694,34 @@ const make = Effect.gen(function* () {
       },
       Effect.orElseSucceed(() => undefined),
     );
+    const hasGitDirectory = Effect.fnUntraced(function* (directory: string) {
+      let current = path.resolve(directory);
+      for (;;) {
+        if (yield* fs.exists(path.join(current, ".git")).pipe(Effect.orElseSucceed(() => false)))
+          return true;
+        if (
+          (yield* fs.exists(path.join(current, "HEAD")).pipe(Effect.orElseSucceed(() => false))) &&
+          (yield* fs.exists(path.join(current, "objects")).pipe(Effect.orElseSucceed(() => false)))
+        )
+          return true;
+        const parent = path.dirname(current);
+        if (parent === current) return false;
+        current = parent;
+      }
+    });
     // Linked worktrees can sit deeper inside a plain folder, like <repository>/replay/<n>. Ask
     // the projects' Git for them rather than walking folders that may hold large non-git trees.
     let registered: ReadonlyArray<string> | undefined;
     const nestedWorktrees = Effect.fnUntraced(function* (folder: string, managedRoot: string) {
       if (yield* fs.exists(path.join(folder, ".git"))) return [];
-      registered ??= (yield* Effect.forEach(new Set(projectRoots), (root) =>
-        git.listWorktreePaths(root).pipe(Effect.orElseSucceed((): string[] => [])),
-      )).flat();
+      if (registered === undefined) {
+        const gitProjectRoots = yield* Effect.filter(new Set(projectRoots), hasGitDirectory, {
+          concurrency: 8,
+        });
+        registered = (yield* Effect.forEach(gitProjectRoots, (root) =>
+          git.listWorktreePaths(root).pipe(Effect.orElseSucceed((): string[] => [])),
+        )).flat();
+      }
       // Locked registrations outlive their directory, whose path may since hold something else.
       return yield* Effect.filter(
         registered.filter(
@@ -3137,25 +3157,33 @@ const make = Effect.gen(function* () {
       );
     const cleanupEnabled = () =>
       anyWorktreePolicy(lastSettings, worktreeCleanupEnabled) || mergedBranchCleanupEnabled();
+    const isTerminalActive = (terminal: TerminalSummary | undefined) =>
+      terminal !== undefined && (terminal.status === "starting" || terminal.status === "running");
     const unsubscribe = yield* terminals.subscribeMetadata((event) =>
       Effect.sync(() => {
         if (event.type === "snapshot") {
           liveTerminals.clear();
           for (const terminal of event.terminals) noteTerminal(terminal);
-        } else if (event.type === "upsert") {
-          noteTerminal(event.terminal);
-        } else {
-          const threadTerminals = liveTerminals.get(event.threadId);
-          threadTerminals?.delete(event.terminalId);
-          if (threadTerminals?.size === 0) liveTerminals.delete(event.threadId);
+          return false;
         }
+        if (event.type === "upsert") {
+          const previous = liveTerminals
+            .get(event.terminal.threadId)
+            ?.get(event.terminal.terminalId);
+          const becameInactive =
+            (previous === undefined || isTerminalActive(previous)) &&
+            !isTerminalActive(event.terminal);
+          noteTerminal(event.terminal);
+          return becameInactive;
+        }
+        const threadTerminals = liveTerminals.get(event.threadId);
+        const previous = threadTerminals?.get(event.terminalId);
+        threadTerminals?.delete(event.terminalId);
+        if (threadTerminals?.size === 0) liveTerminals.delete(event.threadId);
+        return previous === undefined || isTerminalActive(previous);
       }).pipe(
-        Effect.andThen(() =>
-          event.type !== "snapshot" &&
-          (event.type !== "upsert" || !["starting", "running"].includes(event.terminal.status)) &&
-          cleanupEnabled()
-            ? requestSweep
-            : Effect.void,
+        Effect.flatMap((shouldRequestSweep) =>
+          shouldRequestSweep && cleanupEnabled() ? requestSweep : Effect.void,
         ),
       ),
     );
