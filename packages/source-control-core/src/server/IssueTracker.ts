@@ -216,7 +216,7 @@ export interface IssueTrackerApi {
 }
 
 /**
- * A tracker reached with its own credential rather than a checkout's: Linear, Jira. The server
+ * A tracker reached with its own credential rather than a checkout's, such as Linear. The server
  * stores one credential per kind and offers the connect flow from `standalone`; a project reads
  * the tracker by binding one of the scopes `probeCredential` lists. The `cwd` on every target is
  * then only the project's root, which such a tracker ignores.
