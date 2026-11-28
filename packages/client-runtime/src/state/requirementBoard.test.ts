@@ -79,7 +79,7 @@ it("keeps local pages available when an issue source fails and refreshes overlap
   expect(filtered.moreIssues).toBe(false);
   const first = Atom.make(
     AsyncResult.success<WorkItemListResult>(
-      { items: [item], candidates: [], nextCursor: cursor },
+      { items: [item], nextCursor: cursor },
       { waiting: true },
     ),
   );
@@ -87,7 +87,6 @@ it("keeps local pages available when an issue source fails and refreshes overlap
     AsyncResult.success<WorkItemListResult>(
       {
         items: [{ ...item, version: 2, status: "in_progress" }],
-        candidates: [],
         nextCursor: null,
       },
       { waiting: true },
@@ -172,7 +171,6 @@ it("keeps local pages available when an issue source fails and refreshes overlap
       second,
       AsyncResult.success({
         items: [{ ...item, version: 3, status: "done" }],
-        candidates: [],
         nextCursor: null,
       }),
     );
@@ -231,7 +229,6 @@ it("keeps environment identities, failures and pagination separate in the combin
       return Atom.make(
         AsyncResult.success<WorkItemListResult>({
           items: [{ ...item, title: environmentId }],
-          candidates: [],
           nextCursor: environmentId === firstEnvironment && !input.cursor ? cursor : null,
         }),
       );
@@ -354,7 +351,6 @@ it("preserves tracker issue metadata and applies involvement, state, and sort fi
               activeExecutionCount: 0,
             },
           ],
-          candidates: [],
           nextCursor: null,
         }),
       ),

@@ -44,6 +44,7 @@ import {
   loadVirtualGeneratorCatalog,
 } from "@t3tools/shared/serverSettings";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import type { AtomRegistry } from "effect/reactivity";
 import type { AtomCommand } from "./state/runtime.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -156,8 +157,6 @@ const applicationServerSettingsTransferPolicy = {
   enablePreviewTunnel: "local",
   sourceControlHosts: "local",
   issueProjectSources: "local",
-  workItemDiscoveryEnabled: "portable",
-  workItemDiscoveryLimit: "portable",
   daxiang: "local",
   meituanIntegrationEnabled: "local",
   meituanSourceControlEnabled: "local",
@@ -528,9 +527,22 @@ export function parseSettingsFile(contents: string): SettingsFile {
   assertSettingsFileSize(contents.length);
   assertSettingsFileSize(new TextEncoder().encode(contents).byteLength);
   try {
-    const file = decodeSettingsFile(JSON.parse(contents), {
-      onExcessProperty: "error",
-    });
+    const raw: unknown = JSON.parse(contents);
+    const file = decodeSettingsFile(
+      Predicate.hasProperty(raw, "scope") &&
+        raw.scope === "application" &&
+        Predicate.hasProperty(raw, "server") &&
+        Predicate.isObject(raw.server) &&
+        !Array.isArray(raw.server)
+        ? {
+            ...raw,
+            server: Struct.omit(raw.server, ["workItemDiscoveryEnabled", "workItemDiscoveryLimit"]),
+          }
+        : raw,
+      {
+        onExcessProperty: "error",
+      },
+    );
     if (
       file.scope === "application" &&
       file.keybindings.some((rule) => !compileResolvedKeybindingRule(rule))

@@ -4,8 +4,6 @@ import {
   ProviderInteractionMode,
   isRuntimeModeAbove,
   MessageId,
-  DEFAULT_SERVER_SETTINGS,
-  MAX_WORK_ITEM_DISCOVERY_LIMIT,
   type NodeId,
   type OrchestrationV2ThreadProjection,
   type RunId,
@@ -13,7 +11,6 @@ import {
   ThreadId,
   WorkItem,
   WorkItemError,
-  WorkItemCandidate,
   WorkItemExecutionId,
   WorkItemId,
   parseBranchIssueUrl,
@@ -21,8 +18,6 @@ import {
   type BranchIssueRef,
   type WorkItemDelivery,
   type WorkItemCommandInput,
-  type WorkItemDiscoverInput,
-  type WorkItemDiscoverResult,
   WorkItemExecution,
   type WorkItemListInput,
   type WorkItemListResult,
@@ -32,12 +27,10 @@ import {
 } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { delegatedTaskProgress } from "@t3tools/provider-core/server/subagentProjection";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
   latestRootProviderFailure,
   orchestrationV2WorktreePending,
 } from "@t3tools/shared/orchestrationV2ThreadError";
-import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Digest from "effect/crypto/Digest";
@@ -54,7 +47,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import { ThreadIssueService } from "../orchestration-v2/ThreadIssueService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import {
   DispatchModeLimit,
   exceededDispatchModeLimit,
@@ -84,9 +76,6 @@ export class WorkItemService extends Context.Service<
       callerThreadId?: ThreadId,
       callerLimits?: typeof SavedCallerLimits.Type,
     ) => Effect.Effect<WorkItemMutationResult, WorkItemError>;
-    readonly discover: (
-      input: WorkItemDiscoverInput,
-    ) => Effect.Effect<WorkItemDiscoverResult, WorkItemError>;
     readonly drain: () => Effect.Effect<void, WorkItemError>;
     readonly associateIssue: (input: {
       projectId: ProjectId;
@@ -136,9 +125,7 @@ const persistenceError = (cause: unknown) =>
     : new WorkItemError({ code: "persistence", message: "Could not access task data.", cause });
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const encodeItem = Schema.encodeEffect(Schema.fromJsonString(WorkItem));
-const encodeCandidate = Schema.encodeEffect(Schema.fromJsonString(WorkItemCandidate));
 const decodeItem = Schema.decodeUnknownEffect(Schema.fromJsonString(WorkItem));
-const decodeCandidate = Schema.decodeUnknownEffect(Schema.fromJsonString(WorkItemCandidate));
 const sameExecution = Schema.toEquivalence(WorkItemExecution);
 const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
@@ -148,16 +135,9 @@ const make = Effect.gen(function* () {
   const launches = yield* ThreadLaunchService.ThreadLaunchService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const threadIssues = yield* ThreadIssueService;
-  const threadSearch = yield* ThreadSearch.ThreadSearch;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const settings = yield* ServerSettings.ServerSettingsService;
-  const discoverySettings = settings.getWorkItemDiscoverySettings.pipe(
-    Effect.orElseSucceed(() => ({
-      workItemDiscoveryEnabled: false,
-      workItemDiscoveryLimit: DEFAULT_SERVER_SETTINGS.workItemDiscoveryLimit,
-    })),
-  );
   const scope = yield* Effect.scope;
   const writes = yield* Semaphore.make(1);
   const effects = yield* Semaphore.make(1);
@@ -222,25 +202,8 @@ const make = Effect.gen(function* () {
     }>`SELECT item_json FROM work_items WHERE ${projectFilter} AND ${issueFilter} AND ${attentionFilter} AND ${cursorFilter} AND ${input.id === undefined ? sql`1 = 1` : sql`id = ${input.id}`} AND ${input.threadId === undefined ? sql`1 = 1` : sql`EXISTS (SELECT 1 FROM json_each(item_json, '$.sources') WHERE json_extract(value, '$.threadId') = ${input.threadId})`} ORDER BY updated_at DESC, id DESC LIMIT ${limit}`;
     return yield* Effect.forEach(rows, (row) => decodeItem(row.item_json));
   }, Effect.mapError(persistenceError));
-  const listCandidates = Effect.fn("WorkItemService.listCandidates")(function* (
-    projectId: ProjectId | undefined,
-  ) {
-    const { workItemDiscoveryEnabled, workItemDiscoveryLimit } = yield* discoverySettings;
-    if (!workItemDiscoveryEnabled) return [];
-    const projectFilter = projectId === undefined ? sql`1 = 1` : sql`project_id = ${projectId}`;
-    const rows = yield* sql<{
-      candidate_json: string;
-    }>`SELECT candidate_json FROM work_item_candidates WHERE json_valid(candidate_json) AND ${projectFilter}
-      ORDER BY json_extract(candidate_json, '$.updatedAt') DESC, thread_id DESC
-      LIMIT ${workItemDiscoveryLimit}`;
-    return yield* Effect.forEach(rows, (row) => decodeCandidate(row.candidate_json));
-  });
   const list = Effect.fn("WorkItemService.list")(function* (input: WorkItemListInput) {
     const items = yield* readItems(input);
-    const candidates =
-      input.id !== undefined || input.issueUrl !== undefined || input.issueUrls !== undefined
-        ? []
-        : yield* listCandidates(input.projectId);
     const limit = input.limit ?? 50;
     const page = items.slice(0, limit);
     const last = page.at(-1);
@@ -292,7 +255,7 @@ const make = Effect.gen(function* () {
       ...((input.id === undefined && input.issueUrl === undefined) || page[0] === undefined
         ? {}
         : { item: page[0] }),
-      candidates,
+      candidates: [],
       nextCursor: items.length > limit && last ? { updatedAt: last.updatedAt, id: last.id } : null,
     };
   }, Effect.mapError(persistenceError));
@@ -946,106 +909,8 @@ const make = Effect.gen(function* () {
         const threadIds = yield* Ref.getAndSet(changedThreads, new Set());
         const checkpointThreadIds = yield* Ref.getAndSet(evidenceThreads, new Set());
         yield* refreshExecutions(threadIds, checkpointThreadIds);
-        if (!(yield* discoverySettings).workItemDiscoveryEnabled) return;
-        const discoveryProjects = yield* sql<{
-          project_id: string;
-        }>`SELECT project_id FROM work_item_discovery`;
-        yield* Effect.forEach(discoveryProjects, (row) =>
-          discover({ projectId: ProjectId.make(row.project_id) }).pipe(
-            Effect.ignoreCause({ log: true }),
-          ),
-        );
       }),
     );
-  }, Effect.mapError(persistenceError));
-
-  const discover = Effect.fn("WorkItemService.discover")(function* (input: WorkItemDiscoverInput) {
-    const { workItemDiscoveryEnabled, workItemDiscoveryLimit } =
-      yield* settings.getWorkItemDiscoverySettings;
-    if (!workItemDiscoveryEnabled) return { candidates: [] };
-    yield* requireProject(input.projectId);
-    if (input.dismissThreadId !== undefined) {
-      const rows = yield* sql<{
-        candidate_json: string;
-      }>`SELECT candidate_json FROM work_item_candidates WHERE thread_id = ${input.dismissThreadId} AND project_id = ${input.projectId}`;
-      if (rows[0]) {
-        const candidate = yield* decodeCandidate(rows[0].candidate_json);
-        yield* sql`INSERT INTO work_item_ignored (thread_id, source_updated_at) VALUES (${candidate.id}, ${candidate.updatedAt}) ON CONFLICT(thread_id) DO UPDATE SET source_updated_at = excluded.source_updated_at`;
-      }
-    }
-    const allThreads = yield* threads.listProjectThreads({
-      projectId: input.projectId,
-      includeSubagents: false,
-    });
-    const cutoff = DateTime.toEpochMillis(yield* DateTime.now) - 30 * 86400000;
-    const existingRows = yield* sql<{
-      item_json: string;
-    }>`SELECT item_json FROM work_items WHERE project_id = ${input.projectId}`;
-    const existing = yield* Effect.forEach(existingRows, (row) => decodeItem(row.item_json));
-    const bound = new Set(
-      existing.flatMap((item) => [
-        ...item.sources.map((source) => source.threadId),
-        ...item.executions.map((execution) => execution.threadId),
-      ]),
-    );
-    const ignored = new Map(
-      (yield* sql<{
-        thread_id: string;
-        source_updated_at: string;
-      }>`SELECT thread_id, source_updated_at FROM work_item_ignored`).map((row) => [
-        row.thread_id,
-        row.source_updated_at,
-      ]),
-    );
-    const recentThreadIds = allThreads
-      .filter(
-        (thread) => !bound.has(thread.id) && DateTime.toEpochMillis(thread.updatedAt) >= cutoff,
-      )
-      .map((thread) => thread.id);
-    const ranked: Omit<WorkItemCandidate, "description">[] = [];
-    for (const threadIds of Arr.chunksOf(recentThreadIds, MAX_WORK_ITEM_DISCOVERY_LIMIT)) {
-      const read = yield* sql
-        .withTransaction(threads.readShellSnapshot({ location: "active", threadIds }))
-        .pipe(NodeSqliteClient.readOnly);
-      const { threads: shells } = yield* read;
-      for (const thread of shells) {
-        if (thread.projectId !== input.projectId) continue;
-        const sourceAt = DateTime.formatIso(
-          thread.latestUserAuthoredMessageAt ?? thread.latestUserMessageAt ?? thread.updatedAt,
-        );
-        if (ignored.get(thread.id) === sourceAt) continue;
-        ranked.push({
-          id: thread.id,
-          projectId: thread.projectId,
-          title: thread.title,
-          status: thread.status,
-          updatedAt: sourceAt,
-        });
-      }
-      ranked.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
-      ranked.splice(MAX_WORK_ITEM_DISCOVERY_LIMIT);
-    }
-    const candidates = yield* Effect.forEach(ranked, (candidate) =>
-      threadSearch
-        .latestMessagePreview(candidate.id)
-        .pipe(
-          Effect.map((description) => ({ ...candidate, description: description.slice(0, 500) })),
-        ),
-    );
-    yield* writes.withPermits(1)(
-      sql.withTransaction(
-        Effect.gen(function* () {
-          yield* sql`INSERT OR IGNORE INTO work_item_discovery (project_id) VALUES (${input.projectId})`;
-          yield* sql`DELETE FROM work_item_candidates WHERE project_id = ${input.projectId}`;
-          for (const candidate of candidates) {
-            const candidateJson = yield* encodeCandidate(candidate);
-            yield* sql`INSERT INTO work_item_candidates (thread_id, project_id, candidate_json) VALUES (${candidate.id}, ${candidate.projectId}, ${candidateJson})`;
-          }
-        }),
-      ),
-    );
-    yield* notify;
-    return { candidates: candidates.slice(0, workItemDiscoveryLimit) };
   }, Effect.mapError(persistenceError));
 
   const mutate = Effect.fn("WorkItemService.mutate")(function* (
@@ -1287,8 +1152,6 @@ const make = Effect.gen(function* () {
                 yield* sql`INSERT INTO work_item_issue_projects (work_item_id, project_id) VALUES (${next.id}, ${projectId})`;
             }
             yield* sql`INSERT INTO work_item_commands (command_id, input_json, result_json) VALUES (${input.commandId}, ${inputJson}, ${yield* encodeItem(next)})`;
-            if (next.sources.length > 0)
-              yield* sql`DELETE FROM work_item_candidates WHERE project_id = ${next.projectId} AND thread_id IN ${sql.in(next.sources.map((source) => source.threadId))}`;
             return { item: next };
           }),
         ),
@@ -1466,24 +1329,6 @@ const make = Effect.gen(function* () {
     Stream.runForEach(() => runPending().pipe(Effect.ignoreCause({ log: true }))),
     Effect.forkIn(scope),
   );
-  const discoveryChanges = yield* settings.subscribeWorkItemDiscoveryChanges;
-  const initialDiscoverySettings = yield* discoverySettings;
-  yield* Stream.concat(Stream.succeed(initialDiscoverySettings), discoveryChanges).pipe(
-    Stream.changesWith(
-      (previous, next) =>
-        previous.workItemDiscoveryEnabled === next.workItemDiscoveryEnabled &&
-        previous.workItemDiscoveryLimit === next.workItemDiscoveryLimit,
-    ),
-    Stream.zipWithPrevious,
-    Stream.runForEach(([previous, next]) => {
-      if (Option.isNone(previous)) return Effect.void;
-      return next.workItemDiscoveryEnabled && !previous.value.workItemDiscoveryEnabled
-        ? Effect.andThen(notify, Queue.offer(pending, undefined))
-        : notify;
-    }),
-    Effect.ignoreCause({ log: true }),
-    Effect.forkIn(scope),
-  );
   yield* threads.streamDomainEvents.pipe(
     Stream.filter((event) =>
       [
@@ -1539,7 +1384,6 @@ const make = Effect.gen(function* () {
     list,
     subscribeList,
     mutate,
-    discover,
     drain: runPending,
     associateIssue,
     recordDelivery,

@@ -553,6 +553,19 @@ describe("settings transfer", () => {
     expect(contents).not.toContain("private-device-microphone-id");
     expect(file.clientSettings).not.toHaveProperty("voiceMicrophone");
     expect(file.server).not.toHaveProperty("enablePreviewTunnel");
+    const encoded = JSON.parse(contents);
+    expect(
+      parseSettingsFile(
+        JSON.stringify({
+          ...encoded,
+          server: {
+            ...encoded.server,
+            workItemDiscoveryEnabled: false,
+            workItemDiscoveryLimit: 50,
+          },
+        }),
+      ),
+    ).toEqual(file);
     const legacyMicrophone = parseSettingsFile(
       JSON.stringify({
         ...JSON.parse(contents),

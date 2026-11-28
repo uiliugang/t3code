@@ -136,15 +136,6 @@ export const WorkItem = Schema.Struct({
   delivery: Schema.optional(WorkItemDelivery),
 });
 export type WorkItem = typeof WorkItem.Type;
-export const WorkItemCandidate = Schema.Struct({
-  id: ThreadId,
-  projectId: ProjectId,
-  title: Schema.String,
-  description: Text,
-  status: Schema.String,
-  updatedAt: IsoDateTime,
-});
-export type WorkItemCandidate = typeof WorkItemCandidate.Type;
 export const WorkItemCursor = Schema.Struct({ updatedAt: IsoDateTime, id: WorkItemId });
 export const WorkItemListInput = Schema.Struct({
   projectId: Schema.optional(ProjectId),
@@ -178,7 +169,8 @@ export type WorkItemSummary = typeof WorkItemSummary.Type;
 export const WorkItemListResult = Schema.Struct({
   items: Schema.Array(WorkItemSummary),
   item: Schema.optional(WorkItem),
-  candidates: Schema.Array(WorkItemCandidate),
+  // Older clients require this field when decoding task lists.
+  candidates: Schema.optionalKey(Schema.Array(Schema.Unknown)),
   nextCursor: Schema.optional(Schema.NullOr(WorkItemCursor)),
 });
 export type WorkItemListResult = typeof WorkItemListResult.Type;
@@ -338,14 +330,6 @@ export type WorkItemCommandInput = typeof WorkItemCommandInput.Type;
 export const WorkItemMutationResult = Schema.Struct({ item: WorkItem });
 export const WorkItemIssueResult = Schema.Union([WorkItemMutationResult, IssueMetadata]);
 export type WorkItemMutationResult = typeof WorkItemMutationResult.Type;
-export const WorkItemDiscoverInput = Schema.Struct({
-  projectId: ProjectId,
-  dismissThreadId: Schema.optional(ThreadId),
-});
-export type WorkItemDiscoverInput = typeof WorkItemDiscoverInput.Type;
-export const WorkItemDiscoverResult = Schema.Struct({
-  candidates: Schema.Array(WorkItemCandidate),
-});
 export const WorkItemCreateIssueInput = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
@@ -353,7 +337,6 @@ export const WorkItemCreateIssueInput = Schema.Struct({
 });
 export type WorkItemCreateIssueInput = typeof WorkItemCreateIssueInput.Type;
 export const WorkItemRefreshDeliveryInput = Schema.Struct({ id: WorkItemId });
-export type WorkItemDiscoverResult = typeof WorkItemDiscoverResult.Type;
 export class WorkItemError extends Schema.TaggedError<
   WorkItemError,
   { readonly brand: unique symbol }

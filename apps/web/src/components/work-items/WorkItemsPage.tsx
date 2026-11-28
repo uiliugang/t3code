@@ -12,7 +12,6 @@ import {
   type ScopedThreadRef,
   type WorkItem,
   type WorkItemSummary,
-  type WorkItemCandidate,
   type WorkItemCommandInput,
   type WorkItemExecutionId,
   type WorkItemParticipant,
@@ -261,7 +260,6 @@ export function WorkItemEditor({
   initialDescription,
   initialSources,
   original,
-  candidate,
   projectId,
   threadRef,
   busy,
@@ -273,7 +271,6 @@ export function WorkItemEditor({
   initialDescription?: string | undefined;
   initialSources?: ReadonlyArray<WorkItemSource> | undefined;
   original?: WorkItem | undefined;
-  candidate?: WorkItemCandidate | undefined;
   projectId: ProjectId;
   threadRef?: ScopedThreadRef | undefined;
   busy: boolean;
@@ -282,10 +279,8 @@ export function WorkItemEditor({
 }) {
   const t = useUiTranslation();
   const thread = useQuietThreadShell(threadRef ?? null);
-  const [title, setTitle] = useState(original?.title ?? candidate?.title ?? initialTitle ?? "");
-  const [description, setDescription] = useState(
-    original?.description ?? candidate?.description ?? initialDescription ?? "",
-  );
+  const [title, setTitle] = useState(original?.title ?? initialTitle ?? "");
+  const [description, setDescription] = useState(original?.description ?? initialDescription ?? "");
   const [constraints, setConstraints] = useState(original?.constraints.join("\n") ?? "");
   const [criteria, setCriteria] = useState(original?.acceptanceCriteria.join("\n") ?? "");
   const [priority, setPriority] = useState<WorkItem["priority"]>(original?.priority ?? "P2");
@@ -295,11 +290,9 @@ export function WorkItemEditor({
     const sources: ReadonlyArray<WorkItemSource> =
       original?.sources ??
       initialSources ??
-      (candidate
-        ? [{ threadId: candidate.id, title: candidate.title }]
-        : threadRef && thread?.projectId === projectId
-          ? [{ threadId: threadRef.threadId, title: thread.title }]
-          : []);
+      (threadRef && thread?.projectId === projectId
+        ? [{ threadId: threadRef.threadId, title: thread.title }]
+        : []);
     const fields = {
       commandId: commandId(),
       title: title.trim(),

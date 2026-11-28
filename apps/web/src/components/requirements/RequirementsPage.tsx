@@ -16,7 +16,6 @@ import {
 } from "@t3tools/contracts";
 import {
   createRequirementOverviewAtoms,
-  createRequirementPermissionAtoms,
   RequirementOverviewKey,
   type RequirementPagination,
   type EnvironmentRequirementEntry,
@@ -55,7 +54,6 @@ import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import * as Schema from "effect/Schema";
 import { Button } from "../ui/button";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { toastManager } from "../ui/toast";
 import {
   isAtomCommandInterrupted,
@@ -128,7 +126,7 @@ import { LabelChoices } from "../issue/IssueListFilterPickers";
 import { requirementTrackerLabel } from "@t3tools/client-runtime/work-item";
 import { IssueCreateDialog, TrackerCreateDialog } from "./IssueCreateDialog";
 import { Popover, PopoverTrigger, PopoverPopup, PopoverTitle } from "../ui/popover";
-import { RequirementCreateMenu, RequirementScanMenu } from "./RequirementBoardActions";
+import { RequirementCreateMenu } from "./RequirementBoardActions";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import type { RequirementsSearch } from "../../routes/_chat.requirements";
 
@@ -152,11 +150,6 @@ const boardAtoms = createRequirementOverviewAtoms({
   config: serverEnvironment.configValueAtom,
   settings: serverEnvironment.settingsValueAtom,
   tracked: serverEnvironment.issueWorkItems,
-});
-const permissionAtoms = createRequirementPermissionAtoms({
-  createIssue: sourceControlEnvironment.createIssue.permissionAtom,
-  mutateWorkItem: serverEnvironment.mutateWorkItem.permissionAtom,
-  discoverWorkItems: serverEnvironment.discoverWorkItems.permissionAtom,
 });
 const CollapsedGroups = Schema.Array(Schema.String);
 const EMPTY_SET: ReadonlySet<string> = new Set();
@@ -316,9 +309,7 @@ export function RequirementBoard({
     key: "",
     pages: {},
   });
-  const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
   const queryEnvironmentIds = queryEnvironments.map((environment) => environment.environmentId);
-  const permissions = useAtomValue(permissionAtoms(environmentIds));
   const filterKey = JSON.stringify([
     queryEnvironmentIds,
     source,
@@ -442,8 +433,6 @@ export function RequirementBoard({
   const pending = useRef(false);
   const retries = useRef(new Map<string, import("@t3tools/contracts").CommandId>());
   const mutate = useAtomCommand(serverEnvironment.mutateWorkItem, { reportFailure: false });
-  const discover = useAtomCommand(serverEnvironment.discoverWorkItems);
-  const [candidate, setCandidate] = useState<(typeof data.candidates)[number] | null>(null);
   const canCreateLocal = useAtomValue(
     serverEnvironment.mutateWorkItem.permissionAtom(environmentId),
   );
@@ -866,30 +855,22 @@ export function RequirementBoard({
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               {mode === "board" ? (
-                <>
-                  <RequirementScanMenu
-                    environments={visibleEnvironments}
-                    {...(search.projectId ? { projectId: search.projectId } : {})}
-                    refreshed={refresh}
-                  />
-                  <RequirementCreateMenu
-                    createTrackerIssue={(id, target) => {
-                      setCreatingEnvironmentId(id);
-                      setCreatingTracker(target);
-                    }}
-                    environments={visibleEnvironments}
-                    {...(search.projectId ? { projectId: search.projectId } : {})}
-                    createIssue={(id, provider) => {
-                      setCreatingEnvironmentId(id);
-                      setCreatingIssue(provider);
-                    }}
-                    createLocal={(id, projectId) => {
-                      setCreatingEnvironmentId(id);
-                      setCandidate(null);
-                      setCreatingLocal(projectId);
-                    }}
-                  />
-                </>
+                <RequirementCreateMenu
+                  createTrackerIssue={(id, target) => {
+                    setCreatingEnvironmentId(id);
+                    setCreatingTracker(target);
+                  }}
+                  environments={visibleEnvironments}
+                  {...(search.projectId ? { projectId: search.projectId } : {})}
+                  createIssue={(id, provider) => {
+                    setCreatingEnvironmentId(id);
+                    setCreatingIssue(provider);
+                  }}
+                  createLocal={(id, projectId) => {
+                    setCreatingEnvironmentId(id);
+                    setCreatingLocal(projectId);
+                  }}
+                />
               ) : null}
               <Button
                 variant="ghost-muted"
@@ -1297,7 +1278,7 @@ export function RequirementBoard({
                       </EmptyMedia>
                       <EmptyTitle>{t("No matching work items.")}</EmptyTitle>
                       <EmptyDescription>
-                        {t("Create or scan items, or adjust your filters.")}
+                        {t("Create an item or adjust your filters.")}
                       </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
@@ -1391,69 +1372,6 @@ export function RequirementBoard({
                     })}
                   </div>
                 )}
-                {data.candidates.length && (source === "all" || source === "local") ? (
-                  <Collapsible render={<section className="border-t border-border/60" />}>
-                    <h2 className="text-sm font-medium">
-                      <CollapsibleTrigger className="group flex min-h-11 w-full items-center gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-                        <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground group-data-panel-open:rotate-90" />
-                        {t("Discovered tasks")}
-                        <span className="text-xs text-muted-foreground">
-                          {data.candidates.length}
-                        </span>
-                      </CollapsibleTrigger>
-                    </h2>
-                    <CollapsiblePanel animate={false}>
-                      <div className="space-y-3 pb-4">
-                        {data.candidates.map((item) => (
-                          <div
-                            key={`${item.environmentId}:${item.id}`}
-                            className="flex items-center gap-3"
-                          >
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm">{item.title}</span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {environmentLabel(item.environmentId)}
-                              </span>
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={
-                                !permissions.get(item.environmentId)?.mutateWorkItem || busy
-                              }
-                              onClick={() => {
-                                setCreatingEnvironmentId(item.environmentId);
-                                setCandidate(item);
-                                setCreatingLocal(item.projectId);
-                              }}
-                            >
-                              {t("Add task")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={
-                                !permissions.get(item.environmentId)?.discoverWorkItems ||
-                                busy ||
-                                registry.get(serverEnvironment.configValueAtom(item.environmentId))
-                                  ?.workItemDiscovery !== true
-                              }
-                              onClick={async () => {
-                                await discover({
-                                  environmentId: item.environmentId,
-                                  input: { projectId: item.projectId, dismissThreadId: item.id },
-                                });
-                                refresh();
-                              }}
-                            >
-                              {t("Ignore")}
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </CollapsiblePanel>
-                  </Collapsible>
-                ) : null}
                 {data.hasMore ? (
                   <div className="flex shrink-0 justify-center py-5">
                     <Button
@@ -1687,7 +1605,6 @@ export function RequirementBoard({
           <WorkItemEditor
             environmentId={environmentId}
             projectId={creatingLocal}
-            {...(candidate ? { candidate } : {})}
             busy={busy}
             run={run}
             close={() => {
