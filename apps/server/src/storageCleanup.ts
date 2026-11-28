@@ -738,11 +738,36 @@ const make = Effect.gen(function* () {
       // Worktrees can be <root>/<repository>/<branch> or explicitly <root>/<name>.
       for (const projectDirectory of yield* directories(root, root)) {
         yield* Effect.gen(function* () {
-          if (referenced.has(pathKey(projectDirectory))) return;
+          const directoryKey = pathKey(projectDirectory);
+          if (referenced.has(directoryKey)) return;
           const gitPath = path.join(projectDirectory, ".git");
           if (yield* fs.exists(gitPath)) {
             if (yield* isLinkedWorktree(projectDirectory)) yield* report(projectDirectory);
             return;
+          }
+          if (
+            path.basename(projectDirectory).startsWith("workspace-") &&
+            !referencedAncestors.has(directoryKey) &&
+            !projectRoots.some(
+              (projectRoot) =>
+                pathKey(projectRoot) === directoryKey || inside(projectDirectory, projectRoot),
+            )
+          ) {
+            const contents = yield* fs
+              .readDirectory(projectDirectory)
+              .pipe(Effect.orElseSucceed(() => null));
+            if (contents !== null && contents.length === 0) {
+              const modified = Option.getOrNull((yield* fs.stat(projectDirectory)).mtime);
+              if (modified !== null && modified.getTime() <= now - ORPHAN_WORKTREE_GRACE_MS) {
+                yield* Effect.promise(() =>
+                  NodeFSP.rmdir(projectDirectory).then(
+                    () => undefined,
+                    () => undefined,
+                  ),
+                );
+                return;
+              }
+            }
           }
           for (const worktreePath of yield* directories(projectDirectory, root)) {
             const nested = yield* nestedWorktrees(worktreePath, root);

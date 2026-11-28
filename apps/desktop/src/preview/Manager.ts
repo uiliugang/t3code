@@ -2673,8 +2673,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   });
 
   const setShown = Effect.fn("PreviewManager.setShown")(function* (tabId: string, shown: boolean) {
-    const serverTab = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.serverTab;
-    if (serverTab) browserHost.setShown(serverTab, shown);
+    const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+    if (tab?.serverTab) browserHost.setShown(tab.serverTab, shown);
+    if (!shown && tab?.webContentsId != null) {
+      const capturing = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).has(tabId);
+      if (!capturing) {
+        const wc = webContents.fromId(tab.webContentsId);
+        if (wc && !wc.isDestroyed()) {
+          yield* setFrameCaptureWebContentsBackgroundThrottling(wc, true).pipe(Effect.ignore);
+        }
+      }
+    }
   });
 
   const setCaptureDrawn = Effect.fn("PreviewManager.setCaptureDrawn")(function* (

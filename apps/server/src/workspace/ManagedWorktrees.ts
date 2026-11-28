@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFSP from "node:fs/promises";
 import {
   CommandId,
   ManagedWorktreeError,
@@ -186,9 +188,11 @@ const make = Effect.gen(function* () {
     while (managedRoots.some((root) => root !== parent && contains(root, parent))) {
       const entries = yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => null));
       if (entries === null || entries.length > 0) break;
-      const removed = yield* fs.remove(parent, { recursive: false }).pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
+      const removed = yield* Effect.promise(() =>
+        NodeFSP.rmdir(parent).then(
+          () => true,
+          () => false,
+        ),
       );
       if (!removed) break;
       const next = path.dirname(parent);

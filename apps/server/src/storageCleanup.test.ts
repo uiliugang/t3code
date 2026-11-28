@@ -3364,6 +3364,32 @@ describe("orphan worktree reports", () => {
     ),
   );
 
+  it.live(
+    "prunes stale empty workspace container directories while preserving recent or non-empty ones",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture();
+          fixture.setThreads([]);
+          const staleEmpty = `${fixture.config.worktreesDir}/workspace-stale-empty`;
+          const recentEmpty = `${fixture.config.worktreesDir}/workspace-recent-empty`;
+          const nonEmpty = `${fixture.config.worktreesDir}/workspace-non-empty`;
+          yield* fixture.fs.makeDirectory(staleEmpty, { recursive: true });
+          yield* fixture.fs.makeDirectory(recentEmpty, { recursive: true });
+          yield* fixture.fs.makeDirectory(nonEmpty, { recursive: true });
+          yield* fixture.fs.writeFileString(`${nonEmpty}/keep.txt`, "keep");
+          yield* fixture.fs.utimes(staleEmpty, 1, 1);
+          yield* fixture.fs.utimes(nonEmpty, 1, 1);
+
+          yield* fixture.service.runNow;
+
+          expect(yield* fixture.fs.exists(staleEmpty)).toBe(false);
+          expect(yield* fixture.fs.exists(recentEmpty)).toBe(true);
+          expect(yield* fixture.fs.exists(nonEmpty)).toBe(true);
+        }),
+      ),
+  );
+
   it.live.each(["nested", "direct", "annexed"] as const)(
     "reports a linked orphan's size without removing its files (%s)",
     (location) =>
