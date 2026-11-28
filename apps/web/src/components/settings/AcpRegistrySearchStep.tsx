@@ -258,7 +258,8 @@ export function AcpRegistrySearchStep({
             <p className="mt-1 text-xs text-muted-foreground">{t("Try a broader search.")}</p>
           </div>
         ) : (
-          <ScrollArea scrollFade className="max-h-64">
+          // Avoid repainting a scroll-linked mask inside the blurred dialog.
+          <ScrollArea className="max-h-64">
             <div className="pr-2.5">
               {results.map((agent) => (
                 <AcpRegistryAgentRow
