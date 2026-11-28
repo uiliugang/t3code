@@ -125,8 +125,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Composer shortcuts this trigger answers besides the picker's own. */
   triggerShortcuts?: string;
   /**
-   * Docks an effort column beside the list and a footer under both. The popup then stays open
-   * until Escape or an outside press, and picking a model moves focus to its levels.
+   * Docks the selected model's settings under the list and a footer under both. The popup then
+   * stays open until Escape or an outside press, and picking a model moves focus to its levels.
    */
   effortColumn?: ReactNode;
   renderFooter?: (usage: ReactNode) => ReactNode;
@@ -482,24 +482,22 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       >
         {props.effortColumn ? (
           <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className="flex max-h-(--available-height) flex-col">
-              {/* One fixed height, so a model with more options never resizes the popup. Short
-                  windows shrink it and keep the footer. */}
-              <div className="flex h-86.5 min-h-0 max-sm:h-auto max-sm:flex-col">
-                {picker}
-                <div
-                  data-model-picker-effort
-                  className="flex min-h-0 w-48 flex-col sm:shrink-0 border-l border-border/70 bg-muted/40 max-sm:h-64 max-sm:w-full max-sm:border-t max-sm:border-l-0"
-                  onKeyDown={(event) => {
-                    if (event.key !== "ArrowLeft" || event.altKey || event.ctrlKey || event.metaKey)
-                      return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    searchInputRef.current?.focus();
-                  }}
-                >
-                  {props.effortColumn}
-                </div>
+            <div className="flex max-h-(--available-height) flex-col sm:w-120">
+              {/* The list gives up height first, so a model with more options never pushes the
+                  settings or the footer out of a short window. */}
+              {picker}
+              <div
+                data-model-picker-effort
+                className="flex shrink-0 flex-col border-t border-border/70"
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowLeft" || event.altKey || event.ctrlKey || event.metaKey)
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {props.effortColumn}
               </div>
               {props.renderFooter?.(
                 <ProviderWeeklyUsage

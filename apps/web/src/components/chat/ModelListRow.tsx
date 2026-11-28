@@ -9,7 +9,7 @@ import { Kbd } from "../ui/kbd";
 import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
+import { ProviderInstanceIcon, providerLogoColor } from "./ProviderInstanceIcon";
 import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 
 export const ModelListRow = memo(function ModelListRow(props: {
@@ -33,6 +33,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   unavailable?: boolean;
   jumpLabel?: string | null;
   disabledReason?: string | null;
+  /** In the stacked picker the rows are roomier and the selected one keeps its star in view. */
+  stacked?: boolean;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
   const t = useUiTranslation();
@@ -41,11 +43,16 @@ export const ModelListRow = memo(function ModelListRow(props: {
     name: props.name,
     subProvider: props.subProvider,
   };
+  // The selected row names its model in the provider's own colour, where it has one.
+  const selectedColor = props.stacked
+    ? (props.providerAccentColor ?? providerLogoColor(props.driverKind) ?? "var(--primary)")
+    : undefined;
 
   const row = (
     <ComboboxItem
       hideIndicator
-      selectedFill={false}
+      selectedFill={props.stacked === true}
+      size={props.stacked ? "roomy" : "default"}
       index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
       disabled={Boolean(props.disabledReason)}
@@ -68,9 +75,15 @@ export const ModelListRow = memo(function ModelListRow(props: {
         indicatorBackground="var(--popover)"
         badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"
       />
-      <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
+      <div
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        style={props.stacked && props.isSelected ? { color: selectedColor } : undefined}
+      >
         <div
-          className="min-w-0 truncate text-sm font-normal leading-snug"
+          className={cn(
+            "min-w-0 truncate text-sm leading-snug",
+            props.stacked && props.isSelected && "font-semibold",
+          )}
           // Names the row in full on hover only when it is cut off.
           onPointerEnter={(event) => {
             const name = event.currentTarget;
@@ -123,6 +136,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
                   "size-3.5 sm:size-3",
                   props.isFavorite && "fill-current text-warning",
                   (!props.isFavorite || props.favoriteStarOnHover) &&
+                    !(props.stacked && props.isSelected) &&
                     "opacity-0 group-hover:opacity-100 group-data-highlighted:opacity-100 in-focus-visible:opacity-100 pointer-coarse:opacity-100",
                 )}
               />

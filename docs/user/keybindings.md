@@ -27,7 +27,7 @@ actions menu. **Reset to default** brings it back.
 
 Configure whether `Enter` sends or requires `mod+Enter` in **Settings → Chat → Send shortcut** (`Shift+Enter` always inserts a newline).
 
-In the model picker, use `Left`/`Shift+Tab` to move to the provider list, `Right` to return to search or move into effort levels, and `Up`/`Down`/`Enter` to select.
+In the model picker, use `Up`/`Down`/`Enter` to move through the models and select one. Typing opens the search, and `Esc` closes the search before it closes the picker. `Left`/`Shift+Tab` move to the provider tabs and `Down` returns to the models; `Right` moves into effort levels, where `Left`/`Right` step between levels and `Left` off the first level returns to the models.
 
 ## Copy pull request and thread references
 

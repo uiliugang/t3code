@@ -186,6 +186,23 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
   await userEvent.keyboard("{ArrowLeft}");
   await expect.element(search).toHaveFocus();
 
+  // The search is one icon until used. Typing opens it over every provider, and Escape closes
+  // the search before a second Escape closes the picker.
+  await expect
+    .element(page.getByRole("button", { name: "Other Codex", exact: true }))
+    .toBeVisible();
+  await userEvent.type(search, "Other");
+  await expect
+    .element(page.getByRole("button", { name: "Other Codex", exact: true }))
+    .not.toBeInTheDocument();
+  await expect.element(page.getByRole("option")).toHaveLength(1);
+  await userEvent.keyboard("{Escape}");
+  await expect
+    .element(page.getByRole("button", { name: "Other Codex", exact: true }))
+    .toBeVisible();
+  await expect.element(search).toHaveValue("");
+  await expect.element(page.getByRole("option", { name: /Plain model/ })).toBeVisible();
+
   await page.getByRole("option", { name: /Second model/ }).click();
   await expect.element(page.getByRole("radio", { name: "Medium" })).toHaveFocus();
   await expect

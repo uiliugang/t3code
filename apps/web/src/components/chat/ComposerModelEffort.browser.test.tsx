@@ -97,10 +97,18 @@ it("draws an agent's reasoning as bars and keeps its mode out of the levels", as
   await expect.element(levels.getByRole("radio")).toHaveLength(3);
   await expect.element(screen.getByRole("radio", { name: "Plan" })).not.toBeInTheDocument();
 
-  // Up and Down walk from the levels through the option rows without opening their menus.
+  // Left and Right walk the bar without picking; Up and Down step over the whole bar to the
+  // option rows, without opening their menus.
   await userEvent.tab();
   await expect.element(screen.getByRole("radio", { name: "Medium" })).toHaveFocus();
-  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(screen.getByRole("radio", { name: "High" })).toHaveFocus();
+  await expect
+    .element(screen.getByRole("radio", { name: "Medium" }))
+    .toHaveAttribute("aria-checked", "true");
+  await userEvent.keyboard("{ArrowUp}");
+  await expect.element(screen.getByRole("radio", { name: "High" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
   const speed = screen.getByRole("button", { name: "Speed: Standard" });
   await expect.element(speed).toHaveFocus();
   await expect.element(page.getByRole("menuitemradio")).not.toBeInTheDocument();
@@ -109,6 +117,8 @@ it("draws an agent's reasoning as bars and keeps its mode out of the levels", as
   await userEvent.keyboard("{ArrowLeft}");
   await expect.element(page.getByRole("menuitemradio")).not.toBeInTheDocument();
   await expect.element(speed).toHaveFocus();
+  await userEvent.keyboard("{ArrowUp}{ArrowUp}");
+  await expect.element(screen.getByRole("radio", { name: "Medium" })).toHaveFocus();
 
   await userEvent.click(screen.getByText("Auto-approve tools"));
   await expect
@@ -121,6 +131,25 @@ it("draws an agent's reasoning as bars and keeps its mode out of the levels", as
     .element(screen.getByRole("button", { name: "Session Mode: Plan" }))
     .toBeInTheDocument();
   await expect.element(page.getByRole("menuitemradio")).not.toBeInTheDocument();
+
+  // A press on the bar picks the level it lands on.
+  await userEvent.click(screen.getByRole("radio", { name: "Low" }));
+  await expect
+    .element(screen.getByRole("radio", { name: "Low" }))
+    .toHaveAttribute("aria-checked", "true");
+  await expect
+    .element(screen.getByRole("radio", { name: "Medium" }))
+    .toHaveAttribute("aria-checked", "false");
+
+  // The bar does not wrap: Left off its first level and Right off its last stay put.
+  await userEvent.keyboard("{ArrowLeft}");
+  await expect.element(screen.getByRole("radio", { name: "Low" })).toHaveFocus();
+  await userEvent.keyboard("{End}");
+  await expect.element(screen.getByRole("radio", { name: "High" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(screen.getByRole("radio", { name: "High" })).toHaveFocus();
+  await userEvent.keyboard("{Home}");
+  await expect.element(screen.getByRole("radio", { name: "Low" })).toHaveFocus();
 });
 
 it("focuses a reasoning level by its first letter without selecting it", async () => {
