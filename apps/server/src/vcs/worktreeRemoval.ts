@@ -1,12 +1,13 @@
 import { GitCommandError } from "@t3tools/contracts";
+import { tryUnquoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import type * as GitVcsDriver from "./GitVcsDriver.ts";
+import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
 
-const INDEX_LIST_MAX_BYTES = 64 * 1024 * 1024;
 // Git's own removal and the checks that mirror it share one bound.
 export const WORKTREE_REMOVE_TIMEOUT_MS = 5 * 60_000;
 
@@ -44,6 +45,63 @@ export const isLinkedWorktree = Effect.fn("WorktreeRemoval.isLinkedWorktree")(fu
     (yield* fileSystem.stat(path.join(worktreePath, ".git"))).type === "File" ||
     Option.isSome(yield* annexedAdminDir(worktreePath))
   );
+});
+
+export const hasWorktreeSubmoduleFiles = Effect.fn("WorktreeRemoval.hasSubmoduleFiles")(function* ({
+  adminDir,
+  execute,
+  ...command
+}: Pick<GitVcsDriver.ExecuteGitInput, "operation" | "cwd" | "env" | "timeoutMs"> & {
+  readonly adminDir: string;
+  readonly execute: GitVcsDriver.GitVcsDriver["Service"]["execute"];
+}) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  if (
+    yield* fileSystem.exists(path.join(adminDir, "modules")).pipe(Effect.orElseSucceed(() => true))
+  ) {
+    return true;
+  }
+  let protectedFiles = false;
+  yield* execute({
+    ...command,
+    args: ["-c", "core.quotePath=true", "ls-files", "--stage"],
+    maxOutputBytes: 64 * 1024,
+    appendTruncationMarker: true,
+    keepLineCallbacksAfterTruncation: true,
+    progress: {
+      onStdoutLine: (line) => {
+        if (protectedFiles || !line.startsWith("160000 ")) return Effect.void;
+        const relative = tryUnquoteGitPatchPath(line.slice(line.indexOf("\t") + 1));
+        if (relative === null) {
+          return Effect.sync(() => {
+            protectedFiles = true;
+          });
+        }
+        const directory = path.resolve(command.cwd, relative);
+        // Git status omits local files inside uninitialized gitlinks.
+        return fileSystem.realPath(directory).pipe(
+          Effect.flatMap((real) =>
+            real !== directory
+              ? Effect.succeed(true)
+              : fileSystem.readDirectory(real).pipe(Effect.map((names) => names.length > 0)),
+          ),
+          Effect.catchIf(
+            (error) => error.reason._tag === "NotFound",
+            () => Effect.succeed(false),
+          ),
+          Effect.orElseSucceed(() => true),
+          Effect.tap((present) =>
+            Effect.sync(() => {
+              protectedFiles = present;
+            }),
+          ),
+          Effect.asVoid,
+        );
+      },
+    },
+  });
+  return protectedFiles;
 });
 
 /**
@@ -132,7 +190,7 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
         operation: input.operation,
         cwd,
         args,
-        maxOutputBytes: INDEX_LIST_MAX_BYTES,
+        maxOutputBytes: 64 * 1024 * 1024,
         timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
         ...(env === undefined ? {} : { env }),
       })
@@ -201,16 +259,17 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
   if (!input.force) {
     // Bound like Git's own check, so `core.worktree` can't point it elsewhere.
     const boundEnv = { GIT_DIR: gitFile, GIT_WORK_TREE: worktreePath };
-    const submodules = refuse("working trees containing submodules cannot be moved or removed");
-    // An unreadable path counts as present, so a doubt refuses.
-    const present = (target: string) =>
-      fileSystem.exists(target).pipe(Effect.orElseSucceed(() => true));
-    if (yield* present(path.join(adminDir, "modules"))) return yield* submodules;
-    const index = yield* gitOutput(worktreePath, ["ls-files", "--stage", "-z"], boundEnv);
-    for (const entry of index.split("\0")) {
-      if (!entry.startsWith("160000 ")) continue;
-      const submodule = entry.slice(entry.indexOf("\t") + 1);
-      if (yield* present(path.join(worktreePath, submodule, ".git"))) return yield* submodules;
+    if (
+      yield* hasWorktreeSubmoduleFiles({
+        operation: input.operation,
+        cwd: worktreePath,
+        adminDir,
+        execute: input.execute,
+        env: boundEnv,
+        timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
+      })
+    ) {
+      return yield* refuse("working trees containing submodules cannot be moved or removed");
     }
     const status = yield* gitOutput(
       worktreePath,
@@ -238,10 +297,21 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
       .remove(path.join(worktreePath, name), { recursive: true })
       .pipe(Effect.mapError(failedToDelete));
   }
-  yield* fileSystem.remove(gitFile).pipe(Effect.mapError(failedToDelete));
-  yield* fileSystem.remove(worktreePath, { recursive: true }).pipe(
-    Effect.tapError(() => fileSystem.writeFileString(gitFile, gitFileContents).pipe(Effect.ignore)),
+  yield* fileSystem.remove(gitFile).pipe(
     Effect.mapError(failedToDelete),
+    Effect.andThen(
+      removeEmptyDirectory(worktreePath).pipe(
+        Effect.mapError(failedToDelete),
+        Effect.filterOrFail(
+          (removed) => removed,
+          () => refuse(`new files appeared in '${worktreePath}' during removal`),
+        ),
+        Effect.tapError(() =>
+          fileSystem.writeFileString(gitFile, gitFileContents, { flag: "wx" }).pipe(Effect.ignore),
+        ),
+      ),
+    ),
+    Effect.uninterruptible,
   );
   // The folder is gone, so Git only drops the worktree's metadata. The caller's `cwd` may
   // have been inside it; the common Git directory survives, and is named explicitly

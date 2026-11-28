@@ -965,7 +965,7 @@ describe("IssueService with a standalone tracker", () => {
         credentials: {
           get: () =>
             Effect.map(IssueTrackerAccount, (account) =>
-              account === accountId ? Option.some(credential) : Option.none(),
+              account === accountId || account === null ? Option.some(credential) : Option.none(),
             ),
         },
       });
@@ -1063,6 +1063,21 @@ describe("IssueService with a standalone tracker", () => {
       credential = "acme";
       const detail = yield* service.detail({ ...explicit, key: "eng-1" });
       expect(detail.url).toBe(explicit.url);
+
+      const unbound = yield* makeService({
+        projects: [project({ id: "web" })],
+        trackers: [tracker],
+      });
+      const page = { ...explicit, cursor: "first-page" };
+      credential = "acme";
+      expect(yield* unbound.comments(page)).toMatchObject({ nextCursor: "acme" });
+      expect(yield* Effect.flip(unbound.comments(page))).toMatchObject({ reason: "not-found" });
+      credential = "acme";
+      for (const mismatch of [{ host: "example.com" }, { scope: "QA" }, { key: "ENG-2" }]) {
+        expect(yield* Effect.flip(unbound.comments({ ...page, ...mismatch }))).toMatchObject({
+          reason: "not-found",
+        });
+      }
     }),
   );
 

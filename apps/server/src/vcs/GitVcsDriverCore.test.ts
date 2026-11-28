@@ -9349,6 +9349,143 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("keeps new files written during worktree removal and retains the registration", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "new-files");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/new-files",
+        });
+        const gitFile = path.join(worktreePath, ".git");
+        const lateFile = path.join(worktreePath, "notes.txt");
+        const pointer = yield* fileSystem.readFileString(gitFile);
+        const removing = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fileSystem,
+            remove: (target, options) =>
+              target === gitFile
+                ? fileSystem
+                    .writeFileString(lateFile, "new work\n")
+                    .pipe(Effect.andThen(fileSystem.remove(target, options)))
+                : fileSystem.remove(target, options),
+          }),
+          Effect.provide(layerServerConfig),
+        );
+
+        const result = yield* Effect.result(removing.removeWorktree({ cwd, path: worktreePath }));
+
+        assert.isTrue(Result.isFailure(result));
+        assert.equal(yield* fileSystem.readFileString(lateFile), "new work\n");
+        assert.equal(yield* fileSystem.readFileString(gitFile), pointer);
+        assert.include(yield* git(cwd, ["worktree", "list", "--porcelain"]), worktreePath);
+      }),
+    );
+
+    it.effect(
+      "preserves local files inside an uninitialized submodule during worktree removal",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          const path = yield* Path.Path;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "uninitialized");
+          const gitlink = "module-\uFFFD";
+          const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+          yield* git(cwd, ["update-index", "--add", "--cacheinfo", `160000,${head},${gitlink}`]);
+          yield* git(cwd, ["commit", "--quiet", "-m", "Record an uninitialized submodule"]);
+          yield* git(cwd, ["worktree", "add", "--quiet", "--detach", worktreePath]);
+          yield* writeTextFile(worktreePath, `${gitlink}/local.txt`, "local draft\n");
+          assert.equal(
+            yield* git(worktreePath, ["status", "--porcelain", "--ignore-submodules=none"]),
+            "",
+          );
+
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const result = yield* Effect.result(driver.removeWorktree({ cwd, path: worktreePath }));
+
+          assert.isTrue(Result.isFailure(result));
+          const localFile = path.join(worktreePath, gitlink, "local.txt");
+          assert.equal(yield* fileSystem.readFileString(localFile), "local draft\n");
+          assert.include(yield* git(cwd, ["worktree", "list", "--porcelain"]), worktreePath);
+          yield* fileSystem.remove(localFile);
+          yield* driver.removeWorktree({ cwd, path: worktreePath });
+          assert.isFalse(yield* fileSystem.exists(worktreePath));
+        }),
+    );
+
+    it.effect.each([false, true])(
+      "checks worktree indexes past the stdout buffer limit (submodule: %s)",
+      (submodule) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          const path = yield* Path.Path;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "large-index");
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          yield* driver.createWorktree({
+            cwd,
+            path: worktreePath,
+            refName: initialBranch,
+            newRefName: "feature/large-index",
+          });
+          if (submodule) yield* writeTextFile(worktreePath, "子模块/.git", "gitdir: ../admin\n");
+
+          const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const spawner = ChildProcessSpawner.make((command) => {
+            if (
+              !ChildProcess.isStandardCommand(command) ||
+              !command.args.includes("ls-files") ||
+              !command.args.includes("--stage")
+            ) {
+              return delegate.spawn(command);
+            }
+            // Stream more than the previous 64 MiB cap without allocating a large fixture.
+            const separator = command.args.includes("-z") ? "\0" : "\n";
+            const sha = "a".repeat(40);
+            const filename = `${"directory/".repeat(100)}file.txt`;
+            const chunk = Buffer.from(`100644 ${sha} 0\t${filename}${separator}`.repeat(64));
+            const gitlink =
+              separator === "\0" ? "子模块" : '"\\345\\255\\220\\346\\250\\241\\345\\235\\227"';
+            const tail = submodule ? `160000 ${sha} 0\t${gitlink}${separator}` : "";
+            return Effect.succeed(
+              ChildProcessSpawner.makeHandle({
+                ...makeSuccessfulHandle(""),
+                stdout: Stream.concat(
+                  Stream.range(1, 1100).pipe(Stream.map(() => chunk)),
+                  Stream.encodeText(Stream.make(tail)),
+                ),
+              }),
+            );
+          });
+          const removing = yield* makeGitVcsDriverCore().pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.provide(layerServerConfig),
+          );
+
+          const result = yield* Effect.result(removing.removeWorktree({ cwd, path: worktreePath }));
+
+          if (submodule) {
+            assert.include(
+              Result.getOrThrow(Result.flip(result)).detail,
+              "working trees containing submodules cannot be moved or removed",
+            );
+            assert.isTrue(yield* fileSystem.exists(path.join(worktreePath, "子模块", ".git")));
+          } else {
+            assert.isTrue(Result.isSuccess(result));
+            assert.isFalse(yield* fileSystem.exists(worktreePath));
+          }
+        }),
+    );
+
     it.effect.skipIf(!symlinksSupported)(
       "removes a worktree whose .git file git-annex replaced with a symlink, keeping the symlink when refused",
       () =>

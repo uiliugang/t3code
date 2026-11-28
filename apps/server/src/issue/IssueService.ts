@@ -154,9 +154,28 @@ function findStandaloneIssueUrl(trackers: ReadonlyArray<StandaloneIssueTrackerAp
   if (url === null) return null;
   for (const api of trackers) {
     const link = api.parseIssueUrl(url);
-    if (link !== null) return { api, tracker: api.kind, link };
+    if (link !== null) return { api, tracker: api.kind, link, authority: url.host.toLowerCase() };
   }
   return null;
+}
+
+function validateStandaloneIssueRef(
+  ref: IssueScopeRef & { readonly key?: string },
+  { link, authority }: NonNullable<ReturnType<typeof findStandaloneIssueUrl>>,
+  operation: string,
+) {
+  const host = ref.host?.trim().toLowerCase();
+  return (host === undefined || host === link.host || host === authority) &&
+    link.key.toLowerCase() === ref.key?.trim().toLowerCase() &&
+    link.scope.toLowerCase() === ref.scope.trim().toLowerCase()
+    ? Effect.void
+    : Effect.fail(
+        new IssueOperationError({
+          operation,
+          reason: "not-found",
+          detail: "The issue URL does not match the selected issue's host, team and key.",
+        }),
+      );
 }
 
 /** Lower case, so a scope keeps its cursor whichever project's spelling is read. Clients group by the leading host. */
@@ -445,45 +464,63 @@ const make = Effect.gen(function* () {
     return { ...project, api: asIssueTrackerAccount(tracker, project.accountId, credential) };
   });
 
-  /**
-   * A project with no binding for a standalone tracker, the No project included, serves its
-   * exact URL reads with the environment's credential, never unbound writes.
-   */
-  const requireStandaloneProject = (
-    ref: IssueScopeRef,
-    api: StandaloneIssueTrackerApi,
-  ): Effect.Effect<SupportedProject & { readonly writable: boolean }, IssueError> => {
-    const host = ref.host?.trim().toLowerCase();
-    if (host !== undefined && host !== api.standalone.host) {
-      return Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" }));
-    }
-    return projects.getShell(ref.projectId).pipe(
-      Effect.mapError(
-        (cause) =>
-          new IssueOperationError({
-            operation: "listProjects",
-            detail: "The project list could not be read.",
-            cause,
-          }),
-      ),
-      Effect.flatMap(
-        Option.match({
-          onNone: () => Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" })),
-          onSome: (project) =>
-            Effect.succeed({
-              project,
-              api,
-              // No binding names an account, so the tracker's first one serves.
-              accountId: null,
-              tracker: ref.tracker,
-              host: api.standalone.host,
-              scope: ref.scope.trim(),
-              writable: false,
+  const readUnboundStandaloneIssue = Effect.fn("IssueService.readUnboundStandaloneIssue")(
+    function* (
+      projectId: ProjectId,
+      { api, tracker, link }: NonNullable<ReturnType<typeof findStandaloneIssueUrl>>,
+      operation: string,
+    ) {
+      const project = yield* projects.getShell(projectId).pipe(
+        Effect.mapError(
+          (cause) =>
+            new IssueOperationError({
+              operation: "listProjects",
+              detail: "The project list could not be read.",
+              cause,
             }),
-        }),
-      ),
-    );
-  };
+        ),
+      );
+      if (Option.isNone(project)) {
+        return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+      }
+      const served = yield* pinCredential(
+        {
+          project: project.value,
+          api,
+          // No binding names an account, so the tracker's first one serves.
+          accountId: null,
+          tracker,
+          host: api.standalone.host,
+          scope: link.scope.trim(),
+          writable: false,
+        },
+        operation,
+      );
+      const issue = yield* served.api
+        .getIssue({
+          cwd: served.project.workspaceRoot,
+          host: served.host,
+          scope: link.scope,
+          key: link.key,
+        })
+        .pipe(Effect.mapError(toIssueError(operation)));
+      const canonicalUrl = parseUrl(issue.url);
+      const canonical = canonicalUrl === null ? null : api.parseIssueUrl(canonicalUrl);
+      if (
+        canonical === null ||
+        canonical.workspace.toLowerCase() !== link.workspace.toLowerCase() ||
+        canonical.scope.toLowerCase() !== link.scope.toLowerCase() ||
+        canonical.key.toLowerCase() !== link.key.toLowerCase()
+      ) {
+        return yield* new IssueOperationError({
+          operation,
+          reason: "not-found",
+          detail: "This issue URL does not belong to the connected workspace.",
+        });
+      }
+      return { project: served, issue };
+    },
+  );
 
   /**
    * The project whose checkout and credentials serve a reference, and whether the reference is
@@ -493,8 +530,9 @@ const make = Effect.gen(function* () {
    */
   const requireProject = Effect.fn("IssueService.requireProject")(function* (
     ref: IssueScopeRef & { readonly key?: string },
-    writeOperation?: string,
+    options?: { readonly writeOperation?: string; readonly unboundReadOperation?: string },
   ): Effect.fn.Return<SupportedProject & { readonly writable: boolean }, IssueError> {
+    const writeOperation = options?.writeOperation;
     const standalone = ref.url ? findStandaloneIssueUrl(registry.standalone, ref.url) : null;
     const standaloneTracker = registry.standalone.some((api) => api.kind === ref.tracker);
     if (
@@ -514,7 +552,7 @@ const make = Effect.gen(function* () {
       });
     }
     if (standalone !== null && standalone.tracker === ref.tracker) {
-      const authority = new URL(ref.url!).host.toLowerCase();
+      const { authority } = standalone;
       const { supported } = yield* listProjects({
         host: standalone.link.host,
         authority,
@@ -547,7 +585,12 @@ const make = Effect.gen(function* () {
       const ordered = [...preferred(exact), ...preferred(onTracker)];
       const accounts = [...new Set(ordered.map((project) => project.accountId))];
       if (accounts.length === 0) {
-        return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+        const operation = options?.unboundReadOperation;
+        if (operation === undefined) {
+          return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+        }
+        yield* validateStandaloneIssueRef(ref, standalone, operation);
+        return (yield* readUnboundStandaloneIssue(ref.projectId, standalone, operation)).project;
       }
       let failure: IssueError | null = null;
       for (const accountId of accounts) {
@@ -625,7 +668,7 @@ const make = Effect.gen(function* () {
   });
 
   const requireWritable = (ref: IssueScopeRef & { readonly key?: string }, operation: string) =>
-    requireProject(ref, operation).pipe(
+    requireProject(ref, { writeOperation: operation }).pipe(
       Effect.filterOrFail(
         (project) => project.writable,
         () => readOnly(operation),
@@ -866,20 +909,7 @@ const make = Effect.gen(function* () {
     function* (input) {
       const standalone = input.url ? findStandaloneIssueUrl(registry.standalone, input.url) : null;
       if (standalone !== null && standalone.tracker === input.tracker) {
-        const host = input.host?.trim().toLowerCase();
-        if (
-          (host !== undefined &&
-            host !== standalone.link.host &&
-            host !== parseUrl(input.url!)?.host.toLowerCase()) ||
-          standalone.link.key.toLowerCase() !== input.key.trim().toLowerCase() ||
-          standalone.link.scope.toLowerCase() !== input.scope.trim().toLowerCase()
-        ) {
-          return yield* new IssueOperationError({
-            operation: "detail",
-            reason: "not-found",
-            detail: "The issue URL does not match the selected issue's host, team and key.",
-          });
-        }
+        yield* validateStandaloneIssueRef(input, standalone, "detail");
         // A canonical URL must be checked against the current account before reusing a read.
         const resolved = yield* resolveUrl(input.url!, input.projectId);
         if (
@@ -913,7 +943,7 @@ const make = Effect.gen(function* () {
     );
 
   const comments: IssueService["Service"]["comments"] = (input) =>
-    requireProject(input).pipe(
+    requireProject(input, { unboundReadOperation: "comments" }).pipe(
       Effect.flatMap((project) =>
         project.api
           .getComments({
@@ -1214,33 +1244,11 @@ const make = Effect.gen(function* () {
         if (preferredProjectId === undefined) {
           return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
         }
-        const unbound = yield* requireStandaloneProject(
-          { projectId: preferredProjectId, tracker, scope: link.scope },
-          standalone.api,
+        const { project: served, issue } = yield* readUnboundStandaloneIssue(
+          preferredProjectId,
+          standalone,
+          "resolveUrl",
         );
-        const served = yield* pinCredential(unbound, "resolveUrl");
-        const issue = yield* served.api
-          .getIssue({
-            cwd: served.project.workspaceRoot,
-            host: served.host,
-            scope: link.scope,
-            key: link.key,
-          })
-          .pipe(Effect.mapError(toIssueError("resolveUrl")));
-        const canonicalUrl = parseUrl(issue.url);
-        const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
-        if (
-          canonical === null ||
-          canonical.workspace.toLowerCase() !== standalone.link.workspace.toLowerCase() ||
-          canonical.scope.toLowerCase() !== standalone.link.scope.toLowerCase() ||
-          canonical.key.toLowerCase() !== standalone.link.key.toLowerCase()
-        ) {
-          return yield* new IssueOperationError({
-            operation: "resolveUrl",
-            reason: "not-found",
-            detail: "This issue URL does not belong to the connected workspace.",
-          });
-        }
         return {
           projectId: served.project.id,
           tracker: served.tracker,
