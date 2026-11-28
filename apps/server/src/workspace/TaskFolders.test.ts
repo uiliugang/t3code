@@ -683,11 +683,15 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
         });
         if (carrySource !== "none") {
           assert.equal(
-            yield* fileSystem.readFileString(path.join(taskFolder.projectPath, apiName, "README.md")),
+            yield* fileSystem.readFileString(
+              path.join(taskFolder.projectPath, apiName, "README.md"),
+            ),
             carrySource === "task-folder" ? "parent commit\n" : "pending changes\n",
           );
           assert.equal(
-            yield* fileSystem.readFileString(path.join(taskFolder.projectPath, apiName, "notes.txt")),
+            yield* fileSystem.readFileString(
+              path.join(taskFolder.projectPath, apiName, "notes.txt"),
+            ),
             "local notes\n",
           );
         }

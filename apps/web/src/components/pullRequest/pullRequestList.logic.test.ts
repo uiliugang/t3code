@@ -164,7 +164,9 @@ describe("visible pull request line-count targets", () => {
       expect(withDiffStat(own, stats)).toEqual(own);
       if (source === "explicit") {
         const { target: _target, ...legacy } = own;
-        expect(withDiffStat(own, mergePullRequestDiffStats(stats, [{ ...legacy, additions: 55 }]))).toEqual(own);
+        expect(
+          withDiffStat(own, mergePullRequestDiffStats(stats, [{ ...legacy, additions: 55 }])),
+        ).toEqual(own);
       }
       expect([...pullRequestStatsKeysToRequest(entriesByKey, new Set([key]), [], stats)]).toEqual([
         key,

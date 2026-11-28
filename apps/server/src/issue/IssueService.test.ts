@@ -1395,14 +1395,21 @@ describe("IssueService with a standalone tracker", () => {
         host: "linear.app",
         writable: false,
       });
-      expect(yield* Effect.result(unbound.detail({ ...noProjectRef, url, key: "ENG-2" })))
-        .toMatchObject({ _tag: "Failure" });
-      expect(yield* Effect.result(unbound.comment({ ...noProjectRef, url, body: "Follow-up" })))
-        .toMatchObject({ _tag: "Failure" });
-      expect(yield* Effect.result(unbound.setState({ ...noProjectRef, url, state: "Done" })))
-        .toMatchObject({ _tag: "Failure" });
-      expect(yield* unbound.resolveUrl(url, "notes" as ProjectId))
-        .toMatchObject({ projectId: "notes", host: "linear.app", key: "ENG-1", writable: false });
+      expect(
+        yield* Effect.result(unbound.detail({ ...noProjectRef, url, key: "ENG-2" })),
+      ).toMatchObject({ _tag: "Failure" });
+      expect(
+        yield* Effect.result(unbound.comment({ ...noProjectRef, url, body: "Follow-up" })),
+      ).toMatchObject({ _tag: "Failure" });
+      expect(
+        yield* Effect.result(unbound.setState({ ...noProjectRef, url, state: "Done" })),
+      ).toMatchObject({ _tag: "Failure" });
+      expect(yield* unbound.resolveUrl(url, "notes" as ProjectId)).toMatchObject({
+        projectId: "notes",
+        host: "linear.app",
+        key: "ENG-1",
+        writable: false,
+      });
 
       // A project with no remote at all can still be bound, and then has only the standalone one.
       const standaloneOnly = yield* makeService({
