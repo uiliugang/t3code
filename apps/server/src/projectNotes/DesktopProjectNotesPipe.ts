@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Wraps inherited libuv descriptors; does not bind or listen.
 import * as NodeNet from "node:net";
-import * as NodeStream from "@effect/platform-node/NodeStream";
+import type * as NodeStream from "node:stream";
+import * as EffectNodeStream from "@effect/platform-node/NodeStream";
 import {
   DESKTOP_PROJECT_NOTES_INPUT_FD,
   DESKTOP_PROJECT_NOTES_OUTPUT_FD,
@@ -38,20 +39,27 @@ const acquire = Effect.fn("DesktopProjectNotesPipe.acquire")((fd: number, writab
       }),
   ),
 );
-const send = (socket: NodeNet.Socket, bytes: Uint8Array) =>
+export const writeProjectNotesReply = (socket: NodeStream.Writable, bytes: Uint8Array) =>
   Effect.callback<void, PipeClosed>((resume) => {
     if (socket.destroyed || !socket.writable) {
       resume(Effect.fail(close()));
       return;
     }
-    const onClose = () => resume(Effect.fail(close()));
-    socket.once("close", onClose);
-    socket.once("error", onClose);
-    socket.write(bytes, (error) => resume(error ? Effect.fail(close()) : Effect.void));
-    return Effect.sync(() => {
+    const cleanup = () => {
       socket.off("close", onClose);
       socket.off("error", onClose);
+    };
+    const onClose = () => {
+      cleanup();
+      resume(Effect.fail(close()));
+    };
+    socket.once("close", onClose);
+    socket.once("error", onClose);
+    socket.write(bytes, (error) => {
+      cleanup();
+      resume(error ? Effect.fail(close()) : Effect.void);
     });
+    return Effect.sync(cleanup);
   }).pipe(Effect.timeoutOrElse({ duration: "4 seconds", orElse: () => Effect.fail(close()) }));
 const start = Effect.fn("DesktopProjectNotesPipe.start")(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -64,14 +72,16 @@ const start = Effect.fn("DesktopProjectNotesPipe.start")(function* () {
       const incoming = yield* acquire(DESKTOP_PROJECT_NOTES_INPUT_FD, false);
       const outgoing = yield* acquire(DESKTOP_PROJECT_NOTES_OUTPUT_FD, true);
       const session = yield* makeDesktopProjectNotesSession({ launchNonce: nonce, environmentId });
-      const input = NodeStream.fromReadable<Uint8Array, PipeClosed>({
+      const input = EffectNodeStream.fromReadable<Uint8Array, PipeClosed>({
         evaluate: () => incoming,
         closeOnDone: true,
         onError: close,
       });
       yield* desktopProjectNotesLines(input).pipe(
         Stream.runForEach((line) =>
-          session.handle(line).pipe(Effect.flatMap((reply) => send(outgoing, reply))),
+          session
+            .handle(line)
+            .pipe(Effect.flatMap((reply) => writeProjectNotesReply(outgoing, reply))),
         ),
         Effect.ensuring(session.close),
       );

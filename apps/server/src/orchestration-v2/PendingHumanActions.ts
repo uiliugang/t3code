@@ -28,12 +28,13 @@ export const readPendingHumanActions = Effect.fn("PendingHumanActions.read")(fun
              request.runtime_request_id AS requestId, card.turn_item_id AS targetItemId,
              CASE WHEN request.kind = 'user_input' THEN 'user_input' ELSE 'approval' END AS kind,
              request.created_at AS createdAt
-      FROM orchestration_v2_projection_threads AS thread
-      CROSS JOIN orchestration_v2_projection_runtime_requests AS request
-        INDEXED BY orchestration_v2_projection_runtime_requests_thread_status_idx
+      FROM orchestration_v2_projection_runtime_requests AS request
+        INDEXED BY orchestration_v2_projection_requests_recovery_idx
+      CROSS JOIN orchestration_v2_projection_threads AS thread
       CROSS JOIN orchestration_v2_projection_turn_items AS card
         INDEXED BY orchestration_v2_projection_turn_items_node_ordinal_idx
-      WHERE thread.archived_at IS NULL AND thread.deleted_at IS NULL
+      WHERE request.status = 'pending' AND thread.thread_id = request.thread_id
+        AND thread.archived_at IS NULL AND thread.deleted_at IS NULL
         AND json_extract(thread.payload_json, '$.linkOrigin') IS NULL
         AND json_extract(thread.payload_json, '$.delegatedFrom') IS NULL
         AND json_type(thread.payload_json, '$.lineage.relationshipToParent') IN ('null', 'text')
@@ -47,7 +48,6 @@ export const readPendingHumanActions = Effect.fn("PendingHumanActions.read")(fun
           json_extract(thread.payload_json, '$.lineage.relationshipToParent') IS 'subagent'
           AND json_extract(thread.payload_json, '$.creationSource') IS 'provider'
         )
-        AND request.thread_id = thread.thread_id AND request.status = 'pending'
         AND request.kind IN ('user_input', 'command', 'file-read', 'file-change', 'mcp-elicitation', 'permission')
         AND (
           json_extract(request.payload_json, '$.responseCapability.type') = 'live'

@@ -250,7 +250,7 @@ export function WorkspaceThreadSidebar() {
       spaceScope={scope}
       spaceControls={spaceControls}
       inboxEntry={
-        enabled && panes.primarySidebarVisible ? (
+        panes.primarySidebarVisible ? (
           <HomeHumanActionInbox
             onOpenTarget={(target) =>
               selectThreadRoute({
