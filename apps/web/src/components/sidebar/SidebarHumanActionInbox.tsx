@@ -79,6 +79,7 @@ export function SidebarHumanActionInbox() {
   const [open, setOpen] = useState(false);
   const navigated = useRef(false);
   const checking = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the outstanding verification transport when this inbox unmounts
   useEffect(() => () => checking.current?.abort(), []);
   const [filter, setFilter] = useState<ScopedHumanAction["kind"] | null>(null);
   const supported = environments.filter(

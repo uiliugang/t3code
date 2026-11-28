@@ -1510,7 +1510,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         className={cn(
           "messages-timeline-row-frame",
           item.id === inboxApprovalRowId &&
-            "[&_[data-human-action-request]:focus-visible]:ring-2 [&_[data-human-action-request]:focus-visible]:ring-ring",
+            "[&_[data-human-action-request]:focus-visible]:ring-2 [&_[data-human-action-request]:focus-visible]:ring-inset [&_[data-human-action-request]:focus-visible]:ring-ring",
         )}
         data-inbox-timeline-row={item.id === inboxApprovalRowId ? item.id : undefined}
         onPlayCapture={(event) => onAudioPlaybackChange(item.id, event)}

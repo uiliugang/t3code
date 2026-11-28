@@ -625,7 +625,9 @@ export default function ChatView(props: ChatViewProps) {
   const [failedInboxHistoryActivation, setFailedInboxHistoryActivation] = useState<string | null>(
     null,
   );
+  const serverThreadHistory = useThreadHistory(routeThreadDetailRef);
   const couldLoadInboxHistory =
+    (serverThreadHistory.hasMoreHistory || serverThreadHistory.loading) &&
     requestedAction !== null &&
     failedInboxHistoryActivation !== requestedAction.activation &&
     inboxStatus === "ready" &&
@@ -697,7 +699,6 @@ export default function ChatView(props: ChatViewProps) {
     activeProviderThread,
   );
   const serverVisibleTurnItems = useQuietThreadVisibleTurnItems(routeThreadDetailRef);
-  const serverThreadHistory = useThreadHistory(routeThreadDetailRef);
   const inboxHistoryTarget = couldLoadInboxHistory ? requestedAction : null;
   const inboxHistoryRouteEnvironment = routeThreadDetailRef?.environmentId;
   const inboxHistoryRouteThread = routeThreadDetailRef?.threadId;
@@ -714,13 +715,10 @@ export default function ChatView(props: ChatViewProps) {
       !inboxHistoryRouteEnvironment ||
       !inboxHistoryRouteThread ||
       inboxHistoryLoading ||
+      !canLoadInboxHistory ||
       startedInboxHistory.current === inboxHistoryActivation
     )
       return;
-    if (!canLoadInboxHistory) {
-      setFailedInboxHistoryActivation(inboxHistoryActivation);
-      return;
-    }
     startedInboxHistory.current = inboxHistoryActivation;
     void loadEarlierThreadHistory({
       environmentId: inboxHistoryRouteEnvironment,

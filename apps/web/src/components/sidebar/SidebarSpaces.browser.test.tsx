@@ -5,6 +5,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
 import { removeLocalStorageItem } from "../../hooks/useLocalStorage";
+import appCss from "../../index.css?inline";
 import { SidebarProvider } from "../ui/sidebar";
 import {
   SidebarSpaceEditor,
@@ -70,6 +71,10 @@ function SpacesSidebar() {
 
 it("creates a Space from the footer and selects exactly one of two same-ID projects", async () => {
   using cleanup = new DisposableStack();
+  const style = document.createElement("style");
+  style.textContent = appCss;
+  document.head.append(style);
+  cleanup.defer(() => style.remove());
   cleanup.defer(() => {
     selectActiveSidebarSpace(null);
     removeLocalStorageItem(SIDEBAR_SPACE_DEFINITIONS);

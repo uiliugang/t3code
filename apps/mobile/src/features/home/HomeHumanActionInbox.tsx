@@ -64,6 +64,7 @@ export function HomeHumanActionInbox({
   const t = useUiTranslation();
   const [open, setOpen] = useState(false);
   const checking = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the outstanding verification transport when this inbox unmounts
   useEffect(() => () => checking.current?.abort(), []);
   const [filter, setFilter] = useState<"all" | ScopedHumanAction["kind"]>("all");
   const environments = useWorkspaceEnvironments();

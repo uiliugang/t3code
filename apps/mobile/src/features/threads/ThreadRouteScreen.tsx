@@ -450,6 +450,8 @@ function ThreadRouteContent(
       : null;
   const [failedInboxHistory, setFailedInboxHistory] = useState<string | null>(null);
   const shouldLoadInboxHistory =
+    (selectedThreadDetailState.history.hasMoreHistory ||
+      selectedThreadDetailState.history.loading) &&
     authorizedTarget !== null &&
     inboxStatus === "ready" &&
     selectedThreadDetailState.status === "live" &&
@@ -530,13 +532,10 @@ function ThreadRouteContent(
       !inboxHistoryEnvironment ||
       !inboxHistoryThread ||
       inboxHistoryLoading ||
+      !inboxHasOlderHistory ||
       startedInboxHistory.current === inboxHistoryActivation
     )
       return;
-    if (!inboxHasOlderHistory) {
-      setFailedInboxHistory(inboxHistoryActivation);
-      return;
-    }
     startedInboxHistory.current = inboxHistoryActivation;
     void loadEarlierHistory({
       environmentId: inboxHistoryEnvironment,
