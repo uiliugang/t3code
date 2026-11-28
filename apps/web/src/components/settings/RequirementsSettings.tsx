@@ -4,16 +4,11 @@ import {
   isMeituanServiceEnabled,
   issueSourcesMatch,
   projectIssueProvider,
-  MAX_WORK_ITEM_DISCOVERY_LIMIT,
-  WorkItemDiscoveryLimit,
   type IssueSource,
   type IssueSourcesResult,
-  type ServerSettingsPatch,
 } from "@t3tools/contracts";
-import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 import {
-  ChevronDownIcon,
   GithubIcon,
   RefreshCwIcon,
   SaveIcon,
@@ -22,7 +17,7 @@ import {
   Undo2Icon,
   XIcon,
 } from "lucide-react";
-import { Fragment, useId, useState } from "react";
+import { useState } from "react";
 import {
   meituanAssociationCountLabel,
   mepSpaceSummary,
@@ -37,11 +32,9 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { MepIcon } from "../Icons";
 import { Checkbox } from "../ui/checkbox";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   parseMepSpaceIds,
@@ -102,112 +95,6 @@ function matchesProjectSourceFilters(
         (filters.mode === "manual"
           ? overridden.has(source.provider)
           : !overridden.has(source.provider))),
-  );
-}
-
-const isDiscoveryLimit = Schema.is(WorkItemDiscoveryLimit);
-
-function DiscoveredTasksSettings({
-  environment,
-  multiple,
-}: {
-  environment: Environment;
-  multiple: boolean;
-}) {
-  const t = useUiTranslation();
-  const { environmentId, label } = environment;
-  const { workItemDiscoveryEnabled, workItemDiscoveryLimit } = useEnvironmentSettings(
-    environmentId,
-    (settings) => settings,
-  );
-  const allowed = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
-  const update = useAtomCommand(serverEnvironment.updateSettings);
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const inputId = useId();
-  const limit = Number(draft ?? workItemDiscoveryLimit);
-  const valid = isDiscoveryLimit(limit);
-  const disabled = !allowed || saving;
-  const save = async (patch: ServerSettingsPatch) => {
-    setSaving(true);
-    const result = await update({ environmentId, input: { patch } });
-    if (result._tag === "Success" && patch.workItemDiscoveryLimit !== undefined) setDraft(null);
-    setSaving(false);
-  };
-
-  return (
-    <section className="space-y-3">
-      <h2 className="text-base font-semibold">
-        {multiple
-          ? t("Discovered tasks · {environment}", { environment: label })
-          : t("Discovered tasks")}
-      </h2>
-      <Collapsible>
-        <div className="flex items-center justify-between gap-3">
-          <Label htmlFor={`${inputId}-enabled`}>{t("Enable task discovery")}</Label>
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <CollapsibleTrigger
-                    render={<Button variant="ghost-muted" size="icon-sm" />}
-                    className="group"
-                    aria-label={t("Maximum discovered tasks")}
-                  >
-                    <ChevronDownIcon
-                      aria-hidden
-                      className="size-3.5 group-data-panel-open:rotate-180"
-                    />
-                  </CollapsibleTrigger>
-                }
-              />
-              <TooltipPopup>{t("Maximum discovered tasks")}</TooltipPopup>
-            </Tooltip>
-            <Switch
-              id={`${inputId}-enabled`}
-              checked={workItemDiscoveryEnabled}
-              disabled={disabled}
-              onCheckedChange={(workItemDiscoveryEnabled) =>
-                void save({ workItemDiscoveryEnabled })
-              }
-            />
-          </div>
-        </div>
-        <CollapsiblePanel animate={false}>
-          <form
-            className="flex items-center gap-2 pt-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!disabled && valid && limit !== workItemDiscoveryLimit) {
-                void save({ workItemDiscoveryLimit: limit });
-              }
-            }}
-          >
-            <Label htmlFor={inputId}>{t("Maximum discovered tasks")}</Label>
-            <div className="w-28 min-w-0">
-              <Input
-                id={inputId}
-                type="number"
-                min={1}
-                max={MAX_WORK_ITEM_DISCOVERY_LIMIT}
-                placeholder={`1-${MAX_WORK_ITEM_DISCOVERY_LIMIT}`}
-                value={draft ?? workItemDiscoveryLimit}
-                disabled={disabled}
-                aria-invalid={!valid}
-                onChange={(event) => setDraft(event.target.value)}
-              />
-            </div>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={disabled || !valid || limit === workItemDiscoveryLimit}
-            >
-              {t("Save")}
-            </Button>
-          </form>
-        </CollapsiblePanel>
-      </Collapsible>
-    </section>
   );
 }
 
@@ -1001,12 +888,12 @@ export function RequirementsSettings() {
           </p>
         ))}
       {groups.map((group, index) => (
-        <Fragment key={group.environment.environmentId}>
-          <EnvironmentTrackers group={group} multiple={groups.length > 1} anchor={index === 0} />
-          {group.environment.serverConfig?.workItemDiscoverySettings ? (
-            <DiscoveredTasksSettings environment={group.environment} multiple={groups.length > 1} />
-          ) : null}
-        </Fragment>
+        <EnvironmentTrackers
+          key={group.environment.environmentId}
+          group={group}
+          multiple={groups.length > 1}
+          anchor={index === 0}
+        />
       ))}
       <ProjectIssueSources
         key={`${JSON.stringify(search)}/${projects.map(projectKey).join(",")}`}

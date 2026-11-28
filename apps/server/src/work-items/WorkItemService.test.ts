@@ -8,7 +8,6 @@ import {
   EventId,
   IssueTrackerKind,
   EnvironmentId,
-  MAX_WORK_ITEM_DISCOVERY_LIMIT,
   MessageId,
   NodeId,
   ProjectId,
@@ -35,9 +34,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
-import * as Statement from "effect/sql/Statement";
 import * as WorkItems from "./WorkItemService.ts";
-import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import * as DeliveryAutomation from "./DeliveryAutomationService.ts";
 import * as Issues from "../sourceControl/IssueService.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
@@ -60,7 +57,6 @@ import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 
 const projectId = ProjectId.make("project:tasks");
 const now = "2026-11-09T01:00:00.000Z";
-const candidatePreview = "Visible source description. ".repeat(25);
 const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "test" };
 const participant = {
   assignment: "Implement the feature",
@@ -146,9 +142,6 @@ function setup(
           },
         } as unknown as ProviderInstance),
     }),
-    Layer.mock(ThreadSearch.ThreadSearch)({
-      latestMessagePreview: () => Effect.succeed(candidatePreview.slice(0, 500)),
-    }),
     Layer.mock(TextGeneration.TextGeneration)({
       generateWorkItemDraft: () =>
         Effect.succeed({
@@ -204,62 +197,12 @@ function setup(
                 ? threadShellFromProjection(projections.get(id) ?? projection(id))
                 : null,
             ),
-      readShellSnapshot: (input) =>
-        Effect.succeed(
-          Effect.sync(() => ({
-            schemaVersion: 1,
-            snapshotSequence: 0,
-            threads: [...projections.values()]
-              .map(threadShellFromProjection)
-              .filter(
-                (thread) =>
-                  thread.deletedAt === null &&
-                  thread.archivedAt === null &&
-                  (input?.threadIds === undefined || input.threadIds.includes(thread.id)),
-              ),
-            archivedThreads: [],
-          })),
-        ),
       getThreadRecords: (id) =>
         failures.records
           ? Effect.fail(new Orchestrator.OrchestratorProjectionError({ threadId: id }))
           : Effect.succeed(projections.get(id) ?? projection(id)).pipe(
               Effect.tap(() => recordBarriers.get(id) ?? Effect.void),
             ),
-      listProjectThreads: (input) =>
-        Effect.succeed(
-          [...projections.values()]
-            .map(threadShellFromProjection)
-            .filter(
-              (thread) =>
-                thread.archivedAt === null &&
-                thread.deletedAt === null &&
-                (input.projectId === undefined || thread.projectId === input.projectId) &&
-                thread.lineage.sideChat !== true &&
-                (input.includeSubagents || thread.lineage.relationshipToParent !== "subagent"),
-            )
-            .map(
-              ({
-                id,
-                projectId,
-                title,
-                lineage,
-                settledOverride,
-                settledAt,
-                snoozedUntil,
-                updatedAt,
-              }) => ({
-                id,
-                projectId,
-                title,
-                lineage,
-                settledOverride,
-                settledAt,
-                snoozedUntil,
-                updatedAt,
-              }),
-            ),
-        ),
       interruptThread: (input) =>
         Effect.sync(() => {
           stopped.push(input.threadId);
@@ -1612,251 +1555,40 @@ it.effect("streams work items when unrelated provider secrets cannot be read", (
   }).pipe(Effect.provide(test.layer), Effect.scoped);
 });
 
-it.effect("reads bounded discovery candidates without sorting the candidate table", () => {
+it.effect("rejects reports from conversations that do not own the execution", () => {
   const test = setup();
   return Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
     const service = yield* WorkItems.WorkItemService;
-    const statements: Array<ReturnType<Statement.Statement<unknown>["compile"]>> = [];
-    const observe: Statement.Transformer = (statement) => {
-      const compiled = statement.compile();
-      if (compiled[0].includes("FROM work_item_candidates")) statements.push(compiled);
-      return Effect.succeed(statement);
-    };
-    yield* Effect.all([service.list({}), service.list({ projectId })]).pipe(
-      Effect.provideService(Statement.CurrentTransformer, observe),
-    );
-    assert.lengthOf(statements, 2);
-    for (const [query, params] of statements) {
-      const plan = yield* sql.unsafe<{ detail: string }>(`EXPLAIN QUERY PLAN ${query}`, params);
-      assert.isFalse(
-        plan.some(({ detail }) => detail.includes("TEMP B-TREE")),
-        JSON.stringify(plan),
-      );
-    }
-  }).pipe(Effect.provide(test.layer), Effect.scoped);
-});
-
-it.effect("limits discovery to the newest candidates and preserves them while disabled", () => {
-  const test = setup();
-  return Effect.gen(function* () {
-    yield* TestClock.setTime(Date.parse(now));
-    const service = yield* WorkItems.WorkItemService;
-    const settings = yield* ServerSettings.ServerSettingsService;
-    const older = ThreadId.make("older-candidate");
-    const newer = ThreadId.make("newer-candidate");
-    const recent = DateTime.makeUnsafe(Date.parse(now) - 60_000);
-    const olderProjection = projection(older);
-    test.projections.set(older, {
-      ...olderProjection,
-      thread: { ...olderProjection.thread, updatedAt: recent },
-      updatedAt: recent,
+    const sourceId = ThreadId.make("source");
+    test.projections.set(sourceId, projection(sourceId));
+    const { item } = yield* create(service);
+    const started = yield* service.mutate({
+      type: "start",
+      commandId: command("start"),
+      id: item.id,
+      specRevision: 1,
+      participants: [participant],
     });
-    const newerProjection = projection(newer);
-    test.projections.set(newer, {
-      ...newerProjection,
-      thread: { ...newerProjection.thread, updatedAt: DateTime.makeUnsafe(now) },
-    });
-
-    yield* settings.updateSettings({ workItemDiscoveryLimit: 1 });
-    assert.deepEqual(
-      (yield* service.discover({ projectId })).candidates.map(({ id }) => id),
-      [newer],
-    );
-    assert.deepEqual(
-      (yield* service.list({})).candidates.map(({ id }) => id),
-      [newer],
-    );
-
-    const updates = yield* Queue.unbounded<ReadonlyArray<ThreadId>>();
-    yield* service.subscribeList({ projectId }).pipe(
-      Stream.map(({ candidates }) => candidates.map(({ id }) => id)),
-      Stream.changesWith(
-        (previous, next) =>
-          previous.length === next.length && previous.every((id, index) => id === next[index]),
-      ),
-      Stream.runForEach((ids) => Queue.offer(updates, ids)),
-      Effect.forkScoped,
-    );
-    assert.deepEqual(yield* Queue.take(updates), [newer]);
-
-    yield* settings.updateSettings({ workItemDiscoveryEnabled: false });
-    assert.deepEqual(yield* Queue.take(updates), []);
-    assert.deepEqual(
-      (yield* service.discover({ projectId, dismissThreadId: older })).candidates,
-      [],
-    );
-
-    yield* settings.updateSettings({ workItemDiscoveryEnabled: true, workItemDiscoveryLimit: 2 });
-    assert.deepEqual(yield* Queue.take(updates), [newer, older]);
-  }).pipe(Effect.provide(test.layer), Effect.scoped);
-});
-
-it.effect("ranks candidate recency before capping large projects", () => {
-  const test = setup();
-  return Effect.gen(function* () {
-    yield* TestClock.setTime(Date.parse(now));
-    const service = yield* WorkItems.WorkItemService;
-    const settings = yield* ServerSettings.ServerSettingsService;
-    const recentActivity = DateTime.makeUnsafe(Date.parse(now));
-    const oldRequest = DateTime.makeUnsafe(Date.parse(now) - 120_000);
-    const newestRequest = DateTime.makeUnsafe(Date.parse(now) - 60_000);
-    const newest = ThreadId.make("newest-request");
-    for (let index = 0; index <= MAX_WORK_ITEM_DISCOVERY_LIMIT; index++) {
-      const hasNewestRequest = index === MAX_WORK_ITEM_DISCOVERY_LIMIT;
-      const id = hasNewestRequest ? newest : ThreadId.make(`active-${index}`);
-      const updatedAt = hasNewestRequest ? newestRequest : recentActivity;
-      const requestedAt = hasNewestRequest ? newestRequest : oldRequest;
-      const base = projection(id);
-      test.projections.set(id, {
-        ...base,
-        thread: { ...base.thread, updatedAt },
-        updatedAt,
-        messages: [
-          {
-            id: MessageId.make(`request-${index}`),
-            threadId: id,
-            runId: null,
-            nodeId: null,
-            role: "user",
-            createdBy: "user",
-            creationSource: "web",
-            text: "Please update the task",
-            attachments: [],
-            streaming: false,
-            createdAt: requestedAt,
-            updatedAt: requestedAt,
-          },
-        ],
-      });
-    }
-    yield* settings.updateSettings({ workItemDiscoveryLimit: 1 });
-    assert.deepEqual(
-      (yield* service.discover({ projectId })).candidates.map(({ id }) => id),
-      [newest],
-    );
-    assert.deepEqual(
-      (yield* service.list({ projectId })).candidates.map(({ id }) => id),
-      [newest],
-    );
-  }).pipe(Effect.provide(test.layer), Effect.scoped);
-});
-
-it.effect(
-  "keeps discovery dismissals until a new user request and validates agent report ownership",
-  () => {
-    const test = setup();
-    return Effect.gen(function* () {
-      yield* TestClock.setTime(Date.parse(now));
-      const service = yield* WorkItems.WorkItemService;
-      const sourceId = ThreadId.make("source");
-      const at = DateTime.makeUnsafe(now);
-      const source = projection(sourceId);
-      const userMessage = {
-        createdBy: "user",
-        creationSource: "web",
-        id: MessageId.make("discovery-request"),
-        threadId: sourceId,
-        runId: null,
-        nodeId: null,
-        role: "user",
-        text: "Implement the requested behavior",
-        attachments: [],
-        streaming: false,
-        createdAt: at,
-        updatedAt: at,
-      } as const;
-      const current = {
-        ...source,
-        thread: { ...source.thread, title: "Candidate title", updatedAt: at },
-        messages: [userMessage],
-        updatedAt: at,
-      };
-      test.projections.set(sourceId, current);
-      const oldId = ThreadId.make("old-source");
-      const old = projection(oldId);
-      test.projections.set(oldId, {
-        ...old,
-        thread: { ...old.thread, updatedAt: DateTime.makeUnsafe(Date.parse(now) - 40 * 86400000) },
-        updatedAt: DateTime.makeUnsafe(Date.parse(now) - 40 * 86400000),
-      });
-      const discovered = yield* service.discover({ projectId });
-      assert.deepEqual(discovered.candidates, [
+    const execution = started.item.executions[0];
+    assert.ok(execution);
+    const wrongCaller = yield* Effect.result(
+      service.mutate(
         {
-          id: sourceId,
-          projectId,
-          title: "Candidate title",
-          description: candidatePreview.slice(0, 500),
-          status: "running",
-          updatedAt: now,
+          type: "report",
+          commandId: command("report"),
+          id: item.id,
+          executionId: execution.id,
+          specRevision: 1,
+          summary: "Done",
+          artifacts: [],
+          submitted: true,
         },
-      ]);
-      assert.equal(
-        (yield* service.discover({ projectId, dismissThreadId: sourceId })).candidates.length,
-        0,
-      );
-      assert.equal((yield* service.discover({ projectId })).candidates.length, 0);
-      const noticeAt = DateTime.makeUnsafe(Date.parse(now) + 1000);
-      test.projections.set(sourceId, {
-        ...current,
-        thread: { ...current.thread, updatedAt: noticeAt },
-        messages: [
-          userMessage,
-          {
-            ...userMessage,
-            id: MessageId.make("agent-notice"),
-            createdBy: "agent",
-            creationSource: "server",
-            updatedAt: noticeAt,
-          },
-        ],
-        updatedAt: noticeAt,
-      });
-      assert.deepEqual((yield* service.discover({ projectId })).candidates, []);
-      const requestAt = DateTime.makeUnsafe(Date.parse(now) + 2000);
-      test.projections.set(sourceId, {
-        ...current,
-        thread: { ...current.thread, updatedAt: requestAt },
-        messages: [
-          userMessage,
-          { ...userMessage, id: MessageId.make("new-request"), updatedAt: requestAt },
-        ],
-        runs: current.runs.map((run) => ({ ...run, status: "completed", completedAt: requestAt })),
-        updatedAt: requestAt,
-      });
-      const refreshed = (yield* service.discover({ projectId })).candidates;
-      assert.equal(refreshed.length, 1);
-      assert.equal(refreshed[0]?.updatedAt, DateTime.formatIso(requestAt));
-      assert.equal(refreshed[0]?.status, "completed");
-      const { item } = yield* create(service);
-      const started = yield* service.mutate({
-        type: "start",
-        commandId: command("start"),
-        id: item.id,
-        specRevision: 1,
-        participants: [participant],
-      });
-      const execution = started.item.executions[0];
-      assert.ok(execution);
-      const wrongCaller = yield* Effect.result(
-        service.mutate(
-          {
-            type: "report",
-            commandId: command("report"),
-            id: item.id,
-            executionId: execution.id,
-            specRevision: 1,
-            summary: "Done",
-            artifacts: [],
-            submitted: true,
-          },
-          sourceId,
-        ),
-      );
-      assert.equal(wrongCaller._tag, "Failure");
-    }).pipe(Effect.provide(test.layer), Effect.scoped);
-  },
-);
+        sourceId,
+      ),
+    );
+    assert.equal(wrongCaller._tag, "Failure");
+  }).pipe(Effect.provide(test.layer), Effect.scoped);
+});
 
 it.effect(
   "paginates all tasks and keeps a detail subscription addressable after its card moves",

@@ -30,7 +30,6 @@ import {
   type WorkItemCommandInput,
   type WorkItemId,
   type WorkItemSource,
-  type ThreadId,
 } from "@t3tools/contracts";
 import { use, useContext, useRef, useState } from "react";
 import * as Schema from "effect/Schema";
@@ -44,7 +43,6 @@ import {
   type ScrollViewInstance,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
@@ -74,7 +72,6 @@ import { IssuePicker } from "./IssuePicker";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { serverEnvironment } from "../../state/server";
 import { RequirementDeliveryPanel } from "./RequirementDeliveryPanel";
-import { CandidateSwipeRow } from "./CandidateSwipeRow";
 import {
   ProjectTag,
   Disclosure,
@@ -100,7 +97,6 @@ import {
 
 import {
   createRequirementOverviewAtoms,
-  createRequirementPermissionAtoms,
   RequirementOverviewKey,
   type RequirementPagination,
   type EnvironmentRequirementEntry,
@@ -126,11 +122,6 @@ const boardAtoms = createRequirementOverviewAtoms({
   config: serverEnvironment.configValueAtom,
   settings: serverEnvironment.settingsValueAtom,
   tracked: serverEnvironment.issueWorkItems,
-});
-const permissionAtoms = createRequirementPermissionAtoms({
-  createIssue: sourceControlEnvironment.createIssue.permissionAtom,
-  mutateWorkItem: serverEnvironment.mutateWorkItem.permissionAtom,
-  discoverWorkItems: serverEnvironment.discoverWorkItems.permissionAtom,
 });
 
 export function RequirementsScreen({
@@ -240,7 +231,6 @@ function UnifiedRequirementBoard({
     key: "",
     pages: {},
   });
-  const environmentIds = visibleEnvironments.map((environment) => environment.environmentId);
   const queryEnvironmentIds = queryEnvironments.map((environment) => environment.environmentId);
   const meituanEnabled = queryEnvironments.some((environment) =>
     isMeituanServiceEnabled(environment.serverConfig?.settings, "requirements"),
@@ -250,7 +240,6 @@ function UnifiedRequirementBoard({
   const [picked, setPicked] = useAtom(requirementLabelsAtom);
   const labels =
     unified && !archived && source !== "meituan" && source !== "local" ? picked.labels : [];
-  const permissions = useAtomValue(permissionAtoms(environmentIds));
   const filterKey = JSON.stringify([
     queryEnvironmentIds,
     labels,
@@ -288,7 +277,6 @@ function UnifiedRequirementBoard({
   const { collapsed, toggle } = useRequirementGroups();
   const canOperate = useAtomValue(serverEnvironment.mutateWorkItem.permissionAtom(environmentId));
   const mutate = useAtomCommand(serverEnvironment.mutateWorkItem, { reportFailure: false });
-  const discover = useAtomCommand(serverEnvironment.discoverWorkItems, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const retries = useRef(new Map<string, CommandId>());
@@ -320,7 +308,6 @@ function UnifiedRequirementBoard({
       : null,
   );
   const scrollRef = useRef<ScrollViewInstance>(null);
-  const openCandidateSwipe = useRef<SwipeableMethods | null>(null);
   const listOffset = useRef(0);
   const pendingRestoreOffset = useRef<number | null>(null);
   const showItem = (id: WorkItemId) => {
@@ -370,41 +357,6 @@ function UnifiedRequirementBoard({
     return response.value.item;
   };
   const run = (input: WorkItemCommandInput) => runOnEnvironment(environmentId, input);
-  const canDiscover = (id: EnvironmentId) => {
-    const config = registry.get(serverEnvironment.configValueAtom(id));
-    return config?.workItemDiscovery === true && config.settings.workItemDiscoveryEnabled;
-  };
-  const scan = async (
-    target: { environmentId: EnvironmentId; projectId: ProjectId },
-    dismissThreadId?: ThreadId,
-  ) => {
-    if (
-      pending.current ||
-      !registry.get(serverEnvironment.discoverWorkItems.permissionAtom(target.environmentId)) ||
-      !canDiscover(target.environmentId)
-    )
-      return;
-    pending.current = true;
-    setBusy(true);
-    const result = await discover({
-      environmentId: target.environmentId,
-      input: { projectId: target.projectId, ...(dismissThreadId ? { dismissThreadId } : {}) },
-    }).finally(() => {
-      pending.current = false;
-      setBusy(false);
-    });
-    if (result._tag === "Failure")
-      Dialog.alert(t("Could not scan chats"), String(squashAtomCommandFailure(result)));
-    refresh();
-  };
-  const createLocal = (
-    target: { environmentId: EnvironmentId; projectId: ProjectId },
-    source?: WorkItemSource,
-    description = "",
-  ) => {
-    setActionEnvironmentId(target.environmentId);
-    setCreating({ projectId: target.projectId, ...(source ? { source } : {}), description });
-  };
   const open = (entry: EnvironmentRequirementEntry) => {
     if (entry.kind === "local") {
       setActionEnvironmentId(entry.environmentId);
@@ -628,15 +580,6 @@ function UnifiedRequirementBoard({
   const applyFilterSelection = (id: string) => {
     applyFilterState(applyRequirementFilterSelection(filterState, id, allProjects));
   };
-  const scanItems = projects.map((project) => ({
-    id: `scan:${projectKey(project)}`,
-    title: `${environmentLabel(project.environmentId)} · ${project.title}`,
-    disabled:
-      busy ||
-      !permissions.get(project.environmentId)?.discoverWorkItems ||
-      !canDiscover(project.environmentId),
-    onPress: () => void scan({ environmentId: project.environmentId, projectId: project.id }),
-  }));
   const headerActions: ReadonlyArray<AppBarAction> = [
     {
       accessibilityLabel: view === "list" ? t("Switch to board view") : t("Switch to list view"),
@@ -666,16 +609,6 @@ function UnifiedRequirementBoard({
         ],
         applyFilterSelection,
       ),
-      ...(scanItems.length > 0
-        ? [
-            {
-              id: "scan",
-              title: t("Scan chats"),
-              icon: "magnifyingglass",
-              items: scanItems,
-            },
-          ]
-        : []),
       {
         id: "archived",
         title: t("Show archived"),
@@ -761,7 +694,6 @@ function UnifiedRequirementBoard({
           onScroll={(event) => {
             if (!creating && !selectedId) listOffset.current = event.nativeEvent.contentOffset.y;
           }}
-          onScrollBeginDrag={() => openCandidateSwipe.current?.close()}
           refreshControl={
             showingList ? (
               <RefreshControl
@@ -958,7 +890,7 @@ function UnifiedRequirementBoard({
                 <EmptyState
                   variant="plain"
                   title={t("No matching work items.")}
-                  detail={t("Create or scan items, or adjust your filters.")}
+                  detail={t("Create an item or adjust your filters.")}
                 />
               ) : null}
               {data.isPending && entries.length ? (
@@ -990,44 +922,6 @@ function UnifiedRequirementBoard({
                   disabled={data.isPending}
                   onPress={() => setPagination({ key: filterKey, pages: data.nextPagination })}
                 />
-              ) : null}
-              {data.candidates.length && (source === "all" || source === "local") ? (
-                <Disclosure title={t("Discovered tasks")} count={data.candidates.length}>
-                  {data.candidates.map((candidate) => (
-                    <CandidateSwipeRow
-                      key={`${candidate.environmentId}:${candidate.id}`}
-                      candidate={candidate}
-                      environmentLabel={environmentLabel(candidate.environmentId)}
-                      canCreate={
-                        !busy && permissions.get(candidate.environmentId)?.mutateWorkItem === true
-                      }
-                      canIgnore={
-                        !busy &&
-                        permissions.get(candidate.environmentId)?.discoverWorkItems === true &&
-                        canDiscover(candidate.environmentId)
-                      }
-                      onCreate={() =>
-                        createLocal(
-                          {
-                            environmentId: candidate.environmentId,
-                            projectId: candidate.projectId,
-                          },
-                          { threadId: candidate.id, title: candidate.title },
-                          candidate.description,
-                        )
-                      }
-                      onIgnore={() => void scan(candidate, candidate.id)}
-                      onWillOpen={(row) => {
-                        if (openCandidateSwipe.current === row) return;
-                        openCandidateSwipe.current?.close();
-                        openCandidateSwipe.current = row;
-                      }}
-                      onClose={(row) => {
-                        if (openCandidateSwipe.current === row) openCandidateSwipe.current = null;
-                      }}
-                    />
-                  ))}
-                </Disclosure>
               ) : null}
             </>
           )}

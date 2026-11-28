@@ -18,6 +18,7 @@ const environment = {
   environmentId,
   connection: { phase: "connected" },
   serverConfig: {
+    workItemDiscoverySettings: true,
     environment: {
       capabilities: {} as { issueProjectSourcesCas?: boolean; githubIssueSourcePorts?: boolean },
     },
@@ -81,6 +82,14 @@ vi.mock(import("../../state/sourceControl"), async (original) => {
 });
 
 const sources = [{ projectId, provider: "github", sources: [github] }];
+
+it("omits task discovery settings when an older environment still advertises them", async () => {
+  await using screen = await render(<RequirementsSettings />);
+  await expect
+    .element(screen.getByRole("heading", { name: "Project issue sources" }))
+    .toBeVisible();
+  await expect.element(screen.getByText("Enable task discovery")).not.toBeInTheDocument();
+});
 
 it("does not bulk edit an older server that cannot compare saved sources", async () => {
   mocks.update.mockReset();

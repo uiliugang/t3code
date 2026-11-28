@@ -319,7 +319,6 @@ export function createRequirementBoardAtoms(queries: {
           (left, right) => left.projectId === right.projectId && left.reason === right.reason,
         ),
         items: mergeWorkItemPages(itemPages),
-        candidates: itemPages[0]?.candidates ?? [],
         nextCursor,
         moreIssues,
         isPending,
@@ -355,29 +354,6 @@ export class RequirementOverviewKey extends Data.Class<{
 }> {}
 
 export type EnvironmentRequirementEntry = RequirementEntry & { environmentId: EnvironmentId };
-
-export function createRequirementPermissionAtoms(
-  permissions: Record<
-    "createIssue" | "mutateWorkItem" | "discoverWorkItems",
-    (environmentId: EnvironmentId) => Atom.Atom<boolean>
-  >,
-) {
-  return Atom.family((environmentIds: ReadonlyArray<EnvironmentId>) =>
-    Atom.make(
-      (get) =>
-        new Map(
-          environmentIds.map((environmentId) => [
-            environmentId,
-            {
-              createIssue: get(permissions.createIssue(environmentId)),
-              mutateWorkItem: get(permissions.mutateWorkItem(environmentId)),
-              discoverWorkItems: get(permissions.discoverWorkItems(environmentId)),
-            },
-          ]),
-        ),
-    ),
-  );
-}
 
 export function createRequirementOverviewAtoms(
   queries: Parameters<typeof createRequirementBoardAtoms>[0] & {
@@ -454,9 +430,6 @@ export function createRequirementOverviewAtoms(
         ),
         failures: environments.flatMap(({ environmentId, failures }) =>
           failures.map((failure) => ({ ...failure, environmentId })),
-        ),
-        candidates: environments.flatMap(({ environmentId, candidates }) =>
-          candidates.map((candidate) => ({ ...candidate, environmentId })),
         ),
         atoms: environments.flatMap((environment) => environment.atoms),
         isPending: environments.some((environment) => environment.isPending),
