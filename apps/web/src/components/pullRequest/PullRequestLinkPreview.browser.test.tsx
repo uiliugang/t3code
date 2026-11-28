@@ -3,9 +3,11 @@ import { getTranslationsSnapshot, GTProvider } from "gt-react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+const locale = vi.hoisted(() => ({ language: "en" as "en" | "zh-CN" }));
+
 vi.mock(import("~/hooks/useUiTranslation"), async () => {
   const { translateUi } = await import("@t3tools/shared/uiLocale");
-  return { useUiTranslation: () => translateUi.bind(null, "en") };
+  return { useUiTranslation: () => translateUi.bind(null, locale.language) };
 });
 
 const known = vi.hoisted(
@@ -155,4 +157,42 @@ it("shows who commented on a linked comment in the active language", async () =>
   await userEvent.hover(screen.getByRole("link"));
 
   await expect.element(page.getByText(/octocat\s*发表了评论/)).toBeVisible();
+});
+
+it("shows when a pull request was opened in the active language", async () => {
+  setup({
+    restoredPreview: {
+      projectId: "project",
+      repository: "owner/repo",
+      number: 1,
+      title: "Renamed title",
+      url: known.url,
+      author: { login: "octocat" },
+      state: "open",
+      isDraft: false,
+      createdAt: "2026-08-01T00:00:00Z",
+    },
+  });
+  locale.language = "zh-CN";
+  using _locale = {
+    [Symbol.dispose]() {
+      locale.language = "en";
+    },
+  };
+  using _now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-08-03T00:00:00Z"));
+  await using screen = await render(
+    <PullRequestLinkPreview
+      link={<a href={known.url}>#1</a>}
+      originalUrl={known.url}
+      target={{
+        environmentId: EnvironmentId.make("environment"),
+        input: { projectId: ProjectId.make("project"), repository: "owner/repo", number: 1 },
+      }}
+    />,
+  );
+
+  await userEvent.hover(screen.getByRole("link"));
+
+  await expect.element(page.getByText("创建于 2天前", { exact: true })).toBeVisible();
+  expect(page.getByText(/\bopened\b/i).query()).toBeNull();
 });

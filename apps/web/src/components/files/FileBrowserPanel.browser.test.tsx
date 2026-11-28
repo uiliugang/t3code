@@ -45,6 +45,8 @@ const pathSearch = {
 
 vi.mock("./useDirectoryEntries", () => ({ useDirectoryEntries: () => directory }));
 vi.mock("~/state/queries", () => ({ useProjectPathSearch: () => pathSearch }));
+const downloadFile = vi.fn();
+vi.mock("./useFileDownload", () => ({ useFileDownload: () => downloadFile }));
 vi.mock("~/hooks/useWorkspaceMutationRefresh", () => ({ useWorkspaceMutationRefresh: () => {} }));
 
 function findTreeRow(path: string): HTMLElement | null {
@@ -122,6 +124,9 @@ describe("FileBrowserPanel", () => {
 
     await openRowMenu("src/");
     const copyPath = page.getByRole("menuitem", { name: "Copy path", exact: true });
+    const download = page.getByRole("menuitem", { name: "Download", exact: true });
+    await expect.element(copyPath).toBeVisible();
+    expect(download.query()).toBeNull();
     await userEvent.click(copyPath);
     await vi.waitFor(() => expect(clipboard).toHaveBeenCalledWith("/repo/src"));
 
@@ -130,6 +135,10 @@ describe("FileBrowserPanel", () => {
     await expect.element(copyMention).toBeVisible();
     await userEvent.click(copyMention);
     await vi.waitFor(() => expect(clipboard).toHaveBeenCalledWith("[README.md](README.md)"));
+
+    await openRowMenu("README.md");
+    await userEvent.click(download);
+    expect(downloadFile).toHaveBeenCalledWith("/repo", "README.md");
 
     // Hover can take focus when the keyboard menu reopens under the pointer.
     await commands.resetPointer();

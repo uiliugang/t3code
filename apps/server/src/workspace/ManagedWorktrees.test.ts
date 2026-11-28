@@ -717,7 +717,9 @@ it.live(
       const { fs, path, git, resources } = context;
       const checkout = resources[0]!.checkoutRoot;
       const head = yield* git.resolveCommit({ cwd: checkout, revision: "HEAD" });
-      for (const name of ["empty\nmodule", "empty module"])
+      const replacementCharacter = "empty \uFFFD module";
+      const gitlinks = ["empty\nmodule", "empty module", replacementCharacter];
+      for (const name of gitlinks)
         yield* git.execute({
           operation: "test",
           cwd: checkout,
@@ -737,9 +739,8 @@ it.live(
           "gitlinks",
         ],
       });
-      const empty = path.join(checkout, "empty\nmodule");
-      yield* fs.makeDirectory(empty);
-      yield* fs.makeDirectory(path.join(checkout, "empty module"));
+      for (const name of gitlinks) yield* fs.makeDirectory(path.join(checkout, name));
+      const empty = path.join(checkout, replacementCharacter);
       yield* Effect.gen(function* () {
         const service = yield* ManagedWorktrees.ManagedWorktrees;
         const [initial] = yield* service.list({});
@@ -779,7 +780,7 @@ it.live(
               Layer.succeed(GitVcsDriver.GitVcsDriver, {
                 ...git,
                 execute: (input) =>
-                  input.args[0] === "ls-files" &&
+                  input.args.includes("ls-files") &&
                   input.args.some((arg) => arg.startsWith("--format"))
                     ? Effect.fail(
                         new GitCommandError({

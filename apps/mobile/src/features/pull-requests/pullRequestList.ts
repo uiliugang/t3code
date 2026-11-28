@@ -82,10 +82,39 @@ export type EnvironmentPullRequestListEntry = PullRequestListEntry & {
 export const scopedPullRequestListKey = (entry: EnvironmentPullRequestListEntry) =>
   `${entry.environmentId}:${pullRequestListKey(entry)}`;
 
-export const pullRequestStatKey = (
-  row: Pick<PullRequestDiffStat, "projectId" | "repository" | "number" | "target">,
-) =>
-  `${row.projectId}:${row.repository}:${row.number}${row.target ? ` ${row.target.provider} ${row.target.origin}` : ""}`;
+type PullRequestStatIdentity = Pick<
+  PullRequestDiffStat,
+  "projectId" | "repository" | "number" | "target" | "host"
+>;
+
+export const pullRequestStatKey = (row: PullRequestStatIdentity) =>
+  JSON.stringify([
+    row.projectId,
+    row.repository.trim().toLowerCase(),
+    row.number,
+    row.target?.provider,
+    row.target?.origin,
+    row.target === undefined ? row.host?.trim().toLowerCase() : null,
+  ]);
+
+// An older server can omit the host. Only the matching request can supply an unambiguous one.
+function qualifyLegacyStats(
+  input: PullRequestListStatsInput,
+  answered: readonly PullRequestDiffStat[],
+): readonly PullRequestDiffStat[] {
+  return answered.flatMap((row) => {
+    if (row.target !== undefined || row.host !== undefined) return [row];
+    const key = pullRequestStatKey(row);
+    const hosts = new Set(
+      input.refs
+        .filter((ref) => pullRequestStatKey({ ...ref, host: undefined }) === key)
+        .map((ref) => ref.host?.trim().toLowerCase()),
+    );
+    if (hosts.size !== 1) return [];
+    const [host] = hosts;
+    return host === undefined ? [row] : [{ ...row, host }];
+  });
+}
 
 /**
  * Diff stats an environment has answered, the stats query that answered each, and each row's
@@ -113,7 +142,7 @@ export function withListedPullRequests(
   cache: PullRequestStatsCache,
   entries: readonly Pick<
     PullRequestListEntry,
-    "projectId" | "repository" | "number" | "updatedAt" | "target"
+    "projectId" | "repository" | "number" | "updatedAt" | "target" | "host"
   >[],
 ): {
   readonly cache: PullRequestStatsCache;
@@ -129,10 +158,13 @@ export function withListedPullRequests(
   const refresh = new Set<PullRequestListStatsInput>();
   for (const entry of moved) {
     const key = pullRequestStatKey(entry);
-    const query = answeredBy.get(key);
-    if (query) refresh.add(query);
-    stats.delete(key);
-    answeredBy.delete(key);
+    const legacyKey = pullRequestStatKey({ ...entry, host: undefined });
+    for (const previousKey of new Set([key, legacyKey])) {
+      const query = answeredBy.get(previousKey);
+      if (query) refresh.add(query);
+      stats.delete(previousKey);
+      answeredBy.delete(previousKey);
+    }
     updatedAt.set(key, entry.updatedAt);
   }
   return { cache: { stats, answeredBy, updatedAt }, refresh: [...refresh] };
@@ -145,7 +177,7 @@ export function withAnsweredPullRequestStats(
 ): PullRequestStatsCache {
   const stats = new Map(cache.stats);
   const answeredBy = new Map(cache.answeredBy);
-  for (const row of answered) {
+  for (const row of qualifyLegacyStats(input, answered)) {
     stats.set(pullRequestStatKey(row), row);
     answeredBy.set(pullRequestStatKey(row), input);
   }
@@ -160,18 +192,32 @@ export function withShownPullRequestStats(
   entries: readonly EnvironmentPullRequestListEntry[],
   answers: readonly {
     readonly environmentId: EnvironmentId;
+    readonly input?: PullRequestListStatsInput;
     readonly stats: readonly PullRequestDiffStat[];
   }[],
 ): readonly EnvironmentPullRequestListEntry[] {
-  const shown = new Map(
-    answers.flatMap(({ environmentId, stats }) =>
-      stats.map((row) => [`${environmentId}:${pullRequestStatKey(row)}`, row] as const),
+  const shown = new Map<string, PullRequestDiffStat>(
+    answers.flatMap(({ environmentId, input, stats }) =>
+      (input === undefined ? stats : qualifyLegacyStats(input, stats)).map(
+        (row) => [`${environmentId}:${pullRequestStatKey(row)}`, row] as const,
+      ),
     ),
   );
   if (!shown.size) return entries;
+  const legacyMatches = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.target !== undefined) continue;
+    const key = `${entry.environmentId}:${pullRequestStatKey({ ...entry, host: undefined })}`;
+    legacyMatches.set(key, (legacyMatches.get(key) ?? 0) + 1);
+  }
   let changed = false;
   const next = entries.map((entry) => {
-    const stat = shown.get(`${entry.environmentId}:${pullRequestStatKey(entry)}`);
+    const legacyKey = `${entry.environmentId}:${pullRequestStatKey({ ...entry, host: undefined })}`;
+    const stat =
+      shown.get(`${entry.environmentId}:${pullRequestStatKey(entry)}`) ??
+      (entry.target === undefined && legacyMatches.get(legacyKey) === 1
+        ? shown.get(legacyKey)
+        : undefined);
     if (!stat || entry.additions + entry.deletions !== 0) return entry;
     if (stat.additions + stat.deletions === 0) return entry;
     changed = true;
@@ -362,31 +408,45 @@ export function pullRequestFilterChoices(input: {
   readonly query: string;
 }): readonly string[] {
   const needle = input.query.trim().toLowerCase();
-  const seen = new Set<string>();
-  const rows: string[] = [];
-  const add = (value: string) => {
-    const key = value.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    rows.push(value);
-  };
   const loaded = input.suggestions.filter((value) => value.toLowerCase().includes(needle));
-  for (const value of input.selected) add(value);
-  // Loaded matches alone could fill the list, so the host's answers get room after the first half.
-  for (const value of loaded.slice(0, FILTER_CHOICE_LIMIT / 2)) add(value);
-  for (const value of input.hosted) add(value);
-  for (const value of loaded.slice(FILTER_CHOICE_LIMIT / 2)) add(value);
-  return rows.slice(0, FILTER_CHOICE_LIMIT);
+  return distinctIgnoringCase([
+    ...input.selected,
+    // Loaded matches alone could fill the list, so the host's answers get room after the first half.
+    ...loaded.slice(0, FILTER_CHOICE_LIMIT / 2),
+    ...input.hosted,
+    ...loaded.slice(FILTER_CHOICE_LIMIT / 2),
+  ]).slice(0, FILTER_CHOICE_LIMIT);
+}
+
+/** Each value once whatever its case; the first spelling wins. Hosts match labels and logins that way. */
+export function distinctIgnoringCase(values: readonly string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = value.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export const includesIgnoringCase = (values: readonly string[], value: string) =>
+  values.some((held) => held.toLowerCase() === value.toLowerCase());
+
+/** The labels picked after `label` is tapped: tapping one already picked, in any case, drops it. */
+export function toggledPullRequestLabels(selected: readonly string[], label: string) {
+  return includesIgnoringCase(selected, label)
+    ? selected.filter((held) => held.toLowerCase() !== label.toLowerCase())
+    : [...selected, label].slice(0, 10);
 }
 
 export function pullRequestListFacets(entries: readonly PullRequestListEntry[]) {
   return {
-    authors: [
-      ...new Set(entries.flatMap((entry) => (entry.author ? [entry.author.login] : []))),
-    ].sort((a, b) => a.localeCompare(b)),
-    labels: [...new Set(entries.flatMap((entry) => entry.labels.map((label) => label.name)))].sort(
-      (a, b) => a.localeCompare(b),
-    ),
+    authors: distinctIgnoringCase(
+      entries.flatMap((entry) => (entry.author ? [entry.author.login] : [])),
+    ).sort((a, b) => a.localeCompare(b)),
+    labels: distinctIgnoringCase(
+      entries.flatMap((entry) => entry.labels.map((label) => label.name)),
+    ).sort((a, b) => a.localeCompare(b)),
     labelColors: pullRequestLabelColors(entries.flatMap((entry) => entry.labels)),
   };
 }
@@ -504,6 +564,18 @@ export function pullRequestListReviewStatus(
       tint: "accent-icon-muted",
     } as const;
   return null;
+}
+
+export function pullRequestListDiffStatsLabel(
+  entry: Pick<PullRequestListEntry, "additions" | "deletions">,
+  resolve: MessageResolver = m,
+) {
+  return resolve(
+    msg(
+      "{additions, plural, one {{additions} addition} other {{additions} additions}}, {deletions, plural, one {{deletions} deletion} other {{deletions} deletions}}",
+      { additions: entry.additions, deletions: entry.deletions },
+    ),
+  );
 }
 
 export function pullRequestLabelColor(color: string | null) {

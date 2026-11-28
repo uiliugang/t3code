@@ -11,6 +11,7 @@ import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import {
   createVcsStatusRevalidationAtomFamily,
   type GitActionRequestInput,
+  type RunVcsStackedActionInput,
   type VcsActionOperation,
   type VcsRef,
 } from "@t3tools/client-runtime/state/vcs";
@@ -410,7 +411,7 @@ export function useSelectedThreadGitActions(
   };
 
   const onRunSelectedThreadGitAction = async (
-    input: GitActionRequestInput,
+    input: GitActionRequestInput & Pick<RunVcsStackedActionInput, "onProgress">,
   ): Promise<GitRunStackedActionResult | null> => {
     const actionId = uuidv4();
     return await runSelectedThreadGitMutation(
@@ -424,6 +425,7 @@ export function useSelectedThreadGitActions(
           ...(input.featureBranch ? { featureBranch: input.featureBranch } : {}),
           ...(input.filePaths?.length ? { filePaths: [...input.filePaths] } : {}),
           threadId: thread.id,
+          ...(input.onProgress ? { onProgress: input.onProgress } : {}),
         });
         if (AsyncResult.isFailure(result)) {
           return result;

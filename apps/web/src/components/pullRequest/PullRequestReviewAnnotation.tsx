@@ -329,7 +329,7 @@ export function ReviewThreadCard({
           {thread.isResolved ? t("Resolved") : t("Open")} ·{" "}
           {t(commentCount === 1 ? "{count} comment" : "{count} comments", { count: commentCount })}
         </button>
-        {thread.isOutdated ? <span>{t("outdated")}</span> : null}
+        {thread.isOutdated ? <span>{t("Outdated")}</span> : null}
         {onFix ? (
           <Button
             size="compact"

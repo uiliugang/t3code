@@ -107,6 +107,14 @@ export interface VcsCheckpointOps {
   readonly hasCheckpointRef: (
     input: Omit<VcsRestoreCheckpointInput, "fallbackToHead">,
   ) => Effect.Effect<boolean, VcsError>;
+  /**
+   * Reuses the source checkpoint only when it matches the current clean checkout and HEAD.
+   * Keeps an existing destination. False, copying nothing, when the source is absent, cannot
+   * be proven current, or would need to copy submodules' separate refs.
+   */
+  readonly copyCheckpointRef: (
+    input: Omit<VcsListAuthoredPathsInput, "range">,
+  ) => Effect.Effect<boolean, VcsError>;
   readonly restoreCheckpoint: (
     input: VcsRestoreCheckpointInput,
   ) => Effect.Effect<boolean, VcsError>;

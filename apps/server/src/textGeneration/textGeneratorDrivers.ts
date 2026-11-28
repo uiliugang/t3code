@@ -50,6 +50,7 @@ export interface TextGeneratorDriver {
 const GENERATE_TIMEOUT = "2 minutes";
 const LIST_MODELS_TIMEOUT = "25 seconds";
 const MAX_MODEL_PAGES = 10;
+const MAX_ERROR_DETAIL_LENGTH = 300;
 
 const ApiErrorBody = Schema.Struct({
   error: Schema.Struct({
@@ -69,12 +70,23 @@ const describeStatus = (label: string, status: number, message: string | undefin
         : status === 429
           ? "is rate-limiting requests"
           : `returned HTTP ${status}`;
-  const detail = message?.trim().slice(0, 300);
+  const trimmed = message?.trim();
+  const end =
+    (trimmed?.codePointAt(MAX_ERROR_DETAIL_LENGTH - 1) ?? 0) > 0xffff
+      ? MAX_ERROR_DETAIL_LENGTH - 1
+      : MAX_ERROR_DETAIL_LENGTH;
+  const detail = trimmed?.slice(0, end);
   return `${label} ${reason}${detail ? `: ${detail}` : "."}`;
 };
 
-const endpoint = (connection: TextGeneratorConnection, path: string) =>
-  `${connection.baseUrl.replace(/\/+$/, "")}${path}`;
+const endpoint = (connection: TextGeneratorConnection, path: string) => {
+  const url = new URL(connection.baseUrl);
+  // The settings schema accepts a trailing empty "?" or "#"; drop them so the path lands in the pathname.
+  url.search = "";
+  url.hash = "";
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+  return url.toString();
+};
 
 const isConnectionInterrupted = ({ reason }: HttpClientError.HttpClientError) => {
   if (reason._tag !== "TransportError" && reason._tag !== "DecodeError") return false;
@@ -168,8 +180,8 @@ const readModel = (entry: { readonly id: string; readonly name?: string | undefi
 const ChatCompletion = Schema.Struct({
   choices: Schema.Array(
     Schema.Struct({
-      finish_reason: Schema.NullOr(Schema.String),
-      message: Schema.Struct({ content: Schema.NullOr(Schema.String) }),
+      finish_reason: Schema.optional(Schema.NullOr(Schema.String)),
+      message: Schema.Struct({ content: Schema.optional(Schema.NullOr(Schema.String)) }),
     }),
   ),
   usage: Schema.optional(Schema.Unknown),
@@ -280,7 +292,7 @@ const openAICompatible: TextGeneratorDriver = {
 
 const ANTHROPIC_VERSION = "2023-06-01";
 const AnthropicMessage = Schema.Struct({
-  stop_reason: Schema.NullOr(Schema.String),
+  stop_reason: Schema.optional(Schema.NullOr(Schema.String)),
   content: Schema.Array(
     Schema.Struct({ type: Schema.String, text: Schema.optional(Schema.String) }),
   ),

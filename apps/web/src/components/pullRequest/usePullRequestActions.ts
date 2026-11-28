@@ -14,6 +14,7 @@ import type {
   PullRequestMergeMethod,
   PullRequestRef,
   PullRequestSummary,
+  ScopedProjectRef,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { msg } from "gt-react";
@@ -340,7 +341,7 @@ type PreparedCheckout = Awaited<
  */
 export function prepareDraftCheckout(
   draftId: DraftId,
-  projectRef: ReturnType<typeof scopeProjectRef>,
+  projectRef: ScopedProjectRef,
   checkout: Promise<PreparedCheckout>,
   isCancelled: () => boolean = () => false,
 ) {
@@ -396,7 +397,7 @@ export function usePullRequestHandoffs({
 
   // Questions must not change checkouts or create worktrees.
   const openThreadWithTask = async (
-    projectRef: ReturnType<typeof scopeProjectRef>,
+    projectRef: ScopedProjectRef,
     task: PullRequestThreadTask | null,
     opened?: { draftId: DraftId },
   ): Promise<{ draftId: DraftId } | null> => {
@@ -491,12 +492,9 @@ export function usePullRequestHandoffs({
       }),
       () => cancelled,
     );
-    if (cancelled) {
-      setHandoff(null);
-      return;
-    }
+    setHandoff(null);
+    if (cancelled) return;
     if (prepared._tag === "Failure") {
-      setHandoff(null);
       toastManager.update(toastId, {
         type: "error",
         title: t("Could not prepare the {term} checkout", { term: t(terminology.singular) }),
@@ -506,7 +504,6 @@ export function usePullRequestHandoffs({
       });
       return;
     }
-    setHandoff(null);
     if (!applied) {
       toastManager.update(toastId, {
         type: "warning",

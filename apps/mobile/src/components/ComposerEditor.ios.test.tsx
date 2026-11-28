@@ -160,6 +160,9 @@ vi.mock("../lib/nativeComposerTheme", () => ({
   createNativeComposerTheme: () => ({ text: "#171717" }),
 }));
 vi.mock("../lib/contextChipIconSource", () => ({ contextChipIconUri: () => "" }));
+vi.mock("../features/settings/appearance/AppearancePreferencesProvider", () => ({
+  useAppearancePreferences: () => ({ fontFamilies: { regular: "System" } }),
+}));
 vi.mock("../features/settings/appearance/useScaledTextRole", () => ({
   useComposerTextRole: () => ({ fontSize: 16, lineHeight: 22 }),
 }));

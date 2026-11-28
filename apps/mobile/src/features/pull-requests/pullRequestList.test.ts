@@ -18,16 +18,20 @@ import {
   patchPullRequestListEntry,
   pullRequestFilterChoices,
   pullRequestLabelColors,
+  pullRequestListDiffStatsLabel,
+  pullRequestListFacets,
   pullRequestListHead,
   pullRequestListInput,
   scopedPullRequestListKey,
   shownPullRequestListPages,
   pullRequestListRowsAreEqual,
+  pullRequestStatKey,
   withAnsweredPullRequestStats,
   withListedPullRequests,
   withShownPullRequestStats,
   withoutScratchProjectScope,
   pullRequestProjectChoices,
+  toggledPullRequestLabels,
 } from "./pullRequestList";
 
 function entry(number: number, patch: Partial<PullRequestListEntry> = {}): PullRequestListEntry {
@@ -84,6 +88,22 @@ describe("recycled PR list rows", () => {
         environmentId: EnvironmentId.make("env-two"),
       }),
     ).toBe(false);
+  });
+});
+
+describe("pullRequestListDiffStatsLabel", () => {
+  it.each([
+    { additions: 1, deletions: 1, summary: "1 addition, 1 deletion" },
+    { additions: 1, deletions: 2, summary: "1 addition, 2 deletions" },
+    { additions: 2, deletions: 1, summary: "2 additions, 1 deletion" },
+    { additions: 0, deletions: 0, summary: "0 additions, 0 deletions" },
+  ])("announces diff stats for $additions added and $deletions deleted", (fixture) => {
+    expect(
+      pullRequestListDiffStatsLabel({
+        additions: fixture.additions,
+        deletions: fixture.deletions,
+      }),
+    ).toBe(fixture.summary);
   });
 });
 
@@ -379,6 +399,27 @@ describe("pullRequestLabelColors", () => {
   });
 });
 
+describe("filter menu values ignore case", () => {
+  const label = (name: string) => ({ name, color: null });
+
+  it("lists each loaded author and label once whatever its case", () => {
+    const facets = pullRequestListFacets([
+      entry(1, {
+        author: { login: "Octocat", name: null, avatarUrl: null },
+        labels: [label("Bug")],
+      }),
+      entry(2, { labels: [label("bug"), label("docs")] }),
+    ]);
+    expect(facets.authors).toEqual(["Octocat"]);
+    expect(facets.labels).toEqual(["Bug", "docs"]);
+  });
+
+  it("drops a picked label when a differently-cased one is tapped", () => {
+    expect(toggledPullRequestLabels(["bug", "docs"], "Bug")).toEqual(["docs"]);
+    expect(toggledPullRequestLabels(["bug"], "docs")).toEqual(["bug", "docs"]);
+  });
+});
+
 describe("pullRequestFilterChoices", () => {
   it("keeps the picked value in view and adds host answers no loaded row carries, once", () => {
     expect(
@@ -485,6 +526,43 @@ describe("shown PR diff stats", () => {
       [4, 1],
     ]);
     expect(filled[1]).toBe(rows[1]);
+  });
+
+  it("keeps same-number merge request stats separate for two inferred GitLab hosts", () => {
+    const hosts = ["first.gitlab.test", "second.gitlab.test"] as const;
+    const requests = hosts.map((host) => ({
+      ...entry(1, { host, provider: SourceControlProviderKind.make("gitlab") }),
+      environmentId: cups,
+    }));
+    const answer = [
+      { ...stat(1, 3, 2), host: hosts[0] },
+      { ...stat(1, 11, 4), host: hosts[1] },
+    ];
+    const refs = requests.map(({ projectId, host, repository, number }) => ({
+      projectId,
+      host,
+      repository,
+      number,
+    }));
+    const input = { refs };
+    expect(
+      withShownPullRequestStats(requests, [{ environmentId: cups, input, stats: answer }]).map(
+        ({ additions }) => additions,
+      ),
+    ).toEqual([3, 11]);
+    const listed = withListedPullRequests(EMPTY_PULL_REQUEST_STATS_CACHE, requests);
+    const cached = withAnsweredPullRequestStats(listed.cache, input, answer);
+    expect(requests.map((row) => cached.stats.get(pullRequestStatKey(row))?.additions)).toEqual([
+      3, 11,
+    ]);
+    expect(
+      withShownPullRequestStats(requests, [{ environmentId: cups, input, stats: [stat(1, 9, 9)] }]),
+    ).toBe(requests);
+    expect(
+      withShownPullRequestStats(requests, [
+        { environmentId: cups, input: { refs: refs.slice(0, 1) }, stats: [stat(1, 9, 9)] },
+      ]).map(({ additions }) => additions),
+    ).toEqual([9, 0]);
   });
 });
 

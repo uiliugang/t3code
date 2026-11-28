@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { mediaReferenceFileName } from "@t3tools/client-runtime/media-reference";
 import { splitPullRequestBody } from "@t3tools/client-runtime/pull-request-markdown";
 import {
   PullRequestImageAttachment,
@@ -59,7 +60,7 @@ export function PullRequestDescription(props: {
     .map((attachment) => {
       return {
         ...pullRequestImageSource(attachment.uri, mediaContext),
-        name: new URL(attachment.uri).pathname.split("/").pop() || gt("Image"),
+        name: mediaReferenceFileName({ kind: "url", url: attachment.uri }) || gt("Image"),
       };
     });
   const canCollapse = collapse !== undefined && bodyHeight > COLLAPSED_HEIGHT;

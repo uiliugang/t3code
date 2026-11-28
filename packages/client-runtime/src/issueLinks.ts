@@ -89,7 +89,13 @@ export function issueLinkedPullRequestTarget(
   const parsed = sourceControlClients.parseChangeRequestUrl(target.url);
   if (
     parsed === null ||
-    parsed.definition.kind !== issue.tracker ||
+    // Linear's connector emits public GitHub attachments, not GitHub Enterprise links.
+    (parsed.definition.kind !== issue.tracker &&
+      !(
+        issue.tracker === LINEAR_KIND &&
+        parsed.definition.kind === GITHUB &&
+        (parsed.link.authority ?? parsed.link.host) === "github.com"
+      )) ||
     parsed.link.repository.toLowerCase() !== repository.toLowerCase() ||
     parsed.link.number !== number
   )

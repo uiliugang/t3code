@@ -277,7 +277,6 @@ function AggregateCard({
   accentClass: string;
   aggregate: ResourceTelemetryAggregate;
 }) {
-  const t = useUiTranslation();
   const gt = useGT();
   return (
     <div className="relative overflow-hidden border-t border-border/60 px-4 py-4 first:border-t-0 md:border-t-0 md:border-l md:first:border-l-0 sm:px-5">
@@ -287,7 +286,7 @@ function AggregateCard({
           {label}
         </div>
         <div className="rounded-md bg-muted/55 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground/70">
-          {t(aggregate.processCount === 1 ? "{count} process" : "{count} processes", {
+          {gt("{count, plural, one {{count} process} other {{count} processes}}", {
             count: aggregate.processCount,
           })}
         </div>
@@ -1134,10 +1133,13 @@ function ResourceTelemetryDiagnosticsBody({
               value={allT3 ? String(allT3.processCount) : "..."}
               detail={
                 allT3
-                  ? t("{starts} starts · {exits} exits", {
-                      starts: allT3.processStarts,
-                      exits: allT3.processExits,
-                    })
+                  ? gt(
+                      "{processStarts, plural, one {{processStarts} start} other {{processStarts} starts}} · {processExits, plural, one {{processExits} exit} other {{processExits} exits}}",
+                      {
+                        processStarts: allT3.processStarts,
+                        processExits: allT3.processExits,
+                      },
+                    )
                   : undefined
               }
             />
@@ -1146,7 +1148,9 @@ function ResourceTelemetryDiagnosticsBody({
               label={t("Read throughput")}
               value={allT3 ? formatRate(allT3.ioReadBytesPerSecond) : "..."}
               detail={
-                allT3 ? t("{bytes} observed", { bytes: formatBytes(allT3.ioReadBytes) }) : undefined
+                allT3
+                  ? gt("{bytes} observed", { bytes: formatBytes(allT3.ioReadBytes) })
+                  : undefined
               }
             />
             <IconStat
@@ -1155,7 +1159,7 @@ function ResourceTelemetryDiagnosticsBody({
               value={allT3 ? formatRate(allT3.ioWriteBytesPerSecond) : "..."}
               detail={
                 allT3
-                  ? t("{bytes} observed", { bytes: formatBytes(allT3.ioWriteBytes) })
+                  ? gt("{bytes} observed", { bytes: formatBytes(allT3.ioWriteBytes) })
                   : undefined
               }
               tone={
@@ -1318,7 +1322,7 @@ function ResourceTelemetryDiagnosticsBody({
                 />
                 <DetailRow
                   label={t("Process scan")}
-                  value={t("{retained}/{scanned} retained", {
+                  value={gt("{retained}/{scanned} retained", {
                     retained: snapshot.health.retainedProcessCount,
                     scanned: snapshot.health.scannedProcessCount,
                   })}

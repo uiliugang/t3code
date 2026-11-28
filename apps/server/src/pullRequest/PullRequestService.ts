@@ -447,6 +447,14 @@ function listCursorKey(
   return `${changeRequestSourceKey(kind, origin)} ${repository.toLowerCase()}`;
 }
 
+function statsRequesterKey(
+  project: Pick<SupportedProject, "project" | "kind" | "origin">,
+  repository: string,
+  number: number,
+): string {
+  return JSON.stringify([project.project.id, project.kind, project.origin, repository, number]);
+}
+
 // Preserve exclusions across slices sharing a timestamp to avoid redelivery.
 function nextListCursor(
   previous: ListCursor | undefined,
@@ -1031,6 +1039,29 @@ export const make = Effect.gen(function* () {
           { concurrency: REPOSITORY_CONCURRENCY },
         ),
       ),
+      // A multi-repository project's folder is usually not a repository itself: each tracked
+      // repository stands in as the project, checked out at its own folder.
+      Effect.flatMap((projects) =>
+        Effect.forEach(
+          projects,
+          (project) =>
+            Effect.forEach(
+              workspaceRoot === undefined ? (project.trackedFolders ?? []) : [],
+              (folder) =>
+                repositoryIdentities
+                  .resolve(folder.path)
+                  .pipe(
+                    Effect.map((repositoryIdentity) =>
+                      repositoryIdentity === null
+                        ? []
+                        : [{ ...project, workspaceRoot: folder.path, repositoryIdentity }],
+                    ),
+                  ),
+              { concurrency: REPOSITORY_CONCURRENCY },
+            ).pipe(Effect.map((folders) => [project, ...folders.flat()])),
+          { concurrency: REPOSITORY_CONCURRENCY },
+        ).pipe(Effect.map((expanded) => expanded.flat())),
+      ),
       Effect.map((projects) => projects.map(projectForPullRequestListing)),
       Effect.flatMap((projects) =>
         resolveRemoteHosts(projects, filter).pipe(
@@ -1187,9 +1218,22 @@ export const make = Effect.gen(function* () {
           ref.target?.provider === candidate.kind &&
           candidate.host === host &&
           sameRepository(candidate);
-        if (own !== undefined && sameEndpoint(own) && sameRepository(own)) {
-          if (host === undefined || host === own.host)
-            return Effect.succeed(bindRequestedOrigin(own));
+        const matchingCheckouts = supported.filter(
+          (candidate) =>
+            sameRepository(candidate) &&
+            (host === undefined || candidate.host === host) &&
+            (ref.target === undefined || sameEndpoint(candidate)),
+        );
+        const checkoutEndpoints = new Set(
+          matchingCheckouts.map((candidate) =>
+            changeRequestSourceKey(candidate.kind, candidate.origin),
+          ),
+        );
+        if (checkoutEndpoints.size > 1) {
+          return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
+        }
+        if (matchingCheckouts[0] !== undefined) {
+          return Effect.succeed(bindRequestedOrigin(matchingCheckouts[0]));
         }
         if (host === undefined) {
           if (own === undefined) {
@@ -1341,8 +1385,10 @@ export const make = Effect.gen(function* () {
   ) =>
     listWorkspaceProjects({ projectId }, workspaceRoot).pipe(
       Effect.map(({ projects, supported }) => {
-        const own = supported[0];
-        if (own === undefined) return projects.find((project) => project.id === projectId);
+        const root = projects.find((project) => project.id === projectId);
+        // One of several tracked repositories is no default for a pull request named by number.
+        const own = supported.find((candidate) => candidate.project === root);
+        if (own === undefined) return root;
         const identity = own.project.repositoryIdentity;
         return identity == null || identity.provider === own.kind
           ? own.project
@@ -3132,24 +3178,45 @@ export const make = Effect.gen(function* () {
     "PullRequestService.listStatsUncached",
   )(function* (input) {
     if (input.refs.length === 0) return { stats: [] };
-    const { supported } = yield* listWorkspaceProjects({});
-    const byProject = new Map(supported.map((project) => [project.project.id, project]));
+    // Read per project: a workspace-wide read keeps one project per repository, which would
+    // leave another project with the same repository without counts.
+    const supported = (yield* Effect.forEach(
+      new Set(input.refs.map((ref) => ref.projectId)),
+      (projectId) =>
+        listWorkspaceProjects({ projectId }).pipe(Effect.map((read) => read.supported)),
+      { concurrency: REPOSITORY_CONCURRENCY },
+    )).flat();
+    // A multi-repository project supports several repositories under one id, and can track a
+    // same-named repository on more than one host; a ref without a host comes from an older client.
     const wanted = new Map<
       string,
       { readonly project: SupportedProject; readonly number: number }
     >();
     for (const ref of input.refs) {
-      const project = byProject.get(ref.projectId);
+      const repository = ref.repository.trim().toLowerCase();
+      const host = ref.host?.trim().toLowerCase();
+      const candidates = supported.filter(
+        (candidate) =>
+          candidate.project.id === ref.projectId &&
+          candidate.repository.toLowerCase() === repository &&
+          (host === undefined || candidate.host === host) &&
+          (ref.target === undefined ||
+            (ref.target.provider === candidate.kind &&
+              ref.target.origin === candidate.origin &&
+              candidate.inferredOrigin !== true)),
+      );
+      const [project] = candidates;
       if (
-        project === undefined ||
-        ref.target?.provider !== project.kind ||
-        ref.target.origin !== project.origin ||
-        project.api.listChangeRequestStats === undefined ||
-        project.repository.toLowerCase() !== ref.repository.trim().toLowerCase()
-      ) {
+        project?.api.listChangeRequestStats === undefined ||
+        new Set(
+          candidates.map((candidate) => changeRequestSourceKey(candidate.kind, candidate.origin)),
+        ).size > 1
+      )
         continue;
-      }
-      wanted.set(`${project.project.id} ${ref.number}`, { project, number: ref.number });
+      wanted.set(statsRequesterKey(project, repository, ref.number), {
+        project,
+        number: ref.number,
+      });
     }
     const bySource = Map.groupBy(wanted.values(), ({ project }) =>
       changeRequestSourceKey(project.kind, project.origin),
@@ -3160,38 +3227,46 @@ export const make = Effect.gen(function* () {
         const first = entries[0]!;
         const readStats = first.project.api.listChangeRequestStats;
         if (readStats === undefined) return Effect.succeed<ReadonlyArray<PullRequestDiffStat>>([]);
-        const projectsByRepository = new Map(
-          entries.map((entry) => [
-            `${entry.project.repository.toLowerCase()} ${entry.number}`,
-            entry.project,
-          ]),
-        );
+        // Several projects can ask for the same pull request; each gets its own row.
+        const requesters = new Map<
+          string,
+          { readonly repository: string; readonly number: number; projects: SupportedProject[] }
+        >();
+        for (const entry of entries) {
+          const key = `${entry.project.repository.toLowerCase()} ${entry.number}`;
+          const held = requesters.get(key);
+          if (held === undefined) {
+            requesters.set(key, {
+              repository: entry.project.repository,
+              number: entry.number,
+              projects: [entry.project],
+            });
+          } else held.projects.push(entry.project);
+        }
         return readStats({
           cwd: first.project.project.workspaceRoot,
           host: first.project.host,
-          changeRequests: entries.map((entry) => ({
-            repository: entry.project.repository,
-            number: entry.number,
+          changeRequests: [...requesters.values()].map(({ repository, number }) => ({
+            repository,
+            number,
           })),
         }).pipe(
           Effect.map((read) =>
-            read.flatMap((stat): ReadonlyArray<PullRequestDiffStat> => {
-              const project = projectsByRepository.get(
-                `${stat.repository.toLowerCase()} ${stat.number}`,
-              );
-              return project === undefined
-                ? []
-                : [
-                    {
-                      projectId: project.project.id,
-                      target: { provider: project.kind, origin: project.origin },
-                      repository: project.repository,
-                      number: stat.number,
-                      additions: stat.additions,
-                      deletions: stat.deletions,
-                    },
-                  ];
-            }),
+            read.flatMap((stat): ReadonlyArray<PullRequestDiffStat> =>
+              (
+                requesters.get(`${stat.repository.toLowerCase()} ${stat.number}`)?.projects ?? []
+              ).map((project) => ({
+                projectId: project.project.id,
+                host: project.host,
+                target: project.inferredOrigin
+                  ? undefined
+                  : { provider: project.kind, origin: project.origin },
+                repository: project.repository,
+                number: stat.number,
+                additions: stat.additions,
+                deletions: stat.deletions,
+              })),
+            ),
           ),
           Effect.orElseSucceed((): ReadonlyArray<PullRequestDiffStat> => []),
         );
@@ -3660,7 +3735,8 @@ export const make = Effect.gen(function* () {
   const detailCache = yield* Cache.makeWith(
     (key: string) => {
       const statsKey = statsCacheKey(key);
-      return detailUncached(refOfCacheKey(key)).pipe(
+      const ref = refOfCacheKey(key);
+      return detailUncached(ref).pipe(
         Effect.tap(
           Effect.fn("PullRequestService.recordDetailStats")(function* (value: PullRequestDetail) {
             if (
@@ -3681,6 +3757,7 @@ export const make = Effect.gen(function* () {
               statsKey,
               {
                 projectId: value.projectId,
+                ...(ref.host === undefined ? {} : { host: ref.host.toLowerCase() }),
                 repository: value.repository,
                 number: value.number,
                 additions: value.additions,
@@ -4079,8 +4156,10 @@ export const make = Effect.gen(function* () {
       const stat = result.stats.find(
         (stat) =>
           stat.projectId === ref.projectId &&
-          stat.target?.provider === ref.target?.provider &&
-          stat.target?.origin === ref.target?.origin &&
+          (ref.host === undefined || stat.host === ref.host.toLowerCase()) &&
+          (ref.target === undefined ||
+            (stat.target?.provider === ref.target.provider &&
+              stat.target.origin === ref.target.origin)) &&
           stat.repository.toLowerCase() === ref.repository.toLowerCase() &&
           stat.number === ref.number,
       );

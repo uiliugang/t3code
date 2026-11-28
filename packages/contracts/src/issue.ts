@@ -20,7 +20,7 @@ import {
 
 /**
  * Which tracker an issue lives in. Git hosts reuse their `SourceControlProviderKind` spelling
- * (`github`, `gitlab`); standalone trackers get their own (`linear`, `jira`). Branded apart from
+ * (`github`, `gitlab`); standalone trackers get their own (such as `linear`). Branded apart from
  * the source control kind because the two sets are not the same: Bitbucket is a git host with no
  * tracker, and Linear is a tracker with no git host.
  */
@@ -628,7 +628,7 @@ export const StandaloneIssueTrackerDescriptor = Schema.Struct({
   displayName: TrimmedNonEmptyString,
   /** Where the tracker is served from; what `IssueRef.host` carries for its issues. */
   host: TrimmedNonEmptyString,
-  /** What the tracker calls its container, in the singular: "team" on Linear, "project" on Jira. */
+  /** What the tracker calls its container, in the singular, such as "team" for Linear. */
   scopeNoun: TrimmedNonEmptyString,
   credential: Schema.Struct({
     /** What the tracker calls the credential: "Personal API key", "API token". */

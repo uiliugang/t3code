@@ -188,13 +188,15 @@ export const layer = Layer.effect(
                   yield* removeLinkedWorktree({
                     operation: "WorkspaceCleanup.remove",
                     cwd: resource.identity.commonDir,
+                    repositoryGitDir: resource.identity.commonDir,
                     worktreePath: resource.checkoutRoot,
                     force: false,
-                    run: (args) =>
+                    execute: git.execute,
+                    run: (args, cwd) =>
                       git.execute({
                         operation: "WorkspaceCleanup.remove",
-                        cwd: path.dirname(resource.checkoutRoot),
-                        args: ["--git-dir", resource.identity.commonDir, ...args],
+                        cwd,
+                        args,
                       }),
                   }).pipe(
                     Effect.provideService(FileSystem.FileSystem, fs),

@@ -1119,8 +1119,8 @@ export function PullRequestDetailPanel({
         threadId: opened.threadId,
       }),
     );
+    setHandoff(null);
     if (prepared._tag === "Failure") {
-      setHandoff(null);
       toastManager.update(toastId, {
         type: "error",
         title: t("Could not prepare the {term} checkout", { term: t(terminology.singular) }),
@@ -1130,7 +1130,6 @@ export function PullRequestDetailPanel({
       });
       return;
     }
-    setHandoff(null);
     if (!applied) {
       toastManager.update(toastId, {
         type: "warning",

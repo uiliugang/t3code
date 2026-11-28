@@ -26,6 +26,7 @@ import { AsyncResult } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import { videoMimeType } from "@t3tools/shared/video";
 import {
+  filePreviewKind,
   isWorkspaceBrowserPreviewPath,
   isWorkspaceImagePreviewPath,
   mediaMimeTypeFromExtension,
@@ -37,6 +38,7 @@ import { ScreenContent } from "../../components/ui/ScreenContent";
 import { filePreviewDelimiter, parseDelimitedPreview } from "@t3tools/shared/delimitedPreview";
 import { DelimitedFilePreview } from "./DelimitedFilePreview";
 import { AudioFilePreview } from "./AudioFilePreview";
+import { EpubFilePreview } from "./EpubFilePreview";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
 import { LoadingScreen } from "../../components/LoadingScreen";
@@ -277,9 +279,11 @@ function FileContent(props: {
   const isImageFile = isWorkspaceImagePreviewPath(props.relativePath);
   const isVideoFile = isVideoPreviewFile(props.relativePath);
   const isAudioFile = isAudioPreviewFile(props.relativePath);
+  const isEpubFile = filePreviewKind({ name: props.relativePath }) === "epub";
   const needsAssetUrl =
     isVideoFile ||
     isAudioFile ||
+    isEpubFile ||
     (props.activeMode === "preview" && (isImageFile || isBrowserFile));
 
   if (needsAssetUrl && props.previewFailure !== null) {
@@ -311,6 +315,9 @@ function FileContent(props: {
       <AudioFilePreview uri={props.previewUri} onRetry={props.onRetryPreview} />
     );
   }
+
+  if (isEpubFile)
+    return <EpubFilePreview uri={props.previewUri} name={basename(props.relativePath)} />;
 
   if (props.activeMode === "preview" && isImageFile) {
     if (isSvgImagePreviewFile(props.relativePath)) {
@@ -707,6 +714,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const [fullScreenPreview, setFullScreenPreview] = useState<FilePreviewSource | null>(null);
   const isVideoFile = relativePath !== null && isVideoPreviewFile(relativePath);
   const isAudioFile = relativePath !== null && !isVideoFile && isAudioPreviewFile(relativePath);
+  const isEpubFile = relativePath !== null && filePreviewKind({ name: relativePath }) === "epub";
   const isBrowserFile =
     relativePath !== null && !isVideoFile && isWorkspaceBrowserPreviewPath(relativePath);
   const isImageFile =
@@ -726,13 +734,18 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
       isImageFile ||
       isVideoFile ||
       isAudioFile ||
+      (isEpubFile && !sourceOnlyMedia) ||
       filePreviewDelimiter({ name: relativePath }) !== null);
   const activeMode =
     relativePath !== null && modeOverride?.path === relativePath
       ? modeOverride.mode
       : defaultWorkspaceFileViewMode(relativePath, targetLine);
   const resolvedActiveMode =
-    isVideoFile || isAudioFile ? "preview" : canPreview ? activeMode : "source";
+    isVideoFile || isAudioFile || (isEpubFile && !sourceOnlyMedia)
+      ? "preview"
+      : canPreview
+        ? activeMode
+        : "source";
   // Metadata is needed only to distinguish directories; file contents can load concurrently.
   const needsFileContents = needsWorkspaceFileContents({
     relativePath,
@@ -775,6 +788,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
       isImageFile ||
       isVideoFile ||
       isAudioFile ||
+      (isEpubFile && !sourceOnlyMedia) ||
       (isArchive && (metadata.data?.byteLength ?? 0) <= ARCHIVE_MAX_BYTES))
       ? relativePath
       : null;
@@ -944,7 +958,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
 
   const fileMenuActions = (() => {
     if (relativePath === null) return [];
-    const canToggleMode = canPreview && !isImageFile && !isVideoFile && !isAudioFile;
+    const canToggleMode = canPreview && !isImageFile && !isVideoFile && !isAudioFile && !isEpubFile;
     return [
       canToggleMode
         ? ({
@@ -1068,14 +1082,14 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
           } as const)
         : null,
       resolvedActiveMode === "preview" &&
-      (isBrowserFile || isImageFile || isVideoFile || isAudioFile)
+      (isBrowserFile || isImageFile || isVideoFile || isAudioFile || isEpubFile)
         ? ({
             id: "refresh",
             title: t("Refresh"),
             icon: "arrow.clockwise",
             inline: false,
             onPress: async () => {
-              if (isVideoFile || isAudioFile) await assetPreview.refresh();
+              if (isVideoFile || isAudioFile || isEpubFile) await assetPreview.refresh();
               setPreviewRevision((current) => current + 1);
             },
           } as const)
@@ -1212,7 +1226,11 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
         actions={fileMenuActions}
       />
       <ScreenContent>
-        {isArchive && assetPreview._tag === "Failure" ? (
+        {isEpubFile && (sourceOnlyMedia || previewUri?.startsWith("file:")) ? (
+          <FilePreviewNotice title={t("No preview for this file")}>
+            {gt("The file could not be rendered.")}
+          </FilePreviewNotice>
+        ) : isArchive && assetPreview._tag === "Failure" ? (
           <WorkspaceFilePreviewError
             environmentId={environmentId}
             reason={assetPreview.reason}

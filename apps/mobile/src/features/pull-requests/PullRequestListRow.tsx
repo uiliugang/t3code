@@ -22,6 +22,7 @@ import {
 } from "./PullRequestPresentation";
 import {
   pullRequestLabelColor,
+  pullRequestListDiffStatsLabel,
   pullRequestListReviewStatus,
   pullRequestListRowsAreEqual,
   type EnvironmentPullRequestListEntry,
@@ -112,41 +113,34 @@ export const PullRequestListRow = memo(
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: props.selected, busy: props.busy }}
-            accessibilityLabel={t(
-              "{value} {number}, {title}, {label}{value2}, by {value3}{value4}{value5}{value6}{value7}, {additions} additions, {deletions} deletions",
-              {
-                value: gt(
-                  "{term, select, mr {Merge request} cr {Change request} other {Pull request}}",
-                  {
-                    term: changeRequestTermKind(
-                      sourceControlClients.get(item.provider).changeRequest,
-                    ),
-                  },
-                ),
-                number: String(item.number),
-                title: String(item.title),
-                label: status.label,
-                value2: [item.visibility === "private" ? t("Private") : null, conflict?.label]
-                  .filter(Boolean)
-                  .map((label) => `, ${label}`)
-                  .join(""),
-                value3: item.author?.login ?? t("Unknown author"),
-                value4: review ? `, ${review.accessibleLabel}` : "",
-                value5: checksSpoken ? `, ${checksSpoken}` : "",
-                value6: String(
-                  item.stack
-                    ? `, ${t("Stack layer {position} of {count}", { position: item.stack.position, count: item.stack.size })}`
-                    : "",
-                ),
-                value7: String(
-                  item.labels.length
-                    ? `, ${item.labels.map((label) => label.name).join(", ")}`
-                    : "",
-                ),
-                additions: String(item.additions),
-                deletions: String(item.deletions),
-              },
-            )}
+            accessibilityLabel={[
+              gt(
+                "{term, select, mr {Merge request} cr {Change request} other {Pull request}} {number}",
+                {
+                  term: changeRequestTermKind(
+                    sourceControlClients.get(item.provider).changeRequest,
+                  ),
+                  number: item.number,
+                },
+              ),
+              item.title,
+              status.label,
+              item.visibility === "private" ? t("Private") : null,
+              conflict ? conflict.label.toLowerCase() : null,
+              gt("by {author}", { author: item.author?.login ?? t("Unknown author") }),
+              review ? review.accessibleLabel : null,
+              checksSpoken,
+              item.stack
+                ? t("Stack layer {position} of {count}", {
+                    position: item.stack.position,
+                    count: item.stack.size,
+                  })
+                : null,
+              item.labels.length ? item.labels.map((label) => label.name).join(", ") : null,
+              pullRequestListDiffStatsLabel(item, m),
+            ]
+              .filter((part) => part !== null)
+              .join(", ")}
             accessibilityHint={t("Double tap to open. Touch and hold for quick actions.")}
             onPress={() => props.onSelect(item)}
             disabled={props.busy}

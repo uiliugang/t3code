@@ -16,6 +16,7 @@ import type {
   OrchestrationV2ProjectedTurnItem,
   ProjectId,
   ThreadPullRequestLink,
+  VcsListRefsInput,
   VcsListRefsResult,
   VcsRef,
 } from "@t3tools/contracts";
@@ -302,12 +303,21 @@ export function useBranches(input: VcsRefTarget) {
   );
 }
 
-export function usePaginatedBranches(target: VcsRefTarget) {
+export function usePaginatedBranches(
+  target: VcsRefTarget & { readonly refKind?: VcsListRefsInput["refKind"] },
+) {
   const resolve = useMessages();
   const query = target.query?.trim() ?? "";
+  const { refKind } = target;
   const targetKey =
     target.environmentId !== null && target.cwd !== null
-      ? JSON.stringify([target.environmentId, target.cwd, query, target.repositoryTarget ?? null])
+      ? JSON.stringify([
+          target.environmentId,
+          target.cwd,
+          query,
+          refKind ?? null,
+          target.repositoryTarget ?? null,
+        ])
       : null;
   const [pagination, setPagination] = useState<{
     readonly targetKey: string | null;
@@ -328,12 +338,13 @@ export function usePaginatedBranches(target: VcsRefTarget) {
                 ...(target.repositoryTarget ? { repositoryTarget: target.repositoryTarget } : {}),
                 ...(query.length > 0 ? { query } : {}),
                 ...(cursor === undefined ? {} : { cursor }),
+                ...(refKind === undefined ? {} : { refKind }),
                 limit: VCS_REF_LIST_LIMIT,
               },
             }),
           )
         : [],
-    [target.environmentId, target.cwd, target.repositoryTarget, query, cursors],
+    [target.environmentId, target.cwd, target.repositoryTarget, query, refKind, cursors],
   );
   const pagesAtom = useMemo(
     () =>

@@ -8,6 +8,7 @@ import { useEnvironmentQuery } from "~/state/query";
 
 import { filesViewedScope } from "./filesViewedStore";
 import {
+  countViewedFiles,
   isFileViewed,
   isStaleViewedState,
   toFileViewedStates,
@@ -15,6 +16,7 @@ import {
 
 export interface PullRequestFilesViewedView {
   readonly enabled: boolean;
+  readonly viewedCount: number;
   readonly isViewed: (path: string) => boolean;
   readonly isStale: (path: string) => boolean;
   readonly setViewed: (path: string, viewed: boolean, revision?: string) => void;
@@ -48,6 +50,7 @@ export function usePullRequestFilesViewed(options: {
 
   return {
     enabled,
+    viewedCount: countViewedFiles(states, overlay),
     isViewed: (path: string) => isFileViewed(path, states, overlay),
     isStale: (path: string) => !overlay.has(path) && isStaleViewedState(states?.get(path)),
     setViewed: scope.setViewed,

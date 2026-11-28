@@ -99,7 +99,7 @@ export function AddUsageLimitSourceDialog({
                   environment: environmentLabel,
                 })
               : t(
-                  "Show the quota of every account the hub pools, next to the providers on {environment}. The key stays on that server.",
+                  "Show the quota of every Codex, Claude, and Grok account the hub pools, next to the providers on {environment}. The key stays on that server.",
                   { environment: environmentLabel },
                 )}
           </DialogDescription>

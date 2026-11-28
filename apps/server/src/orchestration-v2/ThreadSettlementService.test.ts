@@ -38,6 +38,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
@@ -59,6 +60,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
+import * as PendingSettleScripts from "./PendingSettleScripts.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -602,10 +604,11 @@ interface HarnessOptions {
   readonly pullRequestSummary?: PullRequestService.PullRequestService["Service"]["summary"];
   readonly existingWorktreePaths?: ReadonlyArray<string>;
   readonly unreadablePaths?: ReadonlyArray<string>;
+  readonly onExists?: (path: string) => Effect.Effect<void>;
   readonly onDispatch?: (command: AutoSettleCommand) => Effect.Effect<void>;
   readonly onScriptRun?: (
     input: ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput,
-  ) => Effect.Effect<void>;
+  ) => Effect.Effect<ProjectSetupScriptRunner.ProjectSetupScriptRunnerResult | void>;
   readonly deviceSessions?: ReadonlyArray<DeviceSession>;
   readonly servers?: ReadonlyArray<import("@t3tools/contracts").DiscoveredLocalServer>;
   readonly onCloseIdle?: (input: { readonly threadId: string }) => Effect.Effect<void>;
@@ -736,6 +739,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     ServerConfig.layerTest("/test", { prefix: "t3-settlement-" }).pipe(
       Layer.provide(NodeServices.layer),
     ),
+    PendingSettleScripts.layer,
     Layer.mock(ProjectStore.ProjectStoreV2)({
       listShells: () => Ref.get(snapshots).pipe(Effect.map((snapshot) => snapshot.projects)),
       getShell: (projectId) =>
@@ -847,7 +851,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       runForThread: (input) =>
         Queue.offer(scriptRuns, input).pipe(
           Effect.andThen(options.onScriptRun?.(input) ?? Effect.void),
-          Effect.as({ status: "no-script" } as const),
+          Effect.map((result) => result ?? ({ status: "no-script" } as const)),
         ),
     }),
     Layer.mock(GitManager.GitManager)({
@@ -875,7 +879,9 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
                 pathOrDescriptor: path,
               }),
             )
-          : Effect.succeed(options.existingWorktreePaths?.includes(path) ?? false),
+          : (options.onExists?.(path) ?? Effect.void).pipe(
+              Effect.as(options.existingWorktreePaths?.includes(path) ?? false),
+            ),
     }),
     Path.layer,
   );
@@ -914,7 +920,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     layer: Layer.effect(
       ThreadSettlementService.ThreadSettlementServiceV2,
       ThreadSettlementService.make,
-    ).pipe(Layer.provide(Cleanup.layer), Layer.provide(layerDependencies)),
+    ).pipe(Layer.provide(Cleanup.layer), Layer.provideMerge(layerDependencies)),
   };
 });
 
@@ -930,6 +936,7 @@ const startHarness = Effect.fn("startThreadSettlementHarness")(function* (
 });
 
 const projectionStoreSql = ProjectionStore.layer.pipe(
+  Layer.provide(NodeCrypto.layerDigest),
   Layer.provideMerge(SqlitePersistence.layerMemory),
 );
 
@@ -2791,90 +2798,105 @@ describe("ThreadSettlementServiceV2 terminals", () => {
       }),
   );
 
-  it.effect("runs the settle script in the thread's own worktree", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const shared = appThread("shared-checkout-thread", "settled");
-        const missing = appThread("removed-worktree-thread", "settled", "/worktrees/removed");
-        const worktree = appThread("worktree-thread", "settled", "/worktrees/thread");
-        const group = {
-          ...appThread("group", "settled", "/worktrees/frontend"),
-          workspace: yield* decodeWorkspace({
-            id: "revision",
-            projectId: "project-1",
-            sourceProjectVersion: 1,
-            previousRevisionId: null,
-            primaryRootId: "frontend",
-            mode: "isolated",
-            createdAt: "2026-06-10T12:00:00.000Z",
-            resources: ["frontend", "backend", "shared"].map((name) => ({
-              id: name,
-              storeId: name,
-              name,
-              checkoutRoot: `/worktrees/${name}`,
-              identity: {
+  it.effect.each([false, true])(
+    "runs settle scripts only in owned worktrees (shares primary: %s)",
+    (sharesPrimary) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const shared = appThread("shared-checkout-thread", "settled");
+          const missing = appThread("removed-worktree-thread", "settled", "/worktrees/removed");
+          const worktree = appThread("worktree-thread", "settled", "/worktrees/thread");
+          const parent = appThread("group-parent", "active", "/worktrees/frontend");
+          const group = {
+            ...appThread("group", "settled", "/worktrees/frontend"),
+            ...(sharesPrimary
+              ? {
+                  lineage: {
+                    parentThreadId: parent.id,
+                    relationshipToParent: "fork" as const,
+                    rootThreadId: parent.id,
+                    sideChat: true,
+                  },
+                }
+              : {}),
+            workspace: yield* decodeWorkspace({
+              id: "revision",
+              projectId: "project-1",
+              sourceProjectVersion: 1,
+              previousRevisionId: null,
+              primaryRootId: "frontend",
+              mode: "isolated",
+              createdAt: "2026-06-10T12:00:00.000Z",
+              resources: ["frontend", "backend", "shared"].map((name) => ({
+                id: name,
+                storeId: name,
+                name,
                 checkoutRoot: `/worktrees/${name}`,
-                gitDir: `/git/${name}`,
-                commonDir: `/git/${name}`,
-                gitDirIdentity: name,
-                commonDirIdentity: name,
-              },
-              ownership: name === "shared" ? "borrowed" : "managed",
-              generation: 1,
-            })),
-            bindings: ["frontend", "backend", "shared"].map((name) => ({
-              rootId: name,
-              alias: name,
-              description: "",
-              accessIntent: "write",
-              resourceId: name,
-              relativeSubpath: "",
-              sourcePathAtBind: `/source/${name}`,
-              executionPath: `/worktrees/${name}`,
-              launchBaseRef: null,
-              launchBaseCommit: null,
-              launchBranch: null,
-            })),
-          }),
-        };
-        const fixture = yield* makeHarness({
-          snapshot: makeSnapshot([]),
-          currentThreads: [shared, missing, worktree, group],
-          existingWorktreePaths: [
-            "/worktrees/thread",
-            "/worktrees/frontend",
-            "/worktrees/backend",
-            "/worktrees/shared",
-          ],
-        });
+                identity: {
+                  checkoutRoot: `/worktrees/${name}`,
+                  gitDir: `/git/${name}`,
+                  commonDir: `/git/${name}`,
+                  gitDirIdentity: name,
+                  commonDirIdentity: name,
+                },
+                ownership: name === "shared" ? "borrowed" : "managed",
+                generation: 1,
+              })),
+              bindings: ["frontend", "backend", "shared"].map((name) => ({
+                rootId: name,
+                alias: name,
+                description: "",
+                accessIntent: "write",
+                resourceId: name,
+                relativeSubpath: "",
+                sourcePathAtBind: `/source/${name}`,
+                executionPath: `/worktrees/${name}`,
+                launchBaseRef: null,
+                launchBaseCommit: null,
+                launchBranch: null,
+              })),
+            }),
+          };
+          const fixture = yield* makeHarness({
+            snapshot: makeSnapshot([]),
+            currentThreads: [shared, missing, worktree, group, parent],
+            existingWorktreePaths: [
+              "/worktrees/thread",
+              "/worktrees/frontend",
+              "/worktrees/backend",
+              "/worktrees/shared",
+            ],
+          });
 
-        yield* Effect.gen(function* () {
-          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
-          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
-          yield* fixture.publishEvent(settledEvent(shared));
-          yield* fixture.publishEvent(settledEvent(missing));
-          yield* fixture.publishEvent(settledEvent(group));
-          yield* fixture.publishEvent(settledEvent(worktree));
-          const frontend = yield* Queue.take(fixture.scriptRuns);
-          const backend = yield* Queue.take(fixture.scriptRuns);
-          assert.strictEqual(frontend.worktreePath, "/worktrees/frontend");
-          assert.deepStrictEqual(frontend.repositoryRootIds?.map(String), ["frontend"]);
-          assert.strictEqual(backend.worktreePath, "/worktrees/backend");
-          assert.deepStrictEqual(backend.repositoryRootIds?.map(String), ["backend"]);
-          const run = yield* Queue.take(fixture.scriptRuns);
-          assert.strictEqual(run.threadId, worktree.id);
-          assert.strictEqual(run.worktreePath, "/worktrees/thread");
-          assert.strictEqual(run.trigger, "settle");
-          assert.deepStrictEqual(yield* Ref.get(fixture.closedDevices), []);
-          assert.deepStrictEqual(yield* Ref.get(fixture.stoppedServers), [
-            shared.id,
-            missing.id,
-            group.id,
-            worktree.id,
-          ]);
-        }).pipe(Effect.provide(fixture.layer));
-      }),
-    ),
+          yield* Effect.gen(function* () {
+            const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+            yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+            yield* fixture.publishEvent(settledEvent(shared));
+            yield* fixture.publishEvent(settledEvent(missing));
+            yield* fixture.publishEvent(settledEvent(group));
+            yield* fixture.publishEvent(settledEvent(worktree));
+            if (!sharesPrimary) {
+              const frontend = yield* Queue.take(fixture.scriptRuns);
+              assert.strictEqual(frontend.worktreePath, "/worktrees/frontend");
+              assert.deepStrictEqual(frontend.repositoryRootIds?.map(String), ["frontend"]);
+            }
+            const backend = yield* Queue.take(fixture.scriptRuns);
+            assert.strictEqual(backend.worktreePath, "/worktrees/backend");
+            assert.deepStrictEqual(backend.repositoryRootIds?.map(String), ["backend"]);
+            const run = yield* Queue.take(fixture.scriptRuns);
+            assert.strictEqual(run.threadId, worktree.id);
+            assert.strictEqual(run.worktreePath, "/worktrees/thread");
+            assert.strictEqual(run.trigger, "settle");
+            assert.deepStrictEqual(yield* Ref.get(fixture.closedDevices), []);
+            assert.deepStrictEqual(yield* Ref.get(fixture.stoppedServers), [
+              shared.id,
+              missing.id,
+              group.id,
+              worktree.id,
+            ]);
+          }).pipe(Effect.provide(fixture.layer));
+        }),
+      ),
   );
 
   it.effect("warns when the settle script cannot run in the thread worktree", () =>
@@ -2961,6 +2983,33 @@ describe("ThreadSettlementServiceV2 terminals", () => {
       }),
   );
 
+  it.effect("skips the settle script for a thread re-engaged during the worktree check", () =>
+    Effect.gen(function* () {
+      const settled = appThread("stale-thread", "settled", "/worktrees/stale");
+      const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+      const currentThreads = [settled, marker];
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([]),
+        currentThreads,
+        existingWorktreePaths: ["/worktrees/stale", "/worktrees/marker"],
+        onExists: (path) =>
+          Effect.sync(() => {
+            if (path === "/worktrees/stale") {
+              currentThreads[0] = { ...settled, settledOverride: "active" };
+            }
+          }),
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+        yield* fixture.publishEvent(settledEvent(settled));
+        yield* fixture.publishEvent(settledEvent(marker));
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, marker.id);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
   it.effect("skips the settle script for a subagent in its parent's worktree", () =>
     Effect.gen(function* () {
       const parent = appThread("subagent-parent", "settled", "/worktrees/parent");
@@ -2989,6 +3038,39 @@ describe("ThreadSettlementServiceV2 terminals", () => {
         yield* fixture.publishEvent(settledEvent(own));
         assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: shared.id });
         assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: own.id });
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, own.id);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
+  it.effect("skips the settle script for a fork or side chat in its source's worktree", () =>
+    Effect.gen(function* () {
+      const source = appThread("fork-source", "active", "/worktrees/source");
+      const child = (id: string, worktreePath: string, sideChat: boolean) => ({
+        ...appThread(id, "settled", worktreePath),
+        lineage: {
+          parentThreadId: source.id,
+          relationshipToParent: "fork" as const,
+          rootThreadId: source.id,
+          ...(sideChat ? { sideChat: true } : {}),
+        },
+      });
+      const fork = child("fork-shared", "/worktrees/source", false);
+      const sideChat = child("side-chat-shared", "/worktrees/source", true);
+      const own = child("fork-own", "/worktrees/own", false);
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([]),
+        currentThreads: [source, fork, sideChat, own],
+        existingWorktreePaths: ["/worktrees/source", "/worktrees/own"],
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+        // The worktree belongs to the source, so only the fork with its own worktree runs it.
+        yield* fixture.publishEvent(settledEvent(fork));
+        yield* fixture.publishEvent(settledEvent(sideChat));
+        yield* fixture.publishEvent(settledEvent(own));
         assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, own.id);
       }).pipe(Effect.provide(fixture.layer));
     }),
@@ -3036,6 +3118,56 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           );
         }).pipe(Effect.provide(fixture.layer));
       }),
+  );
+
+  it.effect("runs one settle script at a time", () =>
+    Effect.gen(function* () {
+      const first = appThread("first-thread", "settled", "/worktrees/first");
+      const second = appThread("second-thread", "settled", "/worktrees/second");
+      const marker = appThread("marker-thread", "settled");
+      const firstFinished = yield* Deferred.make<void>();
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([]),
+        currentThreads: [first, second, marker],
+        existingWorktreePaths: ["/worktrees/first", "/worktrees/second"],
+        onScriptRun: (input) =>
+          Effect.succeed({
+            status: "started",
+            scriptId: "clean",
+            scriptName: "Clean",
+            scriptCommand: "clean",
+            terminalId: `settle-${input.threadId}`,
+            cwd: input.worktreePath,
+            async: true,
+            completion: (input.threadId === first.id
+              ? Deferred.await(firstFinished)
+              : Effect.void
+            ).pipe(Effect.as({ exitCode: 0, durationMs: 0 })),
+          } as const),
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+        yield* fixture.publishEvent(settledEvent(first));
+        yield* fixture.publishEvent(settledEvent(second));
+        yield* fixture.publishEvent(settledEvent(marker));
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, first.id);
+        // Events run in order, so the second thread's settlement was handled before the marker's.
+        for (const thread of [first, second, marker]) {
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: thread.id });
+        }
+        // A long first script keeps the slot, and storage cleanup still sees the queued thread.
+        yield* TestClock.adjust("4 minutes");
+        assert.strictEqual(yield* Queue.size(fixture.scriptRuns), 0);
+        const pending = yield* PendingSettleScripts.PendingSettleScripts;
+        assert.isTrue(pending.has(second.id));
+        // A script that never finishes stops holding back the queue after five minutes.
+        yield* TestClock.adjust("2 minutes");
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, second.id);
+        yield* Deferred.succeed(firstFinished, undefined);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
   );
 
   it.effect("retries the settle script on a re-emitted settlement after a failed start", () =>

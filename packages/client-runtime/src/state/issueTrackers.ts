@@ -22,7 +22,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import * as Persistence from "../platform/persistence.ts";
 
 /**
- * Standalone issue trackers (Linear, Jira) per environment: which are connected, as whom, which
+ * Standalone issue trackers per environment: which are connected, as whom, which
  * scopes they reach, and which project is bound to which scope. One query carries all of it, and
  * every mutation refreshes that query, so the settings page never shows a stale status.
  */

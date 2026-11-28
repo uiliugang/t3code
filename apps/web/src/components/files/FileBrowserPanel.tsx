@@ -16,7 +16,7 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { useFileContextMenu } from "~/fileContextMenu";
+import { type FileContextMenuAction, useFileContextMenu } from "~/fileContextMenu";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import {
@@ -38,6 +38,7 @@ import {
 import { buildFileTreePathUpdates, shouldRebuildFileTree } from "./fileTreePathReconciliation";
 import { loadFileAncestors } from "./loadFileAncestors";
 import { useDirectoryEntries } from "./useDirectoryEntries";
+import { useFileDownload } from "./useFileDownload";
 import { useProjectPathSearch } from "~/state/queries";
 import { isMacPlatform } from "~/lib/utils";
 import { type PreviewAction, subscribePreviewAction } from "../preview/previewActionBus";
@@ -178,6 +179,7 @@ export default function FileBrowserPanel({
   const messages = useMessages();
   const { resolvedTheme } = useTheme();
   const fileContextMenu = useFileContextMenu(environmentId);
+  const downloadFile = useFileDownload(environmentId);
   const {
     entries: directoryEntries,
     load,
@@ -238,7 +240,19 @@ export default function FileBrowserPanel({
       };
       // The app menu owns focus; the tree's outside-click handler would dismiss it before click.
       context.close({ restoreFocus: !pointerIsFresh });
-      void fileContextMenu.show(fileTarget, position, pointerIsFresh ? pointer.source : undefined);
+      const items = [
+        ...fileContextMenu.buildItems(fileTarget),
+        ...(downloadFile && item.kind !== "directory"
+          ? [{ id: "download", label: gt("Download", { $context: "verb, saves a file" }) }]
+          : []),
+      ];
+      void api.contextMenu
+        .show(items, position, pointerIsFresh ? pointer.source : undefined)
+        .then((clicked) => {
+          if (clicked === "download") downloadFile?.(cwd, relativePath);
+          else if (clicked !== null)
+            return fileContextMenu.activate(clicked as FileContextMenuAction, fileTarget);
+        });
     },
   );
 

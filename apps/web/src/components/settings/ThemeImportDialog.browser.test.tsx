@@ -1,8 +1,10 @@
+import { getTranslationsSnapshot, GTProvider } from "gt-react";
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
+import { initializeI18n } from "../../i18n/initializeI18n";
 import {
   CUSTOM_THEMES_STORAGE_KEY,
   getCustomThemes,
@@ -67,6 +69,40 @@ describe("ThemeImportDialog", () => {
       "night",
       expect.objectContaining({ sortBy: "downloadCount" }),
     );
+  });
+
+  // The count uses the host locale, not the UI language.
+  const compact = (count: number) =>
+    new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(
+      count,
+    );
+  it.each([
+    ["en", 1, "acme · 1 download"],
+    ["zh", 475_001, `acme · ${compact(475_001)} 次下载`],
+  ])("counts %s theme downloads (%d)", async (locale, downloadCount, line) => {
+    searchOpenVsxThemes.mockReset();
+    searchOpenVsxThemes.mockResolvedValue([{ ...extension, downloadCount }]);
+    const translations = await getTranslationsSnapshot(locale);
+    using _locale = {
+      [Symbol.dispose]() {
+        // GTProvider leaves its locale in a cookie; this sets it back to English.
+        initializeI18n(() => {});
+      },
+    };
+    await using _screen = await render(
+      <GTProvider locale={locale} translations={translations}>
+        <ThemeImportDialog
+          open
+          onOpenChange={() => {}}
+          onImported={() => true}
+          onImportedMany={() => {}}
+        />
+      </GTProvider>,
+    );
+
+    await userEvent.fill(page.getByRole("searchbox"), "night");
+
+    await expect.element(page.getByText(line, { exact: true })).toBeVisible();
   });
 
   it("clears the search on Escape before closing the dialog", async () => {
@@ -170,6 +206,81 @@ function isolateThemes() {
   };
 }
 
+it("keeps a numbered copy when the theme name expands in its ID", async () => {
+  using _themes = isolateThemes();
+  const name = "İstanbul İncisi İzmir İskenderun İnegöl İpsala";
+  const original = installCustomTheme(parseThemeFile(theme(name)));
+  const updated = theme(name, "#f97316");
+  await using _screen = await render(
+    <ThemeImportDialog
+      open
+      onOpenChange={() => {}}
+      onImported={() => true}
+      onImportedMany={() => {}}
+    />,
+  );
+
+  await userEvent.fill(page.getByRole("textbox", { name: "Theme JSON" }), JSON.stringify(updated));
+  await page.getByRole("button", { name: "Add theme", exact: true }).click();
+  await expect.element(page.getByText("Already installed")).toBeVisible();
+  await page.getByRole("button", { name: "Keep both" }).click();
+
+  const themes = getCustomThemes();
+  expect(themes).toHaveLength(2);
+  expect(themes.find(({ id }) => id === original.id)).toEqual(original);
+  expect(themes.find(({ id }) => id !== original.id)).toMatchObject({
+    label: "İstanbul İncisi İzmir İskenderun İnegöl İ (1)",
+    colors: parseThemeFile(updated).colors,
+  });
+});
+
+it.each([
+  [
+    "a different theme label",
+    theme("Dusk"),
+    theme("Dusk", "#f97316"),
+    `${"a".repeat(47)}🌙.json`,
+    "a".repeat(47),
+  ],
+  [
+    "the same label after truncating",
+    { ...theme("a".repeat(47)), id: "custom-id" },
+    { ...theme("a".repeat(47), "#f97316"), id: "custom-id" },
+    `${"a".repeat(47)}🌙.json`,
+    `${"a".repeat(44)} (1)`,
+  ],
+  [
+    "the same label after truncating at a space",
+    { ...theme("a".repeat(46)), id: "custom-id" },
+    { ...theme("a".repeat(46), "#f97316"), id: "custom-id" },
+    `${"a".repeat(46)} 🌙.json`,
+    `${"a".repeat(44)} (1)`,
+  ],
+])(
+  "does not split a surrogate pair when naming a kept copy after its file (%s)",
+  async (_caseName, installed, imported, fileName, expectedLabel) => {
+    using _themes = isolateThemes();
+    const original = installCustomTheme(parseThemeFile(installed));
+    const json = JSON.stringify(imported);
+    await using _screen = await render(
+      <ThemeImportDialog
+        open
+        onOpenChange={() => {}}
+        onImported={() => true}
+        onImportedMany={() => {}}
+      />,
+    );
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    await userEvent.upload(input, new File([json], fileName, { type: "application/json" }));
+    await expect.element(page.getByRole("textbox", { name: "Theme JSON" })).toHaveValue(json);
+    await page.getByRole("button", { name: "Add theme", exact: true }).click();
+    await expect.element(page.getByText("Already installed")).toBeVisible();
+    await page.getByRole("button", { name: "Keep both" }).click();
+
+    expect(getCustomThemes().find(({ id }) => id !== original.id)?.label).toBe(expectedLabel);
+  },
+);
+
 it("sizes an oversized theme file just under 1 MB as 1.00 MB", async () => {
   using _themes = isolateThemes();
   await using _screen = await render(
@@ -190,6 +301,38 @@ it("sizes an oversized theme file just under 1 MB as 1.00 MB", async () => {
     .element(page.getByText(/^That file is/))
     .toHaveTextContent(
       "That file is 1.00 MB. Theme files are only a few KB, so this one was not read (limit 256 KB).",
+    );
+});
+
+it("names an oversized file in a batch import in the UI language", async () => {
+  using _themes = isolateThemes();
+  const translations = await getTranslationsSnapshot("zh");
+  using _locale = {
+    [Symbol.dispose]() {
+      // GTProvider leaves its locale in a cookie; this sets it back to English.
+      initializeI18n(() => {});
+    },
+  };
+  await using _screen = await render(
+    <GTProvider locale="zh" translations={translations}>
+      <ThemeImportDialog
+        open
+        onOpenChange={() => {}}
+        onImported={() => true}
+        onImportedMany={() => {}}
+      />
+    </GTProvider>,
+  );
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+  await userEvent.upload(input, [
+    themeFile("Dawn"),
+    new File(["x".repeat(1_048_100)], "huge.json", { type: "application/json" }),
+  ]);
+
+  await expect
+    .element(page.getByRole("alert"))
+    .toHaveTextContent(
+      "huge.json: 此文件大小为 1.00 MB。主题文件通常仅有几 KB，因此未读取此文件（上限为 256 KB）。",
     );
 });
 

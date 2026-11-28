@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { quoteGitPatchPath, unquoteGitPatchPath } from "./gitPatchPath.ts";
+import { quoteGitPatchPath, tryUnquoteGitPatchPath, unquoteGitPatchPath } from "./gitPatchPath.ts";
 
 const BELL = "\u0007";
 const UNIT_SEPARATOR = "\u001f";
@@ -67,6 +67,12 @@ describe("unquoteGitPatchPath", () => {
       "café/résumé.ts",
     );
     expect(unquoteGitPatchPath('"\\360\\237\\232\\200.ts"')).toBe("🚀.ts");
+  });
+
+  it("distinguishes a literal replacement character from invalid UTF-8", () => {
+    expect(tryUnquoteGitPatchPath('"module-\\357\\277\\275"')).toBe("module-\uFFFD");
+    expect(tryUnquoteGitPatchPath('"module-\\357\\277\\275\\377"')).toBeNull();
+    expect(unquoteGitPatchPath('"module-\\377"')).toBe("module-\uFFFD");
   });
 });
 

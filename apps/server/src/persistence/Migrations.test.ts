@@ -1,9 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 import { EventId } from "@t3tools/contracts";
@@ -164,7 +166,7 @@ describe("runMigrations", () => {
             [thread.id],
           );
           assert.deepStrictEqual(snapshot.threads[0]?.workspace, thread.workspace);
-        }).pipe(Effect.provide(ProjectionStore.layer));
+        }).pipe(Effect.provide(ProjectionStore.layer.pipe(Layer.provide(NodeCrypto.layerDigest))));
         // query_only rejects the write lock that an already-current CLI startup must avoid.
         yield* sql`PRAGMA query_only = ON`;
         assert.deepStrictEqual(yield* runMigrations(), []);

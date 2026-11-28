@@ -415,7 +415,7 @@ function useOpenIssueLinkedPullRequest(params: IssueParams) {
             environmentId,
             projectId: input.projectId,
             configLoaded: () => config !== null,
-            lendHostProject: supportsWebTargets,
+            lendHostProject: supportsWebTargets && params.tracker !== "linear",
             supportsWebTargets: () => supportsWebTargets,
           });
     if (!target || !resolved) {

@@ -753,13 +753,15 @@ const make = Effect.gen(function* () {
                   yield* removeLinkedWorktree({
                     operation: "ManagedWorktrees.remove",
                     cwd: resource.identity.commonDir,
+                    repositoryGitDir: resource.identity.commonDir,
                     worktreePath: resource.identity.checkoutRoot,
                     force: false,
-                    run: (args) =>
+                    execute: git.execute,
+                    run: (args, cwd) =>
                       git.execute({
                         operation: "ManagedWorktrees.remove",
-                        cwd: resource.identity.commonDir,
-                        args: ["--git-dir", resource.identity.commonDir, ...args],
+                        cwd,
+                        args,
                       }),
                   }).pipe(
                     Effect.provideService(FileSystem.FileSystem, fs),
@@ -1254,13 +1256,15 @@ const make = Effect.gen(function* () {
                 yield* removeLinkedWorktree({
                   operation: "ManagedWorktrees.removeResiduals",
                   cwd: identity.commonDir,
+                  repositoryGitDir: identity.commonDir,
                   worktreePath: checked.path,
                   force: true,
-                  run: (args) =>
+                  execute: git.execute,
+                  run: (args, cwd) =>
                     git.execute({
                       operation: "ManagedWorktrees.removeResiduals",
-                      cwd: identity.commonDir,
-                      args: ["--git-dir", identity.commonDir, ...args],
+                      cwd,
+                      args,
                     }),
                 }).pipe(
                   Effect.provideService(FileSystem.FileSystem, fs),

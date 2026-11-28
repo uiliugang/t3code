@@ -9,6 +9,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   CHECKPOINT_DIFF_TRUNCATED_MARKER,
   type ReviewBranchCommitsResult,
@@ -35,8 +36,8 @@ import { useCodeViewScrollRestore } from "./diffs/useCodeViewScrollRestore";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { useFileContextMenu } from "../fileContextMenu";
-import { type DraftId } from "../composerDraftStore";
-import { openDiffFilePrimaryAction } from "../diffFileActions";
+import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
+import { openDiffFilePrimaryAction, resolveDiffPathForWorkspace } from "../diffFileActions";
 import { toolCallDiff } from "../lib/toolCallDiff";
 import { useCheckpointDiff, useTurnItemDetail } from "~/state/queries";
 import { revisionedQuery } from "~/state/revisionedQuery";
@@ -52,6 +53,11 @@ import {
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useDiffFileFilters } from "./diffs/useDiffFileFilters";
 import { DiffFileFilterMenu } from "./diffs/DiffFileFilterMenu";
+import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/mediaPreview";
+import { ChatMarkdownAssetImage } from "./chat/ChatMarkdownMedia";
+import { workspaceAssetResource } from "./files/filePreviewMode";
 import { useRenderedAppearance } from "../hooks/useTheme";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
@@ -291,7 +297,17 @@ export default function DiffPanel({
 
   const routeThreadRef = useThreadRouteRef();
   const activeThreadId = routeThreadRef?.threadId ?? null;
-  const activeThread = useQuietThreadShell(routeThreadRef);
+  const serverThread = useQuietThreadShell(routeThreadRef);
+  // A new thread has no server thread yet; its draft names the checkout to diff.
+  const draftThread = useComposerDraftStore((store) =>
+    routeThreadRef === null && typeof composerDraftTarget === "string"
+      ? store.getDraftSession(composerDraftTarget)
+      : null,
+  );
+  const activeThread = serverThread ?? draftThread;
+  const panelThreadRef =
+    routeThreadRef ??
+    (draftThread ? scopeThreadRef(draftThread.environmentId, draftThread.threadId) : null);
   const fileAccess = useFilesystemReadAccess(activeThread?.environmentId ?? null, messages);
   const { canReadFiles } = fileAccess;
   const activeProjectId = activeThread?.projectId ?? null;
@@ -308,24 +324,24 @@ export default function DiffPanel({
       ? state.selectedRepositoryByThreadKey[scopedThreadKey(routeThreadRef)]
       : undefined,
   );
-  const primaryResourceId = activeThread?.workspace?.bindings.find(
-    (binding) => binding.rootId === activeThread.workspace?.primaryRootId,
+  const primaryResourceId = serverThread?.workspace?.bindings.find(
+    (binding) => binding.rootId === serverThread.workspace?.primaryRootId,
   )?.resourceId;
   const repository =
-    activeThread?.workspace?.resources.find((resource) => resource.id === selectedResourceId) ??
-    activeThread?.workspace?.resources.find((resource) => resource.id === primaryResourceId);
+    serverThread?.workspace?.resources.find((resource) => resource.id === selectedResourceId) ??
+    serverThread?.workspace?.resources.find((resource) => resource.id === primaryResourceId);
   const repositoryTarget =
-    activeThread?.workspace && repository
+    serverThread?.workspace && repository && routeThreadRef
       ? {
-          threadId: activeThread.id,
-          workspaceRevisionId: activeThread.workspace.id,
+          threadId: routeThreadRef.threadId,
+          workspaceRevisionId: serverThread.workspace.id,
           resourceId: repository.id,
         }
       : undefined;
   const activeCwd =
     repository?.checkoutRoot ??
     activeThread?.worktreePath ??
-    activeThread?.projectWorkspaceRoot ??
+    serverThread?.projectWorkspaceRoot ??
     activeProject?.workspaceRoot;
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
@@ -348,7 +364,7 @@ export default function DiffPanel({
     gitStatusQuery.data?.workingTree.rootPath ??
     (activeThread?.worktreePath ? undefined : activeProject?.repositoryIdentity?.rootPath);
   const storedDiffSelection = useDiffPanelStore((state) =>
-    selectThreadDiffPanelSelection(state.byThreadKey, routeThreadRef, repository?.id),
+    selectThreadDiffPanelSelection(state.byThreadKey, panelThreadRef, repository?.id),
   );
   const threadFolderIsRepo = gitStatusQuery.data?.isRepo ?? true;
   // The checkout the Git scopes read: the thread's folder, or a repository the thread changed.
@@ -410,7 +426,7 @@ export default function DiffPanel({
       ? { kind: "turn", turnId: latestTurn.runId, filePath: null, revealRequestId: 0 }
       : storedDiffSelection;
   const rememberedBaseRef = useDiffPanelStore((state) =>
-    selectThreadBranchBaseRef(state, routeThreadRef, repository?.id),
+    selectThreadBranchBaseRef(state, panelThreadRef, repository?.id),
   );
   const toolCallSelection = diffSelection.kind === "tool-call" ? diffSelection : null;
   // Turn and git diffs name files from the repository root; a tool call's diff names them as
@@ -467,8 +483,8 @@ export default function DiffPanel({
       : selectedCommitSha !== null
         ? `commit:${selectedCommitSha}`
         : selectedGitScope;
-  const collapseScopeKey = routeThreadRef
-    ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}:${repository?.id ?? "legacy"}:${gitRepository?.repositoryPath ?? "root"}:${reviewSectionId}`
+  const collapseScopeKey = panelThreadRef
+    ? `${panelThreadRef.environmentId}:${panelThreadRef.threadId}:${repository?.id ?? "legacy"}:${gitRepository?.repositoryPath ?? "root"}:${reviewSectionId}`
     : null;
   const codeViewMountKey = collapseScopeKey ?? reviewSectionId;
   const selectedCheckpointRange =
@@ -546,8 +562,8 @@ export default function DiffPanel({
     messages,
   );
   const branchCommits = openCommitMenu ?? branchCommitsQuery.data;
-  const activeThreadRefreshKey = routeThreadRef
-    ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}`
+  const activeThreadRefreshKey = panelThreadRef
+    ? `${panelThreadRef.environmentId}:${panelThreadRef.threadId}`
     : null;
 
   const selectedGitSource = branchDiffPreview.data?.sources.find(
@@ -770,6 +786,8 @@ export default function DiffPanel({
     retry,
     requestFile,
     renderableFiles,
+    remainingFileCount,
+    loadNextFiles,
   } = useReviewFilePatches({
     environmentId: activeThread?.environmentId,
     cwd: branchDiffPreview.data?.cwd,
@@ -858,6 +876,10 @@ export default function DiffPanel({
       .getState()
       .updateCollapsedFileKeys(collapseScopeKey, defaultCollapsedDiffFileKeys, update);
   };
+  const renderLoadingBoundary = () =>
+    remainingFileCount > 0 ? (
+      <DiffFileLoadingBoundary load={loadNextFiles} count={remainingFileCount} />
+    ) : null;
   const codeViewFiles = previewFileEntries.map(({ fileDiff, fileKey, fileVersion }) => ({
     fileDiff,
     filePath: resolveFileDiffPath(fileDiff),
@@ -873,7 +895,11 @@ export default function DiffPanel({
   const fileTreeEntries = diffFileTreeEntries(renderableFiles.filter(isFileShown));
   const codeViewReveal = useCodeViewFileReveal();
   // Lazy files that sat above the saved position load again only when asked for.
-  const codeViewScroll = useCodeViewScrollRestore(collapseScopeKey, !isRefreshingDiff, null);
+  const codeViewScroll = useCodeViewScrollRestore(
+    collapseScopeKey,
+    !isRefreshingDiff && remainingFileCount === 0,
+    remainingFileCount > 0 ? loadNextFiles : null,
+  );
   const attachCodeView = useStableCallback((handle: AnnotatableCodeViewHandle | null) => {
     codeViewScroll.attach(handle);
     codeViewReveal.attach(handle);
@@ -939,11 +965,59 @@ export default function DiffPanel({
       )?.cwd,
     };
   };
+  // Only uncommitted and branch changes end at the working tree, the one version that can be shown.
+  const workingTreeImagePath = (filePath: string) => {
+    if (
+      !isGitSelection ||
+      selectedCommitSha !== null ||
+      !activeCwd ||
+      !isWorkspaceImagePreviewPath(filePath)
+    ) {
+      return null;
+    }
+    if (gitRepository !== null) return resolvePathLinkTarget(filePath, gitRepository.cwd);
+    const workspacePath = resolveDiffPathForWorkspace({
+      filePath,
+      workspaceRoot: activeCwd,
+      repositoryRoot: activeRepositoryRoot,
+    });
+    return workspacePath === null ? null : resolvePathLinkTarget(workspacePath, activeCwd);
+  };
+  const imagePreviewPath = (fileDiff: FileDiffMetadata) => {
+    const filePath = resolveFileDiffPath(fileDiff);
+    return fileDiff.hunks.length === 0 &&
+      fileDiff.type !== "deleted" &&
+      workingTreeImagePath(filePath) !== null
+      ? filePath
+      : null;
+  };
+  const renderImagePreview = (filePath: string) => {
+    const absolutePath = workingTreeImagePath(filePath);
+    if (!routeThreadRef || !activeCwd || absolutePath === null) return null;
+    const resource = workspaceAssetResource({
+      kind: "workspace-file",
+      threadRef: routeThreadRef,
+      draft: false,
+      workspaceRoot: activeCwd,
+      absolutePath,
+    });
+    return resource._tag === "workspace-file" || resource._tag === "media-file" ? (
+      <div className="flex justify-center p-3">
+        <ChatMarkdownAssetImage
+          environmentId={routeThreadRef.environmentId}
+          resource={resource}
+          alt={filePath}
+          workspaceRoot={activeCwd}
+          workspaceMutationId={workspaceMutationId}
+        />
+      </div>
+    ) : null;
+  };
   const openDiffFile = (filePath: string) => {
     const repositoryFile = repositoryFileTarget(filePath);
     openDiffFilePrimaryAction({
       // The file viewer reads below the thread's folder; a repository outside it opens in the editor.
-      threadRef: repositoryFile?.insideThreadFolder === false ? null : routeThreadRef,
+      threadRef: repositoryFile?.insideThreadFolder === false ? null : panelThreadRef,
       filePath: repositoryFile?.insideThreadFolder === false ? repositoryFile.path : filePath,
       activeCwd: repositoryFile?.insideThreadFolder === false ? repositoryFile.cwd : activeCwd,
       repositoryRoot: repositoryFile ? undefined : diffPathRepositoryRoot,
@@ -1028,14 +1102,14 @@ export default function DiffPanel({
     useDiffPanelStore.getState().selectTurn(routeThreadRef, runId);
   };
   const selectGitScope = (scope: "branch" | "unstaged") => {
-    if (!routeThreadRef) return;
-    if (repository) useDiffPanelStore.getState().selectRepository(routeThreadRef, repository.id);
-    useDiffPanelStore.getState().selectGitScope(routeThreadRef, scope);
+    if (!panelThreadRef) return;
+    if (repository) useDiffPanelStore.getState().selectRepository(panelThreadRef, repository.id);
+    useDiffPanelStore.getState().selectGitScope(panelThreadRef, scope);
   };
   const selectBranchBaseRef = (baseRef: string | null) => {
-    if (!routeThreadRef) return;
-    if (repository) useDiffPanelStore.getState().selectRepository(routeThreadRef, repository.id);
-    useDiffPanelStore.getState().selectBranchBaseRef(routeThreadRef, baseRef);
+    if (!panelThreadRef) return;
+    if (repository) useDiffPanelStore.getState().selectRepository(panelThreadRef, repository.id);
+    useDiffPanelStore.getState().selectBranchBaseRef(panelThreadRef, baseRef);
   };
   const selectGitRepository = (value: string) => {
     const nextPath = value === THREAD_FOLDER ? null : value;
@@ -1071,8 +1145,8 @@ export default function DiffPanel({
     } else if (value === selectedCommitValue) {
       selectGitScope("branch");
     } else if (value.startsWith("commit:")) {
-      if (routeThreadRef) {
-        useDiffPanelStore.getState().selectCommit(routeThreadRef, value.slice("commit:".length));
+      if (panelThreadRef) {
+        useDiffPanelStore.getState().selectCommit(panelThreadRef, value.slice("commit:".length));
       }
     } else if (value === "latest") {
       if (latestTurn) selectTurn(latestTurn.runId);
@@ -1088,13 +1162,13 @@ export default function DiffPanel({
   const headerRow = (
     <>
       <div className="@container/diff-refs flex min-w-0 flex-1 items-center gap-2 [-webkit-app-region:no-drag]">
-        {activeThread?.workspace &&
-        activeThread.workspace.resources.length > 1 &&
+        {serverThread?.workspace &&
+        serverThread.workspace.resources.length > 1 &&
         routeThreadRef ? (
           <Select
             value={repository?.id ?? ""}
             onValueChange={(value) => {
-              const resource = activeThread.workspace!.resources.find(
+              const resource = serverThread.workspace!.resources.find(
                 (entry) => entry.id === value,
               );
               if (resource)
@@ -1109,7 +1183,7 @@ export default function DiffPanel({
             >
               <SelectValue>
                 <span className="block truncate">
-                  {activeThread.workspace.bindings
+                  {serverThread.workspace.bindings
                     .filter((binding) => binding.resourceId === repository?.id)
                     .map((binding) => binding.alias)
                     .join(" / ")}
@@ -1117,9 +1191,9 @@ export default function DiffPanel({
               </SelectValue>
             </SelectTrigger>
             <SelectPopup align="start" alignItemWithTrigger={false}>
-              {activeThread.workspace.resources.map((resource) => (
+              {serverThread.workspace.resources.map((resource) => (
                 <SelectItem key={resource.id} value={resource.id}>
-                  {activeThread
+                  {serverThread
                     .workspace!.bindings.filter((binding) => binding.resourceId === resource.id)
                     .map((binding) => binding.alias)
                     .join(" / ")}
@@ -1784,6 +1858,9 @@ export default function DiffPanel({
                       className="h-full min-h-0 overflow-auto"
                       files={codeViewFiles}
                       pendingFiles={pendingFiles}
+                      renderCodeViewFooter={renderLoadingBoundary}
+                      imagePreviewPath={imagePreviewPath}
+                      renderImagePreview={renderImagePreview}
                       sectionId={reviewSectionId}
                       sectionTitle={reviewSectionTitle}
                       composerDraftTarget={composerDraftTarget}
