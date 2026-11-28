@@ -20,7 +20,13 @@ function settingsBreadcrumbLabel(pathname: string): string | null {
   return SETTINGS_BREADCRUMB_LABELS[normalizedPathname] ?? null;
 }
 
-export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
+export function SettingsBreadcrumb({
+  pathname,
+  className,
+}: {
+  pathname: string;
+  className?: string;
+}) {
   const t = useUiTranslation();
 
   const gt = useGT();
@@ -28,7 +34,10 @@ export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
   const sectionLabel = settingsBreadcrumbLabel(pathname);
 
   return (
-    <WorkspaceBreadcrumb ariaLabel={gt("Settings breadcrumb")}>
+    <WorkspaceBreadcrumb
+      ariaLabel={gt("Settings breadcrumb")}
+      {...(className !== undefined ? { className } : {})}
+    >
       {sectionLabel ? (
         <>
           <WorkspaceBreadcrumbItem>{t(m(SETTINGS_LABEL))}</WorkspaceBreadcrumbItem>

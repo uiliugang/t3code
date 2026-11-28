@@ -15,7 +15,6 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import type { ServerSettings } from "@t3tools/contracts";
 import { BUILT_IN_THEMES, RESERVED_THEME_IDS } from "@t3tools/shared/themePalettes";
 import * as Struct from "effect/Struct";
-import { useState } from "react";
 
 import {
   ensureClientSettingsHydrated,
@@ -25,7 +24,11 @@ import {
 import { getThemeSnapshot, readThemeHalvesRaw, useTheme } from "../../hooks/useTheme";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { serverEnvironment } from "../../state/server";
-import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import {
+  useEnvironments,
+  usePrimaryEnvironmentId,
+  type EnvironmentPresentation,
+} from "../../state/environments";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -42,25 +45,40 @@ import { SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectImportHistory } from "./ProjectImportHistory";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
-import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
-import type { SettingsScopeSearch } from "./settingsScope";
+import type { ResolvedSettingsScope } from "./settingsScope";
 import { isConnectedWithConfig } from "./scopedSettings";
 
-export function ApplicationConfigurationSettings() {
-  const t = useUiTranslation();
-  const { scope } = useSettingsScope();
-  const { environments } = useEnvironments();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const connectedEnvironments = environments.filter(isConnectedWithConfig);
-  const [selection, setSelection] = useState<SettingsScopeSearch>({});
-  const environment =
-    connectedEnvironments.find((entry) => entry.environmentId === selection.machine) ??
+export function resolveApplicationTransferEnvironment<
+  T extends Pick<EnvironmentPresentation, "environmentId">,
+>(
+  connectedEnvironments: readonly T[],
+  machine: string | undefined,
+  scope: Pick<ResolvedSettingsScope, "kind"> & { readonly environmentId?: string | null },
+  primaryEnvironmentId: string | null,
+): T | null {
+  return (
+    connectedEnvironments.find((entry) => entry.environmentId === machine) ??
     connectedEnvironments.find(
       (entry) => scope.kind === "environment" && entry.environmentId === scope.environmentId,
     ) ??
     connectedEnvironments.find((entry) => entry.environmentId === primaryEnvironmentId) ??
     connectedEnvironments[0] ??
-    null;
+    null
+  );
+}
+
+export function ApplicationConfigurationSettings() {
+  const t = useUiTranslation();
+  const { scope, search } = useSettingsScope();
+  const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const connectedEnvironments = environments.filter(isConnectedWithConfig);
+  const environment = resolveApplicationTransferEnvironment(
+    connectedEnvironments,
+    search?.machine,
+    scope,
+    primaryEnvironmentId,
+  );
   const environmentId = environment?.environmentId ?? null;
   const canWrite = useAtomValue(serverEnvironment.updateSettings.permissionAtom(environmentId));
   const canWriteBindings = useAtomValue(
@@ -76,7 +94,6 @@ export function ApplicationConfigurationSettings() {
   });
   const supportsProjectImport =
     environment?.serverConfig?.environment.capabilities.projectConfigurationImport === true;
-  if (scope.kind === "project" || scope.kind === "checkout") return null;
 
   return (
     <SettingsSection id="settings-import-export" title={t("Import and export")}>
@@ -87,18 +104,6 @@ export function ApplicationConfigurationSettings() {
           environmentId={environment.environmentId}
           supportsProjectImport={supportsProjectImport}
           title={environment.label}
-          titleControl={
-            connectedEnvironments.length > 1 ? (
-              <EnvironmentScopeMenu
-                value={{ machine: environment.environmentId }}
-                groups={[]}
-                environments={connectedEnvironments}
-                singleEnvironment
-                variant="ghost"
-                onChange={setSelection}
-              />
-            ) : undefined
-          }
           description={t(
             "Back up this client's preferences and themes, plus the selected environment's shortcuts, defaults and project/workspace definitions as JSON. Import restores them to this client and the selected environment. Credentials and machine paths are excluded.",
           )}

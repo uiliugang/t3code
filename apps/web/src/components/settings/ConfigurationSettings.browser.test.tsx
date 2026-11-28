@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useState } from "react";
 import { DEFAULT_CLIENT_SETTINGS, EnvironmentId } from "@t3tools/contracts";
 import type { SettingsFile } from "@t3tools/client-runtime/settings-transfer";
 import { expect, it, vi } from "vite-plus/test";
@@ -6,6 +6,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
+import type { SettingsScopeSearch } from "./settingsScope";
 
 vi.mock(import("./SettingsScopeContext"), () => ({
   useSettingsScope: () => useContext(TestScopeContext)!,
@@ -23,12 +24,47 @@ vi.mock(import("../../state/environments"), async (original) => ({
 }));
 
 import { ApplicationConfigurationSettings } from "./ConfigurationSettings";
+import { SettingsScopeSentence } from "./SettingsScopeSentence";
 
 type Scope = ReturnType<typeof import("./SettingsScopeContext").useSettingsScope>;
 const TestScopeContext = createContext<Scope | null>(null);
 const TestEnvironmentsContext = createContext<Scope["connectedEnvironments"]>([]);
 
-it("switches the transfer environment and recovers when that environment disconnects", async () => {
+function TransferHarness({
+  available,
+  selected,
+}: {
+  available: Scope["connectedEnvironments"];
+  selected: EnvironmentId | null;
+}) {
+  const [override, setOverride] = useState<SettingsScopeSearch | null>(null);
+  const search: SettingsScopeSearch = override ?? (selected ? { machine: selected } : {});
+  const activeId = search.machine ? EnvironmentId.make(search.machine) : null;
+  return (
+    <TestEnvironmentsContext value={available}>
+      <TestScopeContext
+        value={
+          {
+            search,
+            selectScope: setOverride,
+            groups: [],
+            singleEnvironment: false,
+            scope: activeId ? { kind: "environment", environmentId: activeId } : { kind: "all" },
+            connectedEnvironments: available.filter(
+              (entry) => activeId === null || entry.environmentId === activeId,
+            ),
+            targets: [],
+          } as unknown as Scope
+        }
+      >
+        <SettingsScopeSentence pathname="/settings/general" />
+        <ApplicationConfigurationSettings />
+      </TestScopeContext>
+    </TestEnvironmentsContext>
+  );
+}
+
+it("switches the transfer environment from the header and recovers when that environment disconnects", async () => {
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, uiLanguage: "en" });
   const environments = ["Server", "Laptop"].map((label) => ({
     environmentId: EnvironmentId.make(label),
@@ -45,28 +81,13 @@ it("switches the transfer environment and recovers when that environment disconn
   const view = (
     available: Scope["connectedEnvironments"],
     selected: EnvironmentId | null = EnvironmentId.make("Laptop"),
-  ) => (
-    <TestEnvironmentsContext value={available}>
-      <TestScopeContext
-        value={
-          {
-            scope: selected ? { kind: "environment", environmentId: selected } : { kind: "all" },
-            connectedEnvironments: available.filter(
-              (entry) => selected === null || entry.environmentId === selected,
-            ),
-            targets: [],
-          } as unknown as Scope
-        }
-      >
-        <ApplicationConfigurationSettings />
-      </TestScopeContext>
-    </TestEnvironmentsContext>
-  );
+  ) => <TransferHarness available={available} selected={selected} />;
   await using screen = await render(view(environments), { router: "/settings/general" });
   await expect.element(screen.getByRole("button", { name: "Export" })).toBeVisible();
   await expect
     .element(screen.getByRole("button", { name: "Environment scope: Laptop" }))
     .toBeVisible();
+  await expect.element(screen.getByRole("heading", { name: "Laptop", exact: true })).toBeVisible();
   await screen.rerender(view(environments, null));
   await expect
     .element(screen.getByRole("button", { name: "Environment scope: Laptop" }))
@@ -81,9 +102,7 @@ it("switches the transfer environment and recovers when that environment disconn
   await expect
     .element(screen.getByRole("button", { name: "Environment scope: Server" }))
     .toBeVisible();
-  await expect
-    .element(screen.getByRole("heading", { name: "Environment scope: Server", exact: true }))
-    .toBeVisible();
+  await expect.element(screen.getByRole("heading", { name: "Server", exact: true })).toBeVisible();
   await screen.rerender(view([...environments].reverse()));
   await expect
     .element(screen.getByRole("button", { name: "Environment scope: Server" }))
@@ -112,9 +131,9 @@ it("switches the transfer environment and recovers when that environment disconn
     ),
   );
   await expect
-    .element(screen.getByRole("button", { name: /^Environment scope:/ }))
-    .not.toBeInTheDocument();
-  await expect.element(screen.getByText("Laptop", { exact: true })).toBeVisible();
+    .element(screen.getByRole("button", { name: "Environment scope: Laptop" }))
+    .toBeVisible();
+  await expect.element(screen.getByRole("heading", { name: "Laptop", exact: true })).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Export" })).toBeVisible();
   await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   await screen.rerender(
@@ -125,15 +144,18 @@ it("switches the transfer environment and recovers when that environment disconn
     ),
   );
   await expect
-    .element(screen.getByRole("button", { name: /^Environment scope:/ }))
-    .not.toBeInTheDocument();
-  await expect.element(screen.getByText("Laptop", { exact: true })).toBeVisible();
+    .element(screen.getByRole("button", { name: "Environment scope: Laptop" }))
+    .toBeVisible();
+  await expect.element(screen.getByRole("heading", { name: "Laptop", exact: true })).toBeVisible();
   await screen.rerender(view(environments));
   await expect
     .element(screen.getByRole("button", { name: "Environment scope: Server" }))
     .toBeVisible();
   await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   await screen.rerender(view([]));
+  await expect
+    .element(screen.getByRole("button", { name: /^Environment scope:/ }))
+    .not.toBeInTheDocument();
   await expect.element(screen.getByRole("button", { name: "Export" })).not.toBeInTheDocument();
   await expect
     .element(screen.getByText("Choose one connected environment to import or export app settings."))
