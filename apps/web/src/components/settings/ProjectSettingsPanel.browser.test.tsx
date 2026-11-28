@@ -746,6 +746,18 @@ describe("project settings scope", () => {
     await expect.element(page.getByTestId("project-actions")).toBeInTheDocument();
   });
 
+  it("opens project discovery for the selected remote environment", async () => {
+    setup();
+    await using screen = await mountSettings({ machine: remoteId });
+
+    await expect
+      .element(page.getByRole("link", { name: "Import projects and their threads" }))
+      .toBeVisible();
+    const link = screen.container.querySelector<HTMLAnchorElement>('a[href^="/welcome"]');
+    expect(link).not.toBeNull();
+    expect(decodeURIComponent(new URL(link!.href).hash)).toBe(`#projects:${remoteId}`);
+  });
+
   it("lists only the selected environment's projects and keeps it when one is opened", async () => {
     setup();
     const [primaryProject, remoteProject] = state.projects;

@@ -24,19 +24,25 @@ export const Route = createFileRoute("/welcome")({
 function WelcomeRouteView() {
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
-  // A ChatGPT sign-in returns here with the computer it set up.
-  const resumeEnvironmentId = hash.startsWith("agents:")
-    ? Option.getOrUndefined(decodeEnvironmentId(hash.slice("agents:".length)))
-    : undefined;
+  const reviewProjects = hash.startsWith("projects:");
+  // Sign-in and project import shortcuts carry the computer they were opened for.
+  const resumeEnvironmentId =
+    hash.startsWith("agents:") || reviewProjects
+      ? Option.getOrUndefined(decodeEnvironmentId(hash.slice(hash.indexOf(":") + 1)))
+      : undefined;
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments, isReady } = useEnvironments();
-  // Trust the id only once the catalog has it; an unknown computer falls back to this one.
+  // Trust the id only once the catalog has it.
   const waitingForCatalog =
-    !isReady && (resumeEnvironmentId !== undefined || primaryEnvironmentId === null);
+    !isReady &&
+    (reviewProjects || resumeEnvironmentId !== undefined || primaryEnvironmentId === null);
   const resumeKnown =
     resumeEnvironmentId !== undefined &&
     environments.some((environment) => environment.environmentId === resumeEnvironmentId);
-  const environmentId = (resumeKnown ? resumeEnvironmentId : undefined) ?? primaryEnvironmentId;
+  // An import shortcut must never silently switch to a different computer.
+  const environmentId =
+    (resumeKnown ? resumeEnvironmentId : undefined) ??
+    (reviewProjects ? null : primaryEnvironmentId);
   // The root can remount this pending outlet after navigation; do not reopen setup.
   const isWelcomeRoute = useLocation({ select: (location) => location.pathname === "/welcome" });
   const [dismissed, setDismissed] = useState(false);
@@ -45,8 +51,9 @@ function WelcomeRouteView() {
   if (environmentId === null || !isWelcomeRoute || dismissed) return <NoProjectsHero />;
   return (
     <WelcomePage
-      key={environmentId}
+      key={`${environmentId}:${reviewProjects ? "projects" : "welcome"}`}
       environmentId={environmentId}
+      reviewProjects={reviewProjects}
       onDone={async (projectRef) => {
         setDismissed(true);
         if (projectRef !== undefined) {
