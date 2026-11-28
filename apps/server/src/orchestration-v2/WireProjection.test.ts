@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 
 import { coalesceLiveUpdatedEvents } from "./ThreadLiveEventCoalescer.ts";
 import {
+  boundTurnItemForStorage,
   makeLiveBodyDeduper,
   projectTurnItemForWire,
   projectTurnItemForDetail,
@@ -366,6 +367,63 @@ describe("orchestration V2 wire projection", () => {
     });
     expect(failed).toMatchObject({ diffStr: "String to replace not found" });
     expect(failed).not.toHaveProperty("newStr");
+  });
+
+  it("bounds oversized command, subagent, and non-image dynamic tool payloads for storage", () => {
+    const huge = "x".repeat(400_000);
+    const command = boundTurnItemForStorage({
+      ...base,
+      type: "command_execution",
+      input: "cat big.log",
+      output: huge,
+    });
+    expect(command.type).toBe("command_execution");
+    if (command.type === "command_execution") {
+      expect(Buffer.byteLength(command.output ?? "", "utf8")).toBeLessThanOrEqual(256 * 1024);
+      expect(command.output).toContain("output truncated for transport");
+    }
+
+    const dynamicTool = boundTurnItemForStorage({
+      ...base,
+      type: "dynamic_tool",
+      input: { text: huge },
+      output: { rows: huge },
+    });
+    expect(dynamicTool.type).toBe("dynamic_tool");
+    if (dynamicTool.type === "dynamic_tool") {
+      expect(Buffer.byteLength(JSON.stringify(dynamicTool.input), "utf8")).toBeLessThanOrEqual(
+        256 * 1024 + 64,
+      );
+      expect(Buffer.byteLength(JSON.stringify(dynamicTool.output), "utf8")).toBeLessThanOrEqual(
+        256 * 1024 + 64,
+      );
+    }
+
+    const imageOutput = {
+      content: [{ type: "image", mimeType: "image/png", data: "A".repeat(300_000) }],
+    };
+    const withImage = boundTurnItemForStorage({
+      ...base,
+      type: "dynamic_tool",
+      output: imageOutput,
+    });
+    expect(withImage.type === "dynamic_tool" ? withImage.output : null).toBe(imageOutput);
+
+    const mcpAppOutput = {
+      t3McpApp: {
+        attachmentId: "app-1",
+        server: "app",
+        tool: "render",
+        resourceUri: "ui://app/index.html",
+      },
+      result: { text: huge },
+    };
+    const withApp = boundTurnItemForStorage({
+      ...base,
+      type: "dynamic_tool",
+      output: mcpAppOutput,
+    });
+    expect(withApp.type === "dynamic_tool" ? withApp.output : null).toBe(mcpAppOutput);
   });
 
   it("retains only result identities and failure metadata in live tool events", () => {

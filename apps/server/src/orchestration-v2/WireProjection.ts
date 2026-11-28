@@ -20,6 +20,7 @@ import {
   commandIndicatesFailure,
   compactDynamicToolOutput,
   omitToolOutputImageData,
+  toolOutputImageBlocks,
   toolOutputImages,
 } from "@t3tools/shared/toolOutput";
 
@@ -64,6 +65,53 @@ export function boundFileChangeForStorage(item: OrchestrationV2TurnItem): Orches
   return bounded.diffStr === diffStr && bounded.oldStr === oldStr && bounded.newStr === newStr
     ? item
     : bounded;
+}
+
+function hasMcpAppReference(output: unknown): boolean {
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    MCP_APP_OUTPUT_KEY in output &&
+    readMcpAppReference(output[MCP_APP_OUTPUT_KEY]) !== undefined
+  );
+}
+
+/**
+ * Bound stored turn-item payloads to the client on-demand detail limit so SQLite does not
+ * retain multi-megabyte command/tool outputs that clients can never display. Served image
+ * blocks and MCP app outputs are preserved intact for on-demand endpoints.
+ */
+export function boundTurnItemForStorage(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
+  switch (item.type) {
+    case "file_change":
+      return boundFileChangeForStorage(item);
+    case "command_execution": {
+      const input = truncateDetail(item.input, MAX_ON_DEMAND_BYTES) ?? "";
+      const output = truncateDetail(item.output, MAX_ON_DEMAND_BYTES);
+      return input === item.input && output === item.output ? item : { ...item, input, output };
+    }
+    case "dynamic_tool": {
+      const input = boundDynamicValue(item.input);
+      const output =
+        item.output === undefined ||
+        hasMcpAppReference(item.output) ||
+        toolOutputImageBlocks(item.output).length > 0
+          ? item.output
+          : boundDynamicValue(item.output);
+      return input === item.input && output === item.output ? item : { ...item, input, output };
+    }
+    case "subagent": {
+      const prompt = truncateDetail(item.prompt, MAX_ON_DEMAND_BYTES) ?? "";
+      const progress = truncateDetail(item.progress, MAX_ON_DEMAND_BYTES);
+      const result =
+        item.result === null ? null : (truncateDetail(item.result, MAX_ON_DEMAND_BYTES) ?? null);
+      return prompt === item.prompt && progress === item.progress && result === item.result
+        ? item
+        : { ...item, prompt, progress, result };
+    }
+    default:
+      return item;
+  }
 }
 
 function summarizeDynamicValue(value: unknown): unknown {
