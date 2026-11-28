@@ -206,6 +206,20 @@ const browserTestProject = {
           (await import("./test/noiseGuestRelay.ts")).startGuestRelay(page, events),
         stopGuestRelay: async ({ page }) =>
           (await import("./test/noiseGuestRelay.ts")).stopGuestRelay(page),
+        mockPrivacyTestFavicon: async ({ page }, enabled: boolean) => {
+          const url =
+            "https://www.google.com/s2/favicons?domain=favicon-regression.example.org&sz=32";
+          if (!enabled) {
+            await page.unroute(url);
+          } else {
+            await page.route(url, (route) =>
+              route.fulfill({
+                contentType: "image/svg+xml",
+                body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+              }),
+            );
+          }
+        },
         resetPointer: async ({ page }) => {
           await page.mouse.move(-1, -1);
         },

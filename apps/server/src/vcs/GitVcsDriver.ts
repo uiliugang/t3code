@@ -572,6 +572,7 @@ export class GitVcsDriver extends Context.Service<
     readonly writeConfigValue: (
       input: GitWriteConfigValueInput,
     ) => Effect.Effect<void, GitCommandError>;
+    readonly stopWorktreeIndexRefresh: (worktreePath: string) => Effect.Effect<void>;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;

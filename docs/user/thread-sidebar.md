@@ -78,7 +78,7 @@ background work or a pull request watch starts on its own does not.
 
 ### Snooze options
 
-Customize presets in **Settings → Threads → Snooze options** (durations like `3 hours` or times like `9:00 PM tomorrow`), or pick **Snooze → Custom…** for an exact date/time or duration. Choose **Wake thread** to bring a thread back early.
+Customize presets in **Settings → Threads → Snooze options** (durations like `3 hours` or times like `9:00 PM tomorrow`), or pick **Snooze → Custom…** for an exact date/time or duration. **Snooze → Indefinitely** sets no wake time. The usual early-wake rules, such as those for new approvals, still apply. Choose **Wake thread** to bring a thread back early.
 
 ## Link a pull request
 

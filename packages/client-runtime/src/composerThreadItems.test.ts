@@ -151,6 +151,21 @@ it("also offers threads on linked machines, naming the machine, but no other mac
       description: "Hetzner VPS · Completed · Last active 10m ago",
     },
   ]);
+
+  const sameIdItems = matchComposerThreadItems({
+    shells: [
+      shell("same", "Deploy script"),
+      shell("same", "Deploy script", { environmentId: vps }),
+    ],
+    environmentId,
+    linkedEnvironments: new Map([[vps, "Hetzner VPS"]]),
+    excludeThreadId: ThreadId.make("same"),
+    query: "deploy",
+    now: Date.parse("2026-10-23T00:00:00.000Z"),
+  });
+  expect(sameIdItems.map(({ thread }) => thread)).toEqual([
+    { environmentId: vps, threadId: "same" },
+  ]);
 });
 
 it.each([3_600_000, -3_600_000])(

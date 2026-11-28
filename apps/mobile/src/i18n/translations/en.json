@@ -4130,5 +4130,7 @@
   "448392e511282c6e": "Edit environment name",
   "631f4d3b560fe822": "Edit connection URL",
   "da58916ee78e8a6f": "Use a trusted pairing link",
-  "0e26b146e213bedc": "If the environment shows a code, compare it in the host’s Sharing & access settings and approve this device."
+  "0e26b146e213bedc": "If the environment shows a code, compare it in the host’s Sharing & access settings and approve this device.",
+  "a71afe1099a59acd": "pin",
+  "2d3005e2cd158d2d": "pinned projects"
 }

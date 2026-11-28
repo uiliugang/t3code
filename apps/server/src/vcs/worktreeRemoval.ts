@@ -118,6 +118,7 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
   readonly worktreePath: string;
   readonly repositoryGitDir?: string;
   readonly force: boolean;
+  readonly stopWorktreeIndexRefresh: GitVcsDriver.GitVcsDriver["Service"]["stopWorktreeIndexRefresh"];
   readonly execute: GitVcsDriver.GitVcsDriver["Service"]["execute"];
   readonly run: (args: ReadonlyArray<string>, cwd: string) => Effect.Effect<A, E, R>;
 }) {
@@ -141,6 +142,7 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
       detail: `fatal: ${message}`,
       ...(cause === undefined ? {} : { cause }),
     });
+  yield* input.stopWorktreeIndexRefresh(worktreePath);
   const annexed = yield* annexedAdminDir(worktreePath);
   if (Option.isSome(annexed)) {
     const adminDir = annexed.value;

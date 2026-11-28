@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FiberMap from "effect/FiberMap";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -1161,6 +1162,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const random = yield* SecureRandom.SecureRandom;
   const hostPlatform = yield* HostProcess.Platform;
   const serviceScope = yield* Effect.scope;
+  // Keyed by worktree path: a refresh writes beside the index, so removal stops it first.
+  const indexRefreshes = yield* FiberMap.make<string>();
   const automaticFetchInterval = yield* VcsAutomaticFetchInterval;
   type StatusFetchState = {
     phase: "queued" | "running" | "claimed";
@@ -6756,6 +6759,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     // Waiting here would hold up the thread's agent, and refreshing in place later would hold the
     // index lock while its setup script and agent run Git. So refresh a copy in the background and
     // take the lock only to swap it in, unless Git holds it or the index changed since the copy.
+    const key = yield* worktreeRefreshKey(worktreePath);
     const copyPath = `${indexPath}.t3-refresh`;
     const lockPath = `${indexPath}.lock`;
     const stamp = (info: FileSystem.File.Info) =>
@@ -6785,7 +6789,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }).pipe(
       Effect.ensuring(fileSystem.remove(copyPath).pipe(Effect.ignore)),
       Effect.ignore({ log: "Debug" }),
-      Effect.forkIn(serviceScope),
+      FiberMap.run(indexRefreshes, key),
     );
   });
 
@@ -7783,6 +7787,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return empty && (yield* removeEmptyDirectory(target));
   });
 
+  const worktreeRefreshKey = (worktreePath: string) =>
+    fileSystem.realPath(worktreePath).pipe(Effect.orElseSucceed(() => path.resolve(worktreePath)));
+
+  const stopWorktreeIndexRefresh = (worktreePath: string) =>
+    worktreeRefreshKey(worktreePath).pipe(
+      Effect.flatMap((key) => FiberMap.remove(indexRefreshes, key)),
+    );
+
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
@@ -7793,6 +7805,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       operation: "GitVcsDriver.removeWorktree",
       cwd: input.cwd,
       worktreePath: target,
+      stopWorktreeIndexRefresh,
       force: input.force === true,
       execute,
       run: (args, cwd) =>
@@ -8350,6 +8363,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return yield* withListRefsInvalidation(input.cwd, prepareTaskBranch(input));
     }),
     writeConfigValue,
+    stopWorktreeIndexRefresh,
     removeWorktree: Effect.fnUntraced(function* (input) {
       return yield* withListRefsInvalidation(input.cwd, removeWorktree(input));
     }),

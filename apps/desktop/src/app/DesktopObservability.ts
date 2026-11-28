@@ -1,4 +1,5 @@
 import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import { makeFileRotation } from "@t3tools/shared/logging";
 import {
   makeLocalFileTracer,
   makeTraceSink,
@@ -255,7 +256,7 @@ export const makeRotatingLogFileWriter = Effect.fn("makeRotatingLogFileWriter")(
 
   yield* fileSystem.makeDirectory(directory, { recursive: true });
 
-  const withSuffix = (index: number) => `${input.filePath}.${index}`;
+  const rotation = makeFileRotation(fileSystem, input.filePath, maxFiles);
   const currentSize = yield* Ref.make(yield* refreshFileSize(fileSystem, input.filePath));
   const mutex = yield* Semaphore.make(1);
 
@@ -272,23 +273,10 @@ export const makeRotatingLogFileWriter = Effect.fn("makeRotatingLogFileWriter")(
   });
 
   const rotate = Effect.gen(function* () {
-    yield* fileSystem.remove(withSuffix(maxFiles), { force: true }).pipe(Effect.ignore);
-    for (let index = maxFiles - 1; index >= 1; index -= 1) {
-      const source = withSuffix(index);
-      const sourceExists = yield* fileSystem.exists(source).pipe(Effect.orElseSucceed(() => false));
-      if (sourceExists) {
-        yield* fileSystem.rename(source, withSuffix(index + 1));
-      }
-    }
-    const currentExists = yield* fileSystem
-      .exists(input.filePath)
-      .pipe(Effect.orElseSucceed(() => false));
-    if (currentExists) {
-      yield* fileSystem.rename(input.filePath, withSuffix(1));
-    }
-    yield* Ref.set(currentSize, 0);
+    if (yield* rotation.recover) yield* rotation.rotate;
   }).pipe(
-    Effect.catch(() =>
+    Effect.ignore,
+    Effect.andThen(
       refreshFileSize(fileSystem, input.filePath).pipe(
         Effect.flatMap((size) => Ref.set(currentSize, size)),
       ),

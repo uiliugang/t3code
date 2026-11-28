@@ -13,6 +13,7 @@ import {
   hasQueuedTurnStart,
   hasUnseenRunFailure,
   pickSnoozePreset,
+  INDEFINITE_SNOOZE_UNTIL,
   resolveSnoozePresets,
   snoozeWakeLabel,
   threadRaisedHandWhileSnoozed,
@@ -410,9 +411,32 @@ describe("resolveSnoozePresets", () => {
     presets?: ReadonlyArray<SnoozePresetSetting>,
     t = translateUi.bind(null, "en"),
   ) =>
-    resolveSnoozePresets(now, { formatTime, ...(presets ? { presets } : {}), t }).map(
-      (preset) => `${preset.label} ${preset.whenLabel}`,
-    );
+    resolveSnoozePresets(now, { formatTime, ...(presets ? { presets } : {}), t })
+      .filter((preset) => preset.id !== "indefinite")
+      .map((preset) => `${preset.label} ${preset.whenLabel}`);
+
+  it("offers a translated indefinite snooze without a scheduled wake", () => {
+    const now = localDate(2026, 4, 8, 20);
+    const shown = resolveSnoozePresets(now, {
+      presets: [],
+      t: translateUi.bind(null, "zh-CN"),
+    });
+    expect(shown).toEqual([
+      {
+        id: "indefinite",
+        label: "无限期",
+        whenLabel: "",
+        snoozedUntil: INDEFINITE_SNOOZE_UNTIL,
+      },
+    ]);
+    expect(pickSnoozePreset({ shown, now, id: "indefinite", presets: [] })).toBe(shown[0]);
+    expect(snoozeWakeLabel(INDEFINITE_SNOOZE_UNTIL, { now: NOW })).toBe("∞");
+
+    const shell = makeShell({ snoozedAt: SNOOZED_AT, snoozedUntil: INDEFINITE_SNOOZE_UNTIL });
+    expect(effectiveSnoozed(shell, { now: NOW })).toBe(true);
+    expect(threadWokeAt(shell, { now: NOW })).toBeNull();
+    expect(effectiveSnoozed({ ...shell, hasPendingApprovals: true }, { now: NOW })).toBe(false);
+  });
 
   it("lists custom presets soonest first and names the day when the label does not", () => {
     // Wednesday 20:00.
@@ -467,7 +491,7 @@ describe("resolveSnoozePresets", () => {
         { kind: "at", day: "monday", time: "09:00" },
       ],
     });
-    expect(presets.map((preset) => preset.id)).toEqual(["at:monday:09:00"]);
+    expect(presets.map((preset) => preset.id)).toEqual(["at:monday:09:00", "indefinite"]);
     expect(new Date(presets[0]!.snoozedUntil)).toEqual(localDate(2026, 4, 20, 9));
   });
 

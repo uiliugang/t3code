@@ -389,20 +389,70 @@ it("highlights a code block's own source when an earlier block of the same lengt
   await vi.waitFor(() => expect(highlightedText(screen.container)).toBe(second));
 });
 
+describe("Markdown fence previews", () => {
+  it.each(["markdown", "md"])(
+    "switches a %s fence between source and rendered Markdown",
+    async (language) => {
+      setup();
+      const source = "# Release notes\n\nThis is **ready**.";
+      const text = [`\`\`\`${language}`, source, "```"].join("\n");
+      const message = (isStreaming: boolean) => (
+        <ChatMarkdown
+          cwd="/tmp/project"
+          text={text}
+          isStreaming={isStreaming}
+          previewMarkdownFences
+        />
+      );
+
+      await using screen = await render(message(true));
+      const showPreview = screen.getByRole("button", { name: "Show rendered markdown" });
+      const heading = screen.getByRole("heading", { name: "Release notes" });
+      await expect.element(showPreview).not.toBeInTheDocument();
+
+      await screen.rerender(message(false));
+      await expect.element(heading).not.toBeInTheDocument();
+      await showPreview.click();
+      await expect.element(heading).toBeVisible();
+      expect(screen.container.querySelector("strong")?.textContent).toBe("ready");
+
+      using write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+      await screen.getByRole("button", { name: "Copy code" }).click();
+      expect(write).toHaveBeenCalledWith(source);
+
+      await screen.getByRole("button", { name: "Show markdown source" }).click();
+      await expect.element(heading).not.toBeInTheDocument();
+      await expect.element(showPreview).toBeVisible();
+    },
+  );
+
+  it("only offers previews for Markdown fences in enabled messages", async () => {
+    setup();
+    const text = "```md\n# Example\n```\n\n```text\n# Plain text\n```";
+    await using screen = await renderText(text);
+    expect(buttonsLabelled(screen.container, "Show rendered markdown")).toHaveLength(0);
+    await screen.rerender(<ChatMarkdown cwd="/tmp/project" text={text} previewMarkdownFences />);
+    expect(buttonsLabelled(screen.container, "Show rendered markdown")).toHaveLength(1);
+  });
+});
+
 describe("ChatMarkdown favicon privacy", () => {
   it("suppresses private link images while preserving public links across updates", async () => {
     setup();
+    await using route = new AsyncDisposableStack();
+    await commands.mockPrivacyTestFavicon(true);
+    route.defer(() => commands.mockPrivacyTestFavicon(false));
     const markdown = (url: string) => <ChatMarkdown cwd="/tmp/project" text={`[Link](${url})`} />;
-    await using screen = await render(markdown("https://example.com"));
+    await using screen = await render(markdown("https://favicon-regression.example.org"));
     const { container, rerender } = screen;
     expect([...container.querySelectorAll("img")].map((image) => image.src)).toEqual([
-      "https://www.google.com/s2/favicons?domain=example.com&sz=32",
+      "https://www.google.com/s2/favicons?domain=favicon-regression.example.org&sz=32",
     ]);
     for (const url of ["http://192.168.1.10:8080", "http://localhost:3000", "http://home.arpa"]) {
       await rerender(markdown(url));
       expect(container.querySelectorAll("img")).toHaveLength(0);
     }
-    await rerender(markdown("https://example.com"));
+    await rerender(markdown("https://favicon-regression.example.org"));
     expect(container.querySelectorAll("img")).toHaveLength(1);
     await rerender(markdown("https://github.com/pingdotgg/t3code/pull/1"));
     expect(container.querySelectorAll("img")).toHaveLength(0);

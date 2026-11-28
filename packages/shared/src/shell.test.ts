@@ -231,6 +231,46 @@ describe("mergePathEntries", () => {
 });
 
 effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
+  it.effect("finds POSIX executables with a literal backslash in their name on PATH", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-backslash-path-" });
+      const command = "lint\\fast";
+      const executable = path.join(directory, command);
+      yield* fs.writeFileString(executable, "#!/bin/sh\n");
+      yield* fs.chmod(executable, 0o755);
+      const env = { PATH: directory };
+
+      expect(
+        yield* resolveCommandPath(command, { env }).pipe(
+          Effect.provideService(HostProcess.Platform, "linux"),
+          Effect.provideService(CommandResolutionCache, new Map()),
+        ),
+      ).toBe(executable);
+      const resolveExecutable = yield* SpawnExecutableResolution;
+      expect(yield* Effect.promise(async () => resolveExecutable(command, "linux", env))).toBe(
+        executable,
+      );
+
+      // Forward slashes remain explicit paths on POSIX and skip PATH search.
+      const nestedCommand = "sub/lint\\fast";
+      yield* fs.makeDirectory(path.join(directory, "sub"));
+      const nestedExecutable = path.join(directory, nestedCommand);
+      yield* fs.writeFileString(nestedExecutable, "#!/bin/sh\n");
+      yield* fs.chmod(nestedExecutable, 0o755);
+      expect(
+        yield* resolveCommandPath(nestedCommand, { env }).pipe(
+          Effect.provideService(HostProcess.Platform, "linux"),
+          Effect.provideService(CommandResolutionCache, new Map()),
+        ),
+      ).toBeNull();
+      expect(
+        yield* Effect.promise(async () => resolveExecutable(nestedCommand, "linux", env)),
+      ).toBeUndefined();
+    }),
+  );
+
   it.effect("finds executables in a POSIX PATH directory ending in whitespace and quotes", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

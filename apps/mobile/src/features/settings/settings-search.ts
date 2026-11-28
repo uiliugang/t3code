@@ -107,6 +107,8 @@ const SETTINGS_SEARCH_TERMS = {
     "import",
     "export",
     "backup",
+    msg("pin", { $context: "settings search keyword" }),
+    msg("pinned projects", { $context: "settings search keyword" }),
   ],
   SettingsOrganization: [
     "language",

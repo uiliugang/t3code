@@ -741,7 +741,6 @@ export const recordCursorAgentSdkReplayTranscript = Effect.fn(
         : { override: input.runtimePolicyOverride }),
     }),
     threadId,
-    mcpSession: undefined,
   });
   const sendOptions = {
     model: cursorSdkModelSelection(input.modelSelection),

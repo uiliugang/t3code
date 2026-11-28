@@ -176,7 +176,7 @@ export function isStandaloneIssueLink(url: string): boolean {
 }
 
 const LINEAR_LINK_HINT_PATTERN = new RegExp(
-  `${LINEAR_HOST.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`,
+  `${LINEAR_HOST.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?::\\d*)?/`,
   "i",
 );
 

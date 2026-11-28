@@ -11,6 +11,7 @@ import {
   OrchestrationV2AppThreadJson,
   OrchestrationV2ProviderSessionJson,
   StorageCleanupReportEntry,
+  trimAsciiWhitespace,
 } from "@t3tools/contracts";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Schema from "effect/Schema";
@@ -850,8 +851,8 @@ const make = Effect.gen(function* () {
       ]);
       return unreachable === null || unreachable.stdout.trim() !== "";
     }
-    const ref = head.stdout.trim();
-    const name = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length).trim() : null;
+    const ref = trimAsciiWhitespace(head.stdout);
+    const name = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : null;
     return name !== branch;
   });
 
@@ -1315,7 +1316,7 @@ const make = Effect.gen(function* () {
         });
         if (projectHead.exitCode !== 0)
           return { eligible: false, reason: "project branch is unavailable" };
-        defaultRef = projectHead.stdout.trim();
+        defaultRef = trimAsciiWhitespace(projectHead.stdout);
         branch = defaultRef.slice("refs/heads/".length);
       } else {
         const key = `${repositoryCwd}\0${remote}`;
@@ -2215,6 +2216,7 @@ const make = Effect.gen(function* () {
               yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
             const adminDir = yield* worktreeAdminDir(worktreePath);
             yield* removeLinkedWorktree({
+              stopWorktreeIndexRefresh: git.stopWorktreeIndexRefresh,
               operation: "StorageCleanup.cleanupGit",
               cwd: repository,
               worktreePath,

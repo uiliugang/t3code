@@ -131,7 +131,7 @@ vi.mock(import("./ProjectDefaultsSettings"), async (original) => ({
 }));
 vi.mock(import("./ProjectActionsSettings"), async (original) => ({
   ...(await original()),
-  ProjectActionsSettings: (() => null) as never,
+  ProjectActionsSettings: (() => <div data-testid="project-actions" />) as never,
 }));
 vi.mock(import("./ProjectRepositoriesSettings"), () => ({
   ProjectRepositoriesSettings: () => <></>,
@@ -737,6 +737,25 @@ describe("project settings scope", () => {
     await userEvent.click(environmentMenu());
     await expect.element(primaryOption()).toBeVisible();
     await expect.element(remoteOption()).toBeVisible();
+  });
+
+  it("shows the machine-wide Actions while no project is selected", async () => {
+    setup();
+    await using _screen = await mountSettings({});
+
+    await expect.element(page.getByTestId("project-actions")).toBeInTheDocument();
+  });
+
+  it("opens project discovery for the selected remote environment", async () => {
+    setup();
+    await using screen = await mountSettings({ machine: remoteId });
+
+    await expect
+      .element(page.getByRole("link", { name: "Import projects and their threads" }))
+      .toBeVisible();
+    const link = screen.container.querySelector<HTMLAnchorElement>('a[href^="/welcome"]');
+    expect(link).not.toBeNull();
+    expect(decodeURIComponent(new URL(link!.href).hash)).toBe(`#projects:${remoteId}`);
   });
 
   it("lists only the selected environment's projects and keeps it when one is opened", async () => {

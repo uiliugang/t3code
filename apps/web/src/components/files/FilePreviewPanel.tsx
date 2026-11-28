@@ -1995,6 +1995,15 @@ function FilePreviewPanelContent({
                 }
                 selectedPathRevealId={revealRequestId}
                 onOpenFile={onOpenFile}
+                onOpenFilePreview={(path) => {
+                  // A different file starts in preview by default. Only clear the
+                  // source view of the file we explicitly reopened.
+                  if (relativePath !== null && resolveFilePreviewPath(path, cwd) === relativePath) {
+                    setRenderMarkdownPreferred(true);
+                    setHandledReveal({ path: relativePath, requestId: revealRequestId });
+                  }
+                  onOpenFile(path);
+                }}
                 answersPanelFind={!previewPath}
                 workspaceMutationId={workspaceMutationId}
                 {...(previewPath && !isMedia && !isPdf

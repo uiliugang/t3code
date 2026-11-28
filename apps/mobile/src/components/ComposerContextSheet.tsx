@@ -398,7 +398,7 @@ export function ComposerContextSheet(props: {
             {record.kind === "image" ? (
               <ContextField
                 label={t("File")}
-                value={`${record.mimeType} · ${formatAttachmentSize(record.sizeBytes)}`}
+                value={`${record.mimeType} · ${formatAttachmentSize(record.sizeBytes, messages)}`}
               />
             ) : null}
             {record.kind === "mention" ? (

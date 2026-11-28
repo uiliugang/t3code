@@ -141,6 +141,21 @@ function makeRotation<E>(fs: RotationFileSystem<E>, filePath: string, maxFiles: 
   return { recover, rotate };
 }
 
+export function makeFileRotation(fs: FileSystem.FileSystem, filePath: string, maxFiles: number) {
+  return makeRotation(
+    {
+      exists: fs.exists,
+      isDirectory: (path) => fs.lstat(path).pipe(Effect.map((stat) => stat.type === "Directory")),
+      rename: fs.rename,
+      remove: (path) => fs.remove(path, { force: true }),
+      read: fs.readFileString,
+      write: fs.writeFileString,
+    },
+    filePath,
+    maxFiles,
+  );
+}
+
 export class RotatingFileSink {
   private readonly filePath: string;
   private readonly maxBytes: number;
@@ -325,18 +340,7 @@ export const makeAsyncRotatingFileSink = Effect.fnUntraced(function* (
   yield* fs
     .makeDirectory(directory, { recursive: true })
     .pipe(Effect.mapError(failure("initialize")));
-  const rotation = makeRotation(
-    {
-      exists: fs.exists,
-      isDirectory: (path) => fs.lstat(path).pipe(Effect.map((stat) => stat.type === "Directory")),
-      rename: fs.rename,
-      remove: (path) => fs.remove(path, { force: true }),
-      read: fs.readFileString,
-      write: fs.writeFileString,
-    },
-    options.filePath,
-    options.maxFiles,
-  );
+  const rotation = makeFileRotation(fs, options.filePath, options.maxFiles);
   let needsRecovery = yield* rotation.recover.pipe(
     Effect.orElseSucceed(() => false),
     Effect.map((ready) => !ready),
