@@ -7911,5 +7911,16 @@
   "5f1018e6ac1d0b37": "Files…",
   "5170ee5a3814cc69": "Folder…",
   "c0628ad999cbbbf5": "Show markdown source",
-  "cb93b10c61d3cc72": "Show rendered markdown"
+  "cb93b10c61d3cc72": "Show rendered markdown",
+  "ddbb490b16c9bd59": "Local device status is unavailable.",
+  "8e958d0ea2eec651": "Turn on device support to see local devices.",
+  "c2e53e53fba436f2": "{total} devices · {running} simulators running or starting",
+  "8cba6f9d8d96669a": "Refresh to find local devices.",
+  "c720adf6eed58c5a": "Local devices",
+  "d0071440c469440c": "Device inventory",
+  "7b230cf8adfbe17d": "Some devices could not be listed.",
+  "a1eb65a69c08f3c7": "Close local simulators started by T3 Code after this long without agent use. Enter 0 to turn off idle shutdown.",
+  "1bbc64165d861b35": "Limits how many local simulators can run or start at once. Enter 0 for no limit.",
+  "0b809f17d7d04a11": "Idle shutdown (minutes)",
+  "4016c2874f86ebdb": "Maximum local simulator instances"
 }

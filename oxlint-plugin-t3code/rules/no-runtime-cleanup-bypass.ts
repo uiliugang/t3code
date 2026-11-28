@@ -2,7 +2,12 @@ import * as Option from "effect/Option";
 import { defineRule } from "@oxlint/plugins";
 import { getPropertyName } from "../utils.ts";
 
-const automaticMethods = new Set(["stopThreadServers", "closeOnSettle", "closeRetired"]);
+const automaticMethods = new Set([
+  "stopThreadServers",
+  "closeOnSettle",
+  "closeRetired",
+  "cleanupIdleLocalDevices",
+]);
 
 export default defineRule({
   meta: {

@@ -36,10 +36,14 @@ export class ResourceCleanupError extends Schema.TaggedError<
 export class ResourceCleanupService extends Context.Reference<{
   readonly cleanupScheduledTasks: (threadId: ThreadId) => Effect.Effect<void, ResourceCleanupError>;
   readonly runtimeThreadIds: Effect.Effect<ReadonlyArray<ThreadId>>;
-  readonly cleanupRuntime: (input: {
-    readonly threadId: ThreadId;
-    readonly mode: "settled" | "removed";
-  }) => Effect.Effect<boolean, ResourceCleanupError>;
+  readonly cleanupRuntime: (
+    input:
+      | {
+          readonly threadId: ThreadId;
+          readonly mode: "settled" | "removed";
+        }
+      | { readonly mode: "idle-devices" },
+  ) => Effect.Effect<boolean, ResourceCleanupError>;
   readonly cleanupPreviews: (threadId: string) => Effect.Effect<void, ResourceCleanupError>;
   readonly cleanupAttachments: (
     attachmentIds: ReadonlyArray<string>,
@@ -88,7 +92,7 @@ export const layer = Layer.effect(
         ),
       );
     };
-    return {
+    const service: typeof ResourceCleanupService.Service = {
       runtimeThreadIds: Effect.gen(function* () {
         const servers = yield* ports.scan([], { refreshAgents: true });
         const ids = servers.flatMap((server) => {
@@ -114,10 +118,23 @@ export const layer = Layer.effect(
             ),
           );
       }),
-      cleanupRuntime: Effect.fn("ResourceCleanupService.cleanupRuntime")(function* ({
-        threadId,
-        mode,
-      }) {
+      cleanupRuntime: Effect.fn("ResourceCleanupService.cleanupRuntime")(function* (input) {
+        if (input.mode === "idle-devices") {
+          yield* devices
+            .cleanupIdleLocalDevices((threadId) =>
+              projections.getRunningTurnContext(threadId).pipe(
+                Effect.map(({ run }) => run !== undefined),
+                Effect.catch((error) =>
+                  Effect.succeed(error._tag !== "ProjectionStoreThreadNotFoundError"),
+                ),
+              ),
+            )
+            .pipe(
+              Effect.mapError((cause) => new ResourceCleanupError({ operation: "device", cause })),
+            );
+          return true;
+        }
+        const { threadId, mode } = input;
         const thread = yield* readThread(threadId);
         const key = thread === null ? null : retirementKey(thread, mode);
         if (key === null) return false;
@@ -190,5 +207,19 @@ export const layer = Layer.effect(
         );
       }),
     };
+    yield* Effect.sleep("1 minute").pipe(
+      Effect.andThen(
+        service
+          .cleanupRuntime({ mode: "idle-devices" })
+          .pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Could not close idle local simulators", { cause }),
+            ),
+          ),
+      ),
+      Effect.forever,
+      Effect.forkScoped,
+    );
+    return service;
   }),
 );
