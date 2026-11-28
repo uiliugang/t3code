@@ -30,6 +30,7 @@
     "build:resource-monitor": "cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml",
     "typecheck": "vp run -r --cache --concurrency-limit 4 typecheck",
     "tc": "vp run -r --cache --concurrency-limit 4 typecheck",
+    "check:no-native-windows": "node scripts/check-no-native-windows.ts",
     "check:changed": "node scripts/check-changed.ts",
     "report:server": "node scripts/metrics/server/server-metrics.ts",
     "report:client": "node scripts/metrics/web/client-metrics.ts",
