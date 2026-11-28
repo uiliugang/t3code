@@ -9,7 +9,7 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 import type { useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
 import { SettingsRow, SettingResetButton } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 
 export function PromptSuggestionSettingsRow({
@@ -56,6 +56,16 @@ export function PromptSuggestionSettingsRow({
   )?.serverConfig.managedPolicy?.organization;
   const label = gt("Suggest next prompt");
   const sourceLabel = supportsFallback ? gt("Suggestion priority") : gt("Suggestion source");
+  const sources = [
+    {
+      value: "native",
+      label: supportsFallback ? gt("Native suggestions first") : gt("Native suggestions"),
+    },
+    {
+      value: "text-generation",
+      label: supportsFallback ? gt("Text generation model first") : gt("Text generation model"),
+    },
+  ] as const;
   const managed =
     managedBy === undefined
       ? undefined
@@ -89,59 +99,67 @@ export function PromptSuggestionSettingsRow({
                 })
         }
         control={
-          <Switch
-            aria-label={label}
-            checked={
-              supported
-                ? !mixedEnabled && first?.enabled === true
-                : legacy && !nativeMixed && nativeEnabled
-            }
-            mixed={supported ? mixedEnabled : legacy && nativeMixed}
-            disabled={
-              !canWrite ||
-              (!supportsFallback && legacyNativeManaged !== undefined) ||
-              (!supported && !legacy)
-            }
-            onCheckedChange={(enabled) =>
-              save(() =>
+          <>
+            {supported && (
+              <Select
+                items={sources}
+                value={mixedSource ? null : (first?.source ?? null)}
+                disabled={!canWrite}
+                onValueChange={(source) => {
+                  if (source === null) return;
+                  save(() => ({
+                    promptSuggestionPreference: {
+                      legacyModelEnabled: showPredictedMessages,
+                      source,
+                    },
+                  }));
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-auto min-w-0 max-w-full"
+                  aria-label={sourceLabel}
+                >
+                  <SelectValue placeholder={gt("Mixed")} />
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {sources.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            )}
+            <Switch
+              aria-label={label}
+              checked={
                 supported
-                  ? {
-                      promptSuggestionPreference: {
-                        legacyModelEnabled: showPredictedMessages,
-                        enabled,
-                      },
-                    }
-                  : { promptSuggestionsEnabled: enabled },
-              )
-            }
-          />
+                  ? !mixedEnabled && first?.enabled === true
+                  : legacy && !nativeMixed && nativeEnabled
+              }
+              mixed={supported ? mixedEnabled : legacy && nativeMixed}
+              disabled={
+                !canWrite ||
+                (!supportsFallback && legacyNativeManaged !== undefined) ||
+                (!supported && !legacy)
+              }
+              onCheckedChange={(enabled) =>
+                save(() =>
+                  supported
+                    ? {
+                        promptSuggestionPreference: {
+                          legacyModelEnabled: showPredictedMessages,
+                          enabled,
+                        },
+                      }
+                    : { promptSuggestionsEnabled: enabled },
+                )
+              }
+            />
+          </>
         }
       >
-        {supported && (
-          <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
-            <ToggleGroup
-              aria-label={sourceLabel}
-              value={mixedSource || first === undefined ? [] : [first.source]}
-              disabled={!canWrite}
-              onValueChange={([source]) => {
-                if (source !== "native" && source !== "text-generation") return;
-                save(() => ({
-                  promptSuggestionPreference: {
-                    legacyModelEnabled: showPredictedMessages,
-                    source,
-                  },
-                }));
-              }}
-            >
-              <Toggle value="native">
-                {supportsFallback ? gt("Native suggestions first") : gt("Native suggestions")}
-              </Toggle>
-              <Toggle value="text-generation">
-                {supportsFallback ? gt("Text generation model first") : gt("Text generation model")}
-              </Toggle>
-            </ToggleGroup>
-          </div>
-        )}
         {supported && (
           <p className="pb-2 text-xs text-muted-foreground">
             {supportsFallback
