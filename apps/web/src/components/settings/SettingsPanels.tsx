@@ -1180,7 +1180,6 @@ export function ChatSettingsPanel() {
     <SettingsPageContainer
       searchTargetFallbacks={{ "composer-predictions": "prompt-suggestions-beta" }}
     >
-      {suggestionTargets.picker}
       <SettingsSection id="composer" title={gt("Composer")}>
         <SettingsRow
           {...setting("composer-rich-text")}

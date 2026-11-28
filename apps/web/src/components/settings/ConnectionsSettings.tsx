@@ -3,10 +3,9 @@ import { errorDisplayMessage, thrownErrorMessage } from "@t3tools/client-runtime
 import { m as resolveMessage } from "~/i18n/messages";
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import { SessionPermissions } from "./SessionPermissions";
-import { useSearch } from "@tanstack/react-router";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
 import { useAtom, useAtomValue } from "@effect/atom-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { useGT, useMessages } from "gt-react";
 import {
   AuthAccessReadScope,
@@ -38,7 +37,7 @@ import {
   resolveLocalVersionStatusLabel,
   resolveTailscaleServeBaseUrl,
 } from "./ConnectionsSettings.logic";
-import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
+import { useSettingsScope } from "./SettingsScopeContext";
 import { useAccessEnvironment } from "./useAccessEnvironment";
 import { WechatSettings } from "./WechatSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
@@ -52,7 +51,7 @@ import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { EnvironmentsMap } from "./EnvironmentsMap";
 import { LinkedEnvironmentEnableSettings } from "./LinkedEnvironmentEnableSettings";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
-import { useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
+import { supportsPeerLinks, useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
 import { addEnvironmentPrefillAtom } from "~/state/linkedThreadView";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
@@ -185,37 +184,16 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
 }
 
 function AccessSettings() {
-  // A link that names an environment, such as the MCP wizard's, opens the page on it. The
-  // settings layout remounts this page when the link changes.
-  const linkedEnvironmentId = useSearch({
-    strict: false,
-    select: (search) =>
-      typeof search.machine === "string" ? EnvironmentId.make(search.machine) : null,
-  });
-  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState(linkedEnvironmentId);
-  const { candidates, environment: accessEnvironment } =
-    useAccessEnvironment(selectedEnvironmentId);
+  const { search } = useSettingsScope();
+  const requestedEnvironmentId = search.machine ? EnvironmentId.make(search.machine) : null;
+  const { environment: accessEnvironment } = useAccessEnvironment(requestedEnvironmentId);
   const accessEnvironmentId = accessEnvironment?.environmentId ?? null;
-  const picker =
-    candidates.length > 1 && accessEnvironmentId !== null ? (
-      <EnvironmentScopeMenu
-        value={{ machine: accessEnvironmentId }}
-        groups={[]}
-        environments={candidates}
-        singleEnvironment
-        variant="ghost"
-        onChange={(next) => {
-          if (next.machine) setSelectedEnvironmentId(EnvironmentId.make(next.machine));
-        }}
-      />
-    ) : null;
   // Keyed so pairing credentials and pending work never carry over to another environment.
   return (
     <ConnectionsSettingsContent
       key={accessEnvironmentId ?? "none"}
       view="access"
       accessEnvironmentId={accessEnvironmentId}
-      accessEnvironmentPicker={picker}
     />
   );
 }
@@ -223,11 +201,9 @@ function AccessSettings() {
 function ConnectionsSettingsContent({
   view,
   accessEnvironmentId,
-  accessEnvironmentPicker = null,
 }: {
   readonly view: "environments" | "access";
   readonly accessEnvironmentId: EnvironmentId | null;
-  readonly accessEnvironmentPicker?: ReactNode;
 }) {
   const t = useUiTranslation();
   const searchableSetting = useSearchableSetting();
@@ -235,10 +211,7 @@ function ConnectionsSettingsContent({
   const m = useMessages();
   const linkingTargets = useEnvironmentSettingTargets(
     ["linkedEnvironmentsEnabled"],
-    (environment) =>
-      view === "environments" &&
-      environment.serverConfig?.environment.capabilities.peerLinks === true,
-    gt("Linking between environments"),
+    (environment) => view === "environments" && supportsPeerLinks(environment),
   );
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();
@@ -994,22 +967,17 @@ function ConnectionsSettingsContent({
           <SettingsSection
             {...searchableSetting("connections-environment")}
             title={
-              accessEnvironmentPicker ??
               accessEnvironment?.label ??
               (desktopBridge ? gt("This machine") : gt("Primary environment"))
             }
             icon={
-              accessEnvironmentPicker ? undefined : (
-                <EnvironmentMachineIcon
-                  aria-hidden
-                  kind={
-                    accessServerConfig
-                      ? resolveEnvironmentMachineKind(accessServerConfig)
-                      : "desktop"
-                  }
-                  className="size-4"
-                />
-              )
+              <EnvironmentMachineIcon
+                aria-hidden
+                kind={
+                  accessServerConfig ? resolveEnvironmentMachineKind(accessServerConfig) : "desktop"
+                }
+                className="size-4"
+              />
             }
             headerAction={
               accessEnvironmentId !== null ? (
@@ -1417,7 +1385,6 @@ function ConnectionsSettingsContent({
 
   return (
     <SettingsPageContainer>
-      {linkingTargets.picker}
       {desktopBridge ? (
         <SettingsSection id="this-app" title={t("This app")}>
           <LocalEnvironmentSetting />
