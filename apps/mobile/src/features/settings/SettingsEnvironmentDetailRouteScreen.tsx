@@ -91,8 +91,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const linkingManaged = isManagedSettingPath(config?.managedPolicy, "linkedEnvironmentsEnabled");
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const [connectionExpanded, setConnectionExpanded] = useState(false);
   const savedName = config?.settings.environmentName ?? "";
-  const nameValue = nameDraft ?? savedName;
   const saveName = async (environmentName: string | null) => {
     if (!canRename || renaming) return;
     setRenaming(true);
@@ -101,10 +101,12 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
       input: { patch: { environmentName } },
     });
     setRenaming(false);
-    if (result._tag === "Success") setNameDraft(null);
+    if (result._tag === "Success") {
+      setNameDraft(null);
+      setConnectionExpanded(false);
+    }
   };
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
-  const [connectionExpanded, setConnectionExpanded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -212,6 +214,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     <SettingsScreen title={environment?.environmentLabel ?? t("Environment")}>
       <ScreenScrollView
         contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
         className="flex-1"
         contentContainerClassName="gap-6 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
@@ -226,7 +229,65 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
               <ConnectionEnvironmentRow
                 environment={environment}
                 expanded={connectionExpanded}
-                onToggle={() => setConnectionExpanded((value) => !value)}
+                onToggle={() => {
+                  setConnectionExpanded(!connectionExpanded);
+                  if (connectionExpanded) setNameDraft(null);
+                }}
+                onEditName={
+                  connected && canRename
+                    ? () => {
+                        setNameDraft((draft) => draft ?? savedName);
+                        setConnectionExpanded(true);
+                      }
+                    : undefined
+                }
+                nameEditor={
+                  connected && canRename && nameDraft !== null ? (
+                    <View className="gap-3">
+                      <View className="flex-row items-center gap-2">
+                        <AppTextInput
+                          accessibilityLabel={t("Environment name")}
+                          autoFocus
+                          value={nameDraft}
+                          placeholder={
+                            config?.environment.defaultLabel ?? config?.environment.label
+                          }
+                          maxLength={100}
+                          editable={!renaming}
+                          onChangeText={setNameDraft}
+                          className="min-h-14 min-w-0 flex-1 rounded-lg border border-border px-3 py-2 text-base text-foreground"
+                        />
+                        <View className="flex-row gap-2">
+                          <Button
+                            label={t("Save")}
+                            size="inline"
+                            tone="primary"
+                            loading={renaming}
+                            disabled={!nameDraft.trim() || nameDraft.trim() === savedName}
+                            onPress={() => void saveName(nameDraft.trim())}
+                          />
+                          <Button
+                            label={t("Cancel")}
+                            size="inline"
+                            disabled={renaming}
+                            onPress={() => {
+                              setNameDraft(null);
+                              setConnectionExpanded(false);
+                            }}
+                          />
+                        </View>
+                      </View>
+                      {savedName ? (
+                        <Button
+                          label={t("Restore default name")}
+                          size="compact"
+                          disabled={renaming}
+                          onPress={() => void saveName(null)}
+                        />
+                      ) : null}
+                    </View>
+                  ) : null
+                }
                 onReconnect={connections.onReconnectEnvironment}
                 onRemove={connections.onRemoveEnvironmentPress}
                 onSetEnabled={connections.onSetEnvironmentEnabled}
@@ -238,36 +299,6 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                 environmentId={environmentId}
                 requireApproval={config?.settings.requireConnectDeviceApproval === true}
               />
-            ) : null}
-            {connected && canRename ? (
-              <SettingsSection title={t("Environment name")}>
-                <View className="gap-3 p-4">
-                  <AppTextInput
-                    accessibilityLabel={t("Environment name")}
-                    value={nameValue}
-                    placeholder={config?.environment.defaultLabel ?? config?.environment.label}
-                    maxLength={100}
-                    editable={!renaming}
-                    onChangeText={setNameDraft}
-                    className="min-h-10 rounded-lg border border-border px-3 py-2 text-base text-foreground"
-                  />
-                  <View className="flex-row flex-wrap gap-2">
-                    <Button
-                      label={t("Save")}
-                      size="compact"
-                      loading={renaming}
-                      disabled={!nameValue.trim() || nameValue.trim() === savedName}
-                      onPress={() => void saveName(nameValue.trim())}
-                    />
-                    <Button
-                      label={t("Restore default name")}
-                      size="compact"
-                      disabled={renaming || savedName === ""}
-                      onPress={() => void saveName(null)}
-                    />
-                  </View>
-                </View>
-              </SettingsSection>
             ) : null}
             <EnvironmentRoutesSection
               environmentId={environmentId}

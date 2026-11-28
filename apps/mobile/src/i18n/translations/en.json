@@ -1858,7 +1858,6 @@
   "eba81cdd32c6163d": "Paste the link from t3 auth connect-device noise-pin on the host to encrypt chat, attachments, workspace files, and terminal sessions.",
   "a349f1b6078df8e4": "The host key changed. Verify the new link on the host before replacing its saved key.",
   "e334e368ad88bfc8": "Could not enable the encrypted connection.",
-  "3eb6e7f400d9e480": "Check the environment’s connection status below. If it shows a code, compare it on the host and approve this device.",
   "9d7fb2ec72ce9693": "Off",
   "d92a43b7bf4c24c8": "Keep source control requests on this environment.",
   "2763012f6869f8d0": "Read PRs",
@@ -4123,5 +4122,13 @@
   "98535ab178d0a502": "Show a suggestion in the empty composer after a turn. Try the other source if the preferred one cannot give a suggestion.",
   "587f570a3a6a3199": "Native suggestions first",
   "f669edbb0567a354": "Text generation model first",
-  "f025fd312a6cc28c": "Native suggestions may use plan quota even when the text generation model is preferred. Native suggestions require Codex 0.165 or later when using Codex."
+  "f025fd312a6cc28c": "Native suggestions may use plan quota even when the text generation model is preferred. Native suggestions require Codex 0.165 or later when using Codex.",
+  "cfe11c24d7130626": "This host does not offer end-to-end encryption. Update the host or allow compatibility connections in Environments.",
+  "df26416405fd2b4e": "Could not retrieve the host key for the encrypted connection.",
+  "654c2bc4e2b525f5": "Allow T3 Connect without end-to-end encryption",
+  "8778b3fe5a183ad0": "For official and older hosts. Without end-to-end encryption, the tunnel provider can read chats, files, and terminal traffic.",
+  "448392e511282c6e": "Edit environment name",
+  "631f4d3b560fe822": "Edit connection URL",
+  "da58916ee78e8a6f": "Use a trusted pairing link",
+  "0e26b146e213bedc": "If the environment shows a code, compare it in the host’s Sharing & access settings and approve this device."
 }

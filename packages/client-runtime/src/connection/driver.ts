@@ -17,13 +17,16 @@ import type {
   ConnectionTarget,
   PreparedConnection,
 } from "./model.ts";
-import { NoiseConnections } from "../platform/capabilities.ts";
+import { NoiseConnections, type ApprovedNoiseConnection } from "../platform/capabilities.ts";
 import { ConnectionTransientError, RelayConnectionTarget } from "./model.ts";
 import { isHostCredentialRefusal } from "./errors.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import {
   connectionRouteId,
   connectionRoutes,
+  entryWithRoutes,
+  hasRelayRoute,
+  isOrdinaryConnectRoute,
   routeEntry,
   routeHttpBaseUrl,
   routeKeepsItsHost,
@@ -248,6 +251,46 @@ export const make = Effect.gen(function* () {
           }),
         );
 
+  const connectNoise = Effect.fn("ConnectionDriver.connectNoise")(function* (
+    target: RelayConnectionTarget,
+    authorize: Effect.Effect<
+      { readonly key: Uint8Array; readonly connection: ApprovedNoiseConnection } | null,
+      ConnectionAttemptError,
+      Scope.Scope
+    >,
+    reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
+  ) {
+    const prepared: PreparedConnection = {
+      environmentId: target.environmentId,
+      label: target.label,
+      target,
+      transport: "noise",
+      httpBaseUrl: "t3noise://environment",
+      socketUrl: "t3noise://environment",
+      httpAuthorization: null,
+    };
+    yield* reportProgress({ stage: "opening", prepared });
+    const authorized = yield* authorize;
+    if (authorized === null) return null;
+    const { key, connection } = authorized;
+    const session = yield* sessions.connect(prepared, connection);
+    const mediaOrigins = yield* (
+      noise?.openMediaOrigins?.(target.environmentId, key) ?? Effect.undefined
+    );
+    const browserMedia = yield* (
+      noise?.openBrowserMedia?.(target.environmentId, key) ?? Effect.undefined
+    );
+    const connected = {
+      ...prepared,
+      ...(browserMedia ? { browserMedia } : {}),
+      ...(mediaOrigins ? { mediaOrigins } : {}),
+      noiseHttpClient: makeNoiseHttpClient(session.client),
+    };
+    yield* reportProgress({ stage: "synchronizing", prepared: connected });
+    yield* session.ready;
+    return { prepared: connected, session } satisfies RouteConnection;
+  });
+
   const connect = Effect.fn("ConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
     reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
@@ -263,43 +306,40 @@ export const make = Effect.gen(function* () {
       const key = yield* noise.readPin(target.environmentId);
       if (key !== null) {
         // A pin belongs to the environment, including every alternate route in its catalog entry.
-        const prepared: PreparedConnection = {
-          environmentId: target.environmentId,
-          label: target.label,
-          target: new RelayConnectionTarget({
+        const connected = yield* connectNoise(
+          new RelayConnectionTarget({
             environmentId: target.environmentId,
             label: target.label,
           }),
-          transport: "noise",
-          httpBaseUrl: "t3noise://environment",
-          socketUrl: "t3noise://environment",
-          httpAuthorization: null,
-        };
-        yield* reportProgress({ stage: "opening", prepared });
-        const approved = yield* noise.open(target.environmentId, key);
-        const session = yield* sessions.connect(prepared, approved);
-        const mediaOrigins = yield* (
-          noise.openMediaOrigins?.(target.environmentId, key) ?? Effect.undefined
+          noise
+            .open(target.environmentId, key)
+            .pipe(Effect.map((connection) => ({ key, connection }))),
+          reportProgress,
         );
-        const browserMedia = yield* (
-          noise.openBrowserMedia?.(target.environmentId, key) ?? Effect.undefined
-        );
-        const connected = {
-          ...prepared,
-          ...(browserMedia ? { browserMedia } : {}),
-          ...(mediaOrigins ? { mediaOrigins } : {}),
-          noiseHttpClient: makeNoiseHttpClient(session.client),
-        };
-        yield* reportProgress({ stage: "synchronizing", prepared: connected });
-        yield* session.ready;
-        return { prepared: connected, session, refusedRouteIds: [] };
+        return { ...connected!, refusedRouteIds: [] };
       }
     }
+    // Routes learned through T3 Connect must not bypass its encryption policy.
+    const routedEntry =
+      noise?.openRelay && hasRelayRoute(entry)
+        ? entryWithRoutes(
+            entry,
+            connectionRoutes(entry).filter((route) => !isOrdinaryConnectRoute(route)),
+          )
+        : entry;
     return yield* connectOverRoutes(
-      entry,
-      (route) => checkRoute(entry, route),
+      routedEntry,
+      (route) => checkRoute(routedEntry, route),
       Effect.fnUntraced(function* (route) {
         yield* reportProgress({ stage: "preparing", target: route.target });
+        if (route.target._tag === "RelayConnectionTarget" && noise?.openRelay) {
+          const encrypted = yield* connectNoise(
+            route.target,
+            noise.openRelay(route.target.environmentId),
+            reportProgress,
+          );
+          if (encrypted !== null) return encrypted;
+        }
         const prepared = yield* resolver.prepare(routeEntry(entry, route));
         yield* reportProgress({ stage: "opening", prepared });
         const session = yield* sessions.connect(prepared);
@@ -334,6 +374,11 @@ export const make = Effect.gen(function* () {
     if (noise !== null) {
       const pin = yield* noise.readPin(entry.target.environmentId).pipe(Effect.result);
       if (pin._tag === "Failure" || pin.success !== null) return "unchecked" as const;
+      if (
+        noise.openRelay &&
+        (route.target._tag === "RelayConnectionTarget" || isOrdinaryConnectRoute(route))
+      )
+        return "unchecked" as const;
     }
     return yield* preflightRoute(
       sendsTokenInClear(connectionRoutes(entry), route)

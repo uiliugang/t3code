@@ -22,7 +22,7 @@ import * as RpcClient from "effect/rpc/RpcClient";
 import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Socket from "effect/socket/Socket";
 
-import { assertOrdinaryConnectionAllowed } from "../platform/capabilities.ts";
+import { assertOrdinaryConnectionAllowed, NoiseConnections } from "../platform/capabilities.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import { makeWsRpcProtocolClient, PING_TIMEOUT } from "../rpc/protocol.ts";
 import {
@@ -36,6 +36,7 @@ import * as EnvironmentRegistry from "./registry.ts";
 import {
   connectionRoutes,
   hasRelayRoute,
+  isOrdinaryConnectRoute,
   routeEntry,
   routeHttpBaseUrl,
   usableRoutes,
@@ -66,8 +67,14 @@ const reachOutdatedHost = Effect.fn("clientRuntime.connection.reachOutdatedHost"
   if (entry === undefined) {
     return yield* new EnvironmentRegistry.EnvironmentNotRegisteredError({ environmentId });
   }
+  const noise = Option.getOrNull(yield* Effect.serviceOption(NoiseConnections));
   const { prepared, descriptor } = yield* Effect.firstSuccessOf(
-    usableRoutes(entry).map((route) => resolver.prepareForUpdate(routeEntry(entry, route))),
+    usableRoutes(entry).map((route) =>
+      (route.target._tag === "RelayConnectionTarget" || isOrdinaryConnectRoute(route)
+        ? (noise?.assertLegacyRelayUpdateAllowed?.(environmentId) ?? Effect.void)
+        : Effect.void
+      ).pipe(Effect.andThen(resolver.prepareForUpdate(routeEntry(entry, route)))),
+    ),
   );
   return { entry, prepared, descriptor };
 });

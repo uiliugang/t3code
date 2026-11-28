@@ -17,6 +17,7 @@ export function NoiseDeviceApproval({
 }) {
   const gt = useGT();
   const enroll = useAtomCommand(enrollEncryptedRelay, { reportFailure: false });
+  const [expanded, setExpanded] = useState(initialLink !== "");
   const [value, setValue] = useState(initialLink);
   const [result, setResult] = useState<"error" | "changed" | "enrolled" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,6 +31,13 @@ export function NoiseDeviceApproval({
     setResult(reply._tag === "Success" ? reply.value.status : "error");
     setBusy(false);
   };
+  if (!expanded) {
+    return (
+      <View className="overflow-hidden rounded-[24px] bg-grouped-card">
+        <ListRow label={gt("Use a trusted pairing link")} onPress={() => setExpanded(true)} />
+      </View>
+    );
+  }
   return (
     <View className="gap-2 px-4">
       <AppTextInput
@@ -65,7 +73,7 @@ export function NoiseDeviceApproval({
             : result === "error"
               ? gt("Could not enable the encrypted connection.")
               : gt(
-                  "Check the environment’s connection status below. If it shows a code, compare it on the host and approve this device.",
+                  "If the environment shows a code, compare it in the host’s Sharing & access settings and approve this device.",
                 )}
         </AppText>
       )}

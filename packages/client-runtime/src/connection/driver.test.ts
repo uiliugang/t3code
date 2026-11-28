@@ -9,7 +9,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { NoiseConnections } from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
-import type { ConnectionCatalogEntry } from "./catalog.ts";
+import { BearerConnectionProfile, type ConnectionCatalogEntry } from "./catalog.ts";
 import * as ConnectionDriver from "./driver.ts";
 import {
   BearerConnectionTarget,
@@ -37,6 +37,53 @@ const ENTRY: ConnectionCatalogEntry = {
 };
 
 describe("ConnectionDriver", () => {
+  it.effect("does not reach ordinary LAN routes learned through T3 Connect", () =>
+    Effect.gen(function* () {
+      const environmentId = ENTRY.target.environmentId;
+      const relay = new RelayConnectionTarget({ environmentId, label: "Host" });
+      const learned = {
+        target: new BearerConnectionTarget({ environmentId, label: "LAN", connectionId: "lan" }),
+        profile: Option.some(
+          new BearerConnectionProfile({
+            connectionId: "lan",
+            environmentId,
+            label: "LAN",
+            httpBaseUrl: "http://192.168.0.1:3773",
+            wsBaseUrl: "ws://192.168.0.1:3773",
+            authorization: "t3-connect",
+          }),
+        ),
+      };
+      const error = new ConnectionBlockedError({
+        reason: "configuration",
+        detail: "Noise required",
+      });
+      const driver = yield* ConnectionDriver.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(NoiseConnections)({
+              readPin: () => Effect.succeed(null),
+              openRelay: () => Effect.fail(error),
+            }),
+            Layer.mock(ConnectionResolver.ConnectionResolver)({}),
+            Layer.mock(RpcSession.RpcSessionFactory)({}),
+            Layer.mock(RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization)({}),
+            FetchHttpClient.layer,
+          ),
+        ),
+      );
+      const entry = {
+        ...learned,
+        enabled: true,
+        alternateRoutes: [{ target: relay, profile: Option.none() }],
+      };
+      expect(yield* driver.preflight(entry, learned)).toBe("unchecked");
+      expect(yield* driver.connect(entry, () => Effect.void).pipe(Effect.scoped, Effect.flip)).toBe(
+        error,
+      );
+    }),
+  );
+
   it.effect(
     "never prepares ordinary routes or upgrades to LAN when the device pin or handshake fails",
     () =>

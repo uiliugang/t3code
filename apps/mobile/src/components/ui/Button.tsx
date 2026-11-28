@@ -14,7 +14,7 @@ export interface ButtonProps {
   readonly loading?: boolean;
   readonly tone?: "primary" | "secondary" | "danger" | "text" | "contrast";
   readonly fullWidth?: boolean;
-  readonly size?: "default" | "compact";
+  readonly size?: "default" | "compact" | "inline";
 }
 
 const TONE_CLASS_NAMES = {
@@ -23,6 +23,12 @@ const TONE_CLASS_NAMES = {
   secondary: ["bg-secondary", "text-secondary-foreground"],
   danger: ["bg-danger", "text-danger-foreground"],
   text: ["bg-transparent", "text-primary-text"],
+} as const;
+
+const SIZE_CLASS_NAMES = {
+  default: "min-h-[44px] px-6 android:min-h-[48px]",
+  compact: "min-h-10 px-5",
+  inline: "min-h-11 min-w-11 px-2.5",
 } as const;
 
 export function Button(props: ButtonProps) {
@@ -38,7 +44,7 @@ export function Button(props: ButtonProps) {
       onPress={props.onPress}
       className={cn(
         "flex-row items-center justify-center gap-2 rounded-full active:opacity-70",
-        props.size === "compact" ? "min-h-10 px-5" : "min-h-[44px] px-6 android:min-h-[48px]",
+        SIZE_CLASS_NAMES[props.size ?? "default"],
         props.fullWidth ? "w-full" : "self-start",
         disabled ? "bg-subtle-strong" : containerClassName,
       )}
@@ -57,6 +63,7 @@ export function Button(props: ButtonProps) {
       <AppText
         className={cn(
           "min-w-0 shrink text-center font-t3-medium",
+          props.size === "inline" && "text-sm",
           disabled ? "text-foreground-muted" : labelClassName,
         )}
       >

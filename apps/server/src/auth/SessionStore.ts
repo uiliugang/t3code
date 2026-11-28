@@ -401,6 +401,12 @@ export type SessionCredentialError = typeof SessionCredentialError.Type;
 export const LOCAL_NOISE_DEVICE_SUBJECT = "local-cli-noise-device";
 export const NOISE_SESSION_SUBJECT = "connect-noise-v1";
 
+export const canApproveNoiseDevices = (subject: string | undefined) =>
+  subject === NOISE_SESSION_SUBJECT ||
+  subject === LOCAL_NOISE_DEVICE_SUBJECT ||
+  subject === "desktop-bootstrap" ||
+  subject === "cli";
+
 export class SessionStore extends Context.Service<
   SessionStore,
   {

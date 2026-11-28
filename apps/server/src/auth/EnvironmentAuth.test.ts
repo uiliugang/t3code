@@ -311,7 +311,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
       }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" }))),
     );
 
-    it.effect("allows a Noise session to approve a waiting Noise device", () =>
+    it.effect("limits approval of waiting Noise devices to encrypted and local sessions", () =>
       Effect.gen(function* () {
         const auth = yield* EnvironmentAuth.EnvironmentAuth;
         const proofKeyThumbprint = "new-device";
@@ -328,9 +328,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         expect(
           yield* auth.approveConnectDevice(request!.id, EnvironmentAuth.CLOUD_CONNECT_SUBJECT),
         ).toBe(false);
-        expect(
-          yield* auth.approveConnectDevice(request!.id, SessionStore.NOISE_SESSION_SUBJECT),
-        ).toBe(true);
+        expect(yield* auth.approveConnectDevice(request!.id, "desktop-bootstrap")).toBe(true);
         expect(yield* auth.openNoiseSession(grant.credential, proofKeyThumbprint)).toMatchObject({
           subject: SessionStore.NOISE_SESSION_SUBJECT,
           proofKeyThumbprint,

@@ -10,7 +10,7 @@ import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Platform, Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import type { MessageResolver } from "../../i18n/messages";
@@ -57,6 +57,8 @@ export function ConnectionEnvironmentRow(props: {
   readonly expanded: boolean;
   readonly opensDetails?: boolean;
   readonly onToggle: () => void;
+  readonly onEditName?: (() => void) | undefined;
+  readonly nameEditor?: ReactNode;
   readonly onReconnect: (environmentId: EnvironmentId) => void;
   readonly onRemove: (environmentId: EnvironmentId) => void;
   readonly onSetEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
@@ -69,6 +71,7 @@ export function ConnectionEnvironmentRow(props: {
   const m = useMessages();
   const [label, setLabel] = useState(props.environment.environmentLabel);
   const [url, setUrl] = useState(props.environment.displayUrl);
+  const [editingRoute, setEditingRoute] = useState(false);
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(props.environment.environmentId),
   );
@@ -77,6 +80,8 @@ export function ConnectionEnvironmentRow(props: {
     environmentPresentations.presentationAtom(props.environment.environmentId),
   );
   const canRetry = presentation !== null && hasSavedBearerRoute(presentation.entry);
+  const canEditRoute = !props.environment.isRelayManaged;
+  const showRouteEditor = canEditRoute && editingRoute;
   const { diagnosis, state: connectionState } = useConnectionDiagnosis(
     props.environment.environmentId,
     presentation,
@@ -96,13 +101,30 @@ export function ConnectionEnvironmentRow(props: {
     enabled &&
     (props.environment.connectionState === "connecting" ||
       props.environment.connectionState === "reconnecting");
+  const toggle = () => {
+    setEditingRoute(false);
+    props.onToggle();
+  };
+  const openRouteEditor = () => {
+    setLabel(props.environment.environmentLabel);
+    setUrl(props.environment.displayUrl);
+    setEditingRoute(true);
+  };
+  const edit = props.onEditName
+    ? () => {
+        setEditingRoute(false);
+        props.onEditName?.();
+      }
+    : canEditRoute
+      ? openRouteEditor
+      : undefined;
   const handleSave = async () => {
     const result = await props.onUpdate(props.environment.environmentId, {
       label: label.trim(),
       displayUrl: url.trim(),
     });
     if (AsyncResult.isSuccess(result)) {
-      props.onToggle();
+      toggle();
       return;
     }
     const error = Cause.squash(result.cause);
@@ -115,6 +137,7 @@ export function ConnectionEnvironmentRow(props: {
   };
 
   const gt = useGT();
+  const editLabel = props.onEditName ? gt("Edit environment name") : t("Edit");
   const toggleLabel = props.opensDetails
     ? gt("Manage {environment}", { environment: props.environment.environmentLabel })
     : props.expanded
@@ -132,7 +155,7 @@ export function ConnectionEnvironmentRow(props: {
           className="min-w-0 flex-1 gap-0.5 active:opacity-70"
           accessibilityRole="button"
           accessibilityLabel={toggleLabel}
-          onPress={props.onToggle}
+          onPress={toggle}
         >
           <View className="flex-row items-center gap-1.5">
             <ConnectionStatusDot
@@ -208,7 +231,7 @@ export function ConnectionEnvironmentRow(props: {
           accessible={false}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
-          onPress={props.onToggle}
+          onPress={toggle}
           style={{
             minWidth: 44,
             minHeight: 44,
@@ -232,6 +255,17 @@ export function ConnectionEnvironmentRow(props: {
           exiting={FadeOut.duration(150)}
           className="gap-3 px-4 pb-4"
         >
+          {showRouteEditor ? null : props.nameEditor}
+          {canEditRoute && props.nameEditor && !showRouteEditor ? (
+            <View className="items-start">
+              <Button
+                label={gt("Edit connection URL")}
+                size="compact"
+                tone="text"
+                onPress={openRouteEditor}
+              />
+            </View>
+          ) : null}
           {diagnosis ? (
             <ConnectionDiagnosisDetails
               hostLabel={props.environment.environmentLabel}
@@ -242,7 +276,7 @@ export function ConnectionEnvironmentRow(props: {
             <Text className="text-sm text-foreground-muted">
               {t("Managed by T3 Connect. Tunnel details update automatically.")}
             </Text>
-          ) : (
+          ) : showRouteEditor ? (
             <>
               <ConnectionFormField
                 label={t("Label")}
@@ -263,11 +297,11 @@ export function ConnectionEnvironmentRow(props: {
                 onChangeText={setUrl}
               />
             </>
-          )}
+          ) : null}
 
           {Platform.OS === "android" ? (
             <View className="flex-row items-center justify-end gap-2">
-              {props.environment.isRelayManaged ? null : (
+              {showRouteEditor ? (
                 <View className="flex-1">
                   <Button
                     label={t("Save")}
@@ -278,7 +312,15 @@ export function ConnectionEnvironmentRow(props: {
                     }}
                   />
                 </View>
-              )}
+              ) : null}
+              {edit ? (
+                <IconButton
+                  accessibilityLabel={editLabel}
+                  icon="pencil"
+                  variant="tonal"
+                  onPress={edit}
+                />
+              ) : null}
               <IconButton
                 accessibilityLabel={t("Reconnect environment")}
                 icon="arrow.clockwise"
@@ -295,7 +337,7 @@ export function ConnectionEnvironmentRow(props: {
             </View>
           ) : (
             <View className="flex-row justify-end gap-2">
-              {props.environment.isRelayManaged ? null : (
+              {showRouteEditor ? (
                 <Pressable
                   className="min-h-[42px] flex-1 flex-row items-center justify-center gap-1.5 rounded-[14px] bg-primary px-3.5 py-2.5 active:opacity-70"
                   onPress={handleSave}
@@ -310,8 +352,24 @@ export function ConnectionEnvironmentRow(props: {
                     {t("Save")}
                   </Text>
                 </Pressable>
-              )}
+              ) : null}
 
+              {edit ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={editLabel}
+                  className="h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-input-border bg-input active:opacity-70"
+                  hitSlop={1}
+                  onPress={edit}
+                >
+                  <SymbolView
+                    name="pencil"
+                    size={14}
+                    tintColorClassName="accent-icon-subtle"
+                    type="monochrome"
+                  />
+                </Pressable>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={t("Reconnect environment")}

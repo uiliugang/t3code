@@ -6,19 +6,23 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  CONNECT_NOISE_KEY_PATH,
   CONNECT_NOISE_PATH,
   EnvironmentId,
   connectDeviceVerificationCode,
   ORCHESTRATION_PROTOCOL_VERSION,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpRouter, HttpServer, HttpServerRequest } from "effect/http";
+import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as Schema from "effect/Schema";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 import { openPinnedNoiseClient } from "./pinnedNoiseClient.ts";
 import { decideNoiseDevice } from "../cli/runningServer.ts";
-import { LOCAL_NOISE_DEVICE_SUBJECT } from "./SessionStore.ts";
+import { LOCAL_NOISE_DEVICE_SUBJECT, NOISE_SESSION_SUBJECT } from "./SessionStore.ts";
 import {
   AuthAccessWriteScope,
   AuthAccessReadScope,
@@ -47,8 +51,6 @@ it.live(
       });
       const policyError = yield* createNoisePin().pipe(Effect.provide(disabled), Effect.flip);
       assert.equal(policyError._tag, "ManagedPolicyRefusedError");
-      const pin = new URL(yield* createNoisePin());
-      assert.equal(yield* createNoisePin(), pin.href);
       const device = makeDpopKey();
       const issue = () =>
         grants.issueOneTimeToken({
@@ -56,9 +58,12 @@ it.live(
           proofKeyThumbprint: device.thumbprint,
         });
       const grant = yield* issue();
+      const rpcSession = yield* Deferred.make<EnvironmentAuth.AuthenticatedSession>();
       const services = yield* Layer.build(
         HttpRouter.serve(
-          routeLayer(() => Effect.die("Approval probes cannot start RPC")),
+          routeLayer((_request, session) =>
+            Deferred.succeed(rpcSession, session).pipe(Effect.as(HttpServerResponse.empty())),
+          ),
           { disableListenLog: true },
         ).pipe(
           Layer.provideMerge(
@@ -75,6 +80,14 @@ it.live(
           /^http/,
           "ws",
         ) + CONNECT_NOISE_PATH;
+      const origin = new URL(url).origin.replace(/^ws/, "http");
+      const keyResponse = yield* HttpClient.get(origin + CONNECT_NOISE_KEY_PATH).pipe(
+        Effect.provide(FetchHttpClient.layer),
+      );
+      assert.equal(keyResponse.status, 200);
+      assert.equal(keyResponse.headers["cache-control"], "no-store");
+      const pin = new URL(yield* keyResponse.text);
+      assert.equal(yield* createNoisePin(), pin.href);
       const request = (credential: string, options?: Parameters<typeof connectNoiseClient>[4]) =>
         connectNoiseClient(url, pin, device, credential, options).pipe(
           Effect.map((connection) => connection.reply),
@@ -87,7 +100,6 @@ it.live(
         status: "pending",
         verificationCode: connectDeviceVerificationCode(device.thumbprint),
       });
-      const origin = new URL(url).origin.replace(/^ws/, "http");
       const args = new URLSearchParams(pin.hash.slice(1));
       const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const encode = Schema.encodeEffect(Schema.fromJsonString(LocalDeviceNoiseRequest));
@@ -139,10 +151,27 @@ it.live(
           Effect.scoped,
         ),
       );
-      assert.deepEqual(yield* request((yield* issue()).credential), {
+      const rePair = yield* issue();
+      const rpcOptions = {
+        mode: "rpc",
+        orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
+      } as const;
+      assert.deepEqual(yield* request(rePair.credential, rpcOptions), {
         status: "pending",
         verificationCode: connectDeviceVerificationCode(device.thumbprint),
       });
+      assert.isFalse(yield* Deferred.isDone(rpcSession));
+      const [pending] = yield* environmentAuth.listPairingLinks({ includeNoiseRequests: true });
+      assert.equal(
+        pending?.connectDeviceRequest?.verificationCode,
+        connectDeviceVerificationCode(device.thumbprint),
+      );
+      assert.isTrue(yield* environmentAuth.approveConnectDevice(pending!.id, "desktop-bootstrap"));
+      const connected = yield* request(rePair.credential, rpcOptions);
+      assert.equal(connected.status, "connected");
+      const session = yield* Deferred.await(rpcSession);
+      assert.equal(session.subject, NOISE_SESSION_SUBJECT);
+      assert.equal(session.proofKeyThumbprint, device.thumbprint);
     }).pipe(
       Effect.scoped,
       Effect.provide(

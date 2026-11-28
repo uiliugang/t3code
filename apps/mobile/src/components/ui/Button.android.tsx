@@ -70,6 +70,7 @@ export function Button(props: ButtonProps) {
           <Component
             enabled={!props.disabled && !props.loading}
             onClick={props.onPress}
+            {...(props.size === "inline" ? { contentPadding: { start: 8, end: 8 } } : {})}
             modifiers={[
               defaultMinSize({ minHeight: 48 }),
               ...(props.fullWidth ? [fillMaxWidth()] : []),

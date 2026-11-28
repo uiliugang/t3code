@@ -16,6 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import { AtomRegistry } from "effect/reactivity";
 import Constants from "expo-constants";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
@@ -28,6 +29,7 @@ import { layerNoiseConnections } from "../features/connection/noiseApproval";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
 import * as EnvironmentOwnedDataCleanup from "./environment-owned-data-cleanup";
 import * as ConnectionStorage from "./storage";
+import { relayPolicyChangedAtom } from "./relay-policy";
 
 function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "online" {
   if (state.isConnected === false) {
@@ -115,7 +117,7 @@ const networkPathChanges = Stream.callback<"network-changed">((queue) =>
 );
 
 const layerWakeups = Wakeups.layer({
-  changes: Stream.mergeAll(
+  changes: Stream.mergeAll<Wakeups.ConnectionWakeup, never, never>(
     [
       Stream.callback<"application-active-probe" | "application-active-long">((queue) =>
         Effect.acquireRelease(
@@ -141,6 +143,17 @@ const layerWakeups = Wakeups.layer({
         Stream.map(() => "credentials-changed" as const),
       ),
       networkPathChanges,
+      AtomRegistry.toStream(appAtomRegistry, relayPolicyChangedAtom).pipe(
+        Stream.drop(1),
+        Stream.flatMap((ids) =>
+          Stream.fromIterable(
+            ids.map((environmentId) => ({
+              type: "relay-policy-changed" as const,
+              environmentId,
+            })),
+          ),
+        ),
+      ),
     ],
     { concurrency: "unbounded" },
   ),

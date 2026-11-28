@@ -16,6 +16,7 @@ import { GuestShareService } from "../guest/GuestShareService.ts";
 import { NoiseGuestCall, type NoiseGuestSession } from "./noiseGuestContext.ts";
 import { noiseHostIdentity, noiseHostKeyName } from "./noiseHostIdentity.ts";
 import {
+  CONNECT_NOISE_KEY_PATH,
   CONNECT_NOISE_PATH,
   ORCHESTRATION_PROTOCOL_VERSION,
   ConnectNoiseRequest,
@@ -75,12 +76,14 @@ const decodeGuest = Schema.decodeOption(Schema.fromJsonString(NoiseGuestRequest)
 const init = Effect.promise(initializeConnectNoise);
 const encodeReply = Schema.encodeEffect(Schema.fromJsonString(ConnectNoiseResult));
 const decode = Schema.decodeOption(Schema.fromJsonString(ConnectNoiseRequest));
+const noisePinLink = noiseHostIdentity.pipe(
+  Effect.map((identity) => `t3noise://pair#${new URLSearchParams(identity)}`),
+);
 
 export const createNoisePin = Effect.fn("connectNoise.createPin")(function* () {
   const policy = yield* ManagedPolicy.ManagedPolicy;
   if (!ManagedLimits.allowsConnect(policy)) return yield* ManagedLimits.refuseConnect(policy);
-  const params = new URLSearchParams(yield* noiseHostIdentity);
-  return `t3noise://pair#${params}`;
+  return yield* noisePinLink;
 });
 
 const authenticate = Effect.fn("connectNoise.authenticate")(function* (
@@ -161,7 +164,17 @@ export const routeLayer = <R>(
       const enabled = ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy);
       const slots = yield* Semaphore.make(32);
       const loadOnce = yield* Effect.cached(init);
-      return HttpRouter.add(
+      const publicKey = HttpRouter.add(
+        "GET",
+        CONNECT_NOISE_KEY_PATH,
+        noisePinLink.pipe(
+          Effect.map((link) =>
+            HttpServerResponse.text(link, { headers: { "cache-control": "no-store" } }),
+          ),
+          Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 503 })),
+        ),
+      );
+      const upgrade = HttpRouter.add(
         "GET",
         CONNECT_NOISE_PATH,
         Effect.gen(function* () {
@@ -288,5 +301,6 @@ export const routeLayer = <R>(
           );
         }).pipe(Effect.scoped),
       );
+      return enabled ? Layer.merge(publicKey, upgrade) : upgrade;
     }),
   );

@@ -41,7 +41,9 @@ export const readNoiseAgentActivity = Effect.fn("MobileWake.readNoiseAgentActivi
       ) {
         return yield* denied();
       }
-      const pin = yield* noise.readPin(environmentId);
+      const pin =
+        (yield* noise.readPin(environmentId)) ??
+        (yield* noise.readRelayPin?.(environmentId) ?? Effect.succeed(null));
       if (!pin) return yield* denied();
       return pin;
     });

@@ -96,6 +96,19 @@ export interface ApprovedNoiseConnection {
 export class NoiseConnections extends Context.Service<
   NoiseConnections,
   {
+    readonly assertLegacyRelayUpdateAllowed?: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<void, ConnectionAttemptError>;
+    readonly readRelayPin?: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<Uint8Array | null, ConnectionAttemptError>;
+    readonly openRelay?: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<
+      { readonly key: Uint8Array; readonly connection: ApprovedNoiseConnection } | null,
+      ConnectionAttemptError,
+      Scope.Scope
+    >;
     readonly openBrowserMedia?: (
       environmentId: EnvironmentId,
       key: Uint8Array,

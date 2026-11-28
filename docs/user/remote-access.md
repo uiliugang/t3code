@@ -37,15 +37,27 @@ cannot show the code, so update them before you turn approval on.
 
 ### Use an end-to-end encrypted connection
 
+In this fork’s Android app, select a T3 Connect environment to connect with
+end-to-end encryption. The app retrieves and saves the host’s public key on
+first use. If the connection shows a verification code, open **Settings →
+Sharing & access** on the desktop host and approve only when the code matches.
+The client reconnects automatically.
+
+For official or older hosts that lack encrypted pairing, turn on **Allow T3
+Connect without end-to-end encryption** under **Settings → Environments** on
+Android. The tunnel still uses TLS, and its provider can read chat, file and
+terminal traffic without end-to-end encryption.
+
 If you treat T3 Connect as untrusted, turn on **Require approval for new
 devices** on the host and review its approved devices. Otherwise a different
 device on the account can still obtain ordinary access to this environment.
+Use a trusted pairing link to verify the host key independently on first use.
 
 On the host, run `t3 auth connect-device noise-pin`. Transfer the link directly to
 your signed-in client through a trusted channel. In your own web build or desktop app,
 open **Settings → Connections → Add environment** and paste the link into **Host**.
 Use a web origin you trust to deliver the application code. In the Android app, open **Add
-environment**, paste it into **Trusted Noise pairing link**, and tap **Connect with
+environment**, select **Use a trusted pairing link**, paste the link, and tap **Connect with
 end-to-end encryption**. Compare the code in the environment’s connection status
 with `t3 auth connect-device list` on the host. If they match, run
 `t3 auth connect-device approve <code>`. The client reconnects automatically.

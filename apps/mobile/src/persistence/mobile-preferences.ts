@@ -176,6 +176,7 @@ export interface Preferences {
   readonly codeWordBreak?: boolean;
   readonly mathRenderingEnabled?: boolean;
   readonly apkAutoUpdateEnabled?: boolean;
+  readonly allowT3ConnectWithoutE2ee?: boolean;
   readonly connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
   readonly collapsedProjectGroups?: readonly string[];
   readonly dismissedDatabaseStorageNotices?: readonly string[];
@@ -285,6 +286,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     codeWordBreak?: boolean;
     mathRenderingEnabled?: boolean;
     apkAutoUpdateEnabled?: boolean;
+    allowT3ConnectWithoutE2ee?: boolean;
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
     dismissedDatabaseStorageNotices?: readonly string[];
@@ -412,6 +414,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     preferences.mathRenderingEnabled = parsed.mathRenderingEnabled;
   if (typeof parsed.apkAutoUpdateEnabled === "boolean") {
     preferences.apkAutoUpdateEnabled = parsed.apkAutoUpdateEnabled;
+  }
+  if (typeof parsed.allowT3ConnectWithoutE2ee === "boolean") {
+    preferences.allowT3ConnectWithoutE2ee = parsed.allowT3ConnectWithoutE2ee;
   }
   if (Array.isArray(parsed.connectOnboardingOptOutAccounts)) {
     preferences.connectOnboardingOptOutAccounts = parsed.connectOnboardingOptOutAccounts.filter(
