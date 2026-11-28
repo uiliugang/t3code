@@ -15,7 +15,7 @@ type Violation = { readonly path: string; readonly line: number; readonly rule: 
 
 const isWorkflow = /^\.github\/(?:workflows|actions)\/.*\.ya?ml$/i;
 const isProductCode =
-  /^(?:apps\/(?:desktop|server|web|mobile|marketing)\/(?:src|scripts)\/|packages\/[^/]+\/src\/).+\.[cm]?[jt]sx?$/;
+  /^(?:(?:apps\/(?:desktop|server|web|mobile|marketing)\/(?:src|scripts)\/|packages\/[^/]+\/src\/).+|apps\/(?:desktop|server)\/vite\.config)\.[cm]?[jt]sx?$/;
 const isPackaging =
   /^(?:package\.json|apps\/(?:desktop|server)\/(?:package\.json|(?:electron-builder|forge\.config)[^/]*|scripts\/[^/]+\.[cm]?[jt]s)|scripts\/(?:build-(?:cli|desktop)|install|npm-launcher)[^/]*(?:\/.*)?\.(?:[cm]?[jt]s|sh))$/i;
 const isTestOrGenerated =
@@ -89,7 +89,9 @@ export function findNativeWindowsRegressions(file: string, contents: string): Vi
     const comparison =
       ts.isBinaryExpression(node) &&
       (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
-        node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken) &&
       ((isPlatformSelector(node.left) && isWindowsLiteral(node.right)) ||
         (isPlatformSelector(node.right) && isWindowsLiteral(node.left)));
     // This exported host-introspection value is still used by portable test fixtures.

@@ -4,6 +4,8 @@ import { findNativeWindowsRegressions } from "./check-no-native-windows.ts";
 describe("native Windows retirement gate", () => {
   it.each([
     'if (hostPlatform === "win32") { startNativeGit(); }',
+    'if (process.platform !== "win32") launchPosix(); else launchNativeServer();',
+    'if ("win32" != os.platform()) launchPosix(); else launchNativeServer();',
     'function* launch() { if ("win32" == (yield* HostProcess.Platform)) startNativeGit(); }',
     'const launcher = process["platform"] === "win32" ? native : portable;',
     'switch (os.platform()) { case "win32": startNativeGit(); }',
@@ -15,6 +17,15 @@ describe("native Windows retirement gate", () => {
       { path, line: 2, rule: "native-runtime" },
     ]);
   });
+
+  it.each(["apps/desktop/vite.config.ts", "apps/server/vite.config.ts"])(
+    "checks native platform branches in the build config %s",
+    (path) => {
+      expect(
+        findNativeWindowsRegressions(path, 'if (process.platform === "win32") addNativeBuild();'),
+      ).toEqual([{ path, line: 1, rule: "native-runtime" }]);
+    },
+  );
 
   it("rejects the retired installer files even when their contents are empty", () => {
     for (const path of [
@@ -60,6 +71,7 @@ describe("native Windows retirement gate", () => {
           '// if (process.platform === "win32") used to launch a helper.',
           'type PreviousPlatform = "win32" | "darwin";',
           'const known = remote.os === "win32";',
+          'const nonWindowsHistory = remote.os !== "win32";',
           "const drive = Path.win32.parse(foreignPath);",
           'const platformNames = ["linux", "darwin", "win32"];',
         ].join("\n"),
