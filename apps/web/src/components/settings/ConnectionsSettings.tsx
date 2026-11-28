@@ -233,11 +233,11 @@ function ConnectionsSettingsContent({
   const gt = useGT();
   const m = useMessages();
   const linkingTargets = useEnvironmentSettingTargets(
-    gt("Linking between environments"),
     ["linkedEnvironmentsEnabled"],
     (environment) =>
       view === "environments" &&
       environment.serverConfig?.environment.capabilities.peerLinks === true,
+    gt("Linking between environments"),
   );
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();

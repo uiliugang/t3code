@@ -1163,9 +1163,7 @@ export function ChatSettingsPanel() {
   const t = useUiTranslation();
   const setting = useSearchableSetting();
   const gt = useGT();
-  const suggestionTargets = useEnvironmentSettingTargets(gt("Suggest next prompt"), [
-    "promptSuggestionPreference",
-  ]);
+  const suggestionTargets = useEnvironmentSettingTargets(["promptSuggestionPreference"]);
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const sendShortcutOptions = [
     { value: "enter", label: "Enter" },

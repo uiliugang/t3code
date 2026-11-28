@@ -19,9 +19,9 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
 
 export function useEnvironmentSettingTargets(
-  label: string,
   keys: readonly string[],
   includes: (environment: EnvironmentPresentation) => boolean = () => true,
+  label?: string,
 ) {
   const { environments } = useEnvironments();
   const { search } = useSettingsScope();
@@ -54,7 +54,7 @@ export function useEnvironmentSettingTargets(
   const picker =
     candidates.length > 0 ? (
       <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 text-sm text-muted-foreground sm:px-4">
-        <span>{label}</span>
+        {label !== undefined && <span>{label}</span>}
         <EnvironmentScopeMenu
           groups={[]}
           environments={candidates}
