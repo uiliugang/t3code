@@ -165,8 +165,9 @@ function PromptSuggestionEnvironmentSection({
   const disabled =
     managed || !canWrite || saving || (!settings.promptSuggestionPreference && !preferencesReady);
   const preference = resolvePromptSuggestionPreference(settings, showPredictedMessages);
+  const supportsFallback = serverConfig.promptSuggestionFallback === true;
   const nativeManaged =
-    preference.source === "native" &&
+    (supportsFallback || preference.source === "native") &&
     isManagedSettingPath(managedPolicy, "promptSuggestionsEnabled");
 
   const save = (change: Partial<PromptSuggestionPreference>) => {
@@ -193,24 +194,34 @@ function PromptSuggestionEnvironmentSection({
               ? gt("Native suggestions are managed by {organization}.", {
                   organization: managedPolicy?.organization ?? "",
                 })
-              : gt("Show a suggestion in the empty composer after a turn.")
+              : supportsFallback
+                ? gt(
+                    "Show a suggestion in the empty composer after a turn. Try the other source if the preferred one cannot give a suggestion.",
+                  )
+                : gt("Show a suggestion in the empty composer after a turn.")
         }
-        disabled={disabled || nativeManaged}
+        disabled={disabled || (!supportsFallback && nativeManaged)}
         value={preference.enabled}
         onValueChange={(enabled) => save({ enabled })}
       />
       <SettingsChoiceRow
-        label={gt("Native suggestions")}
-        description={gt(
-          "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
-        )}
+        label={supportsFallback ? gt("Native suggestions first") : gt("Native suggestions")}
+        description={
+          supportsFallback
+            ? gt(
+                "Native suggestions may use plan quota even when the text generation model is preferred. Native suggestions require Codex 0.165 or later when using Codex.",
+              )
+            : gt(
+                "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
+              )
+        }
         selected={preference.source === "native"}
         disabled={disabled}
         separated
         onPress={() => save({ source: "native" })}
       />
       <SettingsChoiceRow
-        label={gt("Text generation model")}
+        label={supportsFallback ? gt("Text generation model first") : gt("Text generation model")}
         description={gt(
           "Model suggestions use your text generation model and count toward its usage.",
         )}

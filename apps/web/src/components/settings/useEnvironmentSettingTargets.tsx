@@ -19,6 +19,7 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
 
 export function useEnvironmentSettingTargets(
+  label: string,
   keys: readonly string[],
   includes: (environment: EnvironmentPresentation) => boolean = () => true,
 ) {
@@ -52,14 +53,16 @@ export function useEnvironmentSettingTargets(
   const update = useAtomCommand(serverEnvironment.updateSettings);
   const picker =
     candidates.length > 0 ? (
-      <EnvironmentScopeMenu
-        groups={[]}
-        environments={candidates}
-        value={selected === null ? {} : { machine: selected }}
-        onChange={(next) => setSelection(next.machine ?? null)}
-        singleEnvironment={candidates.length === 1}
-        variant="ghost"
-      />
+      <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 text-sm text-muted-foreground sm:px-4">
+        <span>{label}</span>
+        <EnvironmentScopeMenu
+          groups={[]}
+          environments={candidates}
+          value={selected === null ? {} : { machine: selected }}
+          onChange={(next) => setSelection(next.machine ?? null)}
+          singleEnvironment={candidates.length === 1}
+        />
+      </div>
     ) : null;
 
   return {

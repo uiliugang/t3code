@@ -3,7 +3,9 @@ import {
   DEFAULT_SERVER_SETTINGS,
   MessageId,
   ProjectId,
+  ProviderInstanceId,
   RunId,
+  TextGenerationError,
   ThreadId,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ThreadProjection,
@@ -12,8 +14,11 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProviderSessions from "../orchestration-v2/ProviderSessionManager.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import * as ThreadPrediction from "./ThreadPrediction.ts";
@@ -22,10 +27,13 @@ const threadId = ThreadId.make("prediction-thread");
 const sourceRunId = RunId.make("prediction-run");
 const projectId = ProjectId.make("prediction-project");
 const input = { threadId, sourceRunId };
+const fallbackInput = { ...input, suggestionFallback: { legacyModelEnabled: false } };
 const makeShell = () =>
   ({
     id: threadId,
     projectId,
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    lineage: { relationshipToParent: null },
     status: "completed",
     latestRunId: sourceRunId,
     activeRunId: null,
@@ -42,6 +50,8 @@ function layer(
   readShell: () => OrchestrationV2ThreadShell,
   generate: TextGeneration.TextGeneration["Service"]["generatePredictedMessage"],
   promptSuggestionPreference?: (typeof DEFAULT_SERVER_SETTINGS)["promptSuggestionPreference"],
+  subscribePromptSuggestion: ProviderSessions.ProviderSessionManagerV2["Service"]["subscribePromptSuggestion"] = () =>
+    Stream.empty,
 ) {
   const messages = Array.from({ length: 20 }, (_, index) => ({
     id: MessageId.make(`message-${index}`),
@@ -54,6 +64,7 @@ function layer(
     Layer.provide(
       Layer.succeed(ProjectionStore.ProjectionStoreV2, {
         getThreadShell: () => Effect.sync(readShell),
+        getRun: () => Effect.undefined,
         getThreadSnapshotWindow: (
           _threadId: ThreadId,
           options: { readonly rowLimit: number; readonly userTurnLimit?: number },
@@ -64,6 +75,11 @@ function layer(
           });
         },
       } as unknown as ProjectionStore.ProjectionStoreV2["Service"]),
+    ),
+    Layer.provide(
+      Layer.succeed(ProviderSessions.ProviderSessionManagerV2, {
+        subscribePromptSuggestion,
+      } as ProviderSessions.ProviderSessionManagerV2["Service"]),
     ),
     Layer.provide(
       Layer.succeed(ProjectStore.ProjectStoreV2, {
@@ -201,6 +217,77 @@ it.effect.each([
       const service = yield* ThreadPrediction.ThreadPrediction;
       assert.deepEqual(yield* service.predict(input), { sourceRunId, text: expected });
       assert.equal(calls, expected === null ? 0 : 1);
+    }).pipe(Effect.provide(testLayer));
+  }),
+);
+
+it.effect.each([
+  { priority: "native", model: "unused", expected: "native", calls: 0 },
+  { priority: "text-generation", model: "model", expected: "model", calls: 1 },
+  { priority: "text-generation", model: null, expected: "native", calls: 1 },
+  { priority: "text-generation", model: "error", expected: "native", calls: 1 },
+] as const)("tries $priority first and uses the other source if needed", (test) =>
+  Effect.gen(function* () {
+    let calls = 0;
+    yield* Effect.gen(function* () {
+      const service = yield* ThreadPrediction.ThreadPrediction;
+      assert.deepEqual(yield* service.predict(fallbackInput), {
+        sourceRunId,
+        text: test.expected,
+      });
+      assert.equal(calls, test.calls);
+    }).pipe(
+      Effect.provide(
+        layer(
+          makeShell,
+          () =>
+            Effect.suspend(() => {
+              calls++;
+              return test.model === "error"
+                ? Effect.fail(
+                    new TextGenerationError({ operation: "predict", detail: "unavailable" }),
+                  )
+                : Effect.succeed({ text: test.model });
+            }),
+          { enabled: true, source: test.priority },
+          () => Stream.succeed({ runId: sourceRunId, text: "native" }),
+        ),
+      ),
+    );
+  }),
+);
+
+it.effect("falls back to the model after the native wait expires for the current run", () =>
+  Effect.gen(function* () {
+    let modelCalls = 0;
+    const subscribed = yield* Deferred.make<void>();
+    const testLayer = layer(
+      makeShell,
+      () =>
+        Effect.sync(() => {
+          modelCalls++;
+          return { text: "model" };
+        }),
+      { enabled: true, source: "native" },
+      () =>
+        Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+          Stream.flatMap(() =>
+            Stream.concat(
+              Stream.succeed({ runId: RunId.make("previous-run"), text: "stale" }),
+              Stream.never,
+            ),
+          ),
+        ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ThreadPrediction.ThreadPrediction;
+      const pending = yield* service.predict(fallbackInput).pipe(Effect.forkChild);
+      yield* Effect.raceFirst(Deferred.await(subscribed), Fiber.join(pending));
+      assert.isTrue(yield* Deferred.isDone(subscribed));
+      assert.equal(modelCalls, 0);
+      yield* TestClock.adjust("4 seconds");
+      assert.deepEqual(yield* Fiber.join(pending), { sourceRunId, text: "model" });
+      assert.equal(modelCalls, 1);
     }).pipe(Effect.provide(testLayer));
   }),
 );

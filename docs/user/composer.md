@@ -98,12 +98,14 @@ Press `ArrowUp` in an empty composer to cycle backward through earlier prompts i
 
 ## Suggested next prompt
 
-Open **Settings → Chat → Composer** to enable suggestions after a turn and choose one source
-for the environment. An empty composer shows the suggestion. Press `Tab` to accept or
-`Escape` to dismiss.
+Open **Settings → Chat → Composer** to enable suggestions after a turn and choose which source
+to try first for the environment. T3 Code tries the other source if the first is unavailable,
+fails, or provides no suggestion. An empty composer shows the suggestion. Press `Tab` to accept
+or `Escape` to dismiss.
 
-- **Native suggestions** use Claude or Codex and make one cached request against your plan's
-  usage. Claude skips the first turn and turns near usage limits. Codex requires CLI 0.165+.
+- **Native suggestions** use Claude or Codex. The provider may prepare one after a turn and
+  use a cached request against your plan even if you prefer the text generation model. Claude
+  skips the first turn and turns near usage limits. Codex requires CLI 0.165+.
 - **Text generation model** uses the environment's configured text generation model and counts
   toward that model's usage.
 

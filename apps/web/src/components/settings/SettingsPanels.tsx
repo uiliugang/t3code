@@ -1,4 +1,5 @@
 import { PromptSuggestionSettingsRow } from "./PromptSuggestionSettingsRow";
+import { useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
 import type { ProviderInstanceId } from "@t3tools/contracts";
 import type {
   DiffLayout,
@@ -1162,6 +1163,9 @@ export function ChatSettingsPanel() {
   const t = useUiTranslation();
   const setting = useSearchableSetting();
   const gt = useGT();
+  const suggestionTargets = useEnvironmentSettingTargets(gt("Suggest next prompt"), [
+    "promptSuggestionPreference",
+  ]);
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const sendShortcutOptions = [
     { value: "enter", label: "Enter" },
@@ -1178,6 +1182,7 @@ export function ChatSettingsPanel() {
     <SettingsPageContainer
       searchTargetFallbacks={{ "composer-predictions": "prompt-suggestions-beta" }}
     >
+      {suggestionTargets.picker}
       <SettingsSection id="composer" title={gt("Composer")}>
         <SettingsRow
           {...setting("composer-rich-text")}
@@ -1205,7 +1210,7 @@ export function ChatSettingsPanel() {
             />
           }
         />
-        <PromptSuggestionSettingsRow />
+        <PromptSuggestionSettingsRow settingTargets={suggestionTargets} />
         <SettingsRow
           {...setting("send-shortcut")}
           description={t("Choose when Enter sends a prompt or inserts a new line")}

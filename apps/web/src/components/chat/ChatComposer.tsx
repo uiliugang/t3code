@@ -1052,25 +1052,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pendingApprovals.length === 0 &&
     prompt.length === 0 &&
     !composerDraftHasUserContent(composerDraft);
-  const textGenerationPrediction = useComposerPrediction({
+  const composerPrediction = useComposerPrediction({
     environmentId,
     threadId: routeThreadRef.threadId,
     thread: props.activeThreadShell,
-    enabled: predictionAllowed && predictionSource === "text-generation",
+    allowed: predictionAllowed,
+    legacyModelEnabled: settings.showPredictedMessages,
+    legacyModelSelected: predictionSource === "text-generation",
   });
   const nativePrediction = usePromptSuggestion(
     environmentId,
     activeThread,
-    predictionAllowed && predictionSource === "native",
+    predictionAllowed && !composerPrediction.useFallback && predictionSource === "native",
     activeThreadRuns,
   );
   const prediction =
-    predictionSource === "native"
+    !composerPrediction.useFallback && predictionSource === "native"
       ? {
           text: predictionAllowed ? nativePrediction.suggestion : null,
           dismiss: nativePrediction.dismiss,
         }
-      : textGenerationPrediction;
+      : composerPrediction;
   const providerSetupInstanceId = noProviderAvailable
     ? (unavailableProviderInstanceId ??
       (lockedProvider === null

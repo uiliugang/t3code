@@ -6,29 +6,34 @@ import {
 import { useGT } from "gt-react";
 
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-import { useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
+import type { useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
 import { SettingsRow, SettingResetButton } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Switch } from "../ui/switch";
 
-export function PromptSuggestionSettingsRow() {
+export function PromptSuggestionSettingsRow({
+  settingTargets: { targets, canWrite, permitted, managedBy, save },
+}: {
+  settingTargets: ReturnType<typeof useEnvironmentSettingTargets>;
+}) {
   const gt = useGT();
   const setting = useSearchableSetting()("prompt-suggestions-beta");
   const { showPredictedMessages } = useScopedSettings();
   const updateDevice = useUpdateScopedSettings();
-  const { picker, targets, canWrite, permitted, managedBy, save } = useEnvironmentSettingTargets([
-    "promptSuggestionPreference",
-  ]);
   const supported =
     targets.length > 0 &&
     targets.every(({ serverConfig }) => serverConfig.promptSuggestionSettings === true);
+  const supportsFallback =
+    supported &&
+    targets.every(({ serverConfig }) => serverConfig.promptSuggestionFallback === true);
   const preferences = targets.map(({ serverConfig }) =>
     resolvePromptSuggestionPreference(serverConfig.settings, showPredictedMessages),
   );
   const first = preferences[0];
   const mixedEnabled = preferences.some(({ enabled }) => enabled !== first?.enabled);
   const legacyBothEnabled =
+    !supportsFallback &&
     showPredictedMessages &&
     targets.some(
       ({ serverConfig }) =>
@@ -46,11 +51,11 @@ export function PromptSuggestionSettingsRow() {
   );
   const legacyNativeManaged = targets.find(
     ({ serverConfig }, index) =>
-      (!supported || preferences[index]?.source === "native") &&
+      (supportsFallback || !supported || preferences[index]?.source === "native") &&
       isManagedSettingPath(serverConfig.managedPolicy, "promptSuggestionsEnabled"),
   )?.serverConfig.managedPolicy?.organization;
   const label = gt("Suggest next prompt");
-  const sourceLabel = gt("Suggestion source");
+  const sourceLabel = supportsFallback ? gt("Suggestion priority") : gt("Suggestion source");
   const managed =
     managedBy === undefined
       ? undefined
@@ -61,13 +66,17 @@ export function PromptSuggestionSettingsRow() {
       <SettingsRow
         {...setting}
         description={
-          supported
+          supportsFallback
             ? gt(
-                "Show a suggestion in the empty composer after a turn. Choose its source for the selected environment.",
+                "Show a suggestion in the empty composer after a turn. Try the other source if the preferred one cannot give a suggestion.",
               )
-            : targets.length > 0
-              ? gt("Update the selected environment to choose a single suggestion source.")
-              : gt("Connect an environment to choose a suggestion source.")
+            : supported
+              ? gt(
+                  "Show a suggestion in the empty composer after a turn. Choose its source for the selected environment.",
+                )
+              : targets.length > 0
+                ? gt("Update the selected environment to choose a single suggestion source.")
+                : gt("Connect an environment to choose a suggestion source.")
         }
         managed={managed}
         status={
@@ -88,7 +97,11 @@ export function PromptSuggestionSettingsRow() {
                 : legacy && !nativeMixed && nativeEnabled
             }
             mixed={supported ? mixedEnabled : legacy && nativeMixed}
-            disabled={!canWrite || legacyNativeManaged !== undefined || (!supported && !legacy)}
+            disabled={
+              !canWrite ||
+              (!supportsFallback && legacyNativeManaged !== undefined) ||
+              (!supported && !legacy)
+            }
             onCheckedChange={(enabled) =>
               save(() =>
                 supported
@@ -104,9 +117,8 @@ export function PromptSuggestionSettingsRow() {
           />
         }
       >
-        <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
-          {picker}
-          {supported && (
+        {supported && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 pb-2">
             <ToggleGroup
               aria-label={sourceLabel}
               value={mixedSource || first === undefined ? [] : [first.source]}
@@ -121,26 +133,34 @@ export function PromptSuggestionSettingsRow() {
                 }));
               }}
             >
-              <Toggle value="native">{gt("Native suggestions")}</Toggle>
-              <Toggle value="text-generation">{gt("Text generation model")}</Toggle>
+              <Toggle value="native">
+                {supportsFallback ? gt("Native suggestions first") : gt("Native suggestions")}
+              </Toggle>
+              <Toggle value="text-generation">
+                {supportsFallback ? gt("Text generation model first") : gt("Text generation model")}
+              </Toggle>
             </ToggleGroup>
-          )}
-        </div>
+          </div>
+        )}
         {supported && (
           <p className="pb-2 text-xs text-muted-foreground">
-            {legacyBothEnabled
+            {supportsFallback
               ? gt(
-                  "This environment is using its previous suggestion preferences. Choose a source to use it exclusively.",
+                  "Native suggestions may use plan quota even when the text generation model is preferred. Native suggestions require Codex 0.165 or later when using Codex.",
                 )
-              : mixedSource
-                ? gt("The selected environments use different suggestion sources.")
-                : first?.source === "native"
-                  ? gt(
-                      "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
-                    )
-                  : gt(
-                      "Model suggestions use your text generation model and count toward its usage.",
-                    )}
+              : legacyBothEnabled
+                ? gt(
+                    "This environment is using its previous suggestion preferences. Choose a source to use it exclusively.",
+                  )
+                : mixedSource
+                  ? gt("The selected environments use different suggestion sources.")
+                  : first?.source === "native"
+                    ? gt(
+                        "Native suggestions use an extra cached request on your plan. Requires Codex 0.165 or later.",
+                      )
+                    : gt(
+                        "Model suggestions use your text generation model and count toward its usage.",
+                      )}
           </p>
         )}
         {supported && (

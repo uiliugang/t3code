@@ -2,15 +2,15 @@ import { useGT } from "gt-react";
 import { Switch } from "../ui/switch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
-import { useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
+import type { useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
 
-export function LinkedEnvironmentEnableSettings() {
+export function LinkedEnvironmentEnableSettings({
+  settingTargets: { targets, canWrite, permitted, managedBy, save },
+}: {
+  settingTargets: ReturnType<typeof useEnvironmentSettingTargets>;
+}) {
   const gt = useGT();
   const setting = useSearchableSetting()("linked-environments-beta");
-  const { picker, targets, canWrite, permitted, managedBy, save } = useEnvironmentSettingTargets(
-    ["linkedEnvironmentsEnabled"],
-    (environment) => environment.serverConfig?.environment.capabilities.peerLinks === true,
-  );
   const checked = targets[0]?.serverConfig.settings.linkedEnvironmentsEnabled ?? false;
   const mixed = targets.some(
     ({ serverConfig }) => serverConfig.settings.linkedEnvironmentsEnabled !== checked,
@@ -46,9 +46,7 @@ export function LinkedEnvironmentEnableSettings() {
             onCheckedChange={(value) => save(() => ({ linkedEnvironmentsEnabled: value }))}
           />
         }
-      >
-        {picker}
-      </SettingsRow>
+      />
     </SettingsSection>
   );
 }
