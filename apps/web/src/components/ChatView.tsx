@@ -2725,17 +2725,6 @@ export default function ChatView(props: ChatViewProps) {
     pendingUserInputs.length > 0;
   // A typed /compact queues behind a running turn, so only the immediate compaction waits for idle.
   const compactDisabled = compactThreadUnavailable || isWorking;
-  const compactDisabledReason = compactDisabled
-    ? !canOperateThread
-      ? "This connection cannot change threads."
-      : !activeProject
-        ? "Choose a project before compacting"
-        : isWorking
-          ? "Wait for the current turn to finish"
-          : !manualCompactionProviderAvailable
-            ? "Compaction is unavailable for this provider"
-            : "Compacting is unavailable right now"
-    : null;
   const freshSessionAvailable =
     activeMessageCount > 0 && serverConfig?.environment.capabilities.freshContext === true;
   const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
@@ -2764,19 +2753,6 @@ export default function ChatView(props: ChatViewProps) {
     })
       ? activeContextWindow.usedTokens
       : null;
-  const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const keepFullHistory = fullHistoryThreadKeys.has(routeThreadKey);
-  const setKeepFullHistory = (threadKey: string, keep: boolean) => {
-    setFullHistoryThreadKeys((current) => {
-      if (current.has(threadKey) === keep) return current;
-      const next = new Set(current);
-      if (keep) next.add(threadKey);
-      else next.delete(threadKey);
-      return next;
-    });
-  };
   // While a question or approval owns the composer, its text answers that, not the agent.
   const freshSessionCommandAvailable =
     freshSessionAvailable && activePendingApproval === null && pendingUserInputs.length === 0;
@@ -2786,11 +2762,6 @@ export default function ChatView(props: ChatViewProps) {
     cancelHeldComposerSend(composerDraftTargetKey);
     focusComposerStable();
   });
-  const toggleKeepFullHistory = () => {
-    cancelHeldComposerSend(composerDraftTargetKey);
-    setKeepFullHistory(routeThreadKey, !keepFullHistory);
-  };
-  const toggleKeepFullHistoryStable = useStableCallback(toggleKeepFullHistory);
   const armFreshSessionStable = useStableCallback(() => armFreshSession(routeThreadKey));
   const handleRestoreThreadBranch = () => {
     if (!canWriteSourceControl) return;
@@ -3250,7 +3221,6 @@ export default function ChatView(props: ChatViewProps) {
     isDraftHeroState,
     panelAnimationsActive,
     panelAnimationDurationMs,
-    keepFullHistory,
     freshSessionAvailable: freshSessionCommandAvailable,
     resumeCompactionTokens,
     usageLimitsKey,
@@ -3279,7 +3249,6 @@ export default function ChatView(props: ChatViewProps) {
     },
     setFeedbackSubmissionsByThreadKey,
     setThreadError,
-    setKeepFullHistory,
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     onSideChat: sideChat.available ? sendSideChatStable : undefined,
@@ -4030,8 +3999,6 @@ export default function ChatView(props: ChatViewProps) {
                                     : composerBannerItems
                                 }
                                 resumeCompactionTokens={resumeCompactionTokens}
-                                keepFullHistory={keepFullHistory}
-                                onToggleKeepFullHistory={toggleKeepFullHistoryStable}
                                 sideChatAvailable={sideChat.available}
                                 sideChatDisabledReason={sideChatDisabledReason}
                                 onFreshSession={
@@ -4064,12 +4031,8 @@ export default function ChatView(props: ChatViewProps) {
                                 followsVirtualModel={followsVirtualModel}
                                 activeProjectId={activeProject?.id ?? null}
                                 projectName={activeProject?.title}
-                                contextWindowEntries={serverVisibleTurnItems}
-                                contextWindowLiveUsage={activeThreadLiveTokenUsage}
-                                contextWindowProviderThread={activeProviderThread}
                                 compactThreadUnavailable={compactThreadUnavailable}
                                 compactDisabled={compactDisabled}
-                                compactDisabledReason={compactDisabledReason}
                                 resolvedTheme={resolvedTheme}
                                 settings={settings}
                                 keybindings={keybindings}

@@ -1,6 +1,5 @@
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import type { ModelSelection, ProviderInstanceId, RuntimeMode } from "@t3tools/contracts";
-import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useMessages } from "gt-react";
 import { type ComponentProps, memo, use, useId, useRef, useState } from "react";
@@ -11,7 +10,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { resolveRuntimeModeOption, runtimeModeConfig } from "./runtimeModeConfig";
@@ -199,9 +197,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   children?: React.ReactNode;
   compact: boolean;
   canOperateThread: boolean;
-  activeContextWindow: ContextWindowSnapshot | null;
-  reserveContextWindowMeter: boolean;
-  activeThreadModelDisplayName: string | null;
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -229,27 +224,10 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onResume: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
-  onCompactContext?: (() => void) | undefined;
-  compactDisabled: boolean;
-  compactDisabledReason: string | null;
   compactBeforeSendTokens: number | null;
-  hideCompactToggle: boolean;
-  keepFullHistory: boolean;
-  onToggleKeepFullHistory: () => void;
 }) {
   return (
     <>
-      {props.activeContextWindow ? (
-        <ContextWindowMeter
-          usage={props.activeContextWindow}
-          modelDisplayName={props.activeThreadModelDisplayName}
-          onCompact={props.onCompactContext}
-          compactDisabled={props.compactDisabled}
-          compactDisabledReason={props.compactDisabledReason}
-        />
-      ) : props.reserveContextWindowMeter ? (
-        <ContextWindowMeterPlaceholder />
-      ) : null}
       <ComposerPrimaryActions
         compact={props.compact}
         canOperateThread={props.canOperateThread}
@@ -275,9 +253,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         compactBeforeSendTokens={props.compactBeforeSendTokens}
-        hideCompactToggle={props.hideCompactToggle}
-        keepFullHistory={props.keepFullHistory}
-        onToggleKeepFullHistory={props.onToggleKeepFullHistory}
       >
         {props.children}
       </ComposerPrimaryActions>

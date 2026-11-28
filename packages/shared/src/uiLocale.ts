@@ -863,20 +863,10 @@ const zhCN: Readonly<Record<string, string>> = {
   "Show folder threads on two lines: the title, then the branch, pull request, and agent.":
     "将文件夹内的会话显示为两行：第一行是标题，第二行是分支、拉取请求和智能体。",
   "tool calls in chat": "聊天中的工具调用",
-  "Context window indicator": "上下文窗口指示器",
-  "Context window {percentage} used": "上下文窗口已使用 {percentage}",
-  "Context window {tokens} tokens used": "上下文窗口已使用 {tokens} 个令牌",
-  "Context window usage": "上下文窗口用量",
-  "Total processed": "累计处理",
   Cost: "费用",
   "Compacts automatically at about {tokens} tokens.": "约达到 {tokens} 个令牌时自动压缩。",
-  "Context for {model} compacts automatically when needed.": "{model} 的上下文会在需要时自动压缩。",
   "Context compacts automatically when needed.": "上下文会在需要时自动压缩。",
-  "Compact context": "压缩上下文",
   "This connection cannot change threads.": "此连接无法修改会话。",
-  "Choose a project before compacting": "请先选择项目再压缩上下文",
-  "Compaction is unavailable for this provider": "此提供商不支持压缩上下文",
-  "Compacting is unavailable right now": "暂时无法压缩上下文",
   "Could not add t3 to PATH": "无法将 t3 添加到 PATH",
   "Another t3 at {path} runs first in a new terminal. Remove it to use T3 Code's.":
     "新终端会优先运行 {path} 处的另一个 t3。移除它后即可使用 T3 Code 的版本。",
@@ -2800,8 +2790,6 @@ const zhCN: Readonly<Record<string, string>> = {
   "Restore Build/Plan, /plan, /default, and Shift+Tab. Off uses build mode.":
     "恢复构建/计划模式、/plan、/default 和 Shift+Tab；关闭时使用构建模式。",
   "Plan mode (legacy)": "计划模式（旧版）",
-  "Shows context window usage as a circular indicator in the composer.":
-    "在输入框中以环形指示器显示上下文窗口用量。",
   "Context window indicator (legacy)": "上下文窗口指示器（旧版）",
   "Restore per-project thread trees instead of the default flat sidebar.":
     "恢复按项目组织的会话树，替代默认的平铺侧边栏。",
@@ -3409,8 +3397,6 @@ const zhCN: Readonly<Record<string, string>> = {
   Implement: "实施",
   "Implement in a new thread": "在新会话中实施",
   Compact: "压缩",
-  "Click to compact first": "点击以先压缩上下文",
-  "Click to keep full history": "点击以保留完整历史",
   Unavailable: "不可用",
   "Open command palette": "打开命令面板",
   "Search models...": "搜索模型…",

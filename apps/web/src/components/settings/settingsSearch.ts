@@ -593,12 +593,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
-    id: "context-window-indicator",
-    title: msg("Context window indicator"),
-    to: "/settings/chat",
-    searchTerms: ["context window usage tokens meter indicator compact 上下文 用量 令牌 压缩"],
-  },
-  {
     id: "screen-reader-announcements",
     title: msg("Screen reader announcements"),
     to: "/settings/chat",

@@ -126,8 +126,8 @@ it("sends a Codex follow-up on a cold Claude thread without compacting first", a
   expect(messages()).toEqual([sent]);
 });
 
-it("drops the compact offer on a cold Claude thread while /clear is armed", async () => {
-  // At phone width, dismissing the fresh-session notice collapses the composer and hides the chip.
+it("drops the compaction offer on a cold Claude thread while /clear is armed", async () => {
+  // At phone width, dismissing the fresh-session notice collapses the composer.
   const viewport = { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(1280, 800);
   await using _viewport = {
@@ -149,22 +149,22 @@ it("drops the compact offer on a cold Claude thread while /clear is armed", asyn
     router: false,
   });
   await expect.element(page.getByText(`Answer 2 for ${thread.id}.`)).toBeVisible();
-  const chip = page.getByRole("button", { name: "Compact 250k tokens of history before sending" });
   const compactAndSend = page.getByRole("button", { name: "Compact and send" });
-  await expect.element(chip).toBeVisible();
   await expect.element(compactAndSend).toBeVisible();
+  // The send compacts first; the composer offers no toggle to keep the full history instead.
+  await expect
+    .element(page.getByRole("button", { name: /tokens of history before sending/ }))
+    .not.toBeInTheDocument();
 
   const editor = page.getByTestId("composer-editor");
   await userEvent.click(editor);
   await userEvent.type(editor, "/clear");
   await userEvent.keyboard("{Enter}");
   await expect.element(page.getByText("Your next message starts a fresh session")).toBeVisible();
-  await expect.element(chip).not.toBeInTheDocument();
   await expect.element(compactAndSend).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Submit message" })).toBeVisible();
 
   await page.getByRole("button", { name: "Keep the current session" }).click();
-  await expect.element(chip).toBeVisible();
   await expect.element(compactAndSend).toBeVisible();
 });
 

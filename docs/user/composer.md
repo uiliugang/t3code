@@ -187,10 +187,6 @@ On web and desktop, turn on **Context window** in **Settings → Appearance →
 Thread details** to see context usage in the thread details card. It appears
 once the provider reports usage.
 
-The composer also shows a context meter by default. Toggle **Context window indicator**
-in **Settings → Chat** to hide it. Open the meter for token details and **Compact context**
-when the provider supports compaction.
-
 Claude instances can also compact idle threads for you. See
 [compact long conversations](./providers-claude.md#compact-long-conversations).
 

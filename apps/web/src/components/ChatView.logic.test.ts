@@ -1342,7 +1342,6 @@ describe("planComposerTurn", () => {
     projectIsGitRepo: true,
     isScratchProject: false,
     resumeCompactionTokens: null,
-    keepFullHistory: false,
     phase: "ready" as const,
     dispatchMode: "auto" as const,
     freshContext: false,
