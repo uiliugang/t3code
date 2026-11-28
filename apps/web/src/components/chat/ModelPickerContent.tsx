@@ -181,9 +181,10 @@ const ROW_SEPARATOR_UNITS = 0.5;
 const LIST_CHROME_UNITS = 15.5;
 // A docked row is taller, and its list shows at most this many rows before it scrolls.
 const DOCKED_ROW_UNITS = 9.5;
-// The list's own padding, and the frame the virtualizer puts around its scroll box.
-const DOCKED_LIST_CHROME_UNITS = 4.5;
-const DOCKED_LIST_MAX_ROWS = 8;
+// Includes both padding layers and room for the virtualizer to round row heights.
+const DOCKED_LIST_CHROME_UNITS = 5;
+const DOCKED_LIST_SCROLLING_CHROME_UNITS = 3.5;
+const DOCKED_LIST_MAX_ROWS = 5;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -192,7 +193,10 @@ function ModelListSeparator() {
 /** The stacked picker sizes its list to its rows, so the settings below stay in view. */
 function dockedListHeight(rows: number) {
   if (rows <= 0) return undefined;
-  const units = Math.min(rows, DOCKED_LIST_MAX_ROWS) * DOCKED_ROW_UNITS + DOCKED_LIST_CHROME_UNITS;
+  // Bottom padding scrolls with the list. Budget it only when every row fits.
+  const chrome =
+    rows > DOCKED_LIST_MAX_ROWS ? DOCKED_LIST_SCROLLING_CHROME_UNITS : DOCKED_LIST_CHROME_UNITS;
+  const units = Math.min(rows, DOCKED_LIST_MAX_ROWS) * DOCKED_ROW_UNITS + chrome;
   return `calc(var(--spacing) * ${units})`;
 }
 
@@ -1239,6 +1243,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       index={index}
                       value={modelKey}
                       aria-expanded={legacySection.isExpanded}
+                      size={docked ? "roomy" : "default"}
                       className="group w-full cursor-pointer"
                     >
                       <span className="text-sm leading-snug text-muted-foreground group-hover:text-foreground group-data-highlighted:text-foreground">
@@ -1257,6 +1262,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       value={modelKey}
                       disabled={unavailable}
                       aria-expanded={unavailable ? undefined : subProviderSection.isExpanded}
+                      size={docked ? "roomy" : "default"}
                       className="group w-full cursor-pointer"
                     >
                       <div className="min-w-0 flex-1 text-left">

@@ -9,6 +9,8 @@ import { useState } from "react";
 import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+import "~/index.css";
+
 import { render } from "../../../test/render";
 import { ComposerEffortColumn, describeComposerEffort } from "./ComposerModelEffort";
 import type { TraitsSelectionInput } from "./TraitsPicker";
@@ -55,6 +57,7 @@ const models: ReadonlyArray<ServerProviderModel> = [
           ],
         },
         { id: "auto_approve", label: "Auto-approve tools", type: "boolean", currentValue: false },
+        { id: "ultracode", label: "Ultracode", type: "boolean", currentValue: false },
       ],
     }),
   },
@@ -124,6 +127,11 @@ it("draws an agent's reasoning as bars and keeps its mode out of the levels", as
   await expect
     .element(screen.getByRole("switch", { name: "Auto-approve tools" }))
     .toHaveAttribute("aria-checked", "true");
+
+  const ultracode = screen.getByRole("switch", { name: "Ultracode" });
+  await expect.element(ultracode).toHaveAttribute("aria-checked", "false");
+  await ultracode.click();
+  await expect.element(ultracode).toHaveAttribute("aria-checked", "true");
 
   await userEvent.click(screen.getByRole("button", { name: "Session Mode: Bypass Permissions" }));
   await userEvent.click(page.getByRole("menuitemradio", { name: "Plan" }));

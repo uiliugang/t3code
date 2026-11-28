@@ -120,6 +120,10 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
         { slug: "original", name: "Original model" },
         { slug: "second", name: "Second model" },
         { slug: "plain", name: "Plain model" },
+        ...Array.from({ length: 5 }, (_, index) => ({
+          slug: `sample-${index}`,
+          name: `Sample model ${index}`,
+        })),
       ],
     ],
   ]);
@@ -181,6 +185,22 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
   await screen.getByRole("button", { name: "Choose model" }).click();
   const search = page.getByPlaceholder(/Search models\.\.\.|搜索模型…/);
   await expect.element(search).toHaveFocus();
+
+  const list = page.getByRole("listbox").element();
+  const scroller = list.firstElementChild as HTMLElement;
+  const rowBounds = () =>
+    Array.from(list.querySelectorAll('[role="option"]'), (row) => row.getBoundingClientRect());
+  await vi.waitFor(() => {
+    const rows = rowBounds();
+    const { bottom } = scroller.getBoundingClientRect();
+    expect(rows).toHaveLength(8);
+    expect(rows[4]!.bottom).toBeLessThanOrEqual(bottom + 1);
+    expect(rows[5]!.top).toBeGreaterThanOrEqual(bottom - 1);
+  });
+  scroller.scrollTop = scroller.scrollHeight;
+  expect(rowBounds().at(-1)!.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
+  scroller.scrollTop = 0;
+
   await userEvent.keyboard("{ArrowRight}");
   await expect.element(page.getByRole("radio", { name: "High" })).toHaveFocus();
   await userEvent.keyboard("{ArrowLeft}");

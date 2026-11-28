@@ -478,6 +478,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           : {})}
         className="before:hidden"
         padding="none"
+        // This popup changes size in place as models and their options change.
+        animateResize={!docked}
         touchBackdrop
       >
         {props.effortColumn ? (

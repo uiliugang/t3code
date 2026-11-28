@@ -39,22 +39,18 @@ import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 type BooleanDescriptor = Extract<ProviderOptionDescriptor, { type: "boolean" }>;
 
-/** Service tiers, Claude's Fast mode, and Ultracode sit in the footer, not the column. */
+/** Service tiers and Claude's Fast mode sit in the footer. */
 function splitSpeed(
   selects: ReadonlyArray<SelectDescriptor>,
   toggles: ReadonlyArray<BooleanDescriptor>,
 ) {
   const speedSelect = selects.find((descriptor) => descriptor.id === "serviceTier") ?? null;
   const fastToggle = toggles.find((descriptor) => descriptor.id === "fastMode") ?? null;
-  const ultracodeToggle = toggles.find((descriptor) => descriptor.id === "ultracode") ?? null;
   return {
     speedSelect,
     fastToggle,
-    ultracodeToggle,
     columnSelects: selects.filter((descriptor) => descriptor !== speedSelect),
-    columnToggles: toggles.filter(
-      (descriptor) => descriptor !== fastToggle && descriptor !== ultracodeToggle,
-    ),
+    columnToggles: toggles.filter((descriptor) => descriptor !== fastToggle),
   };
 }
 
@@ -621,7 +617,7 @@ export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | nul
       : null;
   return (
     <>
-      <div className="flex h-11 shrink-0 items-baseline gap-3 px-4 text-sm">
+      <div className="flex shrink-0 items-baseline gap-3 px-4 pt-4 pb-2 text-sm">
         <span className="shrink-0 text-sm font-medium text-muted-foreground">
           {controls?.effort?.descriptor.label ??
             (controls?.others.length
@@ -718,27 +714,6 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
   );
 }
 
-function UltracodeControl(props: { traits: TraitsSelectionInput }) {
-  const traits = useTraitsSelection(props.traits);
-  const { ultracodeToggle } = splitSpeed(traits.selectDescriptors, traits.booleanDescriptors);
-  if (traits.modelIsUnavailable || !ultracodeToggle) return null;
-  const on = ultracodeToggle.currentValue === true;
-  return (
-    <div className="flex rounded-xl bg-foreground/[0.11] p-0.5">
-      <button
-        type="button"
-        aria-pressed={on}
-        data-checked={on || undefined}
-        className={FOOTER_SEGMENT}
-        onClick={() => traits.changeBoolean(ultracodeToggle.id, !on)}
-      >
-        <WorkflowIcon aria-hidden="true" className="size-3" />
-        {ultracodeToggle.label}
-      </button>
-    </div>
-  );
-}
-
 /** Permissions change rarely, so the footer names the mode and nests the choice in a menu. */
 function PermissionsMenu(props: {
   runtimeMode: RuntimeMode;
@@ -793,7 +768,6 @@ export function ComposerPickerFooter(props: {
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-t border-border/70 px-3 py-2">
       {props.traits ? <SpeedControl traits={props.traits} /> : null}
-      {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       {props.usage}
       <PermissionsMenu
         runtimeMode={props.runtimeMode}
