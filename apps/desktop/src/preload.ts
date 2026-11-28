@@ -27,6 +27,8 @@ try {
 
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Electron exposes the client platform in its sandboxed preload process.
 const clientPlatform = process.platform;
+// Toggling localEnvironmentEnabled relaunches the desktop app, so this value is invariant per renderer lifetime.
+let cachedLocalEnvironmentEnabled: boolean | undefined;
 
 if (clientPlatform === "darwin") {
   // Native buttons ignore Chromium zoom; reserve native points even after reload.
@@ -136,8 +138,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getLocalEnvironmentBearerToken: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL),
-  getLocalEnvironmentEnabled: () =>
-    ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL) !== false,
+  getLocalEnvironmentEnabled: () => {
+    if (cachedLocalEnvironmentEnabled === undefined) {
+      cachedLocalEnvironmentEnabled =
+        ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL) !== false;
+    }
+    return cachedLocalEnvironmentEnabled;
+  },
   setLocalEnvironmentEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL, enabled),
   getHostEnvironmentId: () => ipcRenderer.invoke(IpcChannels.GET_HOST_ENVIRONMENT_ID_CHANNEL),

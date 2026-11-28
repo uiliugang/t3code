@@ -123,8 +123,9 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
 
 export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
   channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL,
+  traced: false,
   result: Schema.Array(DesktopEnvironmentBootstrapSchema),
-  handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBootstraps")(function* () {
+  handler: Effect.fnUntraced(function* () {
     const pool = yield* DesktopBackendPool.DesktopBackendPool;
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const instances = yield* pool.list;

@@ -63,5 +63,17 @@ it.effect("answers only the main window's top frame", () =>
       appSubframe: ["rejected", undefined],
       previewGuest: ["rejected", undefined],
     });
+
+    yield* ipc.handleSync(
+      DesktopIpc.makeSyncIpcMethod({
+        channel: "untraced-sync",
+        traced: false,
+        result: Schema.Boolean,
+        handler: () => Effect.succeed(true),
+      }),
+    );
+    const untracedEvent = { ...senders.app, returnValue: "unset" as unknown };
+    sync.get("untraced-sync")!(untracedEvent);
+    assert.strictEqual(untracedEvent.returnValue, true);
   }),
 );

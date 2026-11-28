@@ -84,6 +84,7 @@ export interface DesktopIpcMethod<E, R> {
 
 export interface DesktopSyncIpcMethod<E, R> {
   readonly channel: string;
+  readonly traced?: boolean;
   readonly handler: () => Effect.Effect<unknown, E, R>;
 }
 
@@ -143,6 +144,7 @@ export const make = (
 
     handleSync: Effect.fn("desktop.ipc.registerSync")(function* <E, R>({
       channel,
+      traced = true,
       handler,
     }: DesktopSyncIpcMethod<E, R>) {
       yield* Effect.annotateCurrentSpan({ channel });
@@ -154,19 +156,19 @@ export const make = (
           try: () => {
             ipcMain.removeAllListeners(channel);
             ipcMain.on(channel, (event) => {
-              event.returnValue = runSync(
-                Effect.gen(function* () {
+              const execution = Effect.gen(function* () {
+                if (traced) {
                   yield* Effect.annotateCurrentSpan({ channel });
-                  // Throwing here would surface as an uncaught main-process exception.
-                  if (!(yield* isTrustedSender(event))) {
-                    yield* Effect.logWarning("Rejected sync IPC from an untrusted sender.");
-                    return undefined;
-                  }
-                  return yield* handler();
-                }).pipe(
-                  Effect.annotateLogs({ channel }),
-                  Effect.withSpan("desktop.ipc.invokeSync"),
-                ),
+                }
+                // Throwing here would surface as an uncaught main-process exception.
+                if (!(yield* isTrustedSender(event))) {
+                  yield* Effect.logWarning("Rejected sync IPC from an untrusted sender.");
+                  return undefined;
+                }
+                return yield* handler();
+              }).pipe(Effect.annotateLogs({ channel }));
+              event.returnValue = runSync(
+                traced ? execution.pipe(Effect.withSpan("desktop.ipc.invokeSync")) : execution,
               );
             });
           },
@@ -285,6 +287,7 @@ export interface DesktopSyncIpcMethodRegistration<
   ResultEncodingServices = never,
 > {
   readonly channel: string;
+  readonly traced?: boolean;
   readonly result: Schema.Codec<
     Result,
     EncodedResult,
@@ -312,15 +315,18 @@ export const makeSyncIpcMethod = <
   >,
 ): DesktopSyncIpcMethod<E | Schema.SchemaError, R | ResultEncodingServices> => {
   const encode = Schema.encodeUnknownEffect(method.result);
+  const traced = method.traced ?? true;
 
   return {
     channel: method.channel,
-    handler: () =>
-      method
-        .handler()
-        .pipe(
-          Effect.flatMap(encode),
-          Effect.withSpan("desktop.ipc.method", { attributes: { channel: method.channel } }),
-        ),
+    traced,
+    handler: () => {
+      const effect = method.handler().pipe(Effect.flatMap(encode));
+      return traced
+        ? effect.pipe(
+            Effect.withSpan("desktop.ipc.method", { attributes: { channel: method.channel } }),
+          )
+        : effect;
+    },
   };
 };
