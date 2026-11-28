@@ -4,8 +4,10 @@ import { Spinner } from "~/components/ui/spinner";
 import type {
   EnvironmentId,
   ProjectId,
+  PullRequestActor,
   PullRequestFilterOptionsInput,
   PullRequestInvolvement,
+  PullRequestLabel,
   PullRequestListFilters,
   PullRequestListState,
   SourceControlProviderKind,
@@ -52,8 +54,11 @@ import {
 import {
   pullRequestAuthorChoices,
   selectedPullRequestAuthor,
+  selectedPullRequestLabels,
   pullRequestLabelChoices,
   pullRequestLabelColor,
+  rememberPullRequestAuthors,
+  rememberPullRequestLabels,
   type PullRequestAuthorFacet,
   type PullRequestLabelFacet,
 } from "./pullRequestList.logic";
@@ -317,8 +322,11 @@ function PullRequestAuthorChoices({
   const t = useUiTranslation();
   const [query, setQuery] = useState("");
   const hosted = useHostedFilterOptions(scope, "authors", query);
+  const [seen, setSeen] = useState<ReadonlyArray<PullRequestActor>>([]);
+  const remembered = rememberPullRequestAuthors(seen, hosted.authors);
+  if (remembered !== seen) setSeen(remembered);
   const login = value?.toLowerCase() ?? "";
-  const selected = selectedPullRequestAuthor(options, hosted.authors, value);
+  const selected = selectedPullRequestAuthor(options, remembered, value);
   const visible = [
     ...(selected ? [selected] : []),
     ...pullRequestAuthorChoices(options, hosted.authors, query).filter(
@@ -417,12 +425,15 @@ function PullRequestLabelChoices({
   const t = useUiTranslation();
   const [query, setQuery] = useState("");
   const hosted = useHostedFilterOptions(scope, "labels", query);
+  const [seen, setSeen] = useState<ReadonlyArray<PullRequestLabel>>([]);
+  const remembered = rememberPullRequestLabels(seen, hosted.labels);
+  if (remembered !== seen) setSeen(remembered);
   const selected = new Set(value.map((name) => name.toLowerCase()));
   const choices = pullRequestLabelChoices(options, hosted.labels, query);
   const visible = [
-    ...value
-      .filter((name) => !choices.some((option) => option.name.toLowerCase() === name.toLowerCase()))
-      .map((name) => ({ name, color: null, count: 0 })),
+    ...selectedPullRequestLabels(options, remembered, value).filter(
+      (label) => !choices.some((option) => option.name.toLowerCase() === label.name.toLowerCase()),
+    ),
     ...choices,
   ];
   return (

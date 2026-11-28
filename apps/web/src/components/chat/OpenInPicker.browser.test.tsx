@@ -55,7 +55,10 @@ vi.mock(import("../../state/use-atom-command"), async (importOriginal) => ({
 }));
 vi.mock(import("../../state/environments"), async (importOriginal) => ({
   ...(await importOriginal()),
-  useEnvironment: (() => ({ label: "Test host" })) as never,
+  useEnvironment: (() => ({
+    label: "Test host",
+    connection: { phase: "offline", error: null, traceId: null },
+  })) as never,
 }));
 vi.mock(import("../../editorPreferences"), async (importOriginal) => {
   const actual = await importOriginal();

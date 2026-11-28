@@ -66,9 +66,10 @@ it("an older checkout cannot overwrite the new project or its text", async () =>
     worktreePath: "/worktrees/destination",
   });
   get().setPrompt(draftId, "Do not submit this elsewhere");
+  expect(await send).toBe("moved");
+  expect(readPendingDraftCheckout(draftId)).toBeNull();
   checkout.raw.resolve("success");
   expect(await checkout.result).toMatchObject({ applied: false });
-  expect(await send).toBe(false);
   expect(checkout.apply).not.toHaveBeenCalled();
   expect(get().getDraftSession(draftId)).toMatchObject({
     projectId: destination.projectId,
@@ -101,7 +102,7 @@ it("does not revive a checkout after moving away and back or superseding it", as
   get().setDraftThreadContext(draftId, { projectRef: source, branch: "original" });
   const newer = prepare();
   older.raw.resolve("success");
-  expect((await olderResult).status).toBe("stale");
+  expect((await olderResult).status).toBe("moved");
   expect(older.apply).not.toHaveBeenCalled();
   newer.raw.resolve("success");
   expect(await newer.result).toMatchObject({ applied: true });

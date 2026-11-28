@@ -109,10 +109,13 @@ export function resolveSubagentPillSegment(
   if (turn.liveCount > 0) {
     return {
       label: `${turn.liveCount}/${total}`,
-      accessibilityLabel: t("{count} of {total} agents working", {
-        count: turn.liveCount,
-        total,
-      }),
+      accessibilityLabel: t(
+        total === 1 ? "{count} of {total} agent working" : "{count} of {total} agents working",
+        {
+          count: turn.liveCount,
+          total,
+        },
+      ),
     };
   }
   return {

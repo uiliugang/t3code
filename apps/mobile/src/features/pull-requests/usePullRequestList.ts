@@ -10,7 +10,12 @@ import {
   runAtomCommand,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, PullRequestDiffStat, PullRequestListInput } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PullRequestDiffStat,
+  PullRequestListInput,
+  PullRequestListStatsInput,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
@@ -302,6 +307,7 @@ export function usePullRequestList(targets: readonly ListTarget[]) {
     return Atom.make((get) =>
       queries.map((target) => ({
         environmentId: target.environmentId,
+        input: target.input,
         result: get(composerPullRequests.listStats(target)),
       })),
     );
@@ -394,6 +400,7 @@ function requestErrors(results: readonly PromiseSettledResult<unknown>[]) {
 
 type StatsAnswer = {
   readonly environmentId: EnvironmentId;
+  readonly input: PullRequestListStatsInput;
   readonly stats: readonly PullRequestDiffStat[];
 };
 
@@ -401,6 +408,7 @@ type StatsAnswer = {
 function answeredStats(
   counts: readonly {
     readonly environmentId: EnvironmentId;
+    readonly input: PullRequestListStatsInput;
     readonly result: AsyncResult.AsyncResult<
       { readonly stats: readonly PullRequestDiffStat[] },
       unknown
@@ -408,12 +416,12 @@ function answeredStats(
   }[],
   previous: readonly StatsAnswer[],
 ): readonly StatsAnswer[] {
-  const next = counts.flatMap(({ environmentId, result }) => {
+  const next = counts.flatMap(({ environmentId, input, result }) => {
     const kept = previous.find((answer) => answer.environmentId === environmentId);
     if (!AsyncResult.isSuccess(result)) return kept ? [kept] : [];
-    return kept?.stats === result.value.stats
+    return kept?.input === input && kept.stats === result.value.stats
       ? [kept]
-      : [{ environmentId, stats: result.value.stats }];
+      : [{ environmentId, input, stats: result.value.stats }];
   });
   return next.length === previous.length &&
     next.every((answer, index) => answer === previous[index])

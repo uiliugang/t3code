@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -151,7 +152,10 @@ it.effect(
       const layerDatabase = SqlitePersistence.layerMemory;
       const layer = Layer.mergeAll(
         layerDatabase,
-        ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
+        ProjectionStore.layer.pipe(
+          Layer.provide(NodeCrypto.layerDigest),
+          Layer.provide(layerDatabase),
+        ),
         ProviderReplayHarness.layerWithRegistry(
           { name: "queued-workspace-rebind" },
           ProviderAdapterRegistry.layerFromAdapters([adapter]),

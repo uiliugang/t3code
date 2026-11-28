@@ -43,6 +43,8 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
   Effect.gen(function* () {
     const refs = new Map<string, string>();
     const workspace = workspaceFixture();
+    const [unchanged, changed] = workspace.resources;
+    const freshSnapshots: string[] = [];
     const layer = CheckpointService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -51,8 +53,16 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
             isGitRepository: () => Effect.succeed(true),
             hasCheckpointRef: ({ cwd, checkpointRef }) =>
               Effect.succeed(refs.get(checkpointRef) === cwd),
+            copyCheckpointRef: ({ cwd, fromCheckpointRef, toCheckpointRef }) =>
+              Effect.sync(() => {
+                if (cwd !== unchanged!.checkoutRoot || refs.get(fromCheckpointRef) !== cwd)
+                  return false;
+                refs.set(toCheckpointRef, cwd);
+                return true;
+              }),
             captureCheckpoint: ({ cwd, checkpointRef, previousCheckpointRef }) =>
               Effect.sync(() => {
+                freshSnapshots.push(cwd);
                 refs.set(checkpointRef, cwd);
                 return previousCheckpointRef && refs.has(previousCheckpointRef)
                   ? {
@@ -98,6 +108,22 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
       assert.equal(new Set(checkpoint.resources?.map((member) => member.ref)).size, 2);
       assert.equal(new Set(checkpoint.resources?.map((member) => member.checkpointId)).size, 2);
       assert.equal(new Set(checkpoint.files.map((file) => file.resourceId)).size, 2);
+      freshSnapshots.length = 0;
+      yield* checkpoints.captureBaseline({
+        scope,
+        ordinalWithinScope: 2,
+        sourceOrdinalWithinScope: 1,
+      });
+      const baseline = yield* checkpoints.materializeBaselineCheckpoint({
+        scope,
+        ordinalWithinScope: 2,
+        nodeId: scope.nodeId,
+        capturedAt: scope.createdAt,
+      });
+      assert.equal(baseline.status, "ready");
+      assert.lengthOf(baseline.resources ?? [], 2);
+      assert.deepEqual(freshSnapshots, [changed!.checkoutRoot]);
+
       const partialCheckpoint = { ...checkpoint, resources: checkpoint.resources!.slice(0, 1) };
       const error = yield* checkpoints
         .restore({
@@ -111,14 +137,21 @@ it.effect("captures distinct repository refs and rejects a partial checkpoint se
 );
 
 it.effect.each([
-  { elapsed: "10 seconds", expected: "Success" },
-  { elapsed: "30 seconds", expected: "Failure" },
-] as const)("bounds required workspace baseline capture with %j", ({ elapsed, expected }) =>
+  { elapsed: "10 seconds", expected: "Success", reuse: false },
+  { elapsed: "30 seconds", expected: "Failure", reuse: false },
+  { elapsed: "10 seconds", expected: "Success", reuse: true },
+  { elapsed: "30 seconds", expected: "Failure", reuse: true },
+] as const)("bounds required workspace baseline capture with %j", ({ elapsed, expected, reuse }) =>
   Effect.gen(function* () {
     const workspace = workspaceFixture();
     const refs = new Map<string, string>();
     const started = yield* Deferred.make<void>();
     const release = yield* Deferred.make<void>();
+    const writeBaseline = (cwd: string, checkpointRef: string) =>
+      (!reuse && cwd === workspace.resources[0]!.checkoutRoot
+        ? Effect.void
+        : Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)))
+      ).pipe(Effect.andThen(Effect.sync(() => refs.set(checkpointRef, cwd))));
     const layerTest = CheckpointService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -128,13 +161,12 @@ it.effect.each([
             hasCheckpointRef: ({ cwd, checkpointRef }) =>
               Effect.succeed(refs.get(checkpointRef) === cwd),
             captureCheckpoint: ({ cwd, checkpointRef }) =>
-              (cwd === workspace.resources[0]!.checkoutRoot
-                ? Effect.void
-                : Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)))
-              ).pipe(
-                Effect.andThen(Effect.sync(() => refs.set(checkpointRef, cwd))),
+              Effect.sync(() => assert.isFalse(reuse, "a reusable ref should avoid capture")).pipe(
+                Effect.andThen(writeBaseline(cwd, checkpointRef)),
                 Effect.as(null),
               ),
+            copyCheckpointRef: ({ cwd, toCheckpointRef }) =>
+              writeBaseline(cwd, toCheckpointRef).pipe(Effect.as(true)),
           }),
         ),
       ),
@@ -153,8 +185,13 @@ it.effect.each([
         workspace,
         createdAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
       });
+      const ordinalWithinScope = reuse ? 2 : 0;
       const capture = yield* checkpoints
-        .captureBaseline({ scope, ordinalWithinScope: 0 })
+        .captureBaseline({
+          scope,
+          ordinalWithinScope,
+          ...(reuse ? { sourceOrdinalWithinScope: 1 } : {}),
+        })
         .pipe(Effect.result, Effect.forkChild);
       yield* Deferred.await(started);
       yield* TestClock.adjust(elapsed);
@@ -163,12 +200,12 @@ it.effect.each([
       assert.equal(result._tag, expected);
       const baseline = yield* checkpoints.materializeBaselineCheckpoint({
         scope,
-        ordinalWithinScope: 0,
+        ordinalWithinScope,
         nodeId: scope.nodeId,
         capturedAt: scope.createdAt,
       });
       assert.equal(baseline.status, expected === "Success" ? "ready" : "error");
-      assert.equal(refs.size, expected === "Success" ? workspace.resources.length : 1);
+      assert.equal(refs.size, expected === "Success" ? workspace.resources.length : reuse ? 0 : 1);
     }).pipe(Effect.provide(layerTest));
   }),
 );
@@ -389,6 +426,58 @@ it.effect(
         assert.strictEqual((yield* Ref.get(refs)).size, 1);
       }).pipe(Effect.provide(layerTest));
     }),
+);
+
+it.effect.each([
+  { label: "a reused checkpoint", source: 2, copy: true, calls: ["copy"] },
+  { label: "a declined copy", source: 2, copy: false, calls: ["copy", "snapshot"] },
+  { label: "a copy slower than its budget", source: 2, calls: ["copy", "snapshot"] },
+])("baselines a turn after steered queued messages with $label", (row) =>
+  Effect.gen(function* () {
+    const scope: OrchestrationV2CheckpointScope = {
+      id: CheckpointScopeId.make("checkpoint-scope:queue-gap"),
+      threadId: ThreadId.make("thread:queue-gap"),
+      runId: RunId.make("run:queue-gap:1"),
+      nodeId: NodeId.make("node:queue-gap:1"),
+      parentScopeId: null,
+      providerThreadId: ProviderThreadId.make("provider-thread:queue-gap"),
+      kind: "root_run",
+      ordinalWithinParent: 0,
+      advancesAppRunCount: true,
+      cwd: "/repo/queue-gap",
+      createdAt: DateTime.makeUnsafe("2026-07-28T00:00:00.000Z"),
+    };
+    const calls = yield* Ref.make<ReadonlyArray<string>>([]);
+    const record = (call: string) => Ref.update(calls, (current) => [...current, call]);
+    const layerTest = CheckpointService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          layerNoTrackedFolders,
+          Layer.mock(CheckpointStore.CheckpointStore)({
+            isGitRepository: () => Effect.succeed(true),
+            hasCheckpointRef: () => Effect.succeed(false),
+            copyCheckpointRef: () =>
+              record("copy").pipe(
+                Effect.andThen(row.copy === undefined ? Effect.never : Effect.succeed(row.copy)),
+              ),
+            captureCheckpoint: () => record("snapshot").pipe(Effect.as(null)),
+          }),
+        ),
+      ),
+      Layer.provideMerge(NodeCrypto.layer),
+    );
+
+    yield* Effect.gen(function* () {
+      const checkpoints = yield* CheckpointService.CheckpointServiceV2;
+      const baseline = yield* checkpoints
+        .captureBaseline({ scope, ordinalWithinScope: 4, sourceOrdinalWithinScope: row.source })
+        .pipe(Effect.forkChild);
+      yield* TestClock.adjust("5 seconds");
+      yield* Fiber.join(baseline);
+      assert.deepEqual(yield* Ref.get(calls), row.calls);
+    }).pipe(Effect.provide(layerTest));
+  }),
 );
 
 it.effect(

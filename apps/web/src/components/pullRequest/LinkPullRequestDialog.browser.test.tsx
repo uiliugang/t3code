@@ -1,4 +1,5 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { getTranslationsSnapshot, GTProvider } from "gt-react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -27,6 +28,7 @@ vi.mock(import("~/state/entities"), async (original) => ({
 
 import { RegistryContext } from "@effect/atom-react";
 
+import { initializeI18n } from "~/i18n/initializeI18n";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { act, render } from "../../../test/render";
 import { LinkPullRequestDialogHost, openLinkPullRequestDialog } from "./LinkPullRequestDialog";
@@ -112,3 +114,34 @@ it.each([{ isComposing: true }, { keyCode: 229 }, { repeat: true }])(
     await expect.element(dialog.input).not.toBeInTheDocument();
   },
 );
+
+it("shows the number error in the UI language when the thread has no repository", async () => {
+  // GTProvider leaves its locale in a cookie; this sets it back to English.
+  initializeI18n(() => {});
+  linking.changeLink.mockReset().mockResolvedValue(undefined);
+  appAtomRegistry.reset();
+  const translations = await getTranslationsSnapshot("zh");
+  await using _screen = await render(
+    <RegistryContext.Provider value={appAtomRegistry}>
+      <GTProvider locale="zh" translations={translations}>
+        <LinkPullRequestDialogHost />
+      </GTProvider>
+    </RegistryContext.Provider>,
+  );
+  await act(() =>
+    openLinkPullRequestDialog({
+      environmentId: EnvironmentId.make("environment"),
+      threadId: ThreadId.make("thread"),
+    }),
+  );
+
+  await page.getByRole("textbox").fill("123");
+  await userEvent.keyboard("{Enter}");
+
+  await expect
+    .element(page.getByText("请粘贴完整的 pull request URL；此会话没有可用于解析编号的仓库。"))
+    .toBeVisible();
+  expect(page.getByText(/this thread has no repository/).query()).toBeNull();
+  initializeI18n(() => {});
+  appAtomRegistry.reset();
+});

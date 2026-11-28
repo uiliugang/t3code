@@ -836,6 +836,37 @@ describe("IssueService", () => {
 });
 
 describe("IssueService with a standalone tracker", () => {
+  it.effect("does not route references for an unavailable Jira tracker to another provider", () =>
+    Effect.gen(function* () {
+      const jira = IssueTrackerKind.make("jira");
+      const projectId = "legacy" as ProjectId;
+      const reads: string[] = [];
+      const service = yield* makeService({
+        projects: [project({ id: projectId, repository: "acme/repo" })],
+        trackers: [
+          fakeTracker({
+            getIssue: ({ key }) =>
+              Effect.sync(() => {
+                reads.push(key);
+                return issue(key);
+              }),
+          }),
+          fakeStandaloneTracker({}),
+        ],
+        bindings: { [projectId]: { tracker: jira, scope: "ENG" } },
+      });
+      const ref = { projectId, tracker: jira, scope: "ENG", key: "ENG-1" };
+
+      expect(yield* Effect.flip(service.detail(ref))).toMatchObject({
+        reason: "tracker-unsupported",
+      });
+      expect(
+        yield* Effect.flip(service.comment({ ...ref, body: "Not for another provider" })),
+      ).toMatchObject({ reason: "tracker-unsupported" });
+      expect(reads).toEqual([]);
+    }),
+  );
+
   it.effect("reads the current standalone workspace after a credential changes", () =>
     Effect.gen(function* () {
       let workspace = "acme";
@@ -934,7 +965,7 @@ describe("IssueService with a standalone tracker", () => {
         credentials: {
           get: () =>
             Effect.map(IssueTrackerAccount, (account) =>
-              account === accountId ? Option.some(credential) : Option.none(),
+              account === accountId || account === null ? Option.some(credential) : Option.none(),
             ),
         },
       });
@@ -1032,6 +1063,21 @@ describe("IssueService with a standalone tracker", () => {
       credential = "acme";
       const detail = yield* service.detail({ ...explicit, key: "eng-1" });
       expect(detail.url).toBe(explicit.url);
+
+      const unbound = yield* makeService({
+        projects: [project({ id: "web" })],
+        trackers: [tracker],
+      });
+      const page = { ...explicit, cursor: "first-page" };
+      credential = "acme";
+      expect(yield* unbound.comments(page)).toMatchObject({ nextCursor: "acme" });
+      expect(yield* Effect.flip(unbound.comments(page))).toMatchObject({ reason: "not-found" });
+      credential = "acme";
+      for (const mismatch of [{ host: "example.com" }, { scope: "QA" }, { key: "ENG-2" }]) {
+        expect(yield* Effect.flip(unbound.comments({ ...page, ...mismatch }))).toMatchObject({
+          reason: "not-found",
+        });
+      }
     }),
   );
 
@@ -1215,10 +1261,13 @@ describe("IssueService with a standalone tracker", () => {
       expect(
         yield* service.resolveUrl("https://linear.app/acme/issue/ENG-1/old-title"),
       ).toMatchObject({ key: "ENG-1", writable: true });
-      const refused = yield* service
-        .resolveUrl("https://linear.app/other-workspace/issue/ENG-1/old-title")
-        .pipe(Effect.result);
-      expect(refused).toMatchObject({
+      const otherWorkspace = "https://linear.app/other-workspace/issue/ENG-1/old-title";
+      // Bound or not, the link must name the workspace the environment's credential reaches.
+      const unbound = yield* makeService({
+        projects: [project({ id: "notes" })],
+        trackers: [fakeStandaloneTracker()],
+      });
+      const refusal = {
         _tag: "Failure",
         failure: {
           _tag: "IssueOperationError",
@@ -1226,7 +1275,11 @@ describe("IssueService with a standalone tracker", () => {
           reason: "not-found",
           detail: "This issue URL does not belong to the connected workspace.",
         },
-      });
+      };
+      expect(yield* service.resolveUrl(otherWorkspace).pipe(Effect.result)).toMatchObject(refusal);
+      expect(
+        yield* unbound.resolveUrl(otherWorkspace, "notes" as ProjectId).pipe(Effect.result),
+      ).toMatchObject(refusal);
     }),
   );
 
@@ -1343,16 +1396,34 @@ describe("IssueService with a standalone tracker", () => {
         },
       });
 
-      // Unbound, the standalone scope is gone and its references are unsupported.
+      // A full URL is readable without a binding, but it does not grant write authority.
       listed.length = 0;
       const unbound = yield* makeService({ projects, trackers });
       const after = yield* unbound.list({ state: "open" });
       expect(listed).toEqual(["github github.com acme/web"]);
       expect(after.trackers.map((tracker) => tracker.tracker)).toEqual(["github"]);
-      const refused = yield* Effect.flip(unbound.detail(linearRef));
-      expect(refused).toMatchObject({
-        _tag: "IssueUnavailableError",
-        reason: "tracker-unsupported",
+      const noProjectRef = { ...linearRef, projectId: "notes" as ProjectId };
+      const url = "https://linear.app/acme/issue/ENG-1/issue-title";
+      expect(yield* Effect.result(unbound.detail(noProjectRef))).toMatchObject({ _tag: "Failure" });
+      expect(yield* unbound.detail({ ...noProjectRef, url })).toMatchObject({
+        projectId: "notes",
+        host: "linear.app",
+        writable: false,
+      });
+      expect(
+        yield* Effect.result(unbound.detail({ ...noProjectRef, url, key: "ENG-2" })),
+      ).toMatchObject({ _tag: "Failure" });
+      expect(
+        yield* Effect.result(unbound.comment({ ...noProjectRef, url, body: "Follow-up" })),
+      ).toMatchObject({ _tag: "Failure" });
+      expect(
+        yield* Effect.result(unbound.setState({ ...noProjectRef, url, state: "Done" })),
+      ).toMatchObject({ _tag: "Failure" });
+      expect(yield* unbound.resolveUrl(url, "notes" as ProjectId)).toMatchObject({
+        projectId: "notes",
+        host: "linear.app",
+        key: "ENG-1",
+        writable: false,
       });
 
       // A project with no remote at all can still be bound, and then has only the standalone one.

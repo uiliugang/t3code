@@ -1,4 +1,8 @@
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { useAtomValue } from "@effect/atom-react";
+import { mediaReferenceFileName } from "@t3tools/client-runtime/media-reference";
+import { makePullRequestMediaKindAtom } from "@t3tools/client-runtime/pull-request-markdown";
+import { fetch } from "expo/fetch";
 import { useGT } from "gt-react-native";
 import { createContext, useContext, useState } from "react";
 import {
@@ -13,6 +17,7 @@ import { Image } from "expo-image";
 import { AppText } from "../../components/ui/AppText";
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
 import { assetImageCacheKey } from "../../lib/assetImageSource";
+import { tryOpenWebLink } from "../../lib/openExternalUrl";
 import { MediaVideoPlayer } from "../../components/MediaVideoPlayer";
 import { VideoAttachmentTile } from "../../components/VideoAttachmentTile";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/ui/VideoPreviewModal";
@@ -26,6 +31,8 @@ import {
 export const PullRequestMediaVisibleContext = createContext(true);
 
 export const PullRequestMediaContext = createContext<PullRequestMediaLocation | null>(null);
+
+const pullRequestMediaKind = makePullRequestMediaKindAtom(fetch);
 
 export function usePullRequestMediaUrl(url: string, kind: "image" | "video" | "unknown") {
   const context = useContext(PullRequestMediaContext);
@@ -55,8 +62,37 @@ export function PullRequestMedia(props: {
   const withGallery = useFilePreviewGallery();
   const [image, setImage] = useState<FilePreviewSource | null>(null);
   const [video, setVideo] = useState<VideoPreviewSource | null>(null);
-  const name = props.caption || new URL(props.url).pathname.split("/").pop() || gt("Attachment");
-  if (props.kind === "image")
+  const [knownKind, setKnownKind] = useState<"image" | "video" | null>(null);
+  const kind = props.kind === "unknown" ? knownKind : props.kind;
+  const detected = useAtomValue(pullRequestMediaKind(kind === null ? media.uri : null));
+  const detectedKind = detected._tag === "Success" ? detected.value : null;
+  if (kind === null && detectedKind !== null) setKnownKind(detectedKind);
+  const name =
+    props.caption || mediaReferenceFileName({ kind: "url", url: props.url }) || gt("Attachment");
+  if (kind === null) {
+    return (
+      <Pressable
+        accessibilityRole="link"
+        onPress={() => void tryOpenWebLink(props.url, "pull-request")}
+      >
+        <AppText numberOfLines={1} className="text-accent">
+          {name}
+        </AppText>
+      </Pressable>
+    );
+  }
+  if (kind === "image" && props.compact) {
+    const source = { ...pullRequestImageSource(props.url, context), name };
+    return (
+      <PullRequestImageAttachment
+        url={props.url}
+        caption={name}
+        source={source}
+        gallery={[source]}
+      />
+    );
+  }
+  if (kind === "image")
     return (
       <>
         <ThreadMarkdownImageView

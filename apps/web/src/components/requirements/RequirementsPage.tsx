@@ -2,6 +2,7 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { msg, useGT } from "gt-react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { isMeituanServiceEnabled } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { githubIssueScopeFromUrl, issueReferenceHost } from "@t3tools/client-runtime/issue-links";
 import {
   IssueTrackerKind,
@@ -72,7 +73,7 @@ import { RefreshIcon } from "../ui/refresh-icon";
 import { SidebarInset } from "../ui/sidebar";
 import { Spinner } from "../ui/spinner";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { RightPanelTabs } from "../RightPanelTabs";
+import { RightPanelTabs, type RightPanelTabsHandle } from "../RightPanelTabs";
 import { PanelLayoutControls } from "../chat/PanelLayoutControls";
 import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestMarkdownPanelContext } from "../pullRequest/PullRequestMarkdown";
@@ -560,12 +561,17 @@ export function RequirementBoard({
     issueTracker,
     pullRequest,
   ]);
-  const closeSurface = (surface: RightPanelSurface) => {
-    useRightPanelStore.getState().closeSurface(rightPanelRef, surface.id);
+  const tabsRef = useRef<RightPanelTabsHandle>(null);
+  const closeSurfaces = (surfaces: readonly RightPanelSurface[]) => {
+    useRightPanelStore.getState().closeSurfaces(
+      rightPanelRef,
+      surfaces.map(({ id }) => id),
+    );
     selectSurfaceInUrl(
       selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, rightPanelRef),
     );
   };
+  const closeSurface = (surface: RightPanelSurface) => closeSurfaces([surface]);
   const panelControlsRef = useRef<HTMLDivElement>(null);
   const refocusToggleWhenOpen = useRef<boolean | null>(null);
   const toggleRightPanel = () => {
@@ -632,8 +638,9 @@ export function RequirementBoard({
     event.preventDefault();
     event.stopPropagation();
     if (event.repeat) return;
-    if (command === "rightPanel.close") closeSurface(panelSurface);
-    else toggleRightPanel();
+    if (command === "rightPanel.close") {
+      if (!tabsRef.current?.closeSelectedTabs()) closeSurface(panelSurface);
+    } else toggleRightPanel();
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens for panel commands on the standalone board; chat owns its own shortcuts
   useEffect(() => {
@@ -1473,6 +1480,8 @@ export function RequirementBoard({
         </div>
         {presence.present && renderedSurface ? (
           <RightPanelTabs
+            ref={tabsRef}
+            selectionScope={scopedThreadKey(rightPanelRef)}
             mode={narrow ? "sheet" : "inline"}
             layoutControls={panelOpen && panelControls}
             open={rightPanelState.isOpen}
@@ -1492,6 +1501,7 @@ export function RequirementBoard({
               selectSurfaceInUrl(surface);
             }}
             onCloseSurface={closeSurface}
+            onCloseSelectedSurfaces={closeSurfaces}
             onCloseOtherSurfaces={(surface) => {
               useRightPanelStore.getState().closeOtherSurfaces(rightPanelRef, surface.id);
               selectSurfaceInUrl(surface);
@@ -1509,8 +1519,8 @@ export function RequirementBoard({
               useRightPanelStore.getState().closeAllSurfaces(rightPanelRef);
               selectSurfaceInUrl(null);
             }}
-            onMoveSurface={(surfaceId, toIndex) =>
-              useRightPanelStore.getState().moveSurface(rightPanelRef, surfaceId, toIndex)
+            onMoveSurfaces={(surfaceIds, targetId) =>
+              useRightPanelStore.getState().moveSurfaces(rightPanelRef, surfaceIds, targetId)
             }
             onCopyFilePath={() => undefined}
             onAddBrowser={() => undefined}

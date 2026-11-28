@@ -54,7 +54,11 @@ export function quoteGitPatchPath(path: string): string {
 }
 
 // Octal escapes represent bytes; rejoin before UTF-8 decoding.
-function unescapeBody(body: string): string {
+function decodeGitPathToken(token: string, decoder: typeof fromUtf8): string {
+  const body =
+    token.length >= 2 && token.startsWith(QUOTE) && token.endsWith(QUOTE)
+      ? token.slice(1, -1)
+      : token;
   if (!body.includes("\\")) return body;
   const bytes: Array<number> = [];
   // Encode literal runs together to preserve surrogate pairs.
@@ -96,13 +100,19 @@ function unescapeBody(body: string): string {
     at += 2;
   }
   flush();
-  return fromUtf8.decode(new Uint8Array(bytes));
+  return decoder.decode(new Uint8Array(bytes));
 }
 
 /** Unescape with or without quotes; client parsers strip them inconsistently across patch headers. */
 export function unquoteGitPatchPath(token: string): string {
-  if (token.length >= 2 && token.startsWith(QUOTE) && token.endsWith(QUOTE)) {
-    return unescapeBody(token.slice(1, -1));
+  return decodeGitPathToken(token, fromUtf8);
+}
+
+/** Returns null when Git's quoted bytes cannot be decoded as UTF-8. */
+export function tryUnquoteGitPatchPath(token: string): string | null {
+  try {
+    return decodeGitPathToken(token, new TextDecoder("utf-8", { ignoreBOM: true, fatal: true }));
+  } catch {
+    return null;
   }
-  return unescapeBody(token);
 }

@@ -15,15 +15,24 @@ interface PendingWorkspaceDefault {
 
 const pendingDefaults = new Map<DraftId, PendingWorkspaceDefault>();
 
+function isInProject(
+  draft: DraftSessionState | null,
+  projectRef: ScopedProjectRef,
+): draft is DraftSessionState {
+  return (
+    draft !== null &&
+    draft.promotedTo == null &&
+    draft.environmentId === projectRef.environmentId &&
+    draft.projectId === projectRef.projectId
+  );
+}
+
 function acceptsWorkspaceDefault(
   draft: DraftSessionState | null,
   pending: PendingWorkspaceDefault,
 ): draft is DraftSessionState {
   return (
-    draft !== null &&
-    draft.promotedTo == null &&
-    draft.environmentId === pending.projectRef.environmentId &&
-    draft.projectId === pending.projectRef.projectId &&
+    isInProject(draft, pending.projectRef) &&
     draft.envMode === pending.workspace.envMode &&
     !draft.workspaceExplicit &&
     draft.worktreePath === null &&
@@ -56,7 +65,7 @@ export function readDraftWorkspaceKey(draftId: DraftId): string | null {
 
 type DraftCheckoutOutcome =
   | { readonly status: "ready"; readonly workspace: string }
-  | { readonly status: "failed" | "stale" };
+  | { readonly status: "failed" | "stale" | "moved" };
 
 interface PendingDraftCheckout {
   readonly outcome: Promise<DraftCheckoutOutcome>;
@@ -90,8 +99,16 @@ export function trackPendingDraftCheckout<T>(
     initial?.environmentId !== projectRef.environmentId ||
     initial?.projectId !== projectRef.projectId ||
     (initial?.selectedProjectIds?.length ?? 0) >= 2;
+  const { promise: invalidated, resolve: invalidate } =
+    Promise.withResolvers<DraftCheckoutOutcome>();
   const stopWatching = useComposerDraftStore.subscribe(() => {
-    changed ||= workspaceKey(get()) !== initialWorkspace;
+    const draft = get();
+    changed ||= workspaceKey(draft) !== initialWorkspace;
+    if (!isInProject(draft, projectRef)) {
+      stopWatching();
+      if (pendingCheckouts.get(draftId) === pending) pendingCheckouts.delete(draftId);
+      invalidate({ status: "moved" });
+    }
   });
   pendingCheckouts.get(draftId)?.stopWatching();
   const canApply = (): boolean =>
@@ -119,14 +136,20 @@ export function trackPendingDraftCheckout<T>(
       stopWatching();
       if (pendingCheckouts.get(draftId) === pending) pendingCheckouts.delete(draftId);
     });
-  const pending: PendingDraftCheckout = { outcome, stopWatching };
+  const pending: PendingDraftCheckout = {
+    outcome: Promise.race([outcome, invalidated]),
+    stopWatching,
+  };
   pendingCheckouts.set(draftId, pending);
   return prepared;
 }
 
-export function readPendingWorkspaceDefault(draftId: DraftId): Promise<boolean> | null {
+export function readPendingWorkspaceDefault(draftId: DraftId): Promise<boolean | "moved"> | null {
   const checkout = readPendingDraftCheckout(draftId);
-  if (checkout) return checkout.then((outcome) => outcome.status === "ready");
+  if (checkout)
+    return checkout.then((outcome) =>
+      outcome.status === "moved" ? "moved" : outcome.status === "ready",
+    );
   const pending = pendingDefaults.get(draftId);
   if (!pending) return null;
   const draft = useComposerDraftStore.getState().getDraftSession(draftId);

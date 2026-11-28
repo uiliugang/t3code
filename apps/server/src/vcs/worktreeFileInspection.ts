@@ -1,10 +1,10 @@
 import type { WorkspaceCheckoutIdentity, WorktreeCleanupRules } from "@t3tools/contracts";
-import { unquoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
+import { hasWorktreeSubmoduleFiles } from "./worktreeRemoval.ts";
 
 const errorCode = (error: PlatformError) =>
   error.cause instanceof Error && "code" in error.cause ? error.cause.code : undefined;
@@ -151,46 +151,16 @@ export const makeWorktreeFileInspection = Effect.gen(function* () {
     return file === undefined ? null : `has ignored files (${file})`;
   });
 
-  const hasSubmoduleFiles = Effect.fn("ManagedWorktrees.hasSubmoduleFiles")(function* (
-    identity: WorkspaceCheckoutIdentity,
-  ) {
-    let protectedFiles = yield* fs.exists(path.join(identity.gitDir, "modules"));
-    yield* git.execute({
+  const hasSubmoduleFiles = (identity: WorkspaceCheckoutIdentity) =>
+    hasWorktreeSubmoduleFiles({
       operation: "ManagedWorktrees.submodules",
       cwd: identity.checkoutRoot,
-      args: ["ls-files", "--stage"],
-      maxOutputBytes: 64 * 1024,
-      appendTruncationMarker: true,
-      keepLineCallbacksAfterTruncation: true,
-      progress: {
-        onStdoutLine: (line) => {
-          if (protectedFiles || !line.startsWith("160000 ")) return Effect.void;
-          const relative = unquoteGitPatchPath(line.slice(line.indexOf("\t") + 1));
-          const directory = path.resolve(identity.checkoutRoot, relative);
-          // Uninitialized gitlinks may be empty; status omits local files placed inside them.
-          return fs.realPath(directory).pipe(
-            Effect.flatMap((real) =>
-              real !== directory || relative.includes("\uFFFD")
-                ? Effect.succeed(true)
-                : fs.readDirectory(real).pipe(Effect.map((names) => names.length > 0)),
-            ),
-            Effect.catchIf(
-              (error) => error.reason._tag === "NotFound",
-              () => Effect.succeed(relative.includes("\uFFFD")),
-            ),
-            Effect.orElseSucceed(() => true),
-            Effect.tap((present) =>
-              Effect.sync(() => {
-                if (present) protectedFiles = true;
-              }),
-            ),
-            Effect.asVoid,
-          );
-        },
-      },
-    });
-    return protectedFiles;
-  });
+      adminDir: identity.gitDir,
+      execute: git.execute,
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, path),
+    );
 
   return { localChangesReason, hasSubmoduleFiles };
 });

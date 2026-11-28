@@ -295,6 +295,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/worktrees",
     scope: "project-defaults",
     searchTerms: [
+      msg("Delete worktrees with deleted threads"),
       msg(
         "disk storage automatic delete deleted archived threads old inactive merged settled unchanged worktrees retention days project inherit off custom",
       ),
@@ -710,7 +711,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "speech-dictionary",
     title: msg("Dictionary"),
     to: "/settings/voice",
-    searchTerms: [msg("speech voice transcription vocabulary names glossary alias")],
+    searchTerms: [
+      msg("Your dictionary"),
+      msg("speech voice transcription vocabulary names glossary alias"),
+    ],
   },
   {
     id: "speech-project-dictionary",
@@ -1195,6 +1199,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: msg("Providers"),
     to: "/settings/providers",
     searchTerms: [
+      msg("ChatGPT account"),
       msg(
         "agents cli codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
       ),
@@ -1384,7 +1389,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/requirements",
     scope: "environment",
     searchTerms: [
-      msg("linear jira issues tracker team api key connect bind project"),
+      msg("linear issues tracker team api key connect bind project"),
       "MEP ONES ones2 mcm",
     ],
   },
@@ -1829,6 +1834,13 @@ export function settingsForThisPlatform(
   );
 }
 
+function titleMatchRank(title: string, query: string, queryTokens: ReadonlyArray<string>): number {
+  if (title === query) return 5;
+  if (title.startsWith(query)) return 4;
+  if (title.includes(query)) return 3;
+  return queryTokens.every((token) => title.includes(token)) ? 2 : 0;
+}
+
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
@@ -1843,32 +1855,31 @@ export function searchSettings(
       const sourceTitle = mFallback(item.title);
       const sourceSection = mFallback(SETTINGS_SECTION_LABELS[item.to]);
       const title = normalizeSearchText(sourceTitle);
+      const displayedTitle = normalizeSearchText(translate(item.title));
+      const navLabel = SETTINGS_NAV_LABELS[item.to];
+      const displayedNavLabel = translate(navLabel);
       const fields = [
         title,
         normalizeSearchText(translateUi("zh-CN", sourceTitle)),
         normalizeSearchText(translateUi("zh-CN", sourceSection)),
         normalizeSearchText(sourceSection),
         // The labels as displayed, so search also works in the active language.
-        normalizeSearchText(translate(item.title)),
+        displayedTitle,
         normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),
+        // Decode only the untranslated label: decodeMsg truncates a translation at its first colon.
+        normalizeSearchText(
+          displayedNavLabel === navLabel ? mFallback(navLabel) : displayedNavLabel,
+        ),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
         ...(item.searchTerms ?? []).map((term) => normalizeSearchText(translate(term))),
       ];
       if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];
 
-      const exactPhraseField = fields.findIndex((field) => field.includes(normalizedQuery));
-      const rank =
-        title === normalizedQuery
-          ? 5
-          : title.startsWith(normalizedQuery)
-            ? 4
-            : title.includes(normalizedQuery)
-              ? 3
-              : queryTokens.every((token) => title.includes(token))
-                ? 2
-                : exactPhraseField >= 0
-                  ? 1
-                  : 0;
+      const rank = Math.max(
+        titleMatchRank(title, normalizedQuery, queryTokens),
+        titleMatchRank(displayedTitle, normalizedQuery, queryTokens),
+        fields.some((field) => field.includes(normalizedQuery)) ? 1 : 0,
+      );
       return [{ item, index, rank }];
     })
     .toSorted(

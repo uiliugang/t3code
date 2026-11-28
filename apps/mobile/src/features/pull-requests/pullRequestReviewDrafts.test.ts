@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   clearSubmittedReview,
   pullRequestReviewKey,
+  reviewDraftReplacement,
   type ReviewDraft,
 } from "./pullRequestReviewDrafts";
 
@@ -35,6 +36,14 @@ describe("mobile review draft recovery", () => {
       summary: "",
       comment: draft.comment,
       comments: [],
+    });
+  });
+
+  it("keeps replacing an outdated draft until it is moved to the current head", () => {
+    expect(reviewDraftReplacement(draft, null, "one")).toStrictEqual({});
+    expect(reviewDraftReplacement(draft, "def", "one")).toStrictEqual({ draftId: "one" });
+    expect(reviewDraftReplacement(draft, "abc", "one")).toStrictEqual({
+      resetOnReload: { replacingDraftId: undefined },
     });
   });
 });

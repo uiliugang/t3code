@@ -37,9 +37,11 @@ import { ProviderDriverError } from "../Errors.ts";
 import * as ResetCreditCoordinator from "../resetCreditCoordinator.ts";
 import {
   checkCodexProviderStatus,
+  makeCodexAppServerHelper,
   makePendingCodexProvider,
   makeCodexSkillsProbe,
   probeCodexSkillsForCwd,
+  probeCodexUsageLimits,
   withCodexAppServerClient,
 } from "../CodexProvider.ts";
 import { resolveCodexLaunchArgs } from "../codexLaunchArgs.ts";
@@ -408,6 +410,25 @@ export const CodexDriver: ProviderDriver<
       Effect.provideService(Path.Path, pathService),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
+    const codexHelper = yield* makeCodexAppServerHelper().pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
+    const checkUsageLimits = Effect.gen(function* () {
+      if (!effectiveConfig.enabled) return undefined;
+      const runtime = yield* resolveRuntime;
+      // Keep warm probes for local binaries only; managed binaries require a live install lease.
+      const helper =
+        codexRuntimeSource(config) === "local" ? codexHelper : yield* makeCodexAppServerHelper();
+      return yield* probeCodexUsageLimits({
+        helper,
+        codexSettings: runtime.config,
+        environment: runtime.environment,
+      });
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.orElseSucceed(() => undefined),
+    );
     const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
     const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<CodexSettings>>({
       resolveMaintenance,
@@ -424,6 +445,7 @@ export const CodexDriver: ProviderDriver<
             ),
         ),
       checkProvider,
+      checkUsageLimits,
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
         resolveMaintenance().pipe(
           Effect.flatMap((maintenanceCapabilities) =>
@@ -462,7 +484,7 @@ export const CodexDriver: ProviderDriver<
     // Managed helpers must exit before the runtime lease allows their installation to be removed.
     const probeSkills =
       codexRuntimeSource(config) === "local"
-        ? yield* makeCodexSkillsProbe()
+        ? yield* makeCodexSkillsProbe(codexHelper)
         : probeCodexSkillsForCwd;
     const snapshotForCwd = (cwd: string) =>
       !effectiveConfig.enabled
@@ -557,7 +579,12 @@ export const CodexDriver: ProviderDriver<
       yield* fileSystem.watch(accountKey).pipe(
         Stream.filter((event) => pathService.basename(event.path) === "auth.json"),
         Stream.debounce(Duration.millis(250)),
-        Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
+        Stream.runForEach(() =>
+          codexHelper.invalidateAll.pipe(
+            Effect.andThen(snapshot.refresh),
+            Effect.ignoreCause({ log: true }),
+          ),
+        ),
         Effect.catchReason("PlatformError", "NotFound", () => Effect.void),
         Effect.ignoreCause({ log: true }),
         Effect.forkScoped,
