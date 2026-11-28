@@ -41,6 +41,7 @@ import {
 import { useComposerDraftStore } from "../composerDraftStore";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { readLocalApi } from "../localApi";
+import { applyAutomaticDraftWorktreeBase } from "../lib/draftWorkspaceDefaults";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { usePaginatedBranches } from "../state/queries";
 import { useProjectClone } from "../state/projectClones";
@@ -302,13 +303,19 @@ export function BranchToolbarBranchSelector({
       currentWorktreePath: activeWorktreePath,
       effectiveEnvMode,
     });
-    setDraftThreadContext(draftId ?? threadRef, {
-      branch,
-      worktreePath,
-      envMode: nextDraftEnvMode,
-      environmentSelection: automatic ? (draftThread?.environmentSelection ?? "auto") : "manual",
-      projectRef: scopeProjectRef(environmentId, activeProject.id),
-    });
+    const updateDraft = () =>
+      setDraftThreadContext(draftId ?? threadRef, {
+        branch,
+        worktreePath,
+        envMode: nextDraftEnvMode,
+        environmentSelection: automatic ? (draftThread?.environmentSelection ?? "auto") : "manual",
+        projectRef: scopeProjectRef(environmentId, activeProject.id),
+      });
+    const automaticDraftId = automatic
+      ? (draftId ?? useComposerDraftStore.getState().getDraftIdByRef(threadRef))
+      : null;
+    if (automaticDraftId === null) updateDraft();
+    else applyAutomaticDraftWorktreeBase(automaticDraftId, updateDraft);
     return true;
   };
 
