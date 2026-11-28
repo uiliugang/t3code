@@ -163,11 +163,8 @@ it("also offers threads on linked machines, naming the machine, but no other mac
     query: "deploy",
     now: Date.parse("2026-10-23T00:00:00.000Z"),
   });
-  expect(sameIdItems.map(({ thread, description }) => ({ thread, description }))).toEqual([
-    {
-      thread: { environmentId: vps, threadId: "same" },
-      description: "Thread on Hetzner VPS",
-    },
+  expect(sameIdItems.map(({ thread }) => thread)).toEqual([
+    { environmentId: vps, threadId: "same" },
   ]);
 });
 

@@ -84,7 +84,7 @@ const PUSH_COMMAND = new RegExp(
 // `"a "'`b`'" c"`.
 const SHELL_WRAPPER = /^\s*(?:\S*\/)?(?:ba|z|da|k)?sh\s+-l?c\s+(?=["'])([\s\S]*)$/u;
 const SHELL_WORD_PIECE = /"((?:\\[\s\S]|[^"\\])*)"|'([^']*)'|\\([\s\S])|(\S)/gu;
-const HEREDOC_OPENER = /<<-?[ \t]*(['"]?)(\w+)\1/uy;
+const HEREDOC_OPENER = /<<(?!<)(-?)[ \t]*(['"]?)(\w+)\2(?=[\s;&|<>()]|$)/uy;
 const COMMAND_SEPARATOR = /&&|\|\||[;|\n]/u;
 const COMMAND_SEPARATORS = new RegExp(COMMAND_SEPARATOR, "gu");
 // Commands that print other change requests' URLs, so output beside them proves nothing.
@@ -104,18 +104,26 @@ function shellScript(input: string): string {
       ).join("");
 }
 
-/** Where a heredoc opened at `at` ends: after its terminator line, or at the end of the script. */
-function heredocEnd(script: string, at: number): number | undefined {
+function heredocOpener(script: string, at: number) {
+  if (script[at - 1] === "<") return undefined;
   HEREDOC_OPENER.lastIndex = at;
-  const [opener, , tag] = HEREDOC_OPENER.exec(script) ?? [];
-  if (opener === undefined || tag === undefined) return undefined;
-  let lineStart = script.indexOf("\n", at + opener.length);
-  if (lineStart === -1) return undefined;
-  while (lineStart !== -1) {
-    const lineEnd = script.indexOf("\n", lineStart + 1);
-    const end = lineEnd === -1 ? script.length : lineEnd;
-    if (script.slice(lineStart + 1, end).trim() === tag) return end;
-    lineStart = lineEnd;
+  const [opener, dash, , tag] = HEREDOC_OPENER.exec(script) ?? [];
+  if (opener !== undefined && tag !== undefined) {
+    return { end: at + opener.length, tag, stripTabs: dash === "-" };
+  }
+}
+
+function heredocBodyEnd(
+  script: string,
+  start: number,
+  { tag, stripTabs }: NonNullable<ReturnType<typeof heredocOpener>>,
+): number {
+  for (let lineStart = start; lineStart < script.length;) {
+    const newline = script.indexOf("\n", lineStart);
+    if (newline === -1) return script.length;
+    const line = script.slice(lineStart, newline);
+    if ((stripTabs ? line.replace(/^\t+/, "") : line) === tag) return newline;
+    lineStart = newline + 1;
   }
   return script.length;
 }
@@ -136,8 +144,12 @@ function doubleQuoteEnd(script: string, at: number): number {
         if (script.startsWith("<<", opener)) break;
         opener++;
       }
-      const end = heredocEnd(script, opener);
-      index = end ?? index + 2;
+      const heredoc = heredocOpener(script, opener);
+      const newline = heredoc === undefined ? -1 : script.indexOf("\n", heredoc.end);
+      index =
+        heredoc !== undefined && newline !== -1
+          ? heredocBodyEnd(script, newline + 1, heredoc)
+          : index + 2;
       continue;
     }
     index++;
@@ -158,6 +170,7 @@ type CarriedText = {
  */
 function carriedText(script: string): ReadonlyArray<CarriedText> {
   const pieces: Array<CarriedText> = [];
+  const heredocs: Array<NonNullable<ReturnType<typeof heredocOpener>>> = [];
   let wordStart = true;
   let index = 0;
   const carry = (end: number, kind: CarriedText["kind"]) => {
@@ -180,9 +193,18 @@ function carriedText(script: string): ReadonlyArray<CarriedText> {
       const lineEnd = script.indexOf("\n", index);
       carry(lineEnd === -1 ? script.length : lineEnd, "text");
     } else {
-      const end = char === "<" ? heredocEnd(script, index) : undefined;
-      if (end !== undefined) carry(end, "heredoc");
-      else {
+      const heredoc = char === "<" ? heredocOpener(script, index) : undefined;
+      if (heredoc !== undefined) {
+        heredocs.push(heredoc);
+        carry(heredoc.end, "text");
+      } else if (char === "\n" && heredocs.length > 0) {
+        // The shell reads every command on the opener line before reading the bodies in order.
+        index++;
+        let end = index - 1;
+        for (const document of heredocs) end = heredocBodyEnd(script, end + 1, document);
+        carry(end, "heredoc");
+        heredocs.length = 0;
+      } else {
         wordStart = /[\s;&|(]/u.test(char);
         index++;
       }
@@ -192,10 +214,14 @@ function carriedText(script: string): ReadonlyArray<CarriedText> {
 }
 
 /** The script with each piece of text it carries replaced. */
-function replaceCarriedText(script: string, replace: (piece: CarriedText) => string): string {
+function replaceCarriedText(
+  script: string,
+  replace: (piece: CarriedText) => string,
+  pieces = carriedText(script),
+): string {
   let result = "";
   let index = 0;
-  for (const piece of carriedText(script)) {
+  for (const piece of pieces) {
     result += script.slice(index, piece.start) + replace(piece);
     index = piece.end;
   }
@@ -205,19 +231,25 @@ function replaceCarriedText(script: string, replace: (piece: CarriedText) => str
 /** The commands a script runs, without the text it carries. */
 const shellCode = (script: string) =>
   replaceCarriedText(script, ({ start, end, kind }) =>
-    kind === "escape" ? script.slice(start, end) : kind === "heredoc" ? "<<" : "''",
+    kind === "escape" ? script.slice(start, end) : kind === "heredoc" ? "" : "''",
   );
 
 /** A script split at the command separators in its code, leaving carried text intact. */
 function shellSegments(script: string): ReadonlyArray<string> {
-  const masked = replaceCarriedText(script, ({ start, end }) => "_".repeat(end - start));
+  const pieces = carriedText(script);
+  const masked = replaceCarriedText(script, ({ start, end }) => "_".repeat(end - start), pieces);
+  const source = replaceCarriedText(
+    script,
+    ({ start, end }) => " ".repeat(end - start),
+    pieces.filter(({ kind }) => kind === "heredoc"),
+  );
   const segments: Array<string> = [];
   let start = 0;
   for (const separator of masked.matchAll(COMMAND_SEPARATORS)) {
-    segments.push(script.slice(start, separator.index));
+    segments.push(source.slice(start, separator.index));
     start = separator.index + separator[0].length;
   }
-  segments.push(script.slice(start));
+  segments.push(source.slice(start));
   return segments;
 }
 

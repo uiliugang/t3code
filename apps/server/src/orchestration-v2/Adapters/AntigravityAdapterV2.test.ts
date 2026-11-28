@@ -2432,8 +2432,6 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
       }).pipe(Effect.provide(layerSession)),
   );
 
-  // agy names its background commands `<session>/task-<n>`; the agent passes that to
-  // t3_background_wait, which must not fail since the adapter already holds the run open.
   it.effect("accepts t3_background_wait for a command it already tracks", () =>
     Effect.gen(function* () {
       const { session, providerThread, startTurn, throughPromptSettled } =
@@ -2444,7 +2442,7 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
       );
       yield* startTurn(1, false);
       yield* throughPromptSettled;
-      const taskIds = ["mock-session-1/task-2"];
+      const taskIds = ["call_fetch"];
       assert.isDefined(session.awaitBackgroundTasks, "t3_background_wait must not be unsupported");
       const result = yield* session.awaitBackgroundTasks!({
         providerThread,
@@ -2452,6 +2450,37 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
         awaited: true,
       });
       assert.deepEqual(result.matched, taskIds);
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("releases only the requested command and rejects an unmapped task id", () =>
+    Effect.gen(function* () {
+      const { session, providerThread, startTurn, throughPromptSettled, throughTerminal } =
+        yield* openSessionWithRunningCommand({}, undefined, undefined, {
+          initialToolCalls: ["call_first", "call_second"].map((toolCallId) => ({
+            sessionUpdate: "tool_call",
+            toolCallId,
+            title: toolCallId,
+            kind: "execute",
+            rawInput: { CommandLine: `node ${toolCallId}.mjs`, WaitMsBeforeAsync: 10000 },
+            status: "in_progress",
+          })),
+        });
+      yield* startTurn(1, false);
+      yield* throughPromptSettled;
+      const mark = (taskIds: string[], awaited: boolean) =>
+        session.awaitBackgroundTasks!({ providerThread, taskIds, awaited });
+
+      assert.deepEqual((yield* mark(["mock-session-1/task-2"], false)).matched, []);
+      assert.deepEqual((yield* mark(["call_first"], false)).matched, ["call_first"]);
+      assert.deepEqual((yield* mark(["call_second"], true)).matched, ["call_second"]);
+      assert.deepEqual((yield* mark(["call_first"], false)).matched, []);
+      assert.deepEqual((yield* mark(["call_second"], false)).matched, ["call_second"]);
+
+      yield* TestClock.adjust("5 seconds");
+      const settled = yield* throughTerminal;
+      const terminal = settled.at(-1);
+      assert.equal(terminal?.type === "turn.terminal" && terminal.status, "completed");
     }).pipe(Effect.provide(layerSession)),
   );
 
@@ -2468,7 +2497,7 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
           event.turnItem.nativeItemRef?.nativeId === command.toolCallId,
       );
       assert.isDefined(originalCommandItem);
-      const taskIds = ["mock-session-1/task-2"];
+      const taskIds = [command.toolCallId];
       const released = yield* session.awaitBackgroundTasks!({
         providerThread,
         taskIds,
@@ -2527,7 +2556,7 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
       yield* run.throughPromptSettled;
       yield* session.awaitBackgroundTasks!({
         providerThread,
-        taskIds: ["mock-session-1/task-2"],
+        taskIds: [command.toolCallId],
         awaited: false,
       });
       yield* TestClock.adjust("5 seconds");
@@ -2552,7 +2581,7 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
       yield* run.throughPromptSettled;
       yield* session.awaitBackgroundTasks!({
         providerThread,
-        taskIds: ["mock-session-1/task-2"],
+        taskIds: [command.toolCallId],
         awaited: false,
       });
       yield* TestClock.adjust("5 seconds");

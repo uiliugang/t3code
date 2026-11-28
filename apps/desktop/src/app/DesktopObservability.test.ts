@@ -377,6 +377,52 @@ describe("DesktopObservability", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("preserves backup order when publication fails and rotation retries", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const directory = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-rotating-retry-test-",
+      });
+      const filePath = `${directory}/server-child.log`;
+      yield* fileSystem.writeFileString(filePath, "AAAAAAAA");
+      yield* fileSystem.writeFileString(`${filePath}.1`, "B");
+      yield* fileSystem.writeFileString(`${filePath}.2`, "C");
+      yield* fileSystem.writeFileString(`${filePath}.3`, "D");
+      let denyPublication = true;
+      const writer = yield* DesktopObservability.makeRotatingLogFileWriter({
+        filePath,
+        maxBytes: 10,
+        maxFiles: 3,
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fileSystem,
+          rename: (source, target) =>
+            denyPublication && source === `${filePath}.rotating` && target === `${filePath}.1`
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "rename",
+                    pathOrDescriptor: source,
+                  }),
+                )
+              : fileSystem.rename(source, target),
+        }),
+      );
+
+      yield* writer.writeText("EEE");
+      denyPublication = false;
+      yield* writer.writeText("FFFFFFFF");
+
+      assert.deepEqual(
+        yield* Effect.forEach(["", ".1", ".2", ".3"], (suffix) =>
+          fileSystem.readFileString(`${filePath}${suffix}`),
+        ),
+        ["FFFFFFFF", "AAAAAAAAEEE", "B", "C"],
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("stops every export when the OpenTelemetry SDK is disabled", () => {
     const requests: Array<ExportedRequest> = [];
     return Effect.gen(function* () {

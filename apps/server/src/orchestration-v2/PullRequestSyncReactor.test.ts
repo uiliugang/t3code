@@ -2277,6 +2277,26 @@ describe("PullRequestSyncReactor", () => {
       linked: [124],
     },
     {
+      name: "a read after a create on the heredoc opener line",
+      input:
+        "gh pr create --title Test --body-file - >/dev/null <<EOF && gh pr view 31 --json url --jq .url\nBody\nEOF",
+      output: "https://github.com/owner/repository/pull/31",
+      linked: [],
+    },
+    {
+      name: "a create on the opener line of two heredocs",
+      input:
+        "cat <<FIRST <<'SECOND' >/dev/null && gh pr create --fill\ngh pr list\nFIRST\ngh pr create --fill\nSECOND",
+      output: "https://github.com/owner/repository/pull/31",
+      linked: [31],
+    },
+    {
+      name: "a create after a here-string",
+      input: "cat <<<sample >/dev/null\ngh pr create --fill",
+      output: "https://github.com/owner/repository/pull/31",
+      linked: [31],
+    },
+    {
       name: "a create after quoted heredoc text",
       input: "echo '<<EOF'; gh pr create --fill\ntrue",
       output: "<<EOF\nhttps://github.com/owner/repository/pull/31",

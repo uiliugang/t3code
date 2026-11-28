@@ -1,4 +1,5 @@
 import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import { makeFileRotation } from "@t3tools/shared/logging";
 import {
   makeLocalFileTracer,
   makeTraceSink,
@@ -255,7 +256,7 @@ export const makeRotatingLogFileWriter = Effect.fn("makeRotatingLogFileWriter")(
 
   yield* fileSystem.makeDirectory(directory, { recursive: true });
 
-  const withSuffix = (index: number) => `${input.filePath}.${index}`;
+  const rotation = makeFileRotation(fileSystem, input.filePath, maxFiles);
   const currentSize = yield* Ref.make(yield* refreshFileSize(fileSystem, input.filePath));
   const mutex = yield* Semaphore.make(1);
 
@@ -271,32 +272,11 @@ export const makeRotatingLogFileWriter = Effect.fn("makeRotatingLogFileWriter")(
     }
   });
 
-  const staged = `${input.filePath}.rotating`;
-  const publishStaged = Effect.gen(function* () {
-    yield* fileSystem.remove(withSuffix(maxFiles), { force: true }).pipe(Effect.ignore);
-    for (let index = maxFiles - 1; index >= 1; index -= 1) {
-      const source = withSuffix(index);
-      const sourceExists = yield* fileSystem.exists(source).pipe(Effect.orElseSucceed(() => false));
-      if (sourceExists) {
-        yield* fileSystem.rename(source, withSuffix(index + 1));
-      }
-    }
-    yield* fileSystem.rename(staged, withSuffix(1));
-  });
-
   const rotate = Effect.gen(function* () {
-    const exists = (filePath: string) =>
-      fileSystem.exists(filePath).pipe(Effect.orElseSucceed(() => false));
-    // A log left staged by an interrupted rotation becomes a backup first.
-    if (yield* exists(staged)) yield* publishStaged;
-    // Move the active log aside before touching backups: while it cannot move, none is aged out.
-    if (yield* exists(input.filePath)) {
-      yield* fileSystem.rename(input.filePath, staged);
-      yield* publishStaged;
-    }
-    yield* Ref.set(currentSize, 0);
+    if (yield* rotation.recover) yield* rotation.rotate;
   }).pipe(
-    Effect.catch(() =>
+    Effect.ignore,
+    Effect.andThen(
       refreshFileSize(fileSystem, input.filePath).pipe(
         Effect.flatMap((size) => Ref.set(currentSize, size)),
       ),

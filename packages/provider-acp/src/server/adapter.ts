@@ -11664,8 +11664,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 ),
               ),
           ),
-          // The held turn already waits on these commands; their tool calls carry no task id,
-          // so any id matches while one runs on this thread.
           ...(flavor.toolOutlivesPrompt === undefined
             ? {}
             : {
@@ -11685,25 +11683,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   ) {
                     return { matched: [] };
                   }
-                  const runningOutliving = [...context.tools.values()].filter(
-                    (tool) => toolStatus(tool.status) === "running" && outlives(tool),
-                  );
-                  if (awaited) {
-                    if (runningOutliving.length === 0) return { matched: [] };
-                    for (const tool of runningOutliving) {
-                      context.unawaitedToolCallIds.delete(tool.toolCallId);
+                  const matched: string[] = [];
+                  for (const taskId of new Set(taskIds)) {
+                    const toolCallId = context.toolCallIdsByBackgroundTaskId.get(taskId) ?? taskId;
+                    const tool = context.tools.get(toolCallId);
+                    if (!tool || toolStatus(tool.status) !== "running" || !outlives(tool)) continue;
+                    if (awaited) context.unawaitedToolCallIds.delete(toolCallId);
+                    else {
+                      if (context.unawaitedToolCallIds.has(toolCallId)) continue;
+                      context.unawaitedToolCallIds.add(toolCallId);
                     }
-                    return { matched: [...new Set(taskIds)] };
+                    matched.push(taskId);
                   }
-                  const held = runningOutliving.filter(
-                    (tool) => !context.unawaitedToolCallIds.has(tool.toolCallId),
-                  );
-                  if (held.length === 0) return { matched: [] };
-                  for (const tool of held) {
-                    context.unawaitedToolCallIds.add(tool.toolCallId);
-                  }
-                  yield* rearmDeferredFinalize(context);
-                  return { matched: [...new Set(taskIds)] };
+                  if (!awaited && matched.length > 0) yield* rearmDeferredFinalize(context);
+                  return { matched };
                 }),
               }),
           interruptTurn: Effect.fn("AcpAdapterV2.interruptTurn")(
