@@ -10,7 +10,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { type IssueCommentAudience, IssueTrackerKind } from "@t3tools/contracts";
+import { IssueTrackerKind } from "@t3tools/contracts";
 import {
   IssueTrackerError,
   type IssueTrackerCredential,
@@ -87,8 +87,6 @@ const Comment = Schema.Struct({
   author: Schema.optional(Schema.NullOr(User)),
   body: Schema.optional(Schema.Unknown),
   created: Schema.String,
-  /** False on a Service Management internal note. */
-  jsdPublic: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 export type JiraComment = typeof Comment.Type;
 
@@ -221,19 +219,13 @@ export class JiraApi extends Context.Service<
       fields: Record<string, unknown>,
     ) => Effect.Effect<void, IssueTrackerError>;
     readonly transition: (key: string, id: string) => Effect.Effect<void, IssueTrackerError>;
-    /** On a Service Management issue the comment is an internal note unless `audience` is public. */
-    readonly addComment: (
-      key: string,
-      body: AdfNode,
-      audience: IssueCommentAudience | undefined,
-    ) => Effect.Effect<void, IssueTrackerError>;
+    readonly addComment: (key: string, body: AdfNode) => Effect.Effect<void, IssueTrackerError>;
     readonly labels: Effect.Effect<
       { readonly names: ReadonlyArray<string>; readonly truncated: boolean },
       IssueTrackerError
     >;
     readonly assignable: (
       project: string,
-      filter?: { readonly query: string } | { readonly accountId: string },
     ) => Effect.Effect<
       { readonly users: ReadonlyArray<JiraUser>; readonly truncated: boolean },
       IssueTrackerError
@@ -485,7 +477,7 @@ export const make = Effect.gen(function* () {
     });
 
   const addComment: JiraApi["Service"]["addComment"] = Effect.fn("JiraApi.addComment")(
-    function* (key, body, audience) {
+    function* (key, body) {
       const issue = yield* send(
         "addComment",
         Schema.Struct({ fields: Schema.Struct({ project: Schema.optional(IssueProject) }) }),
@@ -495,25 +487,13 @@ export const make = Effect.gen(function* () {
           query: { fields: "project" },
         },
       );
-      const serviceDesk = issue.fields.project?.projectTypeKey === "service_desk";
-      if (!serviceDesk && audience === "internal") {
-        return yield* fail(
-          "addComment",
-          "failed",
-          `${key} is not in a Service Management project, so it has no internal notes.`,
-        );
-      }
       // A service desk comment is a reply the customer sees unless marked internal.
+      const internal = issue.fields.project?.projectTypeKey === "service_desk";
       yield* send("addComment", Schema.Unknown, {
         method: "POST",
         path: `/rest/api/3/issue/${encodeURIComponent(key)}/comment`,
-        body: serviceDesk
-          ? {
-              body,
-              properties: [
-                { key: "sd.public.comment", value: { internal: audience !== "public" } },
-              ],
-            }
+        body: internal
+          ? { body, properties: [{ key: "sd.public.comment", value: { internal: true } }] }
           : { body },
       });
     },
@@ -527,13 +507,13 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.map((page) => page.values)),
   ).pipe(Effect.map((page) => ({ names: page.items, truncated: page.truncated })));
 
-  const assignable: JiraApi["Service"]["assignable"] = (project, filter) =>
+  const assignable: JiraApi["Service"]["assignable"] = (project) =>
     paged(
       (startAt) =>
         send("assignable", Schema.Array(User), {
           method: "GET",
           path: "/rest/api/3/user/assignable/search",
-          query: { project, startAt, maxResults: PAGE, ...filter },
+          query: { project, startAt, maxResults: PAGE },
         }),
       // Jira drops users the caller may not see after paging, so a short page is not the last.
       true,

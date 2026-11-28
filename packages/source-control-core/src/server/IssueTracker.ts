@@ -9,7 +9,6 @@ import type {
   IssueCandidates,
   IssueCapabilities,
   IssueComment,
-  IssueCommentAudience,
   IssueCommentsPage,
   IssueCreateResult,
   IssueEvent,
@@ -90,7 +89,6 @@ export interface TrackerIssueDetail extends TrackerIssueSummary {
   readonly states: ReadonlyArray<IssueState>;
   readonly reactions?: ReadonlyArray<IssueReaction>;
   readonly comments: ReadonlyArray<IssueComment>;
-  readonly commentAudiences?: boolean | undefined;
   /** Where older comments carry on; null once the conversation is whole. */
   readonly commentsCursor: string | null;
   readonly events: ReadonlyArray<IssueEvent>;
@@ -157,12 +155,9 @@ export interface IssueTrackerApi {
     },
   ) => Effect.Effect<IssueCreateResult, IssueTrackerError>;
 
-  /** Only called when `capabilities.comment` is true; an internal audience only with `internalComments`. */
+  /** Only called when `capabilities.comment` is true. */
   readonly comment?: (
-    input: IssueTarget & {
-      readonly body: string;
-      readonly audience?: IssueCommentAudience | undefined;
-    },
+    input: IssueTarget & { readonly body: string },
   ) => Effect.Effect<void, IssueTrackerError>;
 
   /**
@@ -205,7 +200,7 @@ export interface IssueTrackerApi {
 
   /** Only called when `capabilities.labels` or `capabilities.assignees` is true. */
   readonly listCandidates?: (
-    input: IssueScopeTarget & { readonly query?: string | undefined },
+    input: IssueScopeTarget,
   ) => Effect.Effect<IssueCandidates, IssueTrackerError>;
 }
 

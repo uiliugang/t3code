@@ -1,4 +1,3 @@
-import type { IssueCommentAudience } from "@t3tools/contracts";
 import { useGT } from "gt-react-native";
 import { useRef, useState } from "react";
 import { Platform, View } from "react-native";
@@ -17,13 +16,8 @@ import {
   useComposerChrome,
   useComposerTextStyle,
 } from "../../components/ComposerSurface";
-import {
-  ComposerActionButton,
-  ComposerInlineControl,
-  ComposerToolbarRow,
-} from "../../components/ComposerToolbar";
+import { ComposerActionButton, ComposerToolbarRow } from "../../components/ComposerToolbar";
 import { AppText as Text } from "../../components/ui/AppText";
-import { Menu } from "../../components/ui/Menu";
 import { useComposerTextRole } from "../settings/appearance/useScaledTextRole";
 import {
   ComposerDictationCancelAction,
@@ -42,8 +36,7 @@ const EDITOR_LEADING_INSET = 14;
 
 /**
  * The comment box at the foot of an issue, in the thread composer's chrome: one row that grows
- * with the draft, dictation, and a round send button. With audiences, the editor gets its own two
- * lines above the audience menu and send. `blocked` replaces the editor with the reason.
+ * with the draft, dictation, and a round send button. `blocked` replaces the editor with the reason.
  */
 export function IssueCommentComposer(props: {
   /** Names this draft to dictation, so a recording started here lands here. */
@@ -51,18 +44,14 @@ export function IssueCommentComposer(props: {
   readonly label: string;
   readonly blocked: string | null;
   readonly posting: boolean;
-  /** Each comment is an internal note unless the viewer picks a reply to the customer. */
-  readonly audiences: boolean;
   readonly bottomInset: number;
   readonly contentMaxWidth?: number;
   /** Resolves true once the comment is posted, which clears the draft. */
-  readonly onSubmit: (body: string, audience?: IssueCommentAudience) => Promise<boolean>;
+  readonly onSubmit: (body: string) => Promise<boolean>;
   readonly onHeightChange: (height: number) => void;
   readonly onFocusChange: (focused: boolean) => void;
 }) {
   const gt = useGT();
-  // Internal by default: a customer reply is always an explicit choice.
-  const [audience, setAudience] = useState<IssueCommentAudience>("internal");
   const editorRef = useRef<ComposerEditorHandle>(null);
   const [draft, setDraft] = useState("");
   // Read by dictation and by send after an await, when the render's `draft` may be stale.
@@ -78,11 +67,6 @@ export function IssueCommentComposer(props: {
   const [focused, setFocused] = useState(false);
   // Animate only while typing, as the thread composer does; a restored draft lands in place.
   const compactEditor = useCompactComposerEditor(bodyText, draft, Platform.OS === "ios" && focused);
-  const [contentHeight, setContentHeight] = useState(0);
-  const twoLineEditorHeight = Math.max(
-    bodyText.lineHeight * 2,
-    Math.min(bodyText.lineHeight * 4, draft.length === 0 ? 0 : contentHeight),
-  );
   const voiceInput = useVoiceInputController({
     ownerKey: props.ownerKey,
     label: props.label,
@@ -106,8 +90,7 @@ export function IssueCommentComposer(props: {
     await editorRef.current?.flushPendingInput();
     const submitted = latestDraft.current;
     if (submitted.trim().length === 0) return;
-    const sent = await props.onSubmit(submitted, props.audiences ? audience : undefined);
-    if (sent && latestDraft.current === submitted) changeDraft("");
+    if ((await props.onSubmit(submitted)) && latestDraft.current === submitted) changeDraft("");
   };
   const send = () => {
     if (!canSend || sending.current) return Promise.resolve();
@@ -125,82 +108,6 @@ export function IssueCommentComposer(props: {
       variant="primary"
       disabled={!canSend}
       onPress={() => void send()}
-    />
-  );
-  const editor = (
-    <ComposerEditor
-      ref={editorRef}
-      multiline
-      value={draft}
-      readOnly={locked}
-      selection={selection}
-      onChangeText={(text) => {
-        if (!locked) changeDraft(text);
-      }}
-      onSelectionChange={setSelection}
-      placeholder={gt("Leave a comment")}
-      onFocus={() => {
-        setFocused(true);
-        props.onFocusChange(true);
-      }}
-      onBlur={() => {
-        setFocused(false);
-        props.onFocusChange(false);
-      }}
-      onSubmit={() => void send()}
-      submitTitle={gt("Comment", { $context: "verb, posts the comment" })}
-      {...(props.audiences
-        ? {
-            singleLineCentered: false,
-            contentInsetVertical: 0,
-            scrollEnabled: Platform.OS === "android" || contentHeight >= bodyText.lineHeight * 4,
-            onContentSizeChange: ({ height }: { height: number }) => setContentHeight(height),
-            style: { height: twoLineEditorHeight },
-          }
-        : compactEditor.editorProps)}
-      textStyle={textStyle}
-    />
-  );
-  const audienceMenu = props.audiences ? (
-    <Menu
-      title={gt("Comment audience")}
-      style={{ flexShrink: 1, minWidth: 0 }}
-      actions={[
-        {
-          id: "internal",
-          title: gt("Internal note"),
-          state: audience === "internal" ? "on" : "off",
-          attributes: { disabled: locked },
-        },
-        {
-          id: "public",
-          title: gt("Reply to customer"),
-          state: audience === "public" ? "on" : "off",
-          attributes: { disabled: locked },
-        },
-      ]}
-      onPressAction={({ nativeEvent }) => {
-        if (nativeEvent.event === "internal" || nativeEvent.event === "public") {
-          setAudience(nativeEvent.event);
-        }
-      }}
-    >
-      <View pointerEvents="none">
-        <ComposerInlineControl
-          size={chrome.controlSize}
-          label={audience === "internal" ? gt("Internal note") : gt("Reply to customer")}
-        />
-      </View>
-    </Menu>
-  ) : null;
-  const dictationStart = (
-    <ComposerDictationStartAction
-      size={chrome.controlSize}
-      state={voiceInput.state}
-      isAvailable={voiceInput.isAvailable}
-      disabled={locked}
-      onStart={voiceInput.start}
-      onCancel={voiceInput.cancel}
     />
   );
 
@@ -221,7 +128,6 @@ export function IssueCommentComposer(props: {
       <View className="w-full self-center" style={{ maxWidth: props.contentMaxWidth }}>
         <ComposerSurface
           animateLayout={false}
-          tone={props.audiences && audience === "internal" ? "warning" : undefined}
           style={{
             borderRadius: chrome.borderRadius,
             borderCurve: "circular",
@@ -247,60 +153,73 @@ export function IssueCommentComposer(props: {
                 error={voiceInput.state.phase === "error" ? voiceInput.state.error : null}
                 onDismiss={voiceInput.cancel}
               />
-              {props.audiences ? (
-                <ComposerDictationDraftContent compact hidden={dictating}>
-                  <View className="px-3.5 pt-3 pb-1">{editor}</View>
-                  {/* Send stays where the one-row composer and the dictation toolbar put it. */}
-                  <View
-                    className="flex-row items-center"
-                    style={{ paddingLeft: EDITOR_LEADING_INSET - 8 }}
+              <View onLayout={compactEditor.onRowLayout}>
+                <ComposerDictationDraftContent
+                  className="flex-row items-end"
+                  compact
+                  hidden={dictating}
+                >
+                  <View style={{ width: EDITOR_LEADING_INSET - 8 }} />
+                  <Animated.View
+                    className="min-w-0 flex-1"
+                    onLayout={compactEditor.onEditorLayout}
+                    style={[
+                      { minWidth: compactEditor.isExpanded ? 0 : INLINE_EDITOR_MIN_WIDTH },
+                      compactEditor.containerStyle,
+                      compactEditor.isExpanded ? { flex: 0, width: 0 } : undefined,
+                    ]}
+                  />
+                  {/* TalkBack orders siblings by position; outside this row the editor reads after Send. */}
+                  <Animated.View
+                    style={[
+                      compactEditor.editorStyle,
+                      // iOS destroys a view under display: none; the editor would lose its focus and caret.
+                      Platform.OS === "android" && dictating ? { display: "none" } : undefined,
+                    ]}
                   >
-                    <View className="min-w-0 flex-1 items-start">{audienceMenu}</View>
-                    {dictationStart}
+                    <ComposerEditor
+                      ref={editorRef}
+                      multiline
+                      value={draft}
+                      readOnly={locked}
+                      selection={selection}
+                      onChangeText={(text) => {
+                        if (!locked) changeDraft(text);
+                      }}
+                      onSelectionChange={setSelection}
+                      placeholder={gt("Leave a comment")}
+                      onFocus={() => {
+                        setFocused(true);
+                        props.onFocusChange(true);
+                      }}
+                      onBlur={() => {
+                        setFocused(false);
+                        props.onFocusChange(false);
+                      }}
+                      onSubmit={() => void send()}
+                      submitTitle={gt("Comment", { $context: "verb, posts the comment" })}
+                      {...compactEditor.editorProps}
+                      textStyle={textStyle}
+                    />
+                  </Animated.View>
+                  <View
+                    className="min-w-0 shrink flex-row items-center"
+                    style={
+                      compactEditor.isExpanded ? { flex: 1, justifyContent: "flex-end" } : undefined
+                    }
+                  >
+                    <ComposerDictationStartAction
+                      size={chrome.controlSize}
+                      state={voiceInput.state}
+                      isAvailable={voiceInput.isAvailable}
+                      disabled={locked}
+                      onStart={voiceInput.start}
+                      onCancel={voiceInput.cancel}
+                    />
                     {sendButton}
                   </View>
                 </ComposerDictationDraftContent>
-              ) : (
-                <View onLayout={compactEditor.onRowLayout}>
-                  <ComposerDictationDraftContent
-                    className="flex-row items-end"
-                    compact
-                    hidden={dictating}
-                  >
-                    <View style={{ width: EDITOR_LEADING_INSET - 8 }} />
-                    <Animated.View
-                      className="min-w-0 flex-1"
-                      onLayout={compactEditor.onEditorLayout}
-                      style={[
-                        { minWidth: compactEditor.isExpanded ? 0 : INLINE_EDITOR_MIN_WIDTH },
-                        compactEditor.containerStyle,
-                        compactEditor.isExpanded ? { flex: 0, width: 0 } : undefined,
-                      ]}
-                    />
-                    {/* TalkBack orders siblings by position; outside this row the editor reads after Send. */}
-                    <Animated.View
-                      style={[
-                        compactEditor.editorStyle,
-                        // iOS destroys a view under display: none; the editor would lose its focus and caret.
-                        Platform.OS === "android" && dictating ? { display: "none" } : undefined,
-                      ]}
-                    >
-                      {editor}
-                    </Animated.View>
-                    <View
-                      className="min-w-0 shrink flex-row items-center"
-                      style={
-                        compactEditor.isExpanded
-                          ? { flex: 1, justifyContent: "flex-end" }
-                          : undefined
-                      }
-                    >
-                      {dictationStart}
-                      {sendButton}
-                    </View>
-                  </ComposerDictationDraftContent>
-                </View>
-              )}
+              </View>
               <Animated.View
                 accessibilityElementsHidden={!dictating}
                 collapsable={false}

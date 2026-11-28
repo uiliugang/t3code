@@ -173,7 +173,6 @@ export function ComposerSurface(props: {
   readonly children: ReactNode;
   readonly style: ViewStyle;
   readonly animateLayout?: boolean;
-  readonly tone?: "warning";
 }) {
   const colors = useUniwindTheme();
   const targetBorderRadius =
@@ -222,7 +221,6 @@ export function ComposerSurface(props: {
       </AnimatedGlassSurface>
       <Animated.View
         collapsable={false}
-        className={props.tone === "warning" ? "bg-warning" : undefined}
         layout={layoutTransition}
         style={[props.style, animatedShapeStyle]}
       >
