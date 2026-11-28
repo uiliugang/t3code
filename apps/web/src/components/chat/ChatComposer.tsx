@@ -20,7 +20,7 @@ import {
   runtimeModeDenial,
 } from "./runtimeModeConfig";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
-import { usePrimaryEnvironmentId } from "../../state/environments";
+import { readPrimaryEnvironmentId, usePrimaryEnvironmentId } from "../../state/environments";
 import { useRightPanelStore } from "~/rightPanelStore";
 import {
   importPastedComposerText,
@@ -3154,14 +3154,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     !localEnvironmentDisabledAtMount &&
     environmentId === primaryEnvironmentId &&
     canReadLocalFiles;
+  const canPickFolderNow = () =>
+    !isLocalEnvironmentDisabled() &&
+    environmentId === readPrimaryEnvironmentId() &&
+    readEnvironmentScope(environmentId, AuthFilesystemReadScope);
   const pickComposerFolder = async () => {
-    if (
-      !desktopBridge?.pickFolder ||
-      isLocalEnvironmentDisabled() ||
-      environmentId !== primaryEnvironmentId ||
-      !readEnvironmentScope(environmentId, AuthFilesystemReadScope)
-    )
-      return;
+    if (!desktopBridge?.pickFolder || !canPickFolderNow()) return;
 
     const draftKey = attachmentTargetKeyRef.current;
     const path = await desktopBridge
@@ -3170,7 +3168,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         toastManager.add({ type: "error", title: gt("Couldn't open the folder picker") });
         return null;
       });
-    if (path !== null && readEnvironmentScope(environmentId, AuthFilesystemReadScope)) {
+    if (path !== null && canPickFolderNow()) {
       insertComposerFolders([{ name: path, path }], draftKey);
     }
   };
