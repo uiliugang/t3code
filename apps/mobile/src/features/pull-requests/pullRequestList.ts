@@ -196,7 +196,7 @@ export function withShownPullRequestStats(
     readonly stats: readonly PullRequestDiffStat[];
   }[],
 ): readonly EnvironmentPullRequestListEntry[] {
-  const shown = new Map(
+  const shown = new Map<string, PullRequestDiffStat>(
     answers.flatMap(({ environmentId, input, stats }) =>
       (input === undefined ? stats : qualifyLegacyStats(input, stats)).map(
         (row) => [`${environmentId}:${pullRequestStatKey(row)}`, row] as const,
