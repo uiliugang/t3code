@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeURL from "node:url";
@@ -952,7 +953,7 @@ export const migrateDevDbCommand = Command.make(
 
 if (import.meta.main) {
   Command.run(migrateDevDbCommand, { version: "0.0.0" }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layerDigest)),
     NodeRuntime.runMain,
   );
 }

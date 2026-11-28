@@ -596,7 +596,8 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
       Effect.gen(function* () {
         const { fileSystem, path, tmp, run, repository, worktreeCount } = yield* fixture;
         const shop = path.join(tmp, "shop");
-        const api = yield* repository("shop/api");
+        const apiName = "api\u2028tools";
+        const api = yield* repository(`shop/${apiName}`);
         const web = yield* repository("shop/web");
         let existingHead: string | undefined;
         if (carrySource === "existing-branch") {
@@ -612,7 +613,7 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
             worktreeLayout: {
               // A plain project's folder is no worktree, even when the command leaves a `.git` there.
               create:
-                'mkdir -p "$T3_WORKTREE_PROJECT_PATH/cache" && git init -q "$T3_WORKTREE_PROJECT_PATH" && printf %s "$T3_WORKTREE_REPOSITORIES" > "$T3_WORKTREE_PROJECT_PATH/chosen" && git -C "$T3_PROJECT_ROOT/api" worktree add -q -b "$T3_WORKTREE_BRANCH" "$T3_WORKTREE_PROJECT_PATH/api" "$T3_WORKTREE_BASE"' +
+                `mkdir -p "$T3_WORKTREE_PROJECT_PATH/cache" && git init -q "$T3_WORKTREE_PROJECT_PATH" && printf %s "$T3_WORKTREE_REPOSITORIES" > "$T3_WORKTREE_PROJECT_PATH/chosen" && git -C "$T3_PROJECT_ROOT/${apiName}" worktree add -q -b "$T3_WORKTREE_BRANCH" "$T3_WORKTREE_PROJECT_PATH/${apiName}" "$T3_WORKTREE_BASE"` +
                 (carrySource === "existing-branch"
                   ? ' && git -C "$T3_PROJECT_ROOT/web" worktree add -q "$T3_WORKTREE_PROJECT_PATH/web" "$T3_WORKTREE_BRANCH"'
                   : ""),
@@ -660,7 +661,7 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
             projectCommands: "permitted",
           });
           sourcePath = source.taskFolder.projectPath;
-          const sourceApi = path.join(sourcePath, "api");
+          const sourceApi = path.join(sourcePath, apiName);
           yield* fileSystem.writeFileString(path.join(sourceApi, "README.md"), "parent commit\n");
           yield* run(sourceApi, "add", "README.md");
           yield* run(sourceApi, "commit", "-m", "parent commit");
@@ -682,22 +683,22 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
         });
         if (carrySource !== "none") {
           assert.equal(
-            yield* fileSystem.readFileString(path.join(taskFolder.projectPath, "api", "README.md")),
+            yield* fileSystem.readFileString(path.join(taskFolder.projectPath, apiName, "README.md")),
             carrySource === "task-folder" ? "parent commit\n" : "pending changes\n",
           );
           assert.equal(
-            yield* fileSystem.readFileString(path.join(taskFolder.projectPath, "api", "notes.txt")),
+            yield* fileSystem.readFileString(path.join(taskFolder.projectPath, apiName, "notes.txt")),
             "local notes\n",
           );
         }
 
         assert.equal(
-          yield* run(path.join(taskFolder.projectPath, "api"), "rev-parse", "HEAD"),
+          yield* run(path.join(taskFolder.projectPath, apiName), "rev-parse", "HEAD"),
           sourceCommit,
         );
         assert.isFalse(taskFolder.projectIsWorktree);
         assert.deepEqual(taskFolder.repositories, [
-          { repositoryPath: api, worktreePath: path.join(taskFolder.root, "api"), name: "api" },
+          { repositoryPath: api, worktreePath: path.join(taskFolder.root, apiName), name: apiName },
         ]);
         assert.isTrue(yield* fileSystem.exists(path.join(taskFolder.root, "cache")));
         assert.equal(
@@ -705,7 +706,7 @@ it.live.each(["none", "project", "task-folder", "existing-branch"] as const)(
           `${api}\n${web}`,
         );
         assert.equal(
-          yield* run(path.join(taskFolder.root, "api"), "symbolic-ref", "--short", "HEAD"),
+          yield* run(path.join(taskFolder.root, apiName), "symbolic-ref", "--short", "HEAD"),
           "feature",
         );
         assert.equal(yield* worktreeCount(web), 1);

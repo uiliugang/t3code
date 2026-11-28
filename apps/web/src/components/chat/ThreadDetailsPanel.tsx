@@ -6,7 +6,6 @@ import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import type { ThreadId } from "@t3tools/contracts";
 import type { WorkspaceRootId } from "@t3tools/contracts";
 import type { BranchToolbarHandle } from "../BranchToolbar";
-import type { NewProjectScriptInput } from "../ProjectScriptsControl";
 import type { ProjectScriptActionResult } from "../ProjectScriptsControl";
 import type { ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -93,11 +92,8 @@ interface ThreadDetailsPanelProps extends Pick<
   onComposerFocusRequest: () => void;
   onOpenChanges?: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
-  onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
-  onUpdateProjectScript: (
-    scriptId: string,
-    input: NewProjectScriptInput,
-  ) => Promise<ProjectScriptActionResult>;
+  onAddProjectScript: ComponentProps<typeof ProjectScriptsControl>["onAddScript"];
+  onUpdateProjectScript: ComponentProps<typeof ProjectScriptsControl>["onUpdateScript"];
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
   usage: ThreadDetailsUsageInput;
 }

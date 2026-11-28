@@ -37,6 +37,7 @@ import * as GitManager from "./git/GitManager.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as Settings from "./serverSettings.ts";
+import * as PendingSettleScripts from "./orchestration-v2/PendingSettleScripts.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -390,6 +391,7 @@ const cleanupFixture = (
     }> = [];
     let projectRoots = [repo];
     let editBeforeRemoval = false;
+    let pendingSettleThreadIds: ReadonlyArray<string> = [];
     let openSessionCwd: string | null = null;
     let sessionLive = true;
     let sessionLiveChecks = 0;
@@ -646,6 +648,10 @@ const cleanupFixture = (
             return () => {};
           }),
       } as unknown as TerminalManager.TerminalManager["Service"]),
+      Effect.provideService(PendingSettleScripts.PendingSettleScripts, {
+        has: (threadId) => pendingSettleThreadIds.includes(threadId),
+        track: () => (effect) => effect,
+      }),
       Effect.provideService(ServerActivation, Deferred.await(activated)),
       Effect.provideService(TaskFolders.TaskFolders, {
         find: (target: string) => taskFolders.find(target),
@@ -667,6 +673,9 @@ const cleanupFixture = (
         terminalListener?.({ type: "snapshot", terminals }) ?? Effect.void,
       editBeforeRemoval: () => {
         editBeforeRemoval = true;
+      },
+      setPendingSettleScripts: (threadIds: ReadonlyArray<string>) => {
+        pendingSettleThreadIds = threadIds;
       },
       fs,
       worktree,
@@ -3811,6 +3820,21 @@ describe("orphan worktree reports", () => {
           expect(report.entries[0]).toMatchObject({ outcome: "removed" });
         }),
       ),
+  );
+
+  it.live("keeps a worktree while its thread's settle script is queued", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fixture = yield* cleanupFixture();
+        fixture.setPendingSettleScripts([shell().id]);
+        expect((yield* fixture.service.runNow).entries[0]).toMatchObject({
+          outcome: "kept",
+          reason: "Settle script is queued",
+        });
+        fixture.setPendingSettleScripts([]);
+        expect((yield* fixture.service.runNow).entries[0]).toMatchObject({ outcome: "removed" });
+      }),
+    ),
   );
 
   it.live.each(["linux"] as const)(

@@ -595,6 +595,8 @@ export type PullRequestStack = typeof PullRequestStack.Type;
 
 export const PullRequestDiffStat = Schema.Struct({
   projectId: ProjectId,
+  /** Tells apart same-named repositories one project tracks on several hosts. Absent from older servers. */
+  host: Schema.optional(TrimmedNonEmptyString),
   target: Schema.optional(PullRequestWebTarget),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,

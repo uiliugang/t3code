@@ -108,8 +108,32 @@ describe("visible pull request line-count targets", () => {
     );
     expect([...keys]).toEqual([secondKey]);
     expect(pullRequestStatsBatches(entriesByKey, keys)[0]?.input.refs).toEqual([
-      { projectId: "project-1", repository: "pingdotgg/t3code", number: 2 },
+      { projectId: "project-1", host: "github.com", repository: "pingdotgg/t3code", number: 2 },
     ]);
+  });
+
+  it("keeps diff stats apart by host, and lets an older server's host-less stat stand in", () => {
+    const own = entry({ additions: 0, deletions: 0, number: 42 });
+    const stat = {
+      environmentId: ENV_1,
+      projectId: "project-1",
+      repository: "pingdotgg/t3code",
+      number: 42,
+      deletions: 0,
+    };
+    const mirrored = mergePullRequestDiffStats(new Map(), [
+      { ...stat, host: "gitlab.com", additions: 20 },
+    ]);
+    expect(withDiffStat(own, mirrored)).toEqual(own);
+    expect(
+      withDiffStat(
+        own,
+        mergePullRequestDiffStats(mirrored, [{ ...stat, host: "github.com", additions: 10 }]),
+      ),
+    ).toMatchObject({ additions: 10 });
+    expect(
+      withDiffStat(own, mergePullRequestDiffStats(new Map(), [{ ...stat, additions: 5 }])),
+    ).toMatchObject({ additions: 5 });
   });
 
   it.each(["explicit", "legacy"] as const)(
@@ -138,6 +162,10 @@ describe("visible pull request line-count targets", () => {
       ]);
 
       expect(withDiffStat(own, stats)).toEqual(own);
+      if (source === "explicit") {
+        const { target: _target, ...legacy } = own;
+        expect(withDiffStat(own, mergePullRequestDiffStats(stats, [{ ...legacy, additions: 55 }]))).toEqual(own);
+      }
       expect([...pullRequestStatsKeysToRequest(entriesByKey, new Set([key]), [], stats)]).toEqual([
         key,
       ]);

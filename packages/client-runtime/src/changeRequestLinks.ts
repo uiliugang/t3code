@@ -9,6 +9,7 @@ import type {
   ChangeRequestLink,
   ParsedChangeRequestUrl,
 } from "@t3tools/source-control-core/shared/definition";
+import { canonicalRepositoryPath } from "@t3tools/shared/git";
 import { parseUrl } from "@t3tools/shared/url";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
@@ -201,6 +202,20 @@ export function resolvePullRequestPreviewTarget({
   };
 }
 
+function trimmedRepositoryPath(path: string): string {
+  return canonicalRepositoryPath(path.replace(/^\/+|\/+$/g, ""));
+}
+
+function webUrlRepositoryPath(webUrl: string | undefined): string | null {
+  if (webUrl === undefined) return null;
+  try {
+    const path = trimmedRepositoryPath(new URL(webUrl).pathname);
+    return path === "" ? null : path;
+  } catch {
+    return null;
+  }
+}
+
 /** The project host's browser URL for one of its change requests, before its detail loads. */
 export function projectChangeRequestUrl(
   identity: RepositoryIdentity | null | undefined,
@@ -210,7 +225,10 @@ export function projectChangeRequestUrl(
   if (identity?.provider === undefined) return null;
   const [host, ...path] = identity.canonicalKey.split("/");
   if (!host) return null;
-  const ownRepository = sourceControlClients.repositorySelector(identity) === repository;
+  // A host mounted under a path prefix can name the checkout with its browser path.
+  const ownRepository =
+    sourceControlClients.repositorySelector(identity) === repository ||
+    webUrlRepositoryPath(identity.webUrl) === trimmedRepositoryPath(repository);
   return sourceControlClients.get(identity.provider).changeRequestUrl({
     host,
     repository: ownRepository ? path.join("/") : repository,

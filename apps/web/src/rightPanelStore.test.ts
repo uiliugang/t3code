@@ -1,4 +1,4 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   EnvironmentId,
   PullRequestWebTarget,
@@ -1076,7 +1076,13 @@ describe("rightPanelStore", () => {
     const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
     expect(state.activeSurfaceId).toBe("file:apps");
     expect(state.surfaces).toEqual([
-      { id: "file:apps", kind: "file", relativePath: "apps", revealLine: null, revealRequestId: 1 },
+      {
+        id: "file:apps",
+        kind: "file",
+        relativePath: "apps",
+        revealLine: null,
+        revealRequestId: expect.any(Number),
+      },
     ]);
   });
 
@@ -1085,31 +1091,18 @@ describe("rightPanelStore", () => {
     const state = () =>
       selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
     store.openFile(refA, "src/app.ts", 40);
+    const file = state().surfaces[0];
 
     store.navigateFolder(refA, "file:src/app.ts", "src", "src/app.ts", true);
     expect(state().activeSurfaceId).toBe("file:src");
     expect(state().surfaces).toEqual([
-      {
-        id: "file:src/app.ts",
-        kind: "file",
-        relativePath: "src/app.ts",
-        revealLine: 40,
-        revealRequestId: 1,
-      },
+      file,
       expect.objectContaining({ id: "file:src", folderTrail: "src/app.ts" }),
     ]);
 
     store.navigateFolder(refA, "file:src", "src/app.ts", "src/app.ts");
     expect(state().activeSurfaceId).toBe("file:src/app.ts");
-    expect(state().surfaces).toEqual([
-      {
-        id: "file:src/app.ts",
-        kind: "file",
-        relativePath: "src/app.ts",
-        revealLine: 40,
-        revealRequestId: 1,
-      },
-    ]);
+    expect(state().surfaces).toEqual([file]);
   });
 
   // regression: #15045 breadcrumb navigation from a closed tab must not resurrect it
@@ -1138,14 +1131,14 @@ describe("rightPanelStore", () => {
           kind: "file",
           relativePath: "src/index.ts",
           revealLine: null,
-          revealRequestId: 2,
+          revealRequestId: expect.any(Number),
         },
         {
           id: "file:README.md",
           kind: "file",
           relativePath: "README.md",
           revealLine: null,
-          revealRequestId: 1,
+          revealRequestId: expect.any(Number),
         },
       ],
     });
@@ -1184,9 +1177,64 @@ describe("rightPanelStore", () => {
     ).toEqual(["file:attachment:shared-id", "attachment:shared-id"]);
   });
 
+  it.each(["none", "next"])(
+    "assigns a fresh line request after closing a file tab (persisted ID: %s)",
+    async (persisted) => {
+      const store = useRightPanelStore.getState();
+      const requestId = () => {
+        const surface = selectActiveRightPanelSurface(
+          useRightPanelStore.getState().byThreadKey,
+          refA,
+        );
+        if (surface?.kind !== "file") return expect.unreachable();
+        return surface.revealRequestId;
+      };
+      if (persisted !== "none") {
+        store.openFile(refA, "seed.log", 42);
+        const persistedId = requestId() + 1;
+        useRightPanelStore.setState({
+          byThreadKey: {
+            [scopedThreadKey(refA)]: {
+              isOpen: true,
+              activeSurfaceId: "file:app.log",
+              surfaces: [
+                {
+                  id: "file:app.log",
+                  kind: "file",
+                  relativePath: "app.log",
+                  revealLine: 42,
+                  revealRequestId: persistedId,
+                },
+              ],
+            },
+          },
+        });
+        await reloadRightPanelStore();
+      } else {
+        store.openFile(refA, "app.log", 42);
+      }
+      const first = requestId();
+      store.closeSurface(refA, "file:app.log");
+
+      store.openFile(refA, "app.log", 42);
+      const reopened = requestId();
+      expect(reopened).not.toBe(first);
+    },
+  );
+
   it("updates line reveal requests when reopening a file surface", () => {
     useRightPanelStore.getState().openFile(refA, "src/index.ts", 42);
+    const requestId = () => {
+      const surface = selectActiveRightPanelSurface(
+        useRightPanelStore.getState().byThreadKey,
+        refA,
+      );
+      if (surface?.kind !== "file") return expect.unreachable();
+      return surface.revealRequestId;
+    };
+    const first = requestId();
     useRightPanelStore.getState().openFile(refA, "src/index.ts", 87);
+    expect(requestId()).toBeGreaterThan(first);
 
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
       isOpen: true,
@@ -1197,7 +1245,7 @@ describe("rightPanelStore", () => {
           kind: "file",
           relativePath: "src/index.ts",
           revealLine: 87,
-          revealRequestId: 2,
+          revealRequestId: expect.any(Number),
         },
       ],
     });
@@ -1213,7 +1261,7 @@ describe("rightPanelStore", () => {
           kind: "file",
           relativePath: "src/index.ts",
           revealLine: null,
-          revealRequestId: 3,
+          revealRequestId: expect.any(Number),
         },
       ],
     });
@@ -1488,6 +1536,19 @@ describe("rightPanelStore", () => {
       terminalIds: ["term-2"],
       activeTerminalId: "term-2",
     });
+  });
+
+  it("closing the active split pane activates its neighbouring pane, as the drawer does", () => {
+    const store = useRightPanelStore.getState();
+    store.openTerminal(refA, "term-1");
+    store.splitTerminal(refA, "terminal:term-1", "term-2");
+    store.splitTerminal(refA, "terminal:term-1", "term-3");
+    store.activateTerminal(refA, "terminal:term-1", "term-1");
+
+    store.closeTerminal(refA, "terminal:term-1", "term-1");
+
+    const surface = selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA);
+    expect(surface?.kind === "terminal" ? surface.activeTerminalId : null).toBe("term-2");
   });
 
   it("closing the final terminal pane removes its surface and closes the panel", () => {

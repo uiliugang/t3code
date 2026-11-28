@@ -420,7 +420,7 @@ export function pullRequestStatsKeysToRequest(
         entry.additions === 0 &&
         entry.deletions === 0 &&
         !requested.has(key) &&
-        !statsByRow.has(pullRequestDiffStatKey(entry))
+        readPullRequestDiffStat(statsByRow, entry) === undefined
       );
     }),
   );
@@ -445,7 +445,8 @@ export function pullRequestStatsBatches(
       key,
       ref: {
         projectId: entry.projectId,
-        ...(entry.target === undefined ? {} : { host: entry.host, target: entry.target }),
+        host: entry.host,
+        ...(entry.target === undefined ? {} : { target: entry.target }),
         repository: entry.repository,
         number: entry.number,
       },
@@ -576,7 +577,7 @@ export type PullRequestDiffStats = ReadonlyMap<
 type PullRequestDiffStatIdentity = {
   readonly environmentId: string;
   readonly projectId: string;
-} & Pick<PullRequestDiffStat, "repository" | "target" | "number">;
+} & Pick<PullRequestDiffStat, "host" | "repository" | "target" | "number">;
 
 /** New stats queries must not blank existing counts. */
 export function mergePullRequestDiffStats(
@@ -602,9 +603,20 @@ export const pullRequestDiffStatKey = (row: PullRequestDiffStatIdentity) =>
     row.projectId,
     row.target?.provider,
     row.target?.origin,
+    row.target === undefined ? row.host?.trim().toLowerCase() : null,
     row.repository.trim().toLowerCase(),
     row.number,
   ]);
+
+/** Only legacy rows may consume older responses that do not name a host. */
+export const readPullRequestDiffStat = <Stat>(
+  statsByRow: ReadonlyMap<string, Stat>,
+  row: PullRequestDiffStatIdentity,
+) =>
+  statsByRow.get(pullRequestDiffStatKey(row)) ??
+  (row.target === undefined && row.host !== undefined
+    ? statsByRow.get(pullRequestDiffStatKey({ ...row, host: undefined }))
+    : undefined);
 
 export interface MergedPullRequestList {
   readonly viewers: PullRequestViewers;
@@ -902,7 +914,7 @@ export function withDiffStat<
   statsByRow: ReadonlyMap<string, { readonly additions: number; readonly deletions: number }>,
 ): Entry {
   if (entry.additions !== 0 || entry.deletions !== 0) return entry;
-  const stat = statsByRow.get(pullRequestDiffStatKey(entry));
+  const stat = readPullRequestDiffStat(statsByRow, entry);
   return stat === undefined ? entry : { ...entry, ...stat };
 }
 

@@ -37,7 +37,7 @@ import { useFilesystemReadAccess } from "~/state/filesystem";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { useFileContextMenu } from "../fileContextMenu";
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
-import { openDiffFilePrimaryAction } from "../diffFileActions";
+import { openDiffFilePrimaryAction, resolveDiffPathForWorkspace } from "../diffFileActions";
 import { toolCallDiff } from "../lib/toolCallDiff";
 import { useCheckpointDiff, useTurnItemDetail } from "~/state/queries";
 import { revisionedQuery } from "~/state/revisionedQuery";
@@ -53,6 +53,11 @@ import {
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useDiffFileFilters } from "./diffs/useDiffFileFilters";
 import { DiffFileFilterMenu } from "./diffs/DiffFileFilterMenu";
+import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/mediaPreview";
+import { ChatMarkdownAssetImage } from "./chat/ChatMarkdownMedia";
+import { workspaceAssetResource } from "./files/filePreviewMode";
 import { useRenderedAppearance } from "../hooks/useTheme";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
@@ -781,6 +786,8 @@ export default function DiffPanel({
     retry,
     requestFile,
     renderableFiles,
+    remainingFileCount,
+    loadNextFiles,
   } = useReviewFilePatches({
     environmentId: activeThread?.environmentId,
     cwd: branchDiffPreview.data?.cwd,
@@ -869,6 +876,10 @@ export default function DiffPanel({
       .getState()
       .updateCollapsedFileKeys(collapseScopeKey, defaultCollapsedDiffFileKeys, update);
   };
+  const renderLoadingBoundary = () =>
+    remainingFileCount > 0 ? (
+      <DiffFileLoadingBoundary load={loadNextFiles} count={remainingFileCount} />
+    ) : null;
   const codeViewFiles = previewFileEntries.map(({ fileDiff, fileKey, fileVersion }) => ({
     fileDiff,
     filePath: resolveFileDiffPath(fileDiff),
@@ -884,7 +895,11 @@ export default function DiffPanel({
   const fileTreeEntries = diffFileTreeEntries(renderableFiles.filter(isFileShown));
   const codeViewReveal = useCodeViewFileReveal();
   // Lazy files that sat above the saved position load again only when asked for.
-  const codeViewScroll = useCodeViewScrollRestore(collapseScopeKey, !isRefreshingDiff, null);
+  const codeViewScroll = useCodeViewScrollRestore(
+    collapseScopeKey,
+    !isRefreshingDiff && remainingFileCount === 0,
+    remainingFileCount > 0 ? loadNextFiles : null,
+  );
   const attachCodeView = useStableCallback((handle: AnnotatableCodeViewHandle | null) => {
     codeViewScroll.attach(handle);
     codeViewReveal.attach(handle);
@@ -949,6 +964,54 @@ export default function DiffPanel({
         (repository) => repository.repositoryPath === match.section.repositoryPath,
       )?.cwd,
     };
+  };
+  // Only uncommitted and branch changes end at the working tree, the one version that can be shown.
+  const workingTreeImagePath = (filePath: string) => {
+    if (
+      !isGitSelection ||
+      selectedCommitSha !== null ||
+      !activeCwd ||
+      !isWorkspaceImagePreviewPath(filePath)
+    ) {
+      return null;
+    }
+    if (gitRepository !== null) return resolvePathLinkTarget(filePath, gitRepository.cwd);
+    const workspacePath = resolveDiffPathForWorkspace({
+      filePath,
+      workspaceRoot: activeCwd,
+      repositoryRoot: activeRepositoryRoot,
+    });
+    return workspacePath === null ? null : resolvePathLinkTarget(workspacePath, activeCwd);
+  };
+  const imagePreviewPath = (fileDiff: FileDiffMetadata) => {
+    const filePath = resolveFileDiffPath(fileDiff);
+    return fileDiff.hunks.length === 0 &&
+      fileDiff.type !== "deleted" &&
+      workingTreeImagePath(filePath) !== null
+      ? filePath
+      : null;
+  };
+  const renderImagePreview = (filePath: string) => {
+    const absolutePath = workingTreeImagePath(filePath);
+    if (!routeThreadRef || !activeCwd || absolutePath === null) return null;
+    const resource = workspaceAssetResource({
+      kind: "workspace-file",
+      threadRef: routeThreadRef,
+      draft: false,
+      workspaceRoot: activeCwd,
+      absolutePath,
+    });
+    return resource._tag === "workspace-file" || resource._tag === "media-file" ? (
+      <div className="flex justify-center p-3">
+        <ChatMarkdownAssetImage
+          environmentId={routeThreadRef.environmentId}
+          resource={resource}
+          alt={filePath}
+          workspaceRoot={activeCwd}
+          workspaceMutationId={workspaceMutationId}
+        />
+      </div>
+    ) : null;
   };
   const openDiffFile = (filePath: string) => {
     const repositoryFile = repositoryFileTarget(filePath);
@@ -1795,6 +1858,9 @@ export default function DiffPanel({
                       className="h-full min-h-0 overflow-auto"
                       files={codeViewFiles}
                       pendingFiles={pendingFiles}
+                      renderCodeViewFooter={renderLoadingBoundary}
+                      imagePreviewPath={imagePreviewPath}
+                      renderImagePreview={renderImagePreview}
                       sectionId={reviewSectionId}
                       sectionTitle={reviewSectionTitle}
                       composerDraftTarget={composerDraftTarget}
