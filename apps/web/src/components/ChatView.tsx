@@ -3537,10 +3537,6 @@ export default function ChatView(props: ChatViewProps) {
     onToggleThreadPanel: toggleThreadPanelStable,
     onToggleRightPanel: toggleRightPanelStable,
   } satisfies PanelLayoutControlsProps;
-  const rightPanelMaximizeShortcutLabel = shortcutLabelForCommand(
-    keybindings,
-    "rightPanel.toggleMaximized",
-  );
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
@@ -3555,7 +3551,6 @@ export default function ChatView(props: ChatViewProps) {
       animationsActive={panelAnimationsActive}
       maximized={rightPanelMaximized}
       onToggleMaximized={toggleRightPanelMaximizedStable}
-      maximizeShortcutLabel={rightPanelMaximizeShortcutLabel}
     >
       {panelToggleControls}
     </WorkspaceTitlebarControls>
@@ -4278,7 +4273,6 @@ export default function ChatView(props: ChatViewProps) {
                 <RightPanelMaximizeControl
                   maximized={rightPanelMaximized}
                   onToggle={toggleRightPanelMaximizedStable}
-                  shortcutLabel={rightPanelMaximizeShortcutLabel}
                 />
                 {panelToggleControls}
               </div>
