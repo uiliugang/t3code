@@ -8,7 +8,7 @@ import type { ProviderOptionDescriptor, RuntimeMode } from "@t3tools/contracts";
 import type { EffortDisplay } from "@t3tools/contracts/settings";
 import { getProviderOptionCurrentLabel } from "@t3tools/shared/model";
 import { msg, useGT, useMessages } from "gt-react";
-import { CheckIcon, ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
+import { ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, use, useRef, useState } from "react";
 
 import { useUiTranslation } from "../../hooks/useUiTranslation";
@@ -39,22 +39,18 @@ import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 type BooleanDescriptor = Extract<ProviderOptionDescriptor, { type: "boolean" }>;
 
-/** Service tiers, Claude's Fast mode, and Ultracode sit in the footer, not the column. */
+/** Service tiers and Claude's Fast mode sit in the footer. */
 function splitSpeed(
   selects: ReadonlyArray<SelectDescriptor>,
   toggles: ReadonlyArray<BooleanDescriptor>,
 ) {
   const speedSelect = selects.find((descriptor) => descriptor.id === "serviceTier") ?? null;
   const fastToggle = toggles.find((descriptor) => descriptor.id === "fastMode") ?? null;
-  const ultracodeToggle = toggles.find((descriptor) => descriptor.id === "ultracode") ?? null;
   return {
     speedSelect,
     fastToggle,
-    ultracodeToggle,
     columnSelects: selects.filter((descriptor) => descriptor !== speedSelect),
-    columnToggles: toggles.filter(
-      (descriptor) => descriptor !== fastToggle && descriptor !== ultracodeToggle,
-    ),
+    columnToggles: toggles.filter((descriptor) => descriptor !== fastToggle),
   };
 }
 
@@ -186,58 +182,29 @@ export function describeComposerEffort(
 }
 
 const COLUMN_ROW =
-  "flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-sm text-foreground outline-none hover:bg-foreground/[0.09] focus-visible:bg-foreground/[0.09] disabled:cursor-not-allowed disabled:opacity-64";
-const COLUMN_LABEL = "px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs";
+  "flex h-9 w-full shrink-0 cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-sm text-foreground outline-none hover:bg-foreground/[0.09] focus-visible:bg-foreground/[0.09] disabled:cursor-not-allowed disabled:opacity-64";
 
-function ColumnRow(props: {
-  label: string;
-  /** Shown on hover; the column is too narrow to print it under the label. */
-  description?: string | undefined;
-  selected: boolean;
-  /** The column's one tab stop: the selected level, else the first when none shows as selected. */
-  tabStop: boolean;
-  isDefault?: boolean | undefined;
-  disabled?: boolean;
-  onPick: () => void;
-}) {
-  const t = useUiTranslation();
-  const rowProps = {
-    type: "button",
-    role: "radio",
-    "aria-checked": props.selected,
-    disabled: props.disabled,
-    "data-effort-row": true,
-    // Focus lands on a level after a model pick, and a typed letter finds one by its label.
-    "data-effort-level": props.label,
-    // Up and Down move between rows.
-    tabIndex: props.tabStop ? 0 : -1,
-    className: COLUMN_ROW,
-    onClick: props.onPick,
-  } as const;
-  const content = (
-    <>
-      <span className="min-w-0 flex-1 truncate">{props.label}</span>
-      {props.selected ? (
-        <>
-          {props.isDefault ? <span className="sr-only">{t("Default")}</span> : null}
-          <CheckIcon aria-hidden="true" className="size-3.5" />
-        </>
-      ) : props.isDefault ? (
-        <span className="text-muted-foreground/70 text-xs">{t("Default")}</span>
-      ) : null}
-    </>
-  );
-  if (!props.description) return <button {...rowProps}>{content}</button>;
-  return (
-    <SharedTooltipTrigger
-      render={<button {...rowProps} />}
-      label={props.description}
-      side="right"
-      className="max-w-56"
-    >
-      {content}
-    </SharedTooltipTrigger>
-  );
+/** The levels share one line, so Up and Down step over the group instead of through it. */
+function rowOnAdjacentLine(
+  rows: ReadonlyArray<HTMLButtonElement>,
+  index: number,
+  direction: 1 | -1,
+): HTMLButtonElement | undefined {
+  const groupOf = (row: HTMLButtonElement) => row.closest('[role="radiogroup"]');
+  const group = groupOf(rows[index]!);
+  for (let i = index + direction; i >= 0 && i < rows.length; i += direction) {
+    const row = rows[i]!;
+    if (group && groupOf(row) === group) continue;
+    const targetGroup = groupOf(row);
+    // Up from an option lands on the level that holds the tab stop.
+    return (
+      (direction === -1 && targetGroup
+        ? [...rows].filter((candidate) => groupOf(candidate) === targetGroup)
+        : [row]
+      ).find((candidate) => candidate.tabIndex === 0) ?? row
+    );
+  }
+  return undefined;
 }
 
 function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
@@ -258,8 +225,11 @@ function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
     event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-effort-row]:not(:disabled)"),
   );
   const index = rows.findIndex((row) => row === document.activeElement);
+  const direction = event.key === "ArrowDown" ? 1 : -1;
   const next = arrow
-    ? rows[Math.min(rows.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1)))]
+    ? index === -1
+      ? rows[Math.min(rows.length - 1, Math.max(0, index + direction))]
+      : rowOnAdjacentLine(rows, index, direction)
     : [...rows.slice(index + 1), ...rows.slice(0, index + 1)].find((row) =>
         row.dataset.effortLevel?.toLowerCase().startsWith(event.key.toLowerCase()),
       );
@@ -268,6 +238,156 @@ function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
   event.stopPropagation();
   next.focus();
   next.scrollIntoView({ block: "nearest" });
+}
+
+const LEVEL_SEGMENT =
+  "flex cursor-pointer flex-col rounded-md px-0.5 pt-2.5 pb-1 outline-none hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.09] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+
+type EffortChoice = {
+  id: string;
+  label: string;
+  description?: string | undefined;
+  isDefault?: boolean | undefined;
+};
+
+/**
+ * The reasoning levels as one bar: it fills up to the chosen level, and each level names itself
+ * under its segment. Press or drag the bar to pick; Left and Right move between levels.
+ */
+function EffortBar(props: { control: ColumnControl; traits: TraitsSelection; locked: boolean }) {
+  const t = useUiTranslation();
+  const messages = useMessages();
+  const groupRef = useRef<HTMLDivElement>(null);
+  const { control, traits, locked } = props;
+  const { descriptor } = control;
+  const choices: ReadonlyArray<EffortChoice> =
+    control.kind === "boolean"
+      ? [
+          { id: "off", label: t("Off") },
+          { id: "on", label: t("On") },
+        ]
+      : selectableProviderOptionChoices(control.descriptor);
+  const value =
+    control.kind === "boolean"
+      ? control.descriptor.currentValue === true
+        ? "on"
+        : "off"
+      : traits.selectValue(control.descriptor);
+  // An "Ultrathink:" prefix selects a level the bar does not offer.
+  const selectedIndex = choices.findIndex((choice) => choice.id === value);
+  const pick = (id: string) => {
+    if (control.kind === "boolean") traits.changeBoolean(descriptor.id, id === "on");
+    else traits.changeSelect(control.descriptor, id);
+  };
+  const pickAt = (clientX: number) => {
+    const box = groupRef.current?.getBoundingClientRect();
+    if (!box?.width) return;
+    const index = Math.min(
+      choices.length - 1,
+      Math.max(0, Math.floor(((clientX - box.left) / box.width) * choices.length)),
+    );
+    pick(choices[index]!.id);
+  };
+  return (
+    <div
+      ref={groupRef}
+      role="radiogroup"
+      aria-label={descriptor.label}
+      className="mx-1.5 mt-1 grid touch-pan-y select-none gap-1"
+      style={{ gridTemplateColumns: `repeat(${choices.length}, minmax(0, 1fr))` }}
+      onPointerDown={(event) => {
+        if (locked) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        pickAt(event.clientX);
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) pickAt(event.clientX);
+      }}
+      onKeyDown={(event) => {
+        if (locked || event.altKey || event.ctrlKey || event.metaKey) return;
+        const levels = Array.from(
+          event.currentTarget.querySelectorAll<HTMLButtonElement>(
+            "[data-effort-level]:not(:disabled)",
+          ),
+        );
+        const index = levels.findIndex((level) => level === document.activeElement);
+        if (index === -1) return;
+        // Left off the first level falls through to the picker, which returns to its search.
+        const target = {
+          ArrowLeft: index > 0 ? index - 1 : undefined,
+          ArrowRight: index < levels.length - 1 ? index + 1 : undefined,
+          Home: 0,
+          End: levels.length - 1,
+        }[event.key];
+        if (target === undefined) return;
+        event.preventDefault();
+        event.stopPropagation();
+        levels[target]?.focus();
+      }}
+    >
+      {locked ? (
+        <p className={cn("col-span-full text-muted-foreground/80 text-xs")} role="presentation">
+          {messages(ULTRATHINK_IN_BODY_NOTE)}
+        </p>
+      ) : null}
+      {choices.map((choice, index) => {
+        const selected = choice.id === value;
+        const filled = selectedIndex >= 0 && index <= selectedIndex;
+        const hint = choice.description ?? (choice.isDefault ? t("Default") : null);
+        const content = (
+          <>
+            <span
+              aria-hidden="true"
+              className={cn(
+                "block h-1.5 rounded-full bg-foreground/12 transition-colors",
+                filled && "bg-primary",
+              )}
+            />
+            <span
+              className={cn(
+                "mt-2 block truncate text-center text-muted-foreground text-xs leading-4",
+                selected && "font-semibold text-foreground",
+              )}
+            >
+              {choice.label}
+            </span>
+            {selected && choice.isDefault ? <span className="sr-only">{t("Default")}</span> : null}
+          </>
+        );
+        const button = (
+          <button
+            key={choice.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            disabled={locked}
+            data-effort-row
+            data-effort-level={choice.label}
+            // Up and Down move between rows.
+            tabIndex={(selectedIndex >= 0 ? selected : index === 0) ? 0 : -1}
+            className={LEVEL_SEGMENT}
+            // A press picks on pointerdown; this click is the keyboard's.
+            onClick={(event) => {
+              if (event.detail === 0) pick(choice.id);
+            }}
+          >
+            {content}
+          </button>
+        );
+        return hint ? (
+          <SharedTooltipTrigger
+            key={choice.id}
+            render={button}
+            label={hint}
+            side="top"
+            className="max-w-56"
+          />
+        ) : (
+          button
+        );
+      })}
+    </div>
+  );
 }
 
 function EffortLevels(props: { traits: TraitsSelectionInput }) {
@@ -279,9 +399,11 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
         {traits.descriptors.map((descriptor) => {
           const value = traits.currentLabel(descriptor);
           return value ? (
-            <div key={descriptor.id}>
-              <div className={COLUMN_LABEL}>{descriptor.label}</div>
-              <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">{value}</div>
+            <div key={descriptor.id} className="flex h-9 items-center gap-2 px-2.5 text-sm">
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {descriptor.label}
+              </span>
+              <span className="shrink-0 text-muted-foreground text-xs">{value}</span>
             </div>
           ) : null;
         })}
@@ -294,11 +416,9 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
     effort?.descriptor.id === traits.primarySelectDescriptor?.id && traits.ultrathinkInBodyText;
   return (
     <>
-      {effort ? <EffortRows control={effort} traits={traits} locked={locked} /> : null}
+      {effort ? <EffortBar control={effort} traits={traits} locked={locked} /> : null}
       {others.length > 0 ? (
-        <div
-          className={cn("flex flex-col gap-0.5", effort && "mt-1 border-t border-border/70 pt-1")}
-        >
+        <div className="flex flex-col gap-0.5">
           {others.map((control, index) =>
             control.kind === "boolean" ? (
               <OptionSwitchRow
@@ -324,69 +444,23 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
 
 type TraitsSelection = ReturnType<typeof useTraitsSelection>;
 
-function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; locked: boolean }) {
-  const t = useUiTranslation();
-  const messages = useMessages();
-  const { control, traits } = props;
-  const { descriptor } = control;
-  if (control.kind === "boolean") {
-    return (
-      <div role="radiogroup" aria-label={descriptor.label} className="flex flex-col gap-0.5">
-        {([true, false] as const).map((value) => (
-          <ColumnRow
-            key={String(value)}
-            label={t(value ? "On" : "Off")}
-            selected={(control.descriptor.currentValue === true) === value}
-            tabStop={(control.descriptor.currentValue === true) === value}
-            onPick={() => traits.changeBoolean(descriptor.id, value)}
-          />
-        ))}
-      </div>
-    );
-  }
-  const { locked } = props;
-  const value = traits.selectValue(control.descriptor);
-  const choices = selectableProviderOptionChoices(control.descriptor);
-  // An "Ultrathink:" prefix selects a level the column does not offer.
-  const shown = choices.some((option) => option.id === value);
-  return (
-    <div role="radiogroup" aria-label={descriptor.label} className="flex flex-col gap-0.5">
-      {locked ? (
-        <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">
-          {messages(ULTRATHINK_IN_BODY_NOTE)}
-        </div>
-      ) : null}
-      {choices.map((option, index) => (
-        <ColumnRow
-          key={option.id}
-          label={option.label}
-          selected={option.id === value}
-          tabStop={shown ? option.id === value : index === 0}
-          description={option.description}
-          isDefault={option.isDefault}
-          disabled={locked}
-          onPick={() => traits.changeSelect(control.descriptor, option.id)}
-        />
-      ))}
-    </div>
-  );
-}
+const OPTION_ROW = cn(COLUMN_ROW, "py-1.5");
 
-const OPTION_ROW = cn(COLUMN_ROW, "h-auto py-1");
-
-/** An option's name over its current value. */
+/** An option's name, then the choice it opens. */
 function OptionRowText(props: { label: string; value: string }) {
   return (
-    <span className="flex min-w-0 flex-1 flex-col">
-      <span className="truncate text-muted-foreground text-xs">{props.label}</span>
-      <span className="truncate">{props.value}</span>
-    </span>
+    <>
+      <span className="min-w-0 flex-1 truncate">{props.label}</span>
+      <span className="min-w-0 max-w-1/2 shrink truncate text-muted-foreground text-xs">
+        {props.value}
+      </span>
+    </>
   );
 }
 
 /**
  * One select besides reasoning, such as an agent's session mode. It names the current choice and
- * opens the rest beside the column, so any number of options leaves the levels in place.
+ * opens the rest above the row.
  */
 function OptionMenuRow(props: {
   descriptor: SelectDescriptor;
@@ -442,10 +516,10 @@ function OptionMenuRow(props: {
       </MenuTrigger>
       <MenuPopup
         ref={popupRef}
-        side="right"
+        side="top"
         align="start"
         sideOffset={6}
-        // A full-width column on phones leaves no room beside it, so fall below or above.
+        // A full-width popup on phones leaves no room above it, so fall below it.
         collisionAvoidance={{ fallbackAxisSide: "end" }}
         className="max-w-72"
         data-model-picker-option-menu
@@ -520,13 +594,16 @@ function OptionSwitchRow(props: {
 function NoEffortRow() {
   const t = useUiTranslation();
   return (
-    <div className="flex h-8 items-center px-2 text-muted-foreground text-sm">
+    <div className="flex h-9 items-center px-2.5 text-muted-foreground text-sm">
       {t("No effort levels")}
     </div>
   );
 }
 
-/** The model picker's effort column: the selected model's levels and its other options. */
+/**
+ * The model picker's settings: the selected model's reasoning levels under a heading that names
+ * it, then its other options, such as an agent's session mode, one row each.
+ */
 export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | null }) {
   const gt = useGT();
   const messages = useMessages();
@@ -540,23 +617,19 @@ export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | nul
       : null;
   return (
     <>
-      {/* Matches the search row's box, so one rule runs across the top of the popup. */}
-      <div className="shrink-0 px-3 pt-2.5">
-        <div className="flex h-8.25 -translate-y-px items-center gap-2 border-b border-border/70 pb-1.5 text-sm">
-          <span className="text-muted-foreground">
-            {controls?.effort?.descriptor.label ??
-              (controls?.others.length
-                ? gt("Options", { $context: "heading for model options" })
-                : gt("Effort", { $context: "heading for reasoning effort levels" }))}
-          </span>
-          <span className="ms-auto min-w-0 truncate text-muted-foreground text-xs">
-            {picker.modelLabel}
-          </span>
-        </div>
+      <div className="flex shrink-0 items-baseline gap-3 px-4 pt-4 pb-2 text-sm">
+        <span className="shrink-0 text-sm font-medium text-muted-foreground">
+          {controls?.effort?.descriptor.label ??
+            (controls?.others.length
+              ? gt("Options", { $context: "heading for model options" })
+              : gt("Effort", { $context: "heading for reasoning effort levels" }))}
+        </span>
+        <span className="ms-auto min-w-0 truncate text-muted-foreground text-xs">
+          {picker.modelLabel}
+        </span>
       </div>
-      {/* pt-2.5 puts the first level on the same line as the first model. */}
       <div
-        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-2 pt-2.5 pb-1.5"
+        className="flex max-h-64 shrink-0 flex-col gap-0.5 overflow-y-auto overscroll-contain px-2 pt-1 pb-1.5"
         // Capture, so Up and Down on an option row move rows instead of opening its menu.
         onKeyDownCapture={moveBetweenRows}
       >
@@ -567,7 +640,7 @@ export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | nul
 }
 
 const FOOTER_SEGMENT =
-  "flex h-6 cursor-pointer items-center justify-center gap-1 px-2 text-muted-foreground text-xs outline-none first:rounded-l-md last:rounded-r-md hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-6 cursor-pointer items-center justify-center gap-1 rounded-lg px-2.5 text-muted-foreground text-xs outline-none hover:text-foreground data-checked:bg-popover data-checked:font-semibold data-checked:text-foreground data-checked:ring-1 data-checked:ring-inset data-checked:ring-border/70 data-checked:shadow-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 function SpeedSegment(props: {
   checked: boolean;
@@ -614,7 +687,7 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
     <div
       role="radiogroup"
       aria-label={speedSelect?.label ?? fastToggle?.label}
-      className="flex rounded-lg bg-input/40 p-0.5"
+      className="flex rounded-xl bg-foreground/[0.11] p-0.5"
     >
       {speedSelect
         ? selectableProviderOptionChoices(speedSelect).map((option) => (
@@ -637,27 +710,6 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
               />
             ))
           : null}
-    </div>
-  );
-}
-
-function UltracodeControl(props: { traits: TraitsSelectionInput }) {
-  const traits = useTraitsSelection(props.traits);
-  const { ultracodeToggle } = splitSpeed(traits.selectDescriptors, traits.booleanDescriptors);
-  if (traits.modelIsUnavailable || !ultracodeToggle) return null;
-  const on = ultracodeToggle.currentValue === true;
-  return (
-    <div className="flex rounded-lg bg-input/40 p-0.5">
-      <button
-        type="button"
-        aria-pressed={on}
-        data-checked={on || undefined}
-        className={FOOTER_SEGMENT}
-        onClick={() => traits.changeBoolean(ultracodeToggle.id, !on)}
-      >
-        <WorkflowIcon aria-hidden="true" className="size-3" />
-        {ultracodeToggle.label}
-      </button>
     </div>
   );
 }
@@ -686,7 +738,7 @@ function PermissionsMenu(props: {
             type="button"
             data-composer-permissions-trigger
             aria-label={t("Permissions: {name}", { name: t(current.label) })}
-            className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted-foreground text-xs outline-none hover:bg-foreground/[0.09] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-foreground/[0.09] data-popup-open:text-foreground"
+            className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-foreground text-xs outline-none hover:bg-foreground/[0.09] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-foreground/[0.09]"
           />
         }
       >
@@ -714,9 +766,8 @@ export function ComposerPickerFooter(props: {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/40 px-3 py-2">
+    <div className="flex flex-wrap items-center gap-1.5 border-t border-border/70 px-3 py-2">
       {props.traits ? <SpeedControl traits={props.traits} /> : null}
-      {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       {props.usage}
       <PermissionsMenu
         runtimeMode={props.runtimeMode}

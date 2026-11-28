@@ -72,10 +72,14 @@ test(
     await screen.getByRole("button", "New thread in demo", { exact: true }).tap();
     const picker = browser.locator("[data-chat-provider-model-picker]");
     await picker.tap();
+    // The search starts as an icon; a tap opens the field.
+    await screen.getByPlaceholder("Search models...").tap();
     await screen.getByPlaceholder("Search models...").fill("Multi turn");
     await browser.keyboard.down("Shift");
     await screen.getByRole("option", /^Multi turn/).tap();
     await browser.keyboard.up("Shift");
+    // The first Escape closes the search and the second closes the picker.
+    await browser.keyboard.press("Escape");
     await browser.keyboard.press("Escape");
 
     const composer = screen.getByRole("textbox");

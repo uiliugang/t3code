@@ -25,10 +25,11 @@ import {
   useEffectEvent,
   useLayoutEffect,
   useRef,
+  type ComponentProps,
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, XIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
@@ -65,7 +66,7 @@ import {
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
-import { InlineButton } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { Badge } from "../ui/badge";
 import {
   isProviderInstancePickerReady,
@@ -178,9 +179,25 @@ const MODEL_LIST_ESTIMATED_ITEM_SIZE = 32;
 const ROW_UNITS = 8;
 const ROW_SEPARATOR_UNITS = 0.5;
 const LIST_CHROME_UNITS = 15.5;
+// A docked row is taller, and its list shows at most this many rows before it scrolls.
+const DOCKED_ROW_UNITS = 9.5;
+// Includes both padding layers and room for the virtualizer to round row heights.
+const DOCKED_LIST_CHROME_UNITS = 5;
+const DOCKED_LIST_SCROLLING_CHROME_UNITS = 3.5;
+const DOCKED_LIST_MAX_ROWS = 5;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
+}
+
+/** The stacked picker sizes its list to its rows, so the settings below stay in view. */
+function dockedListHeight(rows: number) {
+  if (rows <= 0) return undefined;
+  // Bottom padding scrolls with the list. Budget it only when every row fits.
+  const chrome =
+    rows > DOCKED_LIST_MAX_ROWS ? DOCKED_LIST_SCROLLING_CHROME_UNITS : DOCKED_LIST_CHROME_UNITS;
+  const units = Math.min(rows, DOCKED_LIST_MAX_ROWS) * DOCKED_ROW_UNITS + chrome;
+  return `calc(var(--spacing) * ${units})`;
 }
 
 function modelJumpLabelsByKey(
@@ -279,11 +296,16 @@ function ModelPickerList({
   itemKeys,
   extraData,
   renderItem,
+  height,
+  estimatedItemSize,
 }: {
   listRef: RefObject<LegendListRef | null>;
   itemKeys: ReadonlyArray<string>;
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
+  /** A fixed height from the rows on show; without it the list fills the space it is given. */
+  height?: string | undefined;
+  estimatedItemSize: number;
 }) {
   const [showTopScrollFade, setShowTopScrollFade] = useState(false);
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
@@ -299,8 +321,11 @@ function ModelPickerList({
     <div
       className={cn(
         "relative min-h-0 overflow-hidden pr-px",
-        itemKeys.length > 0 ? "flex-1" : "h-0",
+        height === undefined
+          ? itemKeys.length > 0 && "flex-1"
+          : itemKeys.length > 0 && "min-h-0 shrink",
       )}
+      style={height === undefined ? undefined : { height }}
     >
       <ComboboxListVirtualized>
         <LegendList<string>
@@ -309,7 +334,7 @@ function ModelPickerList({
           extraData={extraData}
           keyExtractor={(modelKey) => modelKey}
           renderItem={renderItem}
-          estimatedItemSize={MODEL_LIST_ESTIMATED_ITEM_SIZE}
+          estimatedItemSize={estimatedItemSize}
           drawDistance={480}
           recycleItems
           contentContainerClassName="pl-2 pr-px"
@@ -365,7 +390,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onBrowseInstanceChange?: (instanceId: ProviderInstanceId | "favorites") => void;
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
-  /** Sits beside an effort column: fills the shared row, and stacks above it on narrow screens. */
+  /**
+   * Stacks in one column above the popup's effort column: the provider tabs run along the top,
+   * the search stays a single icon until it is used, and the list takes its height from its rows.
+   */
   docked?: boolean;
   /** Right at the end of the search text moves into the popup's effort column. */
   onFocusEffort?: () => void;
@@ -388,6 +416,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     onOpenProviderSetup,
   } = props;
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const docked = props.docked === true;
   const modelListRef = useRef<LegendListRef | null>(null);
   const pickerContentRef = useRef<HTMLDivElement>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes this picker's mount to global keydown handlers
@@ -497,6 +527,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const focusSearchInput = () => {
     searchInputRef.current?.focus({ preventScroll: true });
   };
+  /** Collapses the search back to its icon; the input keeps focus, so the keys still work. */
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery("");
+  };
 
   const handleSelectInstance = (instanceId: ProviderInstanceId | "favorites") => {
     setSelectedInstanceId(instanceId);
@@ -550,6 +585,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       onToggleModel(instanceId, resolvedModel);
     } else {
       onInstanceModelChange(instanceId, resolvedModel);
+      // Picking several models keeps the search up for the next one.
+      if (docked) closeSearch();
     }
     return resolvedModel;
   };
@@ -699,7 +736,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     return [...available, ...disabled];
   })();
-  const showSidebar = !isSearching && sidebarInstanceEntries.length > 0;
+  const showSidebar = (docked ? !searchOpen : !isSearching) && sidebarInstanceEntries.length > 0;
   const instanceOrder = instanceEntries.map((entry) => entry.instanceId);
 
   const filteredModels = (() => {
@@ -928,6 +965,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         selectableUnavailableInstanceIds,
       });
       setSearchQuery("");
+      setSearchOpen(false);
       handleSelectInstance(next);
       announce(
         next === "favorites" ? gt("Favorites") : (entryByInstanceId.get(next)?.displayName ?? next),
@@ -958,18 +996,139 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     announce(gt("Model: {name}", { name: name ?? selectedSlug }), "model-picker");
   };
 
+  const onSearchChange: NonNullable<ComponentProps<typeof ComboboxSearchInput>["onChange"]> = (
+    e,
+  ) => {
+    if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
+    if (docked) setSearchOpen(true);
+    setSearchQuery(e.target.value);
+  };
+  const onSearchKeyDown: NonNullable<ComponentProps<typeof ComboboxSearchInput>["onKeyDown"]> = (
+    e,
+  ) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) {
+      (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
+      e.stopPropagation();
+      return;
+    }
+    if (
+      showSidebar &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
+        (e.key === "Tab" && e.shiftKey))
+    ) {
+      const sidebar = e.currentTarget
+        .closest("[data-model-picker-content]")
+        ?.querySelector("[data-model-picker-sidebar]");
+      const button =
+        sidebar?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]:not(:disabled)') ??
+        sidebar?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+      if (button) {
+        e.preventDefault();
+        e.stopPropagation();
+        button.focus();
+        return;
+      }
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      // An open search closes first; a second Escape closes the picker.
+      if (docked && searchOpen) closeSearch();
+      else onRequestClose?.();
+      return;
+    }
+    if (
+      props.onFocusEffort &&
+      e.key === "ArrowRight" &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.shiftKey &&
+      e.currentTarget.selectionStart === searchQuery.length
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      // The column shows the selected model's effort, so a highlighted model is picked
+      // first; the owning popup then moves focus to that model's levels.
+      const highlighted = highlightedModelKeyRef.current
+        ? parseModelPickerModelKey(highlightedModelKeyRef.current)
+        : null;
+      const pickedNew =
+        highlighted !== null &&
+        highlightedModelKeyRef.current !== activeModelKey &&
+        handleModelSelect(highlighted.slug, highlighted.instanceId) !== null;
+      if (!pickedNew) props.onFocusEffort();
+      return;
+    }
+    if (e.key === "Enter" && highlightedModelKeyRef.current) {
+      (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
+      e.preventDefault();
+      e.stopPropagation();
+      const legacyInstanceId = parseModelPickerLegacySectionKey(highlightedModelKeyRef.current);
+      if (legacyInstanceId) {
+        toggleLegacySection(legacyInstanceId);
+        return;
+      }
+      if (subProviderSectionByKey.has(highlightedModelKeyRef.current)) {
+        toggleSubProviderSection(highlightedModelKeyRef.current);
+        return;
+      }
+      const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
+      if (model) {
+        handleModelSelect(model.slug, model.instanceId, e.shiftKey);
+      }
+      return;
+    }
+    e.stopPropagation();
+  };
+
+  const searchInputProps: ComponentProps<typeof ComboboxSearchInput> = {
+    ref: searchInputRef,
+    placeholder: t("Search models..."),
+    value: searchQuery,
+    onChange: onSearchChange,
+    onKeyDown: onSearchKeyDown,
+    onMouseDown: (e) => e.stopPropagation(),
+    onTouchStart: (e) => e.stopPropagation(),
+  };
+  const sidebar = showSidebar && (
+    <ModelPickerSidebar
+      orientation={docked ? "horizontal" : "vertical"}
+      selectedInstanceId={selectedInstanceId}
+      onSelectInstance={handleSelectInstance}
+      onFocusSearch={focusSearchInput}
+      onFocusList={focusSearchInput}
+      instanceEntries={sidebarInstanceEntries}
+      showFavorites
+      {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
+      {...(lockedDisabledInstanceIds
+        ? {
+            disabledInstanceIds: lockedDisabledInstanceIds,
+            getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
+              gt(
+                "{provider} is unavailable in this thread. Start a new thread to switch providers.",
+                { provider: entry.displayName },
+              ),
+          }
+        : {})}
+    />
+  );
+
   return (
     <>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
         className={cn(
-          "relative flex w-screen max-w-90 flex-row overflow-hidden",
-          props.docked ? "max-sm:h-56 max-sm:w-full max-sm:max-w-none" : "max-h-86.5",
+          "relative flex overflow-hidden",
+          docked ? "w-full min-w-0 min-h-0 flex-col" : "w-screen max-w-90 flex-row max-h-86.5",
         )}
         // Docked, the popup sets the height; a minimum here would overflow short windows.
         style={
-          props.docked
+          docked
             ? undefined
             : isSearching
               ? { height: searchHeight }
@@ -979,26 +1138,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         }
         data-model-picker-content="true"
       >
-        {showSidebar && (
-          <ModelPickerSidebar
-            selectedInstanceId={selectedInstanceId}
-            onSelectInstance={handleSelectInstance}
-            onFocusSearch={focusSearchInput}
-            instanceEntries={sidebarInstanceEntries}
-            showFavorites
-            {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
-            {...(lockedDisabledInstanceIds
-              ? {
-                  disabledInstanceIds: lockedDisabledInstanceIds,
-                  getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
-                    gt(
-                      "{provider} is unavailable in this thread. Start a new thread to switch providers.",
-                      { provider: entry.displayName },
-                    ),
-                }
-              : {})}
-          />
-        )}
+        {!docked && sidebar}
 
         <Combobox<string, boolean>
           inline
@@ -1046,108 +1186,55 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             }
           }}
         >
+          {docked && (
+            <div
+              className={cn(
+                "flex h-12 shrink-0 items-center",
+                searchOpen ? "pe-1.5" : "gap-1 border-b border-border/70 ps-2 pe-2",
+              )}
+              data-model-picker-tabs="true"
+            >
+              {sidebar}
+              {/* One input for both states, so opening or collapsing the search keeps its focus. */}
+              <div
+                className={cn(
+                  searchOpen
+                    ? "min-w-0 flex-1 cursor-text"
+                    : "size-9 rounded-lg hover:bg-foreground/[0.06] focus-within:bg-foreground/[0.11]",
+                )}
+                onPointerDown={() => {
+                  if (!searchOpen) setSearchOpen(true);
+                }}
+              >
+                <ComboboxSearchInput {...searchInputProps} collapsed={!searchOpen} />
+              </div>
+              {searchOpen ? (
+                <Button
+                  size="icon-sm"
+                  variant="ghost-muted"
+                  aria-label={t("Close search")}
+                  onClick={closeSearch}
+                >
+                  <XIcon />
+                </Button>
+              ) : null}
+            </div>
+          )}
           <div
             className={cn(
-              "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40",
-              showSidebar && "border-l border-border/70",
+              "flex min-h-0 flex-1 flex-col overflow-hidden",
+              !docked && "bg-muted/40",
+              showSidebar && !docked && "border-l border-border/70",
             )}
           >
-            <ComboboxSearchInput
-              ref={searchInputRef}
-              placeholder={t("Search models...")}
-              value={searchQuery}
-              onChange={(e) => {
-                if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
-                setSearchQuery(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing || e.keyCode === 229) {
-                  (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
-                  e.stopPropagation();
-                  return;
-                }
-                if (
-                  showSidebar &&
-                  !e.altKey &&
-                  !e.ctrlKey &&
-                  !e.metaKey &&
-                  ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
-                    (e.key === "Tab" && e.shiftKey))
-                ) {
-                  const sidebar = e.currentTarget
-                    .closest("[data-model-picker-content]")
-                    ?.querySelector("[data-model-picker-sidebar]");
-                  const button =
-                    sidebar?.querySelector<HTMLButtonElement>(
-                      'button[aria-pressed="true"]:not(:disabled)',
-                    ) ?? sidebar?.querySelector<HTMLButtonElement>("button:not(:disabled)");
-                  if (button) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    button.focus();
-                    return;
-                  }
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onRequestClose?.();
-                  return;
-                }
-                if (
-                  props.onFocusEffort &&
-                  e.key === "ArrowRight" &&
-                  !e.altKey &&
-                  !e.ctrlKey &&
-                  !e.metaKey &&
-                  !e.shiftKey &&
-                  e.currentTarget.selectionStart === searchQuery.length
-                ) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // The column shows the selected model's effort, so a highlighted model is picked
-                  // first; the owning popup then moves focus to that model's levels.
-                  const highlighted = highlightedModelKeyRef.current
-                    ? parseModelPickerModelKey(highlightedModelKeyRef.current)
-                    : null;
-                  const pickedNew =
-                    highlighted !== null &&
-                    highlightedModelKeyRef.current !== activeModelKey &&
-                    handleModelSelect(highlighted.slug, highlighted.instanceId) !== null;
-                  if (!pickedNew) props.onFocusEffort();
-                  return;
-                }
-                if (e.key === "Enter" && highlightedModelKeyRef.current) {
-                  (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const legacyInstanceId = parseModelPickerLegacySectionKey(
-                    highlightedModelKeyRef.current,
-                  );
-                  if (legacyInstanceId) {
-                    toggleLegacySection(legacyInstanceId);
-                    return;
-                  }
-                  if (subProviderSectionByKey.has(highlightedModelKeyRef.current)) {
-                    toggleSubProviderSection(highlightedModelKeyRef.current);
-                    return;
-                  }
-                  const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
-                  if (model) {
-                    handleModelSelect(model.slug, model.instanceId, e.shiftKey);
-                  }
-                  return;
-                }
-                e.stopPropagation();
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-            />
+            {docked ? null : <ComboboxSearchInput {...searchInputProps} />}
 
             <ModelPickerList
               listRef={modelListRef}
               itemKeys={filteredItemKeys}
               extraData={modelListExtraData}
+              height={docked ? dockedListHeight(filteredItemKeys.length) : undefined}
+              estimatedItemSize={docked ? DOCKED_ROW_UNITS * 4 : MODEL_LIST_ESTIMATED_ITEM_SIZE}
               renderItem={({ item: modelKey, index }) => {
                 if (legacySection?.key === modelKey) {
                   return (
@@ -1156,6 +1243,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       index={index}
                       value={modelKey}
                       aria-expanded={legacySection.isExpanded}
+                      size={docked ? "roomy" : "default"}
                       className="group w-full cursor-pointer"
                     >
                       <span className="text-sm leading-snug text-muted-foreground group-hover:text-foreground group-data-highlighted:text-foreground">
@@ -1174,6 +1262,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       value={modelKey}
                       disabled={unavailable}
                       aria-expanded={unavailable ? undefined : subProviderSection.isExpanded}
+                      size={docked ? "roomy" : "default"}
                       className="group w-full cursor-pointer"
                     >
                       <div className="min-w-0 flex-1 text-left">
@@ -1233,6 +1322,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     favoriteStarOnHover={selectedInstanceId === "favorites" && !isSearching}
                     showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
                     showNewBadge={model.badge === "new"}
+                    stacked={docked}
                     unavailable={model.isUnavailable === true}
                     jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
                     disabledReason={disabledReason}

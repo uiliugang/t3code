@@ -51,6 +51,7 @@ const PICKER_TOOLTIP_SIDE_OFFSET = 8;
 const ModelPickerSidebarItem = memo(function ModelPickerSidebarItem(props: {
   entry: ProviderInstanceEntry;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
+  horizontal?: boolean;
   selected: boolean;
   hovered: boolean;
   disabledInstanceIds: ReadonlySet<ProviderInstanceId> | undefined;
@@ -75,7 +76,10 @@ const ModelPickerSidebarItem = memo(function ModelPickerSidebarItem(props: {
   const button = (
     <Toolbar.Button
       className={cn(
-        "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+        "relative isolate flex shrink-0 cursor-pointer items-center justify-center transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+        props.horizontal
+          ? "size-9 rounded-lg aria-pressed:bg-foreground/[0.11]"
+          : "aspect-square w-full rounded-md",
         isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
       )}
       data-provider-accent-color={props.entry.accentColor}
@@ -119,14 +123,21 @@ const ModelPickerSidebarItem = memo(function ModelPickerSidebarItem(props: {
     </Toolbar.Button>
   );
 
-  const trigger = isDisabled ? <span className="relative block w-full">{button}</span> : button;
+  const trigger = isDisabled ? (
+    <span className="relative block w-full shrink-0">{button}</span>
+  ) : (
+    button
+  );
 
   return (
-    <div className="relative w-full" data-model-picker-provider={props.entry.instanceId}>
+    <div
+      className={props.horizontal ? "relative shrink-0" : "relative w-full"}
+      data-model-picker-provider={props.entry.instanceId}
+    >
       <Tooltip>
         <TooltipTrigger render={trigger} />
         <TooltipPopup
-          side={PICKER_TOOLTIP_SIDE}
+          side={props.horizontal ? "top" : PICKER_TOOLTIP_SIDE}
           sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
           align="center"
         >
@@ -137,7 +148,7 @@ const ModelPickerSidebarItem = memo(function ModelPickerSidebarItem(props: {
   );
 });
 
-export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
+type SidebarProps = {
   selectedInstanceId: ProviderInstanceId | "favorites";
   onSelectInstance: (instanceId: ProviderInstanceId | "favorites") => void;
   onFocusSearch: () => void;
@@ -146,33 +157,122 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   disabledInstanceIds?: ReadonlySet<ProviderInstanceId>;
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
-}) {
+};
+
+function FavoritesTab(props: { selected: boolean; horizontal: boolean; onSelect: () => void }) {
+  const t = useUiTranslation();
+  return (
+    <div
+      className={props.horizontal ? "relative shrink-0" : "relative w-full"}
+      data-model-picker-provider="favorites"
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Toolbar.Button
+              className={cn(
+                "relative isolate flex shrink-0 cursor-pointer items-center justify-center transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
+                props.horizontal
+                  ? "size-9 rounded-lg aria-pressed:bg-foreground/[0.11] aria-pressed:text-primary"
+                  : "aspect-square w-full rounded-md",
+              )}
+              onClick={props.onSelect}
+              type="button"
+              aria-label={t("Favorites")}
+              aria-pressed={props.selected}
+            >
+              <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
+            </Toolbar.Button>
+          }
+        />
+        <TooltipPopup
+          side={props.horizontal ? "top" : PICKER_TOOLTIP_SIDE}
+          sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
+          align="center"
+        >
+          {t("Favorites")}
+        </TooltipPopup>
+      </Tooltip>
+    </div>
+  );
+}
+
+/** The tabs along the picker's top edge: providers in a row, with the favorites first. */
+function HorizontalModelPickerSidebar(props: SidebarProps & { onFocusList?: () => void }) {
+  const t = useUiTranslation();
+  const m = useMessages();
+  const [hoveredInstanceId, setHoveredInstanceId] = useState<ProviderInstanceId | null>(null);
+  return (
+    <Toolbar.Root
+      className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      data-model-picker-sidebar="true"
+      aria-label={t("Providers")}
+      orientation="horizontal"
+      onKeyDown={(event) => {
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          props.onFocusList?.();
+        }
+      }}
+    >
+      {(props.showFavorites ?? true) ? (
+        <FavoritesTab
+          horizontal
+          selected={props.selectedInstanceId === "favorites"}
+          onSelect={() => props.onSelectInstance("favorites")}
+        />
+      ) : null}
+      {props.instanceEntries.map((entry) => (
+        <ModelPickerSidebarItem
+          key={entry.instanceId}
+          horizontal
+          entry={entry}
+          instanceEntries={props.instanceEntries}
+          selected={props.selectedInstanceId === entry.instanceId}
+          hovered={hoveredInstanceId === entry.instanceId}
+          disabledInstanceIds={props.disabledInstanceIds}
+          selectableUnavailableInstanceIds={props.selectableUnavailableInstanceIds}
+          getDisabledInstanceTooltip={props.getDisabledInstanceTooltip}
+          messageResolver={m}
+          onSelectInstance={props.onSelectInstance}
+          setHoveredInstanceId={setHoveredInstanceId}
+        />
+      ))}
+    </Toolbar.Root>
+  );
+}
+
+const VerticalModelPickerSidebar = memo(function VerticalModelPickerSidebar(props: SidebarProps) {
   const t = useUiTranslation();
   const m = useMessages();
   const showFavorites = props.showFavorites ?? true;
   const [hoveredInstanceId, setHoveredInstanceId] = useState<ProviderInstanceId | null>(null);
   const sidebarContentRef = useRef<HTMLDivElement>(null);
   const [selectedIndicatorTop, setSelectedIndicatorTop] = useState<number | null>(null);
+  // The selected tab's row: favorites first, then the entries in order. -1 when it is not shown.
+  const selectedRow =
+    props.selectedInstanceId === "favorites"
+      ? showFavorites
+        ? 0
+        : -1
+      : props.instanceEntries.findIndex((entry) => entry.instanceId === props.selectedInstanceId) +
+        (showFavorites ? 1 : 0);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the selected provider item's DOM offset to position the selection indicator
   useLayoutEffect(() => {
-    const content = sidebarContentRef.current;
-    if (!content) {
-      return;
-    }
-    const selectedItem = Array.from(
-      content.querySelectorAll<HTMLElement>("[data-model-picker-provider]"),
-    ).find((item) => item.dataset.modelPickerProvider === props.selectedInstanceId);
+    // Adding, removing or reordering providers moves the selected row, so the indicator re-measures.
+    const selectedItem =
+      selectedRow < 0
+        ? undefined
+        : sidebarContentRef.current?.querySelectorAll<HTMLElement>("[data-model-picker-provider]")[
+            selectedRow
+          ];
     if (!selectedItem) {
       setSelectedIndicatorTop(null);
       return;
     }
     setSelectedIndicatorTop(selectedItem.offsetTop + selectedItem.offsetHeight / 2 - 10);
-  }, [
-    // Adding, removing or reordering providers moves the selected item, so the indicator re-measures.
-    props.instanceEntries,
-    props.selectedInstanceId,
-    showFavorites,
-  ]);
+  }, [selectedRow]);
 
   return (
     <Toolbar.Root
@@ -200,32 +300,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
           ) : null}
           {showFavorites ? (
             <>
-              <div className="relative w-full" data-model-picker-provider="favorites">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Toolbar.Button
-                        className={cn(
-                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
-                        )}
-                        onClick={() => props.onSelectInstance("favorites")}
-                        type="button"
-                        aria-label={t("Favorites")}
-                        aria-pressed={props.selectedInstanceId === "favorites"}
-                      >
-                        <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
-                      </Toolbar.Button>
-                    }
-                  />
-                  <TooltipPopup
-                    side={PICKER_TOOLTIP_SIDE}
-                    sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
-                    align="center"
-                  >
-                    {t("Favorites")}
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
+              <FavoritesTab
+                horizontal={false}
+                selected={props.selectedInstanceId === "favorites"}
+                onSelect={() => props.onSelectInstance("favorites")}
+              />
               <div className="border-b border-border/70" aria-hidden="true" />
             </>
           ) : null}
@@ -248,5 +327,21 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
         </div>
       </div>
     </Toolbar.Root>
+  );
+});
+
+export const ModelPickerSidebar = memo(function ModelPickerSidebar(
+  props: SidebarProps & {
+    /** `horizontal` runs the tabs along the picker's top edge instead of down its left side. */
+    orientation?: "vertical" | "horizontal";
+    /** Arrow Down on a horizontal tab row moves into the models. */
+    onFocusList?: () => void;
+  },
+) {
+  const { orientation = "vertical", onFocusList, ...rest } = props;
+  return orientation === "horizontal" ? (
+    <HorizontalModelPickerSidebar {...rest} {...(onFocusList ? { onFocusList } : {})} />
+  ) : (
+    <VerticalModelPickerSidebar {...rest} />
   );
 });

@@ -104,17 +104,50 @@ function ComboboxInput({
   );
 }
 
-function ComboboxSearchInput(props: React.ComponentProps<typeof ComboboxInput>) {
+function ComboboxSearchInput(
+  props: React.ComponentProps<typeof ComboboxInput> & {
+    /**
+     * Shows a search icon alone. The input keeps its focus and takes typing, but prints nothing,
+     * so a picker can start with the icon and reveal the field on first use.
+     */
+    collapsed?: boolean;
+  },
+) {
+  const { collapsed = false, ...inputProps } = props;
   return (
-    <label className="block min-w-0 shrink-0 cursor-text px-3 pt-2.5">
-      <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
+    <label
+      className={cn(
+        "relative min-w-0 shrink-0",
+        collapsed
+          ? "flex size-9 cursor-pointer items-center justify-center"
+          : "block cursor-text px-3 pt-2.5",
+      )}
+    >
+      <div
+        className={cn(
+          "relative",
+          collapsed
+            ? "size-full"
+            : "-translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring",
+        )}
+      >
         <SearchIcon
           aria-hidden="true"
-          className="pointer-events-none absolute top-1.5 left-0 size-4 shrink-0 text-muted-foreground/55"
+          className={cn(
+            "pointer-events-none absolute shrink-0 text-muted-foreground/55",
+            collapsed
+              ? "top-1/2 left-1/2 size-[18px] -translate-x-1/2 -translate-y-1/2"
+              : "top-1.5 left-0 size-4",
+          )}
         />
         <ComboboxInput
-          {...props}
-          className="flex w-full [&_input]:h-6.5 [&_input]:ps-5 [&_input]:font-sans [&_input]:leading-6.5"
+          {...inputProps}
+          className={cn(
+            "flex w-full",
+            collapsed
+              ? "h-9 [&_input]:text-transparent [&_input]:caret-transparent [&_input]:placeholder:text-transparent"
+              : "[&_input]:h-6.5 [&_input]:ps-5 [&_input]:font-sans [&_input]:leading-6.5",
+          )}
           showTrigger={false}
           size="sm"
           unstyled
@@ -190,16 +223,20 @@ function ComboboxItem({
   children,
   hideIndicator: _hideIndicator = false,
   selectedFill = true,
+  size = "default",
   ...props
 }: ComboboxPrimitive.Item.Props & {
   hideIndicator?: boolean;
   /** Off for rows that mark selection themselves, so a fill only means hover or highlight. */
   selectedFill?: boolean;
+  /** `roomy` is for a short list in a wide popup: taller rows with more air. */
+  size?: "default" | "roomy";
 }) {
   return (
     <ComboboxPrimitive.Item
       className={cn(
         "flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-sm px-2 py-1 text-base outline-none not-data-disabled:hover:bg-foreground/[0.09] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-selected:text-foreground data-highlighted:bg-foreground/[0.09] data-highlighted:text-accent-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        size === "roomy" && "min-h-9 gap-3 rounded-md px-2.5 sm:min-h-9",
         selectedFill && "data-selected:bg-foreground/[0.06]",
         className,
       )}
