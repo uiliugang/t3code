@@ -1286,7 +1286,7 @@ export function RequirementBoard({
                   <div
                     className={
                       view === "board"
-                        ? "grid min-h-0 flex-1 auto-cols-[minmax(18rem,1fr)] grid-flow-col grid-rows-[minmax(0,1fr)] gap-4 overflow-x-auto pb-2"
+                        ? "grid min-h-0 flex-1 auto-cols-[minmax(18rem,26rem)] grid-flow-col grid-rows-[minmax(0,1fr)] gap-4 overflow-x-auto pb-2"
                         : "space-y-4"
                     }
                   >

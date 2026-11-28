@@ -655,7 +655,7 @@ it("starts with to-do issues first and completed issues folded, and reveals full
   await expect.element(finished).toBeVisible();
 });
 
-it("stretches board columns to fill the available width instead of leaving a fixed-width gutter", async () => {
+it("shares the board width between columns between 18rem and 26rem, then scrolls sideways", async () => {
   using fixture = setup();
   const issuesAtom = sourceControlEnvironment.issues({
     environmentId: "local",
@@ -689,24 +689,35 @@ it("stretches board columns to fill the available width instead of leaving a fix
   );
   await using screen = await render(fixture.board({ view: "board" }));
   await expect.element(screen.getByRole("button", { name: /Active issue/ })).toBeVisible();
-  await page.viewport(1600, 900);
-
-  const column = (name: RegExp) =>
-    screen.getByRole("button", { name }).element().closest("section")!.getBoundingClientRect();
-  const minimumWidth = parseFloat(getComputedStyle(document.documentElement).fontSize) * 18;
-  const todo = column(/^To do/);
-  const active = column(/^In progress/);
-  const done = column(/^Completed/);
-  expect(todo.width).toBeGreaterThan(minimumWidth);
-  expect(active.width).toBe(todo.width);
-  expect(done.left).toBeGreaterThanOrEqual(active.right);
-  // The last column reaches the right edge of the board, and nothing overflows sideways.
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const minimumWidth = rem * 18;
+  const maximumWidth = rem * 26;
   const board = screen
     .getByRole("button", { name: /^Completed/ })
     .element()
-    .closest(".grid")!;
-  expect(done.right).toBe(board.getBoundingClientRect().right);
+    .closest<HTMLElement>(".grid")!;
+  const column = (name: RegExp) =>
+    screen.getByRole("button", { name }).element().closest("section")!.getBoundingClientRect();
+  const columnWidths = () =>
+    [/^To do/, /^In progress/, /^Completed/].map((name) => column(name).width);
+
+  // Wide board: columns stop at the maximum instead of stretching into sparse cards.
+  await page.viewport(1600, 900);
+  await expect.poll(columnWidths).toEqual([maximumWidth, maximumWidth, maximumWidth]);
   expect(board.scrollWidth).toBe(board.clientWidth);
+
+  // Medium board: columns share the width equally down to the minimum.
+  await page.viewport(1000, 900);
+  await expect.poll(() => columnWidths()[0]).toBeGreaterThan(minimumWidth);
+  expect(columnWidths()[0]).toBeLessThan(maximumWidth);
+  expect(columnWidths()[1]).toBe(columnWidths()[0]);
+  expect(column(/^Completed/).right).toBe(board.getBoundingClientRect().right);
+  expect(board.scrollWidth).toBe(board.clientWidth);
+
+  // Narrow board: columns keep the minimum and the board scrolls sideways.
+  await page.viewport(700, 900);
+  await expect.poll(columnWidths).toEqual([minimumWidth, minimumWidth, minimumWidth]);
+  expect(board.scrollWidth).toBeGreaterThan(board.clientWidth);
 });
 
 it("keeps the updating indicator inside the topbar on narrow viewports without vertical wrapping", async () => {
