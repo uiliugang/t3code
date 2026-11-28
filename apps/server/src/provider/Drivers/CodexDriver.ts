@@ -70,6 +70,7 @@ import {
   materializeCodexShadowHome,
   resolveCodexHomeLayout,
 } from "./CodexHomeLayout.ts";
+import { makeCodexByokCatalog } from "./CodexByokCatalog.ts";
 import { makeManagedCodexProvider } from "./CodexManagedProvider.ts";
 import { codexUsageReader } from "./codexUsage.ts";
 import * as CodexInstallation from "../CodexInstallation.ts";
@@ -78,6 +79,7 @@ import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
+const quoteConfig = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 
 const DRIVER_KIND = ProviderDriverKind.make("codex");
 const CODEX_STANDALONE_HOME_PATTERN = /^(.*)\/packages\/standalone\//is;
@@ -268,6 +270,25 @@ export const CodexDriver: ProviderDriver<
         .filter((value) => value.length > 0)
         .join(" "),
     } satisfies CodexSettings;
+    const syncByokCatalog = byok
+      ? yield* makeCodexByokCatalog(privateHome, config.customModels, processEnv)
+      : undefined;
+    const resolveExecutable =
+      codexRuntimeSource(config) === "local"
+        ? Effect.succeed(effectiveConfig.binaryPath)
+        : installation
+            .acquire(codexRuntimeSource(config), effectiveConfig.binaryPath, processEnv)
+            .pipe(
+              Effect.map((runtime) => runtime.executablePath),
+              Effect.mapError(
+                (error) =>
+                  new ProviderSetupError({
+                    instanceId,
+                    operation: "runtime",
+                    detail: error.detail,
+                  }),
+              ),
+            );
     const resolveRuntime = Effect.gen(function* () {
       if (byok) {
         const error = codexByokUrlError(processEnv.T3_CODEX_BASE_URL ?? "");
@@ -288,27 +309,43 @@ export const CodexDriver: ProviderDriver<
           ),
         );
       }
-      const executable =
-        codexRuntimeSource(config) === "local"
-          ? effectiveConfig.binaryPath
-          : (yield* installation
-              .acquire(codexRuntimeSource(config), effectiveConfig.binaryPath, processEnv)
-              .pipe(
-                Effect.mapError(
-                  (error) =>
-                    new ProviderSetupError({
-                      instanceId,
-                      operation: "runtime",
-                      detail: error.detail,
-                    }),
-                ),
-              )).executablePath;
+      const executable = yield* resolveExecutable;
+      const catalogPath =
+        syncByokCatalog === undefined
+          ? undefined
+          : yield* syncByokCatalog(executable).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ProviderSetupError({
+                    instanceId,
+                    operation: "runtime",
+                    detail: "Could not synchronize the private Codex model catalog.",
+                    cause,
+                  }),
+              ),
+            );
       return {
-        config: { ...effectiveConfig, binaryPath: executable },
+        config: {
+          ...effectiveConfig,
+          binaryPath: executable,
+          launchArgs:
+            catalogPath === undefined
+              ? effectiveConfig.launchArgs
+              : `-c ${quoteConfig(`model_catalog_json=${quoteConfig(catalogPath)}`)} ${effectiveConfig.launchArgs}`,
+        },
         environment: processEnv,
         revision: `${instanceId}:${homeLayout.effectiveHomePath}:${byok ? processEnv.T3_CODEX_BASE_URL : ""}`,
       };
     });
+    if (
+      syncByokCatalog !== undefined &&
+      (config.customModels.length > 0 ||
+        (yield* fileSystem
+          .exists(pathService.join(privateHome, "context-models.json"))
+          .pipe(Effect.orElseSucceed(() => false))))
+    ) {
+      yield* resolveExecutable.pipe(Effect.flatMap(syncByokCatalog), Effect.scoped, Effect.ignore);
+    }
     const resolveInstallation = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(
         makeCodexMaintenanceResolver(homeLayout.sharedHomePath),
@@ -533,7 +570,7 @@ export const CodexDriver: ProviderDriver<
             const { client } = yield* withCodexAppServerClient({
               binaryPath: runtime.config.binaryPath,
               homePath: effectiveConfig.homePath,
-              launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, processEnv),
+              launchArgs: resolveCodexLaunchArgs(runtime.config.launchArgs, processEnv),
               cwd: process.cwd(),
               environment: processEnv,
             });
