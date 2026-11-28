@@ -221,10 +221,7 @@ const RELAY_AGENT_ACTIVITY_STEADY_RETRY_DELAY_MS = 60_000;
 // back off at the environment level instead of retrying every thread every minute.
 const RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS = 60 * 60_000;
 
-function extractUnsupportedWakeStatus(cause: Cause.Cause<unknown>): number | null {
-  const error = Cause.findErrorOption(cause);
-  if (Option.isNone(error)) return null;
-  const value = error.value;
+function unsupportedWakeStatus(value: unknown): number | null {
   if (!HttpClientError.isHttpClientError(value)) return null;
   const reason = value.reason;
   if (!("response" in reason) || reason.response === undefined) return null;
@@ -512,6 +509,12 @@ export const make = Effect.gen(function* () {
   let cachedRelayClient: Effect.Success<ReturnType<typeof makeRelayClient>> | undefined;
   let publishedRelayConfig: NonNullable<Effect.Success<typeof readRelayConfig>> | undefined;
   let unsupportedWakeBlockedUntilMs: number | null = null;
+  let unsupportedWakeTimer: Fiber.Fiber<void> | undefined;
+  const clearUnsupportedWake = Effect.gen(function* () {
+    unsupportedWakeBlockedUntilMs = null;
+    if (unsupportedWakeTimer !== undefined) yield* Fiber.interrupt(unsupportedWakeTimer);
+    unsupportedWakeTimer = undefined;
+  });
 
   // Confirm through the same worker so tombstones cannot race live updates; recovery clears the deadline.
   const publishConfirmDeadlines = new Map<ThreadId, number>();
@@ -539,7 +542,7 @@ export const make = Effect.gen(function* () {
   const resetPublishedConnection = Effect.gen(function* () {
     publishedRelayConfig = undefined;
     cachedRelayClient = undefined;
-    unsupportedWakeBlockedUntilMs = null;
+    yield* clearUnsupportedWake;
     publishConfirmDeadlines.clear();
     heldCompletions.clear();
     unconfirmedWakes.clear();
@@ -558,6 +561,59 @@ export const make = Effect.gen(function* () {
       if (publishedRelayConfig !== undefined) yield* resetPublishedConnection;
       publishedRelayConfig = relayConfig;
     }
+  });
+
+  const wakeEnvironment = Effect.fnUntraced(function* (
+    relayConfig: NonNullable<Effect.Success<typeof readRelayConfig>>,
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+  ) {
+    const connection = publishedRelayConfig;
+    if (cachedRelayClient === undefined) {
+      cachedRelayClient = yield* makeRelayClient(relayConfig);
+    }
+    const relayClient = cachedRelayClient;
+    const proof = yield* makeWakeProof({
+      relayIssuer: relayConfig.issuer,
+      environmentId,
+      jti: yield* random.uuidV4(),
+    }).pipe(Effect.provideService(EnvironmentSigningKey, signingKey));
+
+    const result = yield* relayClient.server
+      .wakeAgentActivity({ params: { environmentId }, payload: { proof } })
+      .pipe(Effect.timeout("10 seconds"), Effect.result);
+    if (connection !== publishedRelayConfig) return;
+    if (result._tag === "Failure") {
+      const status = unsupportedWakeStatus(result.failure);
+      if (status === null) return yield* result.failure;
+      yield* clearUnsupportedWake;
+      unsupportedWakeBlockedUntilMs =
+        (yield* DateTime.now).epochMilliseconds + RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS;
+      unsupportedWakeTimer = yield* Effect.sleep(RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS).pipe(
+        Effect.andThen(Effect.suspend(() => enqueueTopLevelPublish(threadId))),
+        Effect.forkIn(scope),
+      );
+      unconfirmedWakes.clear();
+      yield* cancelPublishRetries;
+      yield* Effect.logWarning(
+        "agent activity wake endpoint unavailable; retrying after cooldown",
+        {
+          threadId,
+          status,
+          cooldownMs: RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS,
+        },
+      );
+      return;
+    }
+    const response = result.success;
+    yield* clearUnsupportedWake;
+    unconfirmedWakes.delete(threadId);
+    yield* Effect.logInfo("agent activity publish completed", {
+      environmentId,
+      threadId,
+      ok: response.ok,
+      deliveries: deliveryStats(response.deliveries),
+    });
   });
 
   const publishThreadUnsafe = Effect.fn("publishThreadUnsafe")(function* (threadId: ThreadId) {
@@ -601,16 +657,6 @@ export const make = Effect.gen(function* () {
         return;
       }
 
-      if (cachedRelayClient === undefined) {
-        cachedRelayClient = yield* makeRelayClient(relayConfig);
-      }
-      const relayClient = cachedRelayClient;
-      const proof = yield* makeWakeProof({
-        relayIssuer: relayConfig.issuer,
-        environmentId,
-        jti: yield* random.uuidV4(),
-      }).pipe(Effect.provideService(EnvironmentSigningKey, signingKey));
-
       yield* Effect.logInfo("publishing agent activity for thread", {
         environmentId,
         threadId,
@@ -621,18 +667,7 @@ export const make = Effect.gen(function* () {
       });
 
       unconfirmedWakes.add(threadId);
-      const response = yield* relayClient.server
-        .wakeAgentActivity({ params: { environmentId }, payload: { proof } })
-        .pipe(Effect.timeout("10 seconds"));
-
-      unsupportedWakeBlockedUntilMs = null;
-      unconfirmedWakes.delete(threadId);
-      yield* Effect.logInfo("agent activity publish completed", {
-        environmentId,
-        threadId,
-        ok: response.ok,
-        deliveries: deliveryStats(response.deliveries),
-      });
+      yield* wakeEnvironment(relayConfig, environmentId, threadId);
     });
 
     // Read only this thread; full shell reads would make each activity event scale with all threads.
@@ -859,30 +894,25 @@ export const make = Effect.gen(function* () {
       yield* Fiber.interrupt(timer);
     }
     yield* publishThreadUnsafe(threadId).pipe(
-      Effect.tap(() => cancelPublishRetry(threadId)),
+      Effect.tap(
+        Effect.gen(function* () {
+          // The wake covers the entire environment, even when the last thread has since settled.
+          if (
+            unsupportedWakeBlockedUntilMs !== null &&
+            publishedRelayConfig !== undefined &&
+            (yield* DateTime.now).epochMilliseconds >= unsupportedWakeBlockedUntilMs
+          ) {
+            yield* wakeEnvironment(
+              publishedRelayConfig,
+              yield* serverEnvironment.getEnvironmentId,
+              threadId,
+            );
+          }
+          yield* cancelPublishRetry(threadId);
+        }),
+      ),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) return Effect.void;
-        const unsupportedStatus = extractUnsupportedWakeStatus(cause);
-        if (unsupportedStatus !== null) {
-          return Effect.gen(function* () {
-            const nowMs = (yield* DateTime.now).epochMilliseconds;
-            const firstTrip =
-              unsupportedWakeBlockedUntilMs === null || nowMs >= unsupportedWakeBlockedUntilMs;
-            unsupportedWakeBlockedUntilMs = nowMs + RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS;
-            unconfirmedWakes.clear();
-            yield* cancelPublishRetries;
-            if (firstTrip) {
-              yield* Effect.logWarning(
-                "agent activity wake endpoint returned permanent not-found; pausing relay wakes",
-                {
-                  threadId,
-                  status: unsupportedStatus,
-                  cooldownMs: RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS,
-                },
-              );
-            }
-          });
-        }
         return Effect.logWarning("agent activity publish failed", {
           threadId,
           cause: Cause.pretty(cause),

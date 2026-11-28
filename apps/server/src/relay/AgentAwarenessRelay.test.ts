@@ -1132,7 +1132,8 @@ describe("AgentAwarenessRelay", () => {
         // Once the 1-hour cooldown elapses and the endpoint becomes available, publishing resumes.
         supported = true;
         yield* TestClock.adjust("60 minutes");
-        yield* Ref.set(currentShell, shell({ status: "running" }));
+        yield* relay.drain;
+        assert.equal(publications.length, 2);
         yield* relay.publishThread(THREAD_ID);
         assert.equal(publications.length, 2);
       }),

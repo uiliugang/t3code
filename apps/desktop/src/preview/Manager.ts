@@ -2675,15 +2675,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const setShown = Effect.fn("PreviewManager.setShown")(function* (tabId: string, shown: boolean) {
     const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
     if (tab?.serverTab) browserHost.setShown(tab.serverTab, shown);
-    if (!shown && tab?.webContentsId != null) {
-      const capturing = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).has(tabId);
-      if (!capturing) {
-        const wc = webContents.fromId(tab.webContentsId);
-        if (wc && !wc.isDestroyed()) {
-          yield* setFrameCaptureWebContentsBackgroundThrottling(wc, true).pipe(Effect.ignore);
-        }
-      }
-    }
+    if (shown || tab?.webContentsId == null) return;
+    const id = tab.webContentsId;
+    yield* SynchronizedRef.updateEffect(frameCaptureSessionsRef, (sessions) => {
+      const wc = webContents.fromId(id);
+      return wc && !sessions.has(tabId)
+        ? setFrameCaptureWebContentsBackgroundThrottling(wc, true).pipe(
+            Effect.ignore,
+            Effect.as(sessions),
+          )
+        : Effect.succeed(sessions);
+    });
   });
 
   const setCaptureDrawn = Effect.fn("PreviewManager.setCaptureDrawn")(function* (

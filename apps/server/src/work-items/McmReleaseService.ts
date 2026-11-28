@@ -87,13 +87,8 @@ function formatMcmCommandFailure(result: {
   if (result.timedOut) details.push("timed out");
   if (result.stdoutTruncated) details.push("stdout truncated");
   if (result.code !== null && result.code !== 0) details.push(`exit code ${result.code}`);
-  const firstStderrLine = result.stderr
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  if (firstStderrLine) {
-    details.push(firstStderrLine.slice(0, 240));
-  }
+  const firstStderrLine = /\S[^\r\n]{0,239}/u.exec(result.stderr)?.[0].trimEnd();
+  if (firstStderrLine) details.push(firstStderrLine);
   return details.length > 0
     ? `Could not read MCM plan (${details.join("; ")})`
     : "Could not read MCM plan";

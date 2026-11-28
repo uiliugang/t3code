@@ -45,7 +45,12 @@ import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { makeWorktreeFileInspection } from "../vcs/worktreeFileInspection.ts";
 import { removeLinkedWorktree } from "../vcs/worktreeRemoval.ts";
-import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
+import {
+  makeHasGitDirectory,
+  isGeneratedWorkspaceContainer,
+  isFilesystemRoot,
+  managedWorktreesDirectories,
+} from "../worktreesDirectory.ts";
 import * as WorkspaceRepositoryResolver from "./WorkspaceRepositoryResolver.ts";
 import { withCheckpointRestoreReservation, withWorkspaceLeases } from "./workspaceLease.ts";
 import { sameDirectoryIdentity } from "./directoryIdentity.ts";
@@ -134,6 +139,7 @@ const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const sql = yield* SqlClient.SqlClient;
   const fs = yield* FileSystem.FileSystem;
+  const hasGitDirectory = yield* makeHasGitDirectory;
   const path = yield* Path.Path;
   const digester = yield* Digest.Digest;
   const random = yield* SecureRandom.SecureRandom;
@@ -180,41 +186,6 @@ const make = Effect.gen(function* () {
       );
     };
   };
-  const pruneEmptyManagedParents = Effect.fnUntraced(function* (
-    checkoutRoot: string,
-    managedRoots: ReadonlyArray<string>,
-  ) {
-    let parent = path.dirname(checkoutRoot);
-    while (managedRoots.some((root) => root !== parent && contains(root, parent))) {
-      const entries = yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => null));
-      if (entries === null || entries.length > 0) break;
-      const removed = yield* Effect.promise(() =>
-        NodeFSP.rmdir(parent).then(
-          () => true,
-          () => false,
-        ),
-      );
-      if (!removed) break;
-      const next = path.dirname(parent);
-      if (next === parent) break;
-      parent = next;
-    }
-  });
-  const hasGitDirectory = Effect.fnUntraced(function* (directory: string) {
-    let current = path.resolve(directory);
-    for (;;) {
-      if (yield* fs.exists(path.join(current, ".git")).pipe(Effect.orElseSucceed(() => false)))
-        return true;
-      if (
-        (yield* fs.exists(path.join(current, "HEAD")).pipe(Effect.orElseSucceed(() => false))) &&
-        (yield* fs.exists(path.join(current, "objects")).pipe(Effect.orElseSucceed(() => false)))
-      )
-        return true;
-      const parent = path.dirname(current);
-      if (parent === current) return false;
-      current = parent;
-    }
-  });
   const roots = Effect.fn("ManagedWorktrees.roots")(function* (
     resolveCanonical: typeof canonical = canonical,
   ) {
@@ -373,7 +344,7 @@ const make = Effect.gen(function* () {
         ],
       })
       .pipe(Effect.option);
-    if (Option.isNone(output)) {
+    if (Option.isNone(output) || output.value.stdoutTruncated) {
       return undefined;
     }
     const refs = new Set<string>();
@@ -435,12 +406,13 @@ const make = Effect.gen(function* () {
       ]),
     ];
     const gitSources = yield* Effect.filter(sources, hasGitDirectory, { concurrency: 8 });
+    const registrations = yield* Effect.forEach(
+      gitSources,
+      (source) => git.listWorktreePaths(source).pipe(Effect.option),
+      { concurrency: 4 },
+    );
     const registeredPaths = new Set(
-      (yield* Effect.forEach(
-        gitSources,
-        (source) => git.listWorktreePaths(source).pipe(Effect.orElseSucceed(() => [])),
-        { concurrency: 4 },
-      )).flat(),
+      registrations.flatMap((entry) => Option.getOrElse(entry, () => [])),
     );
     const saved = yield* snapshots();
     const relevantSaved =
@@ -466,6 +438,7 @@ const make = Effect.gen(function* () {
     }
     return {
       registeredPaths,
+      registrationsComplete: registrations.every(Option.isSome),
       projectRows,
       projectPaths,
       scopes,
@@ -908,10 +881,29 @@ const make = Effect.gen(function* () {
                     Effect.provideService(FileSystem.FileSystem, fs),
                     Effect.provideService(Path.Path, path),
                   );
-                  yield* pruneEmptyManagedParents(
-                    resource.identity.checkoutRoot,
-                    checkedContext.managedRoots,
-                  );
+                  const parent = path.dirname(resource.identity.checkoutRoot);
+                  if (
+                    isGeneratedWorkspaceContainer(path.basename(parent)) &&
+                    checkedContext.registrationsComplete &&
+                    checkedContext.managedRoots.includes(path.dirname(parent)) &&
+                    !checkedContext.managedRoots.some((root) => contains(parent, root)) &&
+                    !checkedContext.projectPaths.some((root) => contains(parent, root)) &&
+                    ![...checkedContext.registeredPaths].some(
+                      (checkout) => contains(parent, checkout) && !current.paths.includes(checkout),
+                    ) &&
+                    (yield* fs.readDirectory(parent).pipe(
+                      Effect.map((entries) => entries.length === 0),
+                      Effect.orElseSucceed(() => false),
+                    ))
+                  ) {
+                    // An open terminal or provider session can be using the now-empty container.
+                    yield* assertIdle({ ...current, paths: [parent] }).pipe(
+                      Effect.andThen(
+                        Effect.tryPromise({ try: () => NodeFSP.rmdir(parent), catch: failure }),
+                      ),
+                      Effect.ignore,
+                    );
+                  }
                   snapshot = Object.assign({}, snapshot, {
                     resources: snapshot.resources.map((entry) =>
                       entry.identity.checkoutRoot === resource.identity.checkoutRoot

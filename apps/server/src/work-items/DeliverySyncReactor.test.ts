@@ -193,6 +193,13 @@ function setup(
     item: () => item,
     closed: () => closed,
     reads: () => reads,
+    edit: () =>
+      Effect.gen(function* () {
+        item = { ...item, title: "Changed title", version: item.version + 1 };
+        const sql = yield* SqlClient.SqlClient;
+        const json = yield* encodeItemJson(item);
+        yield* sql`UPDATE work_items SET item_json = ${json} WHERE id = ${item.id}`;
+      }),
     enableMeituan: (value: boolean) => {
       enabled = value;
     },
@@ -347,6 +354,13 @@ it.effect(
       yield* TestClock.adjust("60 seconds");
       yield* sync.drain();
       expect(test.reads()).toBe(2);
+
+      yield* test.edit();
+      yield* sync.drain();
+      expect(test.reads()).toBe(3);
+      yield* TestClock.adjust("60 seconds");
+      yield* sync.drain();
+      expect(test.reads()).toBe(4);
 
       // Explicit manual refresh bypasses backoff and clears it on success.
       test.failWrite(false);

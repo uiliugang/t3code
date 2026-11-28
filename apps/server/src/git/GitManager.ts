@@ -289,7 +289,6 @@ const PR_LOOKUP_CACHE_TTL = Duration.seconds(60);
 const PR_LOOKUP_NO_OPEN_PR_CACHE_TTL = Duration.minutes(5);
 const PR_LOOKUP_FAILURE_BASE_TTL = Duration.seconds(20);
 const PR_LOOKUP_FAILURE_MAX_TTL = Duration.minutes(15);
-const PR_LOOKUP_AUTH_COOLDOWN_MS = 5 * 60_000;
 
 function isSourceControlAuthError(error: unknown): error is SourceControlProviderError {
   return (
@@ -2633,10 +2632,11 @@ export const make = Effect.gen(function* () {
     return Arr.sort(merged, pullRequestUpdatedAtDescOrder)[0] ?? null;
   });
 
-  const providerAuthCooldownByKind = new Map<
-    string,
-    { readonly untilMs: number; readonly error: SourceControlProviderError }
-  >();
+  const authFailures = yield* Cache.make<string, SourceControlProviderError | null>({
+    capacity: PR_LOOKUP_CACHE_CAPACITY,
+    timeToLive: Duration.minutes(5),
+    lookup: () => Effect.succeed(null),
+  });
   const findLatestPrForHeadContext = Effect.fn("findLatestPrForHeadContext")(function* (
     cwd: string,
     headContext: BranchHeadContext,
@@ -2645,11 +2645,9 @@ export const make = Effect.gen(function* () {
     const parsedByNumber = new Map<number, PullRequestInfo>();
 
     const provider = yield* sourceControlProviders.resolve({ cwd, refresh: true });
-    const nowMs = yield* Clock.currentTimeMillis;
-    const authCooldown = providerAuthCooldownByKind.get(provider.kind);
-    if (authCooldown !== undefined && nowMs < authCooldown.untilMs) {
-      return yield* authCooldown.error;
-    }
+    const authKey = `${provider.kind}\u0000${cwd}`;
+    const authFailure = yield* Cache.get(authFailures, authKey);
+    if (authFailure !== null) return yield* authFailure;
     const probe = headBranchProbe(
       provider,
       headContext.headSelectors,
@@ -2668,18 +2666,8 @@ export const make = Effect.gen(function* () {
           limit: probe.limit,
         })
         .pipe(
-          Effect.tap(() => Effect.sync(() => providerAuthCooldownByKind.delete(provider.kind))),
           Effect.tapError((error) =>
-            isSourceControlAuthError(error)
-              ? Clock.currentTimeMillis.pipe(
-                  Effect.map((failedAtMs) => {
-                    providerAuthCooldownByKind.set(provider.kind, {
-                      untilMs: failedAtMs + PR_LOOKUP_AUTH_COOLDOWN_MS,
-                      error,
-                    });
-                  }),
-                )
-              : Effect.void,
+            isSourceControlAuthError(error) ? Cache.set(authFailures, authKey, error) : Effect.void,
           ),
         );
       pageWasFull ||= pullRequests.length >= probe.limit;

@@ -232,7 +232,7 @@ export const layer = Layer.effect(
 
     const SYNC_FAILURE_BASE_BACKOFF_MS = 60_000;
     const SYNC_FAILURE_MAX_BACKOFF_MS = 15 * 60_000;
-    const failureBackoffByItemId = new Map<
+    let failureBackoffByItemId = new Map<
       WorkItemId,
       { readonly attempts: number; readonly nextAttemptAtMs: number; readonly version: number }
     >();
@@ -245,21 +245,23 @@ export const layer = Layer.effect(
             const rows = yield* sql<{
               item_json: string;
             }>`SELECT item_json FROM work_items WHERE json_extract(item_json, '$.delivery') IS NOT NULL AND json_extract(item_json, '$.archived') = 0`;
+            const previousFailures = failureBackoffByItemId;
+            failureBackoffByItemId = new Map();
             yield* Effect.forEach(
               rows,
               (row) =>
                 Effect.gen(function* () {
                   const item = yield* decodeItem(row.item_json);
-                  const backoff = failureBackoffByItemId.get(item.id);
+                  const backoff = previousFailures.get(item.id);
                   if (
                     backoff !== undefined &&
                     backoff.version === item.version &&
                     nowMs < backoff.nextAttemptAtMs
                   ) {
+                    failureBackoffByItemId.set(item.id, backoff);
                     return;
                   }
                   yield* refresh(item).pipe(
-                    Effect.tap(() => Effect.sync(() => failureBackoffByItemId.delete(item.id))),
                     Effect.catch((cause) =>
                       Effect.gen(function* () {
                         yield* Effect.logWarning("delivery.sync-failed", { id: item.id, cause });
@@ -275,8 +277,8 @@ export const layer = Layer.effect(
                               "Could not synchronize delivery. Check access to PRs, MCM and the issue platform.",
                           });
                         }
-                        const previous = failureBackoffByItemId.get(item.id);
-                        const attempts = (previous ? previous.attempts : 0) + 1;
+                        const attempts =
+                          backoff?.version === item.version ? backoff.attempts + 1 : 1;
                         const delayMs = Math.min(
                           SYNC_FAILURE_MAX_BACKOFF_MS,
                           SYNC_FAILURE_BASE_BACKOFF_MS * Math.pow(2, attempts - 1),
