@@ -1,5 +1,14 @@
 import { expect, it } from "@effect/vitest";
-import { readMcmCoverage } from "./McmReleaseService.ts";
+import { McmReleaseError, readMcmCoverage } from "./McmReleaseService.ts";
+
+it("surfaces the underlying error message on McmReleaseError", () => {
+  expect(
+    new McmReleaseError({ cause: new Error("Could not read MCM plan (exit code 1; auth expired)") })
+      .message,
+  ).toBe("Could not read MCM plan (exit code 1; auth expired)");
+  expect(new McmReleaseError({ cause: "raw failure" }).message).toBe("raw failure");
+  expect(new McmReleaseError({ cause: {} }).message).toBe("MCM release query failed.");
+});
 
 it("requires successful operations matching the service, target and delivery PR", () => {
   const service = {

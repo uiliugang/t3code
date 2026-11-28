@@ -64,8 +64,40 @@ export class McmReleaseError extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("McmReleaseError", {
   cause: Schema.Defect(),
-}) {}
+}) {
+  override get message(): string {
+    if (this.cause instanceof Error && this.cause.message.trim().length > 0) {
+      return this.cause.message;
+    }
+    if (typeof this.cause === "string" && this.cause.trim().length > 0) {
+      return this.cause;
+    }
+    return "MCM release query failed.";
+  }
+}
 const isMcmReleaseError = Schema.is(McmReleaseError);
+
+function formatMcmCommandFailure(result: {
+  readonly code: number | null;
+  readonly timedOut: boolean;
+  readonly stdoutTruncated: boolean;
+  readonly stderr: string;
+}): string {
+  const details: string[] = [];
+  if (result.timedOut) details.push("timed out");
+  if (result.stdoutTruncated) details.push("stdout truncated");
+  if (result.code !== null && result.code !== 0) details.push(`exit code ${result.code}`);
+  const firstStderrLine = result.stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (firstStderrLine) {
+    details.push(firstStderrLine.slice(0, 240));
+  }
+  return details.length > 0
+    ? `Could not read MCM plan (${details.join("; ")})`
+    : "Could not read MCM plan";
+}
 
 export class McmReleaseService extends Context.Service<
   McmReleaseService,
@@ -100,7 +132,9 @@ export const layer = Layer.effect(
         });
         const result = yield* runner.run({ ...invocation, timeout: "30 seconds" });
         if (result.code !== 0 || result.timedOut || result.stdoutTruncated)
-          return yield* new McmReleaseError({ cause: new Error("Could not read MCM plan") });
+          return yield* new McmReleaseError({
+            cause: new Error(formatMcmCommandFailure(result)),
+          });
         const plan = yield* decodePlanJson(result.stdout);
         return readMcmCoverage(plan, services);
       },
