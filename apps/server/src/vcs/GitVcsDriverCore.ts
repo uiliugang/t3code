@@ -59,7 +59,7 @@ import { removeEmptyDirectory, type RemoveEmptyDirectoryError } from "./removeEm
 import { VcsAutomaticFetchInterval } from "./VcsAutomaticFetchInterval.ts";
 import { gitConfigEnv, serverGitConfigEnv, unsetInheritedRepositoryEnv } from "./VcsProcess.ts";
 import { makeWorktreeCheckoutCache } from "./worktreeCheckoutCache.ts";
-import { removeLinkedWorktree } from "./worktreeRemoval.ts";
+import { removeLinkedWorktree, WORKTREE_REMOVE_TIMEOUT_MS } from "./worktreeRemoval.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
   withGitWorktreeRegistrationLeases,
@@ -96,7 +96,6 @@ const backgroundGitProcesses = Semaphore.makeUnsafe(2);
 // the last fetch; on busy repositories that alone outlasts the 30s default.
 const FETCH_REMOTE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const WORKTREE_INDEX_REFRESH_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
-const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const REF_SNAPSHOT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
@@ -7795,8 +7794,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       cwd: input.cwd,
       worktreePath: target,
       force: input.force === true,
-      run: (args) =>
-        executeGitWithStableDiagnostics("GitVcsDriver.removeWorktree", input.cwd, args, {
+      execute,
+      run: (args, cwd) =>
+        executeGitWithStableDiagnostics("GitVcsDriver.removeWorktree", cwd, args, {
           timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
           allowNonZeroExit: true,
         }).pipe(Effect.map((result) => ({ ...result, args }))),

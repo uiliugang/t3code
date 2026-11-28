@@ -2220,7 +2220,8 @@ const make = Effect.gen(function* () {
               worktreePath,
               // Git requires force for submodules; recursive checks above cannot make removal atomic.
               force: submodules.force,
-              run: (args) => cleanupGit(repository, [...args], "git worktree remove"),
+              execute: git.execute,
+              run: (args, cwd) => cleanupGit(cwd, [...args], "git worktree remove"),
             }).pipe(Effect.tapError(() => noteLeftover(adminDir, entry, worktreePath)));
             entries.push({ ...entry, outcome: "removed", reason: sentence(removalReason), bytes });
             yield* gitManager.invalidateStatus(project.workspaceRoot);

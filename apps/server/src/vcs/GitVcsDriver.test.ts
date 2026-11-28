@@ -1847,25 +1847,44 @@ it.effect.each([
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const liveProcess = yield* VcsProcess.VcsProcess;
+      const liveRunner = yield* ProcessRunner.ProcessRunner;
+      const traces: string[] = [];
+      let observeTrace = false;
+      const liveProcess = yield* VcsProcess.make.pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, {
+          run: (input) => {
+            const onChunk = input.onFd3Chunk;
+            if (!observeTrace || !onChunk) return liveRunner.run(input);
+            const chunks: Buffer[] = [];
+            return liveRunner
+              .run({
+                ...input,
+                onFd3Chunk: (chunk) => {
+                  chunks.push(Buffer.from(chunk));
+                  onChunk(chunk);
+                },
+              })
+              .pipe(
+                Effect.tap(() => Effect.sync(() => traces.push(Buffer.concat(chunks).toString()))),
+              );
+          },
+        }),
+      );
       const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-capture-index-nested-" });
       const data = path.join(cwd, "data.txt");
       // 2000-01-01, in seconds.
       const past = 946_684_800;
-      let trace: string | undefined;
       const driver = yield* GitVcsDriver.makeVcsDriverShape().pipe(
         Effect.provideService(VcsProcess.VcsProcess, {
           run: (input) => {
-            if (trace === undefined) return liveProcess.run(input);
-            const traced = { ...input, env: { ...input.env, GIT_TRACE2_EVENT: trace } };
-            if (!input.args.includes("add")) return liveProcess.run(traced);
+            if (!observeTrace || !input.args.includes("add")) return liveProcess.run(input);
             // Same size and mtime, after the claim: only Git's racy check can see this edit.
             return fs
               .writeFileString(data, "after!\n")
               .pipe(
                 Effect.andThen(fs.utimes(data, past, past)),
                 Effect.orDie,
-                Effect.andThen(liveProcess.run(traced)),
+                Effect.andThen(liveProcess.run(input)),
               );
           },
         }),
@@ -1881,10 +1900,11 @@ it.effect.each([
       const keptIndex = yield* fs.glob("*/index.*", { root: keptIndexes });
       assert.strictEqual(keptIndex.length, 1);
       yield* fs.utimes(path.join(keptIndexes, keptIndex[0]!), past, past);
-      trace = path.join(cwd, ".git", "trace2.json");
+      observeTrace = true;
       yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
 
-      const events = (yield* fs.readFileString(trace)).split("\n");
+      observeTrace = false;
+      const events = traces.flatMap((trace) => trace.split("\n"));
       const starts = events.filter((line) => line.includes('"event":"start"'));
       assert.isTrue(starts.some((line) => line.includes('"add"')));
       assert.isFalse(starts.some((line) => line.includes('"read-tree"')));
@@ -1905,7 +1925,7 @@ it.effect.each([
         (yield* git(["ls-tree", "-r", checkpointRef, "--", "worktrees"])).stdout,
         `160000 commit ${nestedHead}\tworktrees/nested\n`,
       );
-    }).pipe(Effect.scoped, Effect.provide(layerGitContract)),
+    }).pipe(Effect.scoped, Effect.provide(layerGitCaptureContract)),
 );
 
 it.effect.each(["sha1", "sha256"] as const)(
