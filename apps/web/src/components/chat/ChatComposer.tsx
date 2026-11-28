@@ -54,6 +54,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   EnvironmentRequestInvalidError,
+  AuthFilesystemReadScope,
   AuthOrchestrationOperateScope,
   clampManagedRuntimeMode,
   ProviderDriverKind,
@@ -302,7 +303,11 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useSoftwareKeyboardOpen } from "../../hooks/useSoftwareKeyboardOpen";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { usePanelAnimationSettings } from "../../panelAnimations";
-import { readEnvironmentScope, readPreparedConnection } from "../../state/session";
+import {
+  readEnvironmentScope,
+  readPreparedConnection,
+  useEnvironmentScope,
+} from "../../state/session";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 import { useComposerRestingTransition } from "./useComposerRestingTransition";
 import {
@@ -3083,15 +3088,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const insertComposerTextAtEndStable = useStableCallback(insertComposerTextAtEnd);
 
-  const insertComposerFolders = (folders: File[], draftKey: string) => {
-    const bridge = window.desktopBridge;
-    for (const folder of folders) {
-      const path = resolveDroppedFolderPath(folder, bridge?.getPathForFile);
+  const insertComposerFolders = (
+    folders: readonly { readonly name: string; readonly path: string | null }[],
+    draftKey: string,
+  ) => {
+    for (const { path, name } of folders) {
       if (!composerMountedRef.current || attachmentTargetKeyRef.current !== draftKey) return;
       if (path === null) {
         toastManager.add({
           type: "error",
-          title: t('Couldn\'t get the path of "{name}"', { name: folder.name }),
+          title: t('Couldn\'t get the path of "{name}"', { name }),
           description: t("Type the folder path with @ instead."),
         });
         continue;
@@ -3111,14 +3117,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     focusComposer();
   };
 
-  const addComposerFolders = (folders: File[]) => {
-    const target = folderDropTarget({
+  const resolveFolderTarget = () =>
+    folderDropTarget({
       localEnvironmentDisabled: isLocalEnvironmentDisabled(),
       environmentId,
       primaryEnvironmentId,
       connection: readPreparedConnection(environmentId),
       isDesktopRenderer: window.desktopBridge !== undefined,
     });
+
+  const addComposerFolders = (folders: File[]) => {
+    const target = resolveFolderTarget();
     if (target === "remote") {
       toastManager.add({
         type: "error",
@@ -3126,9 +3135,46 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       return;
     }
-    insertComposerFolders(folders, attachmentTargetKeyRef.current);
+    const getPathForFile = window.desktopBridge?.getPathForFile;
+    insertComposerFolders(
+      folders.map((folder) => ({
+        name: folder.name,
+        path: resolveDroppedFolderPath(folder, getPathForFile),
+      })),
+      attachmentTargetKeyRef.current,
+    );
   };
   const addComposerFoldersStable = useStableCallback(addComposerFolders);
+
+  const [localEnvironmentDisabledAtMount] = useState(isLocalEnvironmentDisabled);
+  const canReadLocalFiles = useEnvironmentScope(environmentId, AuthFilesystemReadScope);
+  const desktopBridge = window.desktopBridge;
+  const canPickLocalFolder =
+    desktopBridge?.pickFolder !== undefined &&
+    !localEnvironmentDisabledAtMount &&
+    environmentId === primaryEnvironmentId &&
+    canReadLocalFiles;
+  const pickComposerFolder = async () => {
+    if (
+      !desktopBridge?.pickFolder ||
+      isLocalEnvironmentDisabled() ||
+      environmentId !== primaryEnvironmentId ||
+      !readEnvironmentScope(environmentId, AuthFilesystemReadScope)
+    )
+      return;
+
+    const draftKey = attachmentTargetKeyRef.current;
+    const path = await desktopBridge
+      .pickFolder(gitCwd ? { initialPath: gitCwd } : undefined)
+      .catch(() => {
+        toastManager.add({ type: "error", title: gt("Couldn't open the folder picker") });
+        return null;
+      });
+    if (path !== null && readEnvironmentScope(environmentId, AuthFilesystemReadScope)) {
+      insertComposerFolders([{ name: path, path }], draftKey);
+    }
+  };
+  const pickComposerFolderStable = useStableCallback(pickComposerFolder);
 
   const onComposerPaste = (
     event: React.ClipboardEvent<HTMLElement>,
@@ -3755,7 +3801,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       />
     ) : null;
   const composerAttachButton = showComposerAttachAction ? (
-    <ComposerAttachButton onOpenPicker={() => composerAttachInputRef.current?.click()} />
+    <ComposerAttachButton
+      onOpenPicker={() => composerAttachInputRef.current?.click()}
+      onPickFolder={canPickLocalFolder ? pickComposerFolderStable : undefined}
+    />
   ) : null;
   return (
     <form
