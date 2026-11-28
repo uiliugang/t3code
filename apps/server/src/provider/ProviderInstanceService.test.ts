@@ -164,6 +164,7 @@ const fixture = Effect.fn("ProviderInstanceService.test.fixture")(function* (inp
     registration,
     acpCalls,
     sessionsClosed: Effect.sync(() => sessionsClosed),
+    reconciled: Effect.sync(() => reconciled),
     reconnect: Effect.service(ProviderInstanceService.ProviderInstanceService).pipe(
       Effect.provide(ProviderInstanceService.layer),
       Effect.provide(context),
@@ -211,6 +212,26 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("provider removal
           })
           .pipe(Effect.result);
         assert.equal(replacement._tag, "Failure");
+      }),
+    ),
+  );
+
+  it.effect("reloads saved BYOK models before allowing another provider session", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture({
+          instances: () => ({
+            [id]: { driver: codex, config: { connectionMode: "byok", customModels: ["old"] } },
+          }),
+        });
+        const updated = yield* f.service.update({
+          operation: "upsert",
+          instanceId: id,
+          instance: { driver: codex, config: { connectionMode: "byok", customModels: ["new"] } },
+        });
+        assert.isTrue(yield* f.sessionsClosed);
+        assert.isTrue(yield* f.reconciled);
+        assert.deepInclude(updated.providerInstances[id]?.config, { customModels: ["new"] });
       }),
     ),
   );

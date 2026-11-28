@@ -886,6 +886,106 @@ it.layer(layerTest)("CodexDriver", (it) => {
     }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn)),
   );
 
+  it.effect("synchronizes saved BYOK model edits into the catalog used by Codex", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const stateDir = (yield* ServerConfig.ServerConfig).stateDir;
+      const instanceId = ProviderInstanceId.make("byok-model-edits");
+      const home = NodePath.join(stateDir, "providers", "codex", instanceId, "byok");
+      const catalogPath = NodePath.join(home, "context-models.json");
+      const manual = { slug: "manual-model", context_window: 75_000 };
+      yield* fs.makeDirectory(home, { recursive: true });
+      yield* fs.writeFileString(catalogPath, JSON.stringify({ models: [manual] }));
+
+      const run = (slug: string, tier: string) =>
+        Effect.gen(function* () {
+          const driver = yield* CodexDriver.create({
+            instanceId,
+            displayName: "BYOK catalog",
+            enabled: false,
+            environment: [
+              { name: "T3_CODEX_BASE_URL", value: "https://api.test/v1", sensitive: false },
+              { name: "T3_CODEX_API_KEY", value: "fixture-key", sensitive: true },
+            ],
+            config: {
+              ...CodexDriver.defaultConfig(),
+              connectionMode: "byok",
+              runtimeSource: "local",
+              binaryPath: "/selected/codex",
+              customModels: [
+                {
+                  slug,
+                  name: "Custom model",
+                  capabilities: {
+                    optionDescriptors: [
+                      {
+                        id: "serviceTier",
+                        label: "Speed",
+                        type: "select",
+                        options: [
+                          { id: "default", label: "Standard" },
+                          { id: tier, label: "Fast" },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          });
+          const launch = yield* driver.resolveNativeCli!;
+          expect(launch.args).toContain(`model_catalog_json=${JSON.stringify(catalogPath)}`);
+          const catalog = yield* fs.readFileString(catalogPath);
+          expect(JSON.parse(catalog).models).toEqual([
+            manual,
+            expect.objectContaining({
+              slug,
+              display_name: "Custom model",
+              service_tiers: [
+                { id: tier === "fast" ? "priority" : tier, name: "Fast", description: "" },
+              ],
+            }),
+          ]);
+        }).pipe(Effect.scoped);
+      yield* run("custom-model", "priority");
+      yield* run("custom-model", "ultrafast");
+      yield* run("renamed-model", "fast");
+    }).pipe(
+      Effect.provideService(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() =>
+          Effect.succeed(
+            ChildProcessSpawner.makeHandle({
+              pid: ChildProcessSpawner.ProcessId(1),
+              exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+              isRunning: Effect.succeed(false),
+              kill: () => Effect.void,
+              unref: Effect.succeed(Effect.void),
+              stdin: Sink.drain,
+              stdout: Stream.make(
+                new TextEncoder().encode(
+                  JSON.stringify({
+                    models: [
+                      {
+                        slug: "bundled-model",
+                        supported_in_api: true,
+                        base_instructions: "Fixture instructions",
+                      },
+                    ],
+                  }),
+                ),
+              ),
+              stderr: Stream.empty,
+              all: Stream.empty,
+              getInputFd: () => Sink.drain,
+              getOutputFd: () => Stream.empty,
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect("uses each instance's environment CODEX_HOME for continuation", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

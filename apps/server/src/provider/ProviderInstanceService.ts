@@ -1,7 +1,8 @@
 import { providerConnectionConfigurations } from "./providerConnectionProfiles.ts";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
-import { codexRuntimeSource } from "@t3tools/shared/codexByok";
+import { codexConnectionMode, codexRuntimeSource } from "@t3tools/shared/codexByok";
+import { readCustomModelEntries } from "@t3tools/shared/model";
 import {
   type ProviderInstanceConfig,
   ProviderInstanceEnvironment,
@@ -19,6 +20,7 @@ import { resolveCommandPath } from "@t3tools/shared/shell";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -72,9 +74,13 @@ function resourceKey(resource: ManagedResource): string {
   }
 }
 
+function configValue(instance: ProviderInstanceConfig | undefined, key: string): unknown {
+  if (instance?.config === null || typeof instance?.config !== "object") return undefined;
+  return Reflect.get(instance.config, key);
+}
+
 function configString(instance: ProviderInstanceConfig, key: string): string {
-  if (instance.config === null || typeof instance.config !== "object") return "";
-  const value: unknown = Reflect.get(instance.config, key);
+  const value = configValue(instance, key);
   return typeof value === "string" ? value.trim() : "";
 }
 
@@ -472,6 +478,12 @@ const make = Effect.gen(function* () {
         const before = deriveProviderInstanceConfigMap(yield* settings.getSettings)[
           mutation.instanceId
         ];
+        const catalogChanged =
+          codexConnectionMode(mutation.instance.config) === "byok" &&
+          !Equal.equals(
+            readCustomModelEntries(configValue(before, "customModels")),
+            readCustomModelEntries(configValue(mutation.instance, "customModels")),
+          );
         const changed =
           before &&
           ([
@@ -491,7 +503,7 @@ const make = Effect.gen(function* () {
                   : entry,
               ),
             ));
-        if (changed) {
+        if (changed || catalogChanged) {
           const instance = yield* registry.getInstance(mutation.instanceId);
           if (instance?.auth) {
             const state = yield* instance.auth.subscribe("provider-settings").pipe(Stream.runHead);
@@ -508,11 +520,23 @@ const make = Effect.gen(function* () {
               });
           }
         }
-        if (changed)
+        if (changed || catalogChanged)
           return yield* sessions
             .withInstanceClosed(
               mutation.instanceId,
-              settings.updateProviderInstance(mutation, patch),
+              settings
+                .updateProviderInstance(mutation, patch)
+                .pipe(
+                  Effect.tap(() =>
+                    catalogChanged
+                      ? settings.getSettings.pipe(
+                          Effect.flatMap((current) =>
+                            mutator.reconcile(deriveProviderInstanceConfigMap(current)),
+                          ),
+                        )
+                      : Effect.void,
+                  ),
+                ),
               true,
             )
             .pipe(
