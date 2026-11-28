@@ -4119,5 +4119,9 @@
   "f001fa7b329c8fbf": "Hide successful",
   "ad208e3e32c85029": "Hide all",
   "3328503592789bed": "Zen",
-  "856812e7e1fc445e": "Tool calls in chat"
+  "856812e7e1fc445e": "Tool calls in chat",
+  "98535ab178d0a502": "Show a suggestion in the empty composer after a turn. Try the other source if the preferred one cannot give a suggestion.",
+  "587f570a3a6a3199": "Native suggestions first",
+  "f669edbb0567a354": "Text generation model first",
+  "f025fd312a6cc28c": "Native suggestions may use plan quota even when the text generation model is preferred. Native suggestions require Codex 0.165 or later when using Codex."
 }

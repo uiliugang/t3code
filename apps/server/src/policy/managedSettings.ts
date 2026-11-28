@@ -442,17 +442,7 @@ export function makeManagedSettings(
               encodeSettings(current),
             ),
           );
-    const effective =
-      nativeSuggestionsLocked && locked.promptSuggestionPreference?.source === "native"
-        ? {
-            ...locked,
-            promptSuggestionPreference: {
-              ...locked.promptSuggestionPreference,
-              enabled: locked.promptSuggestionsEnabled,
-            },
-          }
-        : locked;
-    const derived = idleCompactionLocked ? syncIdleCompaction(effective) : effective;
+    const derived = idleCompactionLocked ? syncIdleCompaction(locked) : locked;
     const result =
       maxRuntimeMode === undefined ? derived : clampDefaultRuntimeModes(derived, maxRuntimeMode);
     lockCache.set(current, result);
@@ -469,9 +459,7 @@ export function makeManagedSettings(
       nativeSuggestionsLocked &&
       isRecord(suggestionPatch) &&
       suggestion !== undefined &&
-      (current.promptSuggestionPreference === undefined ||
-        (current.promptSuggestionPreference.source === "native" &&
-          suggestion.source === "text-generation"))
+      current.promptSuggestionPreference === undefined
     ) {
       const preference = resolvePromptSuggestionPreference(
         applyLocks(current),

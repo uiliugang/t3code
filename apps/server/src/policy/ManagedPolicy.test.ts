@@ -93,7 +93,14 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
     };
 
     assert.isTrue(nativePromptSuggestionsEnabled(configured));
-    assert.isFalse(nativePromptSuggestionsEnabled(policy.settings.applyLocks(configured)));
+    const effective = policy.settings.applyLocks(configured);
+    assert.isFalse(
+      nativePromptSuggestionsEnabled(effective, {
+        fallback: true,
+        policy: { lockedSettings: ["promptSuggestionsEnabled"] },
+      }),
+    );
+    assert.deepEqual(effective.promptSuggestionPreference, configured.promptSuggestionPreference);
     const sourceOnly = policy.settings.vetWrite(
       configured,
       { ...configured, promptSuggestionPreference: { enabled: true, source: "text-generation" } },
@@ -101,7 +108,7 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
     );
     if (sourceOnly._tag !== "Allowed") throw new Error(sourceOnly.path);
     assert.deepEqual(sourceOnly.settings.promptSuggestionPreference, {
-      enabled: false,
+      enabled: true,
       source: "text-generation",
     });
     for (const enabled of [false, true]) {

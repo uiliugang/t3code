@@ -72,7 +72,9 @@ export function usePromptSuggestion(
 ): { readonly suggestion: string | null; readonly dismiss: () => void } {
   const config = useServerConfigs().get(environmentId);
   const enabled =
-    allowed && config !== undefined && nativePromptSuggestionsEnabled(config.settings);
+    allowed &&
+    config !== undefined &&
+    nativePromptSuggestionsEnabled(config.settings, { policy: config.managedPolicy });
   const { data } = useEnvironmentQuery(
     // A local draft has no run, and so no suggestion, until its first send.
     enabled && thread?.latestRun

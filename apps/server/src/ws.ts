@@ -1928,6 +1928,7 @@ export const layerWsRpc = (
         const settings = ServerSettings.redactServerSettingsForClient(
           yield* serverSettings.getSettings,
           settingsClient,
+          serverSettings.managedPolicy,
         );
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
@@ -2003,6 +2004,7 @@ export const layerWsRpc = (
           workItemAnalysis: false,
           threadPredictions: true,
           promptSuggestionSettings: true,
+          promptSuggestionFallback: true,
           threadFindProgressive: true,
           secretProviderSettings: true,
           secretReferences: true,
@@ -2901,7 +2903,11 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.serverGetSettings]: (_input) =>
           Effect.map(serverSettings.getSettings, (settings) =>
-            ServerSettings.redactServerSettingsForClient(settings, settingsClient),
+            ServerSettings.redactServerSettingsForClient(
+              settings,
+              settingsClient,
+              serverSettings.managedPolicy,
+            ),
           ),
         [WS_METHODS.serverUpdateSettings]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
@@ -2931,7 +2937,11 @@ export const layerWsRpc = (
                 repositoryIdentityResolver,
               ),
             );
-            return ServerSettings.redactServerSettingsForClient(settings, settingsClient);
+            return ServerSettings.redactServerSettingsForClient(
+              settings,
+              settingsClient,
+              serverSettings.managedPolicy,
+            );
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,
         [WS_METHODS.serverCheckSecretSource]: (input) => secretCheck.check(input.source),
@@ -3856,7 +3866,11 @@ export const layerWsRpc = (
                   : Stream.empty;
               const settingsUpdates = settingsChanges.pipe(
                 Stream.map((settings) =>
-                  ServerSettings.redactServerSettingsForClient(settings, settingsClient),
+                  ServerSettings.redactServerSettingsForClient(
+                    settings,
+                    settingsClient,
+                    serverSettings.managedPolicy,
+                  ),
                 ),
                 Stream.map((settings) => ({
                   version: 1 as const,

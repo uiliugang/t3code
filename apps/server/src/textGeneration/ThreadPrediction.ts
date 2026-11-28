@@ -1,5 +1,9 @@
 import {
+  isDelegatedAppThread,
+  MAX_THREAD_PREDICTION_LENGTH,
   ModelSelection,
+  nativePromptSuggestionsEnabled,
+  resolvePromptSuggestionPreference,
   ThreadPredictionError,
   type ThreadPredictionInput,
   type ThreadPredictionResult,
@@ -14,9 +18,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProviderSessions from "../orchestration-v2/ProviderSessionManager.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 
@@ -38,6 +44,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const settings = yield* ServerSettings.ServerSettingsService;
   const generation = yield* TextGeneration.TextGeneration;
+  const providerSessions = yield* ProviderSessions.ProviderSessionManagerV2;
   const cache = yield* Cache.make({
     capacity: 128,
     timeToLive: "10 minutes",
@@ -81,7 +88,7 @@ const make = Effect.gen(function* () {
           modelSelection: yield* decodeModel(input.model),
         })
         .pipe(Effect.timeoutOption("20 seconds"));
-      return Option.isSome(result) ? result.value.text : null;
+      return Option.isSome(result) ? result.value.text?.trim() || null : null;
     }),
   });
 
@@ -91,17 +98,65 @@ const make = Effect.gen(function* () {
       const shell = yield* projections.getThreadShell(input.threadId);
       if (threadPredictionSourceRun(shell) !== input.sourceRunId || !shell) return empty;
       const server = yield* settings.getSettings;
-      const preference = server.promptSuggestionPreference;
-      if (preference && (!preference.enabled || preference.source !== "text-generation")) {
+      const configured = server.promptSuggestionPreference;
+      const fallback = input.suggestionFallback;
+      const preference = fallback
+        ? resolvePromptSuggestionPreference(server, fallback.legacyModelEnabled)
+        : configured;
+      if (
+        preference &&
+        (!preference.enabled || (!fallback && preference.source !== "text-generation"))
+      ) {
         return empty;
       }
-      const scoped = resolveProjectSettings(server, shell.projectId).settings;
-      const modelSelection = resolveVirtualModel(scoped, scoped.textGenerationModelSelection);
-      if (modelSelection.virtualModelId) return empty;
-      const text = yield* Cache.get(
-        cache,
-        new PredictionCacheKey({ ...input, model: yield* encodeModel(modelSelection) }),
-      );
+      const model = Effect.gen(function* () {
+        const scoped = resolveProjectSettings(server, shell.projectId).settings;
+        const modelSelection = resolveVirtualModel(scoped, scoped.textGenerationModelSelection);
+        if (modelSelection.virtualModelId) return null;
+        return yield* Cache.get(
+          cache,
+          new PredictionCacheKey({
+            threadId: input.threadId,
+            sourceRunId: input.sourceRunId,
+            model: yield* encodeModel(modelSelection),
+          }),
+        );
+      });
+      let text: string | null;
+      if (fallback) {
+        const native = Effect.gen(function* () {
+          if (
+            isDelegatedAppThread(shell) ||
+            !nativePromptSuggestionsEnabled(server, {
+              fallback: true,
+              policy: settings.managedPolicy,
+            })
+          )
+            return null;
+          const run = yield* projections.getRun(input.threadId, input.sourceRunId);
+          const instanceId = run?.providerInstanceId ?? shell.providerInstanceId;
+          const driver = server.providerInstances[instanceId]?.driver ?? instanceId;
+          if (driver !== "codex" && driver !== "claudeAgent") return null;
+          // Providers can skip native suggestions without emitting a terminal frame.
+          const suggestion = yield* providerSessions.subscribePromptSuggestion(input.threadId).pipe(
+            Stream.filter((value) => value !== null && value.runId === input.sourceRunId),
+            Stream.runHead,
+            Effect.timeoutOption("4 seconds"),
+          );
+          return (
+            Option.getOrNull(Option.flatten(suggestion))?.text.slice(
+              0,
+              MAX_THREAD_PREDICTION_LENGTH,
+            ) ?? null
+          );
+        }).pipe(Effect.orElseSucceed(() => null));
+        const modelBestEffort = model.pipe(Effect.orElseSucceed(() => null));
+        const [first, second] =
+          preference?.source === "native" ? [native, modelBestEffort] : [modelBestEffort, native];
+        text = (yield* first) ?? (yield* second);
+      } else {
+        text = yield* model;
+      }
       const current = yield* projections.getThreadShell(input.threadId);
       return {
         sourceRunId: input.sourceRunId,

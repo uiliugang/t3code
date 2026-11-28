@@ -1,6 +1,10 @@
 import { useAtomValue, RegistryContext } from "@effect/atom-react";
 import { useContext, useEffect, useState, useSyncExternalStore } from "react";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  resolvePromptSuggestionPreference,
+  type EnvironmentId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import {
   composerPredictionKey,
   createComposerPredictionController,
@@ -15,7 +19,9 @@ export function useComposerPrediction(input: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly thread: EnvironmentThreadShell | null;
-  readonly enabled: boolean;
+  readonly allowed: boolean;
+  readonly legacyModelEnabled: boolean;
+  readonly legacyModelSelected: boolean;
 }) {
   const registry = useContext(RegistryContext);
   const canPredict = useAtomValue(
@@ -35,19 +41,38 @@ export function useComposerPrediction(input: {
     }),
   );
   const sourceRunId = threadPredictionSourceRun(input.thread?.source);
-  const enabled = input.enabled && canPredict && config?.threadPredictions === true;
+  const useFallback =
+    canPredict &&
+    sourceRunId !== null &&
+    config?.threadPredictions === true &&
+    config.promptSuggestionFallback === true;
+  const { legacyModelEnabled } = input;
+  const enabled =
+    input.allowed &&
+    canPredict &&
+    config?.threadPredictions === true &&
+    (useFallback
+      ? resolvePromptSuggestionPreference(config.settings, legacyModelEnabled).enabled
+      : input.legacyModelSelected);
   const { environmentId, threadId } = input;
+  const target = sourceRunId && {
+    environmentId,
+    threadId,
+    sourceRunId,
+    ...(useFallback ? { suggestionFallback: { legacyModelEnabled } } : {}),
+  };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- synchronizes the prediction request lifecycle with the active composer and server capability
   useEffect(() => {
-    controller.update(enabled && sourceRunId ? { environmentId, threadId, sourceRunId } : null);
-  }, [controller, enabled, environmentId, threadId, sourceRunId]);
+    controller.update(enabled ? target : null);
+  }, [controller, enabled, target]);
   const snapshot = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
     controller.getSnapshot,
   );
-  const key = sourceRunId ? composerPredictionKey({ environmentId, threadId, sourceRunId }) : null;
+  const key = target ? composerPredictionKey(target) : null;
   return {
+    useFallback,
     text: enabled && key === snapshot.key ? snapshot.text : null,
     dismiss: () => {
       if (key) controller.dismiss(key);

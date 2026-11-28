@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import { IssueProjectSources } from "./issues.ts";
+import { isManagedSettingPath, type ManagedPolicySummary } from "./managedPolicy.ts";
 import * as Struct from "effect/Struct";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import {
@@ -1846,11 +1847,20 @@ export function resolvePromptSuggestionPreference(
 
 export function nativePromptSuggestionsEnabled(
   settings: Pick<ServerSettings, "promptSuggestionsEnabled" | "promptSuggestionPreference">,
+  options?: {
+    readonly fallback?: boolean;
+    readonly policy?: Pick<ManagedPolicySummary, "lockedSettings"> | undefined;
+  },
 ): boolean {
+  if (
+    !settings.promptSuggestionsEnabled &&
+    isManagedSettingPath(options?.policy, "promptSuggestionsEnabled")
+  )
+    return false;
   const preference = settings.promptSuggestionPreference;
   return preference === undefined
     ? settings.promptSuggestionsEnabled
-    : preference.enabled && preference.source === "native";
+    : preference.enabled && (options?.fallback === true || preference.source === "native");
 }
 
 export function isMeituanServiceEnabled(

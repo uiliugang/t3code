@@ -505,7 +505,12 @@ export const layerWithOptions = (
       const promptSuggestionsEnabled = Option.isNone(serverSettings)
         ? Effect.succeed(false)
         : serverSettings.value.getSettings.pipe(
-            Effect.map(nativePromptSuggestionsEnabled),
+            Effect.map((settings) =>
+              nativePromptSuggestionsEnabled(settings, {
+                fallback: true,
+                policy: serverSettings.value.managedPolicy,
+              }),
+            ),
             Effect.orElseSucceed(() => false),
           );
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(

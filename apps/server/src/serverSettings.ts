@@ -263,6 +263,7 @@ export interface SettingsClient {
 export function redactServerSettingsForClient(
   settings: ServerSettings,
   client: SettingsClient,
+  managedPolicy?: ManagedPolicySummary,
 ): ServerSettings {
   const redacted = mapSettingsSecrets(settings, (secret) =>
     secret.sensitive
@@ -278,7 +279,11 @@ export function redactServerSettingsForClient(
   return {
     ...shaped,
     ...(!client.promptSuggestionSettings
-      ? { promptSuggestionsEnabled: nativePromptSuggestionsEnabled(shaped) }
+      ? {
+          promptSuggestionsEnabled: nativePromptSuggestionsEnabled(shaped, {
+            policy: managedPolicy,
+          }),
+        }
       : {}),
     secretProviders: withoutUnknownSecretProviderConfigs(shaped),
     // Older clients decode only "cliproxy" sources and reject the whole settings payload otherwise.

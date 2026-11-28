@@ -52,6 +52,7 @@ import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { EnvironmentsMap } from "./EnvironmentsMap";
 import { LinkedEnvironmentEnableSettings } from "./LinkedEnvironmentEnableSettings";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
+import { useEnvironmentSettingTargets } from "./useEnvironmentSettingTargets";
 import { addEnvironmentPrefillAtom } from "~/state/linkedThreadView";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
@@ -231,6 +232,13 @@ function ConnectionsSettingsContent({
   const searchableSetting = useSearchableSetting();
   const gt = useGT();
   const m = useMessages();
+  const linkingTargets = useEnvironmentSettingTargets(
+    ["linkedEnvironmentsEnabled"],
+    (environment) =>
+      view === "environments" &&
+      environment.serverConfig?.environment.capabilities.peerLinks === true,
+    gt("Linking between environments"),
+  );
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -1405,6 +1413,7 @@ function ConnectionsSettingsContent({
 
   return (
     <SettingsPageContainer>
+      {linkingTargets.picker}
       {desktopBridge ? (
         <SettingsSection id="this-app" title={t("This app")}>
           <LocalEnvironmentSetting />
@@ -1510,7 +1519,7 @@ function ConnectionsSettingsContent({
           }}
         />
       ) : null}
-      <LinkedEnvironmentEnableSettings />
+      <LinkedEnvironmentEnableSettings settingTargets={linkingTargets} />
       {environmentsView === "list"
         ? peerLinkHosts.map((environment, index) => (
             <LinkedEnvironmentsSettings

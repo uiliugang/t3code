@@ -26,7 +26,12 @@ export type ComposerPredictionTarget = ThreadPredictionInput & {
 };
 
 export function composerPredictionKey(target: ComposerPredictionTarget) {
-  return JSON.stringify([target.environmentId, target.threadId, target.sourceRunId]);
+  return JSON.stringify([
+    target.environmentId,
+    target.threadId,
+    target.sourceRunId,
+    target.suggestionFallback?.legacyModelEnabled,
+  ]);
 }
 
 export function createComposerPredictionController(
