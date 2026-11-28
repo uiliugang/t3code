@@ -37,6 +37,7 @@ function setup(
     remotePublished?: boolean;
     remoteProbeStalled?: boolean;
     issueListStalled?: boolean;
+    issueReadStalled?: boolean;
     detail?: BranchIssueDetail;
   } = {},
 ) {
@@ -49,8 +50,9 @@ function setup(
       : options.published === false && !options.remotePublished
         ? { list: () => Effect.die("Unpublished branches must not query remote issues") }
         : {}),
-    read: ({ cwd, issue }) =>
-      issue.url === options.failUrl
+    read: ({ cwd, issue }) => {
+      if (options.issueReadStalled) return Effect.never;
+      return issue.url === options.failUrl
         ? Effect.fail(
             new SourceControlProviderError({
               provider: kind,
@@ -59,7 +61,8 @@ function setup(
               detail: "Unavailable",
             }),
           )
-        : Effect.succeed(options.detail ?? detail),
+        : Effect.succeed(options.detail ?? detail);
+    },
     ...(options.remote
       ? {
           update: ({ issue, action }) =>
@@ -205,6 +208,28 @@ describe("branch issue associations", () => {
       expect(yield* Fiber.join(query)).toMatchObject({ reason: "unavailable" });
     }).pipe(Effect.provide(setup({ provider: "meituan", issueListStalled: true }).layer)),
   );
+  it.effect("returns saved GitHub issues within the query budget when metadata stalls", () => {
+    const options = { issueReadStalled: false };
+    return Effect.gen(function* () {
+      const service = yield* Service.BranchIssueService;
+      yield* service.update({ ...target, action: "associate", urls: [first] });
+      options.issueReadStalled = true;
+
+      const query = yield* service.list(target).pipe(Effect.result, Effect.forkChild);
+      yield* TestClock.adjust("10 seconds");
+      expect(query.pollUnsafe()).toBeDefined();
+      expect(yield* Fiber.join(query)).toMatchObject({
+        _tag: "Success",
+        success: {
+          published: true,
+          issues: [{ url: first, title: detail.title, state: detail.state, association: "local" }],
+        },
+      });
+
+      yield* service.update({ ...target, action: "disassociate", urls: [first] });
+      expect((yield* service.list(target)).issues).toEqual([]);
+    }).pipe(Effect.provide(setup(options).layer));
+  });
   it.effect("does not query or associate an unpublished branch", () =>
     Effect.gen(function* () {
       const service = yield* Service.BranchIssueService;
