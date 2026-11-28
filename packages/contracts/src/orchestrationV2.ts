@@ -4124,6 +4124,22 @@ export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalComma
 
 export type OrchestrationV2ServerCommand = OrchestrationV2Command | OrchestrationV2InternalCommand;
 
+export const OrchestrationV2PendingHumanActionSnapshot = Schema.Struct({
+  sequence: NonNegativeInt,
+  targets: Schema.Array(
+    Schema.Struct({
+      threadId: ThreadId,
+      projectId: ProjectId,
+      requestId: RuntimeRequestId,
+      targetItemId: TurnItemId,
+      kind: Schema.Literals(["approval", "user_input"]),
+      createdAt: Schema.DateTimeUtc,
+    }),
+  ),
+});
+export type OrchestrationV2PendingHumanActionSnapshot =
+  typeof OrchestrationV2PendingHumanActionSnapshot.Type;
+
 export const ORCHESTRATION_V2_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   getTurnDiff: "orchestration.getTurnDiff",
@@ -4146,6 +4162,7 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   getTurnItem: "orchestration.getTurnItem",
   launchThread: "orchestration.launchThread",
   subscribeShell: "orchestration.subscribeShell",
+  subscribePendingHumanActions: "orchestration.subscribePendingHumanActions",
   subscribeThread: "orchestration.subscribeThread",
   subscribeCommandOutput: "orchestration.subscribeCommandOutput",
   subscribePromptSuggestion: "orchestration.subscribePromptSuggestion",
@@ -4873,6 +4890,10 @@ export const OrchestrationV2RpcSchemas = {
   launchThread: {
     input: OrchestrationV2ThreadLaunchInput,
     output: OrchestrationV2ThreadLaunchResult,
+  },
+  subscribePendingHumanActions: {
+    input: Schema.Struct({}),
+    output: OrchestrationV2PendingHumanActionSnapshot,
   },
   subscribeShell: {
     input: OrchestrationV2SubscribeShellInput,

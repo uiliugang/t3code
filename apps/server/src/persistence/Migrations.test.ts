@@ -21,6 +21,7 @@ import {
 import * as DatabaseMigrationProgress from "./DatabaseMigrationProgress.ts";
 
 import { migrationManifest, runMigrations } from "./Migrations.ts";
+import projectNotesMigration from "./Migrations/138_ProjectNotes.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import {
   workspaceFixture,
@@ -87,7 +88,33 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
-  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102, 108, 119, 126, 129])(
+  it.effect("rejects an old Notes preview using the published migration 120 ID", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 119 });
+      yield* projectNotesMigration;
+      yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (120, 'ProjectNotes')`;
+      yield* sql`INSERT INTO project_notes VALUES (
+        'note', 'project', 'owner', 'Title', '保留原始笔记', 3, NULL, 'created', 'updated'
+      )`;
+      yield* sql`INSERT INTO project_note_mutations VALUES ('owner', 'project', 'save', 'fingerprint', 'note', 3)`;
+      const before = yield* history;
+
+      const exit = yield* Effect.exit(runMigrations());
+      assert.isTrue(Exit.isFailure(exit));
+      assert.include(String(exit), "120_WorkItemCandidateRecencyIndexes (recorded: ProjectNotes)");
+      assert.deepStrictEqual(yield* history, before);
+      assert.deepStrictEqual(yield* sql`SELECT markdown, revision FROM project_notes`, [
+        { markdown: "保留原始笔记", revision: 3 },
+      ]);
+      assert.deepStrictEqual(
+        yield* sql`SELECT mutation_id, request_fingerprint, revision FROM project_note_mutations`,
+        [{ mutation_id: "save", request_fingerprint: "fingerprint", revision: 3 }],
+      );
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect.each([54, 78, 79, 80, 87, 90, 96, 97, 98, 99, 100, 101, 102, 108, 119, 126, 129, 137])(
     "upgrades a database at exactly %s",
     (id) =>
       Effect.gen(function* () {
@@ -120,6 +147,14 @@ describe("runMigrations", () => {
         );
         const approvedDevices = yield* sql`SELECT * FROM auth_connect_devices`;
         assert.deepStrictEqual(approvedDevices, []);
+        const notesTables = yield* sql<{ name: string }>`
+          SELECT name FROM sqlite_master WHERE type = 'table'
+          AND name IN ('project_notes', 'project_note_mutations') ORDER BY name
+        `;
+        assert.deepStrictEqual(
+          notesTables.map(({ name }) => name),
+          ["project_note_mutations", "project_notes"],
+        );
         assert.isAbove(yield* v2TableCount, 0);
         const taskColumns = yield* sql<{
           readonly name: string;

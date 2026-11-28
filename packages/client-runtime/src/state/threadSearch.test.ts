@@ -259,3 +259,40 @@ it("sends one open per thread every ten minutes by this client's clock", () => {
   expect(claimThreadOpen(envB, "thread-open", 9 * minute)).toBe(true);
   expect(claimThreadOpen(envA, "thread-open", 10 * minute)).toBe(true);
 });
+
+it("passes exact scoped project IDs with message search and never asks an absent environment", () => {
+  const calls: Array<readonly [EnvironmentId, OrchestrationV2SearchThreadsInput]> = [];
+  const search = createThreadSearchResultsAtomFamily<Error>({
+    getSearchAtom: (environmentId, input) => {
+      calls.push([environmentId, input]);
+      return Atom.make(AsyncResult.success({ matches: [] }));
+    },
+    labelPrefix: "test:scoped-thread-search",
+  });
+  const registry = AtomRegistry.make();
+  try {
+    const id = ProjectId.make("shared-name");
+    const outside = ProjectId.make("outside-space");
+    registry.get(
+      search.results(
+        makeThreadSearchKey([envA, envB], "needle", {
+          projectIds: [id, outside],
+          spaceProjectIdsByEnvironment: [[envA, [id]]],
+        }),
+      ),
+    );
+    expect(calls).toEqual([[envA, { query: "needle", projectIds: [id] }]]);
+    calls.length = 0;
+    registry.get(
+      search.results(
+        makeThreadSearchKey([envA, envB], "needle", {
+          projectIds: [outside],
+          spaceProjectIdsByEnvironment: [[envA, [id]]],
+        }),
+      ),
+    );
+    expect(calls).toEqual([]);
+  } finally {
+    registry.dispose();
+  }
+});

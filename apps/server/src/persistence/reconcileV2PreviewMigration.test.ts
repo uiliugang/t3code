@@ -43,6 +43,7 @@ describe("V2 preview upgrade", () => {
           [135, "WorkflowMailSender"],
           [136, "WorkflowPools"],
           [137, "WorkflowRunSubject"],
+          [138, "ProjectNotes"],
         ]);
         assert.deepStrictEqual(
           yield* sql`SELECT name FROM effect_sql_migrations WHERE migration_id >= 127 ORDER BY migration_id`,
@@ -58,6 +59,7 @@ describe("V2 preview upgrade", () => {
             { name: "WorkflowMailSender" },
             { name: "WorkflowPools" },
             { name: "WorkflowRunSubject" },
+            { name: "ProjectNotes" },
           ],
         );
         assert.deepStrictEqual(
@@ -158,6 +160,7 @@ describe("V2 preview upgrade", () => {
         [135, "WorkflowMailSender"],
         [136, "WorkflowPools"],
         [137, "WorkflowRunSubject"],
+        [138, "ProjectNotes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(
@@ -323,6 +326,7 @@ describe("V2 preview upgrade", () => {
         [135, "WorkflowMailSender"],
         [136, "WorkflowPools"],
         [137, "WorkflowRunSubject"],
+        [138, "ProjectNotes"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

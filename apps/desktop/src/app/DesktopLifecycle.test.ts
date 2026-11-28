@@ -98,6 +98,7 @@ function layerDesktopWindow(
     handleBackendReady: () => Effect.void,
     handleBackendNotReady: Effect.void,
     flushMainWindowBounds: input.flushMainWindowBounds ?? Effect.void,
+    notifyProjectNotesRevoked: Effect.void,
     dispatchMenuAction: () => Effect.void,
     zoomMain: () => Effect.void,
     runMainContentsCommand: () => Effect.void,

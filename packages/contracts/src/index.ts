@@ -97,3 +97,7 @@ export * from "./speech.ts";
 
 export * from "./workItem.ts";
 export * from "./noiseGuest.ts";
+
+export * from "./projectNotes.ts";
+
+export * from "./desktopProjectNotes.ts";

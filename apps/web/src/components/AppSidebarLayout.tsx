@@ -42,6 +42,8 @@ import {
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
+import { sidebarSpaceRgb } from "@t3tools/client-runtime/sidebar-spaces";
+import { useActiveSidebarSpace } from "./sidebar/sidebarSpaceSession";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
@@ -458,6 +460,12 @@ export function AppSidebarLayout({
       ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
       : {}
   ) as CSSProperties;
+  // A selected Space tints the navigation. Its colour is set here, where the tinted tokens resolve.
+  const activeSpace = useActiveSidebarSpace();
+  const sidebarSpaceStyle = {
+    ...windowControlsInsetStyle,
+    ...(activeSpace === null ? null : { "--space-rgb": sidebarSpaceRgb(activeSpace) }),
+  } as CSSProperties;
   const sidebarProviderStyle = {
     "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
     "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
@@ -479,6 +487,7 @@ export function AppSidebarLayout({
               side="left"
               collapsible="offcanvas"
               data-app-sidebar=""
+              data-space-tint={activeSpace === null ? undefined : true}
               {...sidebarArea}
               role="navigation"
               aria-label={gt("Threads")}
@@ -492,7 +501,7 @@ export function AppSidebarLayout({
                 storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
                 onResize: setSidebarWidth,
               }}
-              style={windowControlsInsetStyle}
+              style={sidebarSpaceStyle}
             >
               <ThreadSidebar routeReveal={sidebarRouteReveal} />
               <SidebarRail onDoubleClick={resetSidebarWidth} />

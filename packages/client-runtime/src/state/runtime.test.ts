@@ -14,6 +14,7 @@ import {
   type IssueListResult,
   ORCHESTRATION_V2_WS_METHODS,
   type OrchestrationV2ArchivedShellSnapshot,
+  type OrchestrationV2PendingHumanActionSnapshot,
   ThreadId,
   ProjectId,
   type ReviewDiffPreviewInput,
@@ -62,6 +63,7 @@ import { createReviewEnvironmentAtoms } from "./review.ts";
 import { createPreviewEnvironmentAtoms } from "./preview.ts";
 import { createFilesystemEnvironmentAtoms } from "./filesystem.ts";
 import { EnvironmentQueryStore, type QueryPersistence } from "./queryPersistence.ts";
+import { readHumanActionSnapshot } from "./humanActionInbox.ts";
 import { createSourceControlEnvironmentAtoms } from "./sourceControl.ts";
 import { prefetchRequirementIssues } from "./requirementBoard.ts";
 import { createIssueEnvironmentAtoms, createMergedIssueListAtoms } from "./issues.ts";
@@ -1525,6 +1527,55 @@ describe("environment query lifecycle", () => {
       yield* collect;
       expect(first.deref()).toBe(query());
       expect(fetches).toBe(1);
+    }),
+  );
+
+  it.effect("rechecks a clicked Inbox card independently of the still-open list", () =>
+    Effect.gen(function* () {
+      const requests =
+        yield* Queue.unbounded<Deferred.Deferred<OrchestrationV2PendingHumanActionSnapshot>>();
+      const harness = yield* makeEnvironmentQueryHarness(Effect.void, {
+        rpcSession: {
+          client: {
+            [ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions]: () =>
+              Stream.fromEffect(
+                Effect.gen(function* () {
+                  const snapshot =
+                    yield* Deferred.make<OrchestrationV2PendingHumanActionSnapshot>();
+                  yield* Queue.offer(requests, snapshot);
+                  return yield* Deferred.await(snapshot);
+                }),
+              ).pipe(Stream.concat(Stream.never)),
+          },
+        } as unknown as RpcSession.RpcSession,
+      });
+      const runtime = harness.runtime as unknown as Atom.AtomRuntime<
+        EnvironmentRegistry.EnvironmentRegistry | HttpClient.HttpClient
+      >;
+      const actions = createOrchestrationEnvironmentAtoms(runtime).v2.pendingHumanActions;
+      const environmentId = QUERY_ENVIRONMENT.environmentId;
+      const inbox = actions({ environmentId, input: {} });
+      const registry = yield* mountEnvironmentQuery(inbox);
+      const snapshotOf = (atom: typeof inbox) =>
+        AtomRegistry.toStream(registry, atom).pipe(
+          Stream.map(readHumanActionSnapshot),
+          Stream.filter((snapshot) => snapshot !== null),
+          Stream.runHead,
+        );
+      yield* Deferred.succeed(yield* Queue.take(requests), { sequence: 10, targets: [] });
+      expect(yield* snapshotOf(inbox)).toEqual(Option.some({ sequence: 10, targets: [] }));
+      expect(registry.get(inbox).waiting).toBe(true);
+
+      const clicked = actions({ environmentId, input: { activation: "row-open" } });
+      yield* Effect.acquireRelease(
+        Effect.sync(() => registry.mount(clicked)),
+        (unmount) => Effect.sync(unmount),
+      );
+      const response = yield* Queue.take(requests);
+      expect(registry.get(clicked)).not.toMatchObject({ value: { sequence: 10 } });
+      yield* Deferred.succeed(response, { sequence: 11, targets: [] });
+      expect(yield* snapshotOf(clicked)).toEqual(Option.some({ sequence: 11, targets: [] }));
+      expect(registry.get(inbox)).toMatchObject({ value: { sequence: 10 } });
     }),
   );
 

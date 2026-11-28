@@ -79,7 +79,7 @@ export function WorkspaceListHeader(props: WorkspaceListHeaderProps) {
         onClose: closeSearch,
       }}
       menus={
-        connectionState.hasConnections
+        connectionState.hasConnections && props.filter.items.length > 0
           ? [
               {
                 title: t("Filter threads"),

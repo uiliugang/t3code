@@ -1,4 +1,5 @@
 import { useUiTranslation } from "../hooks/useUiTranslation";
+import { markInboxArrival } from "../lib/inboxArrival";
 import { m } from "../i18n/messages";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { useGT, useMessages } from "gt-react";
@@ -57,6 +58,11 @@ import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnviron
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
+import {
+  hasLiveHumanAction,
+  humanActionSnapshotStatus,
+} from "@t3tools/client-runtime/state/human-action-inbox";
+import { pendingHumanActionsAtom } from "../state/orchestration";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { resolveWorktreeRepositorySelection } from "@t3tools/client-runtime/state/thread-repositories";
@@ -74,6 +80,7 @@ import { ChatBannerLane } from "./chat/ChatBannerLane";
 import * as Schema from "effect/Schema";
 import {
   AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   AuthSourceControlWriteScope,
   AuthPreviewOperateScope,
   AuthTerminalOperateScope,
@@ -225,6 +232,7 @@ import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { shortcutLabelForCommand } from "../keybindings";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { Button } from "./ui/button";
 import { toastManager } from "./ui/toast";
 import { projectScriptIdFromCommand } from "~/projectScripts";
 import { newMessageId } from "~/lib/utils";
@@ -582,6 +590,98 @@ export default function ChatView(props: ChatViewProps) {
     ? deriveReportedModelSelection(serverProjection)
     : null;
   const threadStatus = useThreadStatus(routeThreadDetailRef);
+  const canReadInboxThread = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
+  const [clearedInboxActivation, setClearedInboxActivation] = useState<string | null>(null);
+  const routeInboxAction = useLocation({
+    select: ({ state }) => {
+      const target = state.pendingHumanAction;
+      return !embedded && target?.environmentId === environmentId && target.threadId === threadId
+        ? target
+        : null;
+    },
+  });
+  const requestedAction =
+    routeInboxAction?.activation === clearedInboxActivation ? null : routeInboxAction;
+  const inboxEnvironment = requestedAction ? environmentById.get(environmentId) : undefined;
+  const canCheckInbox =
+    canReadInboxThread &&
+    canOperateThread &&
+    inboxEnvironment?.connection.phase === "connected" &&
+    inboxEnvironment.serverConfig?.environment.capabilities.pendingHumanActions === true;
+  const inboxSnapshot = useAtomValue(
+    pendingHumanActionsAtom(canCheckInbox ? environmentId : null, requestedAction?.activation),
+  );
+  const inboxStatus =
+    canCheckInbox && requestedAction
+      ? humanActionSnapshotStatus(inboxSnapshot, requestedAction)
+      : "unavailable";
+  const liveInboxAction =
+    requestedAction &&
+    inboxStatus === "ready" &&
+    threadStatus === "live" &&
+    serverProjection &&
+    hasLiveHumanAction(serverProjection, requestedAction)
+      ? requestedAction
+      : null;
+  const [failedInboxHistoryActivation, setFailedInboxHistoryActivation] = useState<string | null>(
+    null,
+  );
+  const serverThreadHistory = useThreadHistory(routeThreadDetailRef);
+  const couldLoadInboxHistory =
+    (serverThreadHistory.hasMoreHistory || serverThreadHistory.loading) &&
+    requestedAction !== null &&
+    failedInboxHistoryActivation !== requestedAction.activation &&
+    inboxStatus === "ready" &&
+    threadStatus === "live" &&
+    serverProjection !== null &&
+    liveInboxAction === null;
+  const inboxNotice =
+    requestedAction && !liveInboxAction
+      ? couldLoadInboxHistory ||
+        inboxStatus === "checking" ||
+        (inboxStatus === "ready" && threadStatus !== "live" && threadStatus !== "deleted")
+        ? t("Checking…")
+        : t("This request is no longer available.")
+      : null;
+  const chatColumn = useRef<HTMLDivElement>(null);
+  const focusedInboxActivation = useRef<string | null>(null);
+  const liveInboxActivation = liveInboxAction?.activation;
+  const liveInboxRequest =
+    liveInboxAction?.kind === "user_input" ? liveInboxAction.requestId : undefined;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the existing DOM request card once its timeline row is mounted
+  useLayoutEffect(() => {
+    const container = chatColumn.current;
+    if (
+      !container ||
+      !liveInboxActivation ||
+      !liveInboxRequest ||
+      focusedInboxActivation.current === liveInboxActivation
+    )
+      return;
+    const focus = () => {
+      const anchor = container.querySelector<HTMLElement>(
+        `[data-human-action-request="${CSS.escape(liveInboxRequest)}"]`,
+      );
+      if (!anchor) return false;
+      focusedInboxActivation.current = liveInboxActivation;
+      anchor.scrollIntoView({ block: "nearest" });
+      anchor.focus({ preventScroll: true });
+      markInboxArrival(anchor);
+      return true;
+    };
+    if (focus()) return;
+    const observer = new MutationObserver(() => {
+      if (focus()) observer.disconnect();
+    });
+    observer.observe(container, {
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-human-action-request"],
+      subtree: true,
+    });
+    return () => observer.disconnect();
+  }, [liveInboxActivation, liveInboxRequest]);
+
   const threadSyncError = useThreadError(routeThreadDetailRef);
   const threadSyncPhase = resolveThreadSyncPhase({
     detailExists: serverProjection !== null,
@@ -601,7 +701,47 @@ export default function ChatView(props: ChatViewProps) {
     activeProviderThread,
   );
   const serverVisibleTurnItems = useQuietThreadVisibleTurnItems(routeThreadDetailRef);
-  const serverThreadHistory = useThreadHistory(routeThreadDetailRef);
+  const inboxHistoryTarget = couldLoadInboxHistory ? requestedAction : null;
+  const inboxHistoryRouteEnvironment = routeThreadDetailRef?.environmentId;
+  const inboxHistoryRouteThread = routeThreadDetailRef?.threadId;
+  const canLoadInboxHistory = serverThreadHistory.hasMoreHistory;
+  const inboxHistoryLoading = serverThreadHistory.loading;
+  const startedInboxHistory = useRef<string | null>(null);
+  const inboxHistoryActivation = inboxHistoryTarget?.activation;
+  const inboxHistoryItem = inboxHistoryTarget?.targetItemId;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the selected live card can lie before the loaded timeline window
+  useEffect(() => {
+    if (
+      !inboxHistoryActivation ||
+      !inboxHistoryItem ||
+      !inboxHistoryRouteEnvironment ||
+      !inboxHistoryRouteThread ||
+      inboxHistoryLoading ||
+      !canLoadInboxHistory ||
+      startedInboxHistory.current === inboxHistoryActivation
+    )
+      return;
+    startedInboxHistory.current = inboxHistoryActivation;
+    void loadEarlierThreadHistory({
+      environmentId: inboxHistoryRouteEnvironment,
+      input: { threadId: inboxHistoryRouteThread, throughEntryId: inboxHistoryItem },
+    }).then((result) => {
+      if (startedInboxHistory.current !== inboxHistoryActivation) return;
+      if (result._tag === "Success" && result.value._tag === "busy") {
+        startedInboxHistory.current = null;
+        return;
+      }
+      setFailedInboxHistoryActivation(inboxHistoryActivation);
+    });
+  }, [
+    canLoadInboxHistory,
+    inboxHistoryActivation,
+    inboxHistoryItem,
+    inboxHistoryLoading,
+    inboxHistoryRouteEnvironment,
+    inboxHistoryRouteThread,
+    loadEarlierThreadHistory,
+  ]);
   const threadHistoryControls = (() => {
     if (routeThreadDetailRef === null || !shouldShowLoadEarlierControl(serverThreadHistory)) {
       return undefined;
@@ -1517,6 +1657,8 @@ export default function ChatView(props: ChatViewProps) {
     onAdvanceActivePendingUserInputStable,
     onPreviousActivePendingUserInputQuestion: onPreviousActivePendingUserInputQuestionStable,
   } = usePendingThreadRequests({
+    preferredQuestion:
+      requestedAction?.kind === "user_input" ? (liveInboxAction?.requestId ?? null) : undefined,
     environmentId,
     activeThreadId,
     serverProjection,
@@ -2348,7 +2490,7 @@ export default function ChatView(props: ChatViewProps) {
   useFocusComposerOnThreadOpen(
     activeThreadRef,
     workspaceLayoutElement,
-    !embedded,
+    !embedded && requestedAction === null,
     terminalUiState.terminalOpen,
     isCoarsePointer ? ignoreComposerFocus : focusComposerStable,
   );
@@ -3644,9 +3786,25 @@ export default function ChatView(props: ChatViewProps) {
             "--chat-header-height": embedded ? "0px" : "var(--workspace-topbar-height)",
           } as CSSProperties
         }
+        ref={chatColumn}
         inert={rightPanelMaximized}
         onMouseUp={preventMiddleClickPasteOutsideEditable}
       >
+        {requestedAction && inboxNotice ? (
+          <div
+            role="status"
+            className="flex items-center justify-between gap-2 border-b px-4 py-2 text-xs text-muted-foreground"
+          >
+            <span>{inboxNotice}</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setClearedInboxActivation(requestedAction.activation)}
+            >
+              {t("Continue")}
+            </Button>
+          </div>
+        ) : null}
         {embedded ? null : (
           <header
             ref={threadPanelPopoverAnchorRef}
@@ -3751,6 +3909,9 @@ export default function ChatView(props: ChatViewProps) {
                   detailLoading={threadDetailLoading}
                   citationRequest={citationRequest}
                   citationHistory={citationHistory}
+                  inboxApprovalTarget={
+                    liveInboxAction?.kind === "approval" ? liveInboxAction : null
+                  }
                   onCiteAssistantText={citeAssistantTextStable}
                   onReplyToResponse={replyToResponseStable}
                   {...(activeProject && !runsOutsideHostCheckout
@@ -4049,6 +4210,11 @@ export default function ChatView(props: ChatViewProps) {
                                 pendingApprovals={pendingApprovals}
                                 onHeldRequestIdsChange={onHeldRequestIdsChange}
                                 pendingUserInputs={pendingUserInputs}
+                                inboxQuestionActivation={
+                                  liveInboxAction?.kind === "user_input"
+                                    ? liveInboxAction.activation
+                                    : undefined
+                                }
                                 activePendingIsResponding={activePendingIsResponding}
                                 respondingRequestIds={respondingRequestIds}
                                 runtimeMode={runtimeMode}

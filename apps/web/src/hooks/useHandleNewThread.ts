@@ -125,11 +125,14 @@ export function createNewThreadHandler(router: AnyRouter) {
       selectedProjectIds?: readonly ProjectId[] | null;
       groupTitle?: string | null;
       replace?: boolean;
+      /** Check the active Space again at the point this opener is invoked. */
+      canStillOpen?: () => boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;
       handoff?: { readonly attachment?: ComposerFileAttachment };
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+    if (options?.canStillOpen?.() === false) return Promise.resolve(null);
     const projects = readProjects();
     const projectGroupingSettings = selectProjectGroupingSettings(getClientSettings());
     // Read at call time; status pushes replace the config map and would recreate every sidebar handler.

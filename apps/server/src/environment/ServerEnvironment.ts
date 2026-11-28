@@ -225,6 +225,7 @@ export const make = Effect.gen(function* () {
     capabilities: {
       repositoryIdentity: true,
       connectionProbe: true,
+      scopedThreadSearch: true,
       attachmentUploads: true,
       accessTokenRenewal: true,
       questionAttachments: true,
@@ -251,6 +252,7 @@ export const make = Effect.gen(function* () {
       residualWorktreeCleanup: true,
       databaseStorage: true,
       otlpEndpointCheck: true,
+      pendingHumanActions: true,
       secretSourceCheck: true,
       projectWorktreeCleanup: true,
       settledWorktreeCleanup: true,

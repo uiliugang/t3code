@@ -458,6 +458,7 @@ export interface ChatComposerProps {
   pendingApprovals: PendingApproval[];
   onHeldRequestIdsChange: (requestIds: ReadonlySet<string>) => void;
   pendingUserInputs: PendingUserInput[];
+  inboxQuestionActivation?: string | undefined;
   activePendingIsResponding: boolean;
   respondingRequestIds: RuntimeRequestId[];
 
@@ -601,6 +602,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pendingApprovals,
     onHeldRequestIdsChange,
     pendingUserInputs: incomingPendingUserInputs,
+    inboxQuestionActivation,
     activePendingIsResponding: incomingPendingIsResponding,
     respondingRequestIds,
     runtimeMode,
@@ -3841,6 +3843,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="info">
                 {pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
+                    key={inboxQuestionActivation}
                     pendingUserInputs={pendingUserInputs}
                     cwd={gitCwd ?? undefined}
                     threadRef={routeThreadRef}

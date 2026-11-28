@@ -196,6 +196,7 @@ export const layer = Layer.effect(
       // Resolve lazily: startup loads persisted settings after pool initialization.
       label: configuration.resolvePrimaryLabel,
       configResolve: configuration.resolvePrimary,
+      onProjectNotesRevoked: desktopWindow.notifyProjectNotesRevoked,
       ...(recovery === undefined
         ? {}
         : {

@@ -4,10 +4,8 @@ import { useEnabledNavigationTabs } from "./navigation-tabs";
 import { NAVIGATION_TAB_ORDER } from "./navigation-tab-order";
 import { workspaceUsesColumns } from "./workspace-tabs-state";
 import { useNavigationState } from "@react-navigation/native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAndroidControlSizing } from "../../../components/ui/useAndroidControlSizing";
-import { FLOATING_TABS } from "./floating-workspace-tabs";
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ScreenContent } from "../../../components/ui/ScreenContent";
 import { PullRequestsScreen } from "../../pull-requests/PullRequestsScreen";
 import { ListSearchToolbar } from "./ListSearchToolbar.android";
@@ -21,6 +19,7 @@ import { WorkspaceTabsContext, useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WorkspaceTabPanes } from "./WorkspaceTabPanes";
 import { WorkspaceThreadSidebar } from "./WorkspaceThreadSidebar";
 import { WorkspaceAppBarScope } from "../../../components/ui/WorkspaceAppBar.android";
+import { AndroidSidebarPinnedTabs } from "./AndroidSidebarPinnedTabs";
 
 /** The Home route in the sidebar column: the selected tab's list. */
 export function AndroidWorkspaceSidebar() {
@@ -28,7 +27,6 @@ export function AndroidWorkspaceSidebar() {
   const workspace = useWorkspaceTabs()!;
   const enabled = useEnabledNavigationTabs();
   const insets = useSafeAreaInsets();
-  const { fabSize } = useAndroidControlSizing();
   const { revealPrimarySidebar, startNewTask } = useAdaptiveWorkspaceLayout();
   const selectedPullRequest = useNavigationState(selectedPullRequestKey);
   const selectedIssue = useNavigationState(selectedIssueKey);
@@ -36,13 +34,11 @@ export function AndroidWorkspaceSidebar() {
   const coveredByPage =
     (useAndroidWorkspaceRoot()?.settingsOpen ?? false) ||
     !workspaceUsesColumns(workspace.state.selectedTab);
-  const bottomClearance = floatingTabsEnabled
-    ? insets.bottom + FLOATING_TABS.bottom + FLOATING_TABS.edge + fabSize
-    : 16;
-  const context = { ...workspace, bottomClearance };
+  const context = { ...workspace, bottomClearance: floatingTabsEnabled ? insets.bottom + 16 : 16 };
   if (enabled.length === 0) return <WorkspaceNoTabs />;
   return (
     <WorkspaceAppBarScope>
+      {floatingTabsEnabled ? <AndroidSidebarPinnedTabs onNewThread={startNewTask} /> : null}
       <WorkspaceTabPanes
         tabs={NAVIGATION_TAB_ORDER}
         selected={workspace.state.selectedTab}

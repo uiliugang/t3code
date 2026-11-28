@@ -18,7 +18,8 @@ import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-searc
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { THREAD_LIST_ROW_LAYOUT } from "./threadListAnimations";
 import { useAtomValue } from "@effect/atom-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import type { SidebarSpaceScope } from "@t3tools/client-runtime/sidebar-spaces";
 import { Platform, StyleSheet, View } from "react-native";
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -111,6 +112,10 @@ interface ThreadNavigationSidebarProps {
   ) => void;
   readonly onRequestVisibility: () => void;
   readonly searchQuery: string;
+  readonly spaceScope?: SidebarSpaceScope;
+  readonly spaceControls?: ReactNode;
+  readonly inboxEntry?: ReactNode;
+  readonly spacePreferencesLoading?: boolean;
 }
 
 export function ThreadNavigationSidebar(props: ThreadNavigationSidebarProps) {
@@ -169,8 +174,11 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   );
   const { options, setSelectedEnvironmentId, setSelectedProjectKey } =
     useHomeListOptions(availableEnvironmentIds);
-  const searchEnvironmentIds =
-    options.selectedEnvironmentId === null
+  const activeSpace = props.spaceScope?.kind === "space" ? props.spaceScope : null;
+  // Old hosts cannot constrain search to per-environment Space projects. Use loaded titles only.
+  const searchEnvironmentIds = activeSpace
+    ? []
+    : options.selectedEnvironmentId === null
       ? workspaceEnvironments
           .filter((environment) => environment.connectionState === "connected")
           .map((environment) => environment.environmentId)
@@ -233,6 +241,9 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   // identity; the hook keeps it stable.
   const threadSearchMatchByKey = useThreadListSearchMatches(threads, threadSearch);
   const selectedProjectKey = selectedProjectScope?.key ?? null;
+  const listProjectRefs = props.spacePreferencesLoading
+    ? []
+    : (activeSpace?.projectRefs ?? selectedProjectScope?.projectRefs ?? null);
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
     for (const project of projects) {
@@ -244,7 +255,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   const [settledVisibleCount, setSettledVisibleCount] = useState(
     THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   );
-  const settledResetKey = `${options.selectedEnvironmentId ?? "all"}:${selectedProjectKey ?? "all"}:${props.searchQuery.trim()}`;
+  const settledResetKey = `${activeSpace?.id ?? "all"}:${options.selectedEnvironmentId ?? "all"}:${selectedProjectKey ?? "all"}:${props.searchQuery.trim()}`;
   const [lastSettledResetKey, setLastSettledResetKey] = useState(settledResetKey);
   if (lastSettledResetKey !== settledResetKey) {
     setLastSettledResetKey(settledResetKey);
@@ -286,8 +297,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   } = useThreadListV2({
     threads: launchingThreads,
     pendingTasks,
-    environmentId: options.selectedEnvironmentId,
-    projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
+    environmentId: activeSpace ? null : options.selectedEnvironmentId,
+    projectRefs: listProjectRefs,
     searchQuery: props.searchQuery,
     searchMatches: threadSearchMatchByKey,
     settlementEnvironmentIds,
@@ -478,9 +489,10 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
             autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
             reorderSupported={
-              item.item.pinned
+              !activeSpace &&
+              (item.item.pinned
                 ? pinReorderEnvironmentIds.has(thread.environmentId)
-                : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId)
+                : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId))
             }
             canMoveUp={item.canMoveUp}
             canMoveDown={item.canMoveDown}
@@ -549,22 +561,28 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
       search={{
         value: props.searchQuery,
         onChangeText: props.onSearchQueryChange,
-        placeholder: gt("Search", { $context: "search field placeholder" }),
+        placeholder: activeSpace
+          ? t("Search loaded titles")
+          : gt("Search", { $context: "search field placeholder" }),
         accessibilityLabel: gt("Search threads"),
       }}
       filter={{
-        customized: options.selectedEnvironmentId !== null || selectedProjectKey !== null,
-        items: buildHomeListFilterMenuItems(
-          {
-            environments,
-            projects: projectFilterOptions,
-            selectedEnvironmentId: options.selectedEnvironmentId,
-            selectedProjectKey,
-            onEnvironmentChange: setSelectedEnvironmentId,
-            onProjectChange: setSelectedProjectKey,
-          },
-          messages,
-        ),
+        customized:
+          activeSpace === null &&
+          (options.selectedEnvironmentId !== null || selectedProjectKey !== null),
+        items: activeSpace
+          ? []
+          : buildHomeListFilterMenuItems(
+              {
+                environments,
+                projects: projectFilterOptions,
+                selectedEnvironmentId: options.selectedEnvironmentId,
+                selectedProjectKey,
+                onEnvironmentChange: setSelectedEnvironmentId,
+                onProjectChange: setSelectedProjectKey,
+              },
+              messages,
+            ),
       }}
       sidebar={{
         width: props.width,
@@ -586,19 +604,27 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             : "px-2 py-4 text-sm text-drawer-foreground-muted"
         }
       >
-        {catalogState.isLoadingConnections
+        {props.spacePreferencesLoading
           ? gt("Loading threads…")
-          : showAddEnvironment
-            ? gt("No environments connected")
-            : props.searchQuery.trim().length > 0
-              ? threadSearch.isPending
-                ? gt("Searching thread messages…")
-                : threadSearch.failed
-                  ? gt("Couldn't search thread messages")
-                  : gt("No matching threads")
-              : selectedProjectScope !== null
-                ? gt("No threads in {project}", { project: selectedProjectScope.title })
-                : gt("No threads yet")}
+          : activeSpace?.status === "empty"
+            ? t("This Space has no projects yet.")
+            : activeSpace?.status === "unavailable"
+              ? t("Space projects are unavailable.")
+              : catalogState.isLoadingConnections
+                ? gt("Loading threads…")
+                : showAddEnvironment
+                  ? gt("No environments connected")
+                  : props.searchQuery.trim().length > 0
+                    ? threadSearch.isPending
+                      ? gt("Searching thread messages…")
+                      : threadSearch.failed
+                        ? gt("Couldn't search thread messages")
+                        : gt("No matching threads")
+                    : activeSpace !== null
+                      ? t("No threads in this Space yet.")
+                      : selectedProjectScope !== null
+                        ? gt("No threads in {project}", { project: selectedProjectScope.title })
+                        : gt("No threads yet")}
       </Text>
       {showAddEnvironment ? (
         <View className={Platform.OS === "android" ? "self-center" : "px-2"}>
@@ -666,13 +692,14 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
         className="flex-1"
         style={{
           marginHorizontal: 4,
-          paddingBottom: insets.bottom,
+          paddingBottom: props.spaceControls ? 0 : insets.bottom,
           backgroundColor: drawerColor,
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
           overflow: "hidden",
         }}
       >
+        {props.inboxEntry}
         {listItems.length === 0 ? (
           <View className="flex-1 items-center justify-center">{listEmpty}</View>
         ) : (
@@ -690,9 +717,11 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
                 keyExtractor={(item) => item.key}
                 renderItem={renderListItem}
                 contentContainerStyle={{
-                  paddingBottom: floatingTabsEnabled
-                    ? FLOATING_TABS.bottom + FLOATING_TABS.edge + fabSize
-                    : Math.max(insets.bottom, 16) + fabClearance - insets.bottom,
+                  paddingBottom: props.spaceControls
+                    ? 8
+                    : floatingTabsEnabled
+                      ? FLOATING_TABS.bottom + FLOATING_TABS.edge + fabSize
+                      : Math.max(insets.bottom, 16) + fabClearance - insets.bottom,
                   paddingTop: 6,
                 }}
                 keyboardDismissMode="on-drag"
@@ -709,6 +738,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
         )}
       </View>
       {header}
+      {props.spaceControls}
       <ThreadUndoNotice visible={props.visible} />
     </View>
   );

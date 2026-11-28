@@ -1,3 +1,5 @@
+import { AppText } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { useUiTranslation } from "../../lib/useUiTranslation";
 import { ChildThreadApprovals } from "./ChildThreadApprovals";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
@@ -276,6 +278,9 @@ export interface ThreadDetailScreenProps {
       }
     | { readonly kind: "failed"; readonly reason: string; readonly onEditTask: () => void }
     | null;
+  readonly inboxTargeted?: boolean;
+  readonly inboxTargetNotice?: { readonly message: string; readonly onContinue: () => void } | null;
+  readonly inboxQuestionActivation?: string | null;
   readonly activePendingApproval: PendingApproval | null;
   readonly activePendingApprovals: ReadonlyArray<PendingApproval>;
   readonly respondingApprovalId: RuntimeRequestId | null;
@@ -1011,11 +1016,14 @@ function ThreadDetailBody(
   const [userInputToggle, setUserInputToggle] = useState<{
     readonly requestId: RuntimeRequestId;
     readonly collapsed: boolean;
+    readonly activation?: string | null;
   } | null>(null);
   const activeUserInputRequestId = props.activePendingUserInput?.requestId ?? null;
   const questionInFlow = Platform.OS === "android" && activeUserInputRequestId !== null;
   const composerSlotHidden =
-    activeUserInputRequestId !== null || props.creationState?.kind === "failed";
+    activeUserInputRequestId !== null ||
+    props.inboxTargeted === true ||
+    props.creationState?.kind === "failed";
   const pendingMessageEditBlocked =
     queuedRunEditBlockedReason(
       { openQuestionCount: activeUserInputRequestId === null ? 0 : 1 },
@@ -1063,7 +1071,9 @@ function ThreadDetailBody(
       current !== null && current.threadKey === threadKey ? null : current,
     );
   const userInputToggled =
-    userInputToggle !== null && userInputToggle.requestId === activeUserInputRequestId;
+    userInputToggle !== null &&
+    userInputToggle.requestId === activeUserInputRequestId &&
+    userInputToggle.activation === props.inboxQuestionActivation;
   const userInputCollapsed = userInputToggled && userInputToggle.collapsed;
   // A height React sets from keyboard state lags the sticky translation by a Yoga pass and
   // flashes over the nav header on the way up, so the usage panel reserves the keyboard instead.
@@ -1248,10 +1258,18 @@ function ThreadDetailBody(
       return;
     }
     if (userInputCollapsed) {
-      setUserInputToggle({ requestId: activeUserInputRequestId, collapsed: false });
+      setUserInputToggle({
+        requestId: activeUserInputRequestId,
+        activation: props.inboxQuestionActivation,
+        collapsed: false,
+      });
     } else {
       Keyboard.dismiss();
-      setUserInputToggle({ requestId: activeUserInputRequestId, collapsed: true });
+      setUserInputToggle({
+        requestId: activeUserInputRequestId,
+        activation: props.inboxQuestionActivation,
+        collapsed: true,
+      });
     }
   };
   const showContent = props.showContent ?? true;
@@ -1888,6 +1906,22 @@ function ThreadDetailBody(
                           onEditTask={props.creationState.onEditTask}
                         />
                       </Animated.View>
+                    ) : null}
+                    {props.inboxTargetNotice ? (
+                      <View className="mx-4 mb-3 items-start gap-2 rounded-xl bg-grouped-card p-3">
+                        <AppText
+                          accessibilityLiveRegion="polite"
+                          textRole="footnote"
+                          className="text-foreground-muted"
+                        >
+                          {props.inboxTargetNotice.message}
+                        </AppText>
+                        <Button
+                          label={t("Continue")}
+                          onPress={props.inboxTargetNotice.onContinue}
+                          tone="text"
+                        />
+                      </View>
                     ) : null}
                     {props.activePendingApproval || props.activePendingUserInput ? (
                       <Animated.View

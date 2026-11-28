@@ -11,6 +11,11 @@ import { removeLocalStorageItem } from "../hooks/useLocalStorage";
 import { makeThreadFixture } from "../test-fixtures";
 import type { Project, Thread } from "../types";
 import { CommandPalette } from "./CommandPalette";
+import {
+  SIDEBAR_SPACE_DEFINITIONS,
+  selectActiveSidebarSpace,
+  sidebarSpaceCommands,
+} from "./sidebar/sidebarSpaceSession";
 
 const entities = vi.hoisted(() => ({
   projects: [] as ReadonlyArray<Project>,
@@ -252,6 +257,45 @@ describe("CommandPalette open intents", () => {
     await page.getByRole("option", { name: /Acme/ }).first().click();
 
     await vi.waitFor(() => expect(screen.router?.state.location.pathname).toBe("/local/parent"));
+  });
+
+  it("opens the globally selected project even if it has no threads and a Space is active", async () => {
+    const member = makeProject("member-project");
+    const target = makeProject("outside-project");
+    setup({ projects: [member, target] });
+    localStorage.setItem(
+      SIDEBAR_SPACE_DEFINITIONS,
+      JSON.stringify([
+        {
+          id: "work",
+          name: "Work",
+          projectRefs: [{ environmentId: member.environmentId, projectId: member.id }],
+        },
+      ]),
+    );
+    selectActiveSidebarSpace("work");
+    const openInSpace = vi.fn();
+    const unsubscribe = sidebarSpaceCommands.subscribe(openInSpace);
+    try {
+      await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+      openCommandPalette({ query: "outside-project" });
+      await page
+        .getByRole("option", { name: /outside-project/ })
+        .first()
+        .click();
+
+      await vi.waitFor(() =>
+        expect(entities.handleNewThread).toHaveBeenCalledWith({
+          environmentId: target.environmentId,
+          projectId: target.id,
+        }),
+      );
+      expect(openInSpace).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      selectActiveSidebarSpace(null);
+      removeLocalStorageItem(SIDEBAR_SPACE_DEFINITIONS);
+    }
   });
 
   it("starts a thread in an open copy when the current project's copy is archived", async () => {

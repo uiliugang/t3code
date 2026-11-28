@@ -608,6 +608,41 @@ describe("mobile task permissions", () => {
     });
   });
 
+  it("does not substitute a first pending approval or question for a mobile inbox target", async () => {
+    state.grantedEnvironments.add("secondary");
+    const first = state.pendingRequests.approvals[0]!;
+    const second = { ...first, requestId: RuntimeRequestId.make("second-approval") };
+    const firstQuestion = RuntimeRequestId.make("first-input");
+    const secondQuestion = RuntimeRequestId.make("second-input");
+    state.pendingRequests = {
+      approvals: [first, second],
+      userInputs: [firstQuestion, secondQuestion].map((requestId) => ({
+        requestId,
+        createdAt: "2026-09-05T00:00:00.000Z",
+        responseCapability: "live",
+        dismissible: false,
+        questions: [state.question],
+      })),
+    };
+    expect(useSelectedThreadRequests().activePendingApproval?.requestId).toBe(first.requestId);
+    const approval = useSelectedThreadRequests({ kind: "approval", requestId: second.requestId });
+    expect(approval.activePendingApprovals).toEqual([second]);
+    await approval.onRespondToApproval(first.requestId, "accept");
+    expect(state.approve).not.toHaveBeenCalled();
+    const question = useSelectedThreadRequests({ kind: "user_input", requestId: secondQuestion });
+    expect(question.activePendingUserInput?.requestId).toBe(secondQuestion);
+    expect(question.activePendingApproval).toBeNull();
+    state.pendingRequests = {
+      ...state.pendingRequests,
+      userInputs: state.pendingRequests.userInputs.slice(0, 1),
+    };
+    expect(
+      useSelectedThreadRequests({ kind: "user_input", requestId: secondQuestion })
+        .activePendingUserInput,
+    ).toBeNull();
+    expect(useSelectedThreadRequests(null).activePendingApproval).toBeNull();
+  });
+
   it("keeps answer drafts editable after revocation while blocking their submission", async () => {
     state.pendingRequests = {
       approvals: [],

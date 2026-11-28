@@ -88,6 +88,12 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.wechatSend)).toBe(AuthOrchestrationOperateScope);
   });
 
+  it("requires orchestration read scope before enumerating human action metadata", () => {
+    expect(
+      requiredScopeForRpcMethod(ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions),
+    ).toBe(AuthOrchestrationReadScope);
+  });
+
   it("lets thread readers observe and refresh checkout branches", () => {
     for (const method of [WS_METHODS.subscribeVcsBranch, WS_METHODS.vcsRefreshBranch]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);

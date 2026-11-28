@@ -73,6 +73,9 @@ export const ThreadSearchScope = Schema.Struct({
   projectIds: Schema.optionalKey(Schema.Array(ProjectId)),
   environmentLabels: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   titlesOnly: Schema.optionalKey(Schema.Boolean),
+  spaceProjectIdsByEnvironment: Schema.optionalKey(
+    Schema.Array(Schema.Tuple([EnvironmentId, Schema.Array(ProjectId)])),
+  ),
 });
 export type ThreadSearchScope = typeof ThreadSearchScope.Type;
 
@@ -139,7 +142,21 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
       let asked = 0;
       let failures = 0;
 
+      const spaceProjectIds =
+        scope.spaceProjectIdsByEnvironment === undefined
+          ? undefined
+          : new Map(scope.spaceProjectIdsByEnvironment);
+      const requestedProjects = scope.projectIds === undefined ? null : new Set(scope.projectIds);
       for (const environmentId of environmentIds) {
+        const scopedIds = spaceProjectIds?.get(environmentId);
+        if (spaceProjectIds !== undefined && !scopedIds?.length) continue;
+        const projectIds =
+          scopedIds === undefined
+            ? scope.projectIds
+            : requestedProjects === null
+              ? scopedIds
+              : scopedIds.filter((projectId) => requestedProjects.has(projectId));
+        if (spaceProjectIds !== undefined && projectIds?.length === 0) continue;
         const before = options.olderSettledBefore
           ? get(options.olderSettledBefore(environmentId))
           : null;
@@ -148,7 +165,7 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
         const result = get(
           options.getSearchAtom(environmentId, {
             query,
-            ...(scope.projectIds === undefined ? {} : { projectIds: scope.projectIds }),
+            ...(projectIds === undefined ? {} : { projectIds }),
             ...(before === null
               ? {}
               : {

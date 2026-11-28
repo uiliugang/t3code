@@ -279,6 +279,40 @@ describe.each([
     },
   ],
 ])("useNewThreadHandler with a %s draft", (_, draft) => {
+  it("does not open a stale Space target when its URL is unchanged", async () => {
+    testState.reset(draft);
+    testState.router.state.location.href = "/?spaceLanding=true";
+
+    await expect(
+      useNewThreadHandler()(
+        { environmentId: "environment-ssh", projectId: "project-remote" } as never,
+        { canStillOpen: () => false },
+      ),
+    ).resolves.toBeNull();
+
+    expect(testState.router.state.location.href).toBe("/?spaceLanding=true");
+    expect(testState.router.navigate).not.toHaveBeenCalled();
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate back to another Space's draft after its workspace file loads", async () => {
+    testState.reset(draft, { envMode: null, startFromOrigin: false });
+    const opened = await useNewThreadHandler()({
+      environmentId: "environment-ssh",
+      projectId: "project-remote",
+    } as never);
+    expect(testState.router.navigate).toHaveBeenCalledOnce();
+
+    testState.router.state.location.href = "/?spaceLanding=true";
+    const pendingDefault = readPendingWorkspaceDefault(opened!.draftId);
+    expect(pendingDefault).not.toBeNull();
+    testState.completeProjectFileRead({ defaultThreadEnvMode: "worktree" });
+    await pendingDefault;
+
+    expect(testState.router.state.location.href).toBe("/?spaceLanding=true");
+    expect(testState.router.navigate).toHaveBeenCalledOnce();
+  });
+
   it("opens the draft before the project file is read, then applies its workspace default", async () => {
     testState.reset(draft, { envMode: null, startFromOrigin: false });
     const opened = await useNewThreadHandler()({

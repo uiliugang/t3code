@@ -1,3 +1,12 @@
+import { SquarePenIcon } from "lucide-react";
+import { SpaceAvatar } from "../components/sidebar/SidebarSpaces";
+import {
+  readActiveSidebarSpaceId,
+  sidebarSpaceCommands,
+  useActiveSidebarSpace,
+  useActiveSidebarSpaceId,
+} from "../components/sidebar/sidebarSpaceSession";
+import { useUiTranslation } from "../hooks/useUiTranslation";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -24,6 +33,7 @@ import { useEnvironments } from "../state/environments";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
+  const activeSpace = useActiveSidebarSpaceId();
   const { environments, isReady } = useEnvironments();
 
   if (authGateState.status === "hosted-static") {
@@ -31,7 +41,47 @@ function ChatIndexRouteView() {
     if (environments.length === 0) return <HostedEmptyState />;
   }
 
-  return <IndexDraftLanding />;
+  return activeSpace !== null ? <SpaceLanding /> : <IndexDraftLanding />;
+}
+
+function SpaceLanding() {
+  const t = useUiTranslation();
+  const space = useActiveSidebarSpace();
+  return (
+    <SidebarInset
+      {...workspaceAreaProps("home", 1, t("Space threads"))}
+      role="main"
+      className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
+    >
+      {isElectron ? <WorkspacePageHeader electron /> : null}
+      {space === null ? null : (
+        <div className="flex flex-1 items-center justify-center overflow-auto scrollbar-gutter-both p-6">
+          <div className="glass-tile flex w-full max-w-xs animate-(--animate-space-rise) flex-col items-center gap-4 rounded-2xl px-8 py-9 text-center motion-reduce:animate-none">
+            <SpaceAvatar space={space} className="size-14 rounded-2xl text-2xl" />
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">{space.name}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t("{count} projects", { count: space.projectRefs.length })}
+              </p>
+            </div>
+            <Button
+              className="w-full"
+              disabled={space.projectRefs.length === 0}
+              onClick={() => {
+                sidebarSpaceCommands.newThread();
+              }}
+            >
+              <SquarePenIcon aria-hidden="true" />
+              {t("New thread in this Space")}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {t("Open a thread or start one from the sidebar.")}
+            </p>
+          </div>
+        </div>
+      )}
+    </SidebarInset>
+  );
 }
 
 function IndexDraftLanding() {
@@ -41,7 +91,9 @@ function IndexDraftLanding() {
   const handleNewThread = useNewThreadHandler();
   const router = useRouter();
   // Read at effect time; this page can stay mounted while the router is already navigating away.
-  const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
+  const isStillOnIndex = useEffectEvent(
+    () => router.state.location.pathname === "/" && readActiveSidebarSpaceId() === null,
+  );
   const startedAttemptRef = useRef<number | null>(null);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
@@ -64,7 +116,10 @@ function IndexDraftLanding() {
       return;
     }
     startedAttemptRef.current = attempt;
-    void handleNewThread(projectRef, { replace: true })
+    void handleNewThread(projectRef, {
+      replace: true,
+      canStillOpen: () => readActiveSidebarSpaceId() === null,
+    })
       .then((opened) => {
         if (opened === null) {
           setStartState((state) => ({ ...state, retryRequest: state.retryRequest + 1 }));
@@ -122,5 +177,7 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
 }
 
 export const Route = createFileRoute("/_chat/")({
+  validateSearch: (search: Record<string, unknown>): { readonly spaceLanding?: true } =>
+    search.spaceLanding === true ? { spaceLanding: true } : {},
   component: ChatIndexRouteView,
 });

@@ -47,8 +47,10 @@ const APPROVAL_PRESENTATION = {
 
 export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalRow({
   approval,
+  targetItemId,
 }: {
   approval: PendingApproval;
+  targetItemId?: string;
 }) {
   const t = useUiTranslation();
   const { respondingRequestIds, canOperateThread, onRespondToApproval } = use(TimelineRowCtx);
@@ -63,6 +65,9 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
       role="group"
       aria-label={m(label)}
       data-v2-item-type="approval_request"
+      data-human-action-request={approval.requestId}
+      data-human-action-item={targetItemId}
+      tabIndex={-1}
       wrapLabel
       icon={
         <ToolActivityIconView

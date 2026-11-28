@@ -140,6 +140,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL) !== false,
   setLocalEnvironmentEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL, enabled),
+  getProjectNotesEnvironment: () =>
+    ipcRenderer.invoke(IpcChannels.GET_PROJECT_NOTES_ENVIRONMENT_CHANNEL),
+  onProjectNotesRevoked: (listener) => {
+    const receive = () => listener();
+    ipcRenderer.on(IpcChannels.PROJECT_NOTES_REVOKED_CHANNEL, receive);
+    return () => ipcRenderer.removeListener(IpcChannels.PROJECT_NOTES_REVOKED_CHANNEL, receive);
+  },
+  callProjectNotes: (request) =>
+    ipcRenderer.invoke(IpcChannels.CALL_PROJECT_NOTES_CHANNEL, request),
   getHostEnvironmentId: () => ipcRenderer.invoke(IpcChannels.GET_HOST_ENVIRONMENT_ID_CHANNEL),
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>

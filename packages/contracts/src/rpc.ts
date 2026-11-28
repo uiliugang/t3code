@@ -2734,6 +2734,16 @@ const WsOrchestrationV2LaunchThreadRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.la
   error: Schema.Union([OrchestrationV2ThreadLaunchError, EnvironmentAuthorizationError]),
 });
 
+const WsOrchestrationV2SubscribePendingHumanActionsRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.subscribePendingHumanActions,
+  {
+    payload: OrchestrationV2RpcSchemas.subscribePendingHumanActions.input,
+    success: OrchestrationV2RpcSchemas.subscribePendingHumanActions.output,
+    error: Schema.Union([OrchestrationV2GetShellSnapshotError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
+
 const WsOrchestrationV2SubscribeShellRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.subscribeShell, {
   payload: OrchestrationV2RpcSchemas.subscribeShell.input,
   success: OrchestrationV2RpcSchemas.subscribeShell.output,
@@ -3293,6 +3303,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2GetThreadProjectionRpc,
   WsOrchestrationV2GetThreadHistoryPageRpc,
   WsOrchestrationV2LaunchThreadRpc,
+  WsOrchestrationV2SubscribePendingHumanActionsRpc,
   WsOrchestrationV2SubscribeShellRpc,
   WsOrchestrationV2SubscribeThreadRpc,
   WsOrchestrationV2SubscribeCommandOutputRpc,

@@ -31,6 +31,7 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
+import { makeDesktopProjectNotesTransport } from "./DesktopProjectNotesTransport.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
@@ -362,7 +363,11 @@ describe("DesktopBackendManager", () => {
         5_000,
       );
 
-      assert.deepEqual(yield* decodeBootstrap(bootstrapJson), configWithObservability);
+      const { desktopProjectNotesNonce, ...decoded } = yield* decodeBootstrap(bootstrapJson);
+      assert.deepEqual(decoded, configWithObservability);
+      assert.match(desktopProjectNotesNonce ?? "", /^[a-f0-9]{64}$/u);
+      assert.equal(spawnedCommand.options.additionalFds?.fd8?.type, "input");
+      assert.equal(spawnedCommand.options.additionalFds?.fd9?.type, "output");
       assert.equal(
         telemetryJson,
         '{"version":1,"type":"desktopTelemetryHello","electronPid":123}\n',
@@ -422,6 +427,49 @@ describe("DesktopBackendManager", () => {
       yield* Deferred.succeed(finishRecording, undefined);
       yield* Fiber.join(run);
       assert.isTrue(yield* Ref.get(forgotten));
+    }),
+  );
+
+  it.effect("does not forward Notes authority on a stdin-only backend launch", () =>
+    Effect.gen(function* () {
+      const nonce = "f".repeat(64);
+      const notes = yield* makeDesktopProjectNotesTransport(nonce);
+      let observedBootstrap = "";
+      let hasNotesDescriptors = false;
+      const spawner = Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make((command) => {
+          if (command._tag !== "StandardCommand") return Effect.die("Expected a standard command");
+          hasNotesDescriptors =
+            command.options.additionalFds?.fd8 !== undefined ||
+            command.options.additionalFds?.fd9 !== undefined;
+          const stdin = command.options.stdin;
+          if (!Stream.isStream(stdin)) return Effect.die("Expected stdin bootstrap payload");
+          return Stream.runFold(
+            Stream.decodeText(stdin),
+            () => "",
+            (text, chunk) => text + chunk,
+          ).pipe(
+            Effect.tap((text) =>
+              Effect.sync(() => {
+                observedBootstrap = text;
+              }),
+            ),
+            Effect.orDie,
+            Effect.as(makeProcess({ exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)) })),
+          );
+        }),
+      );
+      yield* DesktopBackendManager.runBackendProcess({
+        ...baseConfig,
+        bootstrap: { ...baseConfig.bootstrap, desktopProjectNotesNonce: nonce },
+        bootstrapDelivery: "stdin",
+        desktopTelemetryStream: Stream.empty,
+        projectNotesTransport: notes,
+      }).pipe(Effect.scoped, Effect.provide(Layer.merge(spawner, layerHealthyHttpClient)));
+      assert.isFalse(hasNotesDescriptors);
+      assert.isUndefined((yield* decodeBootstrap(observedBootstrap)).desktopProjectNotesNonce);
+      assert.isNull(yield* notes.status);
     }),
   );
 

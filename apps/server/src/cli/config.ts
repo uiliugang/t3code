@@ -547,6 +547,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     ...(desktopAppUpdate === undefined ? {} : { desktopAppUpdate }),
     desktopBrowserFd,
     desktopBrowserControlFd,
+    desktopProjectNotesNonce: bootstrapFd === 3 ? bootstrap?.desktopProjectNotesNonce : undefined,
     resourceMonitorPath,
     autoBootstrapProjectFromCwd,
     logWebSocketEvents,

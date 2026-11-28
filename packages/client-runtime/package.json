@@ -39,6 +39,10 @@
       "types": "./src/workspaceBasenameLookup.ts",
       "default": "./src/workspaceBasenameLookup.ts"
     },
+    "./sidebar-spaces": {
+      "types": "./src/sidebarSpaces.ts",
+      "default": "./src/sidebarSpaces.ts"
+    },
     "./saved-views": {
       "types": "./src/savedViews.ts",
       "default": "./src/savedViews.ts"
@@ -454,6 +458,10 @@
     "./state/pending-user-input": {
       "types": "./src/state/pendingUserInput.ts",
       "default": "./src/state/pendingUserInput.ts"
+    },
+    "./state/human-action-inbox": {
+      "types": "./src/state/humanActionInbox.ts",
+      "default": "./src/state/humanActionInbox.ts"
     },
     "./state/thread-requests": {
       "types": "./src/state/threadRequests.ts",

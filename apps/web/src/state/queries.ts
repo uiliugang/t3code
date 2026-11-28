@@ -148,8 +148,15 @@ export function useThreadSearch(
       ? { query: settledQuery, matches: result.matches }
       : null;
   // Kept from earlier renders: React's pattern for information from previous renders.
-  const [previous, setPrevious] = useState<SettledThreadSearch | null>(null);
-  if (ready !== null && previous?.matches !== ready.matches) setPrevious(ready);
+  const scopeKey = makeThreadSearchKey(environmentIds, "", scope);
+  const [lastReady, setLastReady] = useState<{
+    readonly scopeKey: string;
+    readonly result: SettledThreadSearch;
+  } | null>(null);
+  const previous = lastReady?.scopeKey === scopeKey ? lastReady.result : null;
+  if (ready !== null && previous?.matches !== ready.matches) {
+    setLastReady({ scopeKey, result: ready });
+  }
   const visible = canSearch
     ? visibleThreadSearch(normalizedQuery, ready, previous)
     : { query: "", matches: EMPTY_THREAD_SEARCH_MATCHES };

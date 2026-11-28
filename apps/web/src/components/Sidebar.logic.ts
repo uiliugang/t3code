@@ -1,3 +1,4 @@
+import { sidebarSpaceProjectKey } from "@t3tools/client-runtime/sidebar-spaces";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
@@ -614,8 +615,7 @@ export function filterSidebarV2VisibleThreads<
         thread.lineage,
         delegatedUnderParent,
       ) &&
-      (scopedProjectKeys === null ||
-        scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
+      (scopedProjectKeys === null || scopedProjectKeys.has(sidebarSpaceProjectKey(thread))),
   );
 }
 

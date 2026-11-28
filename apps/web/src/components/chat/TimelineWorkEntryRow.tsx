@@ -345,7 +345,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     failureItem?.type === "approval_request"
       ? ctx.pendingApprovals.get(failureItem.requestId)
       : undefined;
-  if (pendingApproval) return <TimelinePendingApprovalRow approval={pendingApproval} />;
+  if (pendingApproval && failureItem)
+    return <TimelinePendingApprovalRow approval={pendingApproval} targetItemId={failureItem.id} />;
   if (failureItem?.type === "error" && failureItem.status === "failed") {
     const warning = failureItem.failure.class === "usage_limit";
     const resetAt = failureItem.failure.resetAt;
