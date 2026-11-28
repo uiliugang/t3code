@@ -102,6 +102,8 @@ const applicationServerSettingsTransferPolicy = {
   fallbackModelSelection: "portable",
   projectSettingsOverrides: "local",
   enableAgentDeviceAccess: "portable",
+  localDeviceIdleMinutes: "local",
+  maxLocalDeviceInstances: "local",
   enableDeviceSupport: "portable",
   deviceOnboardingCompleted: "local",
   deviceHosts: "local",

@@ -8,6 +8,7 @@ import {
   DeviceHostId,
   DeviceId,
   DeviceHostUnavailableError,
+  DeviceLocalInstanceLimitError,
   DeviceNotFoundError,
   DeviceOperationError,
   type DeviceOpenInput,
@@ -225,6 +226,9 @@ export class DeviceService extends Context.Service<
       session: DeviceSession,
       shouldClose: Effect.Effect<boolean>,
     ) => Effect.Effect<void, DeviceError>;
+    readonly cleanupIdleLocalDevices: (
+      isThreadRunning: (threadId: ThreadId) => Effect.Effect<boolean>,
+    ) => Effect.Effect<void, DeviceError>;
     readonly shutdown: (input: DeviceShutdownInput) => Effect.Effect<void, DeviceError>;
     readonly detail: (input: DeviceDetailInput) => Effect.Effect<DeviceDetail, DeviceError>;
     readonly action: (input: DeviceActionInput) => Effect.Effect<DeviceDetail, DeviceError>;
@@ -311,12 +315,19 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const settings = yield* ServerSettings.ServerSettingsService;
   const digest = yield* Digest.Digest;
   const lifecycleLock = yield* Semaphore.make(1);
+  const localOpenLock = yield* Semaphore.make(1);
   const openingDevices = new Set<{ readonly hostId: DeviceHostId }>();
+  const managedLocalDevices = new Map<
+    DeviceId,
+    { readonly platform: DevicePlatform; idleSince: number | null }
+  >();
   const readDeviceSettings = settings.getSettings.pipe(
     Effect.map((value) => ({
       enabled: value.enableDeviceSupport,
       agentAccessEnabled: value.enableAgentDeviceAccess,
       onboardingCompleted: value.deviceOnboardingCompleted,
+      idleMinutes: value.localDeviceIdleMinutes,
+      maxInstances: value.maxLocalDeviceInstances,
     })),
     Effect.mapError(
       (cause) =>
@@ -801,6 +812,32 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       if (!device) {
         return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: input.deviceId });
       }
+      const localSimulator = host.id === LOCAL_DEVICE_HOST_ID && !device.physical;
+      if (localSimulator && !device.booted && input.boot !== false) {
+        const { maxInstances } = yield* readDeviceSettings;
+        if (maxInstances > 0) {
+          const running = new Set(
+            state.devices
+              .filter(
+                (candidate) =>
+                  candidate.hostId === LOCAL_DEVICE_HOST_ID &&
+                  candidate.booted &&
+                  !candidate.physical,
+              )
+              .map((candidate) => candidate.id),
+          );
+          const status = state.hostStatuses[host.id];
+          for (const [id, { platform }] of managedLocalDevices) {
+            if (
+              status?.incompletePlatforms?.includes(platform) ||
+              (platform === "android" && status?.androidDiscoveryIncomplete)
+            )
+              running.add(id);
+          }
+          if (running.size >= maxInstances)
+            return yield* new DeviceLocalInstanceLimitError({ limit: maxInstances });
+        }
+      }
       // Hosts that route their own streams never encode emulator video with serve-emu's ffmpeg.
       if (device.platform === "android" && !device.physical && !ready.upstream) {
         // Resolve the override on the device host the way its hub does.
@@ -840,7 +877,18 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
             booting,
           ],
         }));
-        const bootedId = yield* ready.devices.boot(device, context).pipe(
+        const starting = device;
+        const bootedId = yield* Effect.gen(function* () {
+          const id = yield* ready.devices.boot(starting, context);
+          if (localSimulator) {
+            managedLocalDevices.set(id, {
+              platform: starting.platform,
+              idleSince: DateTime.toEpochMillis(yield* DateTime.now),
+            });
+          }
+          state = yield* refresh(ready);
+          return id;
+        }).pipe(
           Effect.ensuring(
             publish((current) => ({
               ...current,
@@ -850,7 +898,6 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
             })),
           ),
         );
-        state = yield* refresh(ready);
         // Retained entries predate the boot, so only a complete listing confirms the booted device.
         device = state.hostStatuses[host.id]?.incompletePlatforms?.includes(device.platform)
           ? undefined
@@ -883,6 +930,8 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               hostLabel: host.label,
               reason: "Device support was turned off while the device was opening.",
             });
+          const managed = localSimulator ? managedLocalDevices.get(session.deviceId) : undefined;
+          if (managed) managed.idleSince = DateTime.toEpochMillis(yield* DateTime.now);
           yield* publish((current) => ({
             ...current,
             sessions: [
@@ -910,7 +959,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
             return opening;
           }),
         ),
-        () => effect,
+        () =>
+          (input.hostId ?? LOCAL_DEVICE_HOST_ID) === LOCAL_DEVICE_HOST_ID && input.boot !== false
+            ? localOpenLock.withPermit(effect)
+            : effect,
         (opening) => Effect.sync(() => void openingDevices.delete(opening)),
       ),
   );
@@ -928,6 +980,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     platform: DevicePlatform,
   ) {
     yield* ready.devices.shutdown({ id: deviceId, platform });
+    if (ready.hostId === LOCAL_DEVICE_HOST_ID) managedLocalDevices.delete(deviceId);
     yield* publish((state) => ({
       ...state,
       devices: state.devices.map((device) =>
@@ -936,6 +989,19 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           : device,
       ),
     }));
+  });
+
+  const releaseAgentSession = Effect.fn("DeviceService.releaseAgentSession")(function* (
+    session: DeviceSession,
+    shouldRelease?: Effect.Effect<boolean>,
+  ) {
+    const host = yield* resolveHost(session.hostId);
+    const name = yield* agentDeviceSession(session.threadId, session.hostId, session.deviceId).pipe(
+      Effect.provideService(Digest.Digest, digest),
+    );
+    if (shouldRelease && !(yield* shouldRelease)) return false;
+    yield* host.releaseAgentSession(name, session.deviceId);
+    return true;
   });
 
   const closeSession = Effect.fn("DeviceService.closeSession")(function* (
@@ -990,14 +1056,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           : closing;
         const released: DeviceSession[] = [];
         for (const session of ending) {
-          const host = yield* resolveHost(session.hostId);
-          const name = yield* agentDeviceSession(
-            session.threadId,
-            session.hostId,
-            session.deviceId,
-          ).pipe(Effect.provideService(Digest.Digest, digest));
-          if (shouldClose && !(yield* shouldClose)) break;
-          yield* host.releaseAgentSession(name, session.deviceId);
+          if (!(yield* releaseAgentSession(session, shouldClose))) break;
           released.push(session);
         }
         if (shouldClose && !(yield* shouldClose)) return [];
@@ -1075,19 +1134,95 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       ),
   );
 
+  const cleanupIdleLocalDevices = Effect.fn("DeviceService.cleanupIdleLocalDevices")(function* (
+    isThreadRunning: (threadId: ThreadId) => Effect.Effect<boolean>,
+  ) {
+    const candidates = [...managedLocalDevices.keys()];
+    if (candidates.length === 0) return;
+    const ready = yield* currentReadiness(LOCAL_DEVICE_HOST_ID);
+    if (!ready) return;
+    const [, failures] = yield* Effect.partition(candidates, (deviceId) =>
+      lifecycleLock.withPermit(
+        Effect.gen(function* () {
+          const { enabled, idleMinutes } = yield* readDeviceSettings;
+          if (
+            !enabled ||
+            idleMinutes === 0 ||
+            [...openingDevices].some(({ hostId }) => hostId === LOCAL_DEVICE_HOST_ID)
+          )
+            return;
+          const managed = managedLocalDevices.get(deviceId);
+          if (!managed) return;
+          const { platform } = managed;
+          const now = DateTime.toEpochMillis(yield* DateTime.now);
+          const { state } = yield* SynchronizedRef.get(stateRef);
+          const sessions = state.sessions.filter(
+            (session) => session.hostId === LOCAL_DEVICE_HOST_ID && session.deviceId === deviceId,
+          );
+          const runningClaim = Effect.findFirst(sessions, (session) =>
+            isThreadRunning(session.threadId),
+          ).pipe(Effect.map(Option.isSome));
+          if (yield* runningClaim) {
+            managed.idleSince = null;
+            return;
+          }
+          const idleSince = (managed.idleSince ??= now);
+          if (now - idleSince < idleMinutes * 60_000) return;
+          const listing = yield* fetchDevices(ready);
+          if (
+            listing.incompletePlatforms.includes(platform) ||
+            (platform === "android" && listing.androidDiscoveryIncomplete)
+          )
+            return;
+          const device = listing.devices.find((device) => device.id === deviceId);
+          if (!device?.booted || device.physical) {
+            managedLocalDevices.delete(deviceId);
+            return;
+          }
+          const shouldShutdown = Effect.gen(function* () {
+            const settings = yield* readDeviceSettings;
+            if (
+              !settings.enabled ||
+              settings.idleMinutes === 0 ||
+              now - idleSince < settings.idleMinutes * 60_000
+            )
+              return false;
+            if (!(yield* runningClaim)) return true;
+            managed.idleSince = null;
+            return false;
+          });
+          if (!(yield* shouldShutdown)) return;
+          for (const session of sessions) yield* releaseAgentSession(session);
+          if (sessions.length > 0 && !(yield* shouldShutdown)) return;
+          yield* releaseLaunchers(sessions);
+          yield* shutdownDevice(ready, deviceId, platform);
+          yield* publish((current) => ({
+            ...current,
+            sessions: current.sessions.filter((session) => !sessions.includes(session)),
+          }));
+        }),
+      ),
+    );
+    if (failures[0] !== undefined) return yield* failures[0];
+  });
+
   // Sessions retire before the power-off, while their agent-device sessions can still close the app;
   // agent-device keeps a claim whose app close fails.
   const shutdown: DeviceService["Service"]["shutdown"] = Effect.fn("DeviceService.shutdown")(
     function* (input) {
       const host = yield* resolveHost(input.hostId);
-      yield* publish((current) => ({
-        ...current,
-        sessions: current.sessions.filter(
-          (session) => !(session.hostId === host.id && session.deviceId === input.deviceId),
-        ),
-      }));
       const ready = yield* readiness(host.id);
-      yield* shutdownDevice(ready, input.deviceId, input.platform);
+      yield* lifecycleLock.withPermit(
+        Effect.gen(function* () {
+          yield* publish((current) => ({
+            ...current,
+            sessions: current.sessions.filter(
+              (session) => !(session.hostId === host.id && session.deviceId === input.deviceId),
+            ),
+          }));
+          yield* shutdownDevice(ready, input.deviceId, input.platform);
+        }),
+      );
       yield* refreshAfterShutdown(ready);
     },
   );
@@ -1334,6 +1469,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       open,
       close,
       closeRetired,
+      cleanupIdleLocalDevices,
       shutdown,
       detail,
       action,

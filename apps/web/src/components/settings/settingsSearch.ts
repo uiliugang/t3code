@@ -1249,6 +1249,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("simulator support xcode android studio sdk avd runtime")],
   },
   {
+    id: "local-device-idle-minutes",
+    title: msg("Idle shutdown (minutes)"),
+    to: "/settings/devices",
+    targetId: "local-devices",
+  },
+  {
+    id: "max-local-device-instances",
+    title: msg("Maximum local simulator instances"),
+    to: "/settings/devices",
+    targetId: "local-devices",
+  },
+  {
     id: "browser-profiles",
     title: msg("Browser profiles"),
     to: "/settings/browser",

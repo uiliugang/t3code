@@ -629,7 +629,17 @@ export class DeviceActionUnavailableError extends Schema.TaggedError<
   }
 }
 
+export class DeviceLocalInstanceLimitError extends Schema.TaggedError<DeviceLocalInstanceLimitError>()(
+  "DeviceLocalInstanceLimitError",
+  { limit: Schema.Int },
+) {
+  override get message(): string {
+    return `The local simulator limit (${this.limit}) has been reached. Stop a simulator or increase the limit in Device settings.`;
+  }
+}
+
 export const DeviceError = Schema.Union([
+  DeviceLocalInstanceLimitError,
   DeviceHostUnavailableError,
   DevicePlatformUnavailableError,
   DeviceNotFoundError,
@@ -724,6 +734,7 @@ export class DeviceToolUnavailableError extends Schema.TaggedError<
 }
 
 export const DeviceToolError = Schema.Union([
+  DeviceLocalInstanceLimitError,
   DeviceToolUnavailableError,
   DeviceHostUnavailableError,
   DevicePlatformUnavailableError,

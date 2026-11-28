@@ -1642,6 +1642,86 @@ it.effect.each([
     }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true }))),
 );
 
+describe("local simulator lifecycle", () => {
+  it.effect("enforces the shared instance limit while another platform is unavailable", () =>
+    Effect.gen(function* () {
+      const bootStarted = yield* Deferred.make<void>();
+      const finishBoot = yield* Deferred.make<void>();
+      const { service, settings, requests, devices, discoveryErrors } = yield* fixture(
+        Deferred.succeed(bootStarted, undefined).pipe(Effect.andThen(Deferred.await(finishBoot))),
+      );
+      yield* service.configure({ enabled: true });
+      yield* Ref.update(settings, (current) => ({ ...current, maxLocalDeviceInstances: 1 }));
+      yield* Ref.set(discoveryErrors, [{ message: "[apple-utils] Failed to list devices:" }]);
+      const threadId = ThreadId.make("starts");
+      const first = yield* Effect.forkChild(
+        service.open({ threadId, deviceId: "Pixel_API_35", platform: "android" }),
+      );
+      yield* Deferred.await(bootStarted);
+      yield* Ref.set(discoveryErrors, []);
+      devices.push({
+        id: "ios-test",
+        platform: "ios",
+        name: "iOS test device",
+        version: "test",
+        booted: false,
+        physical: false,
+      });
+      const second = yield* Effect.forkChild(
+        Effect.result(service.open({ threadId, deviceId: "ios-test", platform: "ios" })),
+      );
+      yield* Deferred.succeed(finishBoot, undefined);
+      const session = yield* Fiber.join(first);
+      expect(yield* Fiber.join(second)).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "DeviceLocalInstanceLimitError", limit: 1 },
+      });
+      yield* service.open({
+        threadId: ThreadId.make("attach"),
+        deviceId: session.deviceId,
+        platform: "android",
+      });
+      expect(requests.filter((url) => url.endsWith("/boot"))).toHaveLength(1);
+    }),
+  );
+
+  it.effect(
+    "keeps a claimed simulator during an agent run and closes it after ten idle minutes",
+    () =>
+      Effect.gen(function* () {
+        const { service, requests } = yield* fixture();
+        yield* service.configure({ enabled: true });
+        const threadId = ThreadId.make("idle-claim");
+        const session = yield* service.open({
+          threadId,
+          deviceId: "Pixel_API_35",
+          platform: "android",
+        });
+        const other = yield* service.open({
+          threadId: ThreadId.make("idle-peer"),
+          deviceId: session.deviceId,
+          platform: "android",
+        });
+        const sweep = (isRunning: boolean) =>
+          service.cleanupIdleLocalDevices((id) =>
+            Effect.succeed(isRunning && id === other.threadId),
+          );
+        yield* TestClock.adjust("10 minutes");
+        yield* sweep(true);
+        yield* sweep(false);
+        yield* TestClock.adjust("9 minutes");
+        yield* sweep(false);
+        expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(0);
+        yield* TestClock.adjust("1 minute");
+        yield* sweep(false);
+        const state = yield* service.state;
+        expect(requests.filter((url) => url.endsWith("/shutdown"))).toHaveLength(1);
+        expect(state.sessions).toEqual([]);
+        expect(state.devices.find((device) => device.id === session.deviceId)?.booted).toBe(false);
+      }),
+  );
+});
+
 describe("Android close with shutdown", () => {
   const openEmulator = Effect.fn("openEmulator")(function* () {
     const harness = yield* fixture();

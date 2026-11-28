@@ -25,6 +25,7 @@ import {
   DEFAULT_PREVIEW_APPEARANCE,
   DEFAULT_PREVIEW_ZOOM_FACTOR,
   DEFAULT_SERVER_SETTINGS,
+  LOCAL_DEVICE_HOST_ID,
   FILL_PREVIEW_VIEWPORT,
   PREVIEW_VIEWPORT_MAX_AREA,
   PREVIEW_VIEWPORT_MAX_DIMENSION,
@@ -41,6 +42,7 @@ import { usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { isValidSearchUrlTemplate } from "@t3tools/shared/preview";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
 import { MoreVertical, Plus as PlusIcon } from "lucide-react";
+import { useAtomMount } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import { useRef, useState } from "react";
 import { msg, T, useGT, useMessages } from "gt-react";
@@ -51,7 +53,13 @@ import { resolveEnvironmentOptionLabel } from "~/components/BranchToolbar.logic"
 import { previewBridge } from "~/components/preview/previewBridge";
 import { cn, randomUUID } from "~/lib/utils";
 import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
-import { deviceEnvironment, useDeviceState } from "~/state/device";
+import {
+  deviceEnvironment,
+  deviceHostProbeAtom,
+  NO_DEVICE_PROBE_ATOM,
+  useDeviceState,
+} from "~/state/device";
+import { serverEnvironment } from "~/state/server";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { formatEnvironmentQueryError } from "~/state/query";
@@ -890,11 +898,165 @@ function DeviceIntegrationSettings() {
           agentAccessEnabled={settings.enableAgentDeviceAccess}
         />
       </SettingsSection>
+      <LocalDeviceSettings key={environmentId} environmentId={environmentId} />
       <DeviceSourcesSettings
         supportsEas={state.supportsEasHosts === true}
         supportsSimlock={state.supportsSimlockHosts === true}
       />
     </>
+  );
+}
+
+function LocalDeviceSettings({ environmentId }: { environmentId: EnvironmentId | null }) {
+  const { scope, environment } = useSettingsScope();
+  const gt = useGT();
+  const t = useUiTranslation();
+  const searchableSetting = useSearchableSetting();
+  const { state, loaded, error } = useDeviceState(environmentId);
+  const canWrite = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const update = useAtomCommand(serverEnvironment.updateSettings);
+  const list = useAtomCommand(deviceEnvironment.list);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const settings = environment?.serverConfig?.settings;
+  const enabled = settings?.enableDeviceSupport === true;
+  useAtomMount(
+    enabled && environmentId && loaded ? deviceHostProbeAtom(environmentId) : NO_DEVICE_PROBE_ATOM,
+  );
+  const editable = canWrite && scope.kind !== "project" && scope.kind !== "checkout";
+  const localDevices = state.devices.filter((device) => device.hostId === LOCAL_DEVICE_HOST_ID);
+  const localBoots = (state.bootingDevices ?? []).filter(
+    (device) => device.hostId === LOCAL_DEVICE_HOST_ID,
+  );
+  const booting = new Set(localBoots.map((device) => device.id));
+  const devices = [
+    ...new Map([...localDevices, ...localBoots].map((device) => [device.id, device])).values(),
+  ];
+  const running = devices.filter(
+    (device) => !device.physical && (device.booted || booting.has(device.id)),
+  ).length;
+  const hostStatus = state.hostStatuses[LOCAL_DEVICE_HOST_ID];
+  const discovering = refreshing || deviceHubReadiness(state).busy;
+  const discoveryIncomplete =
+    hostStatus?.androidDiscoveryIncomplete || (hostStatus?.incompletePlatforms?.length ?? 0) > 0;
+  const inventory =
+    !environmentId || !loaded
+      ? gt("Local device status is unavailable.")
+      : !enabled
+        ? gt("Turn on device support to see local devices.")
+        : error || hostStatus?.status === "failed"
+          ? gt("Local device status is unavailable.")
+          : hostStatus?.status === "ready"
+            ? gt("{total} devices · {running} simulators running or starting", {
+                total: devices.length,
+                running,
+              })
+            : discovering
+              ? t("Refreshing…")
+              : gt("Refresh to find local devices.");
+
+  return (
+    <SettingsSection
+      id="local-devices"
+      title={gt("Local devices")}
+      headerAction={
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!environmentId || !enabled || discovering}
+          onClick={() => {
+            if (!environmentId) return;
+            setRefreshing(true);
+            void list({ environmentId, input: {} }).finally(() => setRefreshing(false));
+          }}
+        >
+          {refreshing ? t("Refreshing…") : t("Refresh devices")}
+        </Button>
+      }
+    >
+      {(
+        [
+          {
+            key: "localDeviceIdleMinutes",
+            setting: searchableSetting("local-device-idle-minutes"),
+            description: gt(
+              "Close local simulators started by T3 Code after this long without agent use. Enter 0 to turn off idle shutdown.",
+            ),
+          },
+          {
+            key: "maxLocalDeviceInstances",
+            setting: searchableSetting("max-local-device-instances"),
+            description: gt(
+              "Limits how many local simulators can run or start at once. Enter 0 for no limit.",
+            ),
+          },
+        ] as const
+      ).map(({ key, setting, description }) => {
+        const value = settings?.[key] ?? DEFAULT_SERVER_SETTINGS[key];
+        return (
+          <SettingsRow
+            key={key}
+            {...setting}
+            description={description}
+            control={
+              <NumberField
+                value={value}
+                min={0}
+                max={Number.MAX_SAFE_INTEGER}
+                disabled={!environmentId || !editable}
+                format={NO_GROUPING}
+                size="sm"
+                className="w-24"
+                onValueCommitted={(next) => {
+                  if (
+                    !environmentId ||
+                    !editable ||
+                    next === null ||
+                    !Number.isSafeInteger(next) ||
+                    next < 0 ||
+                    next === value ||
+                    !readEnvironmentScope(environmentId, AuthSettingsWriteScope)
+                  )
+                    return;
+                  void update({ environmentId, input: { patch: { [key]: next } } });
+                }}
+              >
+                <NumberFieldGroup>
+                  <NumberFieldInput
+                    aria-label={setting.title}
+                    onKeyDown={commitNumberFieldOnEnter}
+                  />
+                </NumberFieldGroup>
+              </NumberField>
+            }
+          />
+        );
+      })}
+      <SettingsRow title={gt("Device inventory")} description={inventory}>
+        {discoveryIncomplete ? (
+          <p className="text-sm text-muted-foreground">{gt("Some devices could not be listed.")}</p>
+        ) : null}
+        {devices.length > 0 && enabled ? (
+          <ul className="divide-y divide-border">
+            {devices.map((device) => (
+              <li
+                key={device.id}
+                className="flex min-w-0 flex-wrap justify-between gap-x-3 py-2 text-sm"
+              >
+                <span className="min-w-0 break-words">{device.name}</span>
+                <span className="text-muted-foreground">
+                  {booting.has(device.id)
+                    ? t("Starting…")
+                    : device.booted
+                      ? t("Running")
+                      : t("Stopped")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </SettingsRow>
+    </SettingsSection>
   );
 }
 
