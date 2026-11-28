@@ -154,6 +154,7 @@ import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
 import { ProjectsSettings } from "./ProjectsSettings";
 import { SettingsScopeProvider } from "./SettingsScopeContext";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
+import { SettingsScopeSentence } from "./SettingsScopeSentence";
 import { validateSettingsScopeSearch, type SettingsScopeSearch } from "./settingsScope";
 import { retainSettingsScope, validateSettingsRouteSearch } from "./settingsScopeNavigation";
 
@@ -304,6 +305,7 @@ async function mountSettings(search: SettingsScopeSearch) {
         search={route.useSearch()}
         onChange={(next) => void router.navigate({ to: "/settings/projects", search: () => next })}
       >
+        <SettingsScopeSentence />
         <ProjectsSettings />
       </SettingsScopeProvider>
     ),

@@ -16,30 +16,47 @@ import { useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { isConnectedWithConfig } from "./scopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { EnvironmentScopeMenu } from "./SettingsScopeSentence";
+
+export function supportsPeerLinks(environment: EnvironmentPresentation): boolean {
+  return environment.serverConfig?.environment.capabilities.peerLinks === true;
+}
+
+export function resolveEnvironmentSettingSelection(
+  candidates: readonly EnvironmentPresentation[],
+  machine: string | undefined,
+  primaryEnvironmentId: string | null,
+): string | null {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0]!.environmentId;
+  if (machine === undefined) return null;
+  if (candidates.some((environment) => environment.environmentId === machine)) {
+    return machine;
+  }
+  return (
+    candidates.find(
+      (environment) =>
+        environment.environmentId === primaryEnvironmentId && isConnectedWithConfig(environment),
+    )?.environmentId ??
+    candidates.find(isConnectedWithConfig)?.environmentId ??
+    candidates[0]?.environmentId ??
+    null
+  );
+}
 
 export function useEnvironmentSettingTargets(
   keys: readonly string[],
   includes: (environment: EnvironmentPresentation) => boolean = () => true,
-  label?: string,
 ) {
   const { environments } = useEnvironments();
   const { search } = useSettingsScope();
   const primary = usePrimaryEnvironmentId();
-  const [selection, setSelection] = useState<string | null>();
   const [saving, setSaving] = useState(false);
   const candidates = environments.filter(includes);
   const connected = candidates.filter(
     (environment): environment is EnvironmentPresentation & { serverConfig: ServerConfig } =>
       isConnectedWithConfig(environment),
   );
-  const selected =
-    selection !== undefined
-      ? selection
-      : (search.machine ??
-        connected.find((environment) => environment.environmentId === primary)?.environmentId ??
-        connected[0]?.environmentId ??
-        null);
+  const selected = resolveEnvironmentSettingSelection(candidates, search.machine, primary);
   const targets = connected.filter(
     (environment) => selected === null || selected === environment.environmentId,
   );
@@ -51,22 +68,8 @@ export function useEnvironmentSettingTargets(
     targets.length > 0 && targets.every((environment) => writable.has(environment.environmentId));
   const canWrite = permitted && !managedBy && !saving;
   const update = useAtomCommand(serverEnvironment.updateSettings);
-  const picker =
-    candidates.length > 0 ? (
-      <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 text-sm text-muted-foreground sm:px-4">
-        {label !== undefined && <span>{label}</span>}
-        <EnvironmentScopeMenu
-          groups={[]}
-          environments={candidates}
-          value={selected === null ? {} : { machine: selected }}
-          onChange={(next) => setSelection(next.machine ?? null)}
-          singleEnvironment={candidates.length === 1}
-        />
-      </div>
-    ) : null;
 
   return {
-    picker,
     targets,
     permitted,
     managedBy,

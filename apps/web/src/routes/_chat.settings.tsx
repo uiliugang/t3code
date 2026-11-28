@@ -17,7 +17,10 @@ import {
 import { useEnvironments } from "../state/environments";
 import { SINGLE_ENVIRONMENT_SETTINGS_PATHS } from "../components/settings/settingsScopeAxis";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
-import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
+import {
+  SETTINGS_DEVICE_ONLY_PATHS,
+  SettingsScopeSentence,
+} from "../components/settings/SettingsScopeSentence";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import { useRenderedSettingsPathname } from "../components/settings/useRenderedSettingsPathname";
 import {
@@ -135,7 +138,9 @@ function SettingsContentLayout() {
   const contentScopeKey =
     pathname === "/settings/diagnostics" || pathname === "/settings/providers"
       ? environment?.environmentId
-      : JSON.stringify(search);
+      : pathname === "/settings/connections"
+        ? "connections"
+        : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
 
   return (
@@ -143,9 +148,13 @@ function SettingsContentLayout() {
       <div className="relative flex min-h-0 flex-1">
         <SettingsSidebarNav pathname={navPathname} />
         <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
-            <SettingsBreadcrumb pathname={pathname} />
-            <div className="ms-auto flex shrink-0 items-center gap-1">
+          <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b py-1.5 ps-5 pe-2">
+            <SettingsBreadcrumb pathname={pathname} className="me-auto min-w-0 shrink" />
+            <SettingsScopeSentence
+              pathname={pathname}
+              className="max-sm:order-3 max-sm:basis-full"
+            />
+            <div className="flex shrink-0 items-center gap-1">
               {pathname === "/settings/general" ? (
                 <RestoreDeviceDefaultsButton
                   onRestored={() => setRestoreSignal((value) => value + 1)}
