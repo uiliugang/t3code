@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from "vite-plus/test";
 
 import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import {
+  applyAutomaticDraftWorktreeBase,
   readPendingDraftCheckout,
   readPendingWorkspaceDefault,
   readPreparedDraftCheckout,
@@ -56,6 +57,30 @@ it("keeps typed text and makes the prepared workspace available even to a detach
   get().setDraftThreadContext(draftId, { branch: "later", worktreePath: null });
   expect(readPreparedDraftCheckout(draftId, outcome.workspace)).toBeNull();
 });
+
+it.each(["automatic", "manual"] as const)(
+  "handles %s base branch selection while checkout is pending",
+  async (selection) => {
+    get().setDraftThreadContext(draftId, {
+      branch: null,
+      envMode: "worktree",
+      workspaceExplicit: true,
+      environmentSelection: "manual",
+    });
+    const checkout = prepare();
+    const selectBase = () => get().setDraftThreadContext(draftId, { branch: "main" });
+    if (selection === "automatic") applyAutomaticDraftWorktreeBase(draftId, selectBase);
+    else selectBase();
+
+    checkout.raw.resolve("success");
+    const automatic = selection === "automatic";
+    expect(await checkout.result).toMatchObject({ applied: automatic });
+    expect(get().getDraftSession(draftId)).toMatchObject({
+      branch: automatic ? "pr-1" : "main",
+      worktreePath: automatic ? "/worktrees/pr-1" : null,
+    });
+  },
+);
 
 it("an older checkout cannot overwrite the new project or its text", async () => {
   const checkout = prepare();

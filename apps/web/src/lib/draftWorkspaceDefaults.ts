@@ -73,6 +73,17 @@ interface PendingDraftCheckout {
 }
 
 const pendingCheckouts = new Map<DraftId, PendingDraftCheckout>();
+let settingAutomaticWorktreeBaseFor: DraftId | null = null;
+
+export function applyAutomaticDraftWorktreeBase(draftId: DraftId, update: () => void): void {
+  const previous = settingAutomaticWorktreeBaseFor;
+  settingAutomaticWorktreeBaseFor = draftId;
+  try {
+    update();
+  } finally {
+    settingAutomaticWorktreeBaseFor = previous;
+  }
+}
 
 export function readPendingDraftCheckout(draftId: DraftId) {
   return pendingCheckouts.get(draftId)?.outcome ?? null;
@@ -83,7 +94,7 @@ export function readPreparedDraftCheckout(draftId: DraftId, workspace: string) {
   return workspaceKey(draft) === workspace ? draft : null;
 }
 
-/** Only the current checkout can re-point a draft, and only while its workspace is unchanged. */
+/** Automatic base selection can run while the PR checkout is still preparing. */
 export function trackPendingDraftCheckout<T>(
   draftId: DraftId,
   projectRef: ScopedProjectRef,
@@ -93,9 +104,9 @@ export function trackPendingDraftCheckout<T>(
 ): Promise<{ readonly value: T; readonly applied: boolean }> {
   const get = () => useComposerDraftStore.getState().getDraftSession(draftId);
   const initial = get();
-  const initialWorkspace = workspaceKey(initial);
+  let expectedWorkspace = workspaceKey(initial);
   let changed =
-    initialWorkspace === null ||
+    expectedWorkspace === null ||
     initial?.environmentId !== projectRef.environmentId ||
     initial?.projectId !== projectRef.projectId ||
     (initial?.selectedProjectIds?.length ?? 0) >= 2;
@@ -103,7 +114,12 @@ export function trackPendingDraftCheckout<T>(
     Promise.withResolvers<DraftCheckoutOutcome>();
   const stopWatching = useComposerDraftStore.subscribe(() => {
     const draft = get();
-    changed ||= workspaceKey(draft) !== initialWorkspace;
+    const workspace = workspaceKey(draft);
+    if (settingAutomaticWorktreeBaseFor === draftId) {
+      expectedWorkspace = workspace;
+    } else {
+      changed ||= workspace !== expectedWorkspace;
+    }
     if (!isInProject(draft, projectRef)) {
       stopWatching();
       if (pendingCheckouts.get(draftId) === pending) pendingCheckouts.delete(draftId);
@@ -115,7 +131,7 @@ export function trackPendingDraftCheckout<T>(
     !isCancelled() &&
     !changed &&
     pendingCheckouts.get(draftId) === pending &&
-    workspaceKey(get()) === initialWorkspace;
+    workspaceKey(get()) === expectedWorkspace;
   const prepared = checkout.then((value) => {
     const current = canApply();
     stopWatching();
