@@ -321,7 +321,10 @@ function makeHarness(options: HarnessOptions = {}) {
       Layer.mergeAll(
         layerExternalServices,
         layerLaunchThreads,
-        ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
+        ProjectionStore.layer.pipe(
+          Layer.provide(NodeCrypto.layerDigest),
+          Layer.provide(layerDatabase),
+        ),
         layerReceipts,
         layerOrchestrator,
         ProjectionStore.layer.pipe(Layer.provide(NodeCrypto.layer), Layer.provide(layerDatabase)),

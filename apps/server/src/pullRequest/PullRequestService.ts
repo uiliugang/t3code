@@ -447,6 +447,14 @@ function listCursorKey(
   return `${changeRequestSourceKey(kind, origin)} ${repository.toLowerCase()}`;
 }
 
+function statsRequesterKey(
+  project: Pick<SupportedProject, "project" | "kind" | "origin">,
+  repository: string,
+  number: number,
+): string {
+  return JSON.stringify([project.project.id, project.kind, project.origin, repository, number]);
+}
+
 // Preserve exclusions across slices sharing a timestamp to avoid redelivery.
 function nextListCursor(
   previous: ListCursor | undefined,
@@ -1217,7 +1225,9 @@ export const make = Effect.gen(function* () {
             (ref.target === undefined || sameEndpoint(candidate)),
         );
         const checkoutEndpoints = new Set(
-          matchingCheckouts.map((candidate) => changeRequestSourceKey(candidate.kind, candidate.origin)),
+          matchingCheckouts.map((candidate) =>
+            changeRequestSourceKey(candidate.kind, candidate.origin),
+          ),
         );
         if (checkoutEndpoints.size > 1) {
           return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
@@ -3198,12 +3208,15 @@ export const make = Effect.gen(function* () {
       const [project] = candidates;
       if (
         project?.api.listChangeRequestStats === undefined ||
-        new Set(candidates.map((candidate) => changeRequestSourceKey(candidate.kind, candidate.origin))).size > 1
-      ) continue;
-      wanted.set(
-        JSON.stringify([ref.projectId, project.kind, project.origin, repository, ref.number]),
-        { project, number: ref.number },
-      );
+        new Set(
+          candidates.map((candidate) => changeRequestSourceKey(candidate.kind, candidate.origin)),
+        ).size > 1
+      )
+        continue;
+      wanted.set(statsRequesterKey(project, repository, ref.number), {
+        project,
+        number: ref.number,
+      });
     }
     const bySource = Map.groupBy(wanted.values(), ({ project }) =>
       changeRequestSourceKey(project.kind, project.origin),
@@ -3245,7 +3258,9 @@ export const make = Effect.gen(function* () {
               ).map((project) => ({
                 projectId: project.project.id,
                 host: project.host,
-                target: project.inferredOrigin ? undefined : { provider: project.kind, origin: project.origin },
+                target: project.inferredOrigin
+                  ? undefined
+                  : { provider: project.kind, origin: project.origin },
                 repository: project.repository,
                 number: stat.number,
                 additions: stat.additions,
@@ -4143,7 +4158,8 @@ export const make = Effect.gen(function* () {
           stat.projectId === ref.projectId &&
           (ref.host === undefined || stat.host === ref.host.toLowerCase()) &&
           (ref.target === undefined ||
-            (stat.target?.provider === ref.target.provider && stat.target.origin === ref.target.origin)) &&
+            (stat.target?.provider === ref.target.provider &&
+              stat.target.origin === ref.target.origin)) &&
           stat.repository.toLowerCase() === ref.repository.toLowerCase() &&
           stat.number === ref.number,
       );

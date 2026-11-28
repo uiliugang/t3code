@@ -25,6 +25,7 @@ import {
   scopedPullRequestListKey,
   shownPullRequestListPages,
   pullRequestListRowsAreEqual,
+  pullRequestStatKey,
   withAnsweredPullRequestStats,
   withListedPullRequests,
   withShownPullRequestStats,
@@ -525,6 +526,43 @@ describe("shown PR diff stats", () => {
       [4, 1],
     ]);
     expect(filled[1]).toBe(rows[1]);
+  });
+
+  it("keeps same-number merge request stats separate for two inferred GitLab hosts", () => {
+    const hosts = ["first.gitlab.test", "second.gitlab.test"] as const;
+    const requests = hosts.map((host) => ({
+      ...entry(1, { host, provider: SourceControlProviderKind.make("gitlab") }),
+      environmentId: cups,
+    }));
+    const answer = [
+      { ...stat(1, 3, 2), host: hosts[0] },
+      { ...stat(1, 11, 4), host: hosts[1] },
+    ];
+    const refs = requests.map(({ projectId, host, repository, number }) => ({
+      projectId,
+      host,
+      repository,
+      number,
+    }));
+    const input = { refs };
+    expect(
+      withShownPullRequestStats(requests, [{ environmentId: cups, input, stats: answer }]).map(
+        ({ additions }) => additions,
+      ),
+    ).toEqual([3, 11]);
+    const listed = withListedPullRequests(EMPTY_PULL_REQUEST_STATS_CACHE, requests);
+    const cached = withAnsweredPullRequestStats(listed.cache, input, answer);
+    expect(requests.map((row) => cached.stats.get(pullRequestStatKey(row))?.additions)).toEqual([
+      3, 11,
+    ]);
+    expect(
+      withShownPullRequestStats(requests, [{ environmentId: cups, input, stats: [stat(1, 9, 9)] }]),
+    ).toBe(requests);
+    expect(
+      withShownPullRequestStats(requests, [
+        { environmentId: cups, input: { refs: refs.slice(0, 1) }, stats: [stat(1, 9, 9)] },
+      ]).map(({ additions }) => additions),
+    ).toEqual([9, 0]);
   });
 });
 
