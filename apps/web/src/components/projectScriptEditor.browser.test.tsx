@@ -78,6 +78,8 @@ describe("project action editor save lifecycle", () => {
     expect(onSubmit).toHaveBeenLastCalledWith(
       "build",
       expect.objectContaining({ stopOnSettle: true }),
+      expect.any(Function),
+      false,
     );
 
     await open(screen, request("test"));
@@ -128,6 +130,8 @@ it.each([false, true])(
     expect(onSubmit).toHaveBeenLastCalledWith(
       null,
       expect.objectContaining({ stopOnSettle: !automatic }),
+      expect.any(Function),
+      false,
     );
   },
 );

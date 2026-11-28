@@ -385,5 +385,5 @@ it("shows process counts, I/O totals and the process scan in Simplified Chinese"
   await expect.element(screen.getByText("1 个进程", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("已观测 512 B", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("已观测 300 B", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("已保留 12/40", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("保留 12/40", { exact: true })).toBeVisible();
 });

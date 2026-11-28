@@ -4,11 +4,13 @@ import {
   EnvironmentId,
   IssueTrackerKind,
   ORCHESTRATION_V2_WS_METHODS,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderThreadId,
   ProviderUploadFeedbackError,
   RunId,
+  SourceControlProviderKind,
   ThreadId,
   WS_METHODS,
   type IssueDetail,
@@ -171,26 +173,48 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
     title: "Keep tabs visible",
   };
   const grouped = threadWithHistory("issue-grouped", 1);
-  using _environment = installFakeEnvironment([
-    first,
+  using _environment = installFakeEnvironment(
+    [
+      first,
+      {
+        ...linked,
+        issues: [issue],
+        pullRequests: [
+          {
+            host: "github.com",
+            repository: "pingdotgg/t3code",
+            number: 124,
+            url: "https://github.com/pingdotgg/t3code/pull/124",
+            source: "manual",
+            linkedAt: "2026-01-01T00:00:00.000Z",
+            snapshot: null,
+            stack: null,
+          },
+        ],
+      },
+      { ...grouped, issues: [completed, issue] },
+    ],
     {
-      ...linked,
-      issues: [issue],
-      pullRequests: [
+      capabilities: { pullRequestWebTargets: true },
+      extraProjects: [
         {
-          host: "github.com",
-          repository: "pingdotgg/t3code",
-          number: 124,
-          url: "https://github.com/pingdotgg/t3code/pull/124",
-          source: "manual",
-          linkedAt: "2026-01-01T00:00:00.000Z",
-          snapshot: null,
-          stack: null,
+          id: ProjectId.make("keyboard-shortcuts"),
+          title: "keyboard-shortcuts",
+          repositoryIdentity: {
+            provider: SourceControlProviderKind.make("github"),
+            canonicalKey: "github.com/pingdotgg/t3code",
+            displayName: "pingdotgg/t3code",
+            locator: {
+              source: "git-remote",
+              remoteName: "origin",
+              remoteUrl: "https://github.com/pingdotgg/t3code.git",
+            },
+            webUrl: "https://github.com/pingdotgg/t3code",
+          },
         },
       ],
     },
-    { ...grouped, issues: [completed, issue] },
-  ]);
+  );
   const liveTitle = "Add keyboard shortcuts to the sidebar";
   using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
     const isCompleted = input.key === completed.key;
@@ -254,6 +278,15 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
               isDraft: false,
               closesIssue: false,
             },
+            {
+              repository: "pingdotgg/untracked",
+              number: 124,
+              url: "https://github.com/pingdotgg/untracked/pull/124",
+              title: "Untracked repository PR",
+              state: "open",
+              isDraft: false,
+              closesIssue: false,
+            },
           ],
     } satisfies IssueDetail);
   });
@@ -309,6 +342,9 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
   await userEvent.click(issueRow);
   expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${linked.id}`);
   await expect.element(page.getByRole("heading", { name: liveTitle })).toBeVisible();
+  await expect
+    .element(page.getByRole("link", { name: /Untracked repository PR/ }))
+    .toHaveAttribute("href", "https://github.com/pingdotgg/untracked/pull/124");
   const linkedPr = page.getByRole("button", { name: /Fix keyboard shortcuts/ });
   const issueScroller = () =>
     linkedPr.element().closest<HTMLElement>("[data-pull-request-summary-scroll]")!;

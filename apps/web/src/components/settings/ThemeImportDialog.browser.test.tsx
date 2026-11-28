@@ -5,7 +5,6 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
 import { initializeI18n } from "../../i18n/initializeI18n";
-import { setActiveLocale } from "../../i18n/messages";
 import {
   CUSTOM_THEMES_STORAGE_KEY,
   getCustomThemes,
@@ -79,7 +78,7 @@ describe("ThemeImportDialog", () => {
     );
   it.each([
     ["en", 1, "acme · 1 download"],
-    ["ru", 475_001, `acme · Скачиваний: ${compact(475_001)}`],
+    ["zh", 475_001, `acme · ${compact(475_001)} 次下载`],
   ])("counts %s theme downloads (%d)", async (locale, downloadCount, line) => {
     searchOpenVsxThemes.mockReset();
     searchOpenVsxThemes.mockResolvedValue([{ ...extension, downloadCount }]);
@@ -307,18 +306,15 @@ it("sizes an oversized theme file just under 1 MB as 1.00 MB", async () => {
 
 it("names an oversized file in a batch import in the UI language", async () => {
   using _themes = isolateThemes();
-  const translations = await getTranslationsSnapshot("de");
-  // Mirrors the runtime: `m()` reads the active locale once its catalog is loaded.
-  setActiveLocale("de");
+  const translations = await getTranslationsSnapshot("zh");
   using _locale = {
     [Symbol.dispose]() {
-      setActiveLocale("en");
       // GTProvider leaves its locale in a cookie; this sets it back to English.
       initializeI18n(() => {});
     },
   };
   await using _screen = await render(
-    <GTProvider locale="de" translations={translations}>
+    <GTProvider locale="zh" translations={translations}>
       <ThemeImportDialog
         open
         onOpenChange={() => {}}
@@ -336,7 +332,7 @@ it("names an oversized file in a batch import in the UI language", async () => {
   await expect
     .element(page.getByRole("alert"))
     .toHaveTextContent(
-      "huge.json: Diese Datei ist 1.00 MB groß. Design-Dateien haben nur wenige KB, daher wurde sie nicht gelesen (Limit 256 KB).",
+      "huge.json: 此文件大小为 1.00 MB。主题文件通常仅有几 KB，因此未读取此文件（上限为 256 KB）。",
     );
 });
 

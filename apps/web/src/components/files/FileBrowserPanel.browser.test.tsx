@@ -45,9 +45,6 @@ const pathSearch = {
 
 vi.mock("./useDirectoryEntries", () => ({ useDirectoryEntries: () => directory }));
 vi.mock("~/state/queries", () => ({ useProjectPathSearch: () => pathSearch }));
-vi.mock("~/fileContextMenu", () => ({
-  useFileContextMenu: () => ({ buildItems: () => [], activate: () => Promise.resolve() }),
-}));
 const downloadFile = vi.fn();
 vi.mock("./useFileDownload", () => ({ useFileDownload: () => downloadFile }));
 vi.mock("~/hooks/useWorkspaceMutationRefresh", () => ({ useWorkspaceMutationRefresh: () => {} }));
@@ -149,7 +146,7 @@ describe("FileBrowserPanel", () => {
     await userEvent.keyboard("{Tab}");
     row.focus();
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-    await expect.element(download).toHaveFocus();
+    await expect.element(copyPath).toHaveFocus();
     await userEvent.keyboard("{Escape}");
     await vi.waitFor(() => expect((row.getRootNode() as ShadowRoot).activeElement).toBe(row));
   });

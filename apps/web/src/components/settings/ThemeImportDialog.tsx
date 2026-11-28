@@ -1,4 +1,3 @@
-import type { UiTranslator } from "@t3tools/shared/uiLocale";
 import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { DownloadIcon, PlusIcon } from "lucide-react";
@@ -27,8 +26,8 @@ import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { ThemeSearchSection } from "./ThemeSearchSection";
-import { useGT } from "gt-react";
-import { m } from "../../i18n/messages";
+import { msg, useGT, useMessages } from "gt-react";
+import { m, type MessageResolver } from "../../i18n/messages";
 
 /**
  * The guard runs on the size before the bytes are ever read: a large file
@@ -40,11 +39,13 @@ const MAX_THEME_FILE_BYTES = 256 * 1024;
 /** Highlighting rebuilds markup per keystroke; fall back to plain text for oversized pastes. */
 const MAX_HIGHLIGHTED_JSON_LENGTH = 20_000;
 
-function describeOversizedThemeFile(bytes: number, t: UiTranslator): string | null {
+function describeOversizedThemeFile(bytes: number, resolve: MessageResolver): string | null {
   if (bytes <= MAX_THEME_FILE_BYTES) return null;
-  return t(
-    "That file is {size}. Theme files are only a few KB, so this one was not read (limit {limit}).",
-    { size: formatBytes(bytes), limit: formatBytes(MAX_THEME_FILE_BYTES) },
+  return resolve(
+    msg(
+      "That file is {size}. Theme files are only a few KB, so this one was not read (limit {limit}).",
+      { size: formatBytes(bytes), limit: formatBytes(MAX_THEME_FILE_BYTES) },
+    ),
   );
 }
 
@@ -227,6 +228,7 @@ function ThemeImportBody({
 }) {
   const t = useUiTranslation();
   const gt = useGT();
+  const resolve = useMessages();
   const { signal } = session;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [json, setJson] = useState("");
@@ -242,7 +244,7 @@ function ThemeImportBody({
 
   const readThemeFile = async (file: ImportableThemeFile) => {
     const requestId = ++importRequestRef.current;
-    const oversized = describeOversizedThemeFile(file.size, t);
+    const oversized = describeOversizedThemeFile(file.size, resolve);
     if (oversized) {
       setIsReading(false);
       setError(oversized);
@@ -277,7 +279,7 @@ function ThemeImportBody({
     const failures: string[] = [];
     const parsed: Array<{ theme: ThemeDefinition; sourceName: string }> = [];
     for (const file of files) {
-      const oversized = describeOversizedThemeFile(file.size, t);
+      const oversized = describeOversizedThemeFile(file.size, resolve);
       if (oversized) {
         failures.push(`${file.name}: ${oversized}`);
         continue;
@@ -410,7 +412,7 @@ function ThemeImportBody({
   };
 
   const handleSubmit = () => {
-    const oversized = describeOversizedThemeFile(json.length, t);
+    const oversized = describeOversizedThemeFile(json.length, resolve);
     if (oversized) {
       setError(oversized);
       return;

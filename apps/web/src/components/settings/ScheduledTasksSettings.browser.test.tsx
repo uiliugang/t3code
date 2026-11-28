@@ -474,7 +474,7 @@ describe("ScheduledTasksSettings", () => {
 
   it.each([
     { locale: "en", one: "minute", other: "minutes" },
-    { locale: "de", one: "Minute", other: "Minuten" },
+    { locale: "zh", one: "分钟", other: "分钟" },
   ])(
     "labels intervals of 1, 15 and 1.5 as $one or $other in $locale",
     async ({ locale, one, other }) => {
@@ -500,17 +500,17 @@ describe("ScheduledTasksSettings", () => {
 
   it("names the Delete action in the UI language", async () => {
     setup();
-    const translations = await getTranslationsSnapshot("de");
+    const translations = await getTranslationsSnapshot("zh");
     await using screen = await render(
-      <GTProvider locale="de" translations={translations}>
+      <GTProvider locale="zh" translations={translations}>
         <ScheduledTasksSettings />
       </GTProvider>,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Aktionen für Review issues" }));
+    const actionMenu = screen.getByRole("button", { name: "Review issues 的操作" });
+    await expect.element(actionMenu).toBeEnabled();
+    await userEvent.click(actionMenu);
 
-    await expect
-      .element(page.getByRole("menuitem", { name: "Löschen", exact: true }))
-      .toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "删除", exact: true })).toBeVisible();
   });
 
   it("keeps a new task's draft when the user clicks outside the editor", async () => {

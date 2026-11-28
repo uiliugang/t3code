@@ -994,15 +994,19 @@ describe("WorkflowRunsView", () => {
       },
       { fix: [step({ name: "build", kind: "step", endedAt: at(2) })] },
     );
-    const translations = await getTranslationsSnapshot("ja");
+    const translations = await getTranslationsSnapshot("zh");
+    using _locale = {
+      [Symbol.dispose]() {
+        initializeI18n(() => {});
+      },
+    };
     await using screen = await render(
-      <GTProvider locale="ja" translations={translations}>
+      <GTProvider locale="zh" translations={translations}>
         {page("fix")}
       </GTProvider>,
     );
 
-    await expect.element(screen.getByText("所要時間 2分0秒")).toBeVisible();
-    await expect.element(screen.getByText("2分0秒", { exact: true })).toBeVisible();
-    initializeI18n(() => {});
+    await expect.element(screen.getByText("用时 2 分 0 秒")).toBeVisible();
+    await expect.element(screen.getByText("2 分 0 秒", { exact: true })).toBeVisible();
   });
 });

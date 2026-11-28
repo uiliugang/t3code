@@ -921,7 +921,7 @@ function ScheduledTaskRow({
                   size="icon-sm"
                   variant="ghost"
                   disabled={busy || !canOperate}
-                  aria-label={t("Actions for {task}", { task: task.title })}
+                  aria-label={gt("Actions for {task}", { task: task.title })}
                 />
               }
             >
@@ -946,7 +946,7 @@ function ScheduledTaskRow({
               <MenuSeparator />
               <MenuItem onClick={() => void act("delete")}>
                 <Trash2Icon />
-                {t("Delete")}
+                {gt("Delete", { $context: "scheduled task action" })}
               </MenuItem>
             </MenuPopup>
           </Menu>

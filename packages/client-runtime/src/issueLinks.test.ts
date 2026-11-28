@@ -45,6 +45,40 @@ it("uses the linked GitHub pull request's authority, not the issue's authority",
   ).toBeNull();
 });
 
+it("matches a Linear attachment to its exact GitHub pull request", () => {
+  const issue = { tracker: "linear", host: "linear.app" };
+  const link = {
+    repository: "acme/app",
+    number: 12,
+    url: "https://github.com/acme/app/pull/12",
+  };
+  expect(issueLinkedPullRequestTarget(issue, link)).toEqual({ ...link, host: "github.com" });
+  expect(issueLinkedPullRequestTarget(issue, { ...link, number: 13 })).toBeNull();
+  expect(issueLinkedPullRequestTarget(issue, { ...link, repository: "acme/other" })).toBeNull();
+  expect(
+    issueLinkedPullRequestTarget(issue, { ...link, url: "https://github.com/acme/app" }),
+  ).toBeNull();
+  expect(
+    issueLinkedPullRequestTarget(issue, {
+      ...link,
+      url: link.url.replace("github.com", "forge.test"),
+    }),
+  ).toBeNull();
+  expect(
+    issueLinkedPullRequestTarget(issue, {
+      ...link,
+      url: link.url.replace("github.com", "github.com:8443"),
+    }),
+  ).toBeNull();
+  expect(issueLinkedPullRequestTarget({ tracker: "gitlab" }, link)).toBeNull();
+  expect(
+    issueLinkedPullRequestTarget(issue, {
+      ...link,
+      url: "https://gitlab.com/acme/app/-/merge_requests/12",
+    }),
+  ).toBeNull();
+});
+
 it("uses the linked GitLab merge request's authority, not the issue's authority", () => {
   const issue = { tracker: "gitlab", host: "forge.test" };
   const link = {

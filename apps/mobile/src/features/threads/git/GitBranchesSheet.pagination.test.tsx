@@ -5,6 +5,11 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
 
+vi.mock("../../../lib/useUiTranslation", async () => {
+  const { translateUi } = await import("@t3tools/shared/uiLocale");
+  return { useUiTranslation: () => translateUi.bind(null, "en") };
+});
+
 import { GitBranchesSheet } from "./GitBranchesSheet";
 
 type PressProps = { label: string; disabled?: boolean; onPress: () => void };
@@ -48,6 +53,14 @@ vi.mock("./gitSheetComponents", () => ({
     harness.buttons.set(props.label, props);
     return null;
   },
+}));
+vi.mock("../use-new-task-project-defaults", () => ({
+  useNewTaskProjectDefaults: () => ({
+    projectSettings: { settings: { newWorktreesMainBranchOnly: false } },
+  }),
+}));
+vi.mock("../../../state/use-thread-repository", () => ({
+  useThreadRepository: () => ({ selectionTarget: undefined }),
 }));
 vi.mock("../../../state/use-thread-selection", () => ({
   useThreadSelection: () => ({ selectedThread: { environmentId: "environment-1", branch: null } }),

@@ -58,6 +58,7 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
   readonly operation: string;
   readonly cwd: string;
   readonly worktreePath: string;
+  readonly repositoryGitDir?: string;
   readonly force: boolean;
   readonly execute: GitVcsDriver.GitVcsDriver["Service"]["execute"];
   readonly run: (args: ReadonlyArray<string>, cwd: string) => Effect.Effect<A, E, R>;
@@ -72,6 +73,7 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
   // Git refuses to remove a worktree with untracked files unless forced, but
   // its check honors `status.showUntrackedFiles=no` and would delete them.
   const statusConfig = ["-c", "status.showUntrackedFiles=normal"];
+  const repositoryArgs = input.repositoryGitDir ? [`--git-dir=${input.repositoryGitDir}`] : [];
   // Git's own refusals, worded the way it prints them.
   const refuse = (message: string, cause?: unknown) =>
     new GitCommandError({
@@ -112,6 +114,7 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
   if (!linked) {
     return yield* input.run(
       [
+        ...repositoryArgs,
         ...statusConfig,
         "worktree",
         "remove",
@@ -155,7 +158,10 @@ export const removeLinkedWorktree = Effect.fn("WorktreeRemoval.removeLinkedWorkt
   );
   const commonDir = path.resolve(
     input.cwd,
-    (yield* gitOutput(input.cwd, ["rev-parse", "--git-common-dir"])).replace(/\n$/, ""),
+    (yield* gitOutput(input.cwd, [...repositoryArgs, "rev-parse", "--git-common-dir"])).replace(
+      /\n$/,
+      "",
+    ),
   );
   const pointsBack = yield* fileSystem.readFileString(path.join(adminDir, "gitdir")).pipe(
     // Folders, not `.git` files: a hard-linked copy of the checkout shares its `.git` file.

@@ -573,7 +573,7 @@ function IssueDetailContent({
       configLoaded: () => serverConfig !== null,
       environmentId,
       projectId: reference.projectId,
-      lendHostProject: supportsWebTargets,
+      lendHostProject: supportsWebTargets && reference.tracker !== "linear",
       supportsWebTargets: () => supportsWebTargets,
     });
     return resolved === null ? null : { ...target, projectId: resolved.project.id };
