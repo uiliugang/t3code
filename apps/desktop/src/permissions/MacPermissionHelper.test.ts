@@ -69,10 +69,6 @@ vi.mock("electron", async () => {
       getCursorScreenPoint: () => ({ x: 10, y: 10 }),
       getDisplayNearestPoint: () => ({ workArea: { x: -1200, y: 0, width: 1200, height: 900 } }),
     },
-    systemPreferences: {
-      getMediaAccessStatus: () => (mocks.granted ? "granted" : "denied"),
-      isTrustedAccessibilityClient: () => mocks.granted,
-    },
     shell: { showItemInFolder: mocks.showItemInFolder },
   };
 });
@@ -107,7 +103,13 @@ afterEach(() => {
 });
 const iconPaths = ["/bundle/prod-resources/icon.png"];
 const open = () =>
-  helper.show("accessibility", "/bundle/mac-permission-preload.cjs", null, iconPaths);
+  helper.show(
+    "full-disk-access",
+    "/bundle/mac-permission-preload.cjs",
+    null,
+    iconPaths,
+    () => mocks.granted,
+  );
 it("does not reopen a superseded helper when its initial probe completes", async () => {
   const pending = Promise.withResolvers<boolean>();
   const first = helper.show(

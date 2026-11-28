@@ -1,6 +1,6 @@
 import "vite-plus/test/config";
 
-import { defaultInclude, defineConfig } from "vite-plus";
+import { defineConfig } from "vite-plus";
 import { Rolldown } from "vite-plus/pack";
 
 import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
@@ -102,15 +102,12 @@ export default defineConfig({
     },
     {
       format: "cjs",
-      outDir: "dist-electron",
+      outDir: "dist-electron/backend",
       dts: false,
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
-      entry: [
-        "src/backend/DesktopBackendRecoveryWorker.ts",
-        "src/snapShot/SnapShotAccessibilityWorker.ts",
-      ],
+      entry: ["src/backend/DesktopBackendRecoveryWorker.ts"],
       clean: false,
       deps: {
         alwaysBundle: (id) => !id.startsWith("node:") && !isMainProcessExternal(id),
@@ -184,7 +181,6 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          include: [...defaultInclude, "../../native/kde-snap-shot/src/*.test.ts"],
           exclude: ["**/node_modules/**", ...domTests],
           setupFiles: [
             "../../packages/shared/src/testing/providerEnv.ts",

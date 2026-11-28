@@ -67,7 +67,7 @@ from local clocks or PR caches.
 ## Desktop process isolation
 
 Native modules never load on the Electron main process startup path. Native capabilities that can
-crash or stall (such as accessibility or window-capture helpers) run in isolated child processes or
+crash or stall run in isolated child processes or
 workers with deadlines, never as top-level imports in main.
 
 See the [glossary](./00_glossary.md) for shared terms and the

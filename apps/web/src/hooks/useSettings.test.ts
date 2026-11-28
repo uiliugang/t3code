@@ -181,11 +181,11 @@ describe("persistClientSettingsPatch", () => {
       });
     });
 
-    const firstSettings = { ...DEFAULT_CLIENT_SETTINGS, snapShotFlash: false };
-    const secondSettings = { ...firstSettings, snapShotPlaySound: false };
-    const first = persistClientSettingsPatch({ snapShotFlash: false });
+    const firstSettings = { ...DEFAULT_CLIENT_SETTINGS, wordWrap: false };
+    const secondSettings = { ...firstSettings, mathRenderingEnabled: false };
+    const first = persistClientSettingsPatch({ wordWrap: false });
     await firstStarted;
-    const second = persistClientSettingsPatch({ snapShotPlaySound: false });
+    const second = persistClientSettingsPatch({ mathRenderingEnabled: false });
 
     expect(persistenceMocks.setClientSettings).toHaveBeenCalledTimes(1);
     expect(getClientSettings()).toEqual(secondSettings);

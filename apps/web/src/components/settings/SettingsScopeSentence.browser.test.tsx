@@ -137,7 +137,6 @@ it("shows environment and project controls on scoped pages, environment-only on 
   for (const path of [
     "/settings/appearance",
     "/settings/diffs",
-    "/settings/snap-shot",
     "/settings/about",
     "/settings/open-source-licenses",
   ]) {

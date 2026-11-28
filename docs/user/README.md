@@ -61,7 +61,6 @@ T3 Code is an open-source control plane for coding agents. It gives the coding a
 - [Use T3 Code as your default browser](./default-browser.md) — Opening links and HTML files in T3 Code on macOS.
 - [Devices](./devices.md) — Live iOS Simulators, Android Emulators, physical Android devices, SSH device hosts, and Simlock pools.
 - [Visual replies and MCP apps](./html-renders.md) — Inline HTML charts/diagrams/mockups and interactive MCP Apps.
-- [SnapShots](./snap-shot.md) — Desktop window capture with accessibility text attached to drafts.
 - [Voice input](./voice-input.md) — On-device, environment, and cloud speech-to-text dictation and transcript cleanup.
 - [Prompt links](./prompt-links.md) — Shareable prefilled draft links and thread links.
 

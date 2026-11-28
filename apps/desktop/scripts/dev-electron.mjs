@@ -24,15 +24,12 @@ if (!Number.isInteger(port) || port <= 0) {
 const requiredFiles = [
   "dist-electron/main.cjs",
   "dist-electron/preload.cjs",
-  "dist-electron/snapShot/SnapShotAccessibilityWorker.cjs",
+  "dist-electron/backend/DesktopBackendRecoveryWorker.cjs",
   "../server/dist/bin.mjs",
 ];
 const watchedDirectories = [
   { directory: "dist-electron", files: new Set(["main.cjs", "preload.cjs"]) },
-  {
-    directory: "dist-electron/snapShot",
-    files: new Set(["SnapShotAccessibilityWorker.cjs"]),
-  },
+  { directory: "dist-electron/backend", files: new Set(["DesktopBackendRecoveryWorker.cjs"]) },
   { directory: "../server/dist", files: new Set(["bin.mjs"]) },
 ];
 const forcedShutdownTimeoutMs = 1_500;
