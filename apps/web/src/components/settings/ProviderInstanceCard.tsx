@@ -78,7 +78,6 @@ import {
 } from "./customModelSaves.logic";
 import { getProviderRestartNotice } from "../ProviderUpdateLaunchNotification.logic";
 import {
-  getProviderReinstallCommand,
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
   getProviderStatusKey,
@@ -228,14 +227,13 @@ type ProviderVersionAdvisory = NonNullable<
 // label, busy state and progress line live in one place.
 function ProviderVersionUpdateAction(props: {
   readonly advisory: ProviderVersionAdvisory;
-  readonly isReinstall: boolean;
   readonly isUpdating: boolean;
   readonly progress: string | null;
   readonly problem: string | null;
   readonly stretch: boolean;
   readonly onRun: () => void;
 }) {
-  const { advisory, isReinstall, isUpdating, progress, problem, stretch, onRun } = props;
+  const { advisory, isUpdating, progress, problem, stretch, onRun } = props;
   const gt = useGT();
   return (
     <>
@@ -254,9 +252,7 @@ function ProviderVersionUpdateAction(props: {
             ? gt("Install {version}", {
                 version: getProviderVersionLabel(advisory.targetVersion),
               })
-            : isReinstall
-              ? gt("Reinstall")
-              : gt("Update now")}
+            : gt("Update now")}
       </Button>
       {progress || problem ? (
         <p
@@ -870,28 +866,12 @@ export function ProviderInstanceCard({
       ? (providerAuthLabel(liveProvider.auth, m) ?? null)
       : null;
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
-  const updateAdvisory = getProviderVersionAdvisoryPresentation(
+  const versionAdvisory = getProviderVersionAdvisoryPresentation(
     liveProvider?.versionAdvisory,
     liveProvider?.compatibilityAdvisory,
     enabled,
     m,
   );
-  const reinstallCommand =
-    enabled && !updateAdvisory ? getProviderReinstallCommand(liveProvider) : null;
-  const isReinstall = reinstallCommand !== null;
-  const versionAdvisory =
-    updateAdvisory ??
-    (isReinstall
-      ? {
-          title: gt("Reinstall needed"),
-          detail: gt(
-            "This installation is missing files it needs to start. Reinstall it to fix it.",
-          ),
-          updateCommand: reinstallCommand,
-          emphasis: "strong" as const,
-          targetVersion: null,
-        }
-      : null);
   const updateCommand = versionAdvisory?.updateCommand ?? null;
   const updateState = liveProvider?.updateState;
   const updateProgress = isUpdating
@@ -909,8 +889,7 @@ export function ProviderInstanceCard({
     compatibility !== undefined &&
     compatibility.status !== "supported" &&
     compatibility.status !== "unknown";
-  const VersionAdvisoryIcon =
-    hasCompatibilityWarning || isReinstall ? AlertTriangleIcon : ArrowUpCircleIcon;
+  const VersionAdvisoryIcon = hasCompatibilityWarning ? AlertTriangleIcon : ArrowUpCircleIcon;
   const onRunVersionAction = readOnly
     ? undefined
     : versionAdvisory?.targetVersion
@@ -1135,7 +1114,7 @@ export function ProviderInstanceCard({
                   <VersionAdvisoryIcon
                     className={cn(
                       mode === "list" && "size-3.5",
-                      (hasCompatibilityWarning || isReinstall) && "text-warning",
+                      hasCompatibilityWarning && "text-warning",
                     )}
                   />
                 )}
@@ -1163,7 +1142,6 @@ export function ProviderInstanceCard({
           {onRunVersionAction ? (
             <ProviderVersionUpdateAction
               advisory={versionAdvisory}
-              isReinstall={isReinstall}
               isUpdating={isUpdating}
               progress={updateProgress}
               problem={updateProblem}
@@ -1346,7 +1324,6 @@ export function ProviderInstanceCard({
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <ProviderVersionUpdateAction
             advisory={versionAdvisory}
-            isReinstall={isReinstall}
             isUpdating={isUpdating}
             progress={updateProgress}
             problem={updateProblem}
