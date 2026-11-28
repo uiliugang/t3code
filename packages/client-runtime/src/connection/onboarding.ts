@@ -271,7 +271,7 @@ const updateBearerConnection = Effect.fn(
     entry: Option.fromUndefinedOr(entry),
     credential,
   });
-  yield* registry.register(registration, { useRegistrationLabel: true });
+  yield* registry.register(registration);
 });
 
 export const prepareBearerConnectionUpdate = Effect.fn(

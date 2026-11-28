@@ -172,7 +172,6 @@ function layerPairingOnboarding(
   options?: Parameters<typeof layerPairingHttp>[1],
   calls: Array<{ readonly url: string; readonly init: RequestInit }> = [],
   provision?: ClientCapabilities.SshEnvironmentGateway["Service"]["provision"],
-  savedCredential?: BearerConnectionCredential,
 ) {
   const dependencies = Layer.mergeAll(
     layerClientPresentation,
@@ -188,7 +187,7 @@ function layerPairingOnboarding(
     Layer.mock(Persistence.EnvironmentCacheStore)({}),
     Layer.mock(ConnectionProfileStore.ConnectionProfileStore)({}),
     Layer.mock(ConnectionCredentialStore.ConnectionCredentialStore)({
-      get: () => Effect.succeed(Option.fromUndefinedOr(savedCredential)),
+      get: () => Effect.succeedNone,
       put: () => Effect.void,
     }),
     Layer.mock(ClientCapabilities.SshEnvironmentGateway)(provision ? { provision } : {}),
@@ -291,7 +290,7 @@ describe("connection onboarding", () => {
     }),
   );
 
-  it.effect("turns a switched-off environment back on, keeping its label, when paired again", () =>
+  it.effect("turns a switched-off environment back on when it is paired again", () =>
     Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
       const onboarding = yield* Onboarding.ConnectionOnboarding;
@@ -310,7 +309,7 @@ describe("connection onboarding", () => {
         new BearerConnectionTarget({
           environmentId,
           connectionId: PAIRED_PROFILE.connectionId,
-          label: "Old label",
+          label: PAIRED_PROFILE.label,
         }),
       );
     }).pipe(Effect.provide(layerPairingOnboarding())),
@@ -403,34 +402,6 @@ describe("connection onboarding", () => {
       expect(yield* SubscriptionRef.get(registry.entries)).toEqual(before);
     }).pipe(Effect.provide(layerPairingOnboarding({ exchangeGate })));
   });
-
-  it.effect("an edited label replaces the saved one", () =>
-    Effect.gen(function* () {
-      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-      const onboarding = yield* Onboarding.ConnectionOnboarding;
-      yield* registerSwitchedOffEnvironment;
-
-      yield* onboarding.updateBearer({
-        environmentId: PAIRED_ENVIRONMENT_ID,
-        label: "Studio",
-        httpBaseUrl: PAIRED_PROFILE.httpBaseUrl,
-      });
-
-      const entry = (yield* SubscriptionRef.get(registry.entries)).get(PAIRED_ENVIRONMENT_ID);
-      expect(entry === undefined ? [] : connectionRoutes(entry).map((r) => r.target.label)).toEqual(
-        ["Studio"],
-      );
-    }).pipe(
-      Effect.provide(
-        layerPairingOnboarding(
-          undefined,
-          [],
-          undefined,
-          new BearerConnectionCredential({ token: "old-token" }),
-        ),
-      ),
-    ),
-  );
 
   it.effect("adds a new address as a route when pairing targets that environment", () =>
     Effect.gen(function* () {
