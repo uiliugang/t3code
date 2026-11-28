@@ -556,6 +556,10 @@ describe("sidebar thread menu on a phone", () => {
 
   it("closes the sheet when Add project opens the picker, as New thread does", async () => {
     await using _viewport = await usePhoneViewport();
+    using stack = new DisposableStack();
+    const drafts = useComposerDraftStore.getState();
+    stack.defer(() => useComposerDraftStore.setState(drafts, true));
+    useComposerDraftStore.setState(useComposerDraftStore.getInitialState(), true);
     vi.mocked(useProjects).mockReturnValue([]);
     vi.mocked(useQuietThreadShells).mockReturnValue([]);
     vi.mocked(useThreadRouteTarget).mockReturnValue(null);
