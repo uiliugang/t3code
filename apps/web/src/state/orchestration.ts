@@ -23,10 +23,7 @@ const emptyPendingHumanActionsAtom = Atom.make(
   AsyncResult.initial<OrchestrationV2PendingHumanActionSnapshot | null>(),
 );
 
-export const pendingHumanActionsAtom = (
-  environmentId: EnvironmentId | null,
-  activation?: string,
-) =>
+export const pendingHumanActionsAtom = (environmentId: EnvironmentId | null, activation?: string) =>
   environmentId === null
     ? emptyPendingHumanActionsAtom
     : orchestrationEnvironment.v2.pendingHumanActions({

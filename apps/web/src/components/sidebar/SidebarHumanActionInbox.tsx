@@ -3,13 +3,13 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import {
   collectHumanActions,
   readHumanActionSnapshot,
-  humanActionSnapshotStatus,
+  verifyPendingHumanAction,
   type ScopedHumanAction,
 } from "@t3tools/client-runtime/state/human-action-inbox";
 import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { InboxIcon, MessageCircleIcon, ShieldIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useUiTranslation } from "../../hooks/useUiTranslation";
 import { randomUUID } from "../../lib/utils";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
@@ -51,7 +51,7 @@ function InboxRow({
         variant="outline"
         size="multiline"
         className="w-full justify-start text-start"
-        onClick={() => onOpen(target)}
+        onClick={() => void onOpen(target)}
       >
         <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -78,6 +78,8 @@ export function SidebarHumanActionInbox() {
   const canOperate = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
   const [open, setOpen] = useState(false);
   const navigated = useRef(false);
+  const checking = useRef<AbortController | null>(null);
+  useEffect(() => () => checking.current?.abort(), []);
   const [filter, setFilter] = useState<ScopedHumanAction["kind"] | null>(null);
   const supported = environments.filter(
     ({ environmentId, serverConfig }) =>
@@ -100,17 +102,32 @@ export function SidebarHumanActionInbox() {
   const visible = filter === null ? actions : actions.filter((target) => target.kind === filter);
   if (supported.length === 0 && !open) return null;
 
-  const onOpen = (target: ScopedHumanAction) => {
+  const onOpen = async (target: ScopedHumanAction) => {
     const { environmentId, threadId } = target;
-    const environment = readEnvironment(environmentId);
-    const result = appAtomRegistry.get(pendingHumanActionsAtom(environmentId));
-    if (
-      environment?.connection.phase !== "connected" ||
-      !readEnvironmentScope(environmentId, AuthOrchestrationReadScope) ||
-      !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) ||
-      environment.serverConfig?.environment.capabilities.pendingHumanActions !== true ||
-      humanActionSnapshotStatus(result, target) !== "ready"
-    ) {
+    const canVerify = () => {
+      const environment = readEnvironment(environmentId);
+      return (
+        environment?.connection.phase === "connected" &&
+        readEnvironmentScope(environmentId, AuthOrchestrationReadScope) &&
+        readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) &&
+        environment.serverConfig?.environment.capabilities.pendingHumanActions === true
+      );
+    };
+    checking.current?.abort();
+    const controller = new AbortController();
+    checking.current = controller;
+    const activation = randomUUID();
+    const valid =
+      canVerify() &&
+      (await verifyPendingHumanAction(
+        appAtomRegistry,
+        pendingHumanActionsAtom(environmentId, activation),
+        target,
+        controller.signal,
+      ));
+    if (controller.signal.aborted) return;
+    checking.current = null;
+    if (!valid || !canVerify()) {
       toastManager.add({ type: "info", title: t("This request is no longer available.") });
       return;
     }
@@ -138,6 +155,7 @@ export function SidebarHumanActionInbox() {
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (!next) checking.current?.abort();
         if (next) {
           navigated.current = false;
           setFilter(null);

@@ -1004,6 +1004,7 @@ export interface DesktopBridge {
   /** The environment ID recorded in this app's T3 home, such as its own machine's background service. */
   getHostEnvironmentId?: () => Promise<string | null>;
   getProjectNotesEnvironment?: () => Promise<EnvironmentId | null>;
+  onProjectNotesRevoked?: (listener: () => void) => () => void;
   callProjectNotes?: (request: DesktopProjectNotesPayload) => Promise<DesktopProjectNotesOutcome>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
   getClientSettings: () => Promise<ClientSettings | null>;

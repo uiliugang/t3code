@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   humanActionSnapshotStatus,
+  verifyPendingHumanAction,
   type ScopedHumanAction,
 } from "@t3tools/client-runtime/state/human-action-inbox";
 import {
@@ -27,8 +28,7 @@ export const mobileInboxes = Atom.family((ids: string) =>
   Atom.make((get) => (JSON.parse(ids) as EnvironmentId[]).map((id) => get(inbox(id)))),
 );
 
-export function openableMobileHumanAction(target: ScopedHumanAction) {
-  const { environmentId } = target;
+function canVerify(environmentId: EnvironmentId) {
   if (
     !appAtomRegistry
       .get(workspaceConnections.environmentsAtom)
@@ -44,7 +44,26 @@ export function openableMobileHumanAction(target: ScopedHumanAction) {
       .pendingHumanActions !== true
   )
     return false;
-  return humanActionSnapshotStatus(appAtomRegistry.get(inbox(environmentId)), target) === "ready";
+  return true;
+}
+
+export async function openableMobileHumanAction(
+  target: ScopedHumanAction,
+  activation: string,
+  signal: AbortSignal,
+) {
+  const { environmentId } = target;
+  return (
+    canVerify(environmentId) &&
+    (await verifyPendingHumanAction(
+      appAtomRegistry,
+      inbox(environmentId, activation),
+      target,
+      signal,
+    )) &&
+    !signal.aborted &&
+    canVerify(environmentId)
+  );
 }
 
 export function useLiveMobileHumanAction(

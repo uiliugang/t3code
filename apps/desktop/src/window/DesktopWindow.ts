@@ -27,6 +27,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   MENU_ACTION_CHANNEL,
+  PROJECT_NOTES_REVOKED_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
   TRACKPAD_SCROLL_BEGIN_CHANNEL,
   TRACKPAD_SCROLL_END_CHANNEL,
@@ -134,6 +135,7 @@ export class DesktopWindow extends Context.Service<
     readonly showConnectingSplash: Effect.Effect<void>;
     readonly handleBackendReady: (httpBaseUrl: URL) => Effect.Effect<void, DesktopWindowError>;
     readonly handleBackendNotReady: Effect.Effect<void>;
+    readonly notifyProjectNotesRevoked: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
     readonly dispatchMenuAction: (
       action: string,
@@ -1257,6 +1259,9 @@ export const make = Effect.gen(function* () {
     handleBackendNotReady: Ref.set(backendReadyRef, false).pipe(
       Effect.withSpan("desktop.window.handleBackendNotReady"),
     ),
+    notifyProjectNotesRevoked: dispatchRendererEvent(PROJECT_NOTES_REVOKED_CHANNEL, null, {
+      reveal: false,
+    }).pipe(Effect.ignoreCause),
     flushMainWindowBounds: Effect.suspend(() => flushMainWindowBounds).pipe(
       Effect.withSpan("desktop.window.flushMainWindowBounds"),
     ),

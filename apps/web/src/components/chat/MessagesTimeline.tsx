@@ -235,6 +235,11 @@ export interface MessagesTimelineHistoryControls {
 }
 
 interface MessagesTimelineProps {
+  inboxApprovalTarget?: {
+    readonly activation: string;
+    readonly targetItemId: string;
+    readonly requestId: string;
+  } | null;
   pendingApprovals?: ReadonlyArray<PendingApproval>;
   heldApprovalRequestIds?: ReadonlySet<string> | undefined;
   respondingRequestIds?: TimelineRowSharedState["respondingRequestIds"];
@@ -369,6 +374,7 @@ export function MessagesTimeline(props: MessagesTimelineProps) {
 }
 
 const ConversationTimeline = memo(function ConversationTimeline({
+  inboxApprovalTarget = null,
   pendingApprovals = EMPTY_PENDING_APPROVALS,
   heldApprovalRequestIds,
   respondingRequestIds = EMPTY_RESPONDING_REQUEST_IDS,
@@ -1400,6 +1406,83 @@ const ConversationTimeline = memo(function ConversationTimeline({
     contentInsetEndAdjustment,
   });
 
+  const inboxApprovalRowIndex =
+    inboxApprovalTarget === null
+      ? -1
+      : rows.findIndex((row) => {
+          const entries =
+            row.kind === "work" ? row.groupedEntries : row.kind === "work-live" ? [row.entry] : [];
+          return entries.some(
+            ({ projectedItem }) =>
+              projectedItem?.item.id === inboxApprovalTarget.targetItemId &&
+              projectedItem.item.type === "approval_request" &&
+              projectedItem.item.requestId === inboxApprovalTarget.requestId,
+          );
+        });
+  const inboxApprovalRowId = rows[inboxApprovalRowIndex]?.id;
+  const revealedInboxApproval = useRef<string | null>(null);
+  const inboxActivation = inboxApprovalTarget?.activation;
+  const inboxRequestId = inboxApprovalTarget?.requestId;
+  const inboxItemId = inboxApprovalTarget?.targetItemId;
+  const prepareInboxReveal = useStableCallback(navigateTimeline);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reveals the exact virtualized approval row and focuses its real card
+  useLayoutEffect(() => {
+    const container = timelineViewportElement;
+    if (
+      !inboxActivation ||
+      !inboxRequestId ||
+      !inboxItemId ||
+      !inboxApprovalRowId ||
+      !container ||
+      !findListReady ||
+      restoringThreadPosition ||
+      !listRef.current ||
+      revealedInboxApproval.current === inboxActivation
+    )
+      return;
+    const focus = () => {
+      const anchor = container.querySelector<HTMLElement>(
+        `[data-inbox-timeline-row="${CSS.escape(inboxApprovalRowId)}"] [data-human-action-request="${CSS.escape(inboxRequestId)}"][data-human-action-item="${CSS.escape(inboxItemId)}"]`,
+      );
+      if (!anchor) return false;
+      revealedInboxApproval.current = inboxActivation;
+      anchor.focus({ preventScroll: true });
+      return true;
+    };
+    prepareInboxReveal();
+    void listRef.current.scrollToIndex({
+      index: inboxApprovalRowIndex,
+      animated: false,
+      viewOffset: TIMELINE_MINIMAP_TARGET_OFFSET,
+    });
+    if (focus()) return;
+    const observer = new MutationObserver(() => {
+      if (focus()) observer.disconnect();
+    });
+    observer.observe(container, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        "data-inbox-timeline-row",
+        "data-human-action-request",
+        "data-human-action-item",
+      ],
+    });
+    return () => observer.disconnect();
+  }, [
+    findListReady,
+    inboxActivation,
+    inboxApprovalRowId,
+    inboxApprovalRowIndex,
+    inboxRequestId,
+    inboxItemId,
+    listRef,
+    prepareInboxReveal,
+    restoringThreadPosition,
+    timelineViewportElement,
+  ]);
+
   // LegendList moves rows one commit late; per-row providers prevent thread context leaks.
   const onAudioPlaybackChange = (rowId: string, event: SyntheticEvent) => {
     const audio = event.target;
@@ -1424,7 +1507,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const renderItem = ({ item }: { item: MessagesTimelineRow }) => (
     <TimelineRowCtx value={sharedState}>
       <div
-        className="messages-timeline-row-frame"
+        className={cn(
+          "messages-timeline-row-frame",
+          item.id === inboxApprovalRowId &&
+            "[&_[data-human-action-request]:focus-visible]:ring-2 [&_[data-human-action-request]:focus-visible]:ring-ring",
+        )}
+        data-inbox-timeline-row={item.id === inboxApprovalRowId ? item.id : undefined}
         onPlayCapture={(event) => onAudioPlaybackChange(item.id, event)}
         onPauseCapture={(event) => onAudioPlaybackChange(item.id, event)}
         onEndedCapture={(event) => onAudioPlaybackChange(item.id, event)}

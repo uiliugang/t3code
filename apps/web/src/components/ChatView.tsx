@@ -622,9 +622,20 @@ export default function ChatView(props: ChatViewProps) {
     hasLiveHumanAction(serverProjection, requestedAction)
       ? requestedAction
       : null;
+  const [failedInboxHistoryActivation, setFailedInboxHistoryActivation] = useState<string | null>(
+    null,
+  );
+  const couldLoadInboxHistory =
+    requestedAction !== null &&
+    failedInboxHistoryActivation !== requestedAction.activation &&
+    inboxStatus === "ready" &&
+    threadStatus === "live" &&
+    serverProjection !== null &&
+    liveInboxAction === null;
   const inboxNotice =
     requestedAction && !liveInboxAction
-      ? inboxStatus === "checking" ||
+      ? couldLoadInboxHistory ||
+        inboxStatus === "checking" ||
         (inboxStatus === "ready" && threadStatus !== "live" && threadStatus !== "deleted")
         ? t("Checking…")
         : t("This request is no longer available.")
@@ -632,7 +643,8 @@ export default function ChatView(props: ChatViewProps) {
   const chatColumn = useRef<HTMLDivElement>(null);
   const focusedInboxActivation = useRef<string | null>(null);
   const liveInboxActivation = liveInboxAction?.activation;
-  const liveInboxRequest = liveInboxAction?.requestId;
+  const liveInboxRequest =
+    liveInboxAction?.kind === "user_input" ? liveInboxAction.requestId : undefined;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the existing DOM request card once its timeline row is mounted
   useLayoutEffect(() => {
     const container = chatColumn.current;
@@ -686,6 +698,50 @@ export default function ChatView(props: ChatViewProps) {
   );
   const serverVisibleTurnItems = useQuietThreadVisibleTurnItems(routeThreadDetailRef);
   const serverThreadHistory = useThreadHistory(routeThreadDetailRef);
+  const inboxHistoryTarget = couldLoadInboxHistory ? requestedAction : null;
+  const inboxHistoryRouteEnvironment = routeThreadDetailRef?.environmentId;
+  const inboxHistoryRouteThread = routeThreadDetailRef?.threadId;
+  const canLoadInboxHistory = serverThreadHistory.hasMoreHistory;
+  const inboxHistoryLoading = serverThreadHistory.loading;
+  const startedInboxHistory = useRef<string | null>(null);
+  const inboxHistoryActivation = inboxHistoryTarget?.activation;
+  const inboxHistoryItem = inboxHistoryTarget?.targetItemId;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the selected live card can lie before the loaded timeline window
+  useEffect(() => {
+    if (
+      !inboxHistoryActivation ||
+      !inboxHistoryItem ||
+      !inboxHistoryRouteEnvironment ||
+      !inboxHistoryRouteThread ||
+      inboxHistoryLoading ||
+      startedInboxHistory.current === inboxHistoryActivation
+    )
+      return;
+    if (!canLoadInboxHistory) {
+      setFailedInboxHistoryActivation(inboxHistoryActivation);
+      return;
+    }
+    startedInboxHistory.current = inboxHistoryActivation;
+    void loadEarlierThreadHistory({
+      environmentId: inboxHistoryRouteEnvironment,
+      input: { threadId: inboxHistoryRouteThread, throughEntryId: inboxHistoryItem },
+    }).then((result) => {
+      if (startedInboxHistory.current !== inboxHistoryActivation) return;
+      if (result._tag === "Success" && result.value._tag === "busy") {
+        startedInboxHistory.current = null;
+        return;
+      }
+      setFailedInboxHistoryActivation(inboxHistoryActivation);
+    });
+  }, [
+    canLoadInboxHistory,
+    inboxHistoryActivation,
+    inboxHistoryItem,
+    inboxHistoryLoading,
+    inboxHistoryRouteEnvironment,
+    inboxHistoryRouteThread,
+    loadEarlierThreadHistory,
+  ]);
   const threadHistoryControls = (() => {
     if (routeThreadDetailRef === null || !shouldShowLoadEarlierControl(serverThreadHistory)) {
       return undefined;
@@ -3853,6 +3909,9 @@ export default function ChatView(props: ChatViewProps) {
                   detailLoading={threadDetailLoading}
                   citationRequest={citationRequest}
                   citationHistory={citationHistory}
+                  inboxApprovalTarget={
+                    liveInboxAction?.kind === "approval" ? liveInboxAction : null
+                  }
                   onCiteAssistantText={citeAssistantTextStable}
                   onReplyToResponse={replyToResponseStable}
                   {...(activeProject && !runsOutsideHostCheckout

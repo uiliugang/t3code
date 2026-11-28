@@ -181,7 +181,8 @@ function SidebarUtilityItem({
           <SidebarMenuButton
             aria-label={label}
             aria-current={current ? "page" : undefined}
-            onClick={current ? undefined : onClick}
+            isActive={current}
+            onClick={onClick}
             onPointerEnter={onIntent}
             onFocus={onIntent}
             size="icon"

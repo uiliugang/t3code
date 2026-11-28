@@ -150,11 +150,12 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
       for (const environmentId of environmentIds) {
         const scopedIds = spaceProjectIds?.get(environmentId);
         if (spaceProjectIds !== undefined && !scopedIds?.length) continue;
-        const projectIds = scopedIds === undefined
-          ? scope.projectIds
-          : requestedProjects === null
-            ? scopedIds
-            : scopedIds.filter((projectId) => requestedProjects.has(projectId));
+        const projectIds =
+          scopedIds === undefined
+            ? scope.projectIds
+            : requestedProjects === null
+              ? scopedIds
+              : scopedIds.filter((projectId) => requestedProjects.has(projectId));
         if (spaceProjectIds !== undefined && projectIds?.length === 0) continue;
         const before = options.olderSettledBefore
           ? get(options.olderSettledBefore(environmentId))

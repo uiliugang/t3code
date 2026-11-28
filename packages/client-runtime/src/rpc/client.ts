@@ -570,7 +570,7 @@ export function subscribeResetOnSession<TTag extends EnvironmentSubscriptionRpcT
   return subscribeDynamicMapped<TTag, EnvironmentRpcStreamValue<TTag> | null>(
     tag,
     () => Effect.succeed(input),
-    (_session, stream) => stream,
+    (_session, _input, stream) => stream,
     { resetValue: null, retryValue: null },
   );
 }

@@ -102,6 +102,7 @@ const layerDesktopWindow = (selectedAction: Deferred.Deferred<string>) =>
     handleBackendReady: () => Effect.void,
     handleBackendNotReady: Effect.void,
     flushMainWindowBounds: Effect.void,
+    notifyProjectNotesRevoked: Effect.void,
     dispatchMenuAction: (action) => Deferred.succeed(selectedAction, action).pipe(Effect.asVoid),
     zoomMain: (direction) =>
       Deferred.succeed(selectedAction, `zoom-${direction}`).pipe(Effect.asVoid),

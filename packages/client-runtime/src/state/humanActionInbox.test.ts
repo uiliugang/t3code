@@ -5,9 +5,10 @@ import {
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
+  type OrchestrationV2PendingHumanActionSnapshot,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { AsyncResult } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 import {
   collectHumanActions,
@@ -15,6 +16,7 @@ import {
   humanActionSnapshotStatus,
   readHumanActionSnapshot,
   sameHumanAction,
+  verifyPendingHumanAction,
 } from "./humanActionInbox.ts";
 
 const action = {
@@ -70,6 +72,39 @@ describe("human action inbox", () => {
     ).toBe("unavailable");
   });
 
+  it("uses the authoritative fresh snapshot and does not wait on a canceled verification", async () => {
+    const registry = AtomRegistry.make();
+    const fresh = Atom.make(
+      AsyncResult.initial<OrchestrationV2PendingHumanActionSnapshot | null>(),
+    );
+    const controller = new AbortController();
+    const verify = (signal: AbortSignal) =>
+      verifyPendingHumanAction(registry, fresh, action, signal);
+    const stop = registry.mount(fresh);
+    try {
+      const found = verify(controller.signal);
+      registry.set(fresh, AsyncResult.success({ sequence: 1, targets: [action] }));
+      await expect(found).resolves.toBe(true);
+      registry.set(fresh, AsyncResult.success(null));
+      const replaced = verify(controller.signal);
+      registry.set(
+        fresh,
+        AsyncResult.success({
+          sequence: 2,
+          targets: [{ ...action, targetItemId: TurnItemId.make("replacement") }],
+        }),
+      );
+      await expect(replaced).resolves.toBe(false);
+      registry.set(fresh, AsyncResult.success(null));
+      const canceled = verify(controller.signal);
+      controller.abort();
+      await expect(canceled).resolves.toBe(false);
+    } finally {
+      stop();
+      registry.dispose();
+    }
+  });
+
   it("matches the request's node and ignores projections from outside its current project", () => {
     const nodeId = NodeId.make("request-node");
     const thread = {
@@ -110,6 +145,26 @@ describe("human action inbox", () => {
     } as const;
     const projection = { thread, runtimeRequests: [request], turnItems: [card] };
     expect(hasLiveHumanAction(projection, action)).toBe(true);
+    const pagedProjection = {
+      ...projection,
+      turnItems: [],
+      visibleTurnItems: [
+        {
+          item: card,
+          position: 0,
+          visibility: "local",
+          sourceThreadId: action.threadId,
+          sourceItemId: action.targetItemId,
+        },
+      ] as const,
+    };
+    expect(hasLiveHumanAction(pagedProjection, action)).toBe(true);
+    expect(
+      hasLiveHumanAction(
+        { ...pagedProjection, runtimeRequests: [{ ...request, status: "resolved" }] },
+        action,
+      ),
+    ).toBe(false);
     expect(
       hasLiveHumanAction(
         {

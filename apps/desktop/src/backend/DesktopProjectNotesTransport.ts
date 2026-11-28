@@ -37,11 +37,12 @@ type State =
   | { readonly type: "closed" };
 
 export const makeDesktopProjectNotesTransport = Effect.fn("DesktopProjectNotesTransport.make")(
-  function* (nonce: string) {
+  function* (nonce: string, onRevoked: Effect.Effect<void> = Effect.void) {
     const queue = yield* Queue.bounded<Uint8Array>(2);
     const state = yield* Ref.make<State>({ type: "waiting" });
     const serial = yield* Semaphore.make(1);
     const sequence = yield* Ref.make(0);
+    const timedOutThrough = yield* Ref.make(0);
     const frame = (request: DesktopProjectNotesRequest) =>
       encode(request).pipe(
         Effect.map((line) => utf8.encode(`${line}\n`)),
@@ -51,8 +52,14 @@ export const makeDesktopProjectNotesTransport = Effect.fn("DesktopProjectNotesTr
     if (Option.isSome(hello)) yield* Queue.offer(queue, hello.value);
     const close = Ref.getAndSet(state, { type: "closed" }).pipe(
       Effect.tap((previous) =>
-        previous.type === "open" && previous.pending !== null
-          ? Deferred.succeed(previous.pending.done, unavailable)
+        previous.type === "open"
+          ? onRevoked.pipe(
+              Effect.ensuring(
+                previous.pending !== null
+                  ? Deferred.succeed(previous.pending.done, unavailable)
+                  : Effect.void,
+              ),
+            )
           : Effect.void,
       ),
       Effect.andThen(Queue.shutdown(queue)),
@@ -73,6 +80,14 @@ export const makeDesktopProjectNotesTransport = Effect.fn("DesktopProjectNotesTr
         if (!opened) yield* close;
         return;
       }
+      const receivedId = Number(reply.value.requestId);
+      if (
+        Number.isSafeInteger(receivedId) &&
+        receivedId > 0 &&
+        String(receivedId) === reply.value.requestId &&
+        receivedId <= (yield* Ref.get(timedOutThrough))
+      )
+        return;
       if (
         current.type !== "open" ||
         current.pending === null ||
@@ -109,12 +124,12 @@ export const makeDesktopProjectNotesTransport = Effect.fn("DesktopProjectNotesTr
             : [false, latest],
         );
         if (!installed) return unavailable;
-        // A timed-out write may have reached SQLite; don't issue another request on the old generation.
+        // A timed-out write may have committed. Keep the pipe so a retry can replay its mutation ID.
         return yield* Queue.offer(queue, payload.value).pipe(
           Effect.andThen(Deferred.await(done)),
           Effect.timeoutOrElse({
             duration: "6 seconds",
-            orElse: () => close.pipe(Effect.as(unavailable)),
+            orElse: () => Ref.set(timedOutThrough, Number(id)).pipe(Effect.as(unavailable)),
           }),
           Effect.onInterrupt(() => close),
           Effect.ensuring(

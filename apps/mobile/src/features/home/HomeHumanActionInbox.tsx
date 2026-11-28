@@ -7,7 +7,7 @@ import {
 } from "@t3tools/client-runtime/state/human-action-inbox";
 import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import { useMessages } from "gt-react-native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { AppText } from "../../components/ui/AppText";
 import { ListActionRow } from "../../components/ui/ListActionRow";
@@ -17,6 +17,7 @@ import { Sheet } from "../../components/ui/Sheet";
 import { useNowMinuteMs } from "../../lib/clock";
 import { relativeTime } from "../../lib/time";
 import { useUiTranslation } from "../../lib/useUiTranslation";
+import { uuidv4 } from "../../lib/uuid";
 import { useProject, useQuietThreadShell, useServerConfigs } from "../../state/entities";
 import {
   mobileInboxes,
@@ -50,7 +51,7 @@ function InboxRow({
       detail={relativeTime(new Date(target.createdAt.epochMilliseconds).toISOString(), now, m)}
       icon={approval ? "exclamationmark.shield" : "bubble.left"}
       trailingIcon="chevron.right"
-      onPress={() => onOpen(target)}
+      onPress={() => void onOpen(target)}
     />
   );
 }
@@ -62,6 +63,8 @@ export function HomeHumanActionInbox({
 }) {
   const t = useUiTranslation();
   const [open, setOpen] = useState(false);
+  const checking = useRef<AbortController | null>(null);
+  useEffect(() => () => checking.current?.abort(), []);
   const [filter, setFilter] = useState<"all" | ScopedHumanAction["kind"]>("all");
   const environments = useWorkspaceEnvironments();
   const configs = useServerConfigs();
@@ -87,8 +90,14 @@ export function HomeHumanActionInbox({
   const incomplete = ready.length < enabled.length;
   if (!open && supported.length === 0) return null;
 
-  const onOpen = (target: ScopedHumanAction) => {
-    if (!openableMobileHumanAction(target)) {
+  const onOpen = async (target: ScopedHumanAction) => {
+    checking.current?.abort();
+    const controller = new AbortController();
+    checking.current = controller;
+    const valid = await openableMobileHumanAction(target, uuidv4(), controller.signal);
+    if (controller.signal.aborted) return;
+    checking.current = null;
+    if (!valid) {
       Alert.alert(t("This request is no longer available."));
       return;
     }
@@ -119,7 +128,14 @@ export function HomeHumanActionInbox({
         </ListSection>
       </View>
       {open ? (
-        <Sheet title={t("Waiting for me")} onClose={() => setOpen(false)} expanded>
+        <Sheet
+          title={t("Waiting for me")}
+          onClose={() => {
+            checking.current?.abort();
+            setOpen(false);
+          }}
+          expanded
+        >
           <ScrollView contentInsetAdjustmentBehavior="automatic">
             <View className="gap-4 px-4 py-4">
               <AppText textRole="footnote" className="text-foreground-muted">

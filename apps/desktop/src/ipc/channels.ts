@@ -42,6 +42,7 @@ export const GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:get-local-environm
 export const SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:set-local-environment-enabled";
 export const GET_PROJECT_NOTES_ENVIRONMENT_CHANNEL = "desktop:project-notes-environment";
 export const CALL_PROJECT_NOTES_CHANNEL = "desktop:project-notes-call";
+export const PROJECT_NOTES_REVOKED_CHANNEL = "desktop:project-notes-revoked";
 export const GET_HOST_ENVIRONMENT_ID_CHANNEL = "desktop:get-host-environment-id";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";

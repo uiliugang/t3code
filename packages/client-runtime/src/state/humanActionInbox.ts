@@ -3,7 +3,10 @@ import {
   type EnvironmentId,
   type OrchestrationV2PendingHumanActionSnapshot,
 } from "@t3tools/contracts";
-import { AsyncResult } from "effect/reactivity";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+import { AsyncResult, type Atom, AtomRegistry } from "effect/reactivity";
 import type { ThreadStructure } from "./models.ts";
 
 export type HumanActionTarget = OrchestrationV2PendingHumanActionSnapshot["targets"][number];
@@ -63,8 +66,29 @@ export function humanActionSnapshotStatus<E>(
     : "unavailable";
 }
 
+/** Verify against a newly keyed subscription, not the listing's cached result. */
+export function verifyPendingHumanAction<E>(
+  registry: AtomRegistry.AtomRegistry,
+  fresh: Atom.Atom<AsyncResult.AsyncResult<OrchestrationV2PendingHumanActionSnapshot | null, E>>,
+  target: HumanActionIdentity,
+  signal: AbortSignal,
+): Promise<boolean> {
+  return Effect.runPromise(
+    AtomRegistry.toStream(registry, fresh).pipe(
+      Stream.map((result) => humanActionSnapshotStatus(result, target)),
+      Stream.filter((status) => status !== "checking"),
+      Stream.runHead,
+      Effect.timeoutOption("5 seconds"),
+      Effect.map(Option.flatten),
+      Effect.map((result) => Option.getOrNull(result) === "ready"),
+    ),
+    { signal },
+  ).catch(() => false);
+}
+
 export function hasLiveHumanAction(
   projection: Pick<ThreadStructure, "runtimeRequests" | "turnItems"> & {
+    readonly visibleTurnItems?: ThreadStructure["visibleTurnItems"];
     readonly thread: Pick<
       ThreadStructure["thread"],
       "id" | "projectId" | "archivedAt" | "deletedAt"
@@ -91,14 +115,16 @@ export function hasLiveHumanAction(
       : request.kind !== "user_input" || request.responseCapability.type === "not_resumable")
   )
     return false;
-  return projection.turnItems.some(
-    (item) =>
-      item.threadId === target.threadId &&
-      item.id === target.targetItemId &&
-      item.nodeId === request.nodeId &&
-      (item.status === "waiting" || item.status === "pending") &&
-      (item.type === "approval_request" || item.type === "user_input_request") &&
-      item.type === (approval ? "approval_request" : "user_input_request") &&
-      item.requestId === target.requestId,
+  const isTarget = (item: ThreadStructure["turnItems"][number]) =>
+    item.threadId === target.threadId &&
+    item.id === target.targetItemId &&
+    item.nodeId === request.nodeId &&
+    (item.status === "waiting" || item.status === "pending") &&
+    (item.type === "approval_request" || item.type === "user_input_request") &&
+    item.type === (approval ? "approval_request" : "user_input_request") &&
+    item.requestId === target.requestId;
+  return (
+    projection.turnItems.some(isTarget) ||
+    projection.visibleTurnItems?.some(({ item }) => isTarget(item)) === true
   );
 }

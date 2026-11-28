@@ -448,6 +448,14 @@ function ThreadRouteContent(
     hasLiveHumanAction(selectedThreadDetail, authorizedTarget)
       ? authorizedTarget
       : null;
+  const [failedInboxHistory, setFailedInboxHistory] = useState<string | null>(null);
+  const shouldLoadInboxHistory =
+    authorizedTarget !== null &&
+    inboxStatus === "ready" &&
+    selectedThreadDetailState.status === "live" &&
+    selectedThreadDetail !== null &&
+    liveTarget === null &&
+    failedInboxHistory !== authorizedTarget.activation;
   const requests = useSelectedThreadRequests(
     requestedInboxTarget === null ? undefined : liveTarget,
   );
@@ -459,6 +467,7 @@ function ThreadRouteContent(
     requestedInboxTarget !== null && !targetShown
       ? {
           message:
+            shouldLoadInboxHistory ||
             inboxStatus === "checking" ||
             (inboxStatus === "ready" && selectedThreadDetailState.status !== "live")
               ? t("Checking…")
@@ -505,6 +514,50 @@ function ThreadRouteContent(
     label: t("load earlier thread history"),
     reportFailure: false,
   });
+  const inboxHistory = shouldLoadInboxHistory ? authorizedTarget : null;
+  const inboxHistoryActivation = inboxHistory?.activation;
+  const inboxHistoryItem = inboxHistory?.targetItemId;
+  const inboxHistoryEnvironment = inboxHistory?.environmentId;
+  const inboxHistoryThread = inboxHistory?.threadId;
+  const inboxHistoryLoading = selectedThreadDetailState.history.loading;
+  const inboxHasOlderHistory = selectedThreadDetailState.history.hasMoreHistory;
+  const startedInboxHistory = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pages the exact live request's source card into the thread window
+  useEffect(() => {
+    if (
+      !inboxHistoryActivation ||
+      !inboxHistoryItem ||
+      !inboxHistoryEnvironment ||
+      !inboxHistoryThread ||
+      inboxHistoryLoading ||
+      startedInboxHistory.current === inboxHistoryActivation
+    )
+      return;
+    if (!inboxHasOlderHistory) {
+      setFailedInboxHistory(inboxHistoryActivation);
+      return;
+    }
+    startedInboxHistory.current = inboxHistoryActivation;
+    void loadEarlierHistory({
+      environmentId: inboxHistoryEnvironment,
+      input: { threadId: inboxHistoryThread, throughEntryId: inboxHistoryItem },
+    }).then((result) => {
+      if (startedInboxHistory.current !== inboxHistoryActivation) return;
+      if (result._tag === "Success" && result.value._tag === "busy") {
+        startedInboxHistory.current = null;
+        return;
+      }
+      setFailedInboxHistory(inboxHistoryActivation);
+    });
+  }, [
+    inboxHasOlderHistory,
+    inboxHistoryActivation,
+    inboxHistoryEnvironment,
+    inboxHistoryItem,
+    inboxHistoryLoading,
+    inboxHistoryThread,
+    loadEarlierHistory,
+  ]);
   const historyControls = (() => {
     const history = selectedThreadDetailState.history;
     if (!selectedThread) {

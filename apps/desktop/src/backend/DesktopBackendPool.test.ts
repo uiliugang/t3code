@@ -210,6 +210,7 @@ function layerPool(
           handleBackendReady: () => options.onReady ?? Effect.void,
           handleBackendNotReady: Effect.void,
           flushMainWindowBounds: Effect.void,
+          notifyProjectNotesRevoked: Effect.void,
           dispatchMenuAction: () => Effect.die("unexpected menu action"),
           zoomMain: () => Effect.die("unexpected zoom"),
           runMainContentsCommand:

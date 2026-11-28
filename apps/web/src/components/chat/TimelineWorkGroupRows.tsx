@@ -635,7 +635,8 @@ export function LiveWorkEntryTimelineRow({
   const item = row.entry.projectedItem?.item;
   const pendingApproval =
     item?.type === "approval_request" ? ctx.pendingApprovals.get(item.requestId) : undefined;
-  if (pendingApproval) return <TimelinePendingApprovalRow approval={pendingApproval} />;
+  if (pendingApproval && item)
+    return <TimelinePendingApprovalRow approval={pendingApproval} targetItemId={item.id} />;
 
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
   const thoughtLine =

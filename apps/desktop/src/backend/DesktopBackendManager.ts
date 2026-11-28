@@ -275,6 +275,7 @@ export interface BackendInstanceSpec {
   readonly label: Effect.Effect<string>;
   readonly configResolve: Effect.Effect<DesktopBackendStartConfig, PlatformError.PlatformError>;
   readonly trackProcess?: TrackBackendProcess;
+  readonly onProjectNotesRevoked?: Effect.Effect<void>;
   /** Receives the ready run's URL and pid; reading current config could race a subsequent restart. */
   readonly onReady?: (httpBaseUrl: URL, pid: number) => Effect.Effect<void>;
   readonly onShutdown?: () => Effect.Effect<void>;
@@ -1032,7 +1033,9 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
               ).join("")
             : undefined;
         const notes =
-          notesNonce === undefined ? null : yield* makeDesktopProjectNotesTransport(notesNonce);
+          notesNonce === undefined
+            ? null
+            : yield* makeDesktopProjectNotesTransport(notesNonce, spec.onProjectNotesRevoked);
         yield* Ref.set(currentProjectNotes, notes);
         const program = runBackendProcess({
           ...config.value,
@@ -1226,7 +1229,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const stop = Effect.fn("desktop.backendInstance.stop")(function* (options?: {
     readonly timeout?: Duration.Duration;
   }) {
-    const { active, restartFiber, notifyShutdown } = yield* mutex.withPermits(1)(
+    const { active, restartFiber, notifyShutdown, notes } = yield* mutex.withPermits(1)(
       Effect.gen(function* () {
         const result = yield* SubscriptionRef.modify(state, (latest) => {
           const active = Option.map(latest.active, (run) =>
@@ -1247,10 +1250,11 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             },
           ] as const;
         });
-        return result;
+        return { ...result, notes: yield* Ref.get(currentProjectNotes) };
       }),
     );
 
+    yield* notes?.close ?? Effect.void;
     if (notifyShutdown) {
       yield* (spec.onShutdown?.() ?? Effect.void).pipe(Effect.ignore);
     }

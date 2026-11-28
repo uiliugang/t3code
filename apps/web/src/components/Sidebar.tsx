@@ -1396,6 +1396,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     void handleNewThread(scopeProjectRef(target.environmentId, target.id));
   });
   const [notesProject, setNotesProject] = useState<ProjectNotesSelection | null>(null);
+  const notesOpenAttempt = useRef(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- native Notes authority is independent of the environment WebSocket
+  useEffect(() => {
+    const unsubscribe = window.desktopBridge?.onProjectNotesRevoked?.(() => {
+      notesOpenAttempt.current += 1;
+      setNotesProject(null);
+    });
+    return () => {
+      notesOpenAttempt.current += 1;
+      unsubscribe?.();
+    };
+  }, []);
   const notesPrimaryEnvironment = useAtomValue(primaryEnvironmentIdAtom);
   if (notesProject !== null && notesProject.environmentId !== notesPrimaryEnvironment)
     setNotesProject(null);
@@ -1409,6 +1421,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       if (!api) return;
       void (async () => {
         const canOpenNotes =
+          window.desktopBridge?.onProjectNotesRevoked !== undefined &&
           appAtomRegistry.get(primaryEnvironmentIdAtom) === group.environmentId &&
           (await localNotesEnvironment()) === group.environmentId;
         const clicked = await settlePromise(() =>
@@ -1447,6 +1460,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "project-notes":
             if (canOpenNotes) {
+              const attempt = ++notesOpenAttempt.current;
               const selection = await prepareProjectNotesSelection(
                 group.environmentId,
                 group.id,
@@ -1454,6 +1468,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               );
               if (
                 selection !== null &&
+                notesOpenAttempt.current === attempt &&
                 appAtomRegistry.get(primaryEnvironmentIdAtom) === group.environmentId
               )
                 setNotesProject(selection);
