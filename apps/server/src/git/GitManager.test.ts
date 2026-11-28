@@ -2522,6 +2522,49 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
+  it.effect("shares an authentication failure cooldown across branches for the same provider", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/auth-fail-a"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/auth-fail-a"]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/auth-fail-b"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/auth-fail-b"]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+
+      const { manager, providerCalls } = yield* makeManager({
+        providerScenario: {
+          failWith: "Meituan Code is not authenticated. Run code-cli auth login on the server.",
+        },
+      });
+
+      const firstError = yield* manager
+        .branchPullRequest({ cwd: repoDir, branch: "feature/auth-fail-a" })
+        .pipe(Effect.flip);
+      expect(firstError._tag).toBe("SourceControlProviderError");
+      expect(listed(providerCalls)).toHaveLength(1);
+
+      // A different branch using the same unauthenticated provider fails fast from cooldown.
+      const secondError = yield* manager
+        .branchPullRequest({ cwd: repoDir, branch: "feature/auth-fail-b" })
+        .pipe(Effect.flip);
+      expect(secondError._tag).toBe("SourceControlProviderError");
+      expect(listed(providerCalls)).toHaveLength(1);
+
+      // After the 5-minute provider cooldown expires, lookup probes the provider again.
+      yield* TestClock.adjust("5 minutes");
+      const thirdError = yield* manager
+        .branchPullRequest({ cwd: repoDir, branch: "feature/auth-fail-b" })
+        .pipe(Effect.flip);
+      expect(thirdError._tag).toBe("SourceControlProviderError");
+      expect(listed(providerCalls)).toHaveLength(2);
+    }),
+  );
+
   it.effect("status finds a merged PR after its remote branch was deleted", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
