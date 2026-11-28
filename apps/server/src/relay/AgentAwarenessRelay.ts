@@ -38,6 +38,7 @@ import * as Semaphore from "effect/Semaphore";
 import type { OrchestratorV2Error } from "../orchestration-v2/Orchestrator.ts";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
 
@@ -216,6 +217,20 @@ const REDACTED_RELAY_AGENT_FAILURE_DETAIL = "The agent run failed.";
 const RELAY_AGENT_ACTIVITY_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 // Nothing else re-queues a thread when the network returns, so a lost terminal state is retried until it lands.
 const RELAY_AGENT_ACTIVITY_STEADY_RETRY_DELAY_MS = 60_000;
+// A 404/410 from the relay wake endpoint means this relay/environment does not support it right now;
+// back off at the environment level instead of retrying every thread every minute.
+const RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS = 60 * 60_000;
+
+function extractUnsupportedWakeStatus(cause: Cause.Cause<unknown>): number | null {
+  const error = Cause.findErrorOption(cause);
+  if (Option.isNone(error)) return null;
+  const value = error.value;
+  if (!HttpClientError.isHttpClientError(value)) return null;
+  const reason = value.reason;
+  if (!("response" in reason) || reason.response === undefined) return null;
+  const status = reason.response.status;
+  return status === 404 || status === 410 ? status : null;
+}
 
 function sanitizeRelayAgentActivityState(
   state: RelayAgentActivityState | null,
@@ -496,6 +511,7 @@ export const make = Effect.gen(function* () {
 
   let cachedRelayClient: Effect.Success<ReturnType<typeof makeRelayClient>> | undefined;
   let publishedRelayConfig: NonNullable<Effect.Success<typeof readRelayConfig>> | undefined;
+  let unsupportedWakeBlockedUntilMs: number | null = null;
 
   // Confirm through the same worker so tombstones cannot race live updates; recovery clears the deadline.
   const publishConfirmDeadlines = new Map<ThreadId, number>();
@@ -523,6 +539,7 @@ export const make = Effect.gen(function* () {
   const resetPublishedConnection = Effect.gen(function* () {
     publishedRelayConfig = undefined;
     cachedRelayClient = undefined;
+    unsupportedWakeBlockedUntilMs = null;
     publishConfirmDeadlines.clear();
     heldCompletions.clear();
     unconfirmedWakes.clear();
@@ -570,6 +587,20 @@ export const make = Effect.gen(function* () {
       readonly state: RelayAgentActivityState | null;
       readonly reason: string;
     }) {
+      // A phone can fetch as soon as FCM accepts the wake, before the relay returns its response.
+      if (input.state === null && activityInitialized) activityDetails.delete(threadId);
+      else activityDetails.set(threadId, input.state);
+
+      const nowMs = (yield* DateTime.now).epochMilliseconds;
+      if (unsupportedWakeBlockedUntilMs !== null && nowMs < unsupportedWakeBlockedUntilMs) {
+        yield* Effect.logDebug("agent activity wake skipped; endpoint in unsupported cooldown", {
+          environmentId,
+          threadId,
+          blockedUntilMs: unsupportedWakeBlockedUntilMs,
+        });
+        return;
+      }
+
       if (cachedRelayClient === undefined) {
         cachedRelayClient = yield* makeRelayClient(relayConfig);
       }
@@ -589,14 +620,12 @@ export const make = Effect.gen(function* () {
         reason: input.reason,
       });
 
-      // A phone can fetch as soon as FCM accepts the wake, before the relay returns its response.
-      if (input.state === null && activityInitialized) activityDetails.delete(threadId);
-      else activityDetails.set(threadId, input.state);
       unconfirmedWakes.add(threadId);
       const response = yield* relayClient.server
         .wakeAgentActivity({ params: { environmentId }, payload: { proof } })
         .pipe(Effect.timeout("10 seconds"));
 
+      unsupportedWakeBlockedUntilMs = null;
       unconfirmedWakes.delete(threadId);
       yield* Effect.logInfo("agent activity publish completed", {
         environmentId,
@@ -833,6 +862,27 @@ export const make = Effect.gen(function* () {
       Effect.tap(() => cancelPublishRetry(threadId)),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) return Effect.void;
+        const unsupportedStatus = extractUnsupportedWakeStatus(cause);
+        if (unsupportedStatus !== null) {
+          return Effect.gen(function* () {
+            const nowMs = (yield* DateTime.now).epochMilliseconds;
+            const firstTrip =
+              unsupportedWakeBlockedUntilMs === null || nowMs >= unsupportedWakeBlockedUntilMs;
+            unsupportedWakeBlockedUntilMs = nowMs + RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS;
+            unconfirmedWakes.clear();
+            yield* cancelPublishRetries;
+            if (firstTrip) {
+              yield* Effect.logWarning(
+                "agent activity wake endpoint returned permanent not-found; pausing relay wakes",
+                {
+                  threadId,
+                  status: unsupportedStatus,
+                  cooldownMs: RELAY_AGENT_ACTIVITY_UNSUPPORTED_COOLDOWN_MS,
+                },
+              );
+            }
+          });
+        }
         return Effect.logWarning("agent activity publish failed", {
           threadId,
           cause: Cause.pretty(cause),
