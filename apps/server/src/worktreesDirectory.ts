@@ -2,11 +2,38 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 
 import * as ServerConfig from "./config.ts";
 import * as ServerSettings from "./serverSettings.ts";
+
+const isWorkspaceToken = Schema.is(Schema.String.check(Schema.isUUID(4)));
+
+export function isGeneratedWorkspaceContainer(name: string): boolean {
+  return name.startsWith("workspace-") && isWorkspaceToken(name.slice("workspace-".length));
+}
+
+export const makeHasGitDirectory = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  return Effect.fnUntraced(function* (directory: string) {
+    let current = path.resolve(directory);
+    for (;;) {
+      if (yield* fs.exists(path.join(current, ".git")).pipe(Effect.orElseSucceed(() => false)))
+        return true;
+      if (
+        (yield* fs.exists(path.join(current, "HEAD")).pipe(Effect.orElseSucceed(() => false))) &&
+        (yield* fs.exists(path.join(current, "objects")).pipe(Effect.orElseSucceed(() => false)))
+      )
+        return true;
+      const parent = path.dirname(current);
+      if (parent === current) return false;
+      current = parent;
+    }
+  });
+});
 
 /** Null for filesystem roots or settings not absolute on this host, including synced foreign-platform paths. */
 export function resolveWorktreesDirectory(

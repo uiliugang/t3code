@@ -1,4 +1,5 @@
 import {
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   CheckpointId,
   CheckpointRef,
   CheckpointScopeId,
@@ -26,6 +27,7 @@ import * as Schema from "effect/Schema";
 
 import { coalesceLiveUpdatedEvents } from "./ThreadLiveEventCoalescer.ts";
 import {
+  boundTurnItemForStorage,
   makeLiveBodyDeduper,
   projectTurnItemForWire,
   projectTurnItemForDetail,
@@ -366,6 +368,81 @@ describe("orchestration V2 wire projection", () => {
     });
     expect(failed).toMatchObject({ diffStr: "String to replace not found" });
     expect(failed).not.toHaveProperty("newStr");
+  });
+
+  it("retains exportable tool bodies and keeps detail responses bounded", () => {
+    const huge = "x".repeat(400_000);
+    const command = {
+      ...base,
+      type: "command_execution" as const,
+      input: "cat big.log",
+      output: huge,
+    };
+    expect(boundTurnItemForStorage(command) === command).toBe(true);
+    const detail = projectTurnItemForDetail(command);
+    expect(
+      detail.type === "command_execution" &&
+        detail.output?.endsWith("output truncated for transport"),
+    ).toBe(true);
+    const dynamicTool = {
+      ...base,
+      type: "dynamic_tool" as const,
+      input: { text: huge },
+      output: { rows: huge },
+    };
+    expect(boundTurnItemForStorage(dynamicTool) === dynamicTool).toBe(true);
+
+    const toolWithLinks = {
+      ...base,
+      type: "dynamic_tool" as const,
+      output: { isError: true, threadId: "child-thread", details: huge },
+    };
+    expect(projectTurnItemForWire(boundTurnItemForStorage(toolWithLinks))).toEqual(
+      projectTurnItemForWire(toolWithLinks),
+    );
+    expect(projectTurnItemForDetail(boundTurnItemForStorage(toolWithLinks))).toEqual(
+      projectTurnItemForDetail(toolWithLinks),
+    );
+
+    const imageOutput = {
+      content: [{ type: "image", mimeType: "image/png", data: "A".repeat(300_000) }],
+    };
+    const withImage = boundTurnItemForStorage({
+      ...base,
+      type: "dynamic_tool",
+      output: imageOutput,
+    });
+    expect(withImage.type === "dynamic_tool" ? withImage.output : null).toBe(imageOutput);
+
+    const mcpAppOutput = {
+      t3McpApp: {
+        attachmentId: "app-1",
+        server: "app",
+        tool: "render",
+        resourceUri: "ui://app/index.html",
+      },
+      result: { text: huge },
+    };
+    const withApp = boundTurnItemForStorage({
+      ...base,
+      type: "dynamic_tool",
+      output: mcpAppOutput,
+    });
+    expect(withApp.type === "dynamic_tool" ? withApp.output : null).toBe(mcpAppOutput);
+  });
+
+  it("keeps a non-exportable command over the transcript limit after bounding its stored output", () => {
+    const command = {
+      ...base,
+      type: "command_execution" as const,
+      input: "cat big.log",
+      output: "a".repeat(PROVIDER_SEND_TURN_MAX_FILE_BYTES + 1024),
+    };
+    const bounded = boundTurnItemForStorage(command);
+    if (bounded.type !== "command_execution") throw new Error("expected command");
+    const bytes = Buffer.byteLength(bounded.output ?? "", "utf8");
+    expect(bytes).toBeGreaterThan(PROVIDER_SEND_TURN_MAX_FILE_BYTES);
+    expect(bytes).toBeLessThan(command.output.length);
   });
 
   it("retains only result identities and failure metadata in live tool events", () => {

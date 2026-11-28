@@ -68,7 +68,12 @@ import * as WorktreeBranchSync from "./orchestration-v2/WorktreeBranchSync.ts";
 import { forkParked } from "./serverActivation.ts";
 import * as Settings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
-import { isFilesystemRoot, managedWorktreesDirectories } from "./worktreesDirectory.ts";
+import {
+  makeHasGitDirectory,
+  isGeneratedWorkspaceContainer,
+  isFilesystemRoot,
+  managedWorktreesDirectories,
+} from "./worktreesDirectory.ts";
 import * as CheckpointCaptureIndex from "./vcs/checkpointCaptureIndex.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { isNonRepositoryGitStderr } from "./vcs/GitVcsDriverCore.ts";
@@ -366,6 +371,7 @@ const make = Effect.gen(function* () {
   const terminals = yield* TerminalManager.TerminalManager;
   const pendingSettleScripts = yield* PendingSettleScripts.PendingSettleScripts;
   const fs = yield* FileSystem.FileSystem;
+  const hasGitDirectory = yield* makeHasGitDirectory;
   const path = yield* Path.Path;
   const taskFolders = yield* TaskFolders.TaskFolders;
   const liveTerminals = new Map<string, Map<string, TerminalSummary>>();
@@ -605,41 +611,70 @@ const make = Effect.gen(function* () {
 
   const reportOrphanWorktrees = Effect.fn("StorageCleanup.reportOrphanWorktrees")(function* (
     roots: ReadonlyArray<string>,
-    projects: ReadonlyArray<{ readonly workspaceRoot: string }>,
+    projectPaths: ReadonlyArray<string>,
     entries: StorageCleanupReportEntry[],
     scratchRoot: string | null,
     trigger: StorageCleanupReport["trigger"],
   ) {
-    const rows = yield* sql<{ worktreePath: string }>`
-      SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
-      FROM orchestration_v2_projection_threads
-      WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL
-      UNION SELECT json_extract(resource.value, '$.checkoutRoot') AS worktreePath
-      FROM orchestration_v2_projection_workspace_revisions, json_each(payload_json, '$.resources') AS resource
-      UNION SELECT json_extract(resource.value, '$.path') AS worktreePath
-      FROM workspace_preparations, json_each(payload_json, '$.resources') AS resource
+    // A saved removal retains its checkout path for restoration. Only its empty parent may be pruned.
+    const rows = yield* sql<{ worktreePath: string; removed: number }>`
+      WITH busy(thread_id) AS (
+        SELECT thread_id FROM orchestration_v2_projection_runs
+        WHERE status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+        UNION SELECT thread_id FROM workspace_restores WHERE stage != 'complete'
+      ), removed(path) AS (
+        SELECT json_extract(r.value, '$.identity.checkoutRoot')
+        FROM managed_worktree_snapshots s, json_each(s.payload_json, '$.resources') r
+        WHERE json_extract(r.value, '$.removed') = 1 AND json_extract(r.value, '$.restoredIdentity') IS NULL
+          AND NOT EXISTS (SELECT 1 FROM json_each(s.payload_json, '$.threads') t WHERE json_extract(t.value, '$.id') IN busy)
+        EXCEPT SELECT json_extract(r.value, '$.path') FROM workspace_preparations p, json_each(p.payload_json, '$.resources') r
+        WHERE json_extract(r.value, '$.ready') IS NOT 1 OR p.thread_id IN busy
+        EXCEPT SELECT json_extract(payload_json, '$.worktreePath') FROM orchestration_v2_projection_threads WHERE thread_id IN busy
+      ), paths(path) AS (
+        SELECT json_extract(payload_json, '$.worktreePath') FROM orchestration_v2_projection_threads
+        UNION SELECT json_extract(r.value, '$.checkoutRoot')
+          FROM orchestration_v2_projection_workspace_revisions, json_each(payload_json, '$.resources') r
+        UNION SELECT json_extract(r.value, '$.path') FROM workspace_preparations, json_each(payload_json, '$.resources') r
+      )
+      SELECT path AS "worktreePath", path IN removed AS removed FROM paths WHERE path IS NOT NULL
     `.pipe(NodeSqliteClient.readOnly);
+    const sessionRows = yield* sql<{
+      cwd: string;
+    }>`SELECT DISTINCT json_extract(payload_json, '$.cwd') AS cwd
+      FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`.pipe(
+      NodeSqliteClient.readOnly,
+    );
     const referenced = new Set<string>();
-    for (const row of rows) {
-      const resolved = path.resolve(row.worktreePath);
-      referenced.add(pathKey(resolved));
-      referenced.add(
-        pathKey(yield* fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved))),
-      );
+    const protectedPaths = new Set<string>();
+    for (const { worktreePath, removed } of [
+      ...rows,
+      { worktreePath: yield* HostProcess.WorkingDirectory, removed: 0 },
+      ...sessionRows.map(({ cwd }) => ({ worktreePath: cwd, removed: 0 })),
+    ]) {
+      if (!worktreePath) continue;
+      const resolved = path.resolve(worktreePath);
+      const real = yield* fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
+      for (const key of [pathKey(resolved), pathKey(real)]) {
+        referenced.add(key);
+        if (!removed) protectedPaths.add(key);
+      }
     }
     const referencedAncestors = new Set<string>();
-    for (let ancestor of referenced) {
+    const protectedAncestors = new Set<string>();
+    for (const key of referenced) {
+      let ancestor = key;
       while (roots.some((root) => inside(root, ancestor))) {
         ancestor = pathKey(path.dirname(ancestor));
         referencedAncestors.add(ancestor);
+        if (protectedPaths.has(key)) protectedAncestors.add(ancestor);
       }
     }
     const projectRoots = (yield* Effect.forEach(
-      yield* Effect.filter(projects, (project) =>
-        fs.exists(path.resolve(project.workspaceRoot)).pipe(Effect.orElseSucceed(() => true)),
+      yield* Effect.filter(new Set(projectPaths), (target) =>
+        fs.exists(path.resolve(target)).pipe(Effect.orElseSucceed(() => true)),
       ),
-      (project) => {
-        const resolved = path.resolve(project.workspaceRoot);
+      (target) => {
+        const resolved = path.resolve(target);
         return fs.realPath(resolved).pipe(
           Effect.orElseSucceed(() => resolved),
           Effect.map((realPath) => [resolved, realPath]),
@@ -696,12 +731,23 @@ const make = Effect.gen(function* () {
     );
     // Linked worktrees can sit deeper inside a plain folder, like <repository>/replay/<n>. Ask
     // the projects' Git for them rather than walking folders that may hold large non-git trees.
-    let registered: ReadonlyArray<string> | undefined;
+    const readRegistrations = yield* Effect.cached(
+      Effect.gen(function* () {
+        const gitProjectRoots = yield* Effect.filter(new Set(projectRoots), hasGitDirectory, {
+          concurrency: 8,
+        });
+        const results = yield* Effect.forEach(gitProjectRoots, (root) =>
+          git.listWorktreePaths(root).pipe(Effect.option),
+        );
+        return {
+          complete: results.every(Option.isSome),
+          paths: results.flatMap((result) => Option.getOrElse(result, () => [])),
+        };
+      }),
+    );
     const nestedWorktrees = Effect.fnUntraced(function* (folder: string, managedRoot: string) {
       if (yield* fs.exists(path.join(folder, ".git"))) return [];
-      registered ??= (yield* Effect.forEach(new Set(projectRoots), (root) =>
-        git.listWorktreePaths(root).pipe(Effect.orElseSucceed((): string[] => [])),
-      )).flat();
+      const registered = (yield* readRegistrations).paths;
       // Locked registrations outlive their directory, whose path may since hold something else.
       return yield* Effect.filter(
         registered.filter(
@@ -718,11 +764,52 @@ const make = Effect.gen(function* () {
       // Worktrees can be <root>/<repository>/<branch> or explicitly <root>/<name>.
       for (const projectDirectory of yield* directories(root, root)) {
         yield* Effect.gen(function* () {
-          if (referenced.has(pathKey(projectDirectory))) return;
+          const directoryKey = pathKey(projectDirectory);
+          if (referenced.has(directoryKey)) return;
           const gitPath = path.join(projectDirectory, ".git");
           if (yield* fs.exists(gitPath)) {
             if (yield* isLinkedWorktree(projectDirectory)) yield* report(projectDirectory);
             return;
+          }
+          if (
+            isGeneratedWorkspaceContainer(path.basename(projectDirectory)) &&
+            !protectedAncestors.has(directoryKey) &&
+            !roots.some(
+              (root) => pathKey(root) === directoryKey || inside(projectDirectory, root),
+            ) &&
+            !projectRoots.some(
+              (projectRoot) =>
+                pathKey(projectRoot) === directoryKey || inside(projectDirectory, projectRoot),
+            )
+          ) {
+            const contents = yield* fs
+              .readDirectory(projectDirectory)
+              .pipe(Effect.orElseSucceed(() => null));
+            if (contents !== null && contents.length === 0) {
+              const modified = Option.getOrNull((yield* fs.stat(projectDirectory)).mtime);
+              if (
+                modified !== null &&
+                modified.getTime() <= now - ORPHAN_WORKTREE_GRACE_MS &&
+                !(yield* hasTerminal(projectDirectory))
+              ) {
+                const registered = yield* readRegistrations;
+                if (
+                  !registered.complete ||
+                  registered.paths.some(
+                    (checkout) =>
+                      pathKey(checkout) === directoryKey || inside(projectDirectory, checkout),
+                  )
+                )
+                  return;
+                yield* Effect.promise(() =>
+                  NodeFSP.rmdir(projectDirectory).then(
+                    () => undefined,
+                    () => undefined,
+                  ),
+                );
+                return;
+              }
+            }
           }
           for (const worktreePath of yield* directories(projectDirectory, root)) {
             const nested = yield* nestedWorktrees(worktreePath, root);
@@ -2250,7 +2337,10 @@ const make = Effect.gen(function* () {
     }
     yield* reportOrphanWorktrees(
       roots,
-      yield* projectStore.list({ includeDeleted: true }),
+      (yield* projectStore.list({ includeDeleted: true })).flatMap((project) => [
+        project.workspaceRoot,
+        ...(project.workspaceConfig?.roots.map((root) => root.sourcePath) ?? []),
+      ]),
       entries,
       scratchRoot,
       trigger,
@@ -3137,25 +3227,33 @@ const make = Effect.gen(function* () {
       );
     const cleanupEnabled = () =>
       anyWorktreePolicy(lastSettings, worktreeCleanupEnabled) || mergedBranchCleanupEnabled();
+    const isTerminalActive = (terminal: TerminalSummary | undefined) =>
+      terminal !== undefined && (terminal.status === "starting" || terminal.status === "running");
     const unsubscribe = yield* terminals.subscribeMetadata((event) =>
       Effect.sync(() => {
         if (event.type === "snapshot") {
           liveTerminals.clear();
           for (const terminal of event.terminals) noteTerminal(terminal);
-        } else if (event.type === "upsert") {
-          noteTerminal(event.terminal);
-        } else {
-          const threadTerminals = liveTerminals.get(event.threadId);
-          threadTerminals?.delete(event.terminalId);
-          if (threadTerminals?.size === 0) liveTerminals.delete(event.threadId);
+          return false;
         }
+        if (event.type === "upsert") {
+          const previous = liveTerminals
+            .get(event.terminal.threadId)
+            ?.get(event.terminal.terminalId);
+          const becameInactive =
+            (previous === undefined || isTerminalActive(previous)) &&
+            !isTerminalActive(event.terminal);
+          noteTerminal(event.terminal);
+          return becameInactive;
+        }
+        const threadTerminals = liveTerminals.get(event.threadId);
+        const previous = threadTerminals?.get(event.terminalId);
+        threadTerminals?.delete(event.terminalId);
+        if (threadTerminals?.size === 0) liveTerminals.delete(event.threadId);
+        return previous === undefined || isTerminalActive(previous);
       }).pipe(
-        Effect.andThen(() =>
-          event.type !== "snapshot" &&
-          (event.type !== "upsert" || !["starting", "running"].includes(event.terminal.status)) &&
-          cleanupEnabled()
-            ? requestSweep
-            : Effect.void,
+        Effect.flatMap((shouldRequestSweep) =>
+          shouldRequestSweep && cleanupEnabled() ? requestSweep : Effect.void,
         ),
       ),
     );

@@ -3364,6 +3364,83 @@ describe("orphan worktree reports", () => {
     ),
   );
 
+  it.live(
+    "prunes stale empty workspace container directories while preserving recent or non-empty ones",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture();
+          fixture.setThreads([]);
+          const staleEmpty = `${fixture.config.worktreesDir}/workspace-00000000-0000-4000-8000-000000000001`;
+          const recentEmpty = `${fixture.config.worktreesDir}/workspace-00000000-0000-4000-8000-000000000002`;
+          const nonEmpty = `${fixture.config.worktreesDir}/workspace-00000000-0000-4000-8000-000000000003`;
+          yield* fixture.fs.makeDirectory(staleEmpty, { recursive: true });
+          yield* fixture.fs.makeDirectory(recentEmpty, { recursive: true });
+          yield* fixture.fs.makeDirectory(nonEmpty, { recursive: true });
+          const locked = `${fixture.config.worktreesDir}/workspace-00000000-0000-4000-8000-000000000004`;
+          yield* fixture.command(fixture.repo, ["worktree", "add", "--detach", locked]);
+          yield* fixture.command(fixture.repo, ["worktree", "lock", locked]);
+          yield* fixture.fs.rename(locked, `${fixture.repo}/offline-checkout`);
+          yield* fixture.fs.makeDirectory(locked);
+          yield* fixture.fs.utimes(locked, 1, 1);
+          const personal = `${fixture.config.worktreesDir}/workspace-personal`;
+          yield* fixture.fs.makeDirectory(personal);
+          yield* fixture.fs.utimes(personal, 1, 1);
+          const configuredRoot = `${fixture.config.worktreesDir}/workspace-00000000-0000-4000-8000-000000000005`;
+          yield* fixture.fs.makeDirectory(configuredRoot);
+          yield* fixture.fs.utimes(configuredRoot, 1, 1);
+          fixture.setSettings({ previousWorktreesDirectories: [configuredRoot] });
+          yield* fixture.fs.writeFileString(`${nonEmpty}/keep.txt`, "keep");
+          yield* fixture.fs.utimes(staleEmpty, 1, 1);
+          yield* fixture.fs.utimes(nonEmpty, 1, 1);
+
+          yield* fixture.service.runNow;
+
+          expect(yield* fixture.fs.exists(staleEmpty)).toBe(false);
+          expect(yield* fixture.fs.exists(recentEmpty)).toBe(true);
+          expect(yield* fixture.fs.exists(configuredRoot)).toBe(true);
+          expect(yield* fixture.fs.exists(personal)).toBe(true);
+          expect(yield* fixture.fs.exists(locked)).toBe(true);
+          expect(yield* fixture.fs.exists(nonEmpty)).toBe(true);
+        }),
+      ),
+  );
+
+  it.live(
+    "prunes a removed checkout's empty container only after preparation and recovery finish",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const fixture = yield* cleanupFixture(undefined, {}, sql);
+          const { fs, service } = fixture;
+          fixture.setThreads([]);
+          const parent = `${fixture.config.worktreesDir}/workspace-00000000-0000-4000-8000-000000000006`;
+          const checkout = `${parent}/1-repo`;
+          yield* fs.makeDirectory(parent);
+          yield* fs.utimes(parent, 1, 1);
+          const saved = JSON.stringify({
+            threads: [{ id: "owner" }],
+            resources: [{ removed: true, identity: { checkoutRoot: checkout } }],
+          });
+          yield* sql`INSERT INTO managed_worktree_snapshots VALUES ('group', ${saved})`;
+          const preparation = (ready: boolean) =>
+            JSON.stringify({ resources: [{ path: checkout, ready }] });
+          yield* sql`INSERT INTO workspace_preparations VALUES ('owner', ${preparation(false)})`;
+          yield* service.runNow;
+          expect(yield* fs.exists(parent)).toBe(true);
+          yield* sql`UPDATE workspace_preparations SET payload_json = ${preparation(true)}`;
+          yield* sql`INSERT INTO workspace_restores VALUES ('owner', 'recovering-binding', '{}')`;
+          yield* service.runNow;
+          expect(yield* fs.exists(parent)).toBe(true);
+          yield* sql`UPDATE workspace_restores SET stage = 'complete'`;
+          yield* service.runNow;
+          expect(yield* fs.exists(parent)).toBe(false);
+          expect(yield* sql`SELECT group_id FROM managed_worktree_snapshots`).toHaveLength(1);
+        }).pipe(Effect.provide(Sqlite.layerMemory)),
+      ),
+  );
+
   it.live.each(["nested", "direct", "annexed"] as const)(
     "reports a linked orphan's size without removing its files (%s)",
     (location) =>

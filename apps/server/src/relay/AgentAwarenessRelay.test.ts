@@ -1096,6 +1096,49 @@ describe("AgentAwarenessRelay", () => {
     }),
   );
 
+  it.effect(
+    "pauses relay wake retries on 404 while keeping readActivity fresh and probes again after cooldown",
+    () =>
+      Effect.gen(function* () {
+        let supported = false;
+        const { relay, currentShell, publications } = yield* makeTestRelay({
+          respond: () =>
+            supported
+              ? Response.json({ ok: true, deliveries: [] })
+              : new Response("Not Found", { status: 404 }),
+        });
+
+        yield* relay.publishThread(THREAD_ID);
+        assert.equal(publications.length, 1);
+
+        // Should NOT retry every second/minute on permanent 404.
+        yield* TestClock.adjust("10 minutes");
+        yield* relay.drain;
+        assert.equal(publications.length, 1);
+
+        // Subsequent state changes still update readActivity locally without hitting the relay during cooldown.
+        const completedAt = yield* DateTime.now;
+        yield* Ref.set(
+          currentShell,
+          shell({ status: "completed", latestRunCompletedAt: completedAt }),
+        );
+        yield* relay.publishThread(THREAD_ID);
+        yield* TestClock.adjust("5 seconds");
+        yield* relay.drain;
+        assert.equal(publications.length, 1);
+        const activity = yield* relay.readActivity();
+        assert.equal(activity[0]?.phase, "completed");
+
+        // Once the 1-hour cooldown elapses and the endpoint becomes available, publishing resumes.
+        supported = true;
+        yield* TestClock.adjust("60 minutes");
+        yield* relay.drain;
+        assert.equal(publications.length, 2);
+        yield* relay.publishThread(THREAD_ID);
+        assert.equal(publications.length, 2);
+      }),
+  );
+
   it.effect("keeps settled live work until its awaited monitor finishes", () =>
     Effect.gen(function* () {
       const { relay, currentShell, publications } = yield* makeTestRelay();

@@ -58,7 +58,7 @@ const encodeThread = Schema.encodeEffect(Schema.fromJsonString(OrchestrationV2Ap
 const decodeIdentity = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
 );
-const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
+const fixture = Effect.fn("test.fixture")(function* (remounted = false, container = "") {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const sql = yield* SqlClient.SqlClient;
@@ -73,7 +73,7 @@ const fixture = Effect.fn("test.fixture")(function* (remounted = false) {
   const bindings: ThreadWorkspaceRevision["bindings"][number][] = [];
   for (const resource of base.resources) {
     const source = path.join(temp, resource.name);
-    const checkout = path.join(managed, resource.name);
+    const checkout = path.join(managed, container, resource.name);
     yield* fs.makeDirectory(source, { recursive: true });
     yield* git.execute({ operation: "test", cwd: source, args: ["init", "-b", "main"] });
     yield* fs.writeFileString(path.join(source, "file.txt"), resource.name);
@@ -1088,4 +1088,70 @@ it.live("classifies missing and leftover worktrees without losing historical bra
       assert.equal(yield* fs.readFileString(path.join(leftover, "notes.txt")), "keep");
     }).pipe(Effect.provide(context.layer));
   }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
+it.live.each([
+  { truncated: false, parentUse: "none" },
+  { truncated: true, parentUse: "project" },
+  { truncated: false, parentUse: "unknown" },
+])(
+  "verifies retained refs and prunes only an unused container (truncated=$truncated, parentUse=$parentUse)",
+  ({ truncated, parentUse }) =>
+    Effect.gen(function* () {
+      const context = yield* fixture(false, "workspace-00000000-0000-4000-8000-000000000001");
+      const parent = context.path.dirname(context.resources[0]!.checkoutRoot);
+      if (parentUse === "project") {
+        yield* context.sql`UPDATE projection_projects SET workspace_root = ${parent}`;
+      } else if (parentUse === "unknown") {
+        const broken = context.path.join(context.temp, "unreadable-repo");
+        yield* context.fs.makeDirectory(context.path.join(broken, ".git"), { recursive: true });
+        yield* context.sql`UPDATE projection_projects SET workspace_root = ${broken}`;
+      }
+      const { resources, git } = context;
+      yield* Effect.gen(function* () {
+        const service = yield* ManagedWorktrees.ManagedWorktrees;
+        const [initial] = yield* service.list({});
+        const [removed] = yield* service.remove({
+          targets: [initial!],
+          deleteIgnoredFiles: true,
+        });
+        assert.equal(removed!.outcome, "removed", removed!.detail);
+        assert.equal(yield* context.fs.exists(parent), parentUse !== "none");
+        const [restorable] = yield* service.list({});
+        assert.equal(restorable!.status, "removed");
+        assert.isTrue(restorable!.actions!.restore);
+
+        yield* git.execute({
+          operation: "test",
+          cwd: resources[0]!.identity.commonDir,
+          args: [
+            "--git-dir",
+            resources[0]!.identity.commonDir,
+            "branch",
+            "-D",
+            `feature/${resources[0]!.name}`,
+          ],
+        });
+
+        const [unrecoverable] = yield* service.list({});
+        assert.equal(unrecoverable!.status, "removed");
+        assert.isFalse(unrecoverable!.actions!.restore);
+        assert.include(unrecoverable!.reason!, "cannot be rebuilt");
+      }).pipe(
+        Effect.provide(context.layer),
+        Effect.provideService(GitVcsDriver.GitVcsDriver, {
+          ...git,
+          execute: (input) =>
+            git
+              .execute(input)
+              .pipe(
+                Effect.map((result) =>
+                  truncated && input.operation === "ManagedWorktrees.inspectRecoveryRefs"
+                    ? { ...result, stdout: "", stdoutTruncated: true }
+                    : result,
+                ),
+              ),
+        }),
+      );
+    }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );

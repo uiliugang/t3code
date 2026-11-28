@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Schema from "effect/Schema";
+import { TestClock } from "effect/testing";
 import * as Threads from "../orchestration-v2/ThreadManagementService.ts";
 import * as Issues from "../sourceControl/IssueService.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
@@ -84,6 +85,7 @@ function setup(
     },
   };
   let closed = 0;
+  let reads = 0;
   let failWrite = false;
   let enabled = true;
   let detail: RequirementIssueDetail = {
@@ -136,7 +138,11 @@ function setup(
             }),
         }),
         Layer.mock(Issues.IssueService)({
-          read: () => Effect.succeed(detail),
+          read: () =>
+            Effect.sync(() => {
+              reads++;
+              return detail;
+            }),
           setState: () =>
             failWrite
               ? Effect.fail(
@@ -186,14 +192,22 @@ function setup(
     layer: DeliverySync.layer.pipe(Layer.provide(deps), Layer.provideMerge(Sqlite.layerMemory)),
     item: () => item,
     closed: () => closed,
+    reads: () => reads,
+    edit: () =>
+      Effect.gen(function* () {
+        item = { ...item, title: "Changed title", version: item.version + 1 };
+        const sql = yield* SqlClient.SqlClient;
+        const json = yield* encodeItemJson(item);
+        yield* sql`UPDATE work_items SET item_json = ${json} WHERE id = ${item.id}`;
+      }),
     enableMeituan: (value: boolean) => {
       enabled = value;
     },
     publish: (count: number) => {
       published = count;
     },
-    failWrite: () => {
-      failWrite = true;
+    failWrite: (value = true) => {
+      failWrite = value;
     },
     reopen: () => {
       detail = { ...detail, state: "open", stateCategory: "todo" };
@@ -308,6 +322,51 @@ it.effect(
       const version = test.item().version;
       yield* sync.drain();
       expect(test.item().version).toBe(version);
+    }).pipe(Effect.provide(test.layer), Effect.scoped);
+  },
+);
+
+it.effect(
+  "backs off repeated sync failures during drain and allows manual refresh to bypass",
+  () => {
+    const test = setup("github", 2);
+    return Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const item = test.item();
+      const json = yield* encodeItemJson(item);
+      yield* sql`INSERT INTO work_items (id, project_id, updated_at, active_count, item_json) VALUES (${item.id}, ${item.projectId}, ${item.updatedAt}, 0, ${json})`;
+      const sync = yield* DeliverySync.DeliverySyncReactor;
+      test.failWrite(true);
+
+      yield* sync.drain();
+      expect(test.reads()).toBe(1);
+
+      // Within the 1-minute failure backoff window, drain skips without calling issues.read again.
+      yield* sync.drain();
+      expect(test.reads()).toBe(1);
+
+      // After the backoff expires, drain probes again (and doubles the backoff on failure).
+      yield* TestClock.adjust("60 seconds");
+      yield* sync.drain();
+      expect(test.reads()).toBe(2);
+
+      // Within the 2-minute backoff window, drain still skips.
+      yield* TestClock.adjust("60 seconds");
+      yield* sync.drain();
+      expect(test.reads()).toBe(2);
+
+      yield* test.edit();
+      yield* sync.drain();
+      expect(test.reads()).toBe(3);
+      yield* TestClock.adjust("60 seconds");
+      yield* sync.drain();
+      expect(test.reads()).toBe(4);
+
+      // Explicit manual refresh bypasses backoff and clears it on success.
+      test.failWrite(false);
+      yield* sync.refresh(item.id);
+      expect(test.closed()).toBe(1);
+      expect(test.item().delivery?.syncedRevision).toBe(1);
     }).pipe(Effect.provide(test.layer), Effect.scoped);
   },
 );

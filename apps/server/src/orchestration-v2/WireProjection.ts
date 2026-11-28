@@ -1,3 +1,4 @@
+import { PROVIDER_SEND_TURN_MAX_FILE_BYTES } from "@t3tools/contracts";
 import type {
   CheckpointId,
   MessageId,
@@ -20,6 +21,8 @@ import {
   commandIndicatesFailure,
   compactDynamicToolOutput,
   omitToolOutputImageData,
+  previewRecordingIdFromToolItem,
+  toolOutputImageBlocks,
   toolOutputImages,
 } from "@t3tools/shared/toolOutput";
 
@@ -28,6 +31,8 @@ const MAX_WIRE_CHECKPOINT_FILES = 200;
 const MAX_DETAIL_STRING_BYTES = 32_768;
 const MAX_DYNAMIC_VALUE_BYTES = 16_384;
 const MAX_ON_DEMAND_BYTES = 256 * 1024;
+// Even after discarding a partial UTF-8 character, an oversized item must still exceed the export limit.
+const MAX_STORED_BODY_BYTES = PROVIDER_SEND_TURN_MAX_FILE_BYTES + 4;
 const TRUNCATION_MARKER = "\n… output truncated for transport";
 const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, "utf8");
 
@@ -52,8 +57,9 @@ function truncateDetail(
 }
 
 /** Bound stored diffs to the client wire limit to avoid retaining invisible data in SQLite and heap. */
-export function boundFileChangeForStorage(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
-  if (item.type !== "file_change") return item;
+function boundFileChangeForStorage(
+  item: Extract<OrchestrationV2TurnItem, { type: "file_change" }>,
+): OrchestrationV2TurnItem {
   const { diffStr, oldStr, newStr } = item;
   const bounded = {
     ...item,
@@ -64,6 +70,58 @@ export function boundFileChangeForStorage(item: OrchestrationV2TurnItem): Orches
   return bounded.diffStr === diffStr && bounded.oldStr === oldStr && bounded.newStr === newStr
     ? item
     : bounded;
+}
+
+function hasMcpAppReference(output: unknown): boolean {
+  return (
+    typeof output === "object" &&
+    output !== null &&
+    MCP_APP_OUTPUT_KEY in output &&
+    readMcpAppReference(output[MCP_APP_OUTPUT_KEY]) !== undefined
+  );
+}
+
+/** A transcript exports stored items verbatim. Only bound bodies already too large to export. */
+export function boundTurnItemForStorage(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
+  switch (item.type) {
+    case "file_change":
+      return boundFileChangeForStorage(item);
+    case "command_execution": {
+      const input = truncateDetail(item.input, MAX_STORED_BODY_BYTES) ?? "";
+      const output = truncateDetail(item.output, MAX_STORED_BODY_BYTES);
+      return input === item.input && output === item.output ? item : { ...item, input, output };
+    }
+    case "dynamic_tool": {
+      const input = boundDynamicValue(item.input, MAX_STORED_BODY_BYTES);
+      const output =
+        item.output === undefined ||
+        hasMcpAppReference(item.output) ||
+        toolOutputImageBlocks(item.output).length > 0
+          ? item.output
+          : boundDynamicValue(item.output, MAX_STORED_BODY_BYTES);
+      // A truncated JSON string loses the live card's failure flag, links and tool actions.
+      const storedOutput =
+        output !== item.output &&
+        (compactDynamicToolOutput(item.output) !== undefined ||
+          previewRecordingIdFromToolItem(item) !== undefined)
+          ? item.output
+          : output;
+      return input === item.input && storedOutput === item.output
+        ? item
+        : { ...item, input, output: storedOutput };
+    }
+    case "subagent": {
+      const prompt = truncateDetail(item.prompt, MAX_STORED_BODY_BYTES) ?? "";
+      const progress = truncateDetail(item.progress, MAX_STORED_BODY_BYTES);
+      const result =
+        item.result === null ? null : (truncateDetail(item.result, MAX_STORED_BODY_BYTES) ?? null);
+      return prompt === item.prompt && progress === item.progress && result === item.result
+        ? item
+        : { ...item, prompt, progress, result };
+    }
+    default:
+      return item;
+  }
 }
 
 function summarizeDynamicValue(value: unknown): unknown {
@@ -209,18 +267,16 @@ function hasDynamicValue(value: unknown): boolean {
   return typeof value !== "object" || Object.keys(value).length > 0;
 }
 
-function boundDynamicValue(value: unknown): unknown {
+function boundDynamicValue(value: unknown, maxBytes = MAX_ON_DEMAND_BYTES): unknown {
   if (value === undefined) return value;
-  if (typeof value === "string") return truncateDetail(value, MAX_ON_DEMAND_BYTES);
+  if (typeof value === "string") return truncateDetail(value, maxBytes);
   let json: string;
   try {
     json = JSON.stringify(value) ?? String(value);
   } catch {
     return "Unserializable tool value";
   }
-  return Buffer.byteLength(json, "utf8") <= MAX_ON_DEMAND_BYTES
-    ? value
-    : truncateDetail(json, MAX_ON_DEMAND_BYTES);
+  return Buffer.byteLength(json, "utf8") <= maxBytes ? value : truncateDetail(json, maxBytes);
 }
 
 /** Preserve ordered image markers in truncated output so clients can load images by index. */

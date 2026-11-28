@@ -2228,7 +2228,11 @@ describe("PreviewManager", () => {
           webContents: { setBackgroundThrottling },
         } as never);
 
+        yield* manager.setShown("tab_capture_throttling_1", false);
+        expect(firstWebContents.setBackgroundThrottling.mock.calls).toEqual([[true]]);
+        firstWebContents.setBackgroundThrottling.mockClear();
         yield* manager.startRecording("tab_capture_throttling_1");
+        yield* manager.setShown("tab_capture_throttling_1", false);
         host.displayMediaHandler()?.({ frame: host.mainFrame }, () => {});
         yield* manager.startRecording("tab_capture_throttling_2");
         expect(setBackgroundThrottling.mock.calls).toEqual([[false]]);

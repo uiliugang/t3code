@@ -9,6 +9,7 @@ import {
   WorkItemId,
   type WorkItemMutationResult,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -229,33 +230,64 @@ export const layer = Layer.effect(
       }
     });
 
+    const SYNC_FAILURE_BASE_BACKOFF_MS = 60_000;
+    const SYNC_FAILURE_MAX_BACKOFF_MS = 15 * 60_000;
+    let failureBackoffByItemId = new Map<
+      WorkItemId,
+      { readonly attempts: number; readonly nextAttemptAtMs: number; readonly version: number }
+    >();
+
     const drain = Effect.fn("DeliverySyncReactor.drain")(function* () {
       yield* serial
         .withPermits(1)(
           Effect.gen(function* () {
+            const nowMs = yield* Clock.currentTimeMillis;
             const rows = yield* sql<{
               item_json: string;
             }>`SELECT item_json FROM work_items WHERE json_extract(item_json, '$.delivery') IS NOT NULL AND json_extract(item_json, '$.archived') = 0`;
+            const previousFailures = failureBackoffByItemId;
+            failureBackoffByItemId = new Map();
             yield* Effect.forEach(
               rows,
               (row) =>
                 Effect.gen(function* () {
                   const item = yield* decodeItem(row.item_json);
+                  const backoff = previousFailures.get(item.id);
+                  if (
+                    backoff !== undefined &&
+                    backoff.version === item.version &&
+                    nowMs < backoff.nextAttemptAtMs
+                  ) {
+                    failureBackoffByItemId.set(item.id, backoff);
+                    return;
+                  }
                   yield* refresh(item).pipe(
                     Effect.catch((cause) =>
                       Effect.gen(function* () {
                         yield* Effect.logWarning("delivery.sync-failed", { id: item.id, cause });
-                        const current = yield* items.get(WorkItemId.make(item.id));
+                        let current = yield* items.get(WorkItemId.make(item.id));
                         if (
                           current.delivery !== undefined &&
                           current.delivery.syncError !==
                             "Could not synchronize delivery. Check access to PRs, MCM and the issue platform."
-                        )
-                          yield* items.recordDelivery(current.id, current.version, {
+                        ) {
+                          current = yield* items.recordDelivery(current.id, current.version, {
                             ...current.delivery,
                             syncError:
                               "Could not synchronize delivery. Check access to PRs, MCM and the issue platform.",
                           });
+                        }
+                        const attempts =
+                          backoff?.version === item.version ? backoff.attempts + 1 : 1;
+                        const delayMs = Math.min(
+                          SYNC_FAILURE_MAX_BACKOFF_MS,
+                          SYNC_FAILURE_BASE_BACKOFF_MS * Math.pow(2, attempts - 1),
+                        );
+                        failureBackoffByItemId.set(item.id, {
+                          attempts,
+                          nextAttemptAtMs: (yield* Clock.currentTimeMillis) + delayMs,
+                          version: current.version,
+                        });
                       }),
                     ),
                   );
@@ -270,6 +302,7 @@ export const layer = Layer.effect(
       function* (id: WorkItemId) {
         yield* serial.withPermits(1)(
           Effect.gen(function* () {
+            failureBackoffByItemId.delete(id);
             yield* refresh(yield* items.get(id));
           }),
         );

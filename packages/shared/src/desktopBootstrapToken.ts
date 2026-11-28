@@ -18,9 +18,9 @@ const deriveToken = Effect.fnUntraced(function* (secret: string, window: number)
   return Hex.encode(yield* mac.sign(key, utf8(`t3-desktop-bootstrap:${window}`)));
 }, Effect.orDie);
 
-export const currentDesktopBootstrapToken = Effect.fn("desktopBootstrapToken.current")(
-  (secret: string, nowMs: number) => deriveToken(secret, windowIndex(nowMs)),
-);
+// Untraced: called on every 3-second desktop bootstrap poll; deriving an HMAC takes <0.1ms.
+export const currentDesktopBootstrapToken = (secret: string, nowMs: number) =>
+  deriveToken(secret, windowIndex(nowMs));
 
 export const isValidDesktopBootstrapToken = Effect.fn("desktopBootstrapToken.isValid")(function* (
   secret: string,
