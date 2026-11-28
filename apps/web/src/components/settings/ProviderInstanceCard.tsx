@@ -81,6 +81,7 @@ import {
 } from "./customModelSaves.logic";
 import { getProviderRestartNotice } from "../ProviderUpdateLaunchNotification.logic";
 import {
+  getProviderReinstallCommand,
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
   getProviderStatusKey,
@@ -872,12 +873,28 @@ export function ProviderInstanceCard({
       ? (providerAuthLabel(liveProvider.auth, m) ?? null)
       : null;
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
-  const versionAdvisory = getProviderVersionAdvisoryPresentation(
+  const updateAdvisory = getProviderVersionAdvisoryPresentation(
     liveProvider?.versionAdvisory,
     liveProvider?.compatibilityAdvisory,
     enabled,
     m,
   );
+  const reinstallCommand =
+    enabled && updateAdvisory === null ? getProviderReinstallCommand(liveProvider) : null;
+  const isReinstall = reinstallCommand !== null;
+  const versionAdvisory =
+    updateAdvisory ??
+    (isReinstall
+      ? {
+          title: gt("Reinstall needed"),
+          detail: gt(
+            "This installation is missing files it needs to start. Reinstall it to fix it.",
+          ),
+          updateCommand: reinstallCommand,
+          emphasis: "strong" as const,
+          targetVersion: null,
+        }
+      : null);
   const updateCommand = versionAdvisory?.updateCommand ?? null;
   const updateState = liveProvider?.updateState;
   const updateProgress = isUpdating
@@ -895,7 +912,8 @@ export function ProviderInstanceCard({
     compatibility !== undefined &&
     compatibility.status !== "supported" &&
     compatibility.status !== "unknown";
-  const VersionAdvisoryIcon = hasCompatibilityWarning ? AlertTriangleIcon : ArrowUpCircleIcon;
+  const VersionAdvisoryIcon =
+    hasCompatibilityWarning || isReinstall ? AlertTriangleIcon : ArrowUpCircleIcon;
   const onRunVersionAction = readOnly
     ? undefined
     : versionAdvisory?.targetVersion
@@ -1121,7 +1139,7 @@ export function ProviderInstanceCard({
                   <VersionAdvisoryIcon
                     className={cn(
                       mode === "list" && "size-3.5",
-                      hasCompatibilityWarning && "text-warning",
+                      (hasCompatibilityWarning || isReinstall) && "text-warning",
                     )}
                   />
                 )}
@@ -1147,45 +1165,6 @@ export function ProviderInstanceCard({
               {t(versionAdvisory.detail)}
             </p>
           </div>
-          {onRunVersionAction ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              className="w-full"
-              disabled={isUpdating}
-              onClick={onRunVersionAction}
-            >
-              {isUpdating ? <Spinner /> : <DownloadIcon />}
-              {isUpdating
-                ? gt("Updating")
-                : versionAdvisory.targetVersion
-                  ? gt("Install {version}", {
-                      version:
-                        getProviderVersionLabel(versionAdvisory.targetVersion) ??
-                        versionAdvisory.targetVersion,
-                    })
-                  : gt("Update now")}
-            </Button>
-          ) : null}
-          {updateProgress || updateProblem ? (
-            <p
-              aria-live="polite"
-              className={cn(
-                "text-xs leading-snug [overflow-wrap:anywhere]",
-                updateProblem ? "text-warning" : "text-muted-foreground",
-              )}
-            >
-              {t(updateProgress ?? updateProblem ?? "")}
-            </p>
-          ) : null}
-          {onRunVersionAction && updateCommand ? (
-            <div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
-              <span aria-hidden className="h-px flex-1 bg-border" />
-              {t("or, update manually using")}
-              <span aria-hidden className="h-px flex-1 bg-border" />
-            </div>
-          ) : null}
           {updateCommand ? (
             <div className="flex min-w-0 items-center gap-1 rounded-md border border-border/70 bg-muted/40 py-0.5 pr-0.5 pl-2">
               <code className="min-w-0 flex-1 truncate font-mono text-2xs text-foreground">
@@ -1336,6 +1315,40 @@ export function ProviderInstanceCard({
           {editorStatusNode}
         </div>
       </ProviderStatusDiagnostic>
+      {versionAdvisory && onRunVersionAction ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          className="w-fit"
+          disabled={isUpdating}
+          onClick={onRunVersionAction}
+        >
+          {isUpdating ? <Spinner /> : <DownloadIcon />}
+          {isUpdating
+            ? gt("Updating")
+            : versionAdvisory.targetVersion
+              ? gt("Install {version}", {
+                  version:
+                    getProviderVersionLabel(versionAdvisory.targetVersion) ??
+                    versionAdvisory.targetVersion,
+                })
+              : isReinstall
+                ? gt("Reinstall")
+                : gt("Update now")}
+        </Button>
+      ) : null}
+      {updateProgress || updateProblem ? (
+        <p
+          aria-live="polite"
+          className={cn(
+            "text-xs leading-snug [overflow-wrap:anywhere]",
+            updateProblem ? "text-warning" : "text-muted-foreground",
+          )}
+        >
+          {t(updateProgress ?? updateProblem ?? "")}
+        </p>
+      ) : null}
       {restartNotice ? (
         <p aria-live="polite" className="text-xs leading-snug [overflow-wrap:anywhere]">
           {restartNotice}

@@ -715,3 +715,89 @@ describe("EnvironmentProviderSettings health check interval", () => {
     expect(state.updateSettings).not.toHaveBeenCalled();
   });
 });
+
+describe("EnvironmentProviderSettings CLI maintenance", () => {
+  it("shows a single status-row update and keeps the manual command in version details", async () => {
+    await setup();
+    await setProviders([provider()]);
+    await using _screen = await render(panel({ targetInstanceId: codexId }));
+
+    const update = page.getByRole("button", { name: "Update now" });
+    await expect.element(update).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Update available, view details" }));
+    const details = page.getByRole("dialog", { name: "Update available" });
+    await expect
+      .element(details.getByRole("button", { name: "Copy update command" }))
+      .toBeVisible();
+    await expect
+      .element(details.getByRole("button", { name: "Update now" }))
+      .not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(update);
+
+    expect(state.updateProvider).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { provider: "codex", instanceId: codexId },
+    });
+  });
+
+  it("uses the exact recommended CLI version instead of reinstalling the latest", async () => {
+    await setup();
+    const snapshot = provider();
+    await setProviders([
+      {
+        ...snapshot,
+        versionAdvisory: { ...snapshot.versionAdvisory!, canInstallVersion: true },
+        compatibilityAdvisory: {
+          status: "unsupported",
+          latestVersionStatus: "unsupported",
+          recommendedRange: null,
+          recommendedVersion: "0.99.0",
+          message: "Install a compatible version.",
+        },
+      },
+    ]);
+    await using _screen = await render(panel({ targetInstanceId: codexId }));
+
+    await userEvent.click(page.getByRole("button", { name: "Install v0.99.0" }));
+    expect(state.updateProvider).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { provider: "codex", instanceId: codexId, targetVersion: "0.99.0" },
+    });
+  });
+
+  it.each([false, true])("gates one-click reinstall for readOnly=%s", async (readOnly) => {
+    await setup();
+    const snapshot = provider();
+    await setProviders([
+      {
+        ...snapshot,
+        version: null,
+        status: "error",
+        message: "Missing optional dependency @openai/codex-linux-x64.",
+        versionAdvisory: {
+          ...snapshot.versionAdvisory!,
+          status: "unknown",
+          currentVersion: null,
+          latestVersion: null,
+        },
+      },
+    ]);
+    await using _screen = await render(panel({ targetInstanceId: codexId, readOnly }));
+
+    const reinstall = page.getByRole("button", { name: "Reinstall", exact: true });
+    if (readOnly) {
+      await expect.element(reinstall).not.toBeInTheDocument();
+      await userEvent.click(page.getByRole("button", { name: "Reinstall needed, view details" }));
+      await expect.element(page.getByRole("button", { name: "Copy update command" })).toBeVisible();
+      expect(state.updateProvider).not.toHaveBeenCalled();
+      return;
+    }
+
+    await userEvent.click(reinstall);
+    expect(state.updateProvider).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { provider: "codex", instanceId: codexId },
+    });
+  });
+});

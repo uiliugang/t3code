@@ -114,6 +114,7 @@ import { ClaudeInstallationSection } from "./ClaudeInstallationSection";
 import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import { providerClients } from "./providerDriverMeta";
+import { getProviderReinstallCommand } from "./providerStatus";
 import { useSearchableSetting } from "./settingsSearch";
 import { CompactIdleThreadsRow } from "./SettingsPanels";
 import {
@@ -1389,7 +1390,9 @@ function ProviderInstanceRow({
   const instance = explicitInstance ?? { driver };
   const driverOption = providerClients.get(driver);
   const updateCandidate =
-    liveProvider !== undefined && isProviderSettingsUpdateCandidate(liveProvider)
+    liveProvider !== undefined &&
+    (isProviderSettingsUpdateCandidate(liveProvider) ||
+      getProviderReinstallCommand(liveProvider) !== null)
       ? liveProvider
       : undefined;
   const isInstanceUpdateRunning =
