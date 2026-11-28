@@ -1400,19 +1400,6 @@ export function ChatSettingsPanel() {
 
       <SettingsSection id="activity" title={gt("Activity")}>
         <ToolCallVisibilityRow />
-        <SettingsRow
-          {...setting("context-window-indicator")}
-          description={t("Shows context window usage as a circular indicator in the composer.")}
-          control={
-            <Switch
-              checked={settings.contextWindowMeterEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ contextWindowMeterEnabled: Boolean(checked) })
-              }
-              aria-label={t("Context window indicator")}
-            />
-          }
-        />
       </SettingsSection>
 
       <SettingsSection id="screen-reader" title={t("Screen reader")}>

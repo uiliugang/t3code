@@ -20,11 +20,7 @@ import type { SetStateAction } from "react";
 import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
 import { getProviderModelCapabilities } from "../providerModels";
 import { sanitizeThreadErrorMessage, thrownErrorMessage } from "@t3tools/client-runtime/errors";
-import type {
-  EnvironmentThread,
-  EnvironmentThreadShell,
-  ThreadStructure,
-} from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThread, ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -559,18 +555,6 @@ export function resolveComposerProviderSelection(input: {
     lockedContinuationGroupKey,
     unavailableProviderInstanceId,
   };
-}
-
-export function threadShellHasStarted(
-  shell:
-    | Pick<EnvironmentThreadShell, "latestRun" | "latestUserMessageAt" | "runtime">
-    | null
-    | undefined,
-): boolean {
-  return Boolean(
-    shell &&
-    (shell.latestRun !== null || shell.latestUserMessageAt !== null || shell.runtime !== null),
-  );
 }
 
 export function getAntigravitySendBlockReason(
@@ -1483,7 +1467,6 @@ export function planComposerTurn(input: {
   /** The server launches a No project worktree request at its root, so it needs no base. */
   readonly isScratchProject: boolean;
   readonly resumeCompactionTokens: number | null;
-  readonly keepFullHistory: boolean;
   readonly phase: SessionPhase;
   readonly dispatchMode: ComposerDispatchMode;
   /** The turn starts a new provider session, so it neither compacts first nor steers. */
@@ -1499,7 +1482,6 @@ export function planComposerTurn(input: {
   const compactBeforeSend =
     !input.freshContext &&
     input.resumeCompactionTokens !== null &&
-    !input.keepFullHistory &&
     !COMPACT_COMMAND_PATTERN.test(input.messageText);
   const dispatchMode =
     input.freshContext && (input.dispatchMode === "steer" || input.dispatchMode === "restart")

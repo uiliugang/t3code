@@ -7,7 +7,7 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 
-export function providerSupportsManualCompaction(
+function providerSupportsManualCompaction(
   provider: ProviderInstanceEntry | null | undefined,
 ): boolean {
   return provider?.snapshot.slashCommands.some((command) => command.name === "compact") ?? false;

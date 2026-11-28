@@ -314,9 +314,6 @@ export function getChangedUnifiedSettingLabels(
     ...(settings.screenReaderAnnouncements !== DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements
       ? [resolve(msg("Screen reader announcements"))]
       : []),
-    ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
-      ? [t("Context window indicator")]
-      : []),
     ...(settings.screenReaderWindowTitle !== DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle
       ? [resolve(msg("Screen reader window title"))]
       : []),

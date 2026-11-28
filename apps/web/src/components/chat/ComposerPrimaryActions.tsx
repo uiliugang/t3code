@@ -10,7 +10,6 @@ import { msg, useGT, useMessages } from "gt-react";
 import {
   CheckIcon,
   ChevronLeftIcon,
-  Minimize2Icon,
   PlayIcon,
   CornerUpRightIcon,
   ListPlusIcon,
@@ -68,9 +67,6 @@ interface ComposerPrimaryActionsProps {
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   compactBeforeSendTokens?: number | null;
-  hideCompactToggle?: boolean;
-  keepFullHistory?: boolean;
-  onToggleKeepFullHistory?: () => void;
 }
 
 const formatPendingPrimaryActionLabel = (
@@ -255,9 +251,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onPreviousPendingQuestion,
   onInterrupt,
   compactBeforeSendTokens = null,
-  hideCompactToggle = false,
-  keepFullHistory = false,
-  onToggleKeepFullHistory,
 }: ComposerPrimaryActionsProps) {
   const t = useUiTranslation();
   const gt = useGT();
@@ -385,7 +378,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     compactBeforeSendTokens !== null && !showResume && !isEditingQueuedMessage
       ? formatContextWindowTokens(compactBeforeSendTokens)
       : null;
-  const compactsBeforeSend = compactTokens !== null && !keepFullHistory;
+  // A stale session compacts before the send, so the button says so. Nothing in the composer
+  // opts out any more; the idle-compaction setting does.
+  const compactsBeforeSend = compactTokens !== null;
 
   const submitLabel = showResume
     ? gt("Resume thread")
@@ -496,52 +491,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );
-  if (compactTokens === null || hideCompactToggle) {
-    return withStopButton(
-      <>
-        {children}
-        {submit}
-      </>,
-    );
-  }
-
   return withStopButton(
-    <div data-chat-composer-compact-send="true" className="flex items-center gap-2">
-      <SharedTooltipTrigger
-        render={
-          <button
-            type="button"
-            className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
-            {...pointerFocusProps}
-            aria-pressed={!keepFullHistory}
-            aria-label={t("Compact {count} tokens of history before sending", {
-              count: compactTokens,
-            })}
-            disabled={!canOperateThread}
-            onClick={onToggleKeepFullHistory}
-          />
-        }
-        label={
-          <>
-            <div>
-              {keepFullHistory
-                ? t("Next send keeps all {count} tokens.", { count: compactTokens })
-                : t("Next send compacts {count} tokens first.", { count: compactTokens })}
-            </div>
-            <div>
-              {keepFullHistory ? t("Click to compact first") : t("Click to keep full history")}
-            </div>
-          </>
-        }
-      >
-        <Minimize2Icon aria-hidden="true" />
-        <span className="@max-[480px]/composer-surface:hidden">
-          {keepFullHistory ? t("Keep") : t("Compact")}
-        </span>
-        <span className="text-muted-foreground">{compactTokens}</span>
-      </SharedTooltipTrigger>
+    <>
       {children}
       {submit}
-    </div>,
+    </>,
   );
 });
