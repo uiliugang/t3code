@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import { AuthGrantScopes, ServerAuthDescriptor } from "./auth.ts";
 
 export const CONNECT_NOISE_PATH = "/api/connect/e2ee/v1";
+export const CONNECT_NOISE_KEY_PATH = `${CONNECT_NOISE_PATH}/key` as const;
 export const connectNoiseProofUrl = (environmentId: string) =>
   `https://t3.invalid/environments/${encodeURIComponent(environmentId)}${CONNECT_NOISE_PATH}`;
 

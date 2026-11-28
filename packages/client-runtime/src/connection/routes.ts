@@ -253,6 +253,14 @@ export function hasRelayRoute(
   );
 }
 
+export function isOrdinaryConnectRoute(route: ConnectionRoute): boolean {
+  return Option.exists(
+    route.profile,
+    (profile) =>
+      profile._tag === "BearerConnectionProfile" && profile.authorization === "t3-connect",
+  );
+}
+
 export function mergeLearnedRoutes(input: {
   readonly entry: ConnectionCatalogEntry;
   readonly activeRoute: ConnectionRoute;

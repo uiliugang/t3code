@@ -241,16 +241,16 @@ describe("presentConnectionDiagnosis", () => {
         via: "relay",
       }),
     );
-    const guidance = diagnose(encrypted)?.steps.join(" ");
-    expect(guidance).toContain("t3 auth connect-device list");
-    expect(guidance).toContain("t3 auth connect-device approve K7QM-2XFD");
-    expect(guidance).not.toContain("Settings");
+    const guidance = diagnose(encrypted)?.steps;
+    expect(guidance?.[0]).toContain("Settings > Sharing & access");
+    expect(guidance?.[0]).toContain("code matches K7QM-2XFD");
+    expect(guidance?.[1]).toContain("t3 auth connect-device approve K7QM-2XFD");
     expect(
       presentConnectionDiagnosis(
         { hostLabel: "Mac mini", state: encrypted, via: "relay" },
         translateUi.bind(null, "zh-CN"),
       )?.steps[0],
-    ).toContain("核对");
+    ).toContain("验证码与 K7QM-2XFD 一致时批准");
   });
 
   it("tells a host that refused this device's login to sign in again, not to start T3 Code", () => {

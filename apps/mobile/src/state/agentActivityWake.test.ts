@@ -35,6 +35,7 @@ vi.mock("../features/connection/noiseApproval", async () => {
   return {
     layerNoiseConnections: Layer.mock(ClientCapabilities.NoiseConnections)({
       readPin: mocks.pin,
+      readRelayPin: () => Effect.succeed(null),
       open: mocks.open,
     }),
   };

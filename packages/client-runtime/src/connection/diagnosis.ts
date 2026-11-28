@@ -187,9 +187,13 @@ function steps(
       if (failure?._tag === "ConnectionTransientError" && failure.approvalMethod === "host-cli") {
         return [
           t(
-            "On {host}, run `t3 auth connect-device list` and check that the pending device shows {code}. If it matches, run `t3 auth connect-device approve {code}`.",
+            "On {host}, open Settings > Sharing & access. Approve the device only if its code matches {code}.",
             { host, code: code ?? "<code>" },
           ),
+          t("Or run `t3 auth connect-device approve {code}` on {host}.", {
+            code: code ?? "<code>",
+            host,
+          }),
         ];
       }
       return [

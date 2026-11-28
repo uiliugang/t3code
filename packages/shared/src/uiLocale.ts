@@ -450,8 +450,8 @@ const zhCN: Readonly<Record<string, string>> = {
     "在已连接到 {host} 的设备上，打开“设置 > 共享与访问”，批准显示验证码 {code} 的设备。",
   "On a device already connected to {host}, open Settings > Sharing & access and approve this device.":
     "在已连接到 {host} 的设备上，打开“设置 > 共享与访问”并批准此设备。",
-  "On {host}, run `t3 auth connect-device list` and check that the pending device shows {code}. If it matches, run `t3 auth connect-device approve {code}`.":
-    "在 {host} 上运行 `t3 auth connect-device list`，核对待批准设备的验证码是否为 {code}。如果一致，请运行 `t3 auth connect-device approve {code}`。",
+  "On {host}, open Settings > Sharing & access. Approve the device only if its code matches {code}.":
+    "在 {host} 上打开“设置 → 共享与访问”。仅当设备的验证码与 {code} 一致时批准。",
   "Or run `t3 auth connect-device approve {code}` on {host}.":
     "也可以在 {host} 上运行 `t3 auth connect-device approve {code}`。",
   "Waiting for approval on the host": "等待主机批准",

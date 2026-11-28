@@ -1403,9 +1403,7 @@ export const make = Effect.gen(function* () {
   )(
     function* (pairingLinkId, approverSubject) {
       if (
-        (approverSubject === SessionStore.NOISE_SESSION_SUBJECT ||
-          approverSubject === SessionStore.LOCAL_NOISE_DEVICE_SUBJECT ||
-          approverSubject === "cli") &&
+        SessionStore.canApproveNoiseDevices(approverSubject) &&
         (yield* bootstrapCredentials.approveNoiseRequest(pairingLinkId))
       )
         return true;

@@ -1,7 +1,7 @@
 import { isPeerRequest } from "../peer/noiseTrust.ts";
 import { noiseGuestSession } from "./noiseGuestContext.ts";
 import { encryptedHookPath } from "../scheduledTasks/encryptedWebhook.ts";
-import { CONNECT_NOISE_PATH } from "@t3tools/contracts";
+import { CONNECT_NOISE_KEY_PATH, CONNECT_NOISE_PATH } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
@@ -12,7 +12,7 @@ export { noiseOnly } from "./noiseTrust.ts";
 
 export function allowsNoiseIngress(method: string, path: string): boolean {
   return (
-    (method === "GET" && path === CONNECT_NOISE_PATH) ||
+    (method === "GET" && (path === CONNECT_NOISE_PATH || path === CONNECT_NOISE_KEY_PATH)) ||
     (method === "POST" &&
       (path === "/api/t3-connect/health" ||
         path === "/api/t3-connect/mint-credential" ||

@@ -691,7 +691,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     if (next._tag === "DisconnectRequested") {
       return "end" as const;
     }
-    if (next._tag === "Wakeup" && typeof next.reason === "object") return "reset" as const;
+    if (next._tag === "Wakeup" && typeof next.reason === "object") {
+      if (
+        next.reason.type === "relay-policy-changed" &&
+        (!isRelayLease(lease) || lease.prepared.transport === "noise")
+      )
+        return undefined;
+      return "reset" as const;
+    }
     if (next._tag === "BetterRouteAvailable") {
       yield* Ref.set(preferredRouteId, Option.some(next.routeId));
       return "reset" as const;

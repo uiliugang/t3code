@@ -9,7 +9,7 @@ export type ConnectionWakeup =
   | "application-focused"
   | "credentials-changed"
   | "network-changed"
-  | { readonly type: "host-key-changed"; readonly environmentId: string };
+  | { readonly type: "host-key-changed" | "relay-policy-changed"; readonly environmentId: string };
 
 function isApplicationActiveWakeup(reason: ConnectionWakeup): boolean {
   return (

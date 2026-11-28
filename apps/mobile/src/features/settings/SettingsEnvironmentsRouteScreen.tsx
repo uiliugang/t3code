@@ -6,11 +6,13 @@ import { useAtomValue } from "@effect/atom-react";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useRef, useState } from "react";
+import { Platform, View } from "react-native";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SettingsScreen } from "./components/SettingsScreen";
 import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
+import { RelayCompatibilitySwitch } from "../connection/RelayCompatibilitySwitch";
 import { LocalEnvironmentList } from "../connection/LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "../connection/PullRequestRoutingSettings";
 import { splitEnvironmentSections } from "../connection/environmentSections";
@@ -156,6 +158,11 @@ export function SettingsEnvironmentsRouteScreen() {
               }
             : {})}
         />
+        {Platform.OS === "android" && !SHOWCASE_ENABLED ? (
+          <View className="mt-3">
+            <RelayCompatibilitySwitch environments={connectedCloudEnvironments} />
+          </View>
+        ) : null}
         <PullRequestRoutingSettings />
       </ScrollView>
     </SettingsScreen>

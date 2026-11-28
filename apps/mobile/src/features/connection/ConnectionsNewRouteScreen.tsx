@@ -29,6 +29,7 @@ import { useRemoteConnections } from "../../state/use-remote-environment-registr
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
+import { RelayCompatibilitySwitch } from "./RelayCompatibilitySwitch";
 import {
   autoConnectReport,
   devAutoConnectAttemptAtom,
@@ -423,9 +424,6 @@ function T3ConnectSection({
       <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
         {t("Or use the managed relay")}
       </Text>
-      {isSignedIn && Platform.OS === "android" ? (
-        <NoiseDeviceApproval initialLink={noisePin} expectedEnvironmentId={expectedEnvironmentId} />
-      ) : null}
       {isSignedIn ? (
         <CloudEnvironmentRows
           connectedCloudEnvironments={connectedCloudEnvironments}
@@ -441,6 +439,15 @@ function T3ConnectSection({
           onPress={() => navigation.navigate("SettingsAuth")}
         />
       )}
+      {isSignedIn && Platform.OS === "android" ? (
+        <>
+          <RelayCompatibilitySwitch environments={connectedCloudEnvironments} />
+          <NoiseDeviceApproval
+            initialLink={noisePin}
+            expectedEnvironmentId={expectedEnvironmentId}
+          />
+        </>
+      ) : null}
     </View>
   );
 }

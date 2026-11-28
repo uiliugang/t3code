@@ -1891,7 +1891,7 @@ export const layerWsRpc = (
         yield* providerRegistry.refreshInstance(input.instanceId);
         return { disabled: true } as const;
       });
-      const includeNoiseRequests = currentSession.subject === SessionStore.NOISE_SESSION_SUBJECT;
+      const includeNoiseRequests = SessionStore.canApproveNoiseDevices(currentSession.subject);
       const loadAuthAccessSnapshot = () =>
         Effect.all({
           pairingLinks: serverAuth.listPairingLinks({ includeNoiseRequests }),
