@@ -25,6 +25,16 @@ describe("thread details items", () => {
     expect(visibility.servers).toBe(true);
   });
 
+  it("keeps Agent tasks optional independently of legacy usage settings", () => {
+    const legacyOn = { threadDetailsItems: {}, threadDetailsUsageEnabled: true };
+    const tasks = THREAD_DETAILS_ITEMS.find((item) => item.id === "tasks")!;
+    expect(resolveThreadDetailsVisibility(legacyOn).tasks).toBe(false);
+    const choices = setThreadDetailsItem(legacyOn, tasks, true);
+    expect(resolveThreadDetailsVisibility({ ...legacyOn, threadDetailsItems: choices }).tasks).toBe(
+      true,
+    );
+  });
+
   it("stores only choices that differ from the default", () => {
     const legacyOn = { threadDetailsItems: {}, threadDetailsUsageEnabled: true };
     expect(setThreadDetailsItem(legacyOn, usage, false)).toEqual({ usage: false });

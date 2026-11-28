@@ -37,6 +37,8 @@ import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadRepositorySections } from "./ThreadRepositorySections";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 import { ThreadDetailsContext, ThreadDetailsUsage } from "./ThreadDetailsUsage";
+import { ThreadDetailsTasks } from "./ThreadDetailsTasks";
+import type { TaskListPlan } from "../../session-logic";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -96,6 +98,7 @@ interface ThreadDetailsPanelProps extends Pick<
   onUpdateProjectScript: ComponentProps<typeof ProjectScriptsControl>["onUpdateScript"];
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
   usage: ThreadDetailsUsageInput;
+  taskList: TaskListPlan | null;
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
@@ -492,6 +495,11 @@ function ThreadDetailsPanelContents(props: ThreadDetailsPanelProps) {
                   revisionId={workspace?.id ?? null}
                 />
               ) : null}
+
+              {visible.tasks && props.taskList ? (
+                <ThreadDetailsTasks plan={props.taskList} compact={density !== "full"} />
+              ) : null}
+
               {visible.usage ? <ThreadDetailsUsage {...props.usage} /> : null}
 
               {visible.context && props.usage.contextWindow ? (

@@ -299,6 +299,7 @@ it.each([null, "/work/project-worktree"])(
         onAddProjectScript={async () => AsyncResult.success(undefined)}
         onUpdateProjectScript={async () => AsyncResult.success(undefined)}
         onDeleteProjectScript={async () => AsyncResult.success(undefined)}
+        taskList={null}
         usage={{
           model: null,
           providerInstanceId: null,
