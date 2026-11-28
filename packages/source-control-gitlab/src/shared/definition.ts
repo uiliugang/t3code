@@ -52,9 +52,13 @@ function withCanonicalKey<Identity extends { readonly canonicalKey: string }>(
   return canonicalKey === null ? identity : { ...identity, canonicalKey };
 }
 
+function webHost(host: string): string {
+  return host === "altssh.gitlab.com" ? "gitlab.com" : host;
+}
+
 function changeRequestHost(identity: Parameters<typeof projectChangeRequestHost>[0]): string {
   const configured = projectChangeRequestHost(identity, KIND);
-  const host = configured === "altssh.gitlab.com" ? "gitlab.com" : configured;
+  const host = webHost(configured);
   return parseUrl(remoteWebOrigin(host, identity?.locator?.remoteUrl))?.host ?? host;
 }
 
@@ -78,10 +82,10 @@ export const definition = defineSourceControl({
   changeRequestUrl: ({ host, repository, number, remoteUrl, webUrl }) =>
     webUrl
       ? changeRequestUrlBelow(webUrl, `-/merge_requests/${number}`)
-      : `${remoteWebOrigin(host, remoteUrl)}/${repository}/-/merge_requests/${number}`,
+      : `${remoteWebOrigin(webHost(host), remoteUrl)}/${repository}/-/merge_requests/${number}`,
   parseChangeRequestUrl: (url) => parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
   parseIssueUrl: (url) => parseIssuePath(url, ISSUE_PATH),
-  commitUrl: (input) => buildCommitUrl(input, "-/commit"),
+  commitUrl: (input) => buildCommitUrl({ ...input, host: webHost(input.host) }, "-/commit"),
   parseCommitUrl: (url) => parseCommitPath(url, COMMIT_PATH),
   repositoryUrlFromPage: (url) => repositoryUrlFromPagePath(url, REPOSITORY_PAGE_PATH),
   // `!12` already links the merge request itself; `#12` is always an issue.

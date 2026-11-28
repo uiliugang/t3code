@@ -7997,5 +7997,13 @@
   "f669edbb0567a354": "Text generation model first",
   "f025fd312a6cc28c": "Native suggestions may use plan quota even when the text generation model is preferred. Native suggestions require Codex 0.165 or later when using Codex.",
   "cfe11c24d7130626": "This host does not offer end-to-end encryption. Update the host or allow compatibility connections in Environments.",
-  "df26416405fd2b4e": "Could not retrieve the host key for the encrypted connection."
+  "df26416405fd2b4e": "Could not retrieve the host key for the encrypted connection.",
+  "5603f949e77925d5": "Tunnel connected. Give this URL to a hosted agent, such as ChatGPT: {url}",
+  "93a6d008cde82198": "T3 Connect is unreachable right now, so a hosted agent can use this URL after the tunnel recovers: {url}",
+  "79e3840f1ef8741e": "Give this URL to a hosted agent, such as ChatGPT: {url}",
+  "1d5f687593c4e8ed": "Give this URL to an agent running on this machine: {url}",
+  "3db385bf17d8f48e": "Give this URL to an agent that can reach this environment: {url}",
+  "ffd3cdd328e21c9d": "Copy",
+  "b96de95f92a8eeeb": "MCP URL",
+  "c0ca4e817099761e": "outside agents chatgpt claude codex hosted bot oauth server address copy"
 }

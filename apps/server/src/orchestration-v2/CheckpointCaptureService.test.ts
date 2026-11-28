@@ -88,10 +88,12 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
     "ref-lookup-failed",
     "stale-workspace",
     "missing-workspace-scope",
+    "long-history",
   ] as const)(
     "captures without decoding history or losing newer delegated completion, state=%s",
     (state) =>
       Effect.gen(function* () {
+        const ordinal = state === "long-history" ? 128 : 1;
         const refLookupFails = state === "ref-lookup-failed";
         const staleWorkspace = state === "stale-workspace";
         const missingWorkspaceScope = state === "missing-workspace-scope";
@@ -117,7 +119,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         const staleRun: OrchestrationV2Run = {
           id: runId,
           threadId,
-          ordinal: 1,
+          ordinal,
           providerInstanceId,
           modelSelection,
           providerThreadId,
@@ -202,8 +204,8 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           runId,
           nodeId: rootNodeId,
           parentCheckpointId: readyBaseline.id,
-          ordinalWithinScope: 1,
-          appRunOrdinal: 1,
+          ordinalWithinScope: ordinal,
+          appRunOrdinal: ordinal,
           ref: CheckpointRef.make("checkpoint-ref:captured-1"),
           status: "ready" as const,
           files: [],
@@ -297,6 +299,25 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           payload: readyBaseline,
         });
         const sql = yield* SqlClient.SqlClient;
+        if (ordinal > 1) {
+          yield* sql`WITH RECURSIVE history(ordinal) AS (
+            SELECT 1 UNION ALL SELECT ordinal + 1 FROM history WHERE ordinal < ${ordinal - 1}
+          )
+          INSERT INTO orchestration_v2_projection_checkpoints
+            (checkpoint_id, thread_id, scope_id, node_id, ordinal_within_scope, status,
+              captured_at, payload_json)
+          SELECT 'checkpoint:history:' || ordinal, ${threadId}, ${scopeId}, ${rootNodeId},
+            ordinal, 'ready', ${DateTime.formatIso(now)}, '{}' FROM history`;
+        }
+        const baselineContext = yield* projectionStore.getCheckpointCaptureContext(
+          threadId,
+          { runId, scopeId },
+          { preservedCheckpoints: "baselines" },
+        );
+        assert.deepEqual(
+          [...baselineContext.preservedCheckpointOrdinals].toSorted((a, b) => a - b),
+          ordinal === 1 ? [0] : [0, ordinal - 1],
+        );
         yield* sql`INSERT OR REPLACE INTO orchestration_v2_projection_turn_items
           (turn_item_id, thread_id, run_id, node_id, provider_thread_id, provider_turn_id,
             parent_item_id, ordinal, type, status, updated_at, payload_json)

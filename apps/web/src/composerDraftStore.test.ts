@@ -1451,6 +1451,7 @@ function modelReconciliationHarness(
   );
   const shells = createEnvironmentThreadShellAtoms({
     catalogValueAtom,
+    connectionPhaseAtom: () => Atom.make("connected" as const),
     snapshotAtom: () => visibleSnapshotAtom,
     hiddenThreadTagsAtom: () => Atom.make(null),
   });

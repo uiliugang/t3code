@@ -609,6 +609,40 @@ it.live("reports inspection failures instead of masking them with occupied task 
   }).pipe(Effect.provide(infrastructure), Effect.scoped),
 );
 
+it.live("stops the background index refresh before removing each managed checkout", () =>
+  Effect.gen(function* () {
+    const context = yield* fixture();
+    const { fs, git, resources } = context;
+    const stopped: Array<string> = [];
+    const layer = context.layer.pipe(
+      Layer.provide(
+        Layer.succeed(
+          GitVcsDriver.GitVcsDriver,
+          GitVcsDriver.GitVcsDriver.of({
+            ...git,
+            stopWorktreeIndexRefresh: (checkout) =>
+              Effect.gen(function* () {
+                assert.isTrue(yield* fs.exists(checkout).pipe(Effect.orDie));
+                stopped.push(checkout);
+                yield* git.stopWorktreeIndexRefresh(checkout);
+              }),
+          }),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ManagedWorktrees.ManagedWorktrees;
+      const [group] = yield* service.list({});
+      const canonical = yield* Effect.forEach(resources, (entry) =>
+        fs.realPath(entry.checkoutRoot),
+      );
+      const [removed] = yield* service.remove({ targets: [group!], deleteIgnoredFiles: true });
+      assert.equal(removed!.outcome, "removed", removed!.detail);
+      assert.deepEqual(stopped.toSorted(), canonical.toSorted());
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(infrastructure), Effect.scoped),
+);
+
 it.live.each([
   { keepWhen: "tracked-changes", files: "untracked", removed: true },
   { keepWhen: "uncommitted-changes", files: "untracked", removed: false },

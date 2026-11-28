@@ -751,6 +751,7 @@ const make = Effect.gen(function* () {
                       args: ["clean", "-ffdx"],
                     });
                   yield* removeLinkedWorktree({
+                    stopWorktreeIndexRefresh: git.stopWorktreeIndexRefresh,
                     operation: "ManagedWorktrees.remove",
                     cwd: resource.identity.commonDir,
                     repositoryGitDir: resource.identity.commonDir,
@@ -1254,6 +1255,7 @@ const make = Effect.gen(function* () {
               if (checked.kind === "worktree" && identity !== null) {
                 yield* resolver.verify(identity);
                 yield* removeLinkedWorktree({
+                  stopWorktreeIndexRefresh: git.stopWorktreeIndexRefresh,
                   operation: "ManagedWorktrees.removeResiduals",
                   cwd: identity.commonDir,
                   repositoryGitDir: identity.commonDir,

@@ -919,6 +919,45 @@ describe("project mutation authorization", () => {
   );
 });
 
+it.effect("requires both credential-source grants before calling the handler", () =>
+  Effect.gen(function* () {
+    const method = WS_METHODS.serverCheckSecretSource;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
+      ),
+    );
+    const input = { source: { provider: SecretProviderId.make("fixture"), reference: "fixture" } };
+    let checks = 0;
+    const handler = group.toLayerHandler(method, () =>
+      Effect.sync(() => {
+        checks += 1;
+        return { _tag: "Resolved" as const };
+      }),
+    );
+    const clientWith = (
+      ...scopes: Array<typeof AuthSettingsWriteScope | typeof AuthProvidersManageScope>
+    ) =>
+      RpcTest.makeClient(group).pipe(
+        Effect.provide(Layer.merge(handler, RpcAuthorization.layer(scopes))),
+      );
+    for (const [held, missing] of [
+      [AuthSettingsWriteScope, AuthProvidersManageScope],
+      [AuthProvidersManageScope, AuthSettingsWriteScope],
+    ] as const) {
+      const client = yield* clientWith(held);
+      expect(yield* client[method](input).pipe(Effect.flip)).toMatchObject({
+        _tag: "EnvironmentAuthorizationError",
+        requiredPermission: missing,
+      });
+    }
+    expect(checks).toBe(0);
+    const manager = yield* clientWith(AuthSettingsWriteScope, AuthProvidersManageScope);
+    expect(yield* manager[method](input)).toEqual({ _tag: "Resolved" });
+    expect(checks).toBe(1);
+  }).pipe(Effect.scoped),
+);
+
 it.effect("answering a secret request with a reference needs provider management", () =>
   Effect.gen(function* () {
     const group = WsRpcGroup.omit(

@@ -186,6 +186,7 @@ export const layer = Layer.effect(
                   yield* assertClean(resource);
                   yield* input.beforeRemove;
                   yield* removeLinkedWorktree({
+                    stopWorktreeIndexRefresh: git.stopWorktreeIndexRefresh,
                     operation: "WorkspaceCleanup.remove",
                     cwd: resource.identity.commonDir,
                     repositoryGitDir: resource.identity.commonDir,

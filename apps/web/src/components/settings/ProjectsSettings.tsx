@@ -3,6 +3,7 @@ import { LayersIcon } from "lucide-react";
 import { ProjectImportActions } from "./ProjectImportActions";
 
 import { Button } from "../ui/button";
+import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
@@ -49,16 +50,20 @@ export function ProjectsSettings() {
       ) : unavailable ? (
         unavailable
       ) : (
-        <SettingsScopeNotice
-          target="project"
-          actions={
-            <ProjectImportActions
-              environmentId={value.machine ? EnvironmentId.make(value.machine) : undefined}
-            />
-          }
-        >
-          {t("Choose a project or group to manage its name, icon, repositories and actions.")}
-        </SettingsScopeNotice>
+        <SettingsPageContainer className="gap-6">
+          <ProjectActionsSettings />
+          <SettingsScopeNotice
+            inline
+            target="project"
+            actions={
+              <ProjectImportActions
+                environmentId={value.machine ? EnvironmentId.make(value.machine) : undefined}
+              />
+            }
+          >
+            {t("Choose a project or group to manage its name, icon, repositories and actions.")}
+          </SettingsScopeNotice>
+        </SettingsPageContainer>
       )}
     </div>
   );

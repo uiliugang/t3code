@@ -27,6 +27,7 @@ import { useUiTranslation } from "~/hooks/useUiTranslation";
 import { seedDraftModelSelection } from "~/lib/seedDraftModelSelection";
 import {
   deriveLogicalProjectKeyFromSettings,
+  groupIconFallbacks,
   pickableProjectGroups,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
@@ -537,7 +538,11 @@ export function DraftHeroHeadline({
                   <FolderPlusIcon className="size-4 shrink-0" />
                 ) : entry ? (
                   <span className="relative flex shrink-0">
-                    <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
+                    <ProjectFavicon
+                      project={entry.group}
+                      fallbackProjects={groupIconFallbacks(entry.group.memberProjects, entry.group)}
+                      className="size-4 shrink-0"
+                    />
                     {selectedProjectIdsForDraft.length > 1 && selected ? (
                       <span className="pointer-events-none absolute -right-1 -bottom-1 grid size-3 place-items-center rounded-full bg-primary ring-2 ring-popover">
                         <CheckIcon

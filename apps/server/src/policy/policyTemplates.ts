@@ -4,7 +4,9 @@ const escapeXml = (text: string) =>
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('"', "&quot;")
+    // XML parsers can normalize literal carriage returns before decoding text.
+    .replaceAll("\r", "&#13;");
 
 const plistValue = (value: unknown, indent: string): string => {
   const inner = `${indent}  `;

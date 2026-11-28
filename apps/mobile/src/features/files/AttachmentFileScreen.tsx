@@ -6,7 +6,7 @@ import {
   clampFileAttachmentUploadBytes,
   formatAttachmentSize,
 } from "@t3tools/client-runtime/state/attachments";
-import { useGT } from "gt-react-native";
+import { useGT, useMessages } from "gt-react-native";
 import { useRef, useState } from "react";
 import { View } from "react-native";
 
@@ -41,6 +41,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
   const t = useUiTranslation();
   const navigation = useNavigation();
   const gt = useGT();
+  const messages = useMessages();
   const { appearance, setCodeWordBreak } = useAppearancePreferences();
   const params = props.route.params;
   const environmentId = params.environmentId?.trim()
@@ -218,8 +219,8 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
   const subtitle =
     sizeBytes > 0
       ? draftKey
-        ? gt("Draft attachment · {size}", { size: formatAttachmentSize(sizeBytes) })
-        : gt("Attachment · {size}", { size: formatAttachmentSize(sizeBytes) })
+        ? gt("Draft attachment · {size}", { size: formatAttachmentSize(sizeBytes, messages) })
+        : gt("Attachment · {size}", { size: formatAttachmentSize(sizeBytes, messages) })
       : draftKey
         ? gt("Draft attachment")
         : gt("Attachment");
