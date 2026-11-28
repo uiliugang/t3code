@@ -1998,7 +1998,7 @@ function FilePreviewPanelContent({
                 onOpenFilePreview={(path) => {
                   // A different file starts in preview by default. Only clear the
                   // source view of the file we explicitly reopened.
-                  if (resolveFilePreviewPath(path, cwd) === relativePath) {
+                  if (relativePath !== null && resolveFilePreviewPath(path, cwd) === relativePath) {
                     setRenderMarkdownPreferred(true);
                     setHandledReveal({ path: relativePath, requestId: revealRequestId });
                   }
