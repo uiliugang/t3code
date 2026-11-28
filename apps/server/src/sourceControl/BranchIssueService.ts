@@ -68,6 +68,7 @@ const make = Effect.gen(function* () {
   const isPublished = Effect.fn("BranchIssueService.isPublished")(function* (
     input: BranchIssuesInput,
     remoteName: string,
+    options: Pick<GitVcsDriver.ExecuteGitInput, "timeoutMs"> = {},
   ) {
     if (yield* git.remoteBranchExists({ cwd: input.cwd, remoteName, refName: input.branch }))
       return true;
@@ -76,30 +77,44 @@ const make = Effect.gen(function* () {
       cwd: input.cwd,
       operation: "BranchIssueService.isPublished",
       args: ["ls-remote", "--heads", "--", remoteName, `refs/heads/${input.branch}`],
+      ...options,
     });
     return result.stdout.trim().length > 0;
   });
   const list = Effect.fn("BranchIssueService.list")(
     function* (input: BranchIssuesInput) {
-      const handle = yield* resolve(input);
-      const published = yield* isPublished(input, handle.context.remoteName);
-      if (!published) return { provider: handle.provider.kind, published, issues: [] };
-      const issues = handle.capability.list
-        ? yield* handle.capability.list({ ...input, context: handle.context })
-        : yield* Effect.forEach(
-            yield* stored(input.cwd, handle.key),
-            (issue) =>
-              handle.capability.read({ cwd: input.cwd, issue }).pipe(
-                Effect.map(({ title, state }) => ({ ...issue, title, state })),
-                Effect.catchTags({ SourceControlProviderError: () => Effect.succeed(issue) }),
-              ),
-            { concurrency: 4 },
-          );
-      return {
-        provider: handle.provider.kind,
-        published,
-        issues,
-      };
+      let savedResult: typeof BranchIssuesResult.Type | undefined;
+      return yield* Effect.gen(function* () {
+        const handle = yield* resolve(input);
+        const published = yield* isPublished(input, handle.context.remoteName, {
+          timeoutMs: 5_000,
+        });
+        const branch = { provider: handle.provider.kind, published };
+        if (!published) return { ...branch, issues: [] };
+        if (handle.capability.list) {
+          const issues = yield* handle.capability.list({ ...input, context: handle.context });
+          return { ...branch, issues };
+        }
+
+        const savedIssues = yield* stored(input.cwd, handle.key);
+        savedResult = { ...branch, issues: savedIssues };
+        const issues = yield* Effect.forEach(
+          savedIssues,
+          (issue) =>
+            handle.capability.read({ cwd: input.cwd, issue }).pipe(
+              Effect.map(({ title, state }) => ({ ...issue, title, state })),
+              Effect.catchTags({ SourceControlProviderError: () => Effect.succeed(issue) }),
+            ),
+          { concurrency: 4 },
+        );
+        return { ...branch, issues };
+      }).pipe(
+        Effect.timeout("10 seconds"),
+        Effect.catchTags({
+          TimeoutError: (cause) =>
+            savedResult === undefined ? Effect.fail(cause) : Effect.succeed(savedResult),
+        }),
+      );
     },
     Effect.mapError((cause) =>
       isBranchIssueError(cause)

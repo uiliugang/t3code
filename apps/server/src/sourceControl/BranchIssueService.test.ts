@@ -1,13 +1,16 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   BranchIssueError,
+  GitCommandError,
   SourceControlProviderKind,
   SourceControlProviderError,
   type BranchIssueDetail,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/process";
+import * as TestClock from "effect/testing/TestClock";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Git from "../vcs/GitVcsDriver.ts";
 import * as Providers from "./SourceControlProviderRegistry.ts";
@@ -32,6 +35,9 @@ function setup(
     provider?: "github" | "meituan";
     published?: boolean;
     remotePublished?: boolean;
+    remoteProbeStalled?: boolean;
+    issueListStalled?: boolean;
+    issueReadStalled?: boolean;
     detail?: BranchIssueDetail;
   } = {},
 ) {
@@ -39,11 +45,14 @@ function setup(
   const config = new Map<string, string>();
   const writes: string[] = [];
   const capability: NonNullable<Provider.SourceControlProvider["Service"]["issues"]> = {
-    ...(options.published === false && !options.remotePublished
-      ? { list: () => Effect.die("Unpublished branches must not query remote issues") }
-      : {}),
-    read: ({ cwd, issue }) =>
-      issue.url === options.failUrl
+    ...(options.issueListStalled
+      ? { list: () => Effect.never }
+      : options.published === false && !options.remotePublished
+        ? { list: () => Effect.die("Unpublished branches must not query remote issues") }
+        : {}),
+    read: ({ cwd, issue }) => {
+      if (options.issueReadStalled) return Effect.never;
+      return issue.url === options.failUrl
         ? Effect.fail(
             new SourceControlProviderError({
               provider: kind,
@@ -52,7 +61,8 @@ function setup(
               detail: "Unavailable",
             }),
           )
-        : Effect.succeed(options.detail ?? detail),
+        : Effect.succeed(options.detail ?? detail);
+    },
     ...(options.remote
       ? {
           update: ({ issue, action }) =>
@@ -77,14 +87,27 @@ function setup(
       Layer.mock(Git.GitVcsDriver)({
         listLocalBranchNames: () => Effect.succeed([target.branch, "unlinked"]),
         remoteBranchExists: () => Effect.succeed(options.published ?? true),
-        execute: () =>
-          Effect.succeed({
+        execute: ({ cwd, operation, timeoutMs }) => {
+          if (options.remoteProbeStalled) {
+            return Effect.sleep(timeoutMs ?? 30_000).pipe(
+              Effect.andThen(
+                new GitCommandError({
+                  cwd,
+                  operation,
+                  command: "git",
+                  detail: "Git command timed out.",
+                }),
+              ),
+            );
+          }
+          return Effect.succeed({
             stdout: options.remotePublished ? "abc\trefs/heads/feature/issues\n" : "",
             stderr: "",
             exitCode: ChildProcessSpawner.ExitCode(0),
             stdoutTruncated: false,
             stderrTruncated: false,
-          }),
+          });
+        },
         readConfigValue: (_cwd, key) => Effect.sync(() => config.get(key) ?? null),
         writeConfigValue: ({ key, value }) =>
           Effect.sync(() => {
@@ -154,6 +177,59 @@ describe("branch issue associations", () => {
       yield* service.update({ ...target, action: "associate", urls: [first] });
     }).pipe(Effect.provide(setup({ published: false, remotePublished: true }).layer)),
   );
+  it.effect("reports a stalled remote branch probe after five seconds and can retry", () => {
+    const options = { published: false, remotePublished: true, remoteProbeStalled: false };
+    return Effect.gen(function* () {
+      const service = yield* Service.BranchIssueService;
+      yield* service.update({ ...target, action: "associate", urls: [first] });
+      options.remoteProbeStalled = true;
+
+      const query = yield* service
+        .list(target)
+        .pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
+      yield* TestClock.adjust("5 seconds");
+      expect(query.pollUnsafe()).toBeDefined();
+      expect(yield* Fiber.join(query)).toMatchObject({ reason: "unavailable" });
+
+      options.remoteProbeStalled = false;
+      const result = yield* service.list(target);
+      expect(result.published).toBe(true);
+      expect(result.issues.map((issue) => issue.url)).toEqual([first]);
+    }).pipe(Effect.provide(setup(options).layer));
+  });
+  it.effect("bounds the full query when the issue provider stalls", () =>
+    Effect.gen(function* () {
+      const service = yield* Service.BranchIssueService;
+      const query = yield* service
+        .list(target)
+        .pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
+      yield* TestClock.adjust("10 seconds");
+      expect(query.pollUnsafe()).toBeDefined();
+      expect(yield* Fiber.join(query)).toMatchObject({ reason: "unavailable" });
+    }).pipe(Effect.provide(setup({ provider: "meituan", issueListStalled: true }).layer)),
+  );
+  it.effect("returns saved GitHub issues within the query budget when metadata stalls", () => {
+    const options = { issueReadStalled: false };
+    return Effect.gen(function* () {
+      const service = yield* Service.BranchIssueService;
+      yield* service.update({ ...target, action: "associate", urls: [first] });
+      options.issueReadStalled = true;
+
+      const query = yield* service.list(target).pipe(Effect.result, Effect.forkChild);
+      yield* TestClock.adjust("10 seconds");
+      expect(query.pollUnsafe()).toBeDefined();
+      expect(yield* Fiber.join(query)).toMatchObject({
+        _tag: "Success",
+        success: {
+          published: true,
+          issues: [{ url: first, title: detail.title, state: detail.state, association: "local" }],
+        },
+      });
+
+      yield* service.update({ ...target, action: "disassociate", urls: [first] });
+      expect((yield* service.list(target)).issues).toEqual([]);
+    }).pipe(Effect.provide(setup(options).layer));
+  });
   it.effect("does not query or associate an unpublished branch", () =>
     Effect.gen(function* () {
       const service = yield* Service.BranchIssueService;
