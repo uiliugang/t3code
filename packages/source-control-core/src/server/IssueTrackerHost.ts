@@ -10,7 +10,6 @@ import type * as Option from "effect/Option";
 import {
   isStandaloneIssueTracker,
   type IssueTrackerApi,
-  type IssueTrackerCredential,
   type IssueTrackerCredentialSnapshot,
   type IssueTrackerError,
   type StandaloneIssueTrackerApi,
@@ -23,7 +22,7 @@ export class IssueTrackerHost extends Context.Service<
       /** Read fresh on each call, so a credential saved in Settings applies without a restart. */
       readonly get: (
         tracker: IssueTrackerKind,
-      ) => Effect.Effect<Option.Option<IssueTrackerCredential>, IssueTrackerError>;
+      ) => Effect.Effect<Option.Option<string>, IssueTrackerError>;
     };
   }
 >()("@t3tools/source-control-core/server/IssueTrackerHost") {}

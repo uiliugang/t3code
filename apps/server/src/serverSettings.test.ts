@@ -3128,37 +3128,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("rejects a new requirement source while Jira is the project's effective provider", () =>
-    Effect.gen(function* () {
-      const service = yield* ServerSettingsModule.ServerSettingsService;
-      const sql = yield* SqlClient.SqlClient;
-      const id = ProjectId.make("project:jira-policy");
-      yield* sql`INSERT INTO projection_projects
-        (project_id, title, workspace_root, auto_pull, scripts_json, created_at, updated_at)
-        VALUES (${id}, 'Jira', '/jira', 1, '[]', '2026-08-25', '2026-08-25')`;
-      yield* sql`INSERT INTO issue_tracker_bindings (project_id, tracker, scope, updated_at)
-        VALUES (${id}, 'jira', 'ENG', '2026-08-25')`;
-      const patch = {
-        issueProjectSources: {
-          [id]: [{ provider: "github" as const, host: "github.com", scope: "acme/repo" }],
-        },
-      };
-      const result = yield* service.updateSettings(patch).pipe(Effect.flip);
-      assert.equal(result.detail, "A project can use only one requirement provider.");
-      assert.deepEqual((yield* service.getSettings).issueProjectSources[id] ?? [], []);
-      yield* sql`DELETE FROM issue_tracker_bindings WHERE project_id = ${id}`;
-      assert.deepEqual(
-        (yield* service.updateSettings(patch)).issueProjectSources[id],
-        patch.issueProjectSources[id],
-      );
-    }).pipe(
-      Effect.provideService(RepositoryIdentityResolver.RepositoryIdentityResolver, {
-        resolve: () => Effect.succeed(null),
-      }),
-      Effect.provide(layerServerSettings()),
-    ),
-  );
-
   it.effect("does not hold the settings lock while detecting issue repositories", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

@@ -836,48 +836,34 @@ describe("IssueService", () => {
 });
 
 describe("IssueService with a standalone tracker", () => {
-  it.effect("does not list, read or write a conflicting saved Jira binding", () =>
+  it.effect("does not route references for an unavailable Jira tracker to another provider", () =>
     Effect.gen(function* () {
       const jira = IssueTrackerKind.make("jira");
-      const touched: string[] = [];
-      const standalone = fakeStandaloneTracker({
-        listIssues: () =>
-          Effect.sync(() => {
-            touched.push("list");
-            return { items: [], nextCursor: null };
-          }),
-        getIssue: ({ key }) =>
-          Effect.sync(() => {
-            touched.push("detail");
-            return issue(key);
-          }),
-        comment: () =>
-          Effect.sync(() => {
-            touched.push("comment");
-          }),
-      });
-      const boundJira: StandaloneIssueTrackerApi = {
-        ...standalone,
-        kind: jira,
-        standalone: { ...standalone.standalone, tracker: jira, host: "atlassian.net" },
-      };
+      const projectId = "legacy" as ProjectId;
+      const reads: string[] = [];
       const service = yield* makeService({
-        projects: [project({ id: "github-jira", repository: "acme/repo" })],
-        trackers: [fakeTracker({}), boundJira],
-        bindings: { "github-jira": { tracker: jira, scope: "ENG" } },
+        projects: [project({ id: projectId, repository: "acme/repo" })],
+        trackers: [
+          fakeTracker({
+            getIssue: ({ key }) =>
+              Effect.sync(() => {
+                reads.push(key);
+                return issue(key);
+              }),
+          }),
+          fakeStandaloneTracker({}),
+        ],
+        bindings: { [projectId]: { tracker: jira, scope: "ENG" } },
       });
-      const ref = {
-        projectId: "github-jira" as ProjectId,
-        tracker: jira,
-        host: "atlassian.net",
-        scope: "ENG",
-        key: "ENG-1",
-      };
+      const ref = { projectId, tracker: jira, scope: "ENG", key: "ENG-1" };
 
-      yield* service.list({ state: "open", projectId: ref.projectId });
-      yield* Effect.flip(service.detail(ref));
-      yield* Effect.flip(service.comment({ ...ref, body: "Must not reach Jira" }));
-      expect(touched).toEqual([]);
+      expect(yield* Effect.flip(service.detail(ref))).toMatchObject({
+        reason: "tracker-unsupported",
+      });
+      expect(
+        yield* Effect.flip(service.comment({ ...ref, body: "Not for another provider" })),
+      ).toMatchObject({ reason: "tracker-unsupported" });
+      expect(reads).toEqual([]);
     }),
   );
 
@@ -979,9 +965,7 @@ describe("IssueService with a standalone tracker", () => {
         credentials: {
           get: () =>
             Effect.map(IssueTrackerAccount, (account) =>
-              account === accountId
-                ? Option.some({ token: credential, fields: {} })
-                : Option.none(),
+              account === accountId ? Option.some(credential) : Option.none(),
             ),
         },
       });

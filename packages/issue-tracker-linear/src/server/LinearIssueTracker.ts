@@ -423,7 +423,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       parseIssueUrl: parseLinearIssueUrl,
       snapshotCredential: linear.snapshotCredential,
 
-      probeCredential: ({ token }) =>
+      probeCredential: (token) =>
         linear.viewer(token).pipe(
           Effect.map((data) => ({
             account: userName(data.viewer),

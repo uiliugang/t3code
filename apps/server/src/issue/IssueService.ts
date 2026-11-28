@@ -331,20 +331,18 @@ const make = Effect.gen(function* () {
           const errors: IssueListProjectError[] = [];
           if (shells.length === 0) return { supported, unimplemented, errors };
           const bound = yield* standaloneBindings(filter.projectId);
-          const requirements =
-            filter.standaloneOnly &&
-            ![...bound.values()].some((binding) => binding.tracker === "jira")
-              ? undefined
-              : yield* requirementIssues.trackerSources.pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new IssueOperationError({
-                        operation: "listProjects",
-                        detail: cause.message,
-                        cause,
-                      }),
-                  ),
-                );
+          const requirements = filter.standaloneOnly
+            ? undefined
+            : yield* requirementIssues.trackerSources.pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new IssueOperationError({
+                      operation: "listProjects",
+                      detail: cause.message,
+                      cause,
+                    }),
+                ),
+              );
           const candidates = yield* Effect.forEach(
             shells.filter(
               (project) =>
@@ -374,19 +372,11 @@ const make = Effect.gen(function* () {
                   (yield* repositoryIdentities.resolve(project.workspaceRoot));
                 const shell = { ...project, repositoryIdentity };
                 const gitBindings = resolveGitHostBindings(shell);
-                const { sources, failure, effectiveProvider } =
-                  yield* requirements.forProject(shell);
+                const { sources, failure } = yield* requirements.forProject(shell);
                 const requirementProvider = projectIssueProvider(
                   repositoryIssueKind(repositoryIdentity),
                   sources,
                 );
-                if (binding?.tracker === "jira") {
-                  if (effectiveProvider === undefined && requirementProvider === undefined) {
-                    return standalone;
-                  }
-                  standalone.length = 0;
-                }
-                if (filter.standaloneOnly) return standalone;
                 if (failure)
                   errors.push({
                     projectId: project.id,

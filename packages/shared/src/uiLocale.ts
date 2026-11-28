@@ -1559,9 +1559,6 @@ const zhCN: Readonly<Record<string, string>> = {
   "Select a setting": "请选择设置项",
   "What should the agent do each time?": "每次运行时智能体应执行什么？",
   "Add a CLIProxyAPI hub": "添加 CLIProxyAPI 中心",
-  "API token": "API 令牌",
-  "Account email": "账号邮箱",
-  Site: "站点",
   "Show the quota of every Codex, Claude, and Grok account the hub pools, next to the providers on {environment}. The key stays on that server.":
     "在 {environment} 的提供商旁显示此中心汇集的每个 Codex、Claude 和 Grok 账号的额度。密钥仅保存在该服务器上。",
   "Show the quota of every account the hub pools, next to the providers on {environment}. The key stays on that server.":

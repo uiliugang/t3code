@@ -1387,7 +1387,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/requirements",
     scope: "environment",
     searchTerms: [
-      msg("linear jira issues tracker team api key connect bind project"),
+      msg("linear issues tracker team api key connect bind project"),
       "MEP ONES ones2 mcm",
     ],
   },

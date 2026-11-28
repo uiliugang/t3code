@@ -1631,32 +1631,6 @@ const make = Effect.gen(function* () {
             cause: parseFailure.value,
           });
         }
-        // Jira bindings and requirement-source updates share the settings write semaphore.
-        for (const [projectId, sources] of targets) {
-          const saved = current.issueProjectSources[ProjectId.make(projectId)] ?? [];
-          if (
-            !sources.length ||
-            issueSourcesMatch(sources, saved) ||
-            projectIssueProvider(repositoryKinds.get(projectId), saved) !== undefined
-          )
-            continue;
-          const [jira] = yield* sql<{ tracker: string }>`
-            SELECT tracker FROM issue_tracker_bindings
-            WHERE project_id = ${projectId} AND tracker = 'jira'
-          `.pipe(
-            NodeSqliteClient.readOnly,
-            Effect.mapError(
-              (cause) => new ServerSettingsError({ settingsPath, operation: "write-file", cause }),
-            ),
-          );
-          if (jira !== undefined) {
-            return yield* new ServerSettingsError({
-              settingsPath,
-              operation: "write-file",
-              detail: "A project can use only one requirement provider.",
-            });
-          }
-        }
         // An older client echoes a reference as the redacted marker; restore it before vetting so
         // a removed provider's reference is cleared below rather than restored by persistence.
         const updated = withoutRedirectedSecrets(
