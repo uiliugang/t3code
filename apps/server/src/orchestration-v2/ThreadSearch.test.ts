@@ -388,16 +388,6 @@ it.layer(layerTest)("ThreadSearch", (it) => {
       );
       assert.lengthOf((yield* search.search({ query: "needle", limit: 1 })).matches, 1);
       assert.deepEqual((yield* search.search({ query: "ne%le" })).matches, []);
-      assert.equal(yield* search.latestMessagePreview(both), "needle from the answer");
-      assert.equal(yield* search.latestMessagePreview(assistantOnly), "needle in an answer");
-      for (const id of ["thread:archived", "thread:deleted", "thread:orphaned", "thread:missing"]) {
-        assert.equal(yield* search.latestMessagePreview(ThreadId.make(id)), "");
-      }
-      const longPreview = "Long bounded preview. ".repeat(40);
-      yield* projections.apply(
-        message(assistantOnly, "long-preview", "assistant", longPreview, { minute: 10 }),
-      );
-      assert.equal(yield* search.latestMessagePreview(assistantOnly), longPreview.slice(0, 500));
     }),
   );
 

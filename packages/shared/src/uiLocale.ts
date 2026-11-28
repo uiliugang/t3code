@@ -6726,7 +6726,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Checkout {term}": "检出 {term}",
   'Create new ref "{name}"': "新建分支或引用“{name}”",
   "Provider notices ({count})": "提供商提示（{count}）",
-  "Create or scan items, or adjust your filters.": "创建或扫描需求，或调整筛选条件。",
+  "Create an item or adjust your filters.": "创建需求或调整筛选条件。",
   "Switch to board view": "切换为看板视图",
   "Switch to list view": "切换为列表视图",
   "New requirement": "新建需求",

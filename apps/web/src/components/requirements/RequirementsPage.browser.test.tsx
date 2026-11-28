@@ -76,24 +76,11 @@ vi.mock(import("~/state/entities"), async (original) => ({
 vi.mock(import("~/state/server"), async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
   const { compileResolvedKeybindingsConfig } = await import("@t3tools/shared/keybindings");
-  const workItems = Atom.family((environmentId: string) =>
+  const workItems = Atom.family((_environmentId: string) =>
     Atom.make(
       AsyncResult.success({
         items: [],
         nextCursor: null,
-        candidates:
-          environmentId === "remote"
-            ? [
-                {
-                  id: "candidate",
-                  projectId: "project",
-                  title: "Remote conversation",
-                  description: "",
-                  status: "idle",
-                  updatedAt: "2026-11-15T00:00:00Z",
-                },
-              ]
-            : [],
       }),
     ),
   );
@@ -110,10 +97,9 @@ vi.mock(import("~/state/server"), async () => {
     primaryServerSettingsAtom: Atom.make(null),
     primaryServerConfigAtom: Atom.make(null),
     serverEnvironment: {
-      configValueAtom: Atom.family(() => Atom.make({ workItems: true, workItemDiscovery: true })),
+      configValueAtom: Atom.family(() => Atom.make({ workItems: true })),
       settingsValueAtom: Atom.family(() => Atom.make(null)),
       mutateWorkItem: { permissionAtom: Atom.family(() => Atom.make(true)) },
-      discoverWorkItems: { permissionAtom: Atom.family(() => Atom.make(true)) },
       workItemsLive: ({ environmentId }: { environmentId: string }) => workItems(environmentId),
       issueWorkItems: Atom.family(() => Atom.make(new Map())),
     },
@@ -315,8 +301,6 @@ it("keeps filter checkmarks in sync with keyboard selection and distinguishes pr
     assignee: "selected-user",
   };
   await using screen = await render(fixture.board(search, updateSearch));
-  const discovered = screen.getByRole("heading", { name: "Discovered tasks 1" });
-  await expect.element(discovered).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "Filters" }).click();
   await expect.element(page.getByRole("menuitemcheckbox", { name: "Show archived" })).toBeChecked();
   await openFilterSubmenu("Project");
@@ -336,7 +320,6 @@ it("keeps filter checkmarks in sync with keyboard selection and distinguishes pr
       updateSearch,
     ),
   );
-  await expect.element(discovered).toBeVisible();
   await expect.element(allProjects).toBeChecked();
   await userEvent.keyboard("{Escape}");
   await expect
@@ -380,70 +363,34 @@ it("keeps filter checkmarks in sync with keyboard selection and distinguishes pr
   );
 });
 
-it("updates remote candidate actions when that environment's grants or capabilities change", async () => {
+it("ignores task suggestions from older environments while keeping creation and settings available", async () => {
   using fixture = setup();
-  const permission = serverEnvironment.mutateWorkItem.permissionAtom(
-    EnvironmentId.make("remote"),
-  ) as Atom.Writable<boolean>;
-  fixture.registry.set(permission, false);
-  await using screen = await render(fixture.board());
-  const discovered = screen.getByRole("button", { name: /Discovered tasks/ });
-  const add = screen.getByRole("button", { name: "Add task" });
-  const ignore = screen.getByRole("button", { name: "Ignore" });
-  await expect.element(discovered).toHaveAttribute("aria-expanded", "false");
-  await expect.element(add).not.toBeInTheDocument();
-  await discovered.click();
-  await expect.element(add).toBeDisabled();
-  await act(() => fixture.registry.set(permission, true));
-  await expect.element(add).toBeEnabled();
-  const config = serverEnvironment.configValueAtom(EnvironmentId.make("remote"));
-  const { workItemDiscovery: _, ...baseConfig } = fixture.registry.get(config)!;
-  for (const unavailable of [false, undefined]) {
-    await act(() =>
-      fixture.registry.ensureNode(config).setInitialValue({
-        ...baseConfig,
-        ...(unavailable === undefined ? {} : { workItemDiscovery: unavailable }),
-      }),
-    );
-    await expect.element(ignore).toBeDisabled();
-    await expect.element(add).toBeEnabled();
-  }
-  await act(() =>
-    fixture.registry.ensureNode(config).setInitialValue({ ...baseConfig, workItemDiscovery: true }),
-  );
-  await expect.element(ignore).toBeEnabled();
-  await act(() => fixture.registry.set(permission, false));
-  await expect.element(add).toBeDisabled();
-  await discovered.click();
-  await expect.element(discovered).toHaveAttribute("aria-expanded", "false");
-});
-
-it("keeps the scan action locked after its menu closes until the request settles", async () => {
-  using fixture = setup();
-  let settle!: (result: { _tag: "Success"; value: [] }) => void;
-  mocks.command.mockReturnValueOnce(
-    new Promise((resolve) => {
-      settle = resolve;
+  const workItems = serverEnvironment.workItemsLive({
+    environmentId: EnvironmentId.make("remote"),
+    input: {},
+  });
+  fixture.registry.ensureNode(workItems).setInitialValue(
+    AsyncResult.success({
+      items: [],
+      candidates: [
+        {
+          id: "candidate",
+          projectId: "project",
+          title: "Legacy suggested task",
+          description: "",
+          status: "idle",
+          updatedAt: "2026-11-15T00:00:00Z",
+        },
+      ],
     }),
   );
   await using screen = await render(fixture.board());
-  const trigger = screen.getByRole("button", { name: "Scan chats Select a project" });
-  try {
-    await trigger.click();
-    await userEvent.click(page.getByRole("menuitem", { name: "remote", exact: true }));
-    await page.getByRole("menuitem", { name: "remote project" }).click();
-    await expect
-      .element(page.getByRole("menuitem", { name: "remote project" }))
-      .not.toBeInTheDocument();
-    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({
-      environmentId: EnvironmentId.make("remote"),
-      input: { projectId: ProjectId.make("project") },
-    });
-    await expect.element(trigger).toBeDisabled();
-  } finally {
-    settle({ _tag: "Success", value: [] });
-  }
-  await expect.element(trigger).toBeEnabled();
+  await expect.element(screen.getByRole("button", { name: "New", exact: true })).toBeEnabled();
+  await expect.element(screen.getByRole("link", { name: "Requirement settings" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: /Scan chats/ })).not.toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("heading", { name: /^Discovered tasks/ }))
+    .not.toBeInTheDocument();
 });
 
 it("switches between list and board views with one click, without opening a menu", async () => {
@@ -546,7 +493,6 @@ it("preserves Linear workspace URLs in compact thread panels and does not falsel
     serverEnvironment.configValueAtom("local" as never) as Atom.Writable<unknown>,
     {
       workItems: true,
-      workItemDiscovery: true,
       requirementIssueTrackers: true,
       environment: { capabilities: { issues: true } },
     },
@@ -736,7 +682,6 @@ it("keeps the updating indicator inside the topbar on narrow viewports without v
         },
       ],
       nextCursor: null,
-      candidates: [],
     }),
   );
   const issuesAtom = sourceControlEnvironment.issues({
@@ -759,10 +704,7 @@ it("keeps the updating indicator inside the topbar on narrow viewports without v
   expect(statusRect.bottom).toBeLessThanOrEqual(headerRect.bottom);
 
   fixture.registry.set(issuesAtom, AsyncResult.success({ groups: [], failures: [] }));
-  fixture.registry.set(
-    workItemsAtom,
-    AsyncResult.success({ items: [], nextCursor: null, candidates: [] }),
-  );
+  fixture.registry.set(workItemsAtom, AsyncResult.success({ items: [], nextCursor: null }));
 });
 
 it("opens clicked requirement items as peer tabs in the right panel and switches or closes them", async () => {
@@ -833,7 +775,6 @@ it("opens clicked requirement items as peer tabs in the right panel and switches
           },
         ],
         nextCursor: null,
-        candidates: [],
       }),
     );
     fixture.registry.set(

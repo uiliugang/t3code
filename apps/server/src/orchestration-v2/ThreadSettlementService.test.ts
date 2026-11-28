@@ -707,8 +707,6 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     getSettings: Ref.update(settingsReadCount, (count) => count + 1).pipe(
       Effect.andThen(Ref.get(settings)),
     ),
-    getWorkItemDiscoverySettings: Effect.die("Unexpected work item discovery settings read"),
-    subscribeWorkItemDiscoveryChanges: Effect.succeed(Stream.empty),
     updateSettings,
     updateProviderInstance: () => Effect.die("Unexpected provider mutation"),
     validateProviderInstanceMutation: () => Effect.die("Unexpected provider validation"),

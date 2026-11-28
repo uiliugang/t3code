@@ -1496,11 +1496,6 @@ export const VirtualModel = Schema.Struct({
 export type VirtualModel = typeof VirtualModel.Type;
 export const VirtualModels = Schema.Record(TrimmedNonEmptyString, VirtualModel);
 
-export const MAX_WORK_ITEM_DISCOVERY_LIMIT = 200;
-export const WorkItemDiscoveryLimit = Schema.Int.check(
-  Schema.isBetween({ minimum: 1, maximum: MAX_WORK_ITEM_DISCOVERY_LIMIT }),
-);
-
 export const PromptSuggestionPreference = Schema.Struct({
   enabled: Schema.Boolean,
   source: Schema.Literals(["native", "text-generation"]),
@@ -1797,10 +1792,6 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   issueProjectSources: IssueProjectSources.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  workItemDiscoveryEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  workItemDiscoveryLimit: WorkItemDiscoveryLimit.pipe(
-    Schema.withDecodingDefault(Effect.succeed(20)),
-  ),
   /** Hosts the add and publish project pickers offer, by kind. An unset host is off, except the default one. */
   offeredSourceControlProviders: Schema.Record(Schema.String, Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed({ meituan: true })),
@@ -2295,8 +2286,6 @@ export const ServerSettingsPatch = Schema.Struct({
   /** Merges per host, replacing patched fields whole; redaction markers retain secrets, empty secrets remove them. A non-empty token map keeps the saved tokens of hosts it omits; an empty map clears them all. */
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
   issueProjectSources: Schema.optionalKey(IssueProjectSources),
-  workItemDiscoveryEnabled: Schema.optionalKey(Schema.Boolean),
-  workItemDiscoveryLimit: Schema.optionalKey(WorkItemDiscoveryLimit),
   meituanIntegrationEnabled: Schema.optionalKey(Schema.Boolean),
   meituanSourceControlEnabled: Schema.optionalKey(Schema.Boolean),
   meituanRequirementsEnabled: Schema.optionalKey(Schema.Boolean),

@@ -2140,10 +2140,6 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:work-items:mutate",
       tag: WS_METHODS.workItemsMutate,
     }),
-    discoverWorkItems: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:work-items:discover",
-      tag: WS_METHODS.workItemsDiscover,
-    }),
     generateWorkItemDraft: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:work-items:generate-draft",
       tag: WS_METHODS.workItemsGenerateDraft,
