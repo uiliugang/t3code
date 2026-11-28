@@ -802,8 +802,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     ),
     capabilities?.effortCapSources ?? [],
   );
-  // Skills are scanned per project when a composer asks (probeClaudeWorkspaceSnapshot), not at startup.
-  const skills: ServerProvider["skills"] = [];
+  const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
