@@ -74,9 +74,9 @@ describe("human action inbox", () => {
 
   it("uses the authoritative fresh snapshot and does not wait on a canceled verification", async () => {
     const registry = AtomRegistry.make();
-    const fresh = Atom.make(
-      AsyncResult.initial<OrchestrationV2PendingHumanActionSnapshot | null>(),
-    );
+    const fresh = Atom.make<
+      AsyncResult.AsyncResult<OrchestrationV2PendingHumanActionSnapshot | null>
+    >(AsyncResult.initial());
     const controller = new AbortController();
     const verify = (signal: AbortSignal) =>
       verifyPendingHumanAction(registry, fresh, action, signal);
