@@ -175,16 +175,6 @@ jobs:
           path: native/resource-monitor/target/${{ inputs.rust_target }}/release/t3-resource-monitor
           key: resource-monitor-${{ inputs.rust_target }}-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/build.rs', 'native/resource-monitor/src/**') }}
 
-      - name: Cache Linux capture helpers
-        if: inputs.platform == 'linux'
-        id: capture_helper_cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            native/kde-snap-shot/target/${{ inputs.rust_target }}/release/t3-kde-snap-shot
-            native/hyprland-snap-shot/target/${{ inputs.rust_target }}/release/t3-hyprland-snap-shot
-          key: linux-capture-helpers-${{ inputs.rust_target }}-${{ hashFiles('native/kde-snap-shot/Cargo.lock', 'native/kde-snap-shot/Cargo.toml', 'native/kde-snap-shot/src/**', 'native/hyprland-snap-shot/Cargo.lock', 'native/hyprland-snap-shot/Cargo.toml', 'native/hyprland-snap-shot/src/**', 'native/hyprland-snap-shot/protocols/**') }}
-
       # Every Linux build makes electron-builder fetch the AppImage runtime, FPM
       # for the deb, and the 7-Zip that unpacks FPM from GitHub releases. It
       # checks an archive found here against the SHA-256 pinned in those toolset
@@ -208,7 +198,7 @@ jobs:
           fi
 
       - name: Setup Rust
-        if: steps.resource_monitor_cache.outputs.cache-hit != 'true' || (inputs.platform == 'linux' && steps.capture_helper_cache.outputs.cache-hit != 'true')
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
@@ -391,7 +381,6 @@ jobs:
           pnpm_config_store_dir: ${{ steps.stage_pnpm.outputs.dir }}/store
           pnpm_config_prefer_offline: "true"
           T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: true
-          T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
           T3CODE_DESKTOP_UNTRUSTED_BUNDLE: ${{ inputs.untrusted_bundle }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}

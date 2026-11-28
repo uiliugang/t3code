@@ -1,24 +1,18 @@
-# SnapShots
+# After desktop SnapShots removal
 
-Capture any window on your desktop—along with its app name, window title, and accessibility text/controls—and attach it directly to your current draft so agents can reason about what's on screen.
+Desktop window capture has been removed. You can still open screenshots already attached to conversations.
 
-Available in the desktop app on **macOS** and **Linux (Wayland)** (X11 is not supported). Off by default.
+## Remove an old Linux capture shortcut
 
-## Setup and usage
+If you set up a capture shortcut in Niri or Hyprland, remove the binding from the user config file you used during setup. Back up that file first. Remove only the binding that calls T3 Code's capture action, not other bindings that use the same keys:
 
-1. Enable **Settings → SnapShots** and complete the platform permission and shortcut steps.
-   - **macOS**: Requires Screen Recording (and Accessibility only if **Include app text** is enabled).
-   - **Linux (Wayland)**: Uses a compositor-specific helper/extension (see below).
-2. Switch to any window and press the shortcut (default on macOS: **both Shift keys together**). T3 Code attaches the capture to your active draft (or starts a new draft) and brings itself to the front.
+- **Niri:** In `~/.config/niri/config.kdl` (or the file set by `NIRI_CONFIG`), find the entry inside `binds` that calls `com.t3tools.SnapShot.Capture` with `com.t3tools.T3Code.SnapShot` as the destination. Remove that entry, including its action block, and leave the enclosing `binds` block intact.
+- **Hyprland / Omarchy:** Look in `~/.config/hypr/` for `bindings.conf`, `hyprland.conf`, `bindings.lua`, or `hyprland.lua`. Remove the `bind =` entry or `hl.bind(...)` call targeting `com.t3tools.T3Code:capture-window`, then run `hyprctl reload` in your Hyprland session.
 
-- **Include app text**: Toggle in **Settings → SnapShots** to include or omit accessibility tree data (not every app exposes document/terminal contents; slow apps fall back to screenshot-only).
-- **Sound, flash, and animation**: Each can be toggled independently in Settings.
-- **Customize shortcut**: Pick a modifier pair (macOS) or key chord in Settings (Linux uses key chords only).
+If you set `XDG_CONFIG_HOME`, look there instead of `~/.config`. If you chose a different file during setup, check that file instead. Don't restore an entire old config backup to remove one shortcut; it may overwrite later edits.
 
-## Linux Wayland desktops
+## Recover a screenshot that never reached a draft
 
-- **GNOME**: Installs the per-user **T3 Code SnapShots** extension (sign out and back in once to enable it; revoke via GNOME Extensions).
-- **KDE Plasma 6**: Installs the bundled capture helper (manage shortcuts in **System Settings → Keyboard → Shortcuts**; remove via **Manage capture → Access → Advanced**).
-- **Hyprland / Omarchy**: Installs the helper and previews the exact config binding before saving a backup and reloading (approve screen-sharing if prompted).
-- **Niri**: Previews, validates, and adds the binding to your Niri config (requires `gdbus`).
-- **Other Wayland desktops**: Uses the screenshot portal or falls back to a manual window picker (without accessibility data). XWayland windows inside Wayland are supported.
+On the computer where you captured it, open `~/.t3/userdata/snap-shots` in your file manager. If you launched the desktop app with `T3CODE_HOME`, look in `$T3CODE_HOME/userdata/snap-shots` instead.
+
+Preview the saved `.png` files to find the image you want, then [attach it to a draft](./composer.md#attach-files). Attach only the PNG, not its matching `.json` file. This recovers the image as a regular attachment without the old window metadata.

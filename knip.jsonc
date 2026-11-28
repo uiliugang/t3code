@@ -90,9 +90,7 @@
     "apps/desktop": {
       // Electron loads these bundles by filename rather than importing them.
       "entry": [
-        "gnome-extension/extension.js!",
         "src/backend/DesktopBackendRecoveryWorker.ts!",
-        "src/snapShot/SnapShotAccessibilityWorker.ts!",
         "src/boot.ts!",
         "src/compileCache.ts!",
         "src/serverCompileCache.ts!",

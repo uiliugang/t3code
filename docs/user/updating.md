@@ -25,6 +25,10 @@ In the desktop app, change **Settings → About → Update track** to switch con
 - After 3 consecutive crash recoveries of an unfinished turn, the thread waits for your next message.
 - Updating from V1? Read [Threads from older T3 Code versions](./thread-migration.md).
 
+## After desktop SnapShots removal
+
+If you used desktop SnapShots, learn how to [remove an old Linux capture shortcut or recover a screenshot that never reached a draft](./snap-shot.md).
+
 ## Update a connected server manually
 
 | Situation                           | Action                                                                                                |

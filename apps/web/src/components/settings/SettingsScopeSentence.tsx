@@ -76,7 +76,6 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/appearance",
   "/settings/chat",
   "/settings/diffs",
-  "/settings/snap-shot",
   "/settings/connections",
   "/settings/access",
   "/settings/about",
@@ -86,7 +85,6 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
 const SETTINGS_NO_SCOPE_HEADER_PATHS: ReadonlySet<string> = new Set([
   "/settings/appearance",
   "/settings/diffs",
-  "/settings/snap-shot",
   "/settings/about",
   "/settings/open-source-licenses",
 ]);

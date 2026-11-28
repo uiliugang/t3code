@@ -30,7 +30,6 @@ import { UsageModelFilter } from "./usage.ts";
 import { SecretProviderId, SecretProviderSlug } from "./secretReference.ts";
 import { containsSecretReference, SettingsSecretValue } from "./settingsSecretValue.ts";
 import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
-import { KeybindingShortcut } from "./keybindings.ts";
 import {
   CustomModelSetting,
   DEFAULT_TEXT_GENERATION_MODEL,
@@ -213,66 +212,6 @@ export const EnvironmentIdentificationMode = Schema.Literals([
 ]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
 export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "dev-artwork";
-
-export const SnapShotKeyChord = KeybindingShortcut.check(
-  Schema.makeFilter(
-    (shortcut) =>
-      shortcut.metaKey ||
-      shortcut.ctrlKey ||
-      shortcut.shiftKey ||
-      shortcut.altKey ||
-      shortcut.modKey ||
-      "Snapshot shortcut requires a modifier.",
-  ),
-);
-export type SnapShotKeyChord = typeof SnapShotKeyChord.Type;
-const SNAP_SHOT_MODIFIERS = ["shift", "meta", "control", "alt"] as const;
-export const SnapShotModifier = Schema.Literals(SNAP_SHOT_MODIFIERS);
-export type SnapShotModifier = typeof SnapShotModifier.Type;
-export const SnapShotShortcut = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("both-shift-keys") }),
-  Schema.Struct({ kind: Schema.Literal("modifier-pair"), modifier: SnapShotModifier }),
-  SnapShotKeyChord,
-]);
-export type SnapShotShortcut = typeof SnapShotShortcut.Type;
-export const SnapShotSound = Schema.Literals(["soft-pop", "camera-shutter"]);
-export type SnapShotSound = typeof SnapShotSound.Type;
-const DEFAULT_SNAP_SHOT_SOUND: SnapShotSound = "soft-pop";
-
-export type SnapShotModifierPairShortcut = Extract<SnapShotShortcut, { readonly kind: string }>;
-
-export function isModifierPairShortcut(
-  shortcut: SnapShotShortcut,
-): shortcut is SnapShotModifierPairShortcut {
-  return "kind" in shortcut;
-}
-
-export function snapShotShortcutModifierPair(
-  shortcut: SnapShotModifierPairShortcut,
-): SnapShotModifier {
-  return shortcut.kind === "both-shift-keys" ? "shift" : shortcut.modifier;
-}
-
-const APPLE_MODIFIER_LABELS: Record<SnapShotModifier, string> = {
-  shift: "Shift",
-  meta: "Command",
-  control: "Control",
-  alt: "Option",
-};
-const OTHER_MODIFIER_LABELS: Record<SnapShotModifier, string> = {
-  shift: "Shift",
-  meta: "Super",
-  control: "Ctrl",
-  alt: "Alt",
-};
-
-export function snapShotModifierPairLabel(modifier: SnapShotModifier, apple: boolean): string {
-  const label = (apple ? APPLE_MODIFIER_LABELS : OTHER_MODIFIER_LABELS)[modifier];
-  return `${label} + ${label}`;
-}
-const DEFAULT_SNAP_SHOT_SHORTCUT: SnapShotShortcut = {
-  kind: "both-shift-keys",
-};
 
 export const NotificationMode = Schema.Literals([
   "off",
@@ -647,19 +586,6 @@ export const ClientSettingsSchema = Schema.Struct({
   speechCorrectionWord: SpeechCorrectionCue.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   // A locale code or "system". Open string so new locales and downgrades need no migration.
   language: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("en"))),
-  snapShotEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  snapShotIncludeAccessibility: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(true)),
-  ),
-  snapShotShortcut: SnapShotShortcut.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNAP_SHOT_SHORTCUT)),
-  ),
-  snapShotPlaySound: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  snapShotSound: SnapShotSound.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNAP_SHOT_SOUND)),
-  ),
-  snapShotFlash: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  snapShotAnimations: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
@@ -2513,13 +2439,6 @@ export const ClientSettingsPatch = Schema.Struct({
   speechPostProcessingPrompt: Schema.optionalKey(SpeechPostProcessingPromptSettings),
   speechCorrectionWord: Schema.optionalKey(SpeechCorrectionCue),
   language: Schema.optionalKey(Schema.String),
-  snapShotEnabled: Schema.optionalKey(Schema.Boolean),
-  snapShotIncludeAccessibility: Schema.optionalKey(Schema.Boolean),
-  snapShotShortcut: Schema.optionalKey(SnapShotShortcut),
-  snapShotPlaySound: Schema.optionalKey(Schema.Boolean),
-  snapShotSound: Schema.optionalKey(SnapShotSound),
-  snapShotFlash: Schema.optionalKey(Schema.Boolean),
-  snapShotAnimations: Schema.optionalKey(Schema.Boolean),
   wordWrap: Schema.optionalKey(Schema.Boolean),
   mathRenderingEnabled: Schema.optionalKey(Schema.Boolean),
 });

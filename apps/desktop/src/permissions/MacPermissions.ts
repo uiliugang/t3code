@@ -14,7 +14,7 @@ export class MacPermissions extends Context.Service<
     readonly showHelper: (
       permission: MacPermission,
       owner: Electron.BrowserWindow | null,
-      isGranted?: () => boolean | Promise<boolean>,
+      isGranted: () => boolean | Promise<boolean>,
     ) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/permissions/MacPermissions") {}

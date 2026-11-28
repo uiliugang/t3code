@@ -13,8 +13,7 @@ const TEST_EXCLUDE = [
   "**/.{idea,git,cache,output,temp}/**",
 ];
 
-// Directories whose tests belong to a package's own test config. desktop also
-// owns the kde-snap-shot tests through its `include`.
+// Directories whose tests belong to a package's own test config.
 const TEST_CONFIG_PACKAGES = [
   "apps/desktop",
   "apps/mobile",
@@ -156,11 +155,7 @@ export default defineConfig({
               extends: true,
               test: {
                 name: "root",
-                exclude: [
-                  ...TEST_EXCLUDE,
-                  ...TEST_CONFIG_PACKAGES.map((dir) => `${dir}/**`),
-                  "native/kde-snap-shot/**",
-                ],
+                exclude: [...TEST_EXCLUDE, ...TEST_CONFIG_PACKAGES.map((dir) => `${dir}/**`)],
               },
             },
           ],

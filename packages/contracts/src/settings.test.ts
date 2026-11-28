@@ -79,6 +79,19 @@ describe("composer prediction settings", () => {
   });
 });
 
+it("loads settings and backups containing retired window capture preferences", () => {
+  const current = { uiLanguage: "zh-CN" };
+  const legacy = {
+    ...current,
+    snapShotEnabled: true,
+    snapShotShortcut: { kind: "both-shift-keys" },
+    snapShotSound: "camera-shutter",
+  };
+
+  expect(decodeClientSettings(legacy)).toEqual(decodeClientSettings(current));
+  expect(decodeClientSettingsPatch(legacy)).toEqual(current);
+});
+
 describe("built-in preferences", () => {
   it("starts with portable preferences and preserves explicit overrides", () => {
     const preferences = {
@@ -106,7 +119,6 @@ describe("built-in preferences", () => {
       boringSidebarMultilineRows: true,
       branchIssuesPlacement: "separate",
       timestampFormat: "24-hour",
-      snapShotPlaySound: false,
       wordWrap: true,
       mathRenderingEnabled: true,
     };

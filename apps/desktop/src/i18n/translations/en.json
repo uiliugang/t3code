@@ -21,8 +21,6 @@
   "7379a43c1ac009d2": "The T3 Code background service is using this T3 home (PID {pid}, port {port}). Stop it with `t3 service uninstall`, passing `--base-dir` with this T3 home, and reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.",
   "1510c6547cde9c2e": "Another T3 Code server (for example `t3 serve`, or one started over SSH) is using this T3 home (PID {pid}, port {port}, version {version}). If a T3 Code app on another machine started it over SSH, that app restarts it: remove or disconnect that SSH environment there, or quit that app. Then stop the server, and reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.",
   "8d8628520de0d9f1": "Another T3 Code server (for example `t3 serve`, or one started over SSH) is using this T3 home (PID {pid}, port {port}). If a T3 Code app on another machine started it over SSH, that app restarts it: remove or disconnect that SSH environment there, or quit that app. Then stop the server, and reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.",
-  "6574442caf8bfd15": "Set up Screen Recording",
-  "a8210440c691b062": "Set up Accessibility",
   "0cbbbd8abd25f9d4": "Set up Full Disk Access",
   "4cd679200c978949": "Close permission helper",
   "ea4f056c8f6b5c15": "↑ Drag T3 Code into the list above",
@@ -124,6 +122,5 @@
   "202e13f15a3dcd30": "Copy Link",
   "8af79268f2349f4c": "Copy Email Address",
   "a9f9254d458e49fe": "Copy Image",
-  "9c1b20fbc881de5d": "Desktop config",
   "1b14230874f19eb9": "Images"
 }

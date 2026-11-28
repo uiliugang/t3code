@@ -12,11 +12,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 
-import {
-  type DatabaseMigrationProgress,
-  type DesktopSnapShotEvent,
-  DEFAULT_CLIENT_SETTINGS,
-} from "@t3tools/contracts";
+import { type DatabaseMigrationProgress, DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
@@ -32,7 +28,6 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
-  SNAP_SHOT_EVENT_CHANNEL,
   TRACKPAD_SCROLL_BEGIN_CHANNEL,
   TRACKPAD_SCROLL_END_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
@@ -143,9 +138,6 @@ export class DesktopWindow extends Context.Service<
     readonly dispatchMenuAction: (
       action: string,
       options?: { readonly reveal?: boolean },
-    ) => Effect.Effect<void, DesktopWindowError>;
-    readonly dispatchSnapShotEvent: (
-      event: DesktopSnapShotEvent,
     ) => Effect.Effect<void, DesktopWindowError>;
     // Electron zoom roles target focused guests; zoomMain must always target the app.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
@@ -1271,15 +1263,6 @@ export const make = Effect.gen(function* () {
     dispatchMenuAction: Effect.fn("desktop.window.dispatchMenuAction")(function* (action, options) {
       yield* Effect.annotateCurrentSpan({ action });
       yield* dispatchRendererEvent(MENU_ACTION_CHANNEL, action, options);
-    }),
-    dispatchSnapShotEvent: Effect.fn("desktop.window.dispatchSnapShotEvent")(function* (event) {
-      yield* Effect.annotateCurrentSpan({
-        event: event.type,
-        captureId: "id" in event ? (event.id ?? null) : null,
-      });
-      yield* dispatchRendererEvent(SNAP_SHOT_EVENT_CHANNEL, event, {
-        reveal: event.type === "started",
-      });
     }),
     zoomMain: Effect.fn("desktop.window.zoomMain")(function* (direction) {
       yield* Effect.annotateCurrentSpan({ direction });
