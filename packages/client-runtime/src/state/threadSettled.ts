@@ -210,6 +210,13 @@ const WEEKDAY_INDEX = {
   saturday: 6,
 } as const;
 
+/** Keeps the existing ISO-date wire format; only the timer is disabled, not early-wake rules. */
+export const INDEFINITE_SNOOZE_UNTIL = "9999-12-31T23:59:59.000Z";
+
+export function isIndefiniteSnooze(snoozedUntil: string): boolean {
+  return Date.parse(snoozedUntil) === Date.parse(INDEFINITE_SNOOZE_UNTIL);
+}
+
 export interface SnoozePreset {
   readonly id: string;
   readonly label: string;
@@ -341,6 +348,12 @@ export function resolveSnoozePresets(
         seen.add(wakeMinute(preset));
         return true;
       })
+      .concat({
+        id: "indefinite",
+        label: (options.t ?? translateUi.bind(null, "en"))("Indefinitely"),
+        whenLabel: "",
+        snoozedUntil: INDEFINITE_SNOOZE_UNTIL,
+      })
   );
 }
 
@@ -374,6 +387,7 @@ export function snoozeWakeLabel(
   options: { readonly now: string },
   resolve: MFunctionType = mFallback,
 ): string {
+  if (isIndefiniteSnooze(snoozedUntil)) return "∞";
   const wakeMs = Date.parse(snoozedUntil);
   const nowMs = Date.parse(options.now);
   const now = () => resolve(msg("now", { $context: "a snoozed thread wakes now" }));

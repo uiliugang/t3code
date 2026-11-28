@@ -1736,6 +1736,7 @@ const zhCN: Readonly<Record<string, string>> = {
   "Import and export settings": "导入与导出设置",
   "Fallback model": "备用模型",
   "Snooze options": "稍后提醒选项",
+  Indefinitely: "无限期",
   "Boring sidebar (group by project)": "简洁侧边栏（按项目分组）",
   "Two-line folder rows": "文件夹双行显示",
   "Linked environments": "关联环境",
